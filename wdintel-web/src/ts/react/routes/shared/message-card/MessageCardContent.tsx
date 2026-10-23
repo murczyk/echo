@@ -1153,7 +1153,6 @@ export function MessageCardMessageBody({
         {hasSidebarContent ? (
           <div className="message-card-sidebar">
             {tagsSection}
-            {replyContent}
             {hasCallsignControls ? (
               <MessageCardCallsignsSection
                 msg={msg}
@@ -1171,6 +1170,7 @@ export function MessageCardMessageBody({
               groupInfos={reportGroupInfos}
               onEdit={readOnly ? undefined : onEditReport}
             />
+            {replyContent}
           </div>
         ) : null}
       </div>

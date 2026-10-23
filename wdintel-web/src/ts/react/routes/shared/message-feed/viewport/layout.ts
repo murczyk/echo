@@ -274,6 +274,7 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
     initialPosition,
     focus?.messageId,
     focus?.active,
+    focus?.constrainToContent,
     bottomSpacerPx,
     viewport,
     viewportPreservationKey,

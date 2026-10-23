@@ -1,9 +1,13 @@
-import { MessageRepliesProvider } from '../shared/message-replies/MessageRepliesProvider';
+import {
+  MessageRepliesProvider,
+  ReplyMessageEditor,
+  type ReplyTarget,
+} from '../shared/message-replies/MessageRepliesProvider';
 import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
 } from '../shared/message-card/MessageWriteAccess';
-import { canWriteMessages, hasRole } from '../../utils/roles';
+import { canReplyToMessages, canWriteMessages, hasRole } from '../../utils/roles';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { Box } from '@mui/material';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -21,10 +25,7 @@ import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
-import {
-  ManageMessageDrawer,
-  type ManageMessageEditorHandle,
-} from '../shared/manage-message/ManageMessageDrawer';
+import type { ManageMessageEditorHandle } from '../shared/manage-message/ManageMessageDrawer';
 import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
@@ -62,6 +63,7 @@ export function RerAnalysisNeoPage({
   const page = useRerAnalysisNeoPage(authUserName, authUserRoles);
   const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
     null,
@@ -109,15 +111,17 @@ export function RerAnalysisNeoPage({
     (page.messagesLoading || page.directMessageLoading || page.messages.length === 0);
   const leftPanelVisible = page.leftPanelOpen;
   const requestedRightPanelVisible = page.rightPanelOpen;
-  const editorIntentKey = createMessageOpen
-    ? `create-message:${createMessageGroupMasterKey ?? 'all'}`
-    : page.reportSource
-      ? `create-report:${page.reportSource.id}`
-      : page.editorMessage
-        ? `${page.editorEditAsReport ? 'edit-report' : 'edit-message'}:${page.editorMessage.id}`
-        : page.editTargetLoadState.status !== 'idle'
-          ? `edit-report:${page.editTargetLoadState.reportId}`
-          : null;
+  const editorIntentKey = replyTarget
+    ? `reply:${replyTarget.id}`
+    : createMessageOpen
+      ? `create-message:${createMessageGroupMasterKey ?? 'all'}`
+      : page.reportSource
+        ? `create-report:${page.reportSource.id}`
+        : page.editorMessage
+          ? `${page.editorEditAsReport ? 'edit-report' : 'edit-message'}:${page.editorMessage.id}`
+          : page.editTargetLoadState.status !== 'idle'
+            ? `edit-report:${page.editTargetLoadState.reportId}`
+            : null;
   const editorOpen = editorIntentKey !== null;
   const editorHighlightedMessageId = editorOpen
     ? (editorSourceMessageId ??
@@ -218,13 +222,18 @@ export function RerAnalysisNeoPage({
   );
   const requestEditorIntent = useCallback(
     (key: string, commit: () => void, invokingControl?: HTMLElement, sourceMessageId?: number) => {
-      if (!canWriteMessages(page.currentUser?.roles)) return;
+      if (
+        !canWriteMessages(page.currentUser?.roles) &&
+        !(key.startsWith('reply:') && canReplyToMessages(page.currentUser?.roles))
+      )
+        return;
       const focusTarget =
         invokingControl ??
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       editorInitialFocusTargetRef.current = focusTarget;
       const applyIntent = () => {
         setEditorSourceMessageId(sourceMessageId ?? null);
+        setReplyTarget(null);
         if (page.rightPanelOpen) page.toggleRightPanel();
         if (key.startsWith('create-message:')) {
           if (
@@ -254,6 +263,20 @@ export function RerAnalysisNeoPage({
       page.rightPanelOpen,
       page.toggleRightPanel,
     ],
+  );
+  const openReplyComposer = useCallback(
+    (target: ReplyTarget) => {
+      requestEditorIntent(
+        `reply:${target.id}`,
+        () => {
+          page.closeEditor();
+          setReplyTarget(target);
+        },
+        target.focus ?? undefined,
+        target.id,
+      );
+    },
+    [requestEditorIntent, page.closeEditor],
   );
   const openCreateMessageComposer = useCallback(
     (focusTarget?: HTMLElement) => {
@@ -329,6 +352,7 @@ export function RerAnalysisNeoPage({
     openReportEditor,
   };
   const closeMessageEditor = useCallback(() => {
+    setReplyTarget(null);
     if (
       isPresent(page.editorMessage) ||
       isPresent(page.reportSource) ||
@@ -519,7 +543,9 @@ export function RerAnalysisNeoPage({
                 editorOpen={editorOpen}
                 analyticsOpen={rightPanelVisible}
                 editor={
-                  <ManageMessageDrawer
+                  <ReplyMessageEditor
+                    replyTarget={replyTarget}
+                    timeBasis={page.queryState.messageTimeBasis ?? 'interception'}
                     ref={editorRef}
                     hideNetworks={page.hideNetworks || !page.networkVisibilityReady}
                     open={editorOpen}
@@ -532,7 +558,10 @@ export function RerAnalysisNeoPage({
                     focusFallbackRef={createMessageFabRef}
                     cyberEchoEnabled={page.cyberEchoEnabled}
                     currentUser={page.currentUser}
-                    initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
+                    initialGroupMasterKey={
+                      replyTarget?.message.groupMasterKey ??
+                      (createMessageOpen ? createMessageGroupMasterKey : null)
+                    }
                     editTarget={page.editorMessage}
                     editAsReport={page.editorEditAsReport}
                     editTargetLoadState={page.editTargetLoadState}
@@ -646,9 +675,9 @@ export function RerAnalysisNeoPage({
       <MessageDeleteAccessContext.Provider value={hasRole(page.currentUser?.roles, 'DeleteMsg')}>
         <MessageRepliesProvider
           screen="Analysis"
+          onReply={openReplyComposer}
+          onNavigate={page.navigateReply}
           currentUser={page.currentUser}
-          cyberEchoEnabled={page.cyberEchoEnabled}
-          timeBasis={page.queryState.messageTimeBasis ?? 'interception'}
         >
           {content}
         </MessageRepliesProvider>

@@ -501,6 +501,7 @@ export function useRerDutyFeeds(
     [filterOpts.postsList, feedState.messageFeeds],
   );
   return {
+    buildReqForFeed: feedState.buildReqForFeed,
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
     error: feedState.error,

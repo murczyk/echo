@@ -471,6 +471,15 @@ function ActionIconsRow({
   const canShowLocationCopy =
     etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItemCandidates: Array<OverflowMenuItem | null> = [
+    mobileActions && canShowPrimaryActions && isPresent(onCreateReport)
+      ? {
+          key: 'report',
+          title: 'Створити розвіддонесення',
+          icon: <NoteAddIcon fontSize="small" />,
+          selected: false,
+          onClick: (event) => onCreateReport(overflowMenuTriggerRef.current ?? event.currentTarget),
+        }
+      : null,
     mobileActions && canShowReply
       ? {
           key: 'reply',
@@ -481,15 +490,6 @@ function ActionIconsRow({
             const focusTarget = overflowMenuTriggerRef.current ?? event.currentTarget;
             window.setTimeout(() => onReply(focusTarget), 0);
           },
-        }
-      : null,
-    mobileActions && canShowPrimaryActions && isPresent(onCreateReport)
-      ? {
-          key: 'report',
-          title: 'Створити розвіддонесення',
-          icon: <NoteAddIcon fontSize="small" />,
-          selected: false,
-          onClick: (event) => onCreateReport(overflowMenuTriggerRef.current ?? event.currentTarget),
         }
       : null,
     mobileActions && canShowPrimaryActions
@@ -668,20 +668,20 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    canShowReply && !mobileActions ? (
-      <ActionIconButton
-        key="reply"
-        title="Відповісти"
-        icon={<ReplyIcon className="message-card-action-btn__icon" />}
-        onClick={(event) => onReply(event.currentTarget)}
-      />
-    ) : null,
     canShowPrimaryActions && isPresent(onCreateReport) && !mobileActions ? (
       <ActionIconButton
         key="report"
         title="Створити розвіддонесення"
         icon={<NoteAddIcon className="message-card-action-btn__icon" />}
         onClick={(event) => onCreateReport(event.currentTarget)}
+      />
+    ) : null,
+    canShowReply && !mobileActions ? (
+      <ActionIconButton
+        key="reply"
+        title="Відповісти"
+        icon={<ReplyIcon className="message-card-action-btn__icon" />}
+        onClick={(event) => onReply(event.currentTarget)}
       />
     ) : null,
     canShowPrimaryActions && !mobileActions ? (

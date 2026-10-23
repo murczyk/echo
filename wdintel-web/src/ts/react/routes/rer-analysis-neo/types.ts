@@ -323,6 +323,7 @@ export type AnalysisPageState = {
 };
 
 export type AnalysisPageActions = {
+  navigateReply: import('../shared/message-replies/MessageRepliesProvider').ReplyNavigation;
   applySavedFilter: (savedFilter: SavedFilter | null) => void;
   deleteLoadedSavedFilter: () => void;
   renameExistingSavedFilter: (name: string) => Promise<boolean>;

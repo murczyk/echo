@@ -5,7 +5,6 @@ test.describe('@regression #3612 message replies', () => {
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} preserves deleted chain rows and composes a reply in the standard editor`, async ({
       page,
-      context,
     }) => {
       await openMessageCardPreviewHost(page, host);
       const card = page.locator('[data-message-id]').first();
@@ -118,47 +117,49 @@ test.describe('@regression #3612 message replies', () => {
         screen,
       );
       const chain = card.getByRole('region', { name: 'Відповіді', exact: true });
-      await expect(chain).toContainText('Попередній оригінал');
-      await expect(chain).toContainText('Другий оригінал');
-      await expect(chain).toContainText('Повідомлення недоступне');
-      await expect(
-        chain.getByRole('button', { name: 'Оригінальне повідомлення', exact: true }),
-      ).toHaveCount(2);
-      await expect(chain.locator('blockquote').first().getByRole('button')).toHaveText(
-        host === 'duty' ? '21.09 · 18:13' : '21.09 · 17:13',
+      await expect(chain.getByRole('link')).toHaveCount(2);
+      await chain.getByRole('button', { name: 'Усі 5', exact: true }).click();
+      const panel = page.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
+      await expect(panel).toContainText('Попередній оригінал');
+      await expect(panel).toContainText('Другий оригінал');
+      await expect(panel).toContainText('Повідомлення недоступне');
+      await expect(panel.getByRole('listitem')).toHaveCount(5);
+      await expect(panel.getByRole('listitem').nth(2)).toContainText('Видалено');
+      await expect(panel.getByRole('listitem').nth(2).getByRole('link')).toHaveCount(0);
+      const originalLink = panel.getByRole('link').filter({ hasText: 'Попередній оригінал' });
+      await expect(originalLink).toContainText(
+        host === 'duty' ? '21.09.2026 · 18:13' : '21.09.2026 · 17:13',
       );
-      await expect(chain.locator('ol > li')).toHaveCount(2);
-      await expect(chain).toContainText('Видалено');
-      await expect(chain.locator('ol > li').nth(1).getByRole('button')).toHaveCount(0);
       const requestsBeforeTimeChange = replyRequests;
       await page.evaluate(() =>
         window.dispatchEvent(
-          new CustomEvent('user-settings-updated', {
-            detail: { messageSortBy: 'creation' },
-          }),
+          new CustomEvent('user-settings-updated', { detail: { messageSortBy: 'creation' } }),
         ),
       );
-      await expect(chain.locator('blockquote').first().getByRole('button')).toHaveText(
-        '21.09 · 18:13',
-      );
+      await expect(originalLink).toContainText('21.09.2026 · 18:13');
       expect(replyRequests).toBe(requestsBeforeTimeChange);
-
-      await context.route(`**${href}`, (route) =>
-        route.fulfill({ contentType: 'text/html', body: '<p>Оригінал</p>' }),
+      await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+        route.fulfill({
+          json: {
+            message: null,
+            group_master_keys: [],
+            sigint_inbox_item_ids: [],
+            since_ts: null,
+            till_ts: null,
+          },
+        }),
       );
-      const originalLink = chain
-        .getByRole('button', { name: 'Оригінальне повідомлення', exact: true })
-        .first();
+      const originalUrl = page.url();
       await originalLink.focus();
       await originalLink.press('Enter');
-      const confirmation = page.getByRole('dialog', { name: 'Відкрити повідомлення?' });
-      await expect(confirmation).toBeVisible();
-      const popupPromise = page.waitForEvent('popup');
-      await confirmation.getByRole('button', { name: 'Відкрити', exact: true }).click();
-      const popup = await popupPromise;
-      await expect(popup).toHaveURL(new RegExp('m=3612-original$'));
-      await popup.close();
-      await expect(originalLink).toBeFocused();
+      await expect(panel).toHaveCount(0);
+      await expect(
+        page.getByText('Повідомлення за посиланням не знайдено або воно недоступне.', {
+          exact: true,
+        }),
+      ).toBeVisible();
+      expect(page.context().pages()).toHaveLength(1);
+      expect(page.url()).toBe(originalUrl);
 
       await page.route('**/api/1.1/submit-direct/parse', (route) =>
         route.fulfill({
@@ -212,8 +213,11 @@ test.describe('@regression #3612 message replies', () => {
         .fill('Моя нова відповідь');
       await editor.getByRole('button', { name: 'Створити', exact: true }).click();
       await expect(editor).toHaveCount(0);
-      await expect(chain.locator('ol > li')).toHaveCount(3);
-      await expect(chain).toContainText('Моя нова відповідь');
+      await chain.getByRole('button', { name: 'Усі 6', exact: true }).click();
+      await expect(panel.getByRole('listitem')).toHaveCount(6);
+      await expect(panel).toContainText('Моя нова відповідь');
+      await page.keyboard.press('Escape');
+      await expect(panel).toHaveCount(0);
       const user = await page.evaluate(() =>
         fetch('/api/user').then((response) => response.json()),
       );

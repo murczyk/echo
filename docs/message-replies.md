@@ -2,8 +2,65 @@
 
 Issue: [#3612](https://github.com/echoua/echo/issues/3612).
 
+Both Neo screens already have a working frontend for basic replies: a message
+action, a source preview, a locked destination group, an independent body, closing
+after successful submission, and reciprocal direct citations. Existing state and
+polling also refresh edited previews and deleted citation markers in other
+sessions. These pieces should be reused when completing the shared-thread flows.
+
+## Implementation status against the group-thread plan
+
+The implementation on `3612-reply` uses direct citation edges. The
+[revised implementation plan](superpowers/plans/2026-10-22-group-message-replies.md)
+keeps the agreed shared-thread scenarios and builds on the existing backend.
+Its pending extensions are not current API contracts. Use the verified contracts
+below and generated bindings for fixtures.
+
+| Planned behavior | Current implementation |
+| --- | --- |
+| The same side drawer as ordinary Neo creation | Reply uses the shared page editor, responsive embedded/modal presentation, draft-intent guard, and source outline |
+| Every member links to every other member | Only direct originals and replies are returned; no recursive expansion |
+| Two compact links and a paged `Усі N` popover | Two direct relations on the card; additional direct relations in a scrolling popover. The API still returns all direct relations; no server pagination |
+| Smooth navigation within the current feed | Clickable preview navigates within the source feed, loading a distant window if needed; filters remain unchanged |
+| Save a reply after its original is deleted | Submission rejects an unavailable source and preserves the draft |
+| Detach while composing or editing | No detach control or mutation API |
+| Blue outline around the source while composing | Shared editor selection highlights the source in its own feed |
+| Echo-only relationships | Echo composition plus native Signal/WhatsApp source reconciliation |
+| Group-scoped thread identity and member order | No thread identity; direct edges ordered by relationship creation time and ID |
+
+These differences do not establish that the original requirements were withdrawn.
+Browser tests with mocked HTTP responses verify UI behavior; they do
+not prove database atomicity, authorization, reconciliation, or performance on
+large histories. Those require the backend tests and database plan measurements.
+The endpoint limits requested anchors to 512; this is not a reply-list page size.
+Direct relationships use endpoint indexes, but the response has no pagination or
+independent cap on relationships per anchor. A large number of replies therefore
+still increases response size and rendered rows; no production-scale performance
+guarantee follows from the anchor limit alone.
+
+### Acceptance scenarios remain unchanged
+
+The 24 E1–E13 checks in `message-reply-threads.spec.ts` and
+`message-replies-multi-user.spec.ts` preserve the agreed user journeys, including
+all-member navigation, paged overlays, detach, and successful creation after source
+deletion. Their fixtures use the existing wire contract where it exists; missing
+behavior must remain a meaningful failing assertion, not be redefined as success.
+
+The [revised implementation plan](superpowers/plans/2026-10-22-group-message-replies.md)
+records every scenario and separates existing code from required changes. It also
+identifies the thread/page/detach contracts that must be specified before feature
+implementation. Current native citations are not automatically Echo thread members.
+
+Mocked E2E responses do not demonstrate that the current backend supports a full
+thread or a successful deleted-source submission. There is no successful detach
+fixture contract yet; it must be added alongside the real backend contract, without
+changing the accepted detach scenarios. The existing direct-citation regression
+suite continues to document behavior already implemented in this branch.
+
 Duty Neo and Analysis Neo expose `Відповісти` in the shared message actions. It
-opens the standard New Message surface with one read-only citation. This release
+opens the page's standard `ManageMessageDrawer` with one read-only citation. Desktop
+uses the embedded side editor and mobile uses its standard modal presentation.
+Opening another editor intent uses the same unsaved-draft guard. This release
 does not expose a selector for additional citations. The submission API, database,
 editor state, and renderer accept citation collections so future selection UI
 does not require changing their relationship model. Reply bodies are independent
@@ -93,12 +150,32 @@ Dates use the application timezone and `DD.MM · HH:mm`; an absent selected
 timestamp uses `Час невідомий`. Duty ordering, filtering, unread cursors, and
 notifications retain the [creation-time contract](duty/README.md#creation-time-contract).
 
-Original citations appear below tags under `Оригінальне повідомлення`. The label
-and timestamp prompt for confirmation before opening the appropriate screen in a
-new tab. Direct replies appear below originals under `Ланцюжок`, ordered oldest
-to newest by relationship creation time and ID, with a count and numbered,
-connected rows. Keyboard focus selects the row marker; deleted rows retain their
-number and have no navigation action. Conversations are not expanded recursively.
+Direct relationships appear under `Ланцюжок`, below intelligence-report links.
+Each numbered item has the selected timestamp and one truncated preview line;
+the whole available item is a link. At most two items render on the card.
+For larger lists, `Усі N` opens a lazily mounted anchored popover with its own
+bounded, contained scroll. Opening it does not increase the card height.
+`N` counts the direct related messages, excluding the current card; this is not
+a total for a transitive shared thread. Deleted rows retain their number and
+have no navigation action. Conversations are not expanded recursively.
+
+Clicking a preview closes the popover and resolves the target through existing
+message-navigation APIs in the same tab. Duty targets the originating column;
+Analysis loads a focused window without expanding the date range. Filtered-out
+targets show a notification asking the user to change filters; unavailable targets
+and API errors also produce visible notifications. Existing loaded Duty targets
+use the feed's scrolling API with the reduced-motion preference; newly loaded
+windows use its focus mechanism to hold the target through layout reconciliation.
+Duty reply landings stay within the loaded content: the newest reply appears at
+the bottom of the list without artificial space below it, including after a jump
+from a different history window.
+The frontend does not add new API endpoints or implement server pagination.
+
+Browser coverage for these frontend behaviors:
+`wdintel-web/tests/e2e/message-replies-frontend.spec.ts` and
+`wdintel-web/tests/e2e/message-replies.spec.ts`. The unchanged full E1–E13 suite
+continues to describe backend-dependent shared-thread behavior. Detach, including
+removing the source while composing, is deferred to a separate iteration.
 
 Mounted cards register with a page-owned batched store; their first reply query
 does not block base message rendering. Unmounted card snapshots remain in a
@@ -135,6 +212,14 @@ mirror resync or manual historical reconciliation is required.
 - `wdintel-web/tests/e2e/message-replies.spec.ts`: both screens' citation/chain
   display, tombstones, unavailable citations, confirmed navigation, desktop/mobile
   composition, viewer permissions, and timestamp preference changes without fetching.
+- `wdintel-web/tests/e2e/message-reply-threads.spec.ts`: the unchanged E1/E2/E4/E6/E7/E12
+  acceptance scenarios on both Neo screens, using existing citation requests where
+  supported. Unimplemented thread and detach behavior remains red.
+- `wdintel-web/tests/e2e/message-replies-multi-user.spec.ts`: the unchanged E3/E5/E8–E11/E13
+  acceptance scenarios, including multi-user chains, deletion, detach, and their
+  races. Deletion during composition is required to permit saving. HTTP responses are
+  scripted with generated types; transactions and native reconciliation are not
+  reimplemented in these fixtures.
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.polling.spec.tsx`
   and `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`: existing scheduling,
   scrolling, and unread safeguards remain applicable to the shared card.

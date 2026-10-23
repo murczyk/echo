@@ -732,6 +732,7 @@ export const FeedColumnContent = memo(
     const feedRef = useRef<MessageFeedHandle>(null);
     const scrollerRef = useRef<HTMLDivElement>(null);
     const scrollOptions = {
+      focus: view.linkedMessageFocus,
       policy: DUTY_FEED_POLICY,
       diagnostics: {
         enabled: debugEnabled,
@@ -966,6 +967,7 @@ export const FeedColumnContent = memo(
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
+      prevView.linkedMessageFocus !== nextView.linkedMessageFocus ||
       prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {

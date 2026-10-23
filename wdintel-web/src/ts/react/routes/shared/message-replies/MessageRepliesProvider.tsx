@@ -1,15 +1,15 @@
 import {
   createContext,
+  forwardRef,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
-  useState,
   useSyncExternalStore,
 } from 'react';
 import type { ReactNode } from 'react';
-import type { InboxMessage, MessageReplyScreen, User } from '../../../../../Bindings';
+import type { CitedMessage, InboxMessage, MessageReplyScreen, User } from '../../../../../Bindings';
 import { usePowerSnackbar } from '../../../components/PowerSnackbar';
 import { isUnauthorizedError } from '../../../services/api/client';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
@@ -18,16 +18,26 @@ import { ANALYSIS_SYSTEM_COUNT_INTERVAL_MS } from '../../rer-analysis-neo/config
 import {
   ManageMessageDrawer,
   type ManageMessageEditorHandle,
+  type Props as MessageEditorProps,
 } from '../manage-message/ManageMessageDrawer';
 import { inboxChangedEvents } from '../useInboxChangedMessageIds';
 import { ReplyStore } from './reply-store';
 import { MESSAGE_REPLY_POLL_EVENT } from './events';
 
-type Target = { id: number; message: InboxMessage; focus: HTMLElement | null };
-type ReplyContext = { store: ReplyStore; open?: (target: Target) => void };
+export type ReplyTarget = { id: number; message: InboxMessage; focus: HTMLElement | null };
+export type ReplyNavigation = (message: CitedMessage, source: HTMLElement) => void;
+type ReplyContext = {
+  store: ReplyStore;
+  open?: (target: ReplyTarget) => void;
+  navigate: ReplyNavigation;
+};
 const Context = createContext<ReplyContext | null>(null);
 const EMPTY = { loaded: false, relations: [], messages: new Map() };
 const noop = () => () => {};
+
+export function useReplyNavigation() {
+  return useContext(Context)?.navigate;
+}
 
 export function useMessageReplies(id: number) {
   const context = useContext(Context);
@@ -41,57 +51,45 @@ export function useMessageReplies(id: number) {
   return { snapshot, open: context?.open };
 }
 
-function ReplyComposer({
-  target,
-  currentUser,
-  cyberEchoEnabled,
-  timeBasis,
-  editorRef,
-  close,
-  created,
-}: {
-  target: Target | null;
-  currentUser: User | null;
-  cyberEchoEnabled: boolean;
-  timeBasis: MessageTimeBasis;
-  editorRef: { current: ManageMessageEditorHandle | null };
-  close: () => void;
-  created: () => Promise<void>;
-}) {
-  const { snapshot } = useMessageReplies(target?.id ?? -1);
-  const citation = target ? snapshot.messages.get(target.id) : undefined;
+export const ReplyMessageEditor = forwardRef<
+  ManageMessageEditorHandle,
+  MessageEditorProps & { replyTarget: ReplyTarget | null; timeBasis: MessageTimeBasis }
+>(function ReplyMessageEditor({ replyTarget, timeBasis, ...props }, ref) {
+  const context = useContext(Context);
+  const { snapshot } = useMessageReplies(replyTarget?.id ?? -1);
+  const citation = replyTarget ? snapshot.messages.get(replyTarget.id) : undefined;
   return (
     <ManageMessageDrawer
-      ref={editorRef}
-      open={target != null}
-      currentUser={currentUser}
-      cyberEchoEnabled={cyberEchoEnabled}
-      onClose={close}
-      onCreated={created}
-      initialGroupMasterKey={target?.message.groupMasterKey}
-      initialFocusTarget={target?.focus}
-      intentKey={target ? `reply:${target.id}` : undefined}
-      // The action seeds one citation; the editor and API retain collections for future selection.
-      citedSignalMessageIds={target ? [target.id] : []}
-      citedMessages={citation ? [citation] : []}
-      citationsLoading={!snapshot.loaded}
+      {...props}
+      ref={ref}
+      citedSignalMessageIds={replyTarget ? [replyTarget.id] : undefined}
+      citedMessages={citation ? [citation] : undefined}
+      citationsLoading={replyTarget != null && !snapshot.loaded}
       citationTimeBasis={timeBasis}
+      onCreated={async (result) => {
+        if (replyTarget) {
+          context?.store.invalidate([replyTarget.id]);
+          props.onClose();
+          await context?.store.flush();
+        }
+        await props.onCreated?.(result);
+      }}
     />
   );
-}
+});
 
 export function MessageRepliesProvider({
   screen,
   currentUser,
-  cyberEchoEnabled,
-  timeBasis,
   children,
+  onReply,
+  onNavigate,
 }: {
   screen: MessageReplyScreen;
   currentUser: User | null;
-  cyberEchoEnabled: boolean;
-  timeBasis: MessageTimeBasis;
   children: ReactNode;
+  onReply: (target: ReplyTarget) => void;
+  onNavigate: ReplyNavigation;
 }) {
   const { notify } = usePowerSnackbar();
   const onErrorRef = useRef((error: unknown) => {});
@@ -107,20 +105,10 @@ export function MessageRepliesProvider({
     () => new ReplyStore(screen, (error) => onErrorRef.current(error)),
     [screen, identity],
   );
-  const [target, setTarget] = useState<Target | null>(null);
-  const editorRef = useRef<ManageMessageEditorHandle | null>(null);
-  const targetRef = useRef(target);
-  targetRef.current = target;
-  const open = useCallback((next: Target) => {
-    const commit = () => setTarget(next);
-    if (editorRef.current && targetRef.current)
-      editorRef.current.requestIntentChange({ key: `reply:${next.id}`, commit });
-    else commit();
-  }, []);
   const canReply = canReplyToMessages(currentUser?.roles);
   const value = useMemo(
-    () => ({ store, open: canReply ? open : undefined }),
-    [store, open, canReply],
+    () => ({ store, open: canReply ? onReply : undefined, navigate: onNavigate }),
+    [store, onReply, canReply, onNavigate],
   );
 
   useEffect(() => {
@@ -145,24 +133,5 @@ export function MessageRepliesProvider({
     };
   }, [store, screen]);
 
-  return (
-    <Context.Provider value={value}>
-      {children}
-      {canReply && target ? (
-        <ReplyComposer
-          target={target}
-          currentUser={currentUser}
-          cyberEchoEnabled={cyberEchoEnabled}
-          timeBasis={timeBasis}
-          editorRef={editorRef}
-          close={() => setTarget(null)}
-          created={async () => {
-            if (targetRef.current) store.invalidate([targetRef.current.id]);
-            setTarget(null);
-            await store.flush();
-          }}
-        />
-      ) : null}
-    </Context.Provider>
-  );
+  return <Context.Provider value={value}>{children}</Context.Provider>;
 }

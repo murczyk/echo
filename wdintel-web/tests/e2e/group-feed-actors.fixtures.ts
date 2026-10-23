@@ -7,7 +7,7 @@ import { systemSettingsCurrentResponse } from './fixture-responses';
 
 export type Screen = 'analysis' | 'duty';
 export type Scope = 'group-1' | 'group-2' | 'all';
-type Message = {
+export type Message = {
   id: number;
   author: string;
   groups: string[];
@@ -17,7 +17,7 @@ type Message = {
   sender: string;
   deleted?: boolean;
 };
-type GateKind = 'inbox';
+type GateKind = 'inbox' | 'submit' | 'reply-metadata';
 type Gate = { entered: () => void; wait: Promise<void> };
 export type Actor = {
   page: Page;
@@ -118,7 +118,12 @@ export async function viewMessage(actor: Actor, id: number) {
   await expect(row(actor, id)).toBeInViewport();
 }
 
-export async function installGroupFeedActors() {
+type GroupFeedActorsOptions = {
+  actorCount?: number;
+  messageFields?: (message: Message) => Record<string, unknown>;
+};
+
+export async function installGroupFeedActors(options: GroupFeedActorsOptions = {}) {
   const actors: Actor[] = [];
   const messages: Message[] = [];
   const events: number[] = [];
@@ -226,6 +231,7 @@ export async function installGroupFeedActors() {
           sender: message.sender,
         }),
         isOwn: message.author === user,
+        ...options.messageFields?.(message),
       });
     };
     await page.route('**/api/**', async (route) => {
@@ -298,7 +304,12 @@ export async function installGroupFeedActors() {
                 String(message.id) === body.around_message_ref,
             )
           : -1;
-        const start = target >= 0 ? Math.max(0, target - Math.floor(pageLimit / 2)) : 0;
+        const start =
+          target >= 0
+            ? Math.max(0, target - Math.floor(pageLimit / 2))
+            : body.load_latest && !body.newest_first
+              ? Math.max(0, ordered.length - pageLimit)
+              : 0;
         const response = {
           inbox_items: ordered
             .slice(start, start + pageLimit)
@@ -396,11 +407,14 @@ export async function withGroupFeedActors(
     fixture: Awaited<ReturnType<typeof installGroupFeedActors>>,
     pages: Page[],
   ) => Promise<void>,
+  options: GroupFeedActorsOptions = {},
 ) {
   const contexts = await Promise.all(
-    [1, 2].map(() => browser.newContext({ baseURL, viewport: { width: 1920, height: 900 } })),
+    Array.from({ length: options.actorCount ?? 2 }, () =>
+      browser.newContext({ baseURL, viewport: { width: 1920, height: 900 } }),
+    ),
   );
-  const fixture = await installGroupFeedActors();
+  const fixture = await installGroupFeedActors(options);
   try {
     await run(fixture, await Promise.all(contexts.map((context) => context.newPage())));
   } catch (error) {

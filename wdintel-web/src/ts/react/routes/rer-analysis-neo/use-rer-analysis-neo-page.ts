@@ -1,3 +1,4 @@
+import type { ReplyNavigation } from '../shared/message-replies/MessageRepliesProvider';
 import { canWriteMessages } from '../../utils/roles';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useMediaQuery } from '@mui/material';
@@ -249,6 +250,8 @@ export function useRerAnalysisNeoPage(
   const [selectedSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
     initialPanelQueryState.rightPanelOpen ? 'callsigns' : null,
   );
+  const replyNavigationRef = useRef(false);
+  const [replyNavigationVersion, setReplyNavigationVersion] = useState(0);
   const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
   const [targetMessageQueryState, setTargetMessageQueryState] = useState(initialQueryState);
   const [highlightTargetMessage, setHighlightTargetMessage] = useState(true);
@@ -382,17 +385,18 @@ export function useRerAnalysisNeoPage(
         : { ...current, messageTimeBasis: dutySettings.messageSortBy },
     );
   }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
+  const linkedMessageQueryState = replyNavigationVersion > 0 ? queryState : targetMessageQueryState;
   const directMessageWindowQueryState = useMemo(
     () =>
       effectiveRadioQuery(
         {
-          ...targetMessageQueryState,
+          ...linkedMessageQueryState,
           deviceNamesSelected:
-            deviceAccess.status === 'denied' ? [] : targetMessageQueryState.deviceNamesSelected,
+            deviceAccess.status === 'denied' ? [] : linkedMessageQueryState.deviceNamesSelected,
           onlyWithNetwork:
             rerReportFilterAccess.status === 'denied'
               ? false
-              : targetMessageQueryState.onlyWithNetwork,
+              : linkedMessageQueryState.onlyWithNetwork,
           groupsSelected:
             groupScope.kind === 'group' ? [groupScope.masterKey] : queryState.groupsSelected,
           freqsSelected: queryState.freqsSelected,
@@ -403,7 +407,7 @@ export function useRerAnalysisNeoPage(
         radioFeaturesAllowed,
       ),
     [
-      targetMessageQueryState,
+      linkedMessageQueryState,
       radioFeaturesAllowed,
       deviceAccess.status,
       rerReportFilterAccess.status,
@@ -475,7 +479,9 @@ export function useRerAnalysisNeoPage(
     }>(
       () => ({
         materialize: async (context, signal) => {
-          const next = adjustQueryDateRangeForDirectMessage(requestQueryState, context.message![1]);
+          const next = replyNavigationRef.current
+            ? requestQueryState
+            : adjustQueryDateRangeForDirectMessage(requestQueryState, context.message![1]);
           periodAdjusted = next !== requestQueryState;
           if (periodAdjusted) publishPeriod(next);
           try {
@@ -552,7 +558,11 @@ export function useRerAnalysisNeoPage(
         }
         setTargetMessageLoading(false);
         if (!isContextRefresh || outcome.status === 'load-error') {
-          setDirectMessageError(messageNavigationErrorText(outcome));
+          setDirectMessageError(
+            replyNavigationRef.current && outcome.status === 'landing-error'
+              ? 'Повідомлення поза поточними фільтрами. Змініть фільтри, щоб побачити його.'
+              : messageNavigationErrorText(outcome),
+          );
         }
       },
     );
@@ -570,7 +580,28 @@ export function useRerAnalysisNeoPage(
     dutySettings.loadInProgress,
     targetMessageContextActive,
     targetMessageUid,
+    replyNavigationVersion,
   ]);
+
+  const navigateReply = useCallback<ReplyNavigation>(
+    (message) => {
+      const reference = new URL(message.href, window.location.origin).searchParams.get('m');
+      if (!reference) return;
+      targetMessageControllerRef.current?.cancel();
+      replyNavigationRef.current = true;
+      targetMessageLoadedRef.current = false;
+      setDirectMessageError(null);
+      setTargetMessageQueryState(queryState);
+      setTargetMessageUid(reference);
+      setTargetMessageFocusActive(true);
+      setHighlightTargetMessage(true);
+      setTargetMessageContextActive(true);
+      setTargetMessageLoading(true);
+      setReplyNavigationVersion((version) => version + 1);
+      setCenterTabState('messages');
+    },
+    [queryState],
+  );
 
   const clearTargetMessageFocus = useCallback(() => {
     targetMessageControllerRef.current?.cancel();
@@ -593,6 +624,7 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     const onPopState = () => {
+      replyNavigationRef.current = false;
       clearTargetMessageContext();
       setTargetMessageUid(null);
       const nextGroupScope = readAnalysisGroupScopeFromUrl();
@@ -1464,6 +1496,7 @@ export function useRerAnalysisNeoPage(
   }, [directMessageNavigation?.targetMessageId, directMessageNavigation?.targetMessageIndex]);
 
   return {
+    navigateReply,
     authUserName,
     aorEntries: data.aorEntries,
     radioFeaturesAllowed,
