@@ -4,6 +4,7 @@ module Core.EventService exposing
     , stop
     )
 
+import Bindings as B
 import Core.EventTypes
 
 
@@ -21,9 +22,12 @@ type alias EventState =
 init : EventState
 init =
     { isPolling = False
+    , flavor = B.LpfGeneric
     , requestInFlight = False
     , generation = 0
     , lastEventId = Nothing
+    , lastPollStartedAt = Nothing
+    , lastGenericFullAt = Nothing
     , error = Nothing
     , connectionInterrupted = False
     , persistentErrorReported = False

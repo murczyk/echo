@@ -53,7 +53,7 @@ for (const { width, theme } of [
         await route.fulfill({ json: { events: [], last_event_id: null } });
       }
     });
-    await page.goto('/rer-analysis-neo');
+    await page.goto('/rer-analysis-neo?filterPanelOpen=false');
     await expect(page.locator('app-navbar header')).toBeVisible();
     await expect.poll(() => successfulPolls).toBeGreaterThan(0);
     const indicator = page.getByRole('status', { name: 'Відновлення з’єднання…' });
@@ -62,7 +62,7 @@ for (const { width, theme } of [
     await expect(indicator).toHaveCount(0);
 
     failures.events = true;
-    await page.clock.fastForward(1000);
+    await page.clock.fastForward(2100);
     await expect(indicator).toBeVisible();
     await indicator.focus();
     await page.clock.runFor(1000);
@@ -95,7 +95,7 @@ for (const { width, theme } of [
     await expect.poll(() => failedKeepAlives).toBeGreaterThan(failuresBeforeRetry);
     await expect(indicator).toBeVisible();
     await page.locator('a.app-navbar-logo').click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL((url) => url.pathname === '/');
     await expect(indicator).toBeVisible();
 
     failures.keepAlive = false;
@@ -135,13 +135,13 @@ for (const failure of ['gateway', 'offline'] as const) {
     }
     await page.clock.pauseAt(new Date());
     await page.goto('/rer-analysis-neo');
-    await expect(page.getByRole('textbox', { name: 'Пошук', exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Пошук', exact: true })).toBeVisible();
     await page.clock.runFor(500);
     unavailable = true;
     attempts.tags = 0;
     attempts.groups = 0;
     attempts.senders = 0;
-    await page.getByRole('textbox', { name: 'Пошук', exact: true }).fill('outage');
+    await page.getByRole('combobox', { name: 'Пошук', exact: true }).fill('outage');
     await page.clock.runFor(300);
     await expect.poll(() => attempts).toEqual({ tags: 1, groups: 1, senders: 1 });
     await page.clock.runFor(1500);
@@ -158,7 +158,7 @@ for (const failure of ['gateway', 'offline'] as const) {
     await page.clock.runFor(1000);
     expect(attempts).toEqual({ tags: 4, groups: 4, senders: 4 });
     unavailable = true;
-    await page.getByRole('textbox', { name: 'Пошук', exact: true }).fill('another outage');
+    await page.getByRole('combobox', { name: 'Пошук', exact: true }).fill('another outage');
     await page.clock.runFor(300);
     await expect.poll(() => attempts).toEqual({ tags: 5, groups: 5, senders: 5 });
     await page.goto('/login');

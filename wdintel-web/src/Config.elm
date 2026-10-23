@@ -4,6 +4,8 @@ module Config exposing
     , analysisSearchDocUrl
     , babakNewCallsignMinMentionsDefault
     , eventServicePollTracker
+    , eventServicePollingMinIntervalMs
+    , eventServiceGenericFullIntervalMs
     , featureAudioTranscriptionBesidePlayer
     , featureDisableRerDutyDedup
     , featureEnableTornado
@@ -29,6 +31,16 @@ featureEnableTornado =
 eventServicePollTracker : String
 eventServicePollTracker =
     "shared-event-stream"
+
+
+eventServicePollingMinIntervalMs : Float
+eventServicePollingMinIntervalMs =
+    2000
+
+
+eventServiceGenericFullIntervalMs : Int
+eventServiceGenericFullIntervalMs =
+    10000
 
 
 rerUnitsPollingMinIntervalMs : Float

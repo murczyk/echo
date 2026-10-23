@@ -5,6 +5,7 @@ import Core.Types exposing (ApiError, LocationRes)
 import Route.Path
 import Shared.Components.Toast
 import Shared.Model exposing (ThemeMode)
+import Time
 
 
 type alias ChangelogReleaseMeta =
@@ -53,10 +54,10 @@ type Msg
     | EventServiceStartPolling
     | EventServiceStopPolling
     | EventServicePollEvents Int
+    | EventServicePollReady Int Time.Posix
     | EventServiceEventsReceived Int (Result ApiError B.LongPollRsp)
     | EventServiceRetryPolling Int
     | EventServiceResetRetryCount
-    | EventReceived B.EventMsg -- Event received from backend
     | SubscribeToEvents Route.Path.Path (List B.EventType) -- Page subscribes to event types
     | UnsubscribeFromEvents Route.Path.Path -- Page unsubscribes from all events
     | ReleaseSeenApiSaved (Result ApiError ())
