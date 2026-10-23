@@ -109,7 +109,7 @@ impl AiEngineClient {
         }
         let deadline = tokio::time::Instant::now() + timeout;
         tokio::time::timeout_at(deadline, async {
-            self.glm_cooldown.wait(engine.id).await;
+            self.glm_cooldown.wait().await;
             let timeout =
                 deadline.saturating_duration_since(tokio::time::Instant::now());
             anyhow::ensure!(
@@ -121,7 +121,7 @@ impl AiEngineClient {
                 .await
                 .c(h!())?;
             self.glm_cooldown
-                .observe(engine.id, response.status(), response.headers())
+                .observe(response.status(), response.headers())
                 .await
                 .c(h!())?;
             Ok(response)

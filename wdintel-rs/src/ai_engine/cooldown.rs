@@ -1,24 +1,23 @@
 use crate::{config::AI_ENGINE_GLM_5_3_COOLDOWN_SECS, h, types::ShortContext};
 use chrono::{DateTime, Utc};
 use reqwest::{header, StatusCode};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tokio::{sync::Mutex, time::Instant};
-use uuid::Uuid;
 
 #[derive(Default)]
 pub(super) struct GlmCooldown {
-    retry_at: Mutex<HashMap<Uuid, Instant>>,
+    retry_at: Mutex<Option<Instant>>,
 }
 
 impl GlmCooldown {
-    pub(super) async fn wait(&self, engine_id: Uuid) {
+    pub(super) async fn wait(&self) {
         loop {
             let retry_at = {
-                let mut retries = self.retry_at.lock().await;
-                match retries.get(&engine_id).copied() {
+                let mut retry_at = self.retry_at.lock().await;
+                match *retry_at {
                     Some(retry_at) if retry_at > Instant::now() => retry_at,
                     _ => {
-                        retries.remove(&engine_id);
+                        *retry_at = None;
                         return;
                     }
                 }
@@ -29,7 +28,6 @@ impl GlmCooldown {
 
     pub(super) async fn observe(
         &self,
-        engine_id: Uuid,
         status: StatusCode,
         headers: &header::HeaderMap,
     ) -> anyhow::Result<()> {
@@ -39,12 +37,9 @@ impl GlmCooldown {
         let retry_at = Instant::now()
             .checked_add(retry_after(headers, Utc::now()))
             .c(h!())?;
-        let mut retries = self.retry_at.lock().await;
-        retries.retain(|_, retry_at| *retry_at > Instant::now());
-        retries
-            .entry(engine_id)
-            .and_modify(|current| *current = (*current).max(retry_at))
-            .or_insert(retry_at);
+        let mut current = self.retry_at.lock().await;
+        *current =
+            Some(current.map_or(retry_at, |current| current.max(retry_at)));
         Ok(())
     }
 }

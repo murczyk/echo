@@ -31,27 +31,21 @@ fn parses_provider_retry_after_headers() {
 #[tokio::test(start_paused = true)]
 async fn concurrent_callers_wait_for_the_longest_provider_cooldown() {
     let cooldown = Arc::new(GlmCooldown::default());
-    let engine_id = Uuid::new_v4();
     let started = Instant::now();
     cooldown
-        .observe(
-            engine_id,
-            StatusCode::TOO_MANY_REQUESTS,
-            &header::HeaderMap::new(),
-        )
+        .observe(StatusCode::TOO_MANY_REQUESTS, &header::HeaderMap::new())
         .await
         .unwrap();
     let waiters: Vec<_> = (0..2)
         .map(|_| {
             let cooldown = cooldown.clone();
-            tokio::spawn(async move { cooldown.wait(engine_id).await })
+            tokio::spawn(async move { cooldown.wait().await })
         })
         .collect();
     tokio::time::advance(Duration::from_secs(30)).await;
     for seconds in [90, 10] {
         cooldown
             .observe(
-                engine_id,
                 StatusCode::TOO_MANY_REQUESTS,
                 &headers(&seconds.to_string()),
             )
@@ -69,27 +63,23 @@ async fn concurrent_callers_wait_for_the_longest_provider_cooldown() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn cooldown_isolates_engines_and_survives_cancelled_waiters() {
+async fn cooldown_survives_cancelled_waiters() {
     let cooldown = GlmCooldown::default();
-    let engine_id = Uuid::new_v4();
     cooldown
-        .observe(engine_id, StatusCode::TOO_MANY_REQUESTS, &headers("60"))
+        .observe(StatusCode::TOO_MANY_REQUESTS, &headers("60"))
         .await
         .unwrap();
     let started = Instant::now();
-    cooldown.wait(Uuid::new_v4()).await;
-    assert_eq!(started.elapsed(), Duration::ZERO);
     cooldown
-        .observe(engine_id, StatusCode::OK, &header::HeaderMap::new())
+        .observe(StatusCode::OK, &header::HeaderMap::new())
         .await
         .unwrap();
-    assert!(tokio::time::timeout(
-        Duration::from_secs(10),
-        cooldown.wait(engine_id)
-    )
-    .await
-    .is_err());
-    cooldown.wait(engine_id).await;
+    assert!(
+        tokio::time::timeout(Duration::from_secs(10), cooldown.wait())
+            .await
+            .is_err()
+    );
+    cooldown.wait().await;
     assert_eq!(started.elapsed(), Duration::from_secs(60));
-    assert!(cooldown.retry_at.lock().await.is_empty());
+    assert!(cooldown.retry_at.lock().await.is_none());
 }
