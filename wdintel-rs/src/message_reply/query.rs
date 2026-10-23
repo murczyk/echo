@@ -69,10 +69,13 @@ or (sm.datasource_group_id is null
 #[derive(FromQueryResult)]
 struct ReplyRow {
     id: i64,
+    thread_id: i64,
     original_signal_message_id: Option<i64>,
     reply_signal_message_id: Option<i64>,
     created_at: NaiveDateTime,
     deleted: bool,
+    original_deleted: bool,
+    reply_deleted: bool,
 }
 
 #[derive(FromQueryResult)]
@@ -107,22 +110,26 @@ pub async fn load<C: ConnectionTrait>(
     }
     let rows = ReplyRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        r#"select * from (
-            select id, original_signal_message_id, reply_signal_message_id, created_at, deleted
-                from message_reply where original_signal_message_id = any($1)
+        r#"with threads as (
+            select thread_id from message_reply where original_signal_message_id = any($1)
             union
-            select id, original_signal_message_id, reply_signal_message_id, created_at, deleted
-                from message_reply where reply_signal_message_id = any($1)
-        ) replies order by created_at, id"#,
+            select thread_id from message_reply where reply_signal_message_id = any($1)
+        ) select id, thread_id, original_signal_message_id, reply_signal_message_id,
+            created_at, deleted, original_deleted, reply_deleted
+            from message_reply where thread_id in (select thread_id from threads)
+            order by created_at, id"#,
         vec![anchors.clone().into()],
     )).all(db).await.c(h!())?;
     let mut ids: BTreeSet<i64> = rows
         .iter()
-        .filter(|row| !row.deleted)
         .flat_map(|row| {
-            [row.original_signal_message_id, row.reply_signal_message_id]
-                .into_iter()
-                .flatten()
+            [
+                row.original_signal_message_id
+                    .filter(|_| !row.original_deleted),
+                row.reply_signal_message_id.filter(|_| !row.reply_deleted),
+            ]
+            .into_iter()
+            .flatten()
         })
         .collect();
     ids.extend(anchors);
@@ -135,10 +142,13 @@ pub async fn load<C: ConnectionTrait>(
         .into_iter()
         .map(|row| MessageReply {
             id: row.id,
+            thread_id: row.thread_id,
             original_signal_message_id: row.original_signal_message_id,
             reply_signal_message_id: row.reply_signal_message_id,
             created_at: row.created_at.and_utc().timestamp_millis(),
             deleted: row.deleted,
+            original_deleted: row.original_deleted,
+            reply_deleted: row.reply_deleted,
         })
         .collect();
     Ok(MessageRepliesRsp {

@@ -75,9 +75,9 @@ import { useObservedWidth } from '../../../hooks/use-observed-width';
 import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-layout';
 
 export type Props = {
-  citedSignalMessageIds?: number[];
-  citedMessages?: CitedMessage[];
-  citationsLoading?: boolean;
+  engagedMessageId?: number;
+  citedMessage?: CitedMessage;
+  citationLoading?: boolean;
   citationTimeBasis?: MessageTimeBasis;
   open: boolean;
   hideNetworks?: boolean;
@@ -432,8 +432,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     const wideMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'wide';
     const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
     const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
-    const isReplyMode =
-      !props.editTarget && !props.reportSource && (props.citedSignalMessageIds?.length ?? 0) > 0;
+    const isReplyMode = !props.editTarget && !props.reportSource && props.engagedMessageId != null;
     const canWrite =
       canWriteMessages(props.currentUser?.roles) ||
       (isReplyMode && canReplyToMessages(props.currentUser?.roles));
@@ -793,18 +792,13 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                         {isReplyMode ? (
                           <section aria-label="Цитоване повідомлення" className="mb-echo-sm">
                             <Typography variant="subtitle2">Відповідь на повідомлення</Typography>
-                            {props.citationsLoading ? (
+                            {props.citationLoading ? (
                               <CircularProgress size={20} aria-label="Завантаження цитати" />
                             ) : (
-                              props.citedSignalMessageIds?.map((id) => (
-                                <CitedMessageCard
-                                  key={id}
-                                  message={props.citedMessages?.find(
-                                    (citation) => citation.id === id,
-                                  )}
-                                  timeBasis={props.citationTimeBasis ?? 'creation'}
-                                />
-                              ))
+                              <CitedMessageCard
+                                message={props.citedMessage}
+                                timeBasis={props.citationTimeBasis ?? 'creation'}
+                              />
                             )}
                           </section>
                         ) : null}

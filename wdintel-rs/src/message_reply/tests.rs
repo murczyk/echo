@@ -94,6 +94,144 @@ async fn stage_native(
 // https://github.com/echoua/echo/issues/3612
 #[tokio::test]
 #[serial_test::serial]
+async fn replies_3612_reparented_long_threads_without_recursive_trigger_updates(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let head = message(&env.dbx, login.id, "Late head").await;
+    let first = message(&env.dbx, login.id, "First reply").await;
+    let txn = env.dbx.begin().await.unwrap();
+    let mut previous = first.id;
+    for _ in 0..128 {
+        let reply = message(&env.dbx, login.id, "Nested native reply").await;
+        insert(&txn, Some(previous), reply.id, false, false)
+            .await
+            .unwrap();
+        previous = reply.id;
+    }
+    insert(&txn, Some(head.id), first.id, false, false)
+        .await
+        .unwrap();
+    let thread = query::load(
+        &txn,
+        &login.id,
+        &types::MessageRepliesReq {
+            signal_message_ids: vec![previous],
+            screen: types::MessageReplyScreen::Duty,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(thread.replies.len(), 129);
+    assert!(thread
+        .replies
+        .iter()
+        .all(|relation| relation.original_signal_message_id == Some(head.id)));
+    txn.rollback().await.unwrap();
+}
+
+// https://github.com/echoua/echo/issues/3612
+#[tokio::test]
+#[serial_test::serial]
+async fn replies_3612_resolved_late_native_ancestors_and_kept_deleted_head_threads(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let head = message(&env.dbx, login.id, "Thread head").await;
+    let middle = message(&env.dbx, login.id, "Middle reply").await;
+    let tail = message(&env.dbx, login.id, "Tail reply").await;
+    let sibling = message(&env.dbx, login.id, "Sibling reply").await;
+    let txn = env.dbx.begin().await.unwrap();
+    stage_native(&txn, 3, Some(2), tail.id).await;
+    stage_native(&txn, 4, Some(3), sibling.id).await;
+    stage_native(&txn, 2, Some(1), middle.id).await;
+    let mut snapshot = native_snapshot(1, None);
+    snapshot.message_source = echo_im::types::MessageSource::Whatsapp;
+    stage_source(&txn, 3612, &snapshot).await.unwrap();
+    record_source(&txn, 3612, 1, head.id).await.unwrap();
+    txn.commit().await.unwrap();
+    for anchor in [head.id, middle.id, tail.id, sibling.id] {
+        let thread = load(&env.dbx, login.id, vec![anchor]).await;
+        assert_eq!(thread.replies.len(), 3);
+        assert!(thread.replies.iter().all(|relation| relation
+            .original_signal_message_id
+            == Some(head.id)));
+        assert_eq!(thread.reply_messages.len(), 4);
+    }
+    let relations = crate::entities::message_reply::Entity::find()
+        .order_by_asc(crate::entities::message_reply::Column::Id)
+        .all(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(relations[0].engaged_message_id, Some(middle.id));
+    assert_eq!(relations[1].engaged_message_id, Some(tail.id));
+    set_deleted(&env.dbx, middle.id, true).await;
+    let thread = load(&env.dbx, login.id, vec![tail.id]).await;
+    assert_eq!(
+        thread
+            .replies
+            .iter()
+            .filter(|relation| relation.reply_deleted)
+            .count(),
+        1
+    );
+    assert!(thread
+        .reply_messages
+        .iter()
+        .any(|message| message.id == sibling.id));
+    signal_message::Entity::delete_by_id(head.id)
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    let thread = load(&env.dbx, login.id, vec![tail.id]).await;
+    assert_eq!(thread.replies.len(), 3);
+    assert!(thread
+        .replies
+        .iter()
+        .all(|relation| relation.original_deleted
+            && relation.original_signal_message_id.is_none()));
+    assert!(thread
+        .reply_messages
+        .iter()
+        .any(|message| message.id == sibling.id));
+    crate::entities::message_reply_change::Entity::delete_many()
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+    let appended = message(&env.dbx, login.id, "After head deletion").await;
+    insert(&env.dbx, Some(tail.id), appended.id, false, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        load(&env.dbx, login.id, vec![appended.id])
+            .await
+            .replies
+            .len(),
+        4
+    );
+    assert!(
+        crate::entities::message_reply_change::Entity::find_by_id(tail.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let native_append =
+        message(&env.dbx, login.id, "Native reply after head retention").await;
+    let txn = env.dbx.begin().await.unwrap();
+    stage_native(&txn, 5, Some(1), native_append.id).await;
+    txn.commit().await.unwrap();
+    let thread = load(&env.dbx, login.id, vec![native_append.id]).await;
+    assert_eq!(thread.replies.len(), 5);
+    assert!(thread
+        .replies
+        .iter()
+        .all(|relation| relation.original_deleted));
+}
+
+// https://github.com/echoua/echo/issues/3612
+#[tokio::test]
+#[serial_test::serial]
 async fn replies_3612_preserved_deleted_endpoints_and_narrow_previews() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let login = find_test_login(&env.dbx).await.unwrap();
@@ -220,7 +358,7 @@ async fn replies_3612_distinguished_unresolved_originals_from_deleted_endpoints(
 // https://github.com/echoua/echo/issues/3612
 #[tokio::test]
 #[serial_test::serial]
-async fn replies_3612_submitted_multiple_citations_atomically_and_rejected_hidden_sources(
+async fn replies_3612_submitted_single_target_threads_atomically_and_rejected_hidden_sources(
 ) {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let login = find_test_login(&env.dbx).await.unwrap();
@@ -260,9 +398,10 @@ async fn replies_3612_submitted_multiple_citations_atomically_and_rejected_hidde
         .unwrap();
     }
     let payload = serde_json::from_value(serde_json::json!({
-        "text": "Нова відповідь", "cited_signal_message_ids": [first.id, second.id, first.id],
+        "text": "Нова відповідь", "engaged_message_id": first.id,
         "signal_group_master_key": forbidden.master_key
-    })).unwrap();
+    }))
+    .unwrap();
     let submitted = crate::sigint::direct_submit::bl::submit_signal_message(
         &login.id, &env, payload,
     )
@@ -270,7 +409,43 @@ async fn replies_3612_submitted_multiple_citations_atomically_and_rejected_hidde
     .unwrap();
     let response =
         load(&env.dbx, login.id, vec![submitted.signal_message_id]).await;
-    assert_eq!(response.replies.len(), 2);
+    assert_eq!(response.replies.len(), 1);
+    let payload = serde_json::from_value(serde_json::json!({
+        "text": "Відповідь на відповідь", "engaged_message_id": submitted.signal_message_id,
+    })).unwrap();
+    let nested = crate::sigint::direct_submit::bl::submit_signal_message(
+        &login.id, &env, payload,
+    )
+    .await
+    .unwrap();
+    for anchor in [
+        first.id,
+        submitted.signal_message_id,
+        nested.signal_message_id,
+    ] {
+        let thread = load(&env.dbx, login.id, vec![anchor]).await;
+        assert_eq!(thread.replies.len(), 2);
+        assert!(thread
+            .replies
+            .iter()
+            .all(|reply| reply.original_signal_message_id == Some(first.id)));
+    }
+    let relation = crate::entities::message_reply::Entity::find()
+        .filter(
+            crate::entities::message_reply::Column::ReplySignalMessageId
+                .eq(nested.signal_message_id),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        relation.engaged_message_id,
+        Some(submitted.signal_message_id)
+    );
+    assert!(serde_json::from_value::<crate::sigint::direct_submit::types::DirectSubmitPayload>(
+        serde_json::json!({"text": "Кілька цілей", "engaged_message_id": [first.id, second.id]})
+    ).is_err());
     let hidden = crate::functest::tests::mk_login(
         &env.dbx,
         login::ActiveModel {
@@ -286,8 +461,9 @@ async fn replies_3612_submitted_multiple_citations_atomically_and_rejected_hidde
         .await
         .unwrap();
     let payload = serde_json::from_value(serde_json::json!({
-        "text": "Заборонена відповідь", "cited_signal_message_ids": [first.id, hidden_message.id]
-    })).unwrap();
+        "text": "Заборонена відповідь", "engaged_message_id": hidden_message.id
+    }))
+    .unwrap();
     assert!(crate::sigint::direct_submit::bl::submit_signal_message(
         &login.id, &env, payload
     )
@@ -309,7 +485,7 @@ async fn replies_3612_submitted_multiple_citations_atomically_and_rejected_hidde
     assert!(super::prepare_submission(
         &txn,
         &login.id,
-        &[no_destination.id],
+        no_destination.id,
         None
     )
     .await
@@ -401,15 +577,11 @@ async fn replies_3612_source_identity_survived_queue_consumption_and_late_origin
         .await
         .unwrap();
     let split = query::load(&txn, &login.id, &pending).await.unwrap();
-    assert_eq!(split.replies.len(), 2);
-    assert!(split.replies.iter().any(|relation| relation
-        .original_signal_message_id
-        == Some(original.id)));
-    assert!(split
-        .replies
-        .iter()
-        .any(|relation| relation.original_signal_message_id
-            == Some(promoted_original.id)));
+    assert_eq!(split.replies.len(), 1);
+    assert_eq!(
+        split.replies[0].original_signal_message_id,
+        Some(promoted_original.id)
+    );
     record_source(&txn, 3612, 1, original.id).await.unwrap();
     assert_eq!(
         query::load(&txn, &login.id, &pending)
@@ -434,7 +606,7 @@ async fn replies_3612_source_identity_survived_queue_consumption_and_late_origin
     )
     .await
     .unwrap();
-    assert_eq!(promoted.replies.len(), 1);
+    assert_eq!(promoted.replies.len(), 2);
     assert_eq!(
         promoted.replies[0].original_signal_message_id,
         Some(original.id)
@@ -445,7 +617,7 @@ async fn replies_3612_source_identity_survived_queue_consumption_and_late_origin
             .unwrap()
             .replies
             .len(),
-        1
+        2
     );
     record_source(&txn, 3612, 2, reply.id).await.unwrap();
     assert_eq!(
@@ -579,10 +751,11 @@ async fn replies_3612_concurrent_canonical_moves_did_not_leave_orphan_relationsh
         second_move.await.unwrap();
     }
     let response = load(&env.dbx, login.id, vec![reply.id]).await;
-    assert_eq!(response.replies.len(), 2);
-    assert!(response.replies.iter().all(|relation| relation
-        .original_signal_message_id
-        != Some(original.id)));
+    assert_eq!(response.replies.len(), 1);
+    assert_eq!(
+        response.replies[0].original_signal_message_id,
+        Some(second.id)
+    );
 }
 
 // https://github.com/echoua/echo/issues/3612
@@ -684,8 +857,20 @@ async fn replies_3612_queue_split_bound_quotes_to_the_first_active_result() {
     )
     .await
     .unwrap();
-    assert_eq!(response.replies.len(), 1);
-    assert_eq!(response.replies[0].original_signal_message_id, Some(first));
+    assert_eq!(response.replies.len(), 2);
+    assert!(response.replies.iter().all(|relation| relation
+        .original_signal_message_id
+        == Some(original.id)));
+    let relation = crate::entities::message_reply::Entity::find()
+        .filter(
+            crate::entities::message_reply::Column::ReplySignalMessageId
+                .eq(later.id),
+        )
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(relation.engaged_message_id, Some(first));
     txn.rollback().await.unwrap();
 }
 

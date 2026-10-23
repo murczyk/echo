@@ -595,6 +595,16 @@ def check(
             for change in manifest["migrations"].get(key, {}).get("changes", [])
             if change.get("strategy") == "cdc_additive"
         }
+        existing_tables = {line.split("\t", 1)[0] for line in catalog_before.read_text().splitlines()}
+        new_snapshot_tables = {
+            change["table"]
+            for key, _, ddl in migrations
+            for change in manifest["migrations"].get(key, {}).get("changes", [])
+            if change.get("strategy") == "replicated_snapshot"
+            and any(item.operation == "create" and item.table == change["table"] for item in ddl)
+            and change["table"] not in existing_tables
+        }
+        cdc_tables -= new_snapshot_tables
         invalid_cdc = invalid_cdc_added_catalog_tables(
             catalog_before, catalog_after, cdc_tables
         ) | non_additive_catalog_tables(catalog_before, catalog_after, cdc_tables)

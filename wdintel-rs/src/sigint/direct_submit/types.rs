@@ -77,7 +77,7 @@ pub struct DirectSubmitPayload {
     #[serde(default)]
     pub copy_source_signal_message_ids: Vec<i64>,
     #[serde(default)]
-    pub cited_signal_message_ids: Vec<i64>,
+    pub engaged_message_id: Option<i64>,
 }
 
 #[derive(

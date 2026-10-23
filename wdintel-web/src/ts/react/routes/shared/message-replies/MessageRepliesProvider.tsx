@@ -62,9 +62,9 @@ export const ReplyMessageEditor = forwardRef<
     <ManageMessageDrawer
       {...props}
       ref={ref}
-      citedSignalMessageIds={replyTarget ? [replyTarget.id] : undefined}
-      citedMessages={citation ? [citation] : undefined}
-      citationsLoading={replyTarget != null && !snapshot.loaded}
+      engagedMessageId={replyTarget?.id}
+      citedMessage={citation}
+      citationLoading={replyTarget != null && !snapshot.loaded}
       citationTimeBasis={timeBasis}
       onCreated={async (result) => {
         if (replyTarget) {

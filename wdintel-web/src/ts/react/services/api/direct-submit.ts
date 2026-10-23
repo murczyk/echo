@@ -219,7 +219,7 @@ export type SubmitDmrMetadata = {
 };
 
 export type DirectSubmitRequest = {
-  cited_signal_message_ids?: DirectSubmitPayload['citedSignalMessageIds'];
+  engaged_message_id?: DirectSubmitPayload['engagedMessageId'];
   full_body?: string;
   text?: string;
   comment?: string;

@@ -1570,10 +1570,13 @@ messageRepliesReqEncoder struct =
 
 type alias MessageReply =
     { id : Int
+    , threadId : Int
     , originalSignalMessageId : Maybe (Int)
     , replySignalMessageId : Maybe (Int)
     , createdAt : Int
     , deleted : Bool
+    , originalDeleted : Bool
+    , replyDeleted : Bool
     }
 
 
@@ -1581,10 +1584,13 @@ messageReplyEncoder : MessageReply -> Json.Encode.Value
 messageReplyEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
+        , ( "thread_id", (Json.Encode.int) struct.threadId )
         , ( "original_signal_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.originalSignalMessageId )
         , ( "reply_signal_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.replySignalMessageId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "original_deleted", (Json.Encode.bool) struct.originalDeleted )
+        , ( "reply_deleted", (Json.Encode.bool) struct.replyDeleted )
         ]
 
 
@@ -10763,7 +10769,7 @@ type alias DirectSubmitPayload =
     , retainedMediaIds : Maybe (List (String))
     , parentSignalMessageIds : List (Int)
     , copySourceSignalMessageIds : List (Int)
-    , citedSignalMessageIds : List (Int)
+    , engagedMessageId : Maybe (Int)
     }
 
 
@@ -10795,7 +10801,7 @@ directSubmitPayloadEncoder struct =
         , ( "retained_media_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.retainedMediaIds )
         , ( "parent_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.parentSignalMessageIds )
         , ( "copy_source_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.copySourceSignalMessageIds )
-        , ( "cited_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.citedSignalMessageIds )
+        , ( "engaged_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.engagedMessageId )
         ]
 
 
@@ -19950,10 +19956,13 @@ messageReplyDecoder : Json.Decode.Decoder MessageReply
 messageReplyDecoder =
     Json.Decode.succeed MessageReply
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "thread_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_signal_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reply_signal_message_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reply_deleted" (Json.Decode.bool)))
 
 
 citedMessageDecoder : Json.Decode.Decoder CitedMessage
@@ -26072,7 +26081,7 @@ directSubmitPayloadDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retained_media_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "copy_source_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cited_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engaged_message_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 directSubmitAttachmentUpdatesDecoder : Json.Decode.Decoder DirectSubmitAttachmentUpdates

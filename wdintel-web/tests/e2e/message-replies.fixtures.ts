@@ -42,10 +42,13 @@ export function relation(
 ): MessageReply {
   return {
     id,
+    threadId: original.id,
     originalSignalMessageId: original.id,
     replySignalMessageId: reply.id,
     createdAt: reply.at,
     deleted: Boolean(original.deleted || reply.deleted),
+    originalDeleted: Boolean(original.deleted),
+    replyDeleted: Boolean(reply.deleted),
     ...options,
   };
 }
@@ -69,16 +72,22 @@ function installReplyResponses(feed: FeedFixture) {
       expect(body.screen).toBe(screen === 'duty' ? 'Duty' : 'Analysis');
       expect(body.signal_message_ids.length).toBeLessThanOrEqual(512);
       const anchors = new Set<number>(body.signal_message_ids);
-      const replies = relations.filter(
-        (edge) =>
-          anchors.has(edge.originalSignalMessageId ?? -1) ||
-          anchors.has(edge.replySignalMessageId ?? -1),
+      const threads = new Set(
+        relations
+          .filter(
+            (edge) =>
+              anchors.has(edge.originalSignalMessageId ?? -1) ||
+              anchors.has(edge.replySignalMessageId ?? -1),
+          )
+          .map((edge) => edge.threadId),
       );
+      const replies = relations.filter((edge) => threads.has(edge.threadId));
       const ids = new Set([
         ...anchors,
-        ...replies
-          .filter((edge) => !edge.deleted)
-          .flatMap((edge) => [edge.originalSignalMessageId, edge.replySignalMessageId]),
+        ...replies.flatMap((edge) => [
+          edge.originalDeleted ? null : edge.originalSignalMessageId,
+          edge.replyDeleted ? null : edge.replySignalMessageId,
+        ]),
       ]);
       const replyMessages: CitedMessage[] = feed.messages
         .filter((message) => ids.has(message.id) && !message.deleted)
@@ -107,7 +116,8 @@ function installReplyResponses(feed: FeedFixture) {
         const body = route.request().postDataJSON();
         actor.requests.push({ path: '/api/1.1/submit-direct', body });
         expect(body.full_body ?? body.text).toBe(text);
-        expect(body.cited_signal_message_ids ?? []).toEqual(sourceId == null ? [] : [sourceId]);
+        expect(body.engaged_message_id ?? null).toBe(sourceId);
+        expect(body.cited_signal_message_ids).toBeUndefined();
         expect(body.signal_group_master_key).toBe('group-1');
         expect(body.parent_signal_message_ids).toBeUndefined();
         expect(body.copy_source_signal_message_ids).toBeUndefined();
@@ -125,7 +135,7 @@ function installReplyResponses(feed: FeedFixture) {
       async (route) => {
         const body = route.request().postDataJSON();
         actor.requests.push({ path, body });
-        expect(body.cited_signal_message_ids).toBeUndefined();
+        expect(body.engaged_message_id).toBeUndefined();
         if (detach) {
           await route.fulfill({
             status: 501,

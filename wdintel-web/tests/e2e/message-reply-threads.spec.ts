@@ -148,7 +148,7 @@ for (const screen of ['duty', 'analysis'] as const) {
         messages.push(fixture.seed('user-2', `Thread ${String(i).padStart(3, '0')}`));
       const current = messages.at(-1)!;
       fixture.respondWithReplies(
-        messages.slice(1).map((message, index) => relation(index + 1, messages[index]!, message)),
+        messages.slice(1).map((message, index) => relation(index + 1, first, message)),
       );
       const other = fixture.seed('user-2', 'Other column stays here', { groups: ['group-2'] });
       if (screen === 'duty') {
@@ -181,7 +181,7 @@ for (const screen of ['duty', 'analysis'] as const) {
       await pending.started;
       const remaining = messages.filter((message) => message.id !== messages[59]!.id);
       fixture.respondWithReplies(
-        remaining.slice(1).map((message, index) => relation(index + 1, remaining[index]!, message)),
+        remaining.slice(1).map((message, index) => relation(index + 1, first, message)),
       );
       fixture.clearReplies(messages[59]!);
       fixture.notify([messages[59]!.id]);

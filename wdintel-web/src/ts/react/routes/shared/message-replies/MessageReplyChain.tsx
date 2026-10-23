@@ -19,21 +19,27 @@ export function MessageReplyChain({
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const sourceRef = useRef<HTMLElement>(null);
   const navigate = useReplyNavigation();
-  const seen = new Set<number>();
-  const entries = snapshot.relations.flatMap((relation) => {
-    const original = relation.replySignalMessageId === id;
-    const messageId = original ? relation.originalSignalMessageId : relation.replySignalMessageId;
-    if (messageId != null && seen.has(messageId)) return [];
-    if (messageId != null) seen.add(messageId);
-    return [
-      {
-        key: relation.id,
-        original,
-        deleted: relation.deleted,
-        message: snapshot.messages.get(messageId ?? -1),
-      },
-    ];
-  });
+  const head = snapshot.relations[0];
+  const entries = [
+    ...(head && head.originalSignalMessageId !== id
+      ? [
+          {
+            key: `head-${head.threadId}`,
+            original: true,
+            deleted: head.originalDeleted,
+            message: snapshot.messages.get(head.originalSignalMessageId ?? -1),
+          },
+        ]
+      : []),
+    ...snapshot.relations
+      .filter((relation) => relation.replySignalMessageId !== id)
+      .map((relation) => ({
+        key: `reply-${relation.id}`,
+        original: false,
+        deleted: relation.replyDeleted,
+        message: snapshot.messages.get(relation.replySignalMessageId ?? -1),
+      })),
+  ];
   if (!entries.length) return null;
   const renderList = (all: boolean) => (
     <ol className="m-0 flex list-none flex-col gap-echo-sm p-0">

@@ -121,13 +121,18 @@ export class ReplyStore {
         const projections = new Map(response.replyMessages.map((message) => [message.id, message]));
         const requestedIds = new Set(ids);
         const relationsByAnchor = new Map<number, MessageReply[]>();
+        const relationsByThread = new Map<number, MessageReply[]>();
+        const threadsByAnchor = new Map<number, number>();
         response.replies.forEach((relation) => {
+          const relations = relationsByThread.get(relation.threadId) ?? [];
+          relations.push(relation);
+          relationsByThread.set(relation.threadId, relations);
           [relation.originalSignalMessageId, relation.replySignalMessageId].forEach((id) => {
-            if (id == null || !requestedIds.has(id)) return;
-            const relations = relationsByAnchor.get(id) ?? [];
-            relations.push(relation);
-            relationsByAnchor.set(id, relations);
+            if (id != null && requestedIds.has(id)) threadsByAnchor.set(id, relation.threadId);
           });
+        });
+        threadsByAnchor.forEach((threadId, id) => {
+          relationsByAnchor.set(id, relationsByThread.get(threadId) ?? []);
         });
         ids.forEach((id) => {
           if (!this.references.has(id) || versions.get(id) !== (this.versions.get(id) ?? 0)) return;
@@ -136,13 +141,13 @@ export class ReplyStore {
           const anchor = projections.get(id);
           if (anchor) messages.set(id, anchor);
           relations.forEach((relation) => {
-            if (relation.deleted) return;
-            [relation.originalSignalMessageId, relation.replySignalMessageId].forEach(
-              (messageId) => {
-                const message = messageId == null ? undefined : projections.get(messageId);
-                if (message) messages.set(message.id, message);
-              },
-            );
+            [
+              relation.originalDeleted ? null : relation.originalSignalMessageId,
+              relation.replyDeleted ? null : relation.replySignalMessageId,
+            ].forEach((messageId) => {
+              const message = messageId == null ? undefined : projections.get(messageId);
+              if (message) messages.set(message.id, message);
+            });
           });
           const previous = this.entries.get(id);
           this.initial.delete(id);

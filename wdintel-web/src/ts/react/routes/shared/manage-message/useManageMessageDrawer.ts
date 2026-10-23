@@ -75,7 +75,7 @@ export type ManageMessageIntentChange = {
 };
 
 export type UseManageMessageDrawerProps = {
-  citedSignalMessageIds?: number[];
+  engagedMessageId?: number;
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -114,7 +114,7 @@ export function useManageMessageDrawer({
   onEditSuccess,
   editTarget = null,
   reportSource = null,
-  citedSignalMessageIds = [],
+  engagedMessageId,
   editAsReport = false,
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
@@ -126,7 +126,7 @@ export function useManageMessageDrawer({
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
-  const isReplyMode = !isEditMode && !reportSource && citedSignalMessageIds.length > 0;
+  const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
   const unitFeaturesAllowed = !isReplyMode || canWriteMessages(currentUser?.roles);
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
@@ -1214,7 +1214,7 @@ export function useManageMessageDrawer({
     isReportCreateMode,
     editTarget,
     reportSource,
-    citedSignalMessageIds,
+    engagedMessageId,
     replyGroupMasterKey: initialGroupMasterKey,
     existingMedia,
     onSubmitEdit,

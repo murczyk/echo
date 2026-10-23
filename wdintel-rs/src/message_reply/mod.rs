@@ -48,12 +48,13 @@ pub async fn insert<C: ConnectionTrait>(
 ) -> anyhow::Result<i64> {
     let row = query::IdRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
-        r#"insert into message_reply (original_signal_message_id, reply_signal_message_id, original_deleted, reply_deleted, deleted)
+        r#"insert into message_reply (engaged_message_id, reply_signal_message_id, original_deleted, reply_deleted, deleted)
             values ($1, $2, $3, $4, $3 or $4)
-            on conflict (original_signal_message_id, reply_signal_message_id)
-            do update set original_deleted = message_reply.original_deleted or excluded.original_deleted,
+            on conflict (reply_signal_message_id)
+            do update set engaged_message_id = excluded.engaged_message_id,
+                original_deleted = excluded.original_deleted,
                 reply_deleted = message_reply.reply_deleted or excluded.reply_deleted,
-                deleted = message_reply.deleted or excluded.deleted returning id"#,
+                deleted = excluded.original_deleted or message_reply.reply_deleted or excluded.reply_deleted returning id"#,
         vec![original.into(), reply.into(), original_deleted.into(), reply_deleted.into()],
     )).one(db).await.c(h!())?.c(h!())?;
     Ok(row.id)
@@ -62,23 +63,19 @@ pub async fn insert<C: ConnectionTrait>(
 pub async fn prepare_submission(
     db: &sea_orm::DatabaseTransaction,
     login: &Uuid,
-    ids: &[i64],
+    engaged_message_id: i64,
     preferred_group: Option<&str>,
 ) -> anyhow::Result<crate::entities::signal_group::Model> {
-    anyhow::ensure!(
-        !ids.is_empty()
-            && ids.len() <= crate::config::MESSAGE_REPLY_MAX_ANCHORS,
-        "Invalid reply citations"
-    );
+    let ids = &[engaged_message_id];
+    lock_threads(db).await.c(h!())?;
     // Lock before checking access so deletion cannot race with relationship creation.
     db.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "select id from signal_message where id = any($1) order by id for share", vec![ids.to_vec().into()]))
         .await.c(h!())?;
     let scope = query::AccessScope::load(db, login).await.c(h!())?;
     let visible = scope.visible_ids(db, ids).await.c(h!())?;
-    let distinct: std::collections::BTreeSet<_> = ids.iter().copied().collect();
     anyhow::ensure!(
-        visible.len() == distinct.len(),
+        visible.len() == 1,
         "Повідомлення недоступне для відповіді."
     );
     let allowed_groups =
@@ -97,9 +94,9 @@ pub async fn prepare_submission(
         ) select g.group_master_key as master_key from source_groups g
             join signal_group sg on sg.master_key = g.group_master_key and not sg.deleted
             where g.group_master_key is not null
-            group by g.group_master_key having count(distinct g.signal_message_id) = $2
-            order by (g.group_master_key = $3) desc nulls last, g.group_master_key"#,
-        vec![visible.into(), (distinct.len() as i64).into(), preferred_group.map(str::to_string).into()]))
+            group by g.group_master_key
+            order by (g.group_master_key = $2) desc nulls last, g.group_master_key"#,
+        vec![visible.into(), preferred_group.map(str::to_string).into()]))
         .all(db).await.c(h!())?;
     for group in groups {
         if !allowed_groups.contains(&group.master_key) {
@@ -125,4 +122,13 @@ pub async fn prepare_submission(
     }
     error!("reply destination exhausted: login={login} sources={ids:?}");
     anyhow::bail!("Немає доступної групи для відповіді.")
+}
+
+pub(super) async fn lock_threads<C: ConnectionTrait>(
+    db: &C,
+) -> anyhow::Result<()> {
+    db.execute_unprepared("select message_reply_lock_threads()")
+        .await
+        .c(h!())?;
+    Ok(())
 }

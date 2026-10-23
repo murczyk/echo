@@ -96,10 +96,10 @@ async fn replies_3612_reader_could_reply_without_gaining_ordinary_message_write_
         .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Not allowed", "signal_group_master_key": "vukho-test-master-key" })).to_request()).await;
     assert_eq!(plain.status(), actix_web::http::StatusCode::FORBIDDEN);
     let unit = test::call_service(&app, test::TestRequest::post().uri("/api/1.1/submit-direct")
-        .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Not allowed", "unit": "Protected unit", "cited_signal_message_ids": [source.id] })).to_request()).await;
+        .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Not allowed", "unit": "Protected unit", "engaged_message_id": source.id })).to_request()).await;
     assert_eq!(unit.status(), actix_web::http::StatusCode::FORBIDDEN);
     let reply = test::call_service(&app, test::TestRequest::post().uri("/api/1.1/submit-direct")
-        .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Reader reply", "cited_signal_message_ids": [source.id] })).to_request()).await;
+        .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Reader reply", "engaged_message_id": source.id })).to_request()).await;
     assert!(
         reply.status().is_success(),
         "{}",

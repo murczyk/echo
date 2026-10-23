@@ -47,7 +47,7 @@ test('@reply #3612 E3: three users see one creation-ordered thread across both s
     await saveReply(b, 'M2 by B');
     await fixture.nextCreate(c, 'M3 by C', m2.id, () => {
       m3 = fixture.add(c.user, 'M3 by C');
-      fixture.respondWithReplies([relation(1, m1, m2), relation(2, m2, m3)]);
+      fixture.respondWithReplies([relation(1, m1, m2), relation(2, m1, m3)]);
       fixture.notify([m2.id, m3.id]);
       return m3;
     });
@@ -55,7 +55,7 @@ test('@reply #3612 E3: three users see one creation-ordered thread across both s
     await saveReply(c, 'M3 by C');
     await fixture.nextCreate(a, 'M4 to original by A', m1.id, () => {
       m4 = fixture.add(a.user, 'M4 to original by A');
-      fixture.respondWithReplies([relation(1, m1, m2), relation(2, m2, m3), relation(3, m1, m4)]);
+      fixture.respondWithReplies([relation(1, m1, m2), relation(2, m1, m3), relation(3, m1, m4)]);
       fixture.notify([m1.id, m4.id]);
       return m4;
     });
@@ -176,8 +176,8 @@ for (const position of ['root', 'middle', 'last'] as const) {
       const publish = (revision: number, extra?: Message) =>
         fixture.respondWithReplies([
           relation(1, root, middle),
-          relation(2, middle, last),
-          ...(extra ? [relation(3, survivor, extra)] : []),
+          relation(2, root, last),
+          ...(extra ? [relation(3, root, extra)] : []),
         ]);
       publish(1);
       await fixture.nextDelete(actors[1]!, removed, () => {
@@ -272,7 +272,7 @@ test('@reply #3612 E11: cancel keeps membership; saving detach removes one membe
     const root = fixture.seed(a.user, 'Detach root');
     const middle = fixture.seed(b.user, 'Detach middle');
     const last = fixture.seed(c.user, 'Detach last');
-    fixture.respondWithReplies([relation(1, root, middle), relation(2, middle, last)]);
+    fixture.respondWithReplies([relation(1, root, middle), relation(2, root, last)]);
     await Promise.all([a, b, c].map((actor) => visit(actor)));
     await editMessage(b, middle);
     await detachReply(b);
@@ -365,7 +365,7 @@ for (const first of ['detach', 'reply'] as const) {
           fixture.respondWithReplies([relation(1, source, reply)]);
           fixture.notify([source.id, reply.id]);
         } else {
-          fixture.respondWithReplies([relation(1, root, source), relation(2, source, reply)]);
+          fixture.respondWithReplies([relation(1, root, source), relation(2, root, reply)]);
           fixture.notify([source.id, reply.id]);
         }
         return reply;
