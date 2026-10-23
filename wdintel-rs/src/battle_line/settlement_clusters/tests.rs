@@ -74,6 +74,33 @@ fn ranks_by_all_pairwise_distances_2133() {
 }
 
 #[test]
+fn fixed_inbox_votes_cannot_be_replaced_or_dropped_for_another_cluster_2133() {
+    let fixed = BTreeMap::from([("A".to_string(), 1)]);
+    let mut drafts = vec![
+        draft("A", &[(1, 0.0, 1.0), (2, 2.0, 1.0)]),
+        draft("B", &[(3, 2.01, 1.0)]),
+        draft("C", &[(4, 2.02, 1.0)]),
+    ];
+    resolve_cluster_with_fixed(&mut drafts, &fixed);
+    assert!(drafts
+        .iter()
+        .all(|draft| draft.chosen_candidate_index.is_none()));
+    assert_eq!(
+        elect_settlements_with_fixed(
+            &[
+                draft("A", &[(1, 0.0, 1.0)]),
+                draft("B", &[(2, 0.1, 1.0)]),
+                draft("OUTLIER", &[(3, 4.0, 1.0)]),
+                draft("MISSING", &[]),
+            ],
+            &[],
+            &fixed,
+        ),
+        vec![None; 4]
+    );
+}
+
+#[test]
 fn selects_strict_majority_and_leaves_outliers_unresolved_2133() {
     assert_eq!(
         chosen(vec![

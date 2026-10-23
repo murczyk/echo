@@ -1,9 +1,12 @@
-use super::settlement_clusters::{resolve_cluster, SettlementAnchor};
+use super::settlement_clusters::{
+    resolve_cluster, resolve_cluster_with_fixed, SettlementAnchor,
+};
 use crate::battle_line::types::BattleLineLocationResult;
 use crate::battle_line::{
     active_battle_line_id, ensure_active_battle_line,
     load_location_resolution_drafts, location_result_from_draft, lock_updates,
     resolve_inbox_item_aors, LocationResolutionDraft,
+    SettlementCandidateSource,
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
@@ -58,7 +61,9 @@ struct SettlementResolutionCacheKey {
 
 #[derive(Default)]
 pub(super) struct SettlementResolutionCache {
-    resolutions:
+    database_resolutions:
+        BTreeMap<SettlementResolutionCacheKey, LocationResolutionDraft>,
+    catalog_resolutions:
         BTreeMap<SettlementResolutionCacheKey, LocationResolutionDraft>,
 }
 
@@ -80,13 +85,18 @@ impl SettlementResolutionCache {
 
     fn get(
         &self,
+        source: &SettlementCandidateSource,
         active_battle_line_version_id: i64,
         aor_ids: &[i64],
         settlement_text: &str,
     ) -> Option<LocationResolutionDraft> {
         let key =
             Self::key(active_battle_line_version_id, aor_ids, settlement_text);
-        self.resolutions.get(&key).cloned().map(|mut result| {
+        let resolutions = match source {
+            SettlementCandidateSource::Database => &self.database_resolutions,
+            SettlementCandidateSource::Catalog(_) => &self.catalog_resolutions,
+        };
+        resolutions.get(&key).cloned().map(|mut result| {
             result.location = settlement_text.to_string();
             result
         })
@@ -94,13 +104,22 @@ impl SettlementResolutionCache {
 
     fn insert(
         &mut self,
+        source: &SettlementCandidateSource,
         active_battle_line_version_id: i64,
         aor_ids: &[i64],
         result: LocationResolutionDraft,
     ) {
         let key =
             Self::key(active_battle_line_version_id, aor_ids, &result.location);
-        self.resolutions.insert(key, result);
+        let resolutions = match source {
+            SettlementCandidateSource::Database => {
+                &mut self.database_resolutions
+            }
+            SettlementCandidateSource::Catalog(_) => {
+                &mut self.catalog_resolutions
+            }
+        };
+        resolutions.insert(key, result);
     }
 }
 
@@ -340,7 +359,7 @@ pub async fn run_inbox_settlement_worker_once(
         return Ok(network_processed);
     }
     let active_battle_line_version_id =
-        refresh_settlement_catalog(env).await.c(h!())?;
+        refresh_battle_line_version(env).await.c(h!())?;
     let mut resolution_cache = SettlementResolutionCache::default();
     let processed = process_pending_rows(
         env,
@@ -353,20 +372,12 @@ pub async fn run_inbox_settlement_worker_once(
     Ok(processed || network_processed)
 }
 
-pub(super) async fn refresh_settlement_catalog(
-    env: &Env,
-) -> anyhow::Result<i64> {
-    let catalog_txn = env.dbx.begin().await.c(h!())?;
-    lock_updates(&catalog_txn).await.c(h!())?;
+async fn refresh_battle_line_version(env: &Env) -> anyhow::Result<i64> {
+    let version_txn = env.dbx.begin().await.c(h!())?;
+    lock_updates(&version_txn).await.c(h!())?;
     let active_battle_line_version_id =
-        ensure_active_battle_line(&catalog_txn).await.c(h!())?;
-    crate::location::aor_config::refresh_settlements_aor_map(
-        &catalog_txn,
-        env.settlements.clone(),
-    )
-    .await
-    .c(h!())?;
-    catalog_txn.commit().await.c(h!())?;
+        ensure_active_battle_line(&version_txn).await.c(h!())?;
+    version_txn.commit().await.c(h!())?;
     Ok(active_battle_line_version_id)
 }
 
@@ -400,7 +411,6 @@ async fn process_pending_rows(
         };
         *cursor = Some(claim.first_row_id);
         let affected_item_id = match resolve_claimed_item(
-            env,
             &txn,
             claim.owner_id,
             active_battle_line_version_id,
@@ -541,7 +551,6 @@ select pg_try_advisory_xact_lock(
 }
 
 async fn resolve_claimed_item(
-    env: &Env,
     txn: &DatabaseTransaction,
     item_id: i64,
     active_battle_line_version_id: i64,
@@ -560,10 +569,13 @@ async fn resolve_claimed_item(
     {
         return Ok(None);
     }
-    let anchors = load_settlement_anchors(txn, &rows).await.c(h!())?;
+    let anchors =
+        super::network_settlements::load_item_network_anchors(txn, item_id)
+            .await
+            .c(h!())?;
     let rows = rows
         .into_iter()
-        .filter(|row| row.settlement_id.is_none())
+        .filter(|row| anchors.is_empty() || row.settlement_id.is_none())
         .collect::<Vec<_>>();
     let aor_context =
         resolve_inbox_item_aors(txn, item_id, None).await.c(h!())?;
@@ -571,28 +583,23 @@ async fn resolve_claimed_item(
         .iter()
         .map(|row| row.settlement_text.clone())
         .collect::<Vec<_>>();
-    let network_anchors =
-        super::network_settlements::load_item_network_anchors(txn, item_id)
-            .await
-            .c(h!())?;
-    let anchors = if network_anchors.is_empty() {
-        anchors
-    } else {
-        network_anchors
-    };
-    let results = resolve_settlement_names(
+    let mut drafts = load_location_drafts_with_cache(
         txn,
-        env.settlements.clone(),
+        SettlementCandidateSource::Database,
         locations,
         &aor_context.aor_ids,
         active_battle_line_version_id,
         resolution_cache,
-        &anchors,
     )
     .await
     .c(h!())?;
+    resolve_inbox_cluster(&mut drafts, &rows, &anchors);
+    let results = drafts.into_iter().map(location_result_from_draft);
     let mut affected_item_id = None;
     for (row, result) in rows.into_iter().zip(results) {
+        if row.settlement_id.is_some() {
+            continue;
+        }
         affected_item_id = Some(
             persist_settlement_resolution(
                 txn,
@@ -606,6 +613,26 @@ async fn resolve_claimed_item(
     Ok(affected_item_id)
 }
 
+fn resolve_inbox_cluster(
+    drafts: &mut [LocationResolutionDraft],
+    rows: &[sigint_inbox_item_settlement::Model],
+    anchors: &[SettlementAnchor],
+) {
+    if !anchors.is_empty() {
+        resolve_cluster(drafts, anchors);
+        return;
+    }
+    let fixed = rows
+        .iter()
+        .filter_map(|row| {
+            row.settlement_id.map(|settlement_id| {
+                (normalize_name(&row.settlement_text), settlement_id)
+            })
+        })
+        .collect();
+    resolve_cluster_with_fixed(drafts, &fixed);
+}
+
 pub(super) async fn resolve_settlement_names<C: ConnectionTrait>(
     dbx: &C,
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
@@ -617,7 +644,7 @@ pub(super) async fn resolve_settlement_names<C: ConnectionTrait>(
 ) -> anyhow::Result<Vec<BattleLineLocationResult>> {
     let mut drafts = load_location_drafts_with_cache(
         dbx,
-        settlements,
+        SettlementCandidateSource::Catalog(settlements),
         locations,
         aor_ids,
         version,
@@ -629,48 +656,9 @@ pub(super) async fn resolve_settlement_names<C: ConnectionTrait>(
     Ok(drafts.into_iter().map(location_result_from_draft).collect())
 }
 
-async fn load_settlement_anchors<C: ConnectionTrait>(
-    dbx: &C,
-    rows: &[sigint_inbox_item_settlement::Model],
-) -> anyhow::Result<Vec<SettlementAnchor>> {
-    use crate::entities::settlement;
-
-    let ids = rows
-        .iter()
-        .filter_map(|row| row.settlement_id)
-        .collect::<BTreeSet<_>>();
-    if ids.is_empty() {
-        return Ok(vec![]);
-    }
-    let settlements = settlement::Entity::find()
-        .filter(settlement::Column::Id.is_in(ids))
-        .order_by_asc(settlement::Column::Id)
-        .select_only()
-        .columns([
-            settlement::Column::Id,
-            settlement::Column::Lat,
-            settlement::Column::Lon,
-        ])
-        .into_tuple::<(i32, Option<f64>, Option<f64>)>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-    Ok(settlements
-        .into_iter()
-        .filter_map(|(settlement_id, lat, lon)| {
-            let (lat, lon) = (lat?, lon?);
-            ((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon))
-                .then_some(SettlementAnchor {
-                    settlement_id,
-                    coordinate: super::types::BattleLineCoordinate { lat, lon },
-                })
-        })
-        .collect())
-}
-
 async fn load_location_drafts_with_cache<C>(
     dbx: &C,
-    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    source: SettlementCandidateSource,
     locations: Vec<String>,
     aor_ids: &[i64],
     active_battle_line_version_id: i64,
@@ -682,7 +670,7 @@ where
     let mut missing_locations = BTreeMap::new();
     for location in &locations {
         if resolution_cache
-            .get(active_battle_line_version_id, aor_ids, location)
+            .get(&source, active_battle_line_version_id, aor_ids, location)
             .is_none()
         {
             missing_locations
@@ -697,20 +685,25 @@ where
     let missing_locations = missing_locations.into_values().collect();
     let missing_results = load_location_resolution_drafts(
         dbx,
-        settlements,
+        source.clone(),
         missing_locations,
         aor_ids,
     )
     .await
     .c(h!())?;
     for result in missing_results {
-        resolution_cache.insert(active_battle_line_version_id, aor_ids, result);
+        resolution_cache.insert(
+            &source,
+            active_battle_line_version_id,
+            aor_ids,
+            result,
+        );
     }
     locations
         .into_iter()
         .map(|location| {
             resolution_cache
-                .get(active_battle_line_version_id, aor_ids, &location)
+                .get(&source, active_battle_line_version_id, aor_ids, &location)
                 .c(h!())
         })
         .collect()
@@ -767,7 +760,7 @@ async fn process_oneoff_batch(
     items: &[(NaiveDateTime, i64)],
 ) -> anyhow::Result<OneoffLinkInboxSettlementsStats> {
     let active_battle_line_version_id =
-        refresh_settlement_catalog(env).await.c(h!())?;
+        refresh_battle_line_version(env).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let item_locations =
         lock_oneoff_item_locations(&txn, items).await.c(h!())?;
@@ -781,7 +774,6 @@ async fn process_oneoff_batch(
     };
     let mut resolution_cache = SettlementResolutionCache::default();
     let affected_item_ids = process_oneoff_request_groups(
-        env,
         &txn,
         request_groups,
         active_battle_line_version_id,
@@ -834,7 +826,6 @@ async fn group_oneoff_resolution_requests(
 }
 
 async fn process_oneoff_request_groups(
-    env: &Env,
     txn: &DatabaseTransaction,
     request_groups: BTreeMap<Vec<i64>, Vec<OneoffItemResolutionRequest>>,
     active_battle_line_version_id: i64,
@@ -853,7 +844,7 @@ async fn process_oneoff_request_groups(
             .collect::<Vec<_>>();
         let drafts = load_location_drafts_with_cache(
             txn,
-            env.settlements.clone(),
+            SettlementCandidateSource::Database,
             locations,
             &aor_ids,
             active_battle_line_version_id,
@@ -1858,7 +1849,7 @@ from battle_line_version where id = $2
                 .await
                 .unwrap();
         let mut cache = SettlementResolutionCache::default();
-        resolve_claimed_item(&env, &txn, request.item_id, version, &mut cache)
+        resolve_claimed_item(&txn, request.item_id, version, &mut cache)
             .await
             .unwrap();
         assert_eq!(
@@ -1912,7 +1903,7 @@ from battle_line_version where id = $2
                 .is_undefined,
             None
         );
-        resolve_claimed_item(&env, &txn, request.item_id, version, &mut cache)
+        resolve_claimed_item(&txn, request.item_id, version, &mut cache)
             .await
             .unwrap();
         assert_eq!(
@@ -2038,6 +2029,204 @@ from battle_line_version where id = $2
 
     #[tokio::test]
     #[serial_test::serial]
+    async fn retries_preserve_the_majority_and_reject_distant_outliers_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let request = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 A", None, None),
+                ("#2133 SHARED", None, None),
+                ("#2133 B", None, None),
+            ],
+        )
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        for _ in 0..3 {
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap();
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(
+                rows.iter().map(|row| row.settlement_id).collect::<Vec<_>>(),
+                vec![Some(2_133_101), Some(2_133_103), None]
+            );
+            assert_eq!(rows[2].is_undefined, Some(true));
+            requeue_unresolved_item_settlements(&txn, &[request.item_id])
+                .await
+                .unwrap();
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    async fn insert_kharkiv_resolution_test_item(
+        env: &Env,
+        txn: &DatabaseTransaction,
+    ) -> (i64, OneoffItemResolutionRequest) {
+        let version = insert_active_test_battle_line(txn).await.unwrap();
+        txn.execute_unprepared(
+            r#"update battle_line_version set geometry = ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(37.8 49,37.8 51))', 4326) where retired_at is null"#,
+        ).await.unwrap();
+        env.settlements.write().unwrap().default_settlements_data = Arc::new(
+            crate::location::load_from_file(
+                vec!["settlements_json/kharkivska_oblast.json".to_string()],
+                Mode::Test,
+            )
+            .unwrap(),
+        );
+        let request = insert_cluster_test_item(
+            txn,
+            &[
+                ("БОЛОГІВКА", None, None),
+                ("ДВОРІЧАНСЬКЕ", None, None),
+                ("КАМ’ЯНКА", None, None),
+            ],
+        )
+        .await
+        .unwrap();
+        (version, request)
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn kharkiv_inbox_resolution_uses_database_candidates_and_isolates_catalog_cache_2133(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let (version, request) =
+            insert_kharkiv_resolution_test_item(&env, &txn).await;
+        let mut cache = SettlementResolutionCache::default();
+        let network_results = resolve_settlement_names(
+            &txn,
+            env.settlements.clone(),
+            request.settlement_texts.clone(),
+            &[],
+            version,
+            &mut cache,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            network_results
+                .iter()
+                .map(|result| result.chosen_settlement_id)
+                .collect::<Vec<_>>(),
+            vec![Some(45210), Some(18487), None]
+        );
+        for _ in 0..3 {
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap();
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(
+                rows.iter().map(|row| row.settlement_id).collect::<Vec<_>>(),
+                vec![Some(45210), Some(18487), Some(94886)]
+            );
+            assert_eq!(rows[2].is_undefined, Some(false));
+            requeue_unresolved_item_settlements(&txn, &[request.item_id])
+                .await
+                .unwrap();
+        }
+        let row =
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[2].clone();
+        persist_settlement_resolution(&txn, row, Some(95309))
+            .await
+            .unwrap();
+        *env.settlements.write().unwrap() =
+            crate::location::SettlementsDataConfig::default();
+        let item_id = request.item_id;
+        process_oneoff_request_groups(
+            &txn,
+            BTreeMap::from([(vec![], vec![request])]),
+            version,
+            &mut SettlementResolutionCache::default(),
+            &mut OneoffLinkInboxSettlementsStats::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, item_id)
+                .await
+                .unwrap()
+                .iter()
+                .map(|row| row.settlement_id)
+                .collect::<Vec<_>>(),
+            vec![Some(45210), Some(18487), Some(94886)]
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn inbox_uses_database_aliases_and_rejects_dictionary_only_names_and_invalid_coordinates_2133(
+    ) {
+        use crate::entities::{settlement, settlement_alias};
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let mut dictionary_alias =
+            env.settlements.read().unwrap().default_settlements_data.3
+                [&2_133_102]
+                .clone();
+        dictionary_alias.name = "#2133 JSON ONLY".to_string();
+        env.settlements.write().unwrap().default_settlements_data = Arc::new((
+            vec![],
+            vec![],
+            crate::location::trie::Trie::new(),
+            BTreeMap::from([(2_133_102, dictionary_alias.clone())]),
+            BTreeMap::from([(
+                dictionary_alias.name.clone(),
+                vec![dictionary_alias],
+            )]),
+        ));
+        settlement_alias::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            settlement_id: Set(2_133_101),
+            text: Set("#2133 DB’ONLY".to_string()),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        settlement::ActiveModel {
+            id: Set(2_133_105),
+            kind: Set(
+                crate::entities::sea_orm_active_enums::SettlementKind::Village,
+            ),
+            name: Set("#2133 INVALID".to_string()),
+            lat: Set(Some(91.0)),
+            lon: Set(Some(1.0)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        for (name, expected) in [
+            ("#2133 db'only", Some(2_133_101)),
+            ("#2133 JSON ONLY", None),
+            ("#2133 INVALID", None),
+        ] {
+            let request = insert_cluster_test_item(&txn, &[(name, None, None)])
+                .await
+                .unwrap();
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap();
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(rows[0].settlement_id, expected, "{name}");
+            assert_eq!(rows[0].is_undefined, Some(expected.is_none()));
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
     async fn isolates_cached_clusters_and_preserves_fixed_links_2133() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -2067,7 +2256,6 @@ from battle_line_version where id = $2
         for request in [&first, &second] {
             assert_eq!(
                 resolve_claimed_item(
-                    &env,
                     &txn,
                     request.item_id,
                     version,
@@ -2087,8 +2275,22 @@ from battle_line_version where id = $2
             .await
             .unwrap();
         assert_cluster_test_links(&rows, first.item_id, second.item_id);
-        assert!(cache.get(version, &[], "#2133 UNDEFINED").is_some());
-        let cached = cache.get(version, &[], "#2133 SHARED").unwrap();
+        assert!(cache
+            .get(
+                &SettlementCandidateSource::Database,
+                version,
+                &[],
+                "#2133 UNDEFINED"
+            )
+            .is_some());
+        let cached = cache
+            .get(
+                &SettlementCandidateSource::Database,
+                version,
+                &[],
+                "#2133 SHARED",
+            )
+            .unwrap();
         assert_eq!(cached.candidates.len(), 2);
         assert_eq!(
             location_result_from_draft(cached).chosen_settlement_id,
@@ -2097,7 +2299,6 @@ from battle_line_version where id = $2
 
         let mut stats = OneoffLinkInboxSettlementsStats::default();
         let affected = process_oneoff_request_groups(
-            &env,
             &txn,
             BTreeMap::from([(vec![], vec![first, second])]),
             version,
@@ -2173,7 +2374,7 @@ from battle_line_version where id = $2
         .await
         .unwrap();
         let mut cache = SettlementResolutionCache::default();
-        resolve_claimed_item(&env, &txn, request.item_id, version, &mut cache)
+        resolve_claimed_item(&txn, request.item_id, version, &mut cache)
             .await
             .unwrap();
         for (locations, expected) in [
@@ -2202,7 +2403,6 @@ from battle_line_version where id = $2
             );
             assert_eq!(
                 resolve_claimed_item(
-                    &env,
                     &txn,
                     request.item_id,
                     version,
@@ -2237,7 +2437,6 @@ from battle_line_version where id = $2
             );
             assert_eq!(
                 resolve_claimed_item(
-                    &env,
                     &txn,
                     request.item_id,
                     version,
@@ -2417,11 +2616,7 @@ returning id
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         *env.settlements.write().unwrap() =
-            crate::location::load_settlements_data_config(
-                vec!["settlements_json/kharkivska_oblast.json".to_string()],
-                Mode::Test,
-            )
-            .unwrap();
+            crate::location::SettlementsDataConfig::default();
         let setup = env.dbx.begin().await.unwrap();
         insert_active_test_battle_line(&setup).await.unwrap();
         setup.execute_unprepared(
@@ -2436,14 +2631,18 @@ returning id
         )
         .await
         .unwrap();
-        crate::entities::settlement_alias::ActiveModel {
-            id: Set(uuid::Uuid::now_v7()),
-            settlement_id: Set(79948),
-            text: Set("Село_3383_перевірка".to_string()),
+        for (settlement_id, text) in
+            [(79948, "Село_3383_перевірка"), (65447, "Рибалкіне")]
+        {
+            crate::entities::settlement_alias::ActiveModel {
+                id: Set(uuid::Uuid::now_v7()),
+                settlement_id: Set(settlement_id),
+                text: Set(text.to_string()),
+            }
+            .insert(&setup)
+            .await
+            .unwrap();
         }
-        .insert(&setup)
-        .await
-        .unwrap();
         let location_v2 =
             "|АНИЩИНЕ|ІВАЩИНЕ|РИБАЛКІНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|СЕЛО_3383_ПЕРЕВІРКА|";
         let item = sigint_inbox_item::ActiveModel {
@@ -2686,18 +2885,26 @@ returning id
             battle_line_distances: BTreeMap::new(),
             invalid_aor_ids: vec![],
         };
+        let source = SettlementCandidateSource::Database;
         let mut resolution_cache = SettlementResolutionCache::default();
-        resolution_cache.insert(7, &[3, 2], result);
+        resolution_cache.insert(&source, 7, &[3, 2], result);
 
         let cached = resolution_cache
-            .get(7, &[2, 3], " купʼянськ ")
+            .get(&source, 7, &[2, 3], " купʼянськ ")
             .expect("same battle line and AOR scope must reuse resolution");
         assert_eq!(cached.location, " купʼянськ ");
         assert_eq!(cached.chosen_candidate_index, Some(0));
-        assert!(resolution_cache.get(8, &[2, 3], "КУП’ЯНСЬК").is_none());
-        assert!(resolution_cache.get(7, &[2], "КУП’ЯНСЬК").is_none());
-        let cached = resolution_cache.get(7, &[2, 3], "КУП’ЯНСЬК").unwrap();
+        assert!(resolution_cache
+            .get(&source, 8, &[2, 3], "КУП’ЯНСЬК")
+            .is_none());
+        assert!(resolution_cache
+            .get(&source, 7, &[2], "КУП’ЯНСЬК")
+            .is_none());
+        let cached = resolution_cache
+            .get(&source, 7, &[2, 3], "КУП’ЯНСЬК")
+            .unwrap();
         resolution_cache.insert(
+            &source,
             7,
             &[2, 3],
             LocationResolutionDraft {
@@ -2705,7 +2912,9 @@ returning id
                 ..cached
             },
         );
-        assert!(resolution_cache.get(7, &[2, 3], "#3383 STRASSE").is_none());
+        assert!(resolution_cache
+            .get(&source, 7, &[2, 3], "#3383 STRASSE")
+            .is_none());
     }
 
     #[tokio::test]
