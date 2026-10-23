@@ -32,6 +32,7 @@ import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import String
 import Task
+import Time
 import TimeZone
 import Url.Builder
 import Utils.Api.ErrorHandling
@@ -196,7 +197,6 @@ init flagsResult route =
       , toasts = Shared.Components.Toast.init
       , eventService = Core.EventService.init
       , deploymentMaintenance = Nothing
-      , pendingEvents = []
       , eventSubscriptions = Dict.empty
       , networks = NotAsked
       }
@@ -442,7 +442,9 @@ update req msg model =
             ( { model | changelogPreview = Just preview }, E.none )
 
         MasterUnitsLoadedByApi (Err err) ->
-            ( { model | masterUnits = Failure err }, E.none )
+            ( { model | masterUnits = preserveLookupOnRefreshError err model.masterUnits }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів" err
+            )
 
         MasterUnitsLoadedByApi (Ok rsp) ->
             let
@@ -489,7 +491,9 @@ update req msg model =
             ( { model | masterUnits = Success masterUnits }, E.none )
 
         NetworksLoadedByApi (Err err) ->
-            ( { model | networks = Failure err }, E.none )
+            ( { model | networks = preserveLookupOnRefreshError err model.networks }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мереж" err
+            )
 
         NetworksLoadedByApi (Ok rsp) ->
             ( { model
@@ -589,8 +593,15 @@ update req msg model =
         LoggedResponseDecodeError _ ->
             ( model, E.none )
 
+        ReconcileSharedLookups ->
+            if model.userLoaded && model.user /= Nothing then
+                ( model, loadSharedLookupData req.path )
+
+            else
+                ( model, E.none )
+
         EventServiceStartPolling ->
-            if model.eventService.isPolling || not model.userLoaded || model.user == Nothing then
+            if (model.eventService.isPolling && model.eventService.flavor == eventServiceFlavor req.path) || not model.userLoaded || model.user == Nothing then
                 ( model, E.none )
 
             else
@@ -601,13 +612,9 @@ update req msg model =
                     newEventService =
                         { eventService
                             | isPolling = True
+                            , flavor = eventServiceFlavor req.path
                             , requestInFlight = False
                             , generation = eventService.generation + 1
-                            , error = Nothing
-                            , retryCount = 0
-                            , retryDelay = 1000
-                            , connectionInterrupted = False
-                            , persistentErrorReported = False
                         }
                 in
                 ( { model | eventService = newEventService }
@@ -633,23 +640,43 @@ update req msg model =
                         { eventService | requestInFlight = True, generation = generation + 1 }
                 in
                 ( { model | eventService = newEventService }
-                , E.sendCmd <| pollEvents newEventService.generation newEventService.lastEventId model.deploymentMaintenance
+                , E.sendCmd <| Task.perform (EventServicePollReady newEventService.generation) Time.now
                 )
 
             else
                 ( model, E.none )
 
-        EventServiceEventsReceived generation (Ok response) ->
+        EventServicePollReady generation now ->
+            if not model.eventService.isPolling || generation /= model.eventService.generation then
+                ( model, E.none )
+
+            else if model.eventService.flavor /= eventServiceFlavor req.path then
+                update req EventServiceStartPolling model
+
+            else
+                pollEventsWhenReady generation now model
+
+        EventServiceEventsReceived generation flavor (Ok response) ->
             let
                 eventService =
                     model.eventService
 
                 inboxChangedEvents =
-                    extractInboxChangedEvents response.events
+                    if eventServiceFlavor req.path == B.LpfGeneric then
+                        []
+
+                    else
+                        extractInboxChangedEvents response.events
 
                 newEventService =
                     { eventService
                         | lastEventId = response.lastEventId
+                        , lastGenericFullAt =
+                            if flavor /= B.LpfGeneric then
+                                eventService.lastPollStartedAt
+
+                            else
+                                eventService.lastGenericFullAt
                         , requestInFlight = False
                         , error = Nothing
                         , connectionInterrupted = False
@@ -657,12 +684,6 @@ update req msg model =
                         , retryCount = 0
                         , retryDelay = 1000
                     }
-
-                -- Process each event received
-                processEventsEffect =
-                    List.map EventReceived response.events
-                        |> List.map (\eventMsg -> E.sendCmd <| Task.perform (\_ -> eventMsg) (Task.succeed ()))
-                        |> E.batch
             in
             if not model.eventService.isPolling || generation /= model.eventService.generation then
                 ( model, E.none )
@@ -673,8 +694,7 @@ update req msg model =
                     , deploymentMaintenance = response.deploymentMaintenance
                   }
                 , E.batch
-                    [ processEventsEffect
-                    , if List.isEmpty inboxChangedEvents then
+                    [ if List.isEmpty inboxChangedEvents then
                         E.none
 
                       else
@@ -683,7 +703,7 @@ update req msg model =
                     ]
                 )
 
-        EventServiceEventsReceived generation (Err error) ->
+        EventServiceEventsReceived generation _ (Err error) ->
             let
                 newRetryCount =
                     model.eventService.retryCount + 1
@@ -742,85 +762,6 @@ update req msg model =
                     { eventService | retryCount = 0, retryDelay = 1000, persistentErrorReported = False }
             in
             ( { model | eventService = newEventService }, E.none )
-
-        EventReceived event ->
-            case event.eventType of
-                B.EtUnitChanged ->
-                    ( { model | pendingEvents = event :: model.pendingEvents }
-                    , E.getUnits MasterUnitsLoadedByApi
-                        { sortBy = Nothing
-                        , afterUnitId = Nothing
-                        , beforeUnitId = Nothing
-                        , includeInactive = False
-                        , filterActive = Nothing
-                        , filterText = Nothing
-                        , filterName = Nothing
-                        , filterOther = Nothing
-                        , filterTeamOrCrew = Nothing
-                        , filterSection = Nothing
-                        , filterSquad = Nothing
-                        , filterPlatoon = Nothing
-                        , filterCompany = Nothing
-                        , filterBattalion = Nothing
-                        , filterRegiment = Nothing
-                        , filterBrigade = Nothing
-                        , filterDivision = Nothing
-                        , filterCorps = Nothing
-                        , filterArmy = Nothing
-                        , filterMilitaryDistrict = Nothing
-                        , filterArmyRegion = Nothing
-                        , filterCombatType = Nothing
-                        , filterComment = Nothing
-                        , filterOrbitNote = Nothing
-                        , filterIsDeduplicateCandidate = Nothing
-                        , filterHasOrbit = Nothing
-                        , filterHasOrbitNote = Nothing
-                        , searchMode = Nothing
-                        , limit = Nothing
-                        , offset = Nothing
-                        }
-                    )
-
-                B.EtNetworkChanged ->
-                    ( { model | pendingEvents = event :: model.pendingEvents }
-                    , E.getNetworksList NetworksLoadedByApi
-                        { sortBy = Nothing
-                        , filterFreq = Nothing
-                        , filterUnitId = Nothing
-                        , filterUnit = Nothing
-                        , filterUnitArmyRegion = Nothing
-                        , filterUnitMilitaryDistrict = Nothing
-                        , filterUnitArmy = Nothing
-                        , filterUnitCorps = Nothing
-                        , filterUnitDivision = Nothing
-                        , filterUnitBrigade = Nothing
-                        , filterUnitRegiment = Nothing
-                        , filterUnitBattalion = Nothing
-                        , filterUnitCompany = Nothing
-                        , filterUnitPlatoon = Nothing
-                        , filterUnitSquad = Nothing
-                        , filterUnitSection = Nothing
-                        , filterUnitTeamOrCrew = Nothing
-                        , filterUnitOther = Nothing
-                        , filterText = Nothing
-                        , filterName = Nothing
-                        , filterLocation = Nothing
-                        , showOnlyFurtherInverstigation = Nothing
-                        , showInactive = Nothing
-                        , showOnlyDeleted = Nothing
-                        , statusFilter = Nothing
-                        , aorIds = Nothing
-                        , ids = Nothing
-                        , limit = Nothing
-                        , offset = Nothing
-                        }
-                    )
-
-                _ ->
-                    -- Add event to pending events for distribution
-                    ( { model | pendingEvents = event :: model.pendingEvents }
-                    , E.none
-                    )
 
         SubscribeToEvents pageId eventTypes ->
             -- Add page subscription to event types
@@ -883,13 +824,28 @@ isRerNetworkDetailsPath path =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions _ _ =
+subscriptions _ model =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
         , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
         , Ports.shared_loadRerNetworkDetailsPreferredViewRes RerNetworkDetailsPreferredViewLoaded
+        , if model.userLoaded && model.user /= Nothing then
+            Time.every Config.sharedLookupReconciliationIntervalMs (\_ -> ReconcileSharedLookups)
+
+          else
+            Sub.none
         ]
+
+
+preserveLookupOnRefreshError : ApiError -> RemoteData ApiError a -> RemoteData ApiError a
+preserveLookupOnRefreshError error lookup =
+    case lookup of
+        Success _ ->
+            lookup
+
+        _ ->
+            Failure error
 
 
 
@@ -906,12 +862,71 @@ eventServicePollDelay path =
             100
 
 
-pollEvents : Int -> Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg
-pollEvents generation lastEventId deploymentMaintenance =
+eventServiceFlavor : Route.Path.Path -> B.LongPollFlavor
+eventServiceFlavor path =
+    case path of
+        Route.Path.RerDuty ->
+            B.LpfRer
+
+        Route.Path.RerDutyNeo ->
+            B.LpfRer
+
+        Route.Path.RerAnalysis ->
+            B.LpfRer
+
+        Route.Path.RerAnalysisNeo ->
+            B.LpfAnalysisNeo
+
+        _ ->
+            B.LpfGeneric
+
+
+pollEventsWhenReady : Int -> Time.Posix -> Model -> ( Model, Effect Msg )
+pollEventsWhenReady generation now model =
+    let
+        eventService =
+            model.eventService
+
+        waitMs =
+            eventService.lastPollStartedAt
+                |> Maybe.map (\started -> Config.eventServicePollingMinIntervalMs - toFloat (Time.posixToMillis now - Time.posixToMillis started))
+                |> Maybe.withDefault 0
+
+        genericFullDue =
+            eventService.retryCount > 0
+                || (eventService.lastGenericFullAt
+                        |> Maybe.map (\started -> Time.posixToMillis now - Time.posixToMillis started >= Config.eventServiceGenericFullIntervalMs)
+                        |> Maybe.withDefault True
+                   )
+
+        flavor =
+            if eventService.flavor == B.LpfGeneric && genericFullDue then
+                B.LpfGenericFull
+
+            else
+                eventService.flavor
+
+    in
+    if waitMs > 0 then
+        ( model
+        , E.sendCmd <|
+            Task.perform (EventServicePollReady generation)
+                (Process.sleep waitMs |> Task.andThen (\_ -> Time.now))
+        )
+
+    else
+        ( { model | eventService = { eventService | lastPollStartedAt = Just now } }
+        , E.sendCmd <| pollEvents generation flavor eventService.lastEventId model.deploymentMaintenance
+        )
+
+
+pollEvents : Int -> B.LongPollFlavor -> Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg
+pollEvents generation flavor lastEventId deploymentMaintenance =
     let
         request : B.LongPollReq
         request =
-            { sessionId = "current" -- We'll get this from session later
+            { flavor = flavor
+            , sessionId = "current" -- We'll get this from session later
             , lastEventId = lastEventId
             , deploymentMaintenanceProtocol = Just deploymentMaintenanceProtocolVersion
             , knownDeploymentMaintenanceId = Maybe.map .id deploymentMaintenance
@@ -922,7 +937,7 @@ pollEvents generation lastEventId deploymentMaintenance =
         , headers = []
         , url = "/api/event-stream/long-poll"
         , body = Http.jsonBody (B.longPollReqEncoder request)
-        , expect = leExpectJson (EventServiceEventsReceived generation) B.longPollRspDecoder
+        , expect = leExpectJson (EventServiceEventsReceived generation flavor) B.longPollRspDecoder
         , timeout = Nothing
         , tracker = Just Config.eventServicePollTracker
         }

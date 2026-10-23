@@ -33,16 +33,23 @@ for (const status of [200, 503]) {
   });
 }
 
-test('#3858 other pages retain their existing long-poll interval @regression', async ({ page }) => {
+test('#3866 other pages start long-polls at least two seconds apart @regression', async ({
+  page,
+}) => {
   await page.clock.install();
   await page.clock.pauseAt(new Date());
   await installAnalysisNeoApiMocks(page);
   let requests = 0;
   await page.route('**/api/event-stream/long-poll', async (route) => {
     requests += 1;
+    expect(route.request().postDataJSON().flavor).toBe('analysis-neo');
     await route.fulfill({ json: { events: [], last_event_id: null } });
   });
   await page.goto('/rer-analysis-neo');
-  await page.clock.runFor(500);
+  await page.clock.runFor(100);
+  await expect.poll(() => requests).toBe(1);
+  await page.clock.runFor(1800);
+  expect(requests).toBe(1);
+  await page.clock.runFor(300);
   await expect.poll(() => requests).toBeGreaterThan(1);
 });

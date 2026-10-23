@@ -18588,8 +18588,28 @@ deploymentMaintenanceEncoder struct =
         ]
 
 
+type LongPollFlavor
+    = LpfRer
+    | LpfAnalysisNeo
+    | LpfGeneric
+    | LpfGenericFull
+
+
+longPollFlavorEncoder : LongPollFlavor -> Json.Encode.Value
+longPollFlavorEncoder enum =
+    case enum of
+        LpfRer ->
+            Json.Encode.string "rer"
+        LpfAnalysisNeo ->
+            Json.Encode.string "analysis-neo"
+        LpfGeneric ->
+            Json.Encode.string "generic"
+        LpfGenericFull ->
+            Json.Encode.string "generic-full"
+
 type alias LongPollReq =
-    { sessionId : String
+    { flavor : LongPollFlavor
+    , sessionId : String
     , lastEventId : Maybe (String)
     , deploymentMaintenanceProtocol : Maybe (Int)
     , knownDeploymentMaintenanceId : Maybe (String)
@@ -18599,7 +18619,8 @@ type alias LongPollReq =
 longPollReqEncoder : LongPollReq -> Json.Encode.Value
 longPollReqEncoder struct =
     Json.Encode.object
-        [ ( "session_id", (Json.Encode.string) struct.sessionId )
+        [ ( "flavor", (longPollFlavorEncoder) struct.flavor )
+        , ( "session_id", (Json.Encode.string) struct.sessionId )
         , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastEventId )
         , ( "deployment_maintenance_protocol", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.deploymentMaintenanceProtocol )
         , ( "known_deployment_maintenance_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownDeploymentMaintenanceId )
@@ -30564,9 +30585,51 @@ deploymentMaintenanceDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "remaining_ms" (Json.Decode.int)))
 
 
+longPollFlavorDecoder : Json.Decode.Decoder LongPollFlavor
+longPollFlavorDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "rer" ->
+                            Json.Decode.succeed LpfRer
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "analysis-neo" ->
+                            Json.Decode.succeed LpfAnalysisNeo
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "generic" ->
+                            Json.Decode.succeed LpfGeneric
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "generic-full" ->
+                            Json.Decode.succeed LpfGenericFull
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 longPollReqDecoder : Json.Decode.Decoder LongPollReq
 longPollReqDecoder =
     Json.Decode.succeed LongPollReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "flavor" (longPollFlavorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "session_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance_protocol" (Json.Decode.nullable (Json.Decode.int))))

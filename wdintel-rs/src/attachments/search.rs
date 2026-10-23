@@ -14,7 +14,7 @@ fn term_tsquery(
     token: &str,
     prefixes: bool,
     values: &mut Vec<Value>,
-    correlated: bool,
+    parse_once: bool,
 ) -> String {
     let parameter = bind(values, token);
     let query = if prefixes {
@@ -22,7 +22,7 @@ fn term_tsquery(
     } else {
         format!("plainto_tsquery('russian',{parameter})")
     };
-    if correlated {
+    if parse_once {
         format!("(select {query})")
     } else {
         query
@@ -83,7 +83,7 @@ pub fn text_predicate(
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
     text_predicate_with_correlation(
-        query, message, scope, structured, values, false, None, false,
+        query, message, scope, structured, values, false, None, false, false,
     )
     .c(h!())
 }
@@ -98,6 +98,7 @@ fn text_predicate_with_correlation(
     correlated: bool,
     search_mode: Option<AnalysisSearchMode>,
     direct_body: bool,
+    inline_tsquery: bool,
 ) -> anyhow::Result<String> {
     let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
@@ -143,7 +144,12 @@ fn text_predicate_with_correlation(
             continue;
         }
         let predicate = if search_mode == AnalysisSearchMode::Fuzzy {
-            let tsquery = term_tsquery(token, prefixes, values, correlated);
+            let tsquery = term_tsquery(
+                token,
+                prefixes,
+                values,
+                correlated && !inline_tsquery,
+            );
             let name_pattern = bind(values, literal_pattern(token));
             exists_term(
                 message,
@@ -388,6 +394,7 @@ pub(crate) fn message_filter_with_mode(
         correlated,
         search_mode,
         false,
+        false,
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
@@ -397,6 +404,7 @@ pub(crate) fn analysis_message_filter(
     query: &str,
     search_mode: Option<AnalysisSearchMode>,
     correlated: bool,
+    inline_tsquery: bool,
 ) -> anyhow::Result<SimpleExpr> {
     let mut values = Vec::new();
     let sql = text_predicate_with_correlation(
@@ -408,6 +416,7 @@ pub(crate) fn analysis_message_filter(
         correlated,
         search_mode,
         true,
+        inline_tsquery,
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))

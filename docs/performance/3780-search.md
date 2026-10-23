@@ -10,6 +10,12 @@ Quoted Fuzzy predicates use the source until complete gateway pushdown is
 supported. Source quoted-body matching reads the already joined inbox JSON
 field; attachment and negative-term semantics remain unchanged.
 
+Correlated source reads parse each tsquery once through a scalar subquery.
+Analytics reads keep the same expression inline: a gateway initplan prevents
+native text filtering and can fetch the whole search table. Correlation and
+tsquery placement are separate choices. Analytics pools retain their existing
+`force_custom_plan` setting so bound search terms can become native predicates.
+
 The paginated PostgreSQL path selects only message IDs and ordering keys, with
 all search/access/facet/cursor predicates and the existing page limit. It then
 loads details, tags, and metadata for those IDs in the same short read-only

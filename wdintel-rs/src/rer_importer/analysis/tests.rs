@@ -6913,6 +6913,85 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         .await,
         0
     );
+    sigint_inbox_item_unit::ActiveModel {
+        item_id: Set(msg_other.id),
+        unit_id: Set(other_unit.id),
+        kind: Set(SigintInboxItemUnitKind::Parsed),
+        created_at: Set(fixture.created_at),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    assert_materialized_unit_counts_3780(
+        &fixture.env,
+        &login,
+        cursor.id,
+        other_unit.id,
+    )
+    .await;
+}
+
+async fn assert_materialized_unit_counts_3780(
+    env: &Env,
+    login: &uuid::Uuid,
+    cursor: i64,
+    linked_unit: i64,
+) {
+    for exact in [false, true] {
+        for (selected, denied) in [
+            (Some(vec!["2 бат 1 полк".into()]), None),
+            (None, Some(vec!["2 бат".into()])),
+            (Some(vec!["Не визначено".into()]), None),
+            (None, Some(vec!["Не визначено".into()])),
+            (Some(vec!["2 бат".into(), "Не визначено".into()]), None),
+        ] {
+            for sort_by in [
+                InboxMessagesSortBy::IMSCreatedAt,
+                InboxMessagesSortBy::IMSTimestamp,
+            ] {
+                let req = InboxMessagesReq {
+                    page_id: Some(RER_DUTY_PAGE_ID.to_string()),
+                    since_id_noninclusive: Some(cursor),
+                    sort_by: Some(sort_by),
+                    selected_units: selected.clone(),
+                    denied_units: denied.clone(),
+                    selected_unit_ids: Some(vec![linked_unit]),
+                    units_exact_match_only: Some(exact),
+                    nolimit: Some(true),
+                    ..Default::default()
+                };
+                let expected =
+                    crate::rer_importer::inbox::bl::get_inbox_map_items(
+                        login, env, &req,
+                    )
+                    .await
+                    .unwrap()
+                    .len() as i64;
+                assert_eq!(
+                    fetch_correlated_inbox_count(env, login, &req).await,
+                    expected
+                );
+                let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+                    login, env, &req,
+                )
+                .await
+                .unwrap();
+                let count: i64 = env
+                    .dbx
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        sql,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get("", "count")
+                    .unwrap();
+                assert_eq!(count, expected);
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -8833,6 +8912,24 @@ async fn rer_analysis_analytics_tag_count_matches_postgres_query() {
         expected
     );
 
+    let post = sigint_post::ActiveModel {
+        name: Set("Tagged posts 3780".to_string()),
+        deleted: Set(false),
+        created_at: Set(test_dt(2026, 3, 1, 10, 0)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    sigint_inbox_item::ActiveModel {
+        id: Set(message.id),
+        post_id: Set(Some(post.id)),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .unwrap();
+
     // #3780: sender pushdown must preserve ownership and duplicate-row counts.
     mk_sigint_inbox_item_tag(
         db,
@@ -8885,6 +8982,29 @@ async fn rer_analysis_analytics_tag_count_matches_postgres_query() {
                         .sum();
                     results.push(count);
                 }
+                let mut post_results = Vec::new();
+                for access in [None, Some(&access)] {
+                    let query = stats::build_posts_query(
+                        &&Json(req.clone()),
+                        &login_id,
+                        groups.clone(),
+                        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+                        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+                        scope,
+                        None,
+                        access,
+                    )
+                    .unwrap();
+                    let count: i64 = db
+                        .query_all_raw(query.build(DbBackend::Postgres))
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|row| row.try_get::<i64>("", "count").unwrap())
+                        .sum();
+                    post_results.push(count);
+                }
+                assert_eq!(post_results, results);
                 assert_eq!(results[0], results[1]);
                 assert_eq!(
                     results[1],

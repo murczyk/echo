@@ -3,7 +3,7 @@
 ## Unit event polling
 
 - **Affected route/component:** `/rer-units-neo`, shared Elm event service.
-- **Expected observable result:** the first long-poll starts immediately; subsequent requests wait at least five seconds after the previous response, including temporary failures. Requests remain sequential, and successful responses retain their event cursor. Other routes retain their existing polling interval.
+- **Expected observable result:** the first long-poll starts immediately; subsequent requests wait at least five seconds after the previous response, including temporary failures. Requests remain sequential, and successful responses retain their event cursor. Units use deployment-only `generic` polling, with authenticated `generic-full` housekeeping every ten seconds after successful full checks; failed full checks retry before lightweight polling resumes. All routes keep request starts at least two seconds apart, including flavor changes and retries.
 - **Existing test(s):** `wdintel-web/tests/e2e/units-polling.spec.ts`.
 - **Original Echo issue/PR:** [#3858](https://github.com/echoua/echo/issues/3858).
 

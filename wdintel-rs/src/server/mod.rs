@@ -1801,6 +1801,28 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let deployment_maintenance = web::Data::new(
+        crate::event_stream::DeploymentMaintenanceState::default(),
+    );
+    deployment_maintenance
+        .refresh(&mut env.redis.clone())
+        .await
+        .c(h!())?;
+    let deployment_state = deployment_maintenance.clone();
+    let deployment_redis = env.redis.clone();
+    let deployment_cancel_token = cancel_token.clone();
+    spawn_named_worker(
+        "deployment_maintenance_worker",
+        &mut background_tasks,
+        async move {
+            crate::event_stream::deployment_maintenance_worker(
+                deployment_redis,
+                deployment_state,
+                deployment_cancel_token,
+            )
+            .await;
+        },
+    );
     let session_env = env.clone();
     let token_session = cancel_token.clone();
     spawn_named_worker(
@@ -1879,6 +1901,7 @@ pub async fn main_server(
         let redis_for_middleware = env.redis.clone();
         App::new()
             .app_data(api_rate_limiter.clone())
+            .app_data(deployment_maintenance.clone())
             .wrap(actix_web::middleware::Compress::default())
             .wrap(actix_web::middleware::from_fn(
                 crate::utils::multipart_admission::limit_requests,
@@ -1912,6 +1935,10 @@ pub async fn main_server(
             ))
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
+            ))
+            // Deployment-only polls must bypass session and activity processing.
+            .wrap(actix_web::middleware::from_fn(
+                crate::event_stream::deployment_only_poll,
             ))
             .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
