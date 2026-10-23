@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    pub id_uuid: Option<Uuid>,
     #[sea_orm(
         ignore,
         column_type = "custom(\"tsvector\")",
@@ -17,7 +18,6 @@ pub struct Model {
         nullable
     )]
     pub search_tsv: Option<String>,
-    pub id_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

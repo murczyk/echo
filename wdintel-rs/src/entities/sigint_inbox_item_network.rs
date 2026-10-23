@@ -12,10 +12,10 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique_key = "sigint_inbox_item_network_network_inbox_uq")]
     pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
     #[sea_orm(unique_key = "sigint_inbox_item_network_network_inbox_uq")]
     pub sigint_network_id: i64,
     pub created_at: DateTime,
-    pub sigint_inbox_item_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

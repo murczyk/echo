@@ -31,12 +31,12 @@ pub struct Model {
     pub last_error: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub summary: Option<String>,
-    #[sea_orm(column_type = "JsonBinary")]
-    pub coordinates: Json,
     pub created_at: DateTime,
     pub started_at: Option<DateTime>,
     pub completed_at: Option<DateTime>,
     pub updated_at: DateTime,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub coordinates: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
