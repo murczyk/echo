@@ -442,7 +442,9 @@ update req msg model =
             ( { model | changelogPreview = Just preview }, E.none )
 
         MasterUnitsLoadedByApi (Err err) ->
-            ( { model | masterUnits = Failure err }, E.none )
+            ( { model | masterUnits = preserveLookupOnRefreshError err model.masterUnits }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення підрозділів" err
+            )
 
         MasterUnitsLoadedByApi (Ok rsp) ->
             let
@@ -489,7 +491,9 @@ update req msg model =
             ( { model | masterUnits = Success masterUnits }, E.none )
 
         NetworksLoadedByApi (Err err) ->
-            ( { model | networks = Failure err }, E.none )
+            ( { model | networks = preserveLookupOnRefreshError err model.networks }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка оновлення мереж" err
+            )
 
         NetworksLoadedByApi (Ok rsp) ->
             ( { model
@@ -589,6 +593,13 @@ update req msg model =
         LoggedResponseDecodeError _ ->
             ( model, E.none )
 
+        ReconcileSharedLookups ->
+            if model.userLoaded && model.user /= Nothing then
+                ( model, loadSharedLookupData req.path )
+
+            else
+                ( model, E.none )
+
         EventServiceStartPolling ->
             if (model.eventService.isPolling && model.eventService.flavor == eventServiceFlavor req.path) || not model.userLoaded || model.user == Nothing then
                 ( model, E.none )
@@ -604,11 +615,6 @@ update req msg model =
                             , flavor = eventServiceFlavor req.path
                             , requestInFlight = False
                             , generation = eventService.generation + 1
-                            , error = Nothing
-                            , retryCount = 0
-                            , retryDelay = 1000
-                            , connectionInterrupted = False
-                            , persistentErrorReported = False
                         }
                 in
                 ( { model | eventService = newEventService }
@@ -650,7 +656,7 @@ update req msg model =
             else
                 pollEventsWhenReady generation now model
 
-        EventServiceEventsReceived generation (Ok response) ->
+        EventServiceEventsReceived generation flavor (Ok response) ->
             let
                 eventService =
                     model.eventService
@@ -665,6 +671,12 @@ update req msg model =
                 newEventService =
                     { eventService
                         | lastEventId = response.lastEventId
+                        , lastGenericFullAt =
+                            if flavor /= B.LpfGeneric then
+                                eventService.lastPollStartedAt
+
+                            else
+                                eventService.lastGenericFullAt
                         , requestInFlight = False
                         , error = Nothing
                         , connectionInterrupted = False
@@ -691,7 +703,7 @@ update req msg model =
                     ]
                 )
 
-        EventServiceEventsReceived generation (Err error) ->
+        EventServiceEventsReceived generation _ (Err error) ->
             let
                 newRetryCount =
                     model.eventService.retryCount + 1
@@ -812,13 +824,28 @@ isRerNetworkDetailsPath path =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions _ _ =
+subscriptions _ model =
     Sub.batch
         [ Ports.shared_getLocationRes GotLocation
         , Ports.shared_loadThemeModeRes ThemeModeLoaded
         , Ports.shared_loadLastSeenChangelogRes LastSeenChangelogLoaded
         , Ports.shared_loadRerNetworkDetailsPreferredViewRes RerNetworkDetailsPreferredViewLoaded
+        , if model.userLoaded && model.user /= Nothing then
+            Time.every Config.sharedLookupReconciliationIntervalMs (\_ -> ReconcileSharedLookups)
+
+          else
+            Sub.none
         ]
+
+
+preserveLookupOnRefreshError : ApiError -> RemoteData ApiError a -> RemoteData ApiError a
+preserveLookupOnRefreshError error lookup =
+    case lookup of
+        Success _ ->
+            lookup
+
+        _ ->
+            Failure error
 
 
 
@@ -866,9 +893,11 @@ pollEventsWhenReady generation now model =
                 |> Maybe.withDefault 0
 
         genericFullDue =
-            eventService.lastGenericFullAt
-                |> Maybe.map (\started -> Time.posixToMillis now - Time.posixToMillis started >= Config.eventServiceGenericFullIntervalMs)
-                |> Maybe.withDefault True
+            eventService.retryCount > 0
+                || (eventService.lastGenericFullAt
+                        |> Maybe.map (\started -> Time.posixToMillis now - Time.posixToMillis started >= Config.eventServiceGenericFullIntervalMs)
+                        |> Maybe.withDefault True
+                   )
 
         flavor =
             if eventService.flavor == B.LpfGeneric && genericFullDue then
@@ -877,12 +906,6 @@ pollEventsWhenReady generation now model =
             else
                 eventService.flavor
 
-        lastGenericFullAt =
-            if flavor == B.LpfGenericFull then
-                Just now
-
-            else
-                eventService.lastGenericFullAt
     in
     if waitMs > 0 then
         ( model
@@ -892,7 +915,7 @@ pollEventsWhenReady generation now model =
         )
 
     else
-        ( { model | eventService = { eventService | lastPollStartedAt = Just now, lastGenericFullAt = lastGenericFullAt } }
+        ( { model | eventService = { eventService | lastPollStartedAt = Just now } }
         , E.sendCmd <| pollEvents generation flavor eventService.lastEventId model.deploymentMaintenance
         )
 
@@ -914,7 +937,7 @@ pollEvents generation flavor lastEventId deploymentMaintenance =
         , headers = []
         , url = "/api/event-stream/long-poll"
         , body = Http.jsonBody (B.longPollReqEncoder request)
-        , expect = leExpectJson (EventServiceEventsReceived generation) B.longPollRspDecoder
+        , expect = leExpectJson (EventServiceEventsReceived generation flavor) B.longPollRspDecoder
         , timeout = Nothing
         , tracker = Just Config.eventServicePollTracker
         }

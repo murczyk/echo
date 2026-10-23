@@ -6,6 +6,7 @@ module Config exposing
     , eventServicePollTracker
     , eventServicePollingMinIntervalMs
     , eventServiceGenericFullIntervalMs
+    , sharedLookupReconciliationIntervalMs
     , featureAudioTranscriptionBesidePlayer
     , featureDisableRerDutyDedup
     , featureEnableTornado
@@ -41,6 +42,11 @@ eventServicePollingMinIntervalMs =
 eventServiceGenericFullIntervalMs : Int
 eventServiceGenericFullIntervalMs =
     10000
+
+
+sharedLookupReconciliationIntervalMs : Float
+sharedLookupReconciliationIntervalMs =
+    60000
 
 
 rerUnitsPollingMinIntervalMs : Float

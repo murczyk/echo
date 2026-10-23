@@ -9,7 +9,7 @@ use actix_web::{
     body::{EitherBody, MessageBody},
     dev::{ServiceRequest, ServiceResponse},
     middleware::Next,
-    web, Error, HttpResponse,
+    web, Error, HttpMessage, HttpResponse,
 };
 use chrono::prelude::*;
 use redis::aio::{ConnectionManager, MultiplexedConnection};
@@ -47,11 +47,12 @@ impl DeploymentMaintenanceState {
         &self,
         redis: &mut ConnectionManager,
     ) -> anyhow::Result<()> {
+        let requested_at = std::time::Instant::now();
         let maintenance = get_deployment_maintenance(redis).await.c(h!())?;
         *self.snapshot.write().expect("deployment state lock") = maintenance
             .map(|maintenance| DeploymentMaintenanceSnapshot {
                 id: maintenance.id,
-                expires_at: std::time::Instant::now()
+                expires_at: requested_at
                     + std::time::Duration::from_millis(
                         maintenance.remaining_ms as u64,
                     ),
@@ -88,22 +89,29 @@ pub async fn deployment_only_poll<B: MessageBody>(
     if req.method() != actix_web::http::Method::POST
         || req.path() != "/api/event-stream/long-poll"
     {
-        return Ok(next.call(req).await?.map_into_left_body());
+        return next
+            .call(req)
+            .await
+            .map(|response| response.map_into_left_body())
+            .map_err(|error| middleware_error_context(error, h!()));
     }
-    let poll = req.extract::<Json<LongPollReq>>().await?.into_inner();
+    let poll = req
+        .extract::<Json<LongPollReq>>()
+        .await
+        .map_err(|error| middleware_error_context(error, h!()))?
+        .into_inner();
     if poll.flavor != LongPollFlavor::LpfGeneric {
-        let body = serde_json::to_vec(&poll)
-            .map_err(actix_web::error::ErrorInternalServerError)?;
-        req.set_payload(web::Bytes::from(body).into());
-        return Ok(next.call(req).await?.map_into_left_body());
+        req.extensions_mut().insert(poll);
+        return next
+            .call(req)
+            .await
+            .map(|response| response.map_into_left_body())
+            .map_err(|error| middleware_error_context(error, h!()));
     }
     let state = req
         .app_data::<web::Data<DeploymentMaintenanceState>>()
-        .ok_or_else(|| {
-            actix_web::error::ErrorInternalServerError(
-                "deployment state is unavailable",
-            )
-        })?;
+        .c(h!())
+        .map_err(actix_web::error::ErrorInternalServerError)?;
     let response = LongPollRsp {
         events: vec![],
         last_event_id: poll.last_event_id,
@@ -112,6 +120,16 @@ pub async fn deployment_only_poll<B: MessageBody>(
     Ok(req
         .into_response(HttpResponse::Ok().json(response))
         .map_into_right_body())
+}
+
+fn middleware_error_context(error: Error, location: &'static str) -> Error {
+    let response = error.error_response();
+    let error = anyhow::anyhow!(error.to_string()).context(location);
+    actix_web::error::InternalError::from_response(
+        format!("{error:#}"),
+        response,
+    )
+    .into()
 }
 
 pub fn session_stream_id(session_id: Uuid) -> String {
@@ -153,10 +171,10 @@ async fn long_poll(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     session: actix_session::Session,
-    req: Json<LongPollReq>,
+    req: web::ReqData<LongPollReq>,
 ) -> Result<Json<LongPollRsp>, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
-    let user_id = login_id_from_identity(&user)?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
     let account_id = user_id;
     let Some(session_id) = get_session_id(&session).c(h!())? else {
         tokio::time::sleep(tokio::time::Duration::from_millis(
@@ -325,16 +343,16 @@ fn append_stream_events(
 async fn get_deployment_maintenance(
     redis: &mut ConnectionManager,
 ) -> anyhow::Result<Option<DeploymentMaintenance>> {
-    let id: Option<String> =
-        redis.get(DEPLOYMENT_MAINTENANCE_REDIS_KEY).await.c(h!())?;
-    let Some(id) = id else {
-        return Ok(None);
-    };
-    let remaining_ms: i64 = redis::cmd("PTTL")
-        .arg(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
+    let (id, remaining_ms): (Option<String>, i64) = redis::pipe()
+        .atomic()
+        .get(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
+        .pttl(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
         .query_async(redis)
         .await
         .c(h!())?;
+    let Some(id) = id else {
+        return Ok(None);
+    };
     if remaining_ms <= 0 {
         return Ok(None);
     }
@@ -504,28 +522,6 @@ mod tests {
         assert_eq!(req.known_deployment_maintenance_id, None);
     }
 
-    #[test]
-    fn issue_3866_requires_a_supported_long_poll_flavor() {
-        for flavor in ["rer", "analysis-neo", "generic", "generic-full"] {
-            let req = serde_json::json!({
-                "flavor": flavor,
-                "session_id": "current",
-                "last_event_id": null
-            });
-            assert!(serde_json::from_value::<LongPollReq>(req).is_ok());
-        }
-        for flavor in [None, Some("unknown")] {
-            let mut req = serde_json::json!({
-                "session_id": "current",
-                "last_event_id": null
-            });
-            if let Some(flavor) = flavor {
-                req["flavor"] = flavor.into();
-            }
-            assert!(serde_json::from_value::<LongPollReq>(req).is_err());
-        }
-    }
-
     #[actix_web::test]
     async fn issue_3866_only_generic_bypasses_auth_and_activity() {
         use actix_web::dev::Service;
@@ -543,7 +539,7 @@ mod tests {
         let inner_calls = calls.clone();
         let app = test::init_service(
             App::new()
-                .app_data(state)
+                .app_data(state.clone())
                 .wrap_fn(move |req, next| {
                     inner_calls.fetch_add(1, Ordering::SeqCst);
                     next.call(req)
@@ -551,9 +547,11 @@ mod tests {
                 .wrap(actix_web::middleware::from_fn(deployment_only_poll))
                 .route(
                     "/api/event-stream/long-poll",
-                    web::post().to(|req: Json<LongPollReq>| async move {
-                        HttpResponse::Unauthorized().json(&req.flavor)
-                    }),
+                    web::post().to(
+                        |req: web::ReqData<LongPollReq>| async move {
+                            HttpResponse::Unauthorized().json(&req.flavor)
+                        },
+                    ),
                 ),
         )
         .await;
@@ -598,6 +596,150 @@ mod tests {
             assert_eq!(received, flavor);
         }
         assert_eq!(calls.load(Ordering::SeqCst), 3);
+
+        state.snapshot.write().unwrap().as_mut().unwrap().expires_at =
+            std::time::Instant::now() - std::time::Duration::from_millis(1);
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/event-stream/long-poll")
+                .set_json(serde_json::json!({
+                    "flavor": "generic",
+                    "session_id": "current",
+                    "last_event_id": null
+                }))
+                .to_request(),
+        )
+        .await;
+        let response: LongPollRsp = test::read_body_json(response).await;
+        assert!(response.deployment_maintenance.is_none());
+    }
+
+    #[actix_web::test]
+    async fn issue_3866_forwarding_preserves_context_and_compressed_requests() {
+        use actix_web::dev::Service;
+        use actix_web::{test, App};
+
+        let app = test::init_service(
+            App::new()
+                .wrap_fn(|req, next| {
+                    let error = if req.path() == "/forwarding-error" {
+                        Some(actix_web::error::ErrorForbidden("forbidden"))
+                    } else if req
+                        .extensions()
+                        .get::<LongPollReq>()
+                        .is_some_and(|poll| poll.session_id == "expired")
+                    {
+                        Some(actix_web::error::ErrorUnauthorized(
+                            "expired session",
+                        ))
+                    } else {
+                        None
+                    };
+                    match error {
+                        Some(error) => futures::future::Either::Left(
+                            std::future::ready(Err(error)),
+                        ),
+                        None => futures::future::Either::Right(next.call(req)),
+                    }
+                })
+                .wrap(actix_web::middleware::from_fn(deployment_only_poll))
+                .route(
+                    "/api/event-stream/long-poll",
+                    web::post().to(
+                        |req: web::ReqData<LongPollReq>| async move {
+                            HttpResponse::Unauthorized().json(&req.flavor)
+                        },
+                    ),
+                ),
+        )
+        .await;
+
+        use std::io::Write;
+        let mut compressed = flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::default(),
+        );
+        compressed
+            .write_all(
+                br#"{"flavor":"generic-full","session_id":"current","last_event_id":null}"#,
+            )
+            .unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/event-stream/long-poll")
+                .insert_header(("content-type", "application/json"))
+                .insert_header(("content-encoding", "gzip"))
+                .set_payload(compressed.finish().unwrap())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::UNAUTHORIZED
+        );
+        let received: String = test::read_body_json(response).await;
+        assert_eq!(received, "generic-full");
+
+        let malformed = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .insert_header(("content-type", "application/json"))
+            .set_payload("{")
+            .to_request();
+        let unauthenticated = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "flavor": "generic-full",
+                "session_id": "expired",
+                "last_event_id": null
+            }))
+            .to_request();
+        let forbidden = test::TestRequest::get()
+            .uri("/forwarding-error")
+            .to_request();
+        let unsupported = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "flavor": "unknown",
+                "session_id": "current",
+                "last_event_id": null
+            }))
+            .to_request();
+        let missing_flavor = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "session_id": "current",
+                "last_event_id": null
+            }))
+            .to_request();
+        let missing_state = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "flavor": "generic",
+                "session_id": "current",
+                "last_event_id": null
+            }))
+            .to_request();
+        for (request, status) in [
+            (malformed, actix_web::http::StatusCode::BAD_REQUEST),
+            (unsupported, actix_web::http::StatusCode::BAD_REQUEST),
+            (missing_flavor, actix_web::http::StatusCode::BAD_REQUEST),
+            (unauthenticated, actix_web::http::StatusCode::UNAUTHORIZED),
+            (forbidden, actix_web::http::StatusCode::FORBIDDEN),
+            (
+                missing_state,
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        ] {
+            let error =
+                test::try_call_service(&app, request).await.unwrap_err();
+            assert_eq!(error.as_response_error().status_code(), status);
+            assert!(format!("{error:?}").contains("event_stream/mod.rs"));
+            if status == actix_web::http::StatusCode::UNAUTHORIZED {
+                assert!(error.to_string().contains("expired session"));
+            }
+        }
     }
 
     #[actix_web::test]

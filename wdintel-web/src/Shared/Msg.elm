@@ -55,7 +55,8 @@ type Msg
     | EventServiceStopPolling
     | EventServicePollEvents Int
     | EventServicePollReady Int Time.Posix
-    | EventServiceEventsReceived Int (Result ApiError B.LongPollRsp)
+    | EventServiceEventsReceived Int B.LongPollFlavor (Result ApiError B.LongPollRsp)
+    | ReconcileSharedLookups
     | EventServiceRetryPolling Int
     | EventServiceResetRetryCount
     | SubscribeToEvents Route.Path.Path (List B.EventType) -- Page subscribes to event types
