@@ -76,6 +76,7 @@ export type ManageMessageIntentChange = {
 
 export type UseManageMessageDrawerProps = {
   engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -115,6 +116,7 @@ export function useManageMessageDrawer({
   editTarget = null,
   reportSource = null,
   engagedMessageId,
+  replySourceUnavailable,
   editAsReport = false,
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
@@ -1215,6 +1217,7 @@ export function useManageMessageDrawer({
     editTarget,
     reportSource,
     engagedMessageId,
+    replySourceUnavailable,
     replyGroupMasterKey: initialGroupMasterKey,
     existingMedia,
     onSubmitEdit,

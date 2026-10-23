@@ -4,7 +4,6 @@ import {
   beginReply,
   closeThread,
   deleteMessage,
-  detachReply,
   editMessage,
   editor,
   expectThread,
@@ -133,7 +132,7 @@ test('@reply #3612 E8: an edit updates previews for other users without changing
       timestamp: source.timestamp - 5_000,
     });
     fixture.respondWithReplies([relation(1, source, reply)]);
-    await fixture.nextEdit(a, source, false, () => {
+    await fixture.nextEdit(a, source, () => {
       fixture.respondWithReplies([relation(1, source, reply)]);
       fixture.notify([source.id]);
     });
@@ -211,202 +210,108 @@ for (const position of ['root', 'middle', 'last'] as const) {
   });
 }
 
-for (const hasThread of [false, true]) {
-  test(`@reply #3612 E10: deleting the source while composing ${hasThread ? 'a nested' : 'the first'} reply does not block saving`, async ({
-    browser,
-    baseURL,
-  }) => {
-    await withReplyActors(browser, baseURL, async (fixture, pages) => {
-      const author = await fixture.attach(pages[0]!, 'duty', 'user-1');
-      const owner = await fixture.attach(pages[1]!, 'analysis', 'user-2');
-      const reader = await fixture.attach(pages[2]!, 'analysis', 'user-3');
-      const source = fixture.seed(owner.user, 'Source deleted while writing');
-      const previous = hasThread ? fixture.seed(reader.user, 'Previous reply') : null;
-      if (previous) fixture.respondWithReplies([relation(1, source, previous)]);
-      await fixture.nextDelete(owner, source, () => {
-        if (previous) fixture.respondWithReplies([relation(1, source, previous)]);
-        fixture.notify([source.id]);
-      });
-      await fixture.nextCreate(author, 'Keep this reply', source.id, () => {
-        const reply = fixture.add(author.user, 'Keep this reply');
-        fixture.respondWithReplies([
-          relation(1, source, reply),
-          ...(previous ? [relation(2, source, previous)] : []),
-        ]);
-        fixture.notify([source.id, reply.id]);
-        return reply;
-      });
-      await Promise.all([author, owner, reader].map((actor) => visit(actor)));
-      await beginReply(author, source);
-      await fillReply(author, 'Keep this reply');
-      await deleteMessage(owner, source);
-      await expect(
-        editor(author).getByText('Повідомлення видалено', { exact: true }),
-      ).toBeVisible();
-      await expect(
-        editor(author).getByRole('combobox', { name: 'Група', exact: true }),
-      ).toBeDisabled();
-      await saveReply(author, 'Keep this reply');
-      const reply = fixture.messages.at(-1)!;
-      await expect(row(reader, reply.id)).toContainText('Keep this reply');
-      const panel = await openThread(reader, reply, hasThread ? 3 : 2);
-      await expectThread(
-        panel,
-        hasThread
-          ? ['Повідомлення видалено', 'Previous reply', 'Keep this reply']
-          : ['Повідомлення видалено', 'Keep this reply'],
-      );
-      await expect(panel.getByText('Source deleted while writing', { exact: true })).toHaveCount(0);
-    });
-  });
-}
-
-test('@reply #3612 E11: cancel keeps membership; saving detach removes one member for all users', async ({
-  browser,
-  baseURL,
-}) => {
-  await withReplyActors(browser, baseURL, async (fixture, pages) => {
-    const a = await fixture.attach(pages[0]!, 'duty', 'user-1');
-    const b = await fixture.attach(pages[1]!, 'analysis', 'user-2');
-    const c = await fixture.attach(pages[2]!, 'duty', 'user-3');
-    const root = fixture.seed(a.user, 'Detach root');
-    const middle = fixture.seed(b.user, 'Detach middle');
-    const last = fixture.seed(c.user, 'Detach last');
-    fixture.respondWithReplies([relation(1, root, middle), relation(2, root, last)]);
-    await Promise.all([a, b, c].map((actor) => visit(actor)));
-    await editMessage(b, middle);
-    await detachReply(b);
-    await editor(b).getByRole('button', { name: 'Закрити', exact: true }).click();
-    await b.page.getByRole('button', { name: 'Відхилити зміни', exact: true }).click();
-    const unchanged = await openThread(a, root, 3);
-    await expectThread(unchanged, ['Detach root', 'Detach middle', 'Detach last']);
-    await closeThread(a);
-    await fixture.nextEdit(b, middle, true, () => {
-      fixture.clearReplies(middle);
-      fixture.respondWithReplies([]);
-      fixture.notify([middle.id]);
-    });
-    await editMessage(b, middle);
-    await detachReply(b);
-    await editor(b).getByRole('button', { name: 'Зберегти', exact: true }).click();
-    await expect(editor(b)).toHaveCount(0);
-    for (const actor of [a, b, c]) {
-      await expect(row(actor, middle.id)).toContainText('Detach middle');
-      await expect(row(actor, middle.id).getByRole('button', { name: /^Усі \d+$/ })).toHaveCount(0);
-      await expectThread(await openThread(actor, root, 2), ['Detach root', 'Detach last']);
-      await closeThread(actor);
-      await expect(row(actor, last.id).getByText('Detach middle', { exact: true })).toHaveCount(0);
-    }
-    await fixture.nextEdit(c, last, true, () => {
-      fixture.clearReplies(root);
-      fixture.clearReplies(last);
-      fixture.notify([last.id]);
-    });
-    await editMessage(c, last);
-    await detachReply(c);
-    await editor(c).getByRole('button', { name: 'Зберегти', exact: true }).click();
-    await expect(editor(c)).toHaveCount(0);
-    for (const actor of [a, b, c]) {
-      await expect(row(actor, root.id).getByRole('button', { name: /^Усі \d+$/ })).toHaveCount(0);
-      await expect(row(actor, last.id)).toContainText('Detach last');
-    }
-  });
-});
-
-test('@reply #3612 E11: detaching a reply to a deleted original keeps the message and removes the placeholder', async ({
-  browser,
-  baseURL,
-}) => {
-  await withReplyActors(browser, baseURL, async (fixture, pages) => {
-    const author = await fixture.attach(pages[0]!, 'analysis', 'user-1');
-    const reader = await fixture.attach(pages[1]!, 'duty', 'user-2');
-    const source = fixture.seed(reader.user, 'Deleted original private contents', {
-      deleted: true,
-    });
-    const reply = fixture.seed(author.user, 'Keep this independent message');
-    fixture.respondWithReplies([relation(1, source, reply)]);
-    await fixture.nextEdit(author, reply, true, () => {
-      fixture.clearReplies(reply);
-      fixture.notify([reply.id]);
-    });
-    await Promise.all([author, reader].map((actor) => visit(actor)));
-    await editMessage(author, reply);
-    await expect(editor(author).getByText('Повідомлення видалено', { exact: true })).toBeVisible();
-    await detachReply(author);
-    await editor(author).getByRole('button', { name: 'Зберегти', exact: true }).click();
-    await expect(editor(author)).toHaveCount(0);
-    for (const actor of [author, reader]) {
-      await expect(row(actor, reply.id)).toContainText('Keep this independent message');
-      await expect(
-        row(actor, reply.id).getByText('Повідомлення видалено', { exact: true }),
-      ).toHaveCount(0);
-      await expect(row(actor, reply.id).getByRole('button', { name: /^Усі \d+$/ })).toHaveCount(0);
-      await expect(row(actor, source.id)).toHaveCount(0);
-    }
-  });
-});
-
-for (const first of ['detach', 'reply'] as const) {
-  test(`@reply #3612 E13: ${first} commits first while another user replies to the detached source`, async ({
-    browser,
-    baseURL,
-  }) => {
-    await withReplyActors(browser, baseURL, async (fixture, pages) => {
-      const a = await fixture.attach(pages[0]!, 'analysis', 'user-1');
-      const b = await fixture.attach(pages[1]!, 'duty', 'user-2');
-      const c = await fixture.attach(pages[2]!, 'analysis', 'user-3');
-      const root = fixture.seed(a.user, 'Race root');
-      const source = fixture.seed(b.user, 'Race source');
-      fixture.respondWithReplies([relation(1, root, source)]);
-      let reply!: Message;
-      await fixture.nextCreate(c, 'Reply during detach', source.id, () => {
-        reply = fixture.add(c.user, 'Reply during detach');
-        if (first === 'detach') {
-          fixture.respondWithReplies([relation(1, source, reply)]);
-          fixture.notify([source.id, reply.id]);
-        } else {
-          fixture.respondWithReplies([relation(1, root, source), relation(2, root, reply)]);
-          fixture.notify([source.id, reply.id]);
-        }
-        return reply;
-      });
-      await fixture.nextEdit(b, source, true, () => {
-        fixture.clearReplies(source);
-        if (first === 'detach') fixture.clearReplies(root);
-        else fixture.respondWithReplies([]);
-        fixture.notify([source.id]);
-      });
-      await Promise.all([a, b, c].map((actor) => visit(actor)));
-      await beginReply(c, source);
-      await fillReply(c, 'Reply during detach');
-      await editMessage(b, source);
-      await detachReply(b);
-      const saveDetach = async () => {
-        await editor(b).getByRole('button', { name: 'Зберегти', exact: true }).click();
-        await expect(editor(b)).toHaveCount(0);
-      };
-      if (first === 'detach') {
-        await saveDetach();
-        await saveReply(c, 'Reply during detach');
-      } else {
-        await saveReply(c, 'Reply during detach');
-        await saveDetach();
-      }
-      for (const actor of [a, b, c]) {
-        await expect(row(actor, reply.id)).toContainText('Reply during detach');
-        const panel = await openThread(actor, reply, 2);
-        await expectThread(
-          panel,
-          first === 'detach'
-            ? ['Race source', 'Reply during detach']
-            : ['Race root', 'Reply during detach'],
+for (const screen of ['duty', 'analysis'] as const) {
+  for (const hasThread of [false, true]) {
+    test(`@reply #3612 E10 ${screen}: deleting the source while composing ${hasThread ? 'a nested' : 'the first'} reply saves an independent message`, async ({
+      browser,
+      baseURL,
+    }) => {
+      await withReplyActors(browser, baseURL, async (fixture, pages) => {
+        const author = await fixture.attach(pages[0]!, screen, 'user-1');
+        const owner = await fixture.attach(pages[1]!, 'analysis', 'user-2');
+        const reader = await fixture.attach(pages[2]!, 'analysis', 'user-3');
+        const original = hasThread ? fixture.seed(reader.user, 'Previous original') : null;
+        const source = fixture.seed(owner.user, 'Source deleted while writing');
+        if (original) fixture.respondWithReplies([relation(1, original, source)]);
+        await fixture.nextDelete(owner, source, () => {
+          if (original) fixture.respondWithReplies([relation(1, original, source)]);
+          fixture.notify([source.id]);
+        });
+        await fixture.nextCreate(author, 'Keep this reply', null, () =>
+          fixture.add(author.user, 'Keep this reply'),
         );
-        await closeThread(actor);
-        const standalone = first === 'detach' ? root : source;
+        await Promise.all([author, owner, reader].map((actor) => visit(actor)));
+        await beginReply(author, source);
+        await fillReply(author, 'Keep this reply');
+        let releaseUpload: (() => void) | undefined;
+        const attachment = Buffer.from('Keep this attachment');
+        if (hasThread) {
+          let uploadStarted!: () => void;
+          const started = new Promise<void>((resolve) => {
+            uploadStarted = resolve;
+          });
+          const wait = new Promise<void>((resolve) => {
+            releaseUpload = resolve;
+          });
+          await author.page.route('**/api/sigint/file-upload/tus', async (route) => {
+            uploadStarted();
+            await wait;
+            await route.fulfill({
+              status: 201,
+              headers: {
+                Location: '/api/sigint/file-upload/tus/reply-attachment',
+                'Tus-Resumable': '1.0.0',
+                'Upload-Offset': '0',
+              },
+            });
+          });
+          await author.page.route(
+            '**/api/sigint/file-upload/tus/reply-attachment',
+            async (route) => {
+              expect(route.request().postDataBuffer()).toEqual(attachment);
+              await route.fulfill({
+                status: 204,
+                headers: { 'Tus-Resumable': '1.0.0', 'Upload-Offset': String(attachment.length) },
+              });
+            },
+          );
+          await editor(author)
+            .locator('input[type="file"]')
+            .setInputFiles({ name: 'reply.txt', mimeType: 'text/plain', buffer: attachment });
+          await editor(author).getByRole('button', { name: 'Створити', exact: true }).click();
+          await started;
+        }
+        await deleteMessage(owner, source);
+        await expect(editor(author)).toContainText(
+          'Повідомлення буде збережено як звичайне, без зв’язку з джерелом.',
+        );
         await expect(
-          row(actor, standalone.id).getByRole('button', { name: /^Усі \d+$/ }),
-        ).toHaveCount(0);
-      }
+          editor(author).getByRole('textbox', { name: 'Текст повідомлення' }),
+        ).toHaveValue('Keep this reply');
+        await expect(
+          editor(author).getByRole('combobox', { name: 'Група', exact: true }),
+        ).toBeDisabled();
+        await author.page.screenshot({
+          path: test.info().outputPath('deleted-source-draft.png'),
+          animations: 'disabled',
+        });
+        if (releaseUpload) {
+          releaseUpload();
+          await expect(editor(author)).toHaveCount(0);
+        } else await saveReply(author, 'Keep this reply');
+        const reply = fixture.messages.at(-1)!;
+        for (const actor of [author, reader]) {
+          await expect(row(actor, reply.id)).toContainText('Keep this reply');
+          await expect(
+            row(actor, reply.id).getByRole('region', { name: 'Відповіді', exact: true }),
+          ).toHaveCount(0);
+        }
+        await expect(editor(author)).toHaveCount(0);
+        await author.page.screenshot({
+          path: test.info().outputPath('independent-message-saved.png'),
+          animations: 'disabled',
+        });
+        expect(
+          author.requests.filter(({ path }) => path === '/api/1.1/submit-direct'),
+        ).toHaveLength(1);
+        if (hasThread) {
+          const body = author.requests.find(({ path }) => path === '/api/1.1/submit-direct')!.body;
+          expect(body.upload_urls).toEqual(['/api/sigint/file-upload/tus/reply-attachment']);
+          await expect(
+            row(reader, original!.id).getByRole('region', { name: 'Відповіді', exact: true }),
+          ).toContainText('Повідомлення видалено');
+        }
+      });
     });
-  });
+  }
 }

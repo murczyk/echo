@@ -392,6 +392,7 @@ export function RerDutyNeoPage({
               messageId: targetIds[0],
               active: true,
               constrainToContent: true,
+              behavior: 'smooth',
               onRelease: () => setLinkedMessageFocus(null),
             },
           });
@@ -399,7 +400,11 @@ export function RerDutyNeoPage({
         for (const id of targetIds) {
           const element = columnRefsRef.current[feedId]?.scrollToMessage?.(
             id,
-            window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : behavior,
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches
+              ? 'auto'
+              : replyNavigationRef.current
+                ? 'smooth'
+                : behavior,
           );
           if (!element) continue;
           if (columnRefsRef.current[feedId]?.highlightLinkedMessage?.(id)) return true;

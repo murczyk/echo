@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useFeedScrollDiagnostics } from './internal/diagnostics';
 import { useWindowedFeedScrollRefs } from './internal/refs';
 import { useWindowedFeedScrollFollow } from './interaction/follow';
+import { feedFollowEaseOutCubic } from './interaction/follow-scroll';
 import { useMessageFeedInput } from './interaction/input';
 import { useMessageFeedScrollEvents } from './interaction/scroll-events';
 import { useWindowedFeedScrollTracking } from './interaction/tracking';
@@ -15,6 +16,7 @@ import {
   DEFAULT_AT_BOTTOM_THRESHOLD_PX,
   DEFAULT_BOTTOM_LOAD_BUFFER_PX,
   DEFAULT_TOP_LOAD_BUFFER_PX,
+  FEED_ITEM_SCROLL_MS,
   nowMs,
 } from './internal/scroll-math';
 import type { ScrollStateOpts, TopStatus } from './internal/internal.types';
@@ -239,6 +241,7 @@ export function useWindowedFeedScroll({
 
   const directItemTargetIdRef = useRef<number | null>(null);
   const directItemCenterRafRef = useRef<number | null>(null);
+  const itemMotionRef = useRef<{ from: number; startedAt: number } | null>(null);
   const { bottomSpacerPx, bottomSpacerRef, setBottomSpacerPx, reconcileBottomSpacer } =
     useMessageFeedSpacer({ scrollerRef: refs.scrollerRef, directItemTargetIdRef, itemIds });
 
@@ -246,6 +249,7 @@ export function useWindowedFeedScroll({
     const wasActive =
       directItemTargetIdRef.current !== null || directItemCenterRafRef.current !== null;
     directItemTargetIdRef.current = null;
+    itemMotionRef.current = null;
     if (directItemCenterRafRef.current !== null) {
       cancelAnimationFrame(directItemCenterRafRef.current);
       directItemCenterRafRef.current = null;
@@ -299,10 +303,15 @@ export function useWindowedFeedScroll({
           ? Math.max(0, Math.ceil(targetTop + scroller.clientHeight - contentHeight))
           : 0;
       setBottomSpacerPx((current) => (current === missingSpace ? current : missingSpace));
-      scroller.scrollTop = targetTop;
+      const motion = itemMotionRef.current;
+      const progress = motion ? Math.min(1, (nowMs() - motion.startedAt) / FEED_ITEM_SCROLL_MS) : 1;
+      scroller.scrollTop = motion
+        ? motion.from + (targetTop - motion.from) * feedFollowEaseOutCubic(progress)
+        : targetTop;
+      if (progress >= 1) itemMotionRef.current = null;
       refs.restoredScrollTopRef.current = scroller.scrollTop;
       refs.previousScrollTopRef.current = scroller.scrollTop;
-      anchors.captureAnchorSnapshot(true);
+      if (!itemMotionRef.current) anchors.captureAnchorSnapshot(true);
       recordScrollDebugEvent(
         debugFeedId,
         'item-tracking:center',
@@ -316,12 +325,33 @@ export function useWindowedFeedScroll({
   const scheduleTrackedItemCenter = useCallback(
     (reason: string) => {
       if (directItemTargetIdRef.current === null || directItemCenterRafRef.current !== null) return;
-      directItemCenterRafRef.current = requestAnimationFrame(() => {
+      const tick = () => {
         directItemCenterRafRef.current = null;
-        centerTrackedItem(reason);
-      });
+        if (!centerTrackedItem(reason)) {
+          itemMotionRef.current = null;
+          return;
+        }
+        if (itemMotionRef.current && directItemTargetIdRef.current !== null)
+          directItemCenterRafRef.current = requestAnimationFrame(tick);
+      };
+      directItemCenterRafRef.current = requestAnimationFrame(tick);
     },
     [centerTrackedItem],
+  );
+
+  const startTrackedItemMotion = useCallback(
+    (behavior?: ScrollBehavior) => {
+      const scroller = refs.scrollerRef.current;
+      if (
+        !scroller ||
+        behavior !== 'smooth' ||
+        window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+      )
+        return;
+      itemMotionRef.current = { from: scroller.scrollTop, startedAt: nowMs() };
+      scheduleTrackedItemCenter('smooth');
+    },
+    [refs, scheduleTrackedItemCenter],
   );
 
   const scrollToItem = useCallback(
@@ -333,7 +363,7 @@ export function useWindowedFeedScroll({
 
       refs.hasInitialScrolledRef.current = true;
       stopDirectItemTracking();
-      if (isItemFullyVisible(scroller, target)) {
+      if (isItemFullyVisible(scroller, target) && focusRef.current?.messageId !== id) {
         recordScrollDebugEvent(
           debugFeedId,
           'scroll-to-item:already-visible',
@@ -343,17 +373,16 @@ export function useWindowedFeedScroll({
       }
 
       follow.stopBottomSettle();
+      follow.clearFollowScroll();
+      stopPendingAnchorRestore();
+      viewport.release();
       directItemTargetIdRef.current = id;
       refs.liveBottomFollowRef.current = false;
       refs.physicallyAtBottomRef.current = false;
       refs.callbacksRef.current.onPhysicalBottomChange?.(false);
 
-      if (behavior === 'smooth' && typeof scroller.scrollTo === 'function') {
-        const targetTop = Math.max(0, centeredItemScrollTop(scroller, target));
-        scroller.scrollTo({ top: targetTop, behavior });
-      } else {
-        centerTrackedItem('imperative');
-      }
+      startTrackedItemMotion(behavior);
+      centerTrackedItem('imperative');
       refs.previousScrollTopRef.current = scroller.scrollTop;
       tracking.updateScrollState({
         allowLoadOlder: false,
@@ -376,8 +405,11 @@ export function useWindowedFeedScroll({
       follow,
       refs,
       scheduleTrackedItemCenter,
+      startTrackedItemMotion,
       stopDirectItemTracking,
+      stopPendingAnchorRestore,
       tracking,
+      viewport,
     ],
   );
 
@@ -426,6 +458,7 @@ export function useWindowedFeedScroll({
     bottomSpacerPx,
     setBottomSpacerPx,
     centerTrackedItem,
+    startTrackedItemMotion,
     stopDirectItemTracking,
     stopPendingAnchorRestore,
     schedulePendingAnchorRestore,

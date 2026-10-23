@@ -63,6 +63,7 @@ export const ReplyMessageEditor = forwardRef<
       {...props}
       ref={ref}
       engagedMessageId={replyTarget?.id}
+      replySourceUnavailable={replyTarget != null && snapshot.loaded && !citation}
       citedMessage={citation}
       citationLoading={replyTarget != null && !snapshot.loaded}
       citationTimeBasis={timeBasis}

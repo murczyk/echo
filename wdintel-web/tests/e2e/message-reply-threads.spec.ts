@@ -1,16 +1,14 @@
 import { expect, test } from '@playwright/test';
-import { holdNext, row, selectGroup } from './group-feed-actors.fixtures';
+import { row, selectGroup } from './group-feed-actors.fixtures';
 import {
   beginReply,
   closeThread,
-  detachReply,
   editor,
   expectThread,
   member,
   relation,
   openThread,
   saveReply,
-  scrollThread,
   visit,
   withReplyActors,
 } from './message-replies.fixtures';
@@ -133,7 +131,7 @@ for (const screen of ['duty', 'analysis'] as const) {
     });
   });
 
-  test(`@reply #3612 E6 ${screen}: overlay pages a long thread and ignores a stale page after live detach`, async ({
+  test(`@reply #3612 E6 ${screen}: overlay scrolls a long thread and navigates within the source feed`, async ({
     browser,
     baseURL,
   }) => {
@@ -170,31 +168,14 @@ for (const screen of ['duty', 'analysis'] as const) {
       const after = (await currentRow.boundingBox())!;
       expect(after.height).toBeCloseTo(before.height, 0);
       expect(after.y).toBeCloseTo(before.y, 0);
-      await expect(panel.getByRole('listitem')).toHaveCount(25);
+      await expect(panel.getByRole('listitem')).toHaveCount(100);
       await expect(panel.getByRole('listitem').first()).toContainText('Thread 001');
-      await expect(panel.getByRole('listitem').last()).toContainText('Thread 025');
-      await scrollThread(panel);
-      await expect(panel.getByText('Thread 050', { exact: true })).toBeAttached();
-      const pending = holdNext(actor, 'reply-metadata');
-      await scrollThread(panel);
-      await expect(panel.getByText('Thread 050', { exact: true })).toBeInViewport();
-      await pending.started;
-      const remaining = messages.filter((message) => message.id !== messages[59]!.id);
-      fixture.respondWithReplies(
-        remaining.slice(1).map((message, index) => relation(index + 1, first, message)),
-      );
-      fixture.clearReplies(messages[59]!);
-      fixture.notify([messages[59]!.id]);
-      await expect(currentRow.getByRole('button', { name: 'Усі 99', exact: true })).toBeVisible();
-      pending.release();
-      await expect(panel.getByText('Thread 075', { exact: true })).toBeAttached();
-      await expect(panel.getByText('Thread 060', { exact: true })).toHaveCount(0);
-      await expect(panel.getByText('Thread 050', { exact: true })).toBeAttached();
-      await expect(panel.getByText('Thread 050', { exact: true })).toBeInViewport();
+      await panel.getByText('Thread 099', { exact: true }).scrollIntoViewIfNeeded();
+      await expect(panel.getByText('Thread 099', { exact: true })).toBeInViewport();
       const visibleTexts = await panel.getByRole('listitem').allTextContents();
       expect(new Set(visibleTexts).size).toBe(visibleTexts.length);
       await closeThread(actor);
-      const reopened = await openThread(actor, current, 99);
+      const reopened = await openThread(actor, current, 100);
       await reopened.getByText('Thread 001', { exact: true }).click();
       await expect(reopened).toHaveCount(0);
       await expect(row(actor, first.id)).toBeInViewport();
@@ -219,7 +200,7 @@ for (const screen of ['duty', 'analysis'] as const) {
             .locator(`[data-duty-message-id="${first.id}"]`),
         ).toBeInViewport();
       }
-      const atRoot = await openThread(actor, first, 99);
+      const atRoot = await openThread(actor, first, 100);
       await actor.page.mouse.click(1, 1);
       await expect(atRoot).toHaveCount(0);
     });
@@ -301,38 +282,6 @@ for (const screen of ['duty', 'analysis'] as const) {
       }
       await selectGroup(actor, 'group-2');
       await expect(row(actor, source.id)).toHaveCount(0);
-    });
-  });
-
-  test(`@reply #3612 E12 ${screen}: removing the source keeps the draft and creates an independent message`, async ({
-    browser,
-    baseURL,
-  }) => {
-    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
-      const actor = await fixture.attach(page!, screen, 'user-1');
-      const source = fixture.seed('user-2', 'Wrong source');
-      await fixture.nextCreate(actor, 'Independent draft', null, () =>
-        fixture.add(actor.user, 'Independent draft'),
-      );
-      await visit(actor);
-      await beginReply(actor, source);
-      await editor(actor)
-        .getByRole('textbox', { name: 'Текст повідомлення', exact: true })
-        .fill('Independent draft');
-      await detachReply(actor);
-      await expect(
-        editor(actor).getByRole('textbox', { name: 'Текст повідомлення', exact: true }),
-      ).toHaveValue('Independent draft');
-      await expect(editor(actor).getByText('Wrong source', { exact: true })).toHaveCount(0);
-      await expect(
-        editor(actor).getByRole('combobox', { name: 'Група', exact: true }),
-      ).toBeEnabled();
-      await saveReply(actor, 'Independent draft');
-      await expect(row(actor, fixture.messages.at(-1)!.id)).toContainText('Independent draft');
-      await expect(row(actor, source.id).getByRole('button', { name: /^Усі \d+$/ })).toHaveCount(0);
-      await expect(
-        row(actor, fixture.messages.at(-1)!.id).getByRole('button', { name: /^Усі \d+$/ }),
-      ).toHaveCount(0);
     });
   });
 }

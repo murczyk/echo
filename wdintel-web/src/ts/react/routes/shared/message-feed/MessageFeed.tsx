@@ -207,9 +207,32 @@ function MessageFeedInner<T>(
       highlightedElementRef.current?.removeAttribute('data-message-feed-highlighted');
       highlightedElementRef.current = nextElement;
     }
+    const clearLinkedHighlight = (event: AnimationEvent) => {
+      if (event.animationName === 'message-feed-linked-highlight') {
+        setLinkedHighlightedMessageId((current) =>
+          current === linkedHighlightedMessageId ? null : current,
+        );
+      }
+    };
     nextElement?.setAttribute('data-message-feed-highlighted', 'true');
-    return () => nextElement?.removeAttribute('data-message-feed-highlighted');
-  }, [highlightedMessageId, scroll.getItemElement, shown.children, visibleItems]);
+    nextElement?.setAttribute(
+      'data-message-feed-highlight-kind',
+      editorHighlightedMessageId == null ? 'linked' : 'editor',
+    );
+    nextElement?.addEventListener('animationend', clearLinkedHighlight);
+    return () => {
+      nextElement?.removeAttribute('data-message-feed-highlighted');
+      nextElement?.removeAttribute('data-message-feed-highlight-kind');
+      nextElement?.removeEventListener('animationend', clearLinkedHighlight);
+    };
+  }, [
+    highlightedMessageId,
+    editorHighlightedMessageId,
+    linkedHighlightedMessageId,
+    scroll.getItemElement,
+    shown.children,
+    visibleItems,
+  ]);
   const highlightLinkedMessage = useCallback(
     (id: number) => {
       if (!scroll.getItemElement(id)) return false;

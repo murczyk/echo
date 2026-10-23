@@ -76,6 +76,7 @@ import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-
 
 export type Props = {
   engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
   citedMessage?: CitedMessage;
   citationLoading?: boolean;
   citationTimeBasis?: MessageTimeBasis;
@@ -790,7 +791,10 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                         }}
                       >
                         {isReplyMode ? (
-                          <section aria-label="Цитоване повідомлення" className="mb-echo-sm">
+                          <section
+                            aria-label="Цитоване повідомлення"
+                            className="col-span-full mb-echo-sm min-w-0"
+                          >
                             <Typography variant="subtitle2">Відповідь на повідомлення</Typography>
                             {props.citationLoading ? (
                               <CircularProgress size={20} aria-label="Завантаження цитати" />
@@ -800,6 +804,11 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                                 timeBasis={props.citationTimeBasis ?? 'creation'}
                               />
                             )}
+                            {props.replySourceUnavailable ? (
+                              <PowerAlert severity="info" className="mt-echo-sm">
+                                Повідомлення буде збережено як звичайне, без зв’язку з джерелом.
+                              </PowerAlert>
+                            ) : null}
                           </section>
                         ) : null}
                         {isReportMode ? (

@@ -8,7 +8,9 @@ message, a locked source group, an independent empty body, and a blue source out
 The editor closes after successful creation and uses the existing unsaved-draft guard. A reply starts a thread when the selected message is independent, or
 appends to its existing thread. Replying to a reply always uses that thread's
 original message as the head. Reply bodies are independent of cited bodies.
-Only one message can be selected for a reply.
+Only one message can be selected for a reply. The citation spans the editor grid
+as a separate row above the regular content and metadata columns; narrow editors
+keep the same single-column reading order.
 
 ## Storage and deletion
 
@@ -90,8 +92,15 @@ read access uses direct report/comment parents, matching the inbox read endpoint
 `POST /api/1.1/submit-direct` accepts one optional `engaged_message_id` separately
 from intelligence-report parents and copy sources. It validates the selected
 message and saves the message and relationships atomically. A reply cannot be combined with
-editing or report/copy creation. Deletion during composition causes validation
-to fail without creating a partial message or losing the draft.
+editing or report/copy creation. If a successful citation refresh shows that the
+selected source is no longer available while composing, the editor explains that
+it will save an independent message. The submit omits `engaged_message_id` while
+preserving the draft, attachments and locked group. Source availability is read
+again when building the payload after uploads; no additional history query is
+needed. Missing projection data is described as unavailable, not proof of deletion.
+A deleted-source validation failure before the refresh still leaves the draft
+open: the current server exposes it as a generic 500, so the frontend cannot
+safely retry automatically as an independent message.
 
 Destination selection prefers the clicked source group's authorized context.
 For ambiguous membership it tries the selected message's source groups in
@@ -99,7 +108,10 @@ deterministic order. Group rejections are logged and the next eligible source
 group is tried before message persistence.
 Other validation failures, authentication failures, network errors, timeouts,
 and server errors stop submission. There is no automatic resubmission after a
-possibly committed request. Exhaustion shows an error and preserves the draft.
+possibly committed request. Errors preserve the draft and reply target. The
+existing synchronous in-flight guard and disabled submit button prevent repeated
+clicks or form submissions from sending a second request during a save. This is
+not protection against retries after an unknown commit or across browser tabs.
 
 ## Rendering and refresh
 
@@ -110,33 +122,53 @@ Dates use the application timezone and `DD.MM.YYYY · HH:mm`; an absent selected
 timestamp uses `Час невідомий`. Duty ordering, filtering, unread cursors, and
 notifications retain the [creation-time contract](duty/README.md#creation-time-contract).
 
-Thread items appear below intelligence-report links under the theme-muted
-`Ланцюжок` label. Available items are full clickable previews with a timestamp and
-one truncated text line. The head is labeled `Оригінальне повідомлення`. The current
-card is excluded; deleted endpoints retain their place without exposing content
-or a navigation action. Separate head/reply deletion flags keep surviving replies
+Available thread items are ordered by `(CitedMessage.createdAt, CitedMessage.id)`:
+message creation in Echo, regardless of relation creation, interception time or
+the Analysis time-basis setting. This includes late-arriving native originals;
+the head label does not pin them ahead of earlier-created messages. Compact
+previews and the popup share the same order. The current API omits creation
+metadata for deleted/unavailable endpoints, so those placeholders retain their
+response slots while available entries are sorted around them. Exact creation
+ordering for placeholders after a reload needs backend metadata and is outside
+this frontend-only change.
+
+Thread items appear below intelligence-report links under the `Ланцюжок` label,
+using the same color and opacity as the card creation time. Compact clickable
+previews show only one truncated text line, without dates or a head label. The
+popup uses a primary-text heading, dates and times on available items, and a
+vertical stepper with small solid dots in the same color as its connecting lines.
+The popup includes the current card; only compact previews exclude it. The count
+includes every thread member. Deleted endpoints retain their place without
+exposing content or a navigation action. Their neutral bubbles show the gray text
+`Повідомлення видалено`, without an icon. Separate head/reply deletion flags keep surviving replies
 visible after deletion of the head.
 
-At most two other messages appear on a card. Larger lists offer `Усі N`, with the
-count badge only on that button. It opens a lazily mounted anchored popover with
+The card shows up to two latest other thread members, keeping their creation-time
+order. Threads with more than two members
+offer `Усі повідомлення N`, with the count badge only on that button. It opens a lazily mounted anchored popover with
 its own bounded scroll; the card height does not grow. The backend currently
 returns the entire thread in one response, so this is not server pagination.
 
 Clicking a preview navigates in the current feed and tab through existing message
-navigation APIs. Duty uses the originating column and constrains reply landings
+navigation APIs. Reply landings ease out over 300 ms, remain interruptible by
+reader scrolling or a newer navigation, and skip spatial motion when reduced
+motion is enabled. Distant targets still load only a bounded window. The navigation outline fades and clears after two seconds; the
+editor source outline remains active while composing. Duty uses the originating column and constrains reply landings
 to loaded content, avoiding empty space under the newest reply. Analysis uses its
 focused window without expanding the date range. Filtered-out targets produce a
 notification asking the user to change filters; filters are not changed implicitly.
 
-The agreed E1–E13 scenarios remain in
+The current E1–E10 scenarios remain in
 `wdintel-web/tests/e2e/message-reply-threads.spec.ts` and
 `wdintel-web/tests/e2e/message-replies-multi-user.spec.ts`.
 `wdintel-web/tests/e2e/message-replies-frontend.spec.ts` covers the current editor,
 popover, source-feed navigation, and newest-reply landing. Their fixtures must use
 the current single `engaged_message_id` contract and thread/deletion fields.
-Server pagination, successful creation after source deletion, exact-group fallback
-restrictions, Echo-only thread membership, and request-level create idempotency
-remain outside the current contract. Detach in create/edit is deferred separately.
+Pagination is excluded from this iteration: the popup renders the returned thread
+inside its own scrolling viewport. Native Signal/WhatsApp relationships belong
+to the same model. Exact-group fallback restrictions and request-level create
+idempotency remain backend limitations. Detach in create/edit and its race scenarios
+are excluded from this iteration and its tests.
 Mocked browser scenarios do not establish database concurrency or performance on
 large histories; those need real database tests and query-plan measurements.
 

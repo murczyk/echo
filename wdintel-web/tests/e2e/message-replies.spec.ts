@@ -136,15 +136,17 @@ test.describe('@regression #3612 message replies', () => {
         screen,
       );
       const chain = card.getByRole('region', { name: 'Відповіді', exact: true });
-      await expect(chain.getByRole('link')).toHaveCount(2);
-      await chain.getByRole('button', { name: 'Усі 5', exact: true }).click();
+      await expect(chain.getByRole('listitem')).toHaveCount(2);
+      await chain.getByRole('button', { name: 'Усі повідомлення 6', exact: true }).click();
       const panel = page.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
       await expect(panel).toContainText('Попередній оригінал');
       await expect(panel).toContainText('Другий оригінал');
       await expect(panel).toContainText('Повідомлення недоступне');
-      await expect(panel.getByRole('listitem')).toHaveCount(5);
-      await expect(panel.getByRole('listitem').nth(2)).toContainText('Видалено');
-      await expect(panel.getByRole('listitem').nth(2).getByRole('link')).toHaveCount(0);
+      await expect(panel.getByRole('listitem')).toHaveCount(6);
+      const deletedRow = panel.getByRole('listitem').filter({ hasText: 'Повідомлення видалено' });
+      await expect(deletedRow).toHaveCount(1);
+      await expect(deletedRow.getByRole('link')).toHaveCount(0);
+      await expect(panel.locator('[aria-current="true"]')).toContainText('Цитований оригінал');
       const originalLink = panel.getByRole('link').filter({ hasText: 'Попередній оригінал' });
       await expect(originalLink).toContainText(
         host === 'duty' ? '21.09.2026 · 18:13' : '21.09.2026 · 17:13',
@@ -168,7 +170,7 @@ test.describe('@regression #3612 message replies', () => {
           },
         }),
       );
-      const originalUrl = page.url();
+      const originalUrl = new URL(page.url());
       await originalLink.focus();
       await originalLink.press('Enter');
       await expect(panel).toHaveCount(0);
@@ -178,7 +180,10 @@ test.describe('@regression #3612 message replies', () => {
         }),
       ).toBeVisible();
       expect(page.context().pages()).toHaveLength(1);
-      expect(page.url()).toBe(originalUrl);
+      const currentUrl = new URL(page.url());
+      originalUrl.searchParams.sort();
+      currentUrl.searchParams.sort();
+      expect(currentUrl.href).toBe(originalUrl.href);
 
       await page.route('**/api/1.1/submit-direct/parse', (route) =>
         route.fulfill({
@@ -233,8 +238,8 @@ test.describe('@regression #3612 message replies', () => {
         .fill('Моя нова відповідь');
       await editor.getByRole('button', { name: 'Створити', exact: true }).click();
       await expect(editor).toHaveCount(0);
-      await chain.getByRole('button', { name: 'Усі 6', exact: true }).click();
-      await expect(panel.getByRole('listitem')).toHaveCount(6);
+      await chain.getByRole('button', { name: 'Усі повідомлення 7', exact: true }).click();
+      await expect(panel.getByRole('listitem')).toHaveCount(7);
       await expect(panel).toContainText('Моя нова відповідь');
       await page.keyboard.press('Escape');
       await expect(panel).toHaveCount(0);
@@ -274,11 +279,11 @@ test.describe('@regression #3612 message replies', () => {
         (detail) => window.dispatchEvent(new CustomEvent('echo-message-replies-poll', { detail })),
         screen,
       );
-      await chain.getByRole('button', { name: 'Усі 6', exact: true }).click();
+      await chain.getByRole('button', { name: 'Усі повідомлення 7', exact: true }).click();
       await expect(panel).toContainText('Перша відповідь');
       await expect(panel).toContainText('Моя нова відповідь');
       await expect(panel).not.toContainText('Попередній оригінал');
-      await expect(panel.getByText('Видалено', { exact: true })).toHaveCount(2);
+      await expect(panel.getByText('Повідомлення видалено', { exact: true })).toHaveCount(2);
     });
   }
 });

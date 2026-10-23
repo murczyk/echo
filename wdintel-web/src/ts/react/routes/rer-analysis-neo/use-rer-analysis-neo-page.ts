@@ -1454,6 +1454,7 @@ export function useRerAnalysisNeoPage(
       totalCount: targetMessageWindow.messagesBefore + targetMessageWindow.messagesAfter + 1,
       focusActive: targetMessageFocusActive,
       highlightTarget: highlightTargetMessage,
+      scrollBehavior: replyNavigationRef.current ? ('smooth' as const) : ('auto' as const),
       contextLoading,
       newestFirst,
       canLoadEarlier: data.focusedHasMoreEarlier,

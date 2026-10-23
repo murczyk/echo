@@ -24,6 +24,7 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
     bottomSpacerPx,
     setBottomSpacerPx,
     centerTrackedItem,
+    startTrackedItemMotion,
     stopDirectItemTracking,
     stopPendingAnchorRestore,
     schedulePendingAnchorRestore,
@@ -104,7 +105,9 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
       follow.stopBottomSettle();
       follow.clearFollowScroll();
       refs.liveBottomFollowRef.current = false;
+      const targetChanged = directItemTargetIdRef.current !== focus.messageId;
       directItemTargetIdRef.current = focus.messageId;
+      if (targetChanged) startTrackedItemMotion(focus.behavior);
       centerTrackedItem('focused-context');
     } else if (focus && !focus.active && directItemTargetIdRef.current === focus.messageId) {
       stopDirectItemTracking();
@@ -165,6 +168,8 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
       stopPendingAnchorRestore();
       if (directItemTargetIdRef.current !== null) {
         centerTrackedItem('items-changed');
+        refs.previousItemIdsRef.current = currentItemIds;
+        return;
       } else if (
         refs.liveBottomFollowRef.current &&
         refs.physicallyAtBottomRef.current === true &&
@@ -258,6 +263,7 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
   }, [
     anchors,
     centerTrackedItem,
+    startTrackedItemMotion,
     debugFeedId,
     enabled,
     enabledBeforeRender,
@@ -275,6 +281,7 @@ export function useMessageFeedLayout(options: FeedLayoutOptions) {
     focus?.messageId,
     focus?.active,
     focus?.constrainToContent,
+    focus?.behavior,
     bottomSpacerPx,
     viewport,
     viewportPreservationKey,

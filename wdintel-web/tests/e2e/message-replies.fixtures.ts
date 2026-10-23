@@ -128,7 +128,7 @@ function installReplyResponses(feed: FeedFixture) {
       { times: 1 },
     );
   };
-  const nextEdit = async (actor: Actor, message: Message, detach: boolean, commit: () => void) => {
+  const nextEdit = async (actor: Actor, message: Message, commit: () => void) => {
     const path = `/api/1.1/message/${message.id}/edit`;
     await actor.page.route(
       `**${path}`,
@@ -136,13 +136,6 @@ function installReplyResponses(feed: FeedFixture) {
         const body = route.request().postDataJSON();
         actor.requests.push({ path, body });
         expect(body.engaged_message_id).toBeUndefined();
-        if (detach) {
-          await route.fulfill({
-            status: 501,
-            json: { message: 'Від’єднання reply не підтримується поточним API.' },
-          });
-          return;
-        }
         message.text = body.full_body ?? body.text;
         commit();
         await route.fulfill({ json: { signal_message_id: message.id } });
@@ -187,12 +180,6 @@ function installReplyResponses(feed: FeedFixture) {
       relations = snapshot;
     },
     notify: (ids: number[]) => ids.forEach((id) => feed.emit(id)),
-    clearReplies: (message: Message) => {
-      relations = relations.filter(
-        (edge) =>
-          edge.originalSignalMessageId !== message.id && edge.replySignalMessageId !== message.id,
-      );
-    },
     nextCreate,
     nextEdit,
     nextDelete,
@@ -276,14 +263,11 @@ export async function deleteMessage(actor: Actor, message: Message) {
   await expect(row(actor, message.id)).toHaveCount(0);
 }
 
-export async function detachReply(actor: Actor) {
-  const button = editor(actor).getByRole('button', { name: 'Від’єднати реплай', exact: true });
-  await expect(button).toBeVisible();
-  await button.click();
-}
-
 export async function openThread(actor: Actor, message: Message, count: number) {
-  const button = row(actor, message.id).getByRole('button', { name: `Усі ${count}`, exact: true });
+  const button = row(actor, message.id).getByRole('button', {
+    name: `Усі повідомлення ${count}`,
+    exact: true,
+  });
   await expect(button).toBeVisible();
   await button.click();
   const panel = actor.page.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
@@ -302,8 +286,4 @@ export async function closeThread(actor: Actor) {
   await expect(
     actor.page.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true }),
   ).toHaveCount(0);
-}
-
-export async function scrollThread(panel: Locator) {
-  await panel.getByRole('listitem').last().scrollIntoViewIfNeeded();
 }

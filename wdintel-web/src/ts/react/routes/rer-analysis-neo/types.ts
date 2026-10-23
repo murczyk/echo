@@ -68,6 +68,7 @@ export type AnalysisDirectMessageNavigation = {
   totalCount: number;
   focusActive: boolean;
   highlightTarget?: boolean;
+  scrollBehavior?: ScrollBehavior;
   contextLoading?: boolean;
   newestFirst: boolean;
   canLoadEarlier: boolean;

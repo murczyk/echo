@@ -104,12 +104,14 @@ export function useAnalysisMessageFeed({
         ? {
             messageId: directMessageNavigation.targetMessageId,
             active: directMessageNavigation.focusActive,
+            behavior: directMessageNavigation.scrollBehavior,
             onRelease: directMessageNavigation.onClearFocus,
           }
         : null,
     [
       directMessageNavigation?.targetMessageId,
       directMessageNavigation?.focusActive,
+      directMessageNavigation?.scrollBehavior,
       directMessageNavigation?.onClearFocus,
     ],
   );

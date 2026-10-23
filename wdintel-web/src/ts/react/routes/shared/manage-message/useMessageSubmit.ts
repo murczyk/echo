@@ -28,6 +28,7 @@ import { fallbackFailedMessageUploads, messageUploadFailure } from './message-up
 
 type SubmitOptions = {
   engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
   replyGroupMasterKey?: string | null;
   busy: boolean;
   radioFeaturesAllowed: boolean;
@@ -61,6 +62,7 @@ export function useMessageSubmit({
   editTarget,
   reportSource,
   engagedMessageId,
+  replySourceUnavailable,
   replyGroupMasterKey,
   existingMedia,
   onSubmitEdit,
@@ -74,6 +76,8 @@ export function useMessageSubmit({
   handleDrawerCloseAfterSubmit,
   handleCreateSuccess,
 }: SubmitOptions) {
+  const sourceUnavailable = useRef(replySourceUnavailable);
+  sourceUnavailable.current = replySourceUnavailable;
   const mounted = useRef(false);
   const submission = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -282,7 +286,8 @@ export function useMessageSubmit({
             })),
         deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
         retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
-        engaged_message_id: !isEditMode ? engagedMessageId : undefined,
+        engaged_message_id:
+          !isEditMode && !sourceUnavailable.current ? engagedMessageId : undefined,
         parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
         copy_source_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
       };

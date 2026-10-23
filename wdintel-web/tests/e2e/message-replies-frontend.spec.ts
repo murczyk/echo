@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
-import { row } from './group-feed-actors.fixtures';
+import { holdNext, row } from './group-feed-actors.fixtures';
 import {
   beginReply,
   editor,
+  fillReply,
   relation,
   saveReply,
   visit,
@@ -39,12 +40,27 @@ for (const screen of ['duty', 'analysis'] as const) {
       const card = row(actor, current.id);
       const chain = card.getByRole('region', { name: 'Відповіді', exact: true });
       await expect(chain.getByRole('link')).toHaveCount(2);
+      await expect(chain.getByRole('link').first()).toHaveText('Reply item 38');
+      await expect(chain.getByRole('link').last()).toHaveText('Reply item 39');
       await expect(row(actor, target.id)).toHaveCount(0);
       const before = await card.boundingBox();
       const url = page!.url();
-      await chain.getByRole('button', { name: 'Усі 40', exact: true }).click();
+      const allMessages = chain.getByRole('button', { name: 'Усі повідомлення 41', exact: true });
+      await allMessages.hover();
+      await page!.screenshot({
+        path: test.info().outputPath(`${screen}-all-messages-hover-light.png`),
+        animations: 'disabled',
+      });
+      await allMessages.click();
       const panel = page!.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
       await expect(panel).toBeVisible();
+      await expect(panel.getByRole('listitem')).toHaveCount(41);
+      await expect(panel.locator('[aria-current="true"]')).toContainText(current.text);
+      await expect(panel).not.toContainText('Оригінальне повідомлення');
+      await expect(panel.getByRole('link').first()).toContainText(
+        /\d{2}\.\d{2}\.\d{4} · \d{2}:\d{2}/,
+      );
+      await page!.screenshot({ path: test.info().outputPath(`${screen}-reply-stepper-top.png`) });
       const after = await card.boundingBox();
       expect(after!.height).toBeCloseTo(before!.height, 0);
       expect(after!.y).toBeCloseTo(before!.y, 0);
@@ -70,7 +86,14 @@ for (const screen of ['duty', 'analysis'] as const) {
         animations: 'disabled',
       });
       if (screen === 'duty') {
-        await row(actor, target.id).getByRole('link').filter({ hasText: current.text }).click();
+        await row(actor, target.id)
+          .getByRole('button', { name: 'Усі повідомлення 41', exact: true })
+          .click();
+        await page!
+          .getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true })
+          .getByRole('link')
+          .filter({ hasText: current.text })
+          .click();
         await expect(row(actor, current.id)).toBeInViewport();
         await expect
           .poll(() =>
@@ -87,6 +110,138 @@ for (const screen of ['duty', 'analysis'] as const) {
           animations: 'disabled',
         });
       }
+    });
+  });
+
+  test(`@regression #3612 ${screen}: reply navigation outline fades away and leaves the editor source outline persistent`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      const actor = await fixture.attach(page!, screen, 'user-1');
+      const source = fixture.seed('user-2', 'Temporary navigation highlight');
+      const reply = fixture.seed('user-1', 'Linked reply');
+      fixture.respondWithReplies([relation(1, source, reply)]);
+      await visit(actor);
+      const target = row(actor, source.id);
+      const card = target.locator('[data-message-card-root]');
+      const link = row(actor, reply.id).getByRole('link').filter({ hasText: source.text });
+      await link.click();
+      await expect(target).toBeInViewport();
+      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+      await expect
+        .poll(
+          () =>
+            card.evaluate((element) => {
+              const color = getComputedStyle(element).outlineColor;
+              const alpha = color.startsWith('rgba(')
+                ? Number(color.slice(color.lastIndexOf(',') + 1, -1))
+                : 1;
+              return alpha > 0 && alpha < 1;
+            }),
+          { intervals: [50] },
+        )
+        .toBe(true);
+      await page!.screenshot({ path: test.info().outputPath(`${screen}-outline-fading.png`) });
+      await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
+      await expect(card).not.toHaveCSS('outline-style', 'solid');
+      await page!.screenshot({ path: test.info().outputPath(`${screen}-outline-cleared.png`) });
+      await page!.emulateMedia({ reducedMotion: 'reduce' });
+      await link.click();
+      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+      await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
+      await beginReply(actor, source);
+      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+      await expect(card).toHaveCSS('outline-style', 'solid');
+      expect(
+        await card.evaluate((element) =>
+          element
+            .getAnimations()
+            .some(
+              (animation) =>
+                animation instanceof CSSAnimation &&
+                animation.animationName === 'message-feed-linked-highlight',
+            ),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  test(`@regression #3612 ${screen}: chain order uses Echo message creation time and message ID, independent of interception or relation time`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      const actor = await fixture.attach(page!, screen, 'user-1');
+      const now = Date.now();
+      const root = fixture.seed('user-2', 'Original arrived later', {
+        at: now - 10_000,
+        timestamp: now - 60_000,
+      });
+      const first = fixture.seed('user-2', 'First created reply', {
+        at: now - 30_000,
+        timestamp: now - 10_000,
+      });
+      const lowId = fixture.seed('user-2', 'Equal creation lower ID', {
+        at: now - 20_000,
+        timestamp: now - 30_000,
+      });
+      const highId = fixture.seed('user-2', 'Equal creation higher ID', {
+        at: lowId.at,
+        timestamp: now - 40_000,
+      });
+      const current = fixture.seed('user-1', 'Newest member', { at: now, timestamp: now - 50_000 });
+      fixture.respondWithReplies([
+        relation(1, root, highId, { createdAt: now - 4_000 }),
+        relation(2, root, first, { createdAt: now - 3_000 }),
+        relation(3, root, lowId, { createdAt: now - 2_000 }),
+        relation(4, root, current, { createdAt: now - 1_000 }),
+      ]);
+      await visit(actor);
+      for (const basis of ['interception', 'creation'] as const) {
+        await page!.evaluate(
+          (messageSortBy) =>
+            window.dispatchEvent(
+              new CustomEvent('user-settings-updated', { detail: { messageSortBy } }),
+            ),
+          basis,
+        );
+        const chain = row(actor, current.id).getByRole('region', {
+          name: 'Відповіді',
+          exact: true,
+        });
+        const preview = chain.getByRole('listitem');
+        await expect(preview).toHaveCount(2);
+        await expect(preview.nth(0)).toContainText(highId.text);
+        await expect(preview.nth(1)).toContainText(root.text);
+        const allMessages = chain.getByRole('button', { name: /^Усі повідомлення/ });
+        await expect(allMessages).toHaveText('Усі повідомлення 5');
+        await allMessages.click();
+        const panel = page!.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
+        await expect(panel.getByRole('listitem')).toHaveCount(5);
+        await expect(panel.locator('[aria-current="true"]')).toContainText(current.text);
+        for (const [index, message] of [first, lowId, highId, root, current].entries()) {
+          await expect(panel.getByRole('listitem').nth(index)).toContainText(message.text);
+        }
+        await expect(panel).not.toContainText('Оригінальне повідомлення');
+        await page!.screenshot({
+          path: test.info().outputPath(`${screen}-chain-${basis}-order.png`),
+          animations: 'disabled',
+        });
+        await page!.keyboard.press('Escape');
+      }
+      await row(actor, root.id)
+        .getByRole('button', { name: 'Усі повідомлення 5', exact: true })
+        .click();
+      const rootPanel = page!.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
+      await expect(rootPanel.getByRole('listitem')).toHaveCount(5);
+      await expect(rootPanel.locator('[aria-current="true"]')).toContainText(root.text);
+      await expect(rootPanel).toContainText(current.text);
+      await page!.screenshot({
+        path: test.info().outputPath(`${screen}-full-thread-from-root.png`),
+        animations: 'disabled',
+      });
+      await page!.keyboard.press('Escape');
     });
   });
 
@@ -107,6 +262,30 @@ for (const screen of ['duty', 'analysis'] as const) {
       await visit(actor);
       await beginReply(actor, source);
       await expect(editor(actor)).toHaveAttribute('data-manage-message-presentation', 'embedded');
+      const form = editor(actor).locator('#create-message-form');
+      const citation = editor(actor).getByRole('region', {
+        name: 'Цитоване повідомлення',
+        exact: true,
+      });
+      const content = editor(actor).getByRole('group', { name: /^Вміст повідомлення/ });
+      await expect
+        .poll(() =>
+          form.evaluate(
+            (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
+          ),
+        )
+        .toBe(2);
+      const citationBounds = (await citation.boundingBox())!;
+      const formBounds = (await form.boundingBox())!;
+      const contentBounds = (await content.boundingBox())!;
+      const systemBounds = (await editor(actor)
+        .getByText('Системні', { exact: true })
+        .boundingBox())!;
+      expect(citationBounds.width).toBeCloseTo(formBounds.width, 0);
+      expect(contentBounds.y).toBeGreaterThanOrEqual(citationBounds.y + citationBounds.height);
+      expect(systemBounds.y).toBeGreaterThanOrEqual(citationBounds.y + citationBounds.height);
+      expect(Math.abs(contentBounds.y - systemBounds.y)).toBeLessThan(32);
+
       await expect(
         editor(actor).getByRole('combobox', { name: 'Група', exact: true }),
       ).toBeDisabled();
@@ -118,6 +297,22 @@ for (const screen of ['duty', 'analysis'] as const) {
         path: test.info().outputPath(`${screen}-reply-editor.png`),
         animations: 'disabled',
       });
+      await page!.setViewportSize({ width: 390, height: 844 });
+      await expect
+        .poll(() =>
+          form.evaluate(
+            (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
+          ),
+        )
+        .toBe(1);
+      const narrowCitation = (await citation.boundingBox())!;
+      const narrowContent = (await content.boundingBox())!;
+      expect(narrowContent.y).toBeGreaterThanOrEqual(narrowCitation.y + narrowCitation.height);
+      await page!.screenshot({
+        path: test.info().outputPath(`${screen}-reply-editor-narrow.png`),
+        animations: 'disabled',
+      });
+      await page!.setViewportSize({ width: 1920, height: 1000 });
       await saveReply(actor, 'Independent reply');
       await expect(row(actor, source.id).locator('[data-message-card-root]')).not.toHaveCSS(
         'outline-style',
@@ -126,6 +321,92 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(
         row(actor, source.id).getByRole('link').filter({ hasText: 'Independent reply' }),
       ).toBeVisible();
+    });
+  });
+
+  test(`@regression #3612 ${screen}: repeated submit while saving sends one reply`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      const actor = await fixture.attach(page!, screen, 'user-1');
+      const source = fixture.seed('user-2', 'Single submission source');
+      await fixture.nextCreate(actor, 'Only one reply', source.id, () =>
+        fixture.add(actor.user, 'Only one reply'),
+      );
+      await visit(actor);
+      await beginReply(actor, source);
+      await fillReply(actor, 'Only one reply');
+      const gate = holdNext(actor, 'submit');
+      await editor(actor).getByRole('button', { name: 'Створити', exact: true }).click();
+      await gate.started;
+      await expect(
+        editor(actor).getByRole('button', { name: 'Збереження...', exact: true }),
+      ).toBeDisabled();
+      await editor(actor)
+        .locator('form')
+        .evaluate(async (form) => {
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          );
+        });
+      expect(actor.requests.filter(({ path }) => path === '/api/1.1/submit-direct')).toHaveLength(
+        1,
+      );
+      await page!.screenshot({
+        path: test.info().outputPath('reply-submit-in-flight.png'),
+        animations: 'disabled',
+      });
+      gate.release();
+      await expect(editor(actor)).toHaveCount(0);
+      await expect(row(actor, fixture.messages.at(-1)!.id)).toContainText('Only one reply');
+      expect(fixture.messages.filter(({ text }) => text === 'Only one reply')).toHaveLength(1);
+    });
+  });
+
+  test(`@regression #3612 ${screen}: uncertain and forbidden saves retain the draft without retrying or dropping the reply link`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      const actor = await fixture.attach(page!, screen, 'user-1');
+      const source = fixture.seed('user-2', 'Failure source');
+      const bodies: Record<string, unknown>[] = [];
+      await visit(actor);
+      await beginReply(actor, source);
+      await fillReply(actor, 'Keep the failed draft');
+      for (const failure of ['network', 'server', 'forbidden'] as const) {
+        await page!.route(
+          '**/api/1.1/submit-direct',
+          async (route) => {
+            bodies.push(route.request().postDataJSON());
+            if (failure === 'network') await route.abort('failed');
+            else
+              await route.fulfill({
+                status: failure === 'server' ? 500 : 403,
+                body: failure === 'server' ? 'Internal server error' : 'Недостатньо прав.',
+              });
+          },
+          { times: 1 },
+        );
+        await editor(actor).getByRole('button', { name: 'Створити', exact: true }).click();
+        await expect(editor(actor).getByRole('alert')).toBeVisible();
+        await expect(
+          editor(actor).getByRole('textbox', { name: 'Текст повідомлення' }),
+        ).toHaveValue('Keep the failed draft');
+        await expect(
+          editor(actor).getByRole('button', { name: 'Створити', exact: true }),
+        ).toBeEnabled();
+        expect(bodies).toHaveLength(['network', 'server', 'forbidden'].indexOf(failure) + 1);
+        expect(bodies.at(-1)!.engaged_message_id).toBe(source.id);
+        await page!.screenshot({
+          path: test.info().outputPath(`reply-${failure}-failure.png`),
+          animations: 'disabled',
+        });
+      }
+      expect(fixture.messages).toHaveLength(1);
     });
   });
 
@@ -215,13 +496,24 @@ for (const screen of ['duty', 'analysis'] as const) {
         await page!.getByRole('button', { name: 'Закрити фільтри', exact: true }).click();
         await page!.getByRole('button', { name: 'Закрити ліву панель', exact: true }).click();
       }
-      const trigger = row(actor, current.id).getByRole('button', { name: 'Усі 3', exact: true });
+      const trigger = row(actor, current.id).getByRole('button', {
+        name: 'Усі повідомлення 4',
+        exact: true,
+      });
+      await trigger.hover();
+      await page!.screenshot({
+        path: test.info().outputPath(`${screen}-all-messages-hover-dark.png`),
+        animations: 'disabled',
+      });
       await trigger.focus();
       await trigger.press('Enter');
       const panel = page!.getByRole('dialog', { name: 'Ланцюжок повідомлень', exact: true });
       await expect(panel).toBeVisible();
-      await expect(panel.getByRole('listitem').first()).toContainText('Видалено');
-      await expect(panel.getByRole('listitem').first().getByRole('link')).toHaveCount(0);
+      await expect(panel.getByRole('listitem')).toHaveCount(4);
+      await expect(panel.locator('[aria-current="true"]')).toContainText(current.text);
+      const deletedRow = panel.getByRole('listitem').filter({ hasText: 'Повідомлення видалено' });
+      await expect(deletedRow).toHaveCount(1);
+      await expect(deletedRow.getByRole('link')).toHaveCount(0);
       await expect(panel).not.toContainText('Deleted private text');
       const bounds = await panel.boundingBox();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -237,37 +529,75 @@ for (const screen of ['duty', 'analysis'] as const) {
   });
 }
 
-test('@regression #3612 duty: navigating to a newest reply already loaded leaves no blank tail', async ({
-  browser,
-  baseURL,
-}) => {
-  await withReplyActors(browser, baseURL, async (fixture, [page]) => {
-    await page!.setViewportSize({ width: 1920, height: 1000 });
-    const actor = await fixture.attach(page!, 'duty', 'user-1');
-    fixture.setPageLimit(40);
-    const source = fixture.seed('user-2', 'Loaded original');
-    for (let i = 0; i < 30; i++) fixture.seed('user-2', `Between replies ${i}`);
-    const latest = fixture.seed('user-1', 'Newest loaded reply');
-    fixture.respondWithReplies([relation(1, source, latest)]);
-    await visit(actor);
-    await row(actor, latest.id).getByRole('link').filter({ hasText: source.text }).click();
-    await expect(row(actor, source.id)).toBeInViewport();
-    await row(actor, source.id).getByRole('link').filter({ hasText: latest.text }).click();
-    await expect(row(actor, latest.id)).toBeInViewport();
-    await expect
-      .poll(() =>
-        row(actor, latest.id).evaluate((element) => {
-          const viewport = element.closest('[data-message-feed-scroller]')!;
-          return viewport.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom;
-        }),
-      )
-      .toBeLessThan(32);
-    await page!.screenshot({
-      path: test.info().outputPath('duty-loaded-newest-reply.png'),
-      animations: 'disabled',
+for (const screen of ['duty', 'analysis'] as const) {
+  test(`@regression #3612 ${screen}: navigation to a loaded reply is smooth and respects reduced motion`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      await page!.setViewportSize({ width: 1920, height: 1000 });
+      const actor = await fixture.attach(page!, screen, 'user-1');
+      fixture.setPageLimit(40);
+      const source = fixture.seed('user-2', 'Loaded original');
+      for (let i = 0; i < 30; i++) fixture.seed('user-2', `Between replies ${i}`);
+      const latest = fixture.seed('user-1', 'Newest loaded reply');
+      fixture.respondWithReplies([relation(1, source, latest)]);
+      await visit(actor);
+      await row(actor, latest.id).getByRole('link').filter({ hasText: source.text }).click();
+      await expect(row(actor, source.id)).toBeInViewport();
+      const scroller = row(actor, source.id).locator(
+        'xpath=ancestor::*[@data-message-feed-scroller]',
+      );
+      const navigateToLatest = async () =>
+        (
+          await Promise.all([
+            scroller.evaluate(
+              (element) =>
+                new Promise<number[]>((resolve) => {
+                  const positions: number[] = [];
+                  const start = performance.now();
+                  const sample = () => {
+                    positions.push(element.scrollTop);
+                    if (performance.now() - start < 700) requestAnimationFrame(sample);
+                    else resolve(positions);
+                  };
+                  requestAnimationFrame(sample);
+                }),
+            ),
+            row(actor, source.id).getByRole('link').filter({ hasText: latest.text }).click(),
+          ])
+        )[0];
+      const positions = await navigateToLatest();
+      expect(new Set(positions.map(Math.round)).size).toBeGreaterThan(3);
+      await expect(row(actor, latest.id)).toBeInViewport();
+      if (screen === 'duty')
+        await expect
+          .poll(() =>
+            row(actor, latest.id).evaluate((element) => {
+              const viewport = element.closest('[data-message-feed-scroller]')!;
+              return (
+                viewport.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom
+              );
+            }),
+          )
+          .toBeLessThan(32);
+      await page!.screenshot({
+        path: test.info().outputPath(`${screen}-loaded-newest-reply.png`),
+        animations: 'disabled',
+      });
+      await page!.emulateMedia({ reducedMotion: 'reduce' });
+      await row(actor, latest.id).getByRole('link').filter({ hasText: source.text }).click();
+      await expect(row(actor, source.id)).toBeInViewport();
+      const reducedPositions = await navigateToLatest();
+      const reducedDistance = Math.abs(reducedPositions.at(-1)! - reducedPositions[0]!);
+      const largestStep = Math.max(
+        ...reducedPositions.slice(1).map((top, index) => Math.abs(top - reducedPositions[index]!)),
+      );
+      expect(largestStep).toBeGreaterThan(reducedDistance * 0.9);
+      await expect(row(actor, latest.id)).toBeInViewport();
     });
   });
-});
+}
 
 test('@regression #3612 analysis: filters changed after a reply jump cannot retain excluded messages', async ({
   browser,
