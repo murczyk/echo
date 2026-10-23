@@ -805,7 +805,7 @@ fn selected_units_condition(
             let in_subquery_condition = message_has_linked_unit(
                 linked_unit_match,
                 force_correlation,
-                network_ctes.as_deref_mut(),
+                network_ctes,
             );
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
@@ -1085,7 +1085,7 @@ where
             let in_subquery_condition = message_has_linked_unit(
                 linked_unit_match,
                 force_correlation,
-                network_ctes.as_deref_mut(),
+                network_ctes,
             )
             .not();
 

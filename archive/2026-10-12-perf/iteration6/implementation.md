@@ -57,8 +57,28 @@ duplicate associations, model exclusions and bounded/unbounded scopes.
 
 ## Validation and release
 
-Validation results are recorded below after local checks complete. Production
-diagnostic timings in the findings are not application latency guarantees.
+Local database checks used `wd_test_3780_pivnich_followup` and
+`wd_files_test_3780_pivnich_followup`. The source was restored from the standard
+test dump; the separate file registry database used the normal test migrations.
+
+| Check | Result |
+| --- | --- |
+| `cargo fmt --all -- --check` | Passed |
+| `cargo check -p wdintel-rs --all-targets --all-features` | Passed |
+| `cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings` | Passed |
+| `cargo test -p wdintel-rs --bin wdintel-rs 3780 -- --test-threads=1` | 22 passed; one existing ignored test |
+| Existing child-unit regression, extended with materialized digest/map comparisons | Passed |
+| Existing analytics tag-count regression, extended with posts ownership and duplicate-row comparisons | Passed |
+| `analytics_pool_forces_custom_query_plans` | Passed |
+| `just build-front` | Passed |
+| Whitespace and archive-link checks | Passed |
+
+The three additional regressions ran together through the compiled test
+harness with the same dedicated database environment. Prepared gateway
+`EXPLAIN` reproduced native Fuzzy/prefix filtering under `force_custom_plan`;
+a forced generic plan retained local filtering. No persistent setting changed.
+Production diagnostic timings in the findings are not application latency
+guarantees, and no post-deployment performance improvement is claimed.
 
 This batch needs only the normal backend package rollout, after explicit
 approval naming the operation and target. No analytics reconciliation,

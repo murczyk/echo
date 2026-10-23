@@ -12,7 +12,7 @@
       "prototype_temp_written_blocks": 0,
       "plain_old_inbox_scan_estimated_rows": 20324609,
       "limits": "5s statement timeout; read-only SELECT; no indexes/configuration changed",
-      "caveat": "Representative captured parameters and sequential live-load observations; result/concurrency/generic-plan regressions still required before implementation.",
+      "caveat": "Representative captured parameters and sequential live-load observations; not a controlled before/after trial. Subsequent local validation is recorded in implementation.md.",
       "prototype_with_lateral_ms": 453.732
     },
     "fuzzy_search": {
@@ -60,7 +60,6 @@
     "after_duty_count_responses": 2871,
     "after_duty_count_5xx": 0
   },
-  "files_changed_in_repository": [],
   "comparison_1230_1255_utc": {
     "dates": [
       "2026-10-15",
@@ -105,5 +104,42 @@
     "statement_statistics_deallocations_unchanged": true,
     "limits": "5–8-second SQL limits; native diagnostic limited to 4 threads and 2 GiB.",
     "sanitization": "No credentials, identities, message/group IDs, SQL literals or raw application content retained."
+  },
+  "prepared_gateway_probe": {
+    "custom_plan": {
+      "predicate_pushed_down": true,
+      "local_filter": false
+    },
+    "generic_plan": {
+      "predicate_pushed_down": false,
+      "local_filter": true
+    },
+    "pool_requirement": "Existing analytics pools use force_custom_plan; no setting changed."
+  },
+  "investigation_repository_changes": [],
+  "local_validation": {
+    "test_databases": [
+      "wd_test_3780_pivnich_followup",
+      "wd_files_test_3780_pivnich_followup"
+    ],
+    "source": "Standard source test dump; separate file registry initialized through normal test migrations",
+    "regressions_3780": {
+      "passed": 22,
+      "ignored": 1,
+      "failed": 0
+    },
+    "additional_existing_regressions": {
+      "passed": 3,
+      "failed": 0,
+      "filters": [
+        "rer_duty_unit_filter_includes_child_units_in_fuzzy_mode",
+        "rer_analysis_analytics_tag_count_matches_postgres_query",
+        "analytics_pool_forces_custom_query_plans"
+      ]
+    },
+    "cargo_check": "passed; all targets and features",
+    "cargo_fmt": "passed",
+    "build_front": "passed",
+    "clippy": "passed; all targets and features, -D warnings"
   }
 }
