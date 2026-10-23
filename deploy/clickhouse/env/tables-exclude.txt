@@ -163,3 +163,6 @@ public.rer_csv_import_message
 public.sigint_inbox_item_unit_selection
 
 public.transcription_source
+
+# Durable Iggy unit visibility refresh jobs.
+public.api_integration_iggy_unit_refresh

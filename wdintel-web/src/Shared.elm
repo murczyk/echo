@@ -679,7 +679,7 @@ update req msg model =
 
                       else
                         E.sendCmd <| Ports.shared_dispatchInboxChanged inboxChangedEvents
-                    , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents generation) (Process.sleep 100.0)
+                    , E.sendCmd <| Task.perform (\_ -> EventServicePollEvents generation) (Process.sleep (eventServicePollDelay req.path))
                     ]
                 )
 
@@ -705,7 +705,7 @@ update req msg model =
                     }
 
                 retryEffect =
-                    E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling generation) (Process.sleep (toFloat newRetryDelay))
+                    E.sendCmd <| Task.perform (\_ -> EventServiceRetryPolling generation) (Process.sleep (max (eventServicePollDelay req.path) (toFloat newRetryDelay)))
 
                 shouldNotifyAboutPersistentFailure =
                     newRetryCount >= 6
@@ -894,6 +894,16 @@ subscriptions _ _ =
 
 
 -- HTTP REQUESTS
+
+
+eventServicePollDelay : Route.Path.Path -> Float
+eventServicePollDelay path =
+    case path of
+        Route.Path.RerUnitsNeo ->
+            Config.rerUnitsPollingMinIntervalMs
+
+        _ ->
+            100
 
 
 pollEvents : Int -> Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg

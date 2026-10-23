@@ -119,6 +119,7 @@ where
 pub(super) enum AnalysisFacet {
     Groups,
     Senders,
+    Devices,
     Frequencies,
     Posts,
     Callsigns,
@@ -158,6 +159,7 @@ pub(super) fn request_without_facet_filter(
     match facet {
         AnalysisFacet::Groups => req.selected_groups = None,
         AnalysisFacet::Senders => req.selected_senders = None,
+        AnalysisFacet::Devices => req.selected_device_names = None,
         AnalysisFacet::Frequencies => req.selected_freqs = None,
         AnalysisFacet::Posts => req.selected_posts = None,
         AnalysisFacet::Callsigns => req.selected_callsigns = None,
@@ -5527,7 +5529,30 @@ fn build_locations_filtered_query_for_login(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    let req = request_without_facet_filter(req, AnalysisFacet::Locations);
+    Ok(build_facet_messages_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
+        AnalysisFacet::Locations,
+    )
+    .c(h!())?)
+}
+
+fn build_facet_messages_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+    facet: AnalysisFacet,
+) -> anyhow::Result<Select<sigint_inbox_item::Entity>> {
+    let req = request_without_facet_filter(req, facet);
     let locations_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -5601,7 +5626,7 @@ fn build_locations_filtered_query_for_login(
         scope,
     )
     .context(h!())?;
-    let locations_res = apply_metadata_filters(locations_res, &req)?;
+    let locations_res = apply_metadata_filters(locations_res, &req).c(h!())?;
     let locations_res = filter_search_with_correlated_terms(
         locations_res,
         &req.search,
@@ -5609,16 +5634,69 @@ fn build_locations_filtered_query_for_login(
         scope.is_some(),
     )
     .context(h!())?;
-    let locations_res = filter_selected_device_names(
-        locations_res,
-        &req.selected_device_names,
-    )?;
+    let locations_res =
+        filter_selected_device_names(locations_res, &req.selected_device_names)
+            .c(h!())?;
     let locations_res = filter_selected_aors_for_scope(
         locations_res,
         &req.selected_aors,
         scope,
-    )?;
+    )
+    .c(h!())?;
     Ok(locations_res)
+}
+
+pub(super) async fn fetch_device_names_with_db(
+    req: &AnalysisStatsReq,
+    login_id: &uuid::Uuid,
+    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> anyhow::Result<Vec<AnalysisStatsDeviceName>> {
+    if scope.is_some_and(|scope| scope.is_empty()) {
+        return Ok(Vec::new());
+    }
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        scope,
+    )
+    .await
+    .c(h!())?;
+    build_facet_messages_query(
+        req,
+        login_id,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units.as_ref(),
+        AnalysisFacet::Devices,
+    )
+    .c(h!())?
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::DeviceName.def(),
+    )
+    .filter(sigint_inbox_item::Column::DeviceNameId.is_not_null())
+    .filter(device_name::Column::Name.is_not_null())
+    .select_only()
+    .column_as(device_name::Column::Name, "name")
+    .column_as(
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id))
+            .count_distinct(),
+        "count",
+    )
+    .group_by(device_name::Column::Name)
+    .order_by_asc(device_name::Column::Name)
+    .into_model::<AnalysisStatsDeviceName>()
+    .all(db)
+    .await
+    .c(h!())
 }
 
 pub async fn fetch_aors(

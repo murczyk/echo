@@ -17,6 +17,7 @@ import {
   fetchAnalysisCallsignPage,
   fetchAnalysisFreqs,
   fetchAnalysisGroups,
+  fetchAnalysisDeviceNames,
   fetchAnalysisMapPoints,
   fetchAnalysisLocations,
   fetchAnalysisMetadata,
@@ -383,6 +384,8 @@ export function buildAnalysisReqForFilterSection(
       return { ...analysisReq, selectedGroups: null };
     case 'senders':
       return { ...analysisReq, selectedSenders: null };
+    case 'devices':
+      return { ...analysisReq, selectedDeviceNames: null };
     case 'callsigns':
       return { ...analysisReq, selectedCallsigns: null };
     case 'units':
@@ -498,6 +501,20 @@ export async function loadFilterSectionData(
       context.setOptions((current) => ({
         ...current,
         senders: buildSenderFilterOptions(sendersRsp.senders, senderProfiles),
+      }));
+      return;
+    }
+    case 'devices': {
+      const devices = await fetchAnalysisDeviceNames(context.analysisReq, requestOptions);
+      if (isStale() || isAborted()) return;
+      context.setOptions((current) => ({
+        ...current,
+        devices: toFilterOptions(
+          devices,
+          (item) => item.name,
+          (item) => item.name,
+          (item) => item.count,
+        ),
       }));
       return;
     }

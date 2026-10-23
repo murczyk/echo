@@ -36,6 +36,8 @@ pub enum Relation {
     ApiIntegrationIggyDestination,
     #[sea_orm(has_many = "super::api_integration_iggy_event::Entity")]
     ApiIntegrationIggyEvent,
+    #[sea_orm(has_many = "super::api_integration_iggy_unit_refresh::Entity")]
+    ApiIntegrationIggyUnitRefresh,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::ApiUserLoginId",
@@ -55,6 +57,12 @@ impl Related<super::api_integration_iggy_destination::Entity> for Entity {
 impl Related<super::api_integration_iggy_event::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ApiIntegrationIggyEvent.def()
+    }
+}
+
+impl Related<super::api_integration_iggy_unit_refresh::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ApiIntegrationIggyUnitRefresh.def()
     }
 }
 

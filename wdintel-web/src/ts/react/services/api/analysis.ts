@@ -18,6 +18,7 @@ import type {
   AnalysisStatsMetadataValue,
   AnalysisStatsNetwork,
   AnalysisStatsPost,
+  AnalysisStatsDeviceName,
   AnalysisStatsSender,
   AnalysisStatsTag,
   AnalysisStatsUnit,
@@ -93,6 +94,15 @@ type AreaOfResponsibilityStatsRsp = {
   aorNames: AreaOfResponsibilityEntry[];
 };
 type CallsignInfoBatchRaw = Array<CallsignInfoRes>;
+export async function fetchAnalysisDeviceNames(
+  req: AnalysisStatsReq,
+  options?: RequestOptions,
+): Promise<AnalysisStatsDeviceName[]> {
+  return transformSnakeToCamel<AnalysisStatsDeviceName[]>(
+    await postJson('/api/rer/analysis/stats/device-names', transformCamelToSnake(req), options),
+  );
+}
+
 export type AnalysisStatsCountDimension =
   | 'groups'
   | 'senders'

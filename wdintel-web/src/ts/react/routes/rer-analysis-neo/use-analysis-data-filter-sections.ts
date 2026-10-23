@@ -32,6 +32,7 @@ const OPTION_FILTER_SECTIONS: AnalysisFilterSectionId[] = [
   'aors',
   'groups',
   'senders',
+  'devices',
   'callsigns',
   'units',
   'locations',
@@ -45,7 +46,6 @@ const GLOBAL_OPTION_QUERY_FIELDS: Array<keyof AnalysisQueryState> = [
   'freqsSelected',
   'search',
   'searchMode',
-  'deviceNamesSelected',
   'includeOnlyNewFreqs',
   'adjacentFreqsRange',
   'orWithExtendedForm',
@@ -70,6 +70,7 @@ const SECTION_QUERY_FIELDS: Array<{
   { field: 'aorsSelected', section: 'aors' },
   { field: 'groupsSelected', section: 'groups' },
   { field: 'sendersSelected', section: 'senders' },
+  { field: 'deviceNamesSelected', section: 'devices' },
   { field: 'callsignsSelected', section: 'callsigns' },
   { field: 'unitsSelected', section: 'units' },
   { field: 'locationsSelected', section: 'locations' },
@@ -113,6 +114,7 @@ const EMPTY_SECTION_LOAD_STATES: Record<AnalysisFilterSectionId, AnalysisFilterS
   aors: 'idle',
   groups: 'idle',
   senders: 'idle',
+  devices: 'idle',
   callsigns: 'idle',
   units: 'idle',
   locations: 'idle',
@@ -153,6 +155,7 @@ export function filterSectionsToInvalidateForPatch(
 type Params = {
   queryState: AnalysisQueryState;
   hideNetworks: boolean;
+  canUseDevices?: boolean;
   optionsFreqValues: string[];
   unitsMapRef: MutableRefObject<Record<number, Unit>>;
   onError: (message: string) => void;
@@ -169,6 +172,7 @@ type Params = {
 export function useAnalysisFilterSections({
   queryState,
   hideNetworks,
+  canUseDevices = false,
   optionsFreqValues,
   unitsMapRef,
   onError,
@@ -328,6 +332,7 @@ export function useAnalysisFilterSections({
   const loadFilterSection = useCallback(
     async (section: AnalysisFilterSectionId) => {
       if (hideNetworks && section === 'networks') return;
+      if (section === 'devices' && !canUseDevices) return;
       if (queryState.radioFeaturesAllowed === false && ['metadata', 'posts'].includes(section))
         return;
       const analysisReq = buildAnalysisReq(queryState, optionsFreqValues);
@@ -379,6 +384,7 @@ export function useAnalysisFilterSections({
       }
     },
     [
+      canUseDevices,
       clearSectionInFlight,
       clearFilterRetry,
       isFilterRetryBlocked,
@@ -444,6 +450,7 @@ export function useAnalysisFilterSections({
 
       await Promise.all(
         sections.map(async (section) => {
+          if (section === 'devices' && !canUseDevices) return;
           if (queryState.radioFeaturesAllowed === false && ['metadata', 'posts'].includes(section))
             return;
           const sectionKey = filterSectionCacheKey(section, analysisReq);
@@ -503,6 +510,7 @@ export function useAnalysisFilterSections({
       }
     },
     [
+      canUseDevices,
       clearSectionInFlight,
       clearFilterRetry,
       isFilterRetryBlocked,

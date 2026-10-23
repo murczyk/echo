@@ -496,6 +496,8 @@ mod m20261022_000000_messenger_ingest_avatars;
 mod m20261022_080838_sigint_network_settlement;
 mod m20261022_090303_attachment_job_claim_index;
 
+mod m20261022_151553_iggy_unit_refresh_queue;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -1178,6 +1180,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261022_000000_messenger_ingest_avatars::Migration),
             Box::new(m20261022_090303_attachment_job_claim_index::Migration),
             Box::new(m20261022_080838_sigint_network_settlement::Migration),
+            Box::new(m20261022_151553_iggy_unit_refresh_queue::Migration),
         ]
     }
 }
