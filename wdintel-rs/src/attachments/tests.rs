@@ -77,7 +77,9 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
             .map(|message| message.id)
             .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(actual, expected, "{query}");
-        for correlated in [false, true] {
+        for (correlated, inline_tsquery) in
+            [(false, false), (true, false), (true, true)]
+        {
             let actual = signal_message::Entity::find()
                 .join(
                     sea_orm::JoinType::LeftJoin,
@@ -87,7 +89,10 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
                 )
                 .filter(
                     super::search::analysis_message_filter(
-                        query, None, correlated,
+                        query,
+                        None,
+                        correlated,
+                        inline_tsquery,
                     )
                     .unwrap(),
                 )
@@ -97,7 +102,7 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
                 .into_iter()
                 .map(|message| message.id)
                 .collect::<std::collections::BTreeSet<_>>();
-            assert_eq!(actual, expected, "{query}, correlated={correlated}");
+            assert_eq!(actual, expected, "{query}, correlated={correlated}, inline_tsquery={inline_tsquery}");
         }
     }
 }

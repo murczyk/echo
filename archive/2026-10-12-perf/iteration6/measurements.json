@@ -1,0 +1,109 @@
+{
+  "date_utc": "2026-10-23",
+  "production_mutated": false,
+  "pivnich": {
+    "source_count": {
+      "observed_completed_shape_mean_ms": 25301.61,
+      "observed_shape_shared_read_GiB": 22.98,
+      "window_seconds": 133.94,
+      "prototype_cte_only_ms": 390.013,
+      "prototype_shared_read_blocks": 124,
+      "prototype_shared_hit_blocks": 297215,
+      "prototype_temp_written_blocks": 0,
+      "plain_old_inbox_scan_estimated_rows": 20324609,
+      "limits": "5s statement timeout; read-only SELECT; no indexes/configuration changed",
+      "caveat": "Representative captured parameters and sequential live-load observations; result/concurrency/generic-plan regressions still required before implementation.",
+      "prototype_with_lateral_ms": 453.732
+    },
+    "fuzzy_search": {
+      "native_fingerprint": "16607519593784466947",
+      "cancelled_queries_since_noon_until_1403": 131,
+      "mean_ms": 24735,
+      "accumulated_s": 3240.3,
+      "reproduction": "Scalar tsquery SELECT leaves tsvector filtering local and fetches id/search_tsv without a predicate; inline expression pushes match predicates into ClickHouse.",
+      "open_validation": "Generic prepared plans, stop words, prefixes, negative terms and attachment semantics."
+    },
+    "tagged_posts": {
+      "failed_native_peaks_GiB": [
+        13.091,
+        14.057,
+        14.195,
+        14.456
+      ],
+      "observed_native_join": "signal_message INNER JOIN sigint_post ON TRUE",
+      "diagnostic_plan_before_foreign_scans": 4,
+      "diagnostic_plan_after_foreign_scans": 1,
+      "prototype_ms": 204,
+      "prototype_peak_memory_bytes": 111105433,
+      "prototype_result_rows": 0,
+      "caveat": "Simplified diagnostic with prechecked tags; no controlled replay of full failing AOR/location/metadata scope; 204ms is not a before/after claim."
+    }
+  },
+  "skhid": {
+    "mirror_running_since_utc": "2026-10-23 14:05:20.735295",
+    "health_checked_at_utc": "2026-10-23 14:14:09.102561",
+    "healthy": true,
+    "source_slot_active": true,
+    "slot_lag_bytes": 6015088,
+    "before_window_utc": [
+      "12:48",
+      "12:53"
+    ],
+    "before_responses": 23510,
+    "before_503s": 38,
+    "after_window_utc": [
+      "14:08",
+      "14:13"
+    ],
+    "after_responses": 24582,
+    "after_503s": 1,
+    "after_duty_count_responses": 2871,
+    "after_duty_count_5xx": 0
+  },
+  "files_changed_in_repository": [],
+  "comparison_1230_1255_utc": {
+    "dates": [
+      "2026-10-15",
+      "2026-10-23"
+    ],
+    "pivnich": {
+      "responses": [
+        193576,
+        194175
+      ],
+      "http_503": [
+        188,
+        9
+      ],
+      "inbox_count_p95_ms": [
+        361,
+        624
+      ],
+      "group_facet_p95_ms": [
+        30010,
+        8170
+      ]
+    },
+    "skhid": {
+      "responses": [
+        187560,
+        122511
+      ],
+      "http_503": [
+        74,
+        310
+      ]
+    }
+  },
+  "method": {
+    "remote_access": "Existing unlocked SSH session; read-only SQL, plans, logs and catalogs.",
+    "source_delta_window_utc": [
+      "2026-10-23 14:03:09",
+      "2026-10-23 14:05:23"
+    ],
+    "statement_statistics_reset_unchanged": true,
+    "statement_statistics_deallocations_unchanged": true,
+    "limits": "5–8-second SQL limits; native diagnostic limited to 4 threads and 2 GiB.",
+    "sanitization": "No credentials, identities, message/group IDs, SQL literals or raw application content retained."
+  }
+}

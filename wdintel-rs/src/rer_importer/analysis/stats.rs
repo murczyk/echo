@@ -237,6 +237,38 @@ pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
     })
 }
 
+async fn resolve_tag_access_for_request(
+    source_db: &DatabaseConnection,
+    login_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+) -> Result<Option<AnalyticsTagAccess>, AppError> {
+    Ok(
+        if req
+            .selected_tags
+            .as_ref()
+            .is_some_and(|tags| !tags.is_empty())
+            || req
+                .denied_tags
+                .as_ref()
+                .is_some_and(|tags| !tags.is_empty())
+            || req.tag_presence.is_some()
+            || req.report_tags_only_this_unit == Some(true)
+        {
+            Some(
+                resolve_analytics_tag_access(
+                    source_db,
+                    login_id,
+                    req.report_tags_only_this_unit.unwrap_or(false),
+                )
+                .await
+                .context(h!())?,
+            )
+        } else {
+            None
+        },
+    )
+}
+
 pub(super) async fn resolve_analytics_message_id_scope(
     req: &AnalysisStatsReq,
     db: &DatabaseConnection,
@@ -1151,11 +1183,12 @@ fn apply_group_stats_filters(
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, req)?;
-    let query = filter_search_with_correlated_terms(
+    let query = filter_search_with_scope(
         query,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let query =
@@ -1614,29 +1647,10 @@ async fn fetch_senders_for_login_with_db(
         count: i64,
     }
 
-    let tag_access = if req
-        .selected_tags
-        .as_ref()
-        .is_some_and(|tags| !tags.is_empty())
-        || req
-            .denied_tags
-            .as_ref()
-            .is_some_and(|tags| !tags.is_empty())
-        || req.tag_presence.is_some()
-        || req.report_tags_only_this_unit == Some(true)
-    {
-        Some(
-            resolve_analytics_tag_access(
-                &env.dbx,
-                login_str,
-                req.report_tags_only_this_unit.unwrap_or(false),
-            )
+    let tag_access =
+        resolve_tag_access_for_request(&env.dbx, login_str, &req.0)
             .await
-            .context(h!())?,
-        )
-    } else {
-        None
-    };
+            .c(h!())?;
     let instant = std::time::Instant::now();
     let breakdown_query = build_sender_breakdown_query(
         req,
@@ -1927,11 +1941,12 @@ fn build_senders_filtered_query(
     )
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
-    let senders_res = filter_search_with_correlated_terms(
+    let senders_res = filter_search_with_scope(
         senders_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let senders_res =
@@ -2081,11 +2096,12 @@ where
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
-    let query = filter_search_with_correlated_terms(
+    let query = filter_search_with_scope(
         query,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let query =
@@ -2165,6 +2181,13 @@ async fn fetch_posts_with_db(
     )
     .await
     .context(h!())?;
+    let tag_access = if scope.is_some() {
+        resolve_tag_access_for_request(source_db, &login_value, &req.0)
+            .await
+            .c(h!())?
+    } else {
+        None
+    };
     let instant = std::time::Instant::now();
     let post_res = if scope.is_none() && req_allows_stats_aggregated(&req.0) {
         read_unfiltered_post_stats(db, master_keys, dt_since, dt_till).await?
@@ -2177,6 +2200,7 @@ async fn fetch_posts_with_db(
             dt_till,
             scope,
             units.as_ref(),
+            tag_access.as_ref(),
         )?
         .into_model::<PostsRes>()
         .all(db)
@@ -2274,6 +2298,13 @@ pub(super) async fn count_posts_with_db(
     .await
     .context(h!())?;
 
+    let tag_access = if scope.is_some() {
+        resolve_tag_access_for_request(source_db, &login_value, &req.0)
+            .await
+            .c(h!())?
+    } else {
+        None
+    };
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let posts_res = build_posts_filtered_query(
@@ -2284,6 +2315,7 @@ pub(super) async fn count_posts_with_db(
         dt_till,
         scope,
         units.as_deref(),
+        tag_access.as_ref(),
     )?;
     count_distinct_with_db(
         posts_res,
@@ -2293,7 +2325,7 @@ pub(super) async fn count_posts_with_db(
     .await
 }
 
-fn build_posts_query(
+pub(super) fn build_posts_query(
     req: &&Json<AnalysisStatsReq>,
     login_str: &uuid::Uuid,
     master_keys: Vec<String>,
@@ -2301,6 +2333,7 @@ fn build_posts_query(
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     Ok(build_posts_filtered_query(
         req,
@@ -2310,6 +2343,7 @@ fn build_posts_query(
         dt_till,
         scope,
         units,
+        tag_access,
     )?
     .select_only()
     .column_as(
@@ -2331,6 +2365,7 @@ fn build_posts_filtered_query(
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = Json(request_without_facet_filter(&req.0, AnalysisFacet::Posts));
     let include_peleng_locations =
@@ -2381,7 +2416,7 @@ fn build_posts_filtered_query(
     .context(h!())?;
     let post_res = filter_selected_callsigns(post_res, &req.selected_callsigns)
         .context(h!())?;
-    let post_res = filter_selected_tags_with_scope(
+    let post_res = filter_selected_tags_with_access(
         post_res,
         &req.selected_tags,
         &req.denied_tags,
@@ -2393,8 +2428,15 @@ fn build_posts_filtered_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
+        match tag_access {
+            Some(access) => TagFilterAccess::Resolved {
+                user_id: login_str,
+                accessible_tag_ids: &access.accessible_tag_ids,
+                unit_login_ids: &access.unit_login_ids,
+            },
+            None => TagFilterAccess::Unresolved { user_id: login_str },
+        },
         scope,
     )
     .context(h!())?;
@@ -2407,11 +2449,12 @@ fn build_posts_filtered_query(
     )
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
-    let post_res = filter_search_with_correlated_terms(
+    let post_res = filter_search_with_scope(
         post_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let post_res =
@@ -2876,11 +2919,12 @@ fn build_freqs_filtered_query(
     )
     .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, &req)?;
-    let freqs_res = filter_search_with_correlated_terms(
+    let freqs_res = filter_search_with_scope(
         freqs_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let freqs_res =
@@ -4112,11 +4156,12 @@ fn build_callsigns_filtered_query(
     )
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
-    let callsigns_res = filter_search_with_correlated_terms(
+    let callsigns_res = filter_search_with_scope(
         callsigns_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .c(h!())?;
     let callsigns_res = filter_selected_device_names(
@@ -4832,11 +4877,12 @@ fn build_tags_filtered_query_with_owner_condition(
     }
     .context(h!())?;
     let tags_res = apply_metadata_filters(tags_res, &req)?;
-    let tags_res = filter_search_with_correlated_terms(
+    let tags_res = filter_search_with_scope(
         tags_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .c(h!())?;
     let tags_res =
@@ -5267,11 +5313,12 @@ fn build_units_filtered_query(
     )
     .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
-    let units_res = filter_search_with_correlated_terms(
+    let units_res = filter_search_with_scope(
         units_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let units_res =
@@ -5627,11 +5674,12 @@ fn build_facet_messages_query(
     )
     .context(h!())?;
     let locations_res = apply_metadata_filters(locations_res, &req).c(h!())?;
-    let locations_res = filter_search_with_correlated_terms(
+    let locations_res = filter_search_with_scope(
         locations_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let locations_res =
@@ -6332,11 +6380,12 @@ fn build_aor_messages_query(
         scope,
     )
     .context(h!())?;
-    let messages = filter_search_with_correlated_terms(
+    let messages = filter_search_with_scope(
         messages,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let messages =
@@ -6736,11 +6785,12 @@ fn build_network_analytics_messages_query(
     )
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
-    let messages = filter_search_with_correlated_terms(
+    let messages = filter_search_with_scope(
         messages,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let messages =
@@ -7899,11 +7949,12 @@ async fn fetch_selected_count_for_login_with_conn(
     .context(h!())?;
     let selected_count_res =
         apply_metadata_filters(selected_count_res, &req.0).context(h!())?;
-    let selected_count_res = filter_search_with_correlated_terms(
+    let selected_count_res = filter_search_with_scope(
         selected_count_res,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     let selected_count_res = filter_selected_device_names(
@@ -8688,6 +8739,7 @@ mod tests {
                     dt_since,
                     dt_till,
                     Some(&scope),
+                    None,
                     None,
                 )
                 .unwrap()
