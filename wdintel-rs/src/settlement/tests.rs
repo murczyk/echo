@@ -5,7 +5,7 @@ use crate::entities::{
 use crate::location::{types::SettlementDetails, SettlementsDataConfig};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, DatabaseTransaction, EntityTrait,
-    TransactionTrait,
+    IntoActiveModel, TransactionTrait,
 };
 use serial_test::serial;
 use std::collections::BTreeMap;
@@ -186,6 +186,47 @@ fn catalog(coords: &[(f64, f64)]) -> Arc<crate::location::SettlementsData> {
             .map(|settlement| (settlement.name.clone(), vec![settlement]))
             .collect::<BTreeMap<_, _>>(),
     ))
+}
+
+#[tokio::test]
+#[serial]
+async fn kamianka_sql_seed_preserves_existing_rows_and_is_idempotent_2133() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let original = settlement::Entity::find_by_id(94886)
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut settlement = original.clone().into_active_model();
+    settlement.tag = Set(Some("#2133 preserved".to_string()));
+    let settlement = settlement.update(&txn).await.unwrap();
+    let sql = include_str!("../../../scripts/settlements/add-kamianka.sql");
+    for _ in 0..2 {
+        txn.execute_unprepared(sql).await.unwrap();
+    }
+    assert_eq!(
+        settlement::Entity::find_by_id(94886)
+            .one(&txn)
+            .await
+            .unwrap(),
+        Some(settlement)
+    );
+    settlement::Entity::delete_by_id(94886)
+        .exec(&txn)
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        txn.execute_unprepared(sql).await.unwrap();
+    }
+    assert_eq!(
+        settlement::Entity::find_by_id(94886)
+            .one(&txn)
+            .await
+            .unwrap(),
+        Some(original)
+    );
+    txn.rollback().await.unwrap();
 }
 
 #[tokio::test]

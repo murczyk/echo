@@ -1,9 +1,10 @@
 use super::settlement_clusters::SettlementAnchor;
 use super::settlement_queue::{
-    claim_pending_set, refresh_settlement_catalog, resolve_settlement_names,
-    SettlementQueue, SettlementResolutionCache,
+    claim_pending_set, resolve_settlement_names, SettlementQueue,
+    SettlementResolutionCache,
 };
 use super::types::BattleLineCoordinate;
+use super::{ensure_active_battle_line, lock_updates};
 use crate::config::INBOX_SETTLEMENT_WORKER_BATCH_SIZE;
 use crate::entities::{
     area_of_responsibility, sigint_network, sigint_network_aor,
@@ -14,6 +15,20 @@ use crate::types::{warn, Env, ShortContext};
 use sea_orm::sea_query::LockType;
 use sea_orm::*;
 use std::sync::{Arc, RwLock};
+
+async fn refresh_settlement_catalog(env: &Env) -> anyhow::Result<i64> {
+    let catalog_txn = env.dbx.begin().await.c(h!())?;
+    lock_updates(&catalog_txn).await.c(h!())?;
+    let version = ensure_active_battle_line(&catalog_txn).await.c(h!())?;
+    crate::location::aor_config::refresh_settlements_aor_map(
+        &catalog_txn,
+        env.settlements.clone(),
+    )
+    .await
+    .c(h!())?;
+    catalog_txn.commit().await.c(h!())?;
+    Ok(version)
+}
 
 pub(super) async fn process_pending_networks(
     env: &Env,

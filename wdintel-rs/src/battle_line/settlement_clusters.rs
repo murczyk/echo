@@ -26,6 +26,7 @@ struct Candidate {
 struct Group {
     draft_indices: Vec<usize>,
     candidates: Vec<Candidate>,
+    fixed: bool,
 }
 
 #[derive(Clone, Default)]
@@ -141,7 +142,9 @@ impl Election {
                 return;
             }
         }
-        self.search(groups, index + 1, current);
+        if !groups[index].fixed {
+            self.search(groups, index + 1, current);
+        }
     }
 
     fn consider(&mut self, current: &Combination) {
@@ -174,7 +177,24 @@ pub(super) fn elect_settlements(
     drafts: &[LocationResolutionDraft],
     anchors: &[SettlementAnchor],
 ) -> Vec<Option<usize>> {
+    elect_settlements_with_fixed(drafts, anchors, &BTreeMap::new())
+}
+
+fn elect_settlements_with_fixed(
+    drafts: &[LocationResolutionDraft],
+    anchors: &[SettlementAnchor],
+    fixed: &BTreeMap<String, i32>,
+) -> Vec<Option<usize>> {
     let mut groups = eligible_groups(drafts);
+    for group in &mut groups {
+        let name = normalize_name(&drafts[group.draft_indices[0]].location);
+        if let Some(settlement_id) = fixed.get(&name) {
+            group.fixed = true;
+            group
+                .candidates
+                .retain(|candidate| candidate.settlement_id == *settlement_id);
+        }
+    }
     let mut chosen = vec![None; drafts.len()];
     if groups.is_empty()
         || groups.len() > BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES
@@ -231,6 +251,16 @@ pub(super) fn resolve_cluster(
     }
 }
 
+pub(super) fn resolve_cluster_with_fixed(
+    drafts: &mut [LocationResolutionDraft],
+    fixed: &BTreeMap<String, i32>,
+) {
+    let chosen = elect_settlements_with_fixed(drafts, &[], fixed);
+    for (draft, chosen) in drafts.iter_mut().zip(chosen) {
+        draft.chosen_candidate_index = chosen;
+    }
+}
+
 fn apply_choice(
     drafts: &[LocationResolutionDraft],
     group: &Group,
@@ -255,6 +285,7 @@ fn eligible_groups(drafts: &[LocationResolutionDraft]) -> Vec<Group> {
         let group = groups.entry(name).or_insert_with(|| Group {
             draft_indices: vec![],
             candidates: eligible_candidates(draft),
+            fixed: false,
         });
         group.draft_indices.push(index);
     }

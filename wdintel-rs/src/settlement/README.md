@@ -8,14 +8,22 @@ variants and trim the query. Substring search treats `%`, `_` and `\` literally.
 Each settlement appears once per input, including when several aliases match.
 An alias shared by different settlements returns all of those settlements.
 
-`resolve_candidates` restricts exact name/alias matches to coordinates in the
-configured default or AOR settlement catalogs, using the existing 2 km coordinate
-matching tolerance. Dictionary IDs are not PostgreSQL IDs. When an exact database
+Inbox settlement linking, its diagnostic preview, and explicit recalculation use
+`find_by_names` directly: candidates come only from `settlement` and
+`settlement_alias`, with valid database coordinates. JSON dictionaries neither
+filter these candidates nor provide fallback names. The Battle Line/AOR distance
+limits, joint majority election, and network anchors still apply.
+Alternate spellings present only in JSON need entries in `settlement_alias`;
+otherwise they remain unresolved and count against the majority.
+
+Network resolution through `resolve_candidates` restricts exact name/alias
+matches to coordinates in the configured default or AOR settlement catalogs,
+using the existing 2 km coordinate matching tolerance. Dictionary IDs are not
+PostgreSQL IDs. When an exact database
 match is unavailable within that scope, configured dictionary names and their
 coordinate-to-database mapping provide the fallback. Exact renamed database names
 therefore resolve to their own database rows; explicit aliases resolve to their
-foreign-key targets. Battle-line resolution, background linking and oneoffs all
-use this path. Missing coordinates cannot produce a geographic candidate.
+foreign-key targets. Missing coordinates cannot produce a geographic candidate.
 
 `m20261010_094039_settlement_alias_lookup_indexes` adds expression trigram indexes
 for the same normalized name and alias expressions used by both lookup modes.
@@ -41,9 +49,11 @@ Adding or removing an inbox location requeues the remaining names, including
 previously undefined rows, so earlier joint choices can be reconsidered. Clearing
 linked rows also invalidates group statistics. Unchanged text sets preserve
 processed rows; reordering and repeated names do not requeue them. Already linked
-settlements provide context when no resolved network anchors are available.
+settlements remain fixed votes, with the majority and 50 km limits, when no
+resolved network anchors are available. Retries preserve unresolved outliers.
 Explicit relinking oneoffs recompute all names together. Per-name caches contain
-independent candidate drafts; each item's election runs separately.
+independent candidate drafts; each item's election runs separately. Database-only
+and catalog-based candidate caches are separate.
 
 Network location edits reconcile `sigint_network_settlement` through database
 triggers. The migration queues existing live networks. Network resolution and
@@ -55,3 +65,18 @@ Regression coverage: `wdintel-rs/src/settlement/tests.rs`,
 `wdintel-rs/src/ai_settlement/aliases/tests.rs`,
 `wdintel-rs/src/battle_line/mod.rs`, and
 `wdintel-rs/src/battle_line/settlement_queue.rs`.
+
+## Kamianka SQL seed
+
+`scripts/settlements/add-kamianka.sql` inserts the canonical Кам’янка in the
+Дворічанська community, Куп’янський district, with ID `94886` if it is missing.
+Existing rows, dictionaries, and message links remain unchanged. Run it only
+after approval for the target database:
+
+```bash
+psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/settlements/add-kamianka.sql
+```
+
+Inbox resolution can use this database row without a JSON dictionary entry.
+Historical links require the explicit
+[recalculation command](../battle_line/README.md).
