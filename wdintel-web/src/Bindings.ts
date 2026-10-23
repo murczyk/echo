@@ -7198,7 +7198,15 @@ export type DeploymentMaintenance = {
   remainingMs: number;
 };
 
+export type LongPollFlavor =
+  | 'rer'
+  | 'analysis-neo'
+  | 'generic'
+  | 'generic-full'
+;
+
 export type LongPollReq = {
+  flavor: LongPollFlavor;
   sessionId: string;
   lastEventId: string | null;
   deploymentMaintenanceProtocol: number | null;

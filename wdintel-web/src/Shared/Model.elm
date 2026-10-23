@@ -118,7 +118,6 @@ type alias Model =
     , toasts : Shared.Components.Toast.Model
     , eventService : Core.EventTypes.EventState
     , deploymentMaintenance : Maybe B.DeploymentMaintenance
-    , pendingEvents : List B.EventMsg
     , eventSubscriptions : Core.EventTypes.EventSubscriptions
     }
 

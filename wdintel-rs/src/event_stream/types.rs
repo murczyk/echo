@@ -60,7 +60,22 @@ impl EventMsg {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum LongPollFlavor {
+    #[serde(rename = "rer")]
+    LpfRer,
+    #[serde(rename = "analysis-neo")]
+    LpfAnalysisNeo,
+    #[serde(rename = "generic")]
+    LpfGeneric,
+    #[serde(rename = "generic-full")]
+    LpfGenericFull,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct LongPollReq {
+    pub flavor: LongPollFlavor,
     pub session_id: String,
     pub last_event_id: Option<String>,
     #[serde(default)]

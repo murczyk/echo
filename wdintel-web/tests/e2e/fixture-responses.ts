@@ -1,5 +1,23 @@
-import type { SystemSettingsCurrentRsp } from '../../src/Bindings';
+import type { ListNetworksRsp, ListUnitsRsp, SystemSettingsCurrentRsp } from '../../src/Bindings';
 import { transformCamelToSnake } from '../../src/ts/snake-to-camel';
+
+export function emptyUnitsListResponse() {
+  const response: ListUnitsRsp = {
+    showLoadMore: false,
+    totalCount: 0,
+    statusCounts: { active: 0, inactive: 0 },
+    units: [],
+  };
+  return transformCamelToSnake<Record<string, unknown>>(response);
+}
+
+export function emptyNetworksListResponse() {
+  const response: ListNetworksRsp = {
+    list: [],
+    statusCounts: { active: 0, inactive: 0, archived: 0 },
+  };
+  return transformCamelToSnake<Record<string, unknown>>(response);
+}
 
 export function networkSettingsResponse() {
   return {
