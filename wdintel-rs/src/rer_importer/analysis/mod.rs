@@ -759,6 +759,7 @@ where
         selected_units,
         units_exact_match_only,
         force_correlation,
+        None,
     );
     Ok(match condition {
         Some(condition) => q.filter(condition),
@@ -770,6 +771,7 @@ fn selected_units_condition(
     selected_units: &Option<Vec<String>>,
     units_exact_match_only: &Option<bool>,
     force_correlation: bool,
+    mut network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> Option<SimpleExpr> {
     let mut m_empty_filter = None;
     let mut m_filter = None;
@@ -784,6 +786,7 @@ fn selected_units_condition(
                 ))
                 .is_not_null(),
                 force_correlation,
+                network_ctes.as_deref_mut(),
             )
             .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
@@ -799,8 +802,11 @@ fn selected_units_condition(
                 selected_units.clone(),
                 !exact_match_only,
             );
-            let in_subquery_condition =
-                message_has_linked_unit(linked_unit_match, force_correlation);
+            let in_subquery_condition = message_has_linked_unit(
+                linked_unit_match,
+                force_correlation,
+                network_ctes,
+            );
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
             let expr = if exact_match_only {
@@ -837,6 +843,7 @@ where
         selected_unit_ids,
         units_exact_match_only,
         false,
+        None,
     )
 }
 
@@ -855,6 +862,7 @@ where
         selected_unit_ids,
         units_exact_match_only,
         true,
+        None,
     )
 }
 
@@ -864,6 +872,7 @@ fn filter_selected_units_or_ids_with_correlation<Q>(
     selected_unit_ids: &Option<Vec<i64>>,
     units_exact_match_only: &Option<bool>,
     force_correlation: bool,
+    network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -872,6 +881,7 @@ where
         selected_units,
         units_exact_match_only,
         force_correlation,
+        network_ctes,
     );
     let unit_ids = selected_unit_ids
         .as_ref()
@@ -909,6 +919,7 @@ where
         denied_units,
         units_exact_match_only,
         false,
+        None,
     )
 }
 
@@ -1028,6 +1039,7 @@ where
         denied_units,
         units_exact_match_only,
         true,
+        None,
     )
 }
 
@@ -1036,6 +1048,7 @@ fn filter_denied_units_with_correlation<Q>(
     denied_units: &Option<Vec<String>>,
     units_exact_match_only: &Option<bool>,
     force_correlation: bool,
+    mut network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -1053,6 +1066,7 @@ where
                 ))
                 .is_not_null(),
                 force_correlation,
+                network_ctes.as_deref_mut(),
             )
             .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
@@ -1068,9 +1082,12 @@ where
                 selected_units.clone(),
                 !exact_match_only,
             );
-            let in_subquery_condition =
-                message_has_linked_unit(linked_unit_match, force_correlation)
-                    .not();
+            let in_subquery_condition = message_has_linked_unit(
+                linked_unit_match,
+                force_correlation,
+                network_ctes,
+            )
+            .not();
 
             let expr = if exact_match_only {
                 in_subquery_condition
@@ -1255,12 +1272,69 @@ fn sigint_unit_hierarchy_columns() -> [sigint_unit::Column; 5] {
 fn message_has_linked_unit(
     filter_expr: SimpleExpr,
     force_correlation: bool,
+    network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> SimpleExpr {
-    let mut query = select_sigint_units_by_names(filter_expr);
+    let networks = select_network_ids_by_unit(filter_expr);
+    let networks = match network_ctes {
+        Some(ctes) => materialize_unit_network_ids(networks, ctes),
+        None => networks,
+    };
+    let mut query = select_sigint_units_by_network_ids(networks);
     if force_correlation {
         query.offset(0);
     }
     Expr::exists(query)
+}
+
+fn materialize_unit_network_ids(
+    query: SelectStatement,
+    ctes: &mut Vec<CommonTableExpression>,
+) -> SelectStatement {
+    let alias = Alias::new(format!("inbox_unit_networks_{}", ctes.len()));
+    ctes.push(
+        CommonTableExpression::new()
+            .query(query)
+            .table_name(alias.clone())
+            .materialized(true)
+            .to_owned(),
+    );
+    Query::select()
+        .column((alias.clone(), sigint_network_unit::Column::NetworkId))
+        .from(alias)
+        .to_owned()
+}
+
+pub(crate) fn filter_inbox_units_with_materialized_networks(
+    mut query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+    force_correlation: bool,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let mut ctes = Vec::new();
+    query = filter_selected_units_or_ids_with_correlation(
+        query,
+        &req.selected_units,
+        &req.selected_unit_ids,
+        &req.units_exact_match_only,
+        force_correlation,
+        Some(&mut ctes),
+    )
+    .c(h!())?;
+    query = filter_denied_units_with_correlation(
+        query,
+        &req.denied_units,
+        &req.units_exact_match_only,
+        force_correlation,
+        Some(&mut ctes),
+    )
+    .c(h!())?;
+    if !ctes.is_empty() {
+        let mut with_clause = WithClause::new();
+        for cte in ctes {
+            with_clause.cte(cte);
+        }
+        QuerySelect::query(&mut query).with_cte(with_clause);
+    }
+    Ok(query)
 }
 
 pub(super) fn selected_unit_network_ids_query(
@@ -1370,7 +1444,12 @@ where
         Expr::cust(format!(r#""sigint_inbox_item"."id" IN ({matching_ids})"#))
     })
     .or_else(|| {
-        selected_units_condition(selected_units, units_exact_match_only, false)
+        selected_units_condition(
+            selected_units,
+            units_exact_match_only,
+            false,
+            None,
+        )
     });
     let unit_ids = selected_unit_ids
         .as_ref()
@@ -1701,12 +1780,6 @@ fn linked_unit_inbox_item_is_active(
             ))
             .gte(message_datetime)),
         )
-}
-
-/// Ця функція обирає тільки ті повідомлення, для яких є активна мережа
-/// з прив'язаним підрозділом, який задовольняє `filter_expr`.
-fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
-    select_sigint_units_by_network_ids(select_network_ids_by_unit(filter_expr))
 }
 
 fn select_sigint_units_by_network_ids(
@@ -3525,6 +3598,28 @@ pub(crate) fn filter_search_with_correlated_terms<Q>(
 where
     Q: QueryFilter + QuerySelect,
 {
+    Ok(
+        filter_search_with_scope(
+            q,
+            search,
+            search_mode,
+            correlated_terms,
+            None,
+        )
+        .c(h!())?,
+    )
+}
+
+pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
@@ -3532,6 +3627,7 @@ where
             search,
             search_mode,
             correlated_terms,
+            scope.is_some(),
         )
         .c(h!())?;
         q2 = q2.filter(predicate);
@@ -4406,11 +4502,12 @@ fn build_summary_table_filtered_messages_query_with_access(
         .context(h!())?;
     let q =
         filter_selected_metadata_for_analysis_stats(q, req).context(h!())?;
-    let q = filter_search_with_correlated_terms(
+    let q = filter_search_with_scope(
         q,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
@@ -6784,11 +6881,12 @@ fn build_new_callsign_filtered_items_query(
         callsign_source,
         scope,
     )?;
-    let query = filter_search_with_correlated_terms(
+    let query = filter_search_with_scope(
         query,
         &req.search,
         req.search_mode,
         scope.is_some(),
+        scope,
     )
     .c(h!())?;
     let query = filter_selected_device_names(query, &req.selected_device_names)

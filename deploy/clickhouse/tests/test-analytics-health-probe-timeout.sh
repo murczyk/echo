@@ -49,6 +49,9 @@ source_psql() {
 }
 gateway_psql() {
   cat >/dev/null
+  if [[ ${ECHO_TEST_HEALTH_SCENARIO:-} == gateway_failure ]]; then
+    return 1
+  fi
 }
 postgres_psql() {
   cat >"$ECHO_TEST_HEALTH_SQL"
@@ -63,14 +66,13 @@ chmod +x "$case_dir/path/systemctl"
 
 health_sql=$case_dir/health.sql
 error_log=$case_dir/error.log
-if PATH="$case_dir/path:$PATH" \
+status=0
+PATH="$case_dir/path:$PATH" \
   ECHO_TEST_HEALTH_SQL="$health_sql" \
-  ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=1 \
-  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log"
-then
-  printf 'delayed analytics heartbeat unexpectedly passed health check\n' >&2
-  exit 1
-fi
+  ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=45 \
+  bash "$case_dir/bin/check-analytics-health.sh" --timeout 1 2>"$error_log" \
+  || status=$?
+[[ "$status" == 75 ]]
 
 grep -q '^UPDATE public.echo_analytics_health' "$health_sql"
 if grep -Eq 'checked_at|healthy' "$health_sql"; then
@@ -80,16 +82,25 @@ fi
 grep -q 'source heartbeat was not visible through ClickHouse within 1s' \
   "$error_log"
 
-if PATH="$case_dir/path:$PATH" \
+status=0
+PATH="$case_dir/path:$PATH" \
   ECHO_TEST_HEALTH_SQL="$health_sql" \
   ECHO_TEST_HEALTH_SCENARIO=deadlock \
   ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=1 \
-  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log"
-then
-  printf 'deadlocked analytics heartbeat unexpectedly passed health check\n' >&2
-  exit 1
-fi
+  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log" \
+  || status=$?
+[[ "$status" == 1 ]]
 grep -q 'deadlock detected' "$error_log"
 grep -q 'could not update source analytics heartbeat' "$error_log"
+
+status=0
+PATH="$case_dir/path:$PATH" \
+  ECHO_TEST_HEALTH_SQL="$health_sql" \
+  ECHO_TEST_HEALTH_SCENARIO=gateway_failure \
+  ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=1 \
+  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log" \
+  || status=$?
+[[ "$status" == 1 ]]
+grep -q 'could not read replicated analytics heartbeat' "$error_log"
 
 printf 'Analytics health probe timeout tests passed\n'

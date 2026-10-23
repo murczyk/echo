@@ -1124,8 +1124,15 @@ and ClickHouse catalogs, reconciles schema drift, and verifies analytics once
 all raw tables are ready. Gateway views
 without drift are left in place; changed views are refreshed individually with
 short PostgreSQL lock timeouts. Transient PostgreSQL deadlocks retry only the
-failed verification step before the mirror is left paused. Retry an
-interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
+failed verification step before the mirror is left paused. Heartbeat-only lag
+retries within `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` (default 300), with
+each probe capped by the remaining deadline. Desired-state reconciliation is
+refreshed before each probe so it stays current while the repair lock is held.
+If catch-up exceeds that deadline, deployment fails but leaves the mirror
+running and retains repair state; schema, service, and other health failures
+still leave an interrupted repair paused. The heartbeat probe exits with status
+75 for this delay and accepts `--timeout SECONDS` to cap its normal probe budget.
+Retry an interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
 on the source host after activating the same corrected control bundle on both
 hosts. If exclusion synchronization stops on schema drift from an already-applied
 migration, run `/opt/echo-peerdb/current/bin/source-resnapshot-table.sh --manifest --published-only`

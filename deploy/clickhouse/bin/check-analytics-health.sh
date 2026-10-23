@@ -13,6 +13,11 @@ require_expected_control_release
 probe_timeout=${ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS:-45}
 [[ "$probe_timeout" =~ ^[1-9][0-9]*$ ]] \
   || die "ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS must be a positive integer"
+if (($# > 0)); then
+  [[ $# -eq 2 && $1 == --timeout && $2 =~ ^[1-9][0-9]*$ ]] \
+    || die "usage: $0 [--timeout SECONDS]"
+  ((probe_timeout <= $2)) || probe_timeout=$2
+fi
 export PGCONNECT_TIMEOUT=${ANALYTICS_HEALTH_CONNECT_TIMEOUT_SECONDS:-5}
 [[ "$PGCONNECT_TIMEOUT" =~ ^[1-9][0-9]*$ ]] \
   || die "ANALYTICS_HEALTH_CONNECT_TIMEOUT_SECONDS must be a positive integer"
@@ -162,7 +167,11 @@ WHERE singleton
     OR updated_at >= :'source_updated_at'::timestamptz
   );
 SQL
-  ) || report_transient_health_error
+  ) || {
+    report_transient_health_error
+    fail_health "could not read replicated analytics heartbeat" \
+      "$source_lsn" "$confirmed_flush_lsn"
+  }
   if [[ "$destination_visible" == t ]]; then
     if ! "$SCRIPT_DIR/reconcile-if-needed.sh" --check; then
       fail_health "analytics desired-state check failed" \
@@ -181,4 +190,5 @@ detail="source heartbeat was not visible through ClickHouse within ${probe_timeo
 # freshness budget, rather than the shorter probe timeout, decides when to
 # reject analytics reads.
 record_probe_delay "$detail" "$source_lsn" "$confirmed_flush_lsn" || true
-die "$detail"
+printf '[echo-analytics] ERROR: %s\n' "$detail" >&2
+exit 75

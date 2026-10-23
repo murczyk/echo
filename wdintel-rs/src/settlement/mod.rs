@@ -6,6 +6,7 @@ use crate::h;
 use crate::types::ShortContext;
 use sea_orm::{ConnectionTrait, DatabaseBackend, FromQueryResult, Statement};
 
+pub(crate) mod oneoff;
 mod resolution;
 mod scope;
 

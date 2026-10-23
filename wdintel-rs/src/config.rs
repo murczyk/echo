@@ -72,6 +72,9 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
+pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
+pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
+pub const AI_ENGINE_GLM_5_3_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
 pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
 pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
@@ -1138,6 +1141,8 @@ pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_INITIAL_MS: u64 = 100;
 pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_MAX_MS: u64 = 3_000;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 2_000;
+pub const LONG_POLL_READ_STREAM_ELEMENTS_MAX: usize = 1000;
+pub const LONG_POLL_READ_STREAM_BLOCK_MS: usize = 50_000;
 pub const REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE: usize = 256;
 pub const REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const REDIS_MAXLEN: usize = 1000;
@@ -1157,6 +1162,7 @@ pub const TOTP_2FA_USED_STEP_TTL_SEC: u64 =
 pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
     "echo:deployment:maintenance";
 pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
+pub const DEPLOYMENT_MAINTENANCE_POLL_INTERVAL_MS: u64 = 1_000;
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;

@@ -1231,6 +1231,7 @@ enum Cmd {
     /// Recalculates settlement links, including existing links, in the selected time range (today by default).
     #[command(visible_alias = "oneoff-recalculate-inbox-settlements")]
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
+    OneoffAddMissingSettlements,
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillPelengBattleLineDistance(
         OneoffBackfillPelengBattleLineDistancePs,
@@ -2072,6 +2073,9 @@ async fn async_main(
                 mode, &ps,
             )
             .await
+        }
+        Cmd::OneoffAddMissingSettlements => {
+            settlement::oneoff::oneoff_add_missing_settlements(mode).await
         }
         Cmd::OneoffImportBattleLineFromDeltaKml(ps) => {
             battle_line::oneoff::oneoff_import_battle_line_from_delta_kml(
