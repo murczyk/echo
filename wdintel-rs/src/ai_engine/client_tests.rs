@@ -7,6 +7,45 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[tokio::test(start_paused = true)]
+async fn glm_cooldown_respects_caller_deadlines_before_database_access() {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let engine = ai_engine::Model {
+        id: uuid::Uuid::new_v4(),
+        name: "Government GLM".to_string(),
+        url: AI_GOV_UA_API_BASE.to_string(),
+        token: None,
+        model_name: AI_ENGINE_GLM_5_3_MODEL.to_string(),
+        created_at: chrono::Utc::now().naive_utc(),
+        updated_at: chrono::Utc::now().naive_utc(),
+        enabled: true,
+        callsign_enabled: true,
+        ocr_enabled: false,
+        ocr_request_profile: "openai_vision".to_string(),
+    };
+    client
+        .glm_cooldown
+        .observe(
+            engine.id,
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            &reqwest::header::HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+    let started = tokio::time::Instant::now();
+    let error = client
+        .send(&engine, json!({}), Duration::from_secs(10))
+        .await
+        .unwrap_err();
+    assert!(error
+        .chain()
+        .any(|error| error.is::<tokio::time::error::Elapsed>()));
+    assert_eq!(started.elapsed(), Duration::from_secs(10));
+    client.glm_cooldown.wait(engine.id).await;
+    assert_eq!(started.elapsed(), Duration::from_secs(60));
+}
+
 fn settings_request(secret: Option<&str>) -> SaveAiGovUaSettingsReq {
     SaveAiGovUaSettingsReq {
         enabled: true,

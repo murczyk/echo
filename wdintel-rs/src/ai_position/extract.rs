@@ -5,7 +5,9 @@ use super::normalize::{
     ground, is_cell_label, is_generic_object, position_key,
 };
 use super::types::{AiPositionCoordinateItem, AiPositionFound, AiPositionSpan};
-use crate::ai_engine::{request_structured_ai_response, AiEngineMessage};
+use crate::ai_engine::{
+    extraction_output_tokens, request_structured_ai_response, AiEngineMessage,
+};
 use crate::config::{
     AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
     AI_POSITION_COORDINATE_MATCH_METERS, AI_POSITION_COORDINATE_MAX_CHARS,
@@ -134,7 +136,7 @@ async fn request(
         engine,
         messages,
         AI_POSITION_TEMPERATURE,
-        AI_POSITION_OUTPUT_TOKENS,
+        extraction_output_tokens(engine, AI_POSITION_OUTPUT_TOKENS),
         response_format(),
     )
     .await
