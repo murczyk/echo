@@ -598,10 +598,13 @@ export type MessageRepliesReq = {
 
 export type MessageReply = {
   id: number;
+  threadId: number;
   originalSignalMessageId: number | null;
   replySignalMessageId: number | null;
   createdAt: number;
   deleted: boolean;
+  originalDeleted: boolean;
+  replyDeleted: boolean;
 };
 
 export type CitedMessage = {
@@ -4162,7 +4165,7 @@ export type DirectSubmitPayload = {
   retainedMediaIds: Array<string> | null;
   parentSignalMessageIds: Array<number>;
   copySourceSignalMessageIds: Array<number>;
-  citedSignalMessageIds: Array<number>;
+  engagedMessageId: number | null;
 };
 
 export type DirectSubmitAttachmentUpdates = {

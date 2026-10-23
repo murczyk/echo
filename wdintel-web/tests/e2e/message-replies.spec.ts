@@ -16,6 +16,7 @@ test.describe('@regression #3612 message replies', () => {
       let reader = false;
       let replyRequests = 0;
       let unavailable = false;
+      let headDeleted = false;
       await page.route('**/api/rer-importer/message-replies', (route) => {
         replyRequests += 1;
         if (unavailable) return route.fulfill({ json: { replies: [], reply_messages: [] } });
@@ -24,47 +25,45 @@ test.describe('@regression #3612 message replies', () => {
             replies: [
               {
                 id: 1,
-                original_signal_message_id: 11,
+                original_signal_message_id: headDeleted ? null : 11,
                 reply_signal_message_id: id,
                 created_at: 1,
-                deleted: false,
+                deleted: headDeleted,
+                thread_id: 11,
+                original_deleted: headDeleted,
+                reply_deleted: false,
               },
               {
                 id: 2,
-                original_signal_message_id: id,
+                original_signal_message_id: headDeleted ? null : 11,
                 reply_signal_message_id: 21,
                 created_at: 2,
-                deleted: false,
+                deleted: headDeleted,
+                thread_id: 11,
+                original_deleted: headDeleted,
+                reply_deleted: false,
               },
               {
                 id: 3,
-                original_signal_message_id: id,
+                original_signal_message_id: headDeleted ? null : 11,
                 reply_signal_message_id: null,
                 created_at: 3,
                 deleted: true,
-              },
-              {
-                id: 5,
-                original_signal_message_id: 12,
-                reply_signal_message_id: id,
-                created_at: 5,
-                deleted: false,
-              },
-              {
-                id: 6,
-                original_signal_message_id: null,
-                reply_signal_message_id: id,
-                created_at: 6,
-                deleted: false,
+                thread_id: 11,
+                original_deleted: headDeleted,
+                reply_deleted: true,
               },
               ...(created
                 ? [
                     {
                       id: 4,
-                      original_signal_message_id: id,
+                      original_signal_message_id: headDeleted ? null : 11,
                       reply_signal_message_id: 501,
                       created_at: 4,
-                      deleted: false,
+                      deleted: headDeleted,
+                      thread_id: 11,
+                      original_deleted: headDeleted,
+                      reply_deleted: false,
                     },
                   ]
                 : []),
@@ -91,13 +90,6 @@ test.describe('@regression #3612 message replies', () => {
                 preview: 'Перша відповідь',
                 href: `/rer-${host}-neo?m=21`,
               },
-              {
-                id: 12,
-                timestamp: null,
-                created_at: 1_790_003_600_000,
-                preview: 'Другий оригінал',
-                href: `/rer-${host}-neo?m=12`,
-              },
               ...(created
                 ? [
                     {
@@ -119,15 +111,15 @@ test.describe('@regression #3612 message replies', () => {
       );
       const chain = card.getByRole('region', { name: 'Відповіді', exact: true });
       await expect(chain).toContainText('Попередній оригінал');
-      await expect(chain).toContainText('Другий оригінал');
-      await expect(chain).toContainText('Повідомлення недоступне');
       await expect(
         chain.getByRole('button', { name: 'Оригінальне повідомлення', exact: true }),
-      ).toHaveCount(2);
+      ).toHaveCount(1);
       await expect(chain.locator('blockquote').first().getByRole('button')).toHaveText(
         host === 'duty' ? '21.09 · 18:13' : '21.09 · 17:13',
       );
       await expect(chain.locator('ol > li')).toHaveCount(2);
+      await expect(chain).not.toContainText('Цитований оригінал');
+      await expect(chain).toContainText('Перша відповідь');
       await expect(chain).toContainText('Видалено');
       await expect(chain.locator('ol > li').nth(1).getByRole('button')).toHaveCount(0);
       const requestsBeforeTimeChange = replyRequests;
@@ -174,7 +166,7 @@ test.describe('@regression #3612 message replies', () => {
       );
       await page.route('**/api/1.1/submit-direct', async (route) => {
         const payload = route.request().postDataJSON();
-        expect(payload.cited_signal_message_ids).toEqual([id]);
+        expect(payload.engaged_message_id).toBe(id);
         expect(payload.parent_signal_message_ids).toBeUndefined();
         if (reader) {
           expect(payload.unit).toBeUndefined();
@@ -245,6 +237,15 @@ test.describe('@regression #3612 message replies', () => {
       await editor.getByRole('button', { name: 'Розпарсити', exact: true }).click();
       await editor.getByRole('button', { name: 'Створити', exact: true }).click();
       await expect(editor).toHaveCount(0);
+      headDeleted = true;
+      await page.evaluate(
+        (detail) => window.dispatchEvent(new CustomEvent('echo-message-replies-poll', { detail })),
+        screen,
+      );
+      await expect(chain).toContainText('Перша відповідь');
+      await expect(chain).toContainText('Моя нова відповідь');
+      await expect(chain).not.toContainText('Попередній оригінал');
+      await expect(chain.getByText('Видалено', { exact: true })).toHaveCount(2);
     });
   }
 });

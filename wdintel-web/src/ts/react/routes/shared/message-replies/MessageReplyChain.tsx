@@ -11,24 +11,25 @@ export function MessageReplyChain({
   snapshot: ReplySnapshot;
   timeBasis: MessageTimeBasis;
 }) {
-  const originals = snapshot.relations.filter((relation) => relation.replySignalMessageId === id);
-  const replies = snapshot.relations.filter((relation) => relation.originalSignalMessageId === id);
-  if (!originals.length && !replies.length) return null;
+  const original = snapshot.relations.find((relation) => relation.replySignalMessageId === id);
+  const replies = snapshot.relations.filter((relation) => relation.replySignalMessageId !== id);
+  if (!original && !replies.length) return null;
   return (
     <section aria-label="Відповіді" className="flex min-w-0 flex-col gap-echo-sm">
-      {originals.map((relation) => (
-        <div key={relation.id}>
-          {relation.deleted || !snapshot.messages.has(relation.originalSignalMessageId ?? -1) ? (
+      {original ? (
+        <div>
+          {original.originalDeleted ||
+          !snapshot.messages.has(original.originalSignalMessageId ?? -1) ? (
             <span className="text-(--color-action)">Оригінальне повідомлення</span>
           ) : null}
           <CitedMessageCard
             label="Оригінальне повідомлення"
-            deleted={relation.deleted}
-            message={snapshot.messages.get(relation.originalSignalMessageId ?? -1)}
+            deleted={original.originalDeleted}
+            message={snapshot.messages.get(original.originalSignalMessageId ?? -1)}
             timeBasis={timeBasis}
           />
         </div>
-      ))}
+      ) : null}
       {replies.length ? (
         <>
           <div className="flex items-center gap-echo-xs">
@@ -50,7 +51,7 @@ export function MessageReplyChain({
                 </div>
                 <div className="min-w-0 grow pb-echo-sm">
                   <CitedMessageCard
-                    deleted={relation.deleted}
+                    deleted={relation.replyDeleted}
                     message={snapshot.messages.get(relation.replySignalMessageId ?? -1)}
                     timeBasis={timeBasis}
                   />

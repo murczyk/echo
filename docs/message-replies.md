@@ -3,23 +3,37 @@
 Issue: [#3612](https://github.com/echoua/echo/issues/3612).
 
 Duty Neo and Analysis Neo expose `Відповісти` in the shared message actions. It
-opens the standard New Message surface with one read-only citation. This release
-does not expose a selector for additional citations. The submission API, database,
-editor state, and renderer accept citation collections so future selection UI
-does not require changing their relationship model. Reply bodies are independent
-of cited bodies; originals are not copied into the new message automatically.
+opens the standard New Message surface with one read-only citation of the clicked
+message. A reply starts a thread when the selected message is independent, or
+appends to its existing thread. Replying to a reply always uses that thread's
+original message as the head. Reply bodies are independent of cited bodies.
+Only one message can be selected for a reply.
 
 ## Storage and deletion
 
-`message_reply` joins a regular `signal_message` to each original. Both foreign
-keys use `ON DELETE SET NULL`; relationships and surviving messages persist when
-either endpoint is removed. `deleted` means either endpoint was deleted, rather
-than that the relationship should be hidden. Deleted rows remain in `Ланцюжок`
+`message_reply` joins a regular `signal_message` to its thread head. The nullable
+`engaged_message_id` records the message actually selected for the reply, including
+native messenger targets. A unique reply index prevents a message from belonging
+to several threads. `thread_id` keeps surviving members together after physical
+deletion of the head. All message foreign keys use `ON DELETE SET NULL`;
+relationships and surviving messages persist when either endpoint is removed. `deleted` means either endpoint was deleted, rather
+than that the relationship should be hidden. Deleted endpoints remain in `Ланцюжок`
 and its count, and display a cancel icon followed by `Видалено` without fetching
-the deleted citation body, timestamp, or link. Missing or inaccessible messages
-are shown as unavailable, without assuming deletion.
+the deleted citation body, timestamp, or link. Endpoint deletion flags are returned
+separately so deleting a head does not hide surviving replies. Missing or
+inaccessible messages are shown as unavailable, without assuming deletion.
 
-Database triggers handle soft and physical deletion and enqueue invalidations.
+Database triggers resolve heads, reparent descendants when an ancestor arrives or
+is remapped, handle soft and physical deletion, and enqueue invalidations.
+Descendants are updated as a set so a long chain does not exhaust the trigger stack.
+Invalidations include a surviving member when the head has been physically deleted. Reply
+mutations acquire one transaction advisory lock before source and relationship
+locks so concurrent native reconciliation cannot create divergent heads. When
+native sources share one canonical reply, its latest resolved target determines
+its single thread; the source receipts retain their individual native targets.
+The migration preserves the earliest existing relationship when old multi-citation
+rows share a reply. Nullable column backfill publishes the additive analytics
+schema through CDC; empty tables use the existing targeted snapshot fallback.
 The soft-deletion flag is reconciled when a message is restored, including the
 temporary staging cycle used by messenger edits; a temporary stage must not turn
 an active citation into a permanent deletion warning. A null endpoint resulting
@@ -49,12 +63,14 @@ never create a self-reference.
 `POST /api/rer-importer/message-replies` accepts `signal_message_ids` (at most
 512 per request) and `screen` (`Duty` or `Analysis`). It returns:
 
-- `replies`: all direct relationships with either endpoint in the authorized
-  requested set, including tombstones, ordered by `(created_at, id)`.
+- `replies`: all relationships in the threads of authorized requested messages,
+  including tombstones, ordered by `(created_at, id)`. Each includes its stable
+  thread key and separate head/reply deletion flags.
 - `reply_messages`: deduplicated citation projections for available requested
-  anchors and the available endpoints of live relationships. Each projection
+  anchors and the available endpoints of thread relationships. Each projection
   contains its ID, event timestamp, creation timestamp, preview, and relative
-  screen-specific `?m=` link. Tombstones do not hydrate their missing counterpart.
+  screen-specific `?m=` link. Deleted endpoints are never hydrated; surviving
+  thread items remain available.
 
 The preview is the first two newline-delimited lines, capped at 256 Unicode
 characters after CRLF normalization, and is truncated in PostgreSQL. Empty body
@@ -70,16 +86,16 @@ and privileged unit/device/report operations retain their existing authorization
 Ungrouped ownership follows the preferred sender before `login_id`; inherited
 read access uses direct report/comment parents, matching the inbox read endpoint.
 
-`POST /api/1.1/submit-direct` accepts optional `cited_signal_message_ids` separately
-from intelligence-report parents and copy sources. It validates citations and
-saves the message and relationships atomically. A reply cannot be combined with
+`POST /api/1.1/submit-direct` accepts one optional `engaged_message_id` separately
+from intelligence-report parents and copy sources. It validates the selected
+message and saves the message and relationships atomically. A reply cannot be combined with
 editing or report/copy creation. Deletion during composition causes validation
 to fail without creating a partial message or losing the draft.
 
 Destination selection prefers the clicked source group's authorized context.
-For ambiguous membership it tries source groups in deterministic order, using
-only an authorized common group for multiple citations. Group rejections are
-logged and the next eligible source group is tried before message persistence.
+For ambiguous membership it tries the selected message's source groups in
+deterministic order. Group rejections are logged and the next eligible source
+group is tried before message persistence.
 Other validation failures, authentication failures, network errors, timeouts,
 and server errors stop submission. There is no automatic resubmission after a
 possibly committed request. Exhaustion shows an error and preserves the draft.
@@ -95,10 +111,12 @@ notifications retain the [creation-time contract](duty/README.md#creation-time-c
 
 Original citations appear below tags under `Оригінальне повідомлення`. The label
 and timestamp prompt for confirmation before opening the appropriate screen in a
-new tab. Direct replies appear below originals under `Ланцюжок`, ordered oldest
-to newest by relationship creation time and ID, with a count and numbered,
-connected rows. Keyboard focus selects the row marker; deleted rows retain their
-number and have no navigation action. Conversations are not expanded recursively.
+new tab. All other thread items appear below the original under `Ланцюжок`,
+ordered oldest to newest by relationship creation time and ID, with a count and numbered,
+connected rows. The current message is excluded from both sections; the head
+appears only when viewing a reply. Keyboard focus selects the row marker; deleted
+rows retain their number and have no navigation action. Cards use the flat thread
+snapshot without recursive client requests.
 
 Mounted cards register with a page-owned batched store; their first reply query
 does not block base message rendering. Unmounted card snapshots remain in a
@@ -123,8 +141,9 @@ mirror resync or manual historical reconciliation is required.
 ## Regression coverage
 
 - `wdintel-rs/src/message_reply/tests.rs`: persistence, authorization boundaries,
-  multi-citation atomicity, deletion survival, preview limits, source replay,
-  late original resolution, split processing, and concurrent canonical remapping.
+  single-target submission atomicity, deletion survival, preview limits, source
+  replay, late ancestor resolution, long-thread reparenting, flat thread hydration,
+  engaged-target preservation, split processing, and concurrent canonical remapping.
 - `wdintel-rs/src/messenger/reconcile.rs`: duplicate promotion preserves reply
   links for surviving native sources and tombstones for deleted sources.
 - `wdintel-rs/src/message_reply/tests_api.rs`: viewer reply access with ordinary

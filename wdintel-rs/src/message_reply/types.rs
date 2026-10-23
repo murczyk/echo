@@ -18,10 +18,13 @@ pub struct MessageRepliesReq {
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
 pub struct MessageReply {
     pub id: i64,
+    pub thread_id: i64,
     pub original_signal_message_id: Option<i64>,
     pub reply_signal_message_id: Option<i64>,
     pub created_at: i64,
     pub deleted: bool,
+    pub original_deleted: bool,
+    pub reply_deleted: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]

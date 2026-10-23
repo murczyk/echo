@@ -14,20 +14,28 @@ pub struct Model {
         unique_key = "message_reply_original_signal_message_id_reply_signal_messa_key"
     )]
     pub original_signal_message_id: Option<i64>,
-    #[sea_orm(
-        unique_key = "message_reply_original_signal_message_id_reply_signal_messa_key"
-    )]
+    #[sea_orm(unique)]
     pub reply_signal_message_id: Option<i64>,
     pub created_at: DateTime,
     pub deleted: bool,
     pub original_deleted: bool,
     pub reply_deleted: bool,
+    pub engaged_message_id: Option<i64>,
+    pub thread_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::message_reply_source::Entity")]
     MessageReplySource,
+    #[sea_orm(
+        belongs_to = "super::signal_message::Entity",
+        from = "Column::EngagedMessageId",
+        to = "super::signal_message::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SignalMessage3,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::OriginalSignalMessageId",

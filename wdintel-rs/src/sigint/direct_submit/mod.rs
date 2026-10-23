@@ -64,7 +64,7 @@ pub async fn submit_direct(
     payload: web::Json<DirectSubmitPayload>,
 ) -> Result<web::Json<DirectSubmitRsp>, DirectSubmitApiError> {
     let action = DirectSubmitAction::Save;
-    if payload.cited_signal_message_ids.is_empty()
+    if payload.engaged_message_id.is_none()
         || payload.create_unit
         || payload.unit_id.is_some()
         || payload

@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20261023_084855_message_reply_threads": {
+      "changes": [{ "table": "public.message_reply", "strategy": "cdc_additive" }]
+    },
     "echo:m20261022_161645_message_reply": {
       "changes": [
         { "table": "public.message_reply", "strategy": "replicated_snapshot" },

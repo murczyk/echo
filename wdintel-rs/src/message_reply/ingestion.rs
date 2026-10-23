@@ -58,6 +58,7 @@ pub async fn record_source(
     inbox_message_id: i64,
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
+    super::lock_threads(db).await.c(h!())?;
     let source = SourceRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"select s.original_inbox_message_id, s.original_outbox_message_id, s.deleted or coalesce(e.deleted, false) as deleted
@@ -175,9 +176,49 @@ async fn record_reply(
     )
     .await
     .c(h!())?;
+    if original_id.is_none() {
+        inherit_unresolved_thread(
+            db,
+            id,
+            datasource_id,
+            source,
+            signal_message_id,
+        )
+        .await
+        .c(h!())?;
+    }
     db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "update message_reply_source set message_reply_id = $3 where datasource_id = $1 and inbox_message_id = $2",
         vec![datasource_id.into(), inbox_message_id.into(), id.into()])).await.c(h!())?;
+    Ok(())
+}
+
+async fn inherit_unresolved_thread(
+    db: &DatabaseTransaction,
+    relation: i64,
+    datasource: i64,
+    source: &SourceRow,
+    reply: i64,
+) -> anyhow::Result<()> {
+    let (column, receipt) = match source.original_inbox_message_id {
+        Some(receipt) => ("original_inbox_message_id", receipt),
+        None => (
+            "original_outbox_message_id",
+            source.original_outbox_message_id.c(h!())?,
+        ),
+    };
+    db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        format!(r#"update message_reply r set original_signal_message_id = parent.original_signal_message_id,
+                original_deleted = parent.original_deleted, thread_id = parent.thread_id,
+                deleted = parent.original_deleted or r.reply_deleted
+            from (
+                select related.original_signal_message_id, related.original_deleted, related.thread_id
+                    from message_reply_source s join message_reply related on related.id = s.message_reply_id
+                where s.datasource_id = $2 and s.{column} = $3 and related.id <> $1
+                    and related.original_signal_message_id is distinct from $4
+                order by related.created_at, related.id limit 1
+            ) parent where r.id = $1"#),
+        vec![relation.into(), datasource.into(), receipt.into(), reply.into()])).await.c(h!())?;
     Ok(())
 }
 

@@ -27,7 +27,7 @@ import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 import { fallbackFailedMessageUploads, messageUploadFailure } from './message-upload-fallback';
 
 type SubmitOptions = {
-  citedSignalMessageIds?: number[];
+  engagedMessageId?: number;
   replyGroupMasterKey?: string | null;
   busy: boolean;
   radioFeaturesAllowed: boolean;
@@ -60,7 +60,7 @@ export function useMessageSubmit({
   isReportCreateMode,
   editTarget,
   reportSource,
-  citedSignalMessageIds = [],
+  engagedMessageId,
   replyGroupMasterKey,
   existingMedia,
   onSubmitEdit,
@@ -228,7 +228,7 @@ export function useMessageSubmit({
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
         signal_group_master_key:
-          citedSignalMessageIds.length > 0 && replyGroupMasterKey
+          engagedMessageId != null && replyGroupMasterKey
             ? replyGroupMasterKey
             : data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
               ? null
@@ -282,7 +282,7 @@ export function useMessageSubmit({
             })),
         deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
         retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
-        cited_signal_message_ids: !isEditMode ? citedSignalMessageIds : undefined,
+        engaged_message_id: !isEditMode ? engagedMessageId : undefined,
         parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
         copy_source_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
       };

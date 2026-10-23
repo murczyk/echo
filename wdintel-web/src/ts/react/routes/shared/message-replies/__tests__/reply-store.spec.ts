@@ -7,7 +7,16 @@ const fetchReplies = vi.mocked(fetchMessageReplies);
 type Response = Awaited<ReturnType<typeof fetchMessageReplies>>;
 const response = (deleted = false): Response => ({
   replies: [
-    { id: 1, originalSignalMessageId: 10, replySignalMessageId: 20, createdAt: 100, deleted },
+    {
+      id: 1,
+      threadId: 10,
+      originalSignalMessageId: 10,
+      replySignalMessageId: 20,
+      createdAt: 100,
+      deleted,
+      originalDeleted: false,
+      replyDeleted: deleted,
+    },
   ],
   replyMessages: deleted
     ? []
@@ -26,6 +35,41 @@ afterEach(() => vi.resetAllMocks());
 
 // Regression: https://github.com/echoua/echo/issues/3612
 describe('reply refresh scheduling and stale deletion protection', () => {
+  it('hydrates siblings for a reply anchor and invalidates its whole thread (#3612)', async () => {
+    const thread = response();
+    thread.replies.push({ ...thread.replies[0], id: 2, replySignalMessageId: 30, createdAt: 200 });
+    thread.replyMessages.push({
+      id: 30,
+      timestamp: 30,
+      createdAt: 300,
+      preview: 'Sibling',
+      href: '/rer-duty-neo?m=30',
+    });
+    fetchReplies.mockResolvedValue(thread);
+    const store = new ReplyStore('Duty', vi.fn());
+    store.attach(20);
+    await settle();
+    expect(store.get(20).relations).toHaveLength(2);
+    expect(store.get(20).messages.get(30)?.preview).toBe('Sibling');
+    store.invalidate([30]);
+    const deletedHead = {
+      ...thread,
+      replies: thread.replies.map((relation) => ({
+        ...relation,
+        originalSignalMessageId: null,
+        originalDeleted: true,
+        deleted: true,
+      })),
+      replyMessages: thread.replyMessages.filter((message) => message.id !== 10),
+    };
+    fetchReplies.mockResolvedValue(deletedHead);
+    await store.flush();
+    expect(store.get(20).relations).toHaveLength(2);
+    expect(store.get(20).messages.get(30)?.preview).toBe('Sibling');
+    expect(store.get(20).messages.has(10)).toBe(false);
+    store.dispose();
+  });
+
   it('loads a mounted batch once and waits for scheduled reconciliation after event bursts', async () => {
     fetchReplies.mockResolvedValue(response());
     const store = new ReplyStore('Duty', vi.fn());

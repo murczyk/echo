@@ -71,10 +71,9 @@ function ReplyComposer({
       initialGroupMasterKey={target?.message.groupMasterKey}
       initialFocusTarget={target?.focus}
       intentKey={target ? `reply:${target.id}` : undefined}
-      // The action seeds one citation; the editor and API retain collections for future selection.
-      citedSignalMessageIds={target ? [target.id] : []}
-      citedMessages={citation ? [citation] : []}
-      citationsLoading={!snapshot.loaded}
+      engagedMessageId={target?.id}
+      citedMessage={citation}
+      citationLoading={!snapshot.loaded}
       citationTimeBasis={timeBasis}
     />
   );
