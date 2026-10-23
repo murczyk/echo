@@ -1,4 +1,5 @@
 pub mod client;
+mod cooldown;
 pub mod gov;
 pub mod types;
 pub use client::AiEngineClient;
@@ -6,8 +7,8 @@ pub use client::AiEngineClient;
 use crate::config::{
     AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
     AI_CHAT_TITLE_MAX_CHARS, AI_ENGINE_ERROR_BODY_MAX_CHARS,
-    AI_ENGINE_MODEL_NAME_MAX_CHARS, AI_ENGINE_NAME_MAX_CHARS,
-    AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
+    AI_ENGINE_GLM_5_3_OUTPUT_TOKENS, AI_ENGINE_MODEL_NAME_MAX_CHARS,
+    AI_ENGINE_NAME_MAX_CHARS, AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
     AI_ENGINE_OPENAI_REASONING_NONE_MODELS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
     AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS,
 };
@@ -860,6 +861,17 @@ pub async fn request_ocr_response(
 
 fn ocr_prompt() -> &'static str {
     "Transcribe the complete crop as bounded semantic HTML using only article, section, h1-h6, p, ul, ol, li, table, caption, thead, tbody, tr, th, td, br, and figure. Preserve empty cells and exact text. Represent visible images with data-image=\"present\". Never translate, correct, summarize, infer, add, or repeat content. End exactly with <!-- ECHO_EXTRACTION_END -->"
+}
+
+pub(crate) fn extraction_output_tokens(
+    ai_engine: &ai_engine::Model,
+    max_tokens: u32,
+) -> u32 {
+    if client::is_government_glm(ai_engine) {
+        max_tokens.max(AI_ENGINE_GLM_5_3_OUTPUT_TOKENS)
+    } else {
+        max_tokens
+    }
 }
 
 pub async fn request_structured_ai_response(
