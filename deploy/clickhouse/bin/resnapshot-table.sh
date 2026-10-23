@@ -17,6 +17,7 @@ preflight_only=false
 force_resnapshot=false
 mutation_started=false
 repair_complete=false
+replication_catchup_pending=false
 
 mirror_status() {
   catalog_psql -Atq \
@@ -404,7 +405,35 @@ wait_for_table_snapshot() {
   die "$source_table did not finish its targeted snapshot within ${table_resnapshot_timeout}s"
 }
 
+wait_for_analytics_health() {
+  local deadline=$((SECONDS + table_cdc_timeout)) remaining status=1
+  while ((SECONDS < deadline)); do
+    retry_source_reconciliation_step \
+      "Derived analytics reconciliation" "$analytics_bin_dir/reconcile-if-needed.sh" \
+      || return $?
+    remaining=$((deadline - SECONDS))
+    ((remaining > 0)) || break
+    if retry_source_reconciliation_step \
+      "Analytics health check" "$analytics_bin_dir/check-analytics-health.sh" \
+      --timeout "$remaining"; then
+      return 0
+    else
+      status=$?
+    fi
+    ((status == 75)) || return "$status"
+    if ((SECONDS < deadline)); then
+      log "Replication heartbeat is delayed; waiting for CDC catch-up"
+    fi
+  done
+  if ((status == 75)); then
+    replication_catchup_pending=true
+    log "Replication catch-up exceeded ${table_cdc_timeout}s; leaving the mirror running and retaining repair state"
+  fi
+  return "$status"
+}
+
 refresh_analytics() {
+  replication_catchup_pending=false
   retry_source_reconciliation_step \
     "Current-state view refresh" "$analytics_bin_dir/refresh-current-views.sh" \
     || return $?
@@ -414,11 +443,7 @@ refresh_analytics() {
   retry_source_reconciliation_step \
     "Analytics schema verification" "$analytics_bin_dir/reconcile-schema.sh" \
     || return $?
-  retry_source_reconciliation_step \
-    "Derived analytics reconciliation" "$analytics_bin_dir/reconcile-if-needed.sh" \
-    || return $?
-  retry_source_reconciliation_step \
-    "Analytics health check" "$analytics_bin_dir/check-analytics-health.sh"
+  wait_for_analytics_health
 }
 
 finish_repair() {
@@ -597,7 +622,8 @@ leave_mirror_paused() {
 handle_exit() {
   local exit_status=$?
   trap - EXIT
-  if ((exit_status != 0)) && [[ "$mutation_started" == true && "$repair_complete" != true ]]; then
+  if ((exit_status != 0)) && [[ "$mutation_started" == true \
+    && "$repair_complete" != true && "$replication_catchup_pending" != true ]]; then
     log "Targeted resnapshot did not complete; attempting to leave the mirror paused"
     leave_mirror_paused \
       || log "Mirror could not be paused; inspect its terminal or transitional state immediately"
