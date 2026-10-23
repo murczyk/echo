@@ -190,7 +190,7 @@ fn catalog(coords: &[(f64, f64)]) -> Arc<crate::location::SettlementsData> {
 
 #[tokio::test]
 #[serial]
-async fn kamianka_sql_seed_preserves_existing_rows_and_is_idempotent_2133() {
+async fn settlement_oneoff_preserves_existing_definitions_and_synonyms_2133() {
     let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
     let txn = env.dbx.begin().await.unwrap();
     let original = settlement::Entity::find_by_id(94886)
@@ -201,9 +201,30 @@ async fn kamianka_sql_seed_preserves_existing_rows_and_is_idempotent_2133() {
     let mut settlement = original.clone().into_active_model();
     settlement.tag = Set(Some("#2133 preserved".to_string()));
     let settlement = settlement.update(&txn).await.unwrap();
-    let sql = include_str!("../../../scripts/settlements/add-kamianka.sql");
+    assert_eq!(
+        oneoff::add_missing_settlements(&txn).await.unwrap(),
+        oneoff::SettlementAdditions {
+            settlements: 0,
+            synonyms: 1,
+        }
+    );
+    let alias = settlement_alias::Entity::find()
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(alias.settlement_id, 65447);
+    let mut alias = alias.into_active_model();
+    alias.text = Set("  рибалкіне  ".to_string());
+    let alias = alias.update(&txn).await.unwrap();
     for _ in 0..2 {
-        txn.execute_unprepared(sql).await.unwrap();
+        assert_eq!(
+            oneoff::add_missing_settlements(&txn).await.unwrap(),
+            oneoff::SettlementAdditions {
+                settlements: 0,
+                synonyms: 0,
+            }
+        );
     }
     assert_eq!(
         settlement::Entity::find_by_id(94886)
@@ -212,12 +233,47 @@ async fn kamianka_sql_seed_preserves_existing_rows_and_is_idempotent_2133() {
             .unwrap(),
         Some(settlement)
     );
+    assert_eq!(
+        settlement_alias::Entity::find_by_id(alias.id)
+            .one(&txn)
+            .await
+            .unwrap(),
+        Some(alias)
+    );
+    txn.rollback().await.unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn settlement_oneoff_restores_missing_definitions_and_synonyms_2133() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let original = settlement::Entity::find_by_id(94886)
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    let ribalkyne = settlement::Entity::find_by_id(65447)
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    settlement::Entity::delete_by_id(65447)
+        .exec(&txn)
+        .await
+        .unwrap();
     settlement::Entity::delete_by_id(94886)
         .exec(&txn)
         .await
         .unwrap();
-    for _ in 0..2 {
-        txn.execute_unprepared(sql).await.unwrap();
+    for (settlements, synonyms) in [(2, 1), (0, 0)] {
+        assert_eq!(
+            oneoff::add_missing_settlements(&txn).await.unwrap(),
+            oneoff::SettlementAdditions {
+                settlements,
+                synonyms,
+            }
+        );
     }
     assert_eq!(
         settlement::Entity::find_by_id(94886)
@@ -226,6 +282,18 @@ async fn kamianka_sql_seed_preserves_existing_rows_and_is_idempotent_2133() {
             .unwrap(),
         Some(original)
     );
+    assert_eq!(
+        settlement::Entity::find_by_id(65447)
+            .one(&txn)
+            .await
+            .unwrap(),
+        Some(ribalkyne)
+    );
+    let matches = find_by_names(&txn, &[" РИБАЛКІНЕ ".to_string()])
+        .await
+        .unwrap();
+    assert_eq!(matches[0].len(), 1);
+    assert_eq!(matches[0][0].id, 65447);
     txn.rollback().await.unwrap();
 }
 

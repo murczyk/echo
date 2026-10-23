@@ -66,17 +66,26 @@ Regression coverage: `wdintel-rs/src/settlement/tests.rs`,
 `wdintel-rs/src/battle_line/mod.rs`, and
 `wdintel-rs/src/battle_line/settlement_queue.rs`.
 
-## Kamianka SQL seed
+## Missing settlement definitions and synonyms
 
-`scripts/settlements/add-kamianka.sql` inserts the canonical Кам’янка in the
-Дворічанська community, Куп’янський district, with ID `94886` if it is missing.
-Existing rows, dictionaries, and message links remain unchanged. Run it only
-after approval for the target database:
+`oneoff-add-missing-settlements` applies the curated definitions and synonyms
+embedded as SQL in `wdintel-rs/src/settlement/oneoff.rs`. It currently adds
+missing canonical rows for Кам’янка (`94886`, Дворічанська community,
+Куп’янський district) and Рибалкине (`65447`, Вовчанська community,
+Чугуївський district), both in Харківська region, and the synonym `Рибалкіне`
+for `65447`.
+
+The command applies all additions in one transaction and reports inserted
+settlement and synonym counts. Repeated runs preserve existing rows and aliases,
+including aliases differing only in case or surrounding whitespace. Extend the
+embedded lists when adding reviewed definitions or synonyms. It does not import
+JSON dictionaries or run automatically during deployment. Run it only after
+approval for the target database:
 
 ```bash
-psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -f scripts/settlements/add-kamianka.sql
+wdintel-rs --mode=live oneoff-add-missing-settlements
 ```
 
-Inbox resolution can use this database row without a JSON dictionary entry.
+Inbox resolution can use these database rows without JSON dictionary entries.
 Historical links require the explicit
 [recalculation command](../battle_line/README.md).
