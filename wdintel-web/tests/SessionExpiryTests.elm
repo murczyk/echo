@@ -1,5 +1,6 @@
 module SessionExpiryTests exposing (tests)
 
+import Bindings as B
 import Core.EventService
 import Core.Types exposing (ApiError)
 import Dict
@@ -29,8 +30,8 @@ tests =
                                 [ Msg.EventServicePollEvents 0
                                 , Msg.EventServicePollEvents polling.eventService.generation
                                 , Msg.EventServiceRetryPolling 0
-                                , Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
-                                , Msg.EventServiceEventsReceived 0 (Err (httpError 401))
+                                , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (httpError 401))
                                 ]
                         in
                         Expect.all
@@ -62,8 +63,8 @@ tests =
 
                             obsolete =
                                 [ Msg.EventServiceRetryPolling polling.eventService.generation
-                                , Msg.EventServiceEventsReceived polling.eventService.generation (Err (httpError 401))
-                                , Msg.EventServiceEventsReceived polling.eventService.generation (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived polling.eventService.generation B.LpfGeneric (Err (httpError 401))
+                                , Msg.EventServiceEventsReceived polling.eventService.generation B.LpfGeneric (Ok { events = [], lastEventId = Just "obsolete", deploymentMaintenance = Nothing })
                                 ]
                         in
                         obsolete
@@ -91,7 +92,7 @@ tests =
                     \route shared ->
                         let
                             ( signedOut, effect ) =
-                                Shared.update route (Msg.EventServiceEventsReceived 0 (Err (httpError 401))) shared
+                                Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (httpError 401))) shared
                         in
                         Expect.all
                             [ \_ -> Expect.equal Nothing signedOut.user
@@ -109,8 +110,8 @@ tests =
                                 Shared.update route Msg.SignOut shared
 
                             lateMessages =
-                                [ Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Just "late", deploymentMaintenance = Nothing })
-                                , Msg.EventServiceEventsReceived 0 (Err (httpError 500))
+                                [ Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "late", deploymentMaintenance = Nothing })
+                                , Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (httpError 500))
                                 , Msg.EventServiceRetryPolling 0
                                 , Msg.EventServicePollEvents 0
                                 , Msg.EventServiceStartPolling
@@ -130,7 +131,7 @@ tests =
                     \route shared ->
                         let
                             ( updated, _ ) =
-                                Shared.update route (Msg.EventServiceEventsReceived 0 (Err (httpError 500))) shared
+                                Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (httpError 500))) shared
                         in
                         Expect.equal ( True, 1 ) ( updated.eventService.isPolling, updated.eventService.retryCount )
         , test "temporary event failures do not consume the persistent error notification" <|
@@ -139,7 +140,7 @@ tests =
                     \route shared ->
                         let
                             fail failure state =
-                                Shared.update route (Msg.EventServiceEventsReceived 0 (Err (apiError failure))) state
+                                Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (apiError failure))) state
 
                             interrupted =
                                 List.range 1 8
@@ -152,7 +153,7 @@ tests =
                                 fail (Http.BadStatus 403) unexpected
 
                             ( recovered, _ ) =
-                                Shared.update route (Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing })) unexpected
+                                Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Just "recovered", deploymentMaintenance = Nothing })) unexpected
                         in
                         Expect.all
                             [ \_ -> Expect.equal True interrupted.eventService.isPolling
@@ -228,11 +229,11 @@ temporaryFailureTest failure =
                             shared.eventService
 
                         ( polling, pollingEffect ) =
-                            Shared.update route (Msg.EventServiceEventsReceived 0 (Err (apiError failure)))
+                            Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Err (apiError failure)))
                                 { shared | eventService = { eventService | retryCount = 5 } }
 
                         ( pollingRecovered, _ ) =
-                            Shared.update route (Msg.EventServiceEventsReceived 0 (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing })) polling
+                            Shared.update route (Msg.EventServiceEventsReceived 0 B.LpfGeneric (Ok { events = [], lastEventId = Nothing, deploymentMaintenance = Nothing })) polling
                     in
                     Expect.all
                         [ \_ -> Expect.equal False interrupted.keepAliveStopped
