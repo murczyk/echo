@@ -1,5 +1,6 @@
 use crate::ai_engine::{
-    request_structured_ai_response, AiEngineMessage, AiEngineResponse,
+    extraction_output_tokens, request_structured_ai_response, AiEngineMessage,
+    AiEngineResponse,
 };
 use crate::config::{
     AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
@@ -242,7 +243,7 @@ async fn summarize(
         &ai_engine,
         messages,
         0.1,
-        MEDIA_SUMMARY_OUTPUT_TOKENS,
+        extraction_output_tokens(&ai_engine, MEDIA_SUMMARY_OUTPUT_TOKENS),
         response_format(),
     )
     .await
@@ -751,7 +752,7 @@ pub(crate) async fn summarize_attachment_text(
         engine,
         summary_messages(text),
         0.1,
-        MEDIA_SUMMARY_OUTPUT_TOKENS,
+        extraction_output_tokens(engine, MEDIA_SUMMARY_OUTPUT_TOKENS),
         response_format(),
     )
     .await

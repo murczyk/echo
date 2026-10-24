@@ -18,6 +18,12 @@ pub async fn restart_datasource(
 ) -> Result<Json<bool>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let datasource_id = req.into_inner();
+    crate::datasource::native::require_external_datasource(
+        &env.dbx,
+        i64::from(datasource_id),
+    )
+    .await
+    .c(h!())?;
     let client_id = datasource::Entity::find()
         .join(
             JoinType::InnerJoin,

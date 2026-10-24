@@ -1004,6 +1004,15 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        let forwarding_env = env.clone();
+        let forwarding_cancel = cancel_token.clone();
+        spawn_named_worker("device_audio_forwarding", bg_set, async move {
+            crate::devices::audio::forwarding::run(
+                forwarding_env,
+                forwarding_cancel,
+            )
+            .await;
+        });
         let archive_env = env.clone();
         let archive_cancel = cancel_token.clone();
         spawn_named_worker("device_file_archive", bg_set, async move {
@@ -1139,6 +1148,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group::handlers::orphan_signal_groups)
             .service(crate::messenger::group::handlers::archived_signal_groups)
             .service(crate::messenger::group::handlers::signal_group_archive)
+            .service(crate::messenger::group::native::create)
+            .service(crate::messenger::group::creation::get)
+            .service(crate::messenger::group::native::get)
+            .service(crate::messenger::group::native::update)
             .service(crate::messenger::group::handlers::signal_group_unarchive)
             .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
@@ -1432,6 +1445,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::fallback_upload)
             .service(crate::devices::audio::upload_routes())
             .service(crate::devices::audio::routes())
+            .service(crate::devices::audio::forwarding::get)
+            .service(crate::devices::audio::forwarding::list)
+            .service(crate::devices::audio::forwarding::remove)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)
@@ -1816,6 +1832,28 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let deployment_maintenance = web::Data::new(
+        crate::event_stream::DeploymentMaintenanceState::default(),
+    );
+    deployment_maintenance
+        .refresh(&mut env.redis.clone())
+        .await
+        .c(h!())?;
+    let deployment_state = deployment_maintenance.clone();
+    let deployment_redis = env.redis.clone();
+    let deployment_cancel_token = cancel_token.clone();
+    spawn_named_worker(
+        "deployment_maintenance_worker",
+        &mut background_tasks,
+        async move {
+            crate::event_stream::deployment_maintenance_worker(
+                deployment_redis,
+                deployment_state,
+                deployment_cancel_token,
+            )
+            .await;
+        },
+    );
     let session_env = env.clone();
     let token_session = cancel_token.clone();
     spawn_named_worker(
@@ -1894,6 +1932,7 @@ pub async fn main_server(
         let redis_for_middleware = env.redis.clone();
         App::new()
             .app_data(api_rate_limiter.clone())
+            .app_data(deployment_maintenance.clone())
             .wrap(actix_web::middleware::Compress::default())
             .wrap(actix_web::middleware::from_fn(
                 crate::utils::multipart_admission::limit_requests,
@@ -1927,6 +1966,10 @@ pub async fn main_server(
             ))
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
+            ))
+            // Deployment-only polls must bypass session and activity processing.
+            .wrap(actix_web::middleware::from_fn(
+                crate::event_stream::deployment_only_poll,
             ))
             .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(

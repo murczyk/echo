@@ -7,6 +7,62 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+#[tokio::test(start_paused = true)]
+async fn glm_cooldown_is_shared_across_engine_rows_and_respects_deadlines() {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let engine = ai_engine::Model {
+        id: uuid::Uuid::new_v4(),
+        name: "Government GLM".to_string(),
+        url: AI_GOV_UA_API_BASE.to_string(),
+        token: None,
+        model_name: AI_ENGINE_GLM_5_3_MODEL.to_string(),
+        created_at: chrono::Utc::now().naive_utc(),
+        updated_at: chrono::Utc::now().naive_utc(),
+        enabled: true,
+        callsign_enabled: true,
+        ocr_enabled: false,
+        ocr_request_profile: "openai_vision".to_string(),
+    };
+    let other_engine = ai_engine::Model {
+        id: uuid::Uuid::new_v4(),
+        name: "Another government GLM".to_string(),
+        ..engine.clone()
+    };
+    client
+        .glm_cooldown
+        .observe(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            &reqwest::header::HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+    let started = tokio::time::Instant::now();
+    for (engine, responses) in [
+        (&engine, false),
+        (&other_engine, false),
+        (&other_engine, true),
+    ] {
+        let request_started = tokio::time::Instant::now();
+        let error = if responses {
+            client
+                .send_responses(engine, json!({}), Duration::from_secs(10))
+                .await
+        } else {
+            client
+                .send(engine, json!({}), Duration::from_secs(10))
+                .await
+        }
+        .unwrap_err();
+        assert!(error
+            .chain()
+            .any(|error| error.is::<tokio::time::error::Elapsed>()));
+        assert_eq!(request_started.elapsed(), Duration::from_secs(10));
+    }
+    client.glm_cooldown.wait().await;
+    assert_eq!(started.elapsed(), Duration::from_secs(60));
+}
+
 fn settings_request(secret: Option<&str>) -> SaveAiGovUaSettingsReq {
     SaveAiGovUaSettingsReq {
         enabled: true,

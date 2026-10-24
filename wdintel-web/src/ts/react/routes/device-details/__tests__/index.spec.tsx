@@ -78,6 +78,7 @@ vi.mock('.././components/DeviceAnalyticsPanel', () => ({
 }));
 
 const activeDevice: DeviceDetails = {
+  audioForwardingConfigured: false,
   id: DEVICE_ID,
   name: 'Device Alpha',
   aors: [

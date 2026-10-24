@@ -87,6 +87,9 @@ pub async fn edit_account(
     dbx: &DatabaseConnection,
     login: &Uuid,
 ) -> anyhow::Result<()> {
+    crate::datasource::native::require_external_datasource(dbx, id)
+        .await
+        .c(h!())?;
     let api_login = api_login
         .map(|api_login| Uuid::parse_str(&api_login))
         .transpose()
@@ -126,6 +129,9 @@ pub async fn deactivate_account(
     login: Option<Uuid>,
     mark_deleted: bool,
 ) -> Result<(), AppError> {
+    crate::datasource::native::require_external_datasource(txn, id)
+        .await
+        .c(h!())?;
     let account = load_echo_account(id, txn).await.c(h!())?;
     let datasource = datasource::Entity::find_by_id(account.id)
         .one(txn)
@@ -163,6 +169,11 @@ pub async fn link_account(
     txn: &DatabaseTransaction,
     login: &Uuid,
 ) -> Result<EchoAccountF1, AppError> {
+    if let Some(id) = datasource_id {
+        crate::datasource::native::require_external_datasource(txn, id)
+            .await
+            .c(h!())?;
+    }
     validate_system_service_name(system_service_name)?;
     let source =
         EchoMessageSource::try_from_value(&source.to_string()).c(h!())?;
@@ -522,6 +533,9 @@ pub async fn get_qr_code(
     db: &DatabaseConnection,
     login: &Uuid,
 ) -> Result<String, AppError> {
+    crate::datasource::native::require_external_datasource(db, account_id)
+        .await
+        .c(h!())?;
     let m_account = list_echo_accounts(Some(account_id), db)
         .await
         .c(h!())?
@@ -634,7 +648,8 @@ where
         pub attachments_path: Option<String>,
     }
 
-    let mut q = datasource::Entity::find();
+    let mut q = datasource::Entity::find()
+        .filter(datasource::Column::Kind.ne(DATASOURCE_ECHO_NATIVE_KIND));
     if let Some(id) = m_id {
         q = q.filter(datasource::Column::Id.eq(id));
     }

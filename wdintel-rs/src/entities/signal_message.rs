@@ -43,6 +43,8 @@ pub enum Relation {
     DatasourceGroup,
     #[sea_orm(has_many = "super::importance_operation::Entity")]
     ImportanceOperation,
+    #[sea_orm(has_many = "super::device_audio_forwarding_delivery::Entity")]
+    DeviceAudioForwardingDelivery,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::LoginId",
@@ -61,6 +63,10 @@ pub enum Relation {
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
     SigintInboxItem,
+    #[sea_orm(has_many = "super::signal_message_audio_ref::Entity")]
+    SignalMessageAudioRef,
+    #[sea_orm(has_many = "super::signal_message_audio_search::Entity")]
+    SignalMessageAudioSearch,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
     #[sea_orm(has_many = "super::signal_message_media::Entity")]
@@ -78,6 +84,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::importance_operation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ImportanceOperation.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingDelivery.def()
     }
 }
 
@@ -114,6 +126,18 @@ impl Related<super::sigint_important::Entity> for Entity {
 impl Related<super::sigint_inbox_item::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItem.def()
+    }
+}
+
+impl Related<super::signal_message_audio_ref::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageAudioRef.def()
+    }
+}
+
+impl Related<super::signal_message_audio_search::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageAudioSearch.def()
     }
 }
 

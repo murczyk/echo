@@ -224,6 +224,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
             .await
             .unwrap();
     crate::sigint::direct_submit::query::copy_signal_message_media(
+        &env,
         &env.dbx,
         copy_message.id,
         copy_message.id_uuid,

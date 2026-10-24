@@ -2156,6 +2156,20 @@ signalGroupEntryEncoder struct =
         ]
 
 
+type alias GroupCreationInfo =
+    { createdAt : Int
+    , createdBy : Maybe (String)
+    }
+
+
+groupCreationInfoEncoder : GroupCreationInfo -> Json.Encode.Value
+groupCreationInfoEncoder struct =
+    Json.Encode.object
+        [ ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "created_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.createdBy )
+        ]
+
+
 type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
@@ -5609,6 +5623,7 @@ type alias DeviceDetails =
     , createdAt : String
     , updatedAt : String
     , archivedAt : Maybe (String)
+    , audioForwardingConfigured : Bool
     }
 
 
@@ -5626,6 +5641,7 @@ deviceDetailsEncoder struct =
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
         , ( "archived_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.archivedAt )
+        , ( "audio_forwarding_configured", (Json.Encode.bool) struct.audioForwardingConfigured )
         ]
 
 
@@ -5734,6 +5750,7 @@ type alias UpdateDeviceReq =
     , name : Maybe (String)
     , aorIds : Maybe (List (Int))
     , unitId : Maybe (Int)
+    , audioForwarding : Maybe (DeviceAudioForwardingChange)
     }
 
 
@@ -5746,6 +5763,127 @@ updateDeviceReqEncoder struct =
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
         , ( "unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.unitId )
+        , ( "audio_forwarding", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceAudioForwardingChangeEncoder)) struct.audioForwarding )
+        ]
+
+
+type alias DeviceAudioForwardingChange =
+    { version : Maybe (String)
+    , enabled : Bool
+    , addGroups : List (String)
+    , removeGroups : List (String)
+    }
+
+
+deviceAudioForwardingChangeEncoder : DeviceAudioForwardingChange -> Json.Encode.Value
+deviceAudioForwardingChangeEncoder struct =
+    Json.Encode.object
+        [ ( "version", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.version )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "add_groups", (Json.Encode.list (Json.Encode.string)) struct.addGroups )
+        , ( "remove_groups", (Json.Encode.list (Json.Encode.string)) struct.removeGroups )
+        ]
+
+
+type alias DeviceAudioForwardingGroup =
+    { masterKey : String
+    , name : String
+    , selected : Bool
+    }
+
+
+deviceAudioForwardingGroupEncoder : DeviceAudioForwardingGroup -> Json.Encode.Value
+deviceAudioForwardingGroupEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "selected", (Json.Encode.bool) struct.selected )
+        ]
+
+
+type alias DeviceAudioForwardingSettings =
+    { version : Maybe (String)
+    , enabled : Bool
+    , groups : List (DeviceAudioForwardingGroup)
+    }
+
+
+deviceAudioForwardingSettingsEncoder : DeviceAudioForwardingSettings -> Json.Encode.Value
+deviceAudioForwardingSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "version", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.version )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "groups", (Json.Encode.list (deviceAudioForwardingGroupEncoder)) struct.groups )
+        ]
+
+
+type alias DeviceAudioForwardingEntry =
+    { deviceId : String
+    , deviceName : String
+    , deviceArchived : Bool
+    , groupMasterKey : String
+    , groupName : String
+    , enabled : Bool
+    , version : String
+    }
+
+
+deviceAudioForwardingEntryEncoder : DeviceAudioForwardingEntry -> Json.Encode.Value
+deviceAudioForwardingEntryEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "device_name", (Json.Encode.string) struct.deviceName )
+        , ( "device_archived", (Json.Encode.bool) struct.deviceArchived )
+        , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
+        , ( "group_name", (Json.Encode.string) struct.groupName )
+        , ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "version", (Json.Encode.string) struct.version )
+        ]
+
+
+type alias ListDeviceAudioForwardingReq =
+    { cursor : Maybe (( String, String ))
+    }
+
+
+listDeviceAudioForwardingReqEncoder : ListDeviceAudioForwardingReq -> Json.Encode.Value
+listDeviceAudioForwardingReqEncoder struct =
+    Json.Encode.object
+        [ ( "cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.string b ])) struct.cursor )
+        ]
+
+
+type alias ListDeviceAudioForwardingRsp =
+    { items : List (DeviceAudioForwardingEntry)
+    , nextCursor : Maybe (( String, String ))
+    , totalCount : Int
+    , pageSize : Int
+    }
+
+
+listDeviceAudioForwardingRspEncoder : ListDeviceAudioForwardingRsp -> Json.Encode.Value
+listDeviceAudioForwardingRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (deviceAudioForwardingEntryEncoder)) struct.items )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (\( a, b) -> Json.Encode.list identity [ Json.Encode.string a, Json.Encode.string b ])) struct.nextCursor )
+        , ( "total_count", (Json.Encode.int) struct.totalCount )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
+type alias RemoveDeviceAudioForwardingReq =
+    { deviceId : String
+    , groupMasterKey : String
+    , version : String
+    }
+
+
+removeDeviceAudioForwardingReqEncoder : RemoveDeviceAudioForwardingReq -> Json.Encode.Value
+removeDeviceAudioForwardingReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
+        , ( "version", (Json.Encode.string) struct.version )
         ]
 
 
@@ -18499,8 +18637,28 @@ deploymentMaintenanceEncoder struct =
         ]
 
 
+type LongPollFlavor
+    = LpfRer
+    | LpfAnalysisNeo
+    | LpfGeneric
+    | LpfGenericFull
+
+
+longPollFlavorEncoder : LongPollFlavor -> Json.Encode.Value
+longPollFlavorEncoder enum =
+    case enum of
+        LpfRer ->
+            Json.Encode.string "rer"
+        LpfAnalysisNeo ->
+            Json.Encode.string "analysis-neo"
+        LpfGeneric ->
+            Json.Encode.string "generic"
+        LpfGenericFull ->
+            Json.Encode.string "generic-full"
+
 type alias LongPollReq =
-    { sessionId : String
+    { flavor : LongPollFlavor
+    , sessionId : String
     , lastEventId : Maybe (String)
     , deploymentMaintenanceProtocol : Maybe (Int)
     , knownDeploymentMaintenanceId : Maybe (String)
@@ -18510,7 +18668,8 @@ type alias LongPollReq =
 longPollReqEncoder : LongPollReq -> Json.Encode.Value
 longPollReqEncoder struct =
     Json.Encode.object
-        [ ( "session_id", (Json.Encode.string) struct.sessionId )
+        [ ( "flavor", (longPollFlavorEncoder) struct.flavor )
+        , ( "session_id", (Json.Encode.string) struct.sessionId )
         , ( "last_event_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastEventId )
         , ( "deployment_maintenance_protocol", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.deploymentMaintenanceProtocol )
         , ( "known_deployment_maintenance_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownDeploymentMaintenanceId )
@@ -18838,6 +18997,86 @@ groupUpdateReqEncoder struct =
         , ( "disable_network_assignment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
+        ]
+
+
+type alias NativeGroupSettings =
+    { name : String
+    , colorKey : Maybe (SignalGroupColor)
+    , shortNote : Maybe (String)
+    , longNote : Maybe (String)
+    , isSecret : Bool
+    , userLogins : List (String)
+    , organismIds : List (Int)
+    , adminLogins : List (String)
+    , areaOfResponsibilityIds : List (Int)
+    , zoneIds : List (Int)
+    , interseptionKind : InterseptionKind
+    , disableNetworkAssignment : Bool
+    , isAviationGroup : Bool
+    }
+
+
+nativeGroupSettingsEncoder : NativeGroupSettings -> Json.Encode.Value
+nativeGroupSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "name", (Json.Encode.string) struct.name )
+        , ( "color_key", (Maybe.withDefault Json.Encode.null << Maybe.map (signalGroupColorEncoder)) struct.colorKey )
+        , ( "short_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.shortNote )
+        , ( "long_note", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.longNote )
+        , ( "is_secret", (Json.Encode.bool) struct.isSecret )
+        , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
+        , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
+        , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
+        , ( "area_of_responsibility_ids", (Json.Encode.list (Json.Encode.int)) struct.areaOfResponsibilityIds )
+        , ( "zone_ids", (Json.Encode.list (Json.Encode.int)) struct.zoneIds )
+        , ( "interseption_kind", (interseptionKindEncoder) struct.interseptionKind )
+        , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
+        , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
+        ]
+
+
+type alias NativeGroupCreateReq =
+    { requestId : String
+    , settings : NativeGroupSettings
+    }
+
+
+nativeGroupCreateReqEncoder : NativeGroupCreateReq -> Json.Encode.Value
+nativeGroupCreateReqEncoder struct =
+    Json.Encode.object
+        [ ( "request_id", (Json.Encode.string) struct.requestId )
+        , ( "settings", (nativeGroupSettingsEncoder) struct.settings )
+        ]
+
+
+type alias NativeGroupUpdateReq =
+    { masterKey : String
+    , settings : NativeGroupSettings
+    }
+
+
+nativeGroupUpdateReqEncoder : NativeGroupUpdateReq -> Json.Encode.Value
+nativeGroupUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "settings", (nativeGroupSettingsEncoder) struct.settings )
+        ]
+
+
+type alias NativeGroupDetail =
+    { masterKey : String
+    , settings : NativeGroupSettings
+    , isArchived : Bool
+    }
+
+
+nativeGroupDetailEncoder : NativeGroupDetail -> Json.Encode.Value
+nativeGroupDetailEncoder struct =
+    Json.Encode.object
+        [ ( "master_key", (Json.Encode.string) struct.masterKey )
+        , ( "settings", (nativeGroupSettingsEncoder) struct.settings )
+        , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         ]
 
 
@@ -22248,6 +22487,7 @@ deviceDetailsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_forwarding_configured" (Json.Decode.bool)))
 
 
 deviceUnitStatDecoder : Json.Decode.Decoder DeviceUnitStat
@@ -22308,6 +22548,67 @@ updateDeviceReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_forwarding" (Json.Decode.nullable (deviceAudioForwardingChangeDecoder))))
+
+
+deviceAudioForwardingChangeDecoder : Json.Decode.Decoder DeviceAudioForwardingChange
+deviceAudioForwardingChangeDecoder =
+    Json.Decode.succeed DeviceAudioForwardingChange
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "add_groups" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "remove_groups" (Json.Decode.list (Json.Decode.string))))
+
+
+deviceAudioForwardingGroupDecoder : Json.Decode.Decoder DeviceAudioForwardingGroup
+deviceAudioForwardingGroupDecoder =
+    Json.Decode.succeed DeviceAudioForwardingGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected" (Json.Decode.bool)))
+
+
+deviceAudioForwardingSettingsDecoder : Json.Decode.Decoder DeviceAudioForwardingSettings
+deviceAudioForwardingSettingsDecoder =
+    Json.Decode.succeed DeviceAudioForwardingSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (deviceAudioForwardingGroupDecoder))))
+
+
+deviceAudioForwardingEntryDecoder : Json.Decode.Decoder DeviceAudioForwardingEntry
+deviceAudioForwardingEntryDecoder =
+    Json.Decode.succeed DeviceAudioForwardingEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_archived" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
+
+
+listDeviceAudioForwardingReqDecoder : Json.Decode.Decoder ListDeviceAudioForwardingReq
+listDeviceAudioForwardingReqDecoder =
+    Json.Decode.succeed ListDeviceAudioForwardingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "cursor" (Json.Decode.nullable (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))))
+
+
+listDeviceAudioForwardingRspDecoder : Json.Decode.Decoder ListDeviceAudioForwardingRsp
+listDeviceAudioForwardingRspDecoder =
+    Json.Decode.succeed ListDeviceAudioForwardingRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (deviceAudioForwardingEntryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.string))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+removeDeviceAudioForwardingReqDecoder : Json.Decode.Decoder RemoveDeviceAudioForwardingReq
+removeDeviceAudioForwardingReqDecoder =
+    Json.Decode.succeed RemoveDeviceAudioForwardingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
 
 
 deviceFileRootDecoder : Json.Decode.Decoder DeviceFileRoot
@@ -30414,9 +30715,51 @@ deploymentMaintenanceDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "remaining_ms" (Json.Decode.int)))
 
 
+longPollFlavorDecoder : Json.Decode.Decoder LongPollFlavor
+longPollFlavorDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "rer" ->
+                            Json.Decode.succeed LpfRer
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "analysis-neo" ->
+                            Json.Decode.succeed LpfAnalysisNeo
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "generic" ->
+                            Json.Decode.succeed LpfGeneric
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "generic-full" ->
+                            Json.Decode.succeed LpfGenericFull
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 longPollReqDecoder : Json.Decode.Decoder LongPollReq
 longPollReqDecoder =
     Json.Decode.succeed LongPollReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "flavor" (longPollFlavorDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "session_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_event_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance_protocol" (Json.Decode.nullable (Json.Decode.int))))
@@ -30583,6 +30926,46 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+nativeGroupSettingsDecoder : Json.Decode.Decoder NativeGroupSettings
+nativeGroupSettingsDecoder =
+    Json.Decode.succeed NativeGroupSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "color_key" (Json.Decode.nullable (signalGroupColorDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "short_note" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "long_note" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "area_of_responsibility_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "zone_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "interseption_kind" (interseptionKindDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
+
+
+nativeGroupCreateReqDecoder : Json.Decode.Decoder NativeGroupCreateReq
+nativeGroupCreateReqDecoder =
+    Json.Decode.succeed NativeGroupCreateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "request_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (nativeGroupSettingsDecoder)))
+
+
+nativeGroupUpdateReqDecoder : Json.Decode.Decoder NativeGroupUpdateReq
+nativeGroupUpdateReqDecoder =
+    Json.Decode.succeed NativeGroupUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (nativeGroupSettingsDecoder)))
+
+
+nativeGroupDetailDecoder : Json.Decode.Decoder NativeGroupDetail
+nativeGroupDetailDecoder =
+    Json.Decode.succeed NativeGroupDetail
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (nativeGroupSettingsDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
 
 
 groupEntryF1Decoder : Json.Decode.Decoder GroupEntryF1

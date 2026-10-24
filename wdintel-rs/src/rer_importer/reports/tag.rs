@@ -695,6 +695,7 @@ fn message_full_text_nocomments(
         || datasource_kind == "whatsapp"
         || datasource_kind == "echo_operator"
         || datasource_kind == crate::config::MESSENGER_INGEST_DATASOURCE_KIND
+        || datasource_kind == crate::config::DATASOURCE_ECHO_NATIVE_KIND
     {
         Ok(body.unwrap_or_default())
     } else if datasource_kind == "api" {
@@ -841,10 +842,19 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn tag_report_keeps_importance_across_timestamp_chunks() {
+        for native in [false, true] {
+            assert_tag_report_source_supported(native).await;
+        }
+    }
+
+    async fn assert_tag_report_source_supported(native: bool) {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
-        let datasource_group =
-            find_test_datasource_group(&env.dbx).await.unwrap();
+        let datasource_group = if native {
+            create_native_report_group(&env, &login).await
+        } else {
+            find_test_datasource_group(&env.dbx).await.unwrap()
+        };
         set_report_chunking_hours(&env.dbx, 1).await;
         let created_at = dt(10, 30);
         let interception_datetime = dt(3, 30);
@@ -925,8 +935,56 @@ mod tests {
         .unwrap();
 
         assert!(data.messages.iter().any(|message| {
-            message.message_id == signal_message.id && message.is_important
+            message.message_id == signal_message.id
+                && message.is_important
+                && message.full_text == "important-across-chunks"
         }));
+    }
+
+    async fn create_native_report_group(
+        env: &Env,
+        login: &login::Model,
+    ) -> datasource_group::Model {
+        use crate::messenger::group::native::{
+            create_group, NativeGroupCreateReq, NativeGroupSettings,
+        };
+        let aor = find_test_aor(&env.dbx).await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let group = create_group(
+            &txn,
+            login.id,
+            NativeGroupCreateReq {
+                request_id: Uuid::new_v4().to_string(),
+                settings: NativeGroupSettings {
+                    name: "Native report source".into(),
+                    color_key: None,
+                    short_note: None,
+                    long_note: None,
+                    is_secret: true,
+                    user_logins: vec![login.id.to_string()],
+                    organism_ids: vec![],
+                    admin_logins: vec![login.id.to_string()],
+                    area_of_responsibility_ids: vec![aor.id],
+                    zone_ids: vec![login.sigint_zone_id.unwrap()],
+                    interseption_kind:
+                        crate::sigint::types::InterseptionKind::InterseptionRer,
+                    disable_network_assignment: false,
+                    is_aviation_group: false,
+                },
+            },
+        )
+        .await
+        .unwrap();
+        let mapping = datasource_group::Entity::find()
+            .filter(
+                datasource_group::Column::GroupMasterKey.eq(group.master_key),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        txn.commit().await.unwrap();
+        mapping
     }
 
     async fn set_report_chunking_hours(db: &DatabaseConnection, hours: i32) {

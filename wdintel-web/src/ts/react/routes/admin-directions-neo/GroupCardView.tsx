@@ -3,13 +3,16 @@ import { Box, Button, IconButton, Paper, Tooltip, Typography } from '@mui/materi
 import { useEffect, useMemo, useState } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
-import type { InboxMessage, InboxMessagesReq } from '../../../../Bindings';
+import type { GroupCreationInfo, InboxMessage, InboxMessagesReq } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
 import { PageErrorState } from '../../components/PageErrorState';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
+import { PowerAlert } from '../../components/PowerAlert';
+import { isUnauthorizedError } from '../../services/api/client';
+import { getGroupCreationInfo } from '../../services/api/group-creation';
 import { fetchInboxMessages } from '../../services/api/inbox-messages';
-import { formatDateTime24, NO_DATA_LABEL } from '../../utils/misc';
+import { ELLIPSIS, formatDateTime24, NO_DATA_LABEL } from '../../utils/misc';
 import {
   mrtTextCell,
   type AppMrtColumnDef,
@@ -202,8 +205,34 @@ function GroupMessagesTable({ masterKey }: { masterKey: string }) {
 }
 
 function GroupInfoCard({ group }: { group: GroupCardData }) {
+  const [creationInfo, setCreationInfo] = useState<GroupCreationInfo | null>(null);
+  const [creationError, setCreationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getGroupCreationInfo(group.masterKey, { signal: controller.signal })
+      .then((info) => {
+        if (!controller.signal.aborted) setCreationInfo(info);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        if (isUnauthorizedError(error)) {
+          window.location.assign('/login');
+          return;
+        }
+        setCreationError(error instanceof Error ? error.message : 'Невідома помилка');
+      });
+    return () => controller.abort();
+  }, [group.masterKey]);
+
+  const pendingCreationInfo = creationError ? NO_DATA_LABEL : ELLIPSIS;
   const fields = [
     ['Ключ', group.masterKey],
+    ['Створив групу', creationInfo ? creationInfo.createdBy || NO_DATA_LABEL : pendingCreationInfo],
+    [
+      'Дата створення',
+      creationInfo ? formatDateTime24(creationInfo.createdAt) : pendingCreationInfo,
+    ],
     ['Джерело', group.datasourceLabels.join(', ') || NO_DATA_LABEL],
     ['Напрямок', group.directionLabels.join(', ') || NO_DATA_LABEL],
     ['Категорія', group.interseptionKind === 'rer' ? 'РЕР' : 'Інше'],
@@ -219,6 +248,11 @@ function GroupInfoCard({ group }: { group: GroupCardData }) {
       <Typography variant="h6" sx={{ mb: 2 }}>
         {group.name}
       </Typography>
+      {creationError ? (
+        <PowerAlert severity="error" autoHideDuration={null} dismissible={false}>
+          Не вдалося завантажити дані про створення групи: {creationError}
+        </PowerAlert>
+      ) : null}
       <Box component="dl" sx={{ m: 0, display: 'grid', gap: 1.5 }}>
         {fields.map(([label, value]) => (
           <Box key={label}>
@@ -281,7 +315,7 @@ export function GroupCardView({ group, onBack }: { group: GroupCardData; onBack:
           overflow: 'hidden',
         }}
       >
-        {leftPanelOpen ? <GroupInfoCard group={group} /> : null}
+        {leftPanelOpen ? <GroupInfoCard key={group.masterKey} group={group} /> : null}
         <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
           <GroupMessagesTable masterKey={group.masterKey} />
         </Box>

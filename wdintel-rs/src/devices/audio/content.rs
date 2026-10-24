@@ -285,18 +285,25 @@ pub(super) async fn open_with_hooks(
     command: OpenDeviceAudioCommand,
     hooks: ContentHooks,
 ) -> anyhow::Result<DeviceAudioContent> {
-    authorize_read(&runtime, actor, command.device_id)
+    open_cached(runtime, Some(actor), command, hooks)
         .await
-        .c(h!())?;
+        .c(h!())
+}
+
+async fn open_cached(
+    runtime: Arc<DeviceAudioRuntime>,
+    actor: Option<Uuid>,
+    command: OpenDeviceAudioCommand,
+    hooks: ContentHooks,
+) -> anyhow::Result<DeviceAudioContent> {
+    if let Some(actor) = actor {
+        authorize_read(&runtime, actor, command.device_id)
+            .await
+            .c(h!())?;
+    }
     let entry = tokio::time::timeout(
         Duration::from_secs(DEVICE_AUDIO_PREPARATION_WAIT_SECS),
-        prepare_representation(
-            runtime.clone(),
-            Some(actor),
-            &command,
-            hooks,
-            None,
-        ),
+        prepare_representation(runtime.clone(), actor, &command, hooks, None),
     )
     .await
     .map_err(|_| unavailable("audio preparation timed out"))
@@ -309,9 +316,11 @@ pub(super) async fn open_with_hooks(
         .join(target_name(command.representation));
     let mut file = tokio::fs::File::open(&path).await.c(h!())?;
     let total = file.metadata().await.c(h!())?.len();
-    authorize_read(&runtime, actor, command.device_id)
-        .await
-        .c(h!())?;
+    if let Some(actor) = actor {
+        authorize_read(&runtime, actor, command.device_id)
+            .await
+            .c(h!())?;
+    }
     touch(&entry.entry).await.c(h!())?;
     let range =
         if matches!(command.representation, DeviceAudioRepresentation::Content)
@@ -867,4 +876,83 @@ pub(super) async fn cleanup_cache(
         }
     }
     Ok(())
+}
+
+pub(crate) async fn message_representation(
+    env: &crate::types::Env,
+    actor: Uuid,
+    reference_id: Uuid,
+    representation: DeviceAudioRepresentation,
+    request: Option<&HttpRequest>,
+) -> Result<HttpResponse, AppError> {
+    let reference =
+        crate::messenger::audio_ref::reference(&env.dbx, reference_id)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &actor,
+        reference.signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    let audio = crate::messenger::audio_ref::audio(env, &reference)
+        .await
+        .c(h!())?;
+    let command = OpenDeviceAudioCommand {
+        device_id: audio.device_id,
+        audio_id: audio.id,
+        representation,
+        method: if request.is_some_and(|request| {
+            request.method() == actix_web::http::Method::HEAD
+        }) {
+            DeviceAudioMethod::Head
+        } else {
+            DeviceAudioMethod::Get
+        },
+        range: request
+            .and_then(|request| request.headers().get(header::RANGE))
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_range),
+    };
+    let result = open_cached(
+        env.device_audio.clone(),
+        None,
+        command,
+        ContentHooks::default(),
+    )
+    .await;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &actor,
+        reference.signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    if crate::messenger::audio_ref::reference(&env.dbx, reference_id)
+        .await
+        .c(h!())?
+        .is_none()
+    {
+        return Err(AppError::NotFound);
+    }
+    match result {
+        Ok(content) => Ok(http_response(content)),
+        Err(error) => {
+            if let Some(range) = error
+                .chain()
+                .find_map(|error| error.downcast_ref::<UnsatisfiableRange>())
+            {
+                return Ok(HttpResponse::RangeNotSatisfiable()
+                    .insert_header((
+                        header::CONTENT_RANGE,
+                        format!("bytes */{}", range.0),
+                    ))
+                    .finish());
+            }
+            Err(error).c(h!())?
+        }
+    }
 }

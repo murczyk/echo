@@ -400,6 +400,7 @@ export function DeviceDetailsPage({
               }
             >
               <DeviceDetailsTabPanel
+                audioForwardingConfigured={device?.audioForwardingConfigured}
                 audio={guardedAudio}
                 audioEditor={audioEditor}
                 audioSettings={audioSettings}
@@ -488,6 +489,7 @@ export function DeviceDetailsPage({
       <DeviceUpsertDrawer
         open={page.editForm !== null}
         mode="edit"
+        deviceId={page.device?.id}
         fieldPermissions={page.permissions.fieldPermissions}
         form={page.editForm}
         saving={page.editSubmitting}

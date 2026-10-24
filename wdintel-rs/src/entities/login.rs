@@ -79,6 +79,10 @@ pub enum Relation {
     DeltaLogin,
     #[sea_orm(has_many = "super::device::Entity")]
     Device,
+    #[sea_orm(has_many = "super::device_audio_forwarding_group::Entity")]
+    DeviceAudioForwardingGroup,
+    #[sea_orm(has_many = "super::device_audio_forwarding_settings::Entity")]
+    DeviceAudioForwardingSettings,
     #[sea_orm(has_many = "super::device_name::Entity")]
     DeviceName,
     #[sea_orm(has_many = "super::echo_missing_message::Entity")]
@@ -314,6 +318,18 @@ impl Related<super::delta_login::Entity> for Entity {
 impl Related<super::device::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Device.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingGroup.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingSettings.def()
     }
 }
 

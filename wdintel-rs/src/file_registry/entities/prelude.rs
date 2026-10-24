@@ -4,6 +4,7 @@ pub use super::analytics_tag::Entity as AnalyticsTag;
 pub use super::analytics_tag_test_file::Entity as AnalyticsTagTestFile;
 pub use super::device_audio::Entity as DeviceAudio;
 pub use super::device_audio_asr_setting::Entity as DeviceAudioAsrSetting;
+pub use super::device_audio_forwarding_outbox::Entity as DeviceAudioForwardingOutbox;
 pub use super::device_audio_ingest::Entity as DeviceAudioIngest;
 pub use super::device_file_tag::Entity as DeviceFileTag;
 pub use super::file_analysis_definition::Entity as FileAnalysisDefinition;

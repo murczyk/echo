@@ -1,6 +1,8 @@
 mod bl;
 mod content;
+pub(crate) use content::message_representation;
 mod cursor;
+pub(crate) mod forwarding;
 mod ingest;
 mod preparation;
 mod probe;
@@ -635,4 +637,25 @@ impl ResponseError for DeviceAudioHttpError {
             }
         }
     }
+}
+
+pub(crate) async fn shared_bytes(
+    runtime: &Arc<DeviceAudioRuntime>,
+    audio: &crate::file_registry::entities::device_audio::Model,
+) -> anyhow::Result<Vec<u8>> {
+    storage::verified_content(
+        runtime.clone(),
+        audio.storage_key.clone(),
+        storage::SourceFingerprint {
+            size_bytes: u64::try_from(audio.source_size_bytes).c(h!())?,
+            sha256: audio
+                .source_sha256
+                .clone()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("invalid source hash"))
+                .c(h!())?,
+        },
+    )
+    .await
+    .c(h!())
 }

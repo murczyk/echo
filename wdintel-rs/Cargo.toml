@@ -136,7 +136,7 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "06ac23803f4dbc7bc5e9db471609e89703870125"
+rev = "17cbc64163d227cbc4c3da327e6c0890523293fb"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"

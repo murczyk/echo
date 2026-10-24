@@ -106,6 +106,9 @@ where
 }
 
 pub fn source_key(media: &signal_message_media::Model) -> String {
+    if crate::messenger::audio_ref::is_reference(media) {
+        return media.storage_key.clone().unwrap_or_default();
+    }
     crate::storage::join_paths(
         crate::config::S3_MEDIA_ROOT_PREFIX,
         &crate::messenger::media::media_object_key(media),

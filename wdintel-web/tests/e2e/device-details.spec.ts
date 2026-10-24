@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createServer, request as proxyRequest } from 'node:http';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { emptyNetworksListResponse, emptyUnitsListResponse } from './fixture-responses';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const POSIX_ROOT_ID = '018f0000-0000-7000-8000-000000000001';
@@ -264,6 +265,7 @@ type ApiTracker = {
   subtreeCountRequestCount: number;
   searchRequests: Array<Record<string, unknown>>;
   deviceArchived: boolean;
+  audioForwardingConfigured: boolean;
   submittedCreateName: string | undefined;
   releaseSubtreeCounts: () => void;
 };
@@ -281,6 +283,7 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
     subtreeCountRequestCount: 0,
     searchRequests: [],
     deviceArchived: false,
+    audioForwardingConfigured: false,
     submittedCreateName: undefined,
     releaseSubtreeCounts,
   };
@@ -351,6 +354,14 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
       await fulfillJson(route, { units: [] });
       return;
     }
+    if (pathname === '/api/sigint/units') {
+      await fulfillJson(route, emptyUnitsListResponse());
+      return;
+    }
+    if (pathname === '/api/sigint/network-list') {
+      await fulfillJson(route, emptyNetworksListResponse());
+      return;
+    }
     if (pathname === '/api/device/create') {
       const payload: unknown = route.request().postDataJSON();
       if (payload === null || typeof payload !== 'object' || !('name' in payload)) {
@@ -377,6 +388,7 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
     }
     if (pathname === '/api/device/detail') {
       await fulfillJson(route, {
+        audio_forwarding_configured: tracker.audioForwardingConfigured,
         id: DEVICE_ID,
         name: 'Device Alpha',
         aors: [{ id: 1, name: 'Північ' }],
@@ -390,6 +402,9 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
         archived_at: tracker.deviceArchived ? NOW : null,
       });
       return;
+    }
+    if (pathname === '/api/device/audio/forwarding') {
+      return fulfillJson(route, { version: null, enabled: false, groups: [] });
     }
     if (pathname === '/api/device/audio/list') {
       await fulfillJson(route, { audio: [], next_cursor: null });
@@ -599,6 +614,7 @@ for (const routeName of ['list', 'details']) {
     await expect(drawer.getByRole('textbox', { name: /^Назва/ })).toHaveCount(0);
     await expect(drawer.getByRole('combobox', { name: 'Смуги' })).toHaveCount(0);
     await expect(drawer.getByRole('combobox', { name: 'Підрозділ' })).toHaveCount(0);
+    await expect(drawer.getByLabel('Пересилати нові аудіо в групи')).toHaveCount(0);
   });
 
   test(`@regression Cyber device metadata permissions in ${routeName}`, async ({ page }) => {
@@ -699,6 +715,110 @@ for (const routeName of ['list', 'details']) {
     expect(updates).toHaveLength(2);
   });
 }
+
+test('@regression #3646 forwarding warning follows device status for viewers on desktop and mobile', async ({
+  page,
+}) => {
+  const tracker = await installMocks(page, ['CyberViewer']);
+  const warning = page.getByRole('img', { name: 'Пересилання аудіо не налаштоване', exact: true });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/devices/${DEVICE_ID}`);
+    await expect(warning).toBeVisible();
+    for (const name of [
+      width === 390 ? 'Аналітика' : 'Аналітичні відомості',
+      'Файли',
+      'Журнал',
+      'Аудіо',
+    ]) {
+      await expect(page.getByRole('tab', { name, exact: true })).toBeInViewport();
+    }
+    await warning.focus();
+    await expect(page.getByRole('tooltip')).toHaveText(
+      'Пересилання аудіо в групи не налаштоване для цього пристрою.',
+    );
+    await page.keyboard.press('Tab');
+    await warning.hover();
+    await expect(page.getByRole('tooltip')).toBeVisible();
+  }
+  tracker.audioForwardingConfigured = true;
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Аудіо', exact: true })).toBeVisible();
+  await expect(warning).toHaveCount(0);
+});
+
+test('@regression #3646 forwarding saves visible group deltas and preserves the draft after a conflict', async ({
+  page,
+}) => {
+  await installMocks(page, ['Cyber']);
+  await page.route('**/api/device/audio/forwarding', (route) =>
+    fulfillJson(route, {
+      version: '018f0000-0000-7000-8000-000000000050',
+      enabled: false,
+      groups: [{ master_key: 'echo_native.visible', name: 'Доступна група', selected: false }],
+    }),
+  );
+  const updates: Array<Record<string, unknown>> = [];
+  await page.route('**/api/device/update', async (route) => {
+    updates.push(route.request().postDataJSON());
+    await route.fulfill({
+      status: 409,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: 'Налаштування пересилання змінилися. Оновіть форму та повторіть зміни.',
+      }),
+    });
+  });
+  await page.goto(`/devices/${DEVICE_ID}`);
+  const warning = page.getByRole('img', { name: 'Пересилання аудіо не налаштоване', exact: true });
+  await expect(warning).toBeVisible();
+  await page.getByRole('button', { name: 'Редагувати пристрій', exact: true }).click();
+  const drawer = page
+    .locator('.MuiDrawer-paper')
+    .filter({ has: page.getByRole('heading', { name: 'Редагувати пристрій' }) });
+  await drawer.getByLabel('Пересилати нові аудіо в групи').check();
+  await drawer.getByRole('combobox', { name: 'Групи для пересилання' }).click();
+  await page.getByRole('option', { name: 'Доступна група' }).click();
+  await page.keyboard.press('Escape');
+  await drawer.getByRole('button', { name: 'Зберегти', exact: true }).click();
+  await expect.poll(() => updates.length).toBe(1);
+  expect(updates[0]).toEqual({
+    device_id: DEVICE_ID,
+    audio_forwarding: {
+      version: '018f0000-0000-7000-8000-000000000050',
+      enabled: true,
+      add_groups: ['echo_native.visible'],
+      remove_groups: [],
+    },
+  });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByLabel('Пересилати нові аудіо в групи')).toBeChecked();
+  await expect(drawer).toContainText('Доступна група');
+  await expect(
+    page.getByText('Налаштування пересилання змінилися.', { exact: false }).first(),
+  ).toBeVisible();
+  const device = await page.evaluate(async (id) => {
+    const response = await fetch('/api/device/detail', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: id }),
+    });
+    return response.json();
+  }, DEVICE_ID);
+  await page.route('**/api/device/update', (route) =>
+    fulfillJson(route, { ...device, audio_forwarding_configured: true }),
+  );
+  await drawer.getByRole('button', { name: 'Скасувати', exact: true }).click();
+  await expect(drawer).toBeHidden();
+  await page.getByRole('button', { name: 'Редагувати пристрій', exact: true }).click();
+  await drawer.getByLabel('Пересилати нові аудіо в групи').check();
+  await drawer.getByRole('combobox', { name: 'Групи для пересилання' }).click();
+  await page.getByRole('option', { name: 'Доступна група' }).click();
+  await page.keyboard.press('Escape');
+  await drawer.getByRole('button', { name: 'Зберегти', exact: true }).click();
+  await expect(drawer).toBeHidden();
+  await expect(warning).toHaveCount(0);
+});
 
 test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchronization journal', async ({
   page,
@@ -805,7 +925,7 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
   await expect(rootFileRow.getByText('.log', { exact: true })).toHaveCount(0);
   await expect(rootFileRow).not.toContainText('text/plain');
   await expect(filesSidebar.getByLabel('Вибрати каталог Users як область пошуку')).toBeVisible();
-  await expect(filesSidebar.getByLabel('Завантаження кількості файлів')).toBeVisible();
+  await expect(filesSidebar.getByLabel('Завантаження кількості файлів')).toHaveCount(0);
   await expect.poll(() => tracker.subtreeCountRequestCount).toBe(1);
   await expect(
     filesSidebar.getByLabel(
@@ -836,9 +956,12 @@ test('@smoke device details uses tabs, an IDE-style Files sidebar, and a synchro
 
   const rootLabelBox = await filesSidebar
     .getByLabel('Вибрати каталог / як область пошуку')
+    .getByText('/', { exact: true })
     .boundingBox();
   const documentsLabel = filesSidebar.getByLabel('Вибрати каталог documents як область пошуку');
-  const documentsLabelBox = await documentsLabel.boundingBox();
+  const documentsLabelBox = await documentsLabel
+    .getByText('documents', { exact: true })
+    .boundingBox();
   expect(documentsLabelBox?.x).toBeGreaterThan(rootLabelBox?.x ?? 0);
   await documentsLabel.click();
 

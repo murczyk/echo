@@ -6,6 +6,10 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const DATASOURCE_ECHO_NATIVE_KIND: &str = "echo_native";
+pub const DATASOURCE_ECHO_NATIVE_GROUP_PREFIX: &str = "echo_native.";
+pub const DATASOURCE_NATIVE_VALIDATION_BATCH_SIZE: usize = 1000;
+
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
 pub const HTTP_REDIRECT_MAX_HEADER_BYTES: usize = 2048;
 
@@ -72,6 +76,9 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
+pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
+pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
+pub const AI_ENGINE_GLM_5_3_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
 pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
 pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
@@ -477,6 +484,11 @@ pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
 pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
+pub const DEVICE_AUDIO_FORWARDING_IDLE_MS: u64 = 1000;
+pub const DEVICE_AUDIO_FORWARDING_PAGE_SIZE: u64 = 100;
+pub const DEVICE_AUDIO_FORWARDING_LEASE_SECS: i32 = 120;
+pub const DEVICE_AUDIO_FORWARDING_RETRY_SECS: i32 = 30;
+
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
 pub const ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE: u64 = 200;
 pub const ECHO_AUDIO_TRANSCRIPTION_DEVICE_SOURCE_PREFIX: &str = "device-audio/";
@@ -1172,6 +1184,8 @@ pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_INITIAL_MS: u64 = 100;
 pub const GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_MAX_MS: u64 = 3_000;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 2_000;
+pub const LONG_POLL_READ_STREAM_ELEMENTS_MAX: usize = 1000;
+pub const LONG_POLL_READ_STREAM_BLOCK_MS: usize = 50_000;
 pub const REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE: usize = 256;
 pub const REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const REDIS_MAXLEN: usize = 1000;
@@ -1191,6 +1205,7 @@ pub const TOTP_2FA_USED_STEP_TTL_SEC: u64 =
 pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
     "echo:deployment:maintenance";
 pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
+pub const DEPLOYMENT_MAINTENANCE_POLL_INTERVAL_MS: u64 = 1_000;
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;
@@ -1325,6 +1340,11 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+delete from signal_message_audio_ref;
+delete from device_audio_forwarding_delivery;
+delete from device_audio_forwarding_group;
+delete from device_audio_forwarding_settings;
+
 LOCK TABLE signal_message IN SHARE MODE;
 DELETE FROM group_stats_recalculation_day;
 DELETE FROM ai_callsign_reparse_run;
@@ -1431,7 +1451,7 @@ DELETE FROM goi_knowledge;
 DELETE FROM group_admin_data;
 DELETE FROM datasource_group;
 DELETE FROM signal_group;
-DELETE FROM datasource;
+DELETE FROM datasource WHERE kind <> 'echo_native';
 DELETE FROM report_history;
 DELETE FROM delta_kv;
 DELETE FROM system_settings;

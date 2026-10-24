@@ -12,6 +12,7 @@ const KIND_ICON_TITLE: Record<string, string> = {
   signal: 'Signal',
   whatsapp: 'WhatsApp',
   echo_operator: 'ЕХО',
+  echo_native: 'Echo Native',
 };
 
 export function DatasourceKindIcon({ kind, titleAccess, ...props }: DatasourceKindIconProps) {
@@ -38,7 +39,7 @@ export function DatasourceKindIcon({ kind, titleAccess, ...props }: DatasourceKi
     );
   }
 
-  if (normalizedKind === 'echo_operator') {
+  if (normalizedKind === 'echo_operator' || normalizedKind === 'echo_native') {
     return (
       <span title={resolvedTitleAccess} style={{ display: 'inline-flex' }}>
         <EchoIcon {...props} titleAccess={resolvedTitleAccess} />

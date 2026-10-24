@@ -73,7 +73,24 @@ fn message_has_media_exists(
             signal_message_media::Column::SignalMessageId,
         )));
     }
-    Expr::exists(media_query)
+    let mut audio_query = Query::select()
+        .expr(Expr::value(1))
+        .from(Alias::new("signal_message_audio_ref"))
+        .and_where(
+            Expr::col((
+                Alias::new("signal_message_audio_ref"),
+                Alias::new("signal_message_id"),
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+    if let Some(scope) = scope {
+        audio_query.and_where(scope.condition((
+            Alias::new("signal_message_audio_ref"),
+            Alias::new("signal_message_id"),
+        )));
+    }
+    Expr::exists(media_query).or(Expr::exists(audio_query))
 }
 
 fn message_source_group_is_not_ignored_exists() -> SimpleExpr {
@@ -651,7 +668,7 @@ where
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_posts(q, &req.denied_posts)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_search_with_correlated_terms(
+    let q = filter_search_with_scope(
         q,
         &req.search,
         req.search_mode,
@@ -659,6 +676,7 @@ where
             purpose,
             InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
         ),
+        scope,
     )
     .c(h!())?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;
@@ -834,11 +852,15 @@ async fn build_unit_filtered_inbox_digest_query(
             );
         }
     }
+    let mut candidate_req = req.clone();
+    candidate_req.selected_units = None;
+    candidate_req.denied_units = None;
+    candidate_req.selected_unit_ids = None;
     let query = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
         env,
-        req,
+        &candidate_req,
         None,
         None,
         purpose,
@@ -846,6 +868,12 @@ async fn build_unit_filtered_inbox_digest_query(
     )
     .await
     .context(h!())?;
+    let query = filter_inbox_units_with_materialized_networks(
+        query,
+        req,
+        unit_lookup_strategy == InboxUnitLookupStrategy::Correlated,
+    )
+    .c(h!())?;
     let query = apply_inbox_created_at_bounds(
         query,
         created_at_lower_bound,

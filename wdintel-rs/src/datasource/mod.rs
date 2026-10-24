@@ -11,6 +11,7 @@ use chrono::prelude::*;
 use sea_orm::*;
 use sea_query::Expr;
 pub(crate) mod importer;
+pub mod native;
 pub mod types;
 
 #[post("/api/datasources/list")]
@@ -55,6 +56,39 @@ pub async fn datasource_group_list(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+
+    if datasource.kind == config::DATASOURCE_ECHO_NATIVE_KIND {
+        let mut groups = datasource_group::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                datasource_group::Relation::SignalGroup.def(),
+            )
+            .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
+            .filter(datasource_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::Deleted.eq(false))
+            .filter(signal_group::Column::IsArchived.eq(false));
+        if !is_admin {
+            groups = groups.filter(
+                datasource_group::Column::GroupMasterKey.eq_any(
+                    crate::messenger::group::get_identity_sigint_groups(
+                        &env.dbx,
+                        &login_id_from_identity(&user).c(h!())?,
+                    )
+                    .await
+                    .c(h!())?,
+                ),
+            );
+        }
+        let keys = groups
+            .select_only()
+            .column(datasource_group::Column::GroupMasterKey)
+            .order_by_asc(datasource_group::Column::GroupMasterKey)
+            .into_tuple::<String>()
+            .all(&env.dbx)
+            .await
+            .c(h!())?;
+        return Ok(Json(keys));
+    }
 
     if datasource.kind == "signal"
         || datasource.kind == "whatsapp"
@@ -125,6 +159,9 @@ pub async fn fix_datasource_default_aor(
 
     let datasources = datasource::Entity::find()
         .filter(datasource::Column::DefaultAorId.is_null())
+        .filter(
+            datasource::Column::Kind.ne(config::DATASOURCE_ECHO_NATIVE_KIND),
+        )
         .all(db)
         .await
         .c(h!())?;
@@ -187,6 +224,9 @@ async fn disable_im_datasources(
             )),
         )
         .filter(datasource::Column::Status.eq(AccountStatus::Active))
+        .filter(
+            datasource::Column::Kind.ne(config::DATASOURCE_ECHO_NATIVE_KIND),
+        )
         .exec(db)
         .await
         .context(h!())?;

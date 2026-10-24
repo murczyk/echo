@@ -266,6 +266,12 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/transcription-forwarding' },
+    activeName: 'transcription-forwarding',
+    label: 'Пересилання транскрибації',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/transcription-settings' },
     activeName: 'transcription-settings',
     label: 'Транскрибація',

@@ -115,6 +115,24 @@ async fn merge_group_into(
     source_signal_group: signal_group::Model,
     target_signal_group: &signal_group::Model,
 ) -> Result<(), AppError> {
+    crate::datasource::native::require_external_datasource(
+        txn,
+        datasource_group.datasource_id,
+    )
+    .await
+    .c(h!())?;
+    for key in [
+        &source_signal_group.master_key,
+        &target_signal_group.master_key,
+    ] {
+        crate::datasource::native::ensure_group_datasource_compatible(
+            txn,
+            key,
+            datasource_group.datasource_id,
+        )
+        .await
+        .c(h!())?;
+    }
     let datasource_group_id = datasource_group.id;
     let mut datasource_group = datasource_group.into_active_model();
     datasource_group.group_master_key =

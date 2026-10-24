@@ -92,6 +92,7 @@ pub mod tests {
                     r#"
                     truncate table
                         public.file_archive,
+                        public.device_audio_forwarding_outbox,
                         public.device_audio_asr_setting,
                         public.device_audio,
                         public.device_audio_ingest,
