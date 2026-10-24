@@ -30,7 +30,9 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
+import { DeviceActivityChart } from './DeviceActivityChart';
 import { DeviceRowActions } from './DeviceRowActions';
+import { DeviceSizeLabel } from './DeviceSizeLabel';
 import { DeviceMobileList } from './DeviceMobileList';
 import { useDeviceMobileLayout } from '../use-device-mobile-layout';
 import type { DeviceRowView } from '../helpers';
@@ -130,15 +132,22 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         }),
       },
       {
-        id: 'updatedAt',
-        accessorKey: 'updatedAt',
-        header: 'Оновлено',
-        size: 170,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell<DeviceRowView>({
-          displayValue: ({ row }) => row.original.updatedAtLabel,
-          fullValue: ({ row }) => row.original.updatedAtLabel,
-        }),
+        id: 'activity',
+        accessorFn: (row) => row.activity,
+        header: 'Активність',
+        size: 250,
+        enableSorting: false,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => <DeviceActivityChart days={row.original.activity} />,
+      },
+      {
+        id: 'size',
+        accessorKey: 'sizeLabel',
+        header: 'Розмір',
+        size: 120,
+        enableSorting: false,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => <DeviceSizeLabel row={row.original} />,
       },
       {
         id: 'lifecycle',

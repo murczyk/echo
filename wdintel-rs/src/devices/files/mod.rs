@@ -9,7 +9,7 @@ mod path;
 pub(crate) mod preview;
 pub(in crate::devices) mod query;
 pub(crate) mod sessions;
-pub(in crate::devices) mod stats;
+pub(crate) mod stats;
 pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
@@ -138,10 +138,10 @@ pub(crate) async fn rebuild_stats(
     user: Identity,
     Json(body): Json<RebuildDeviceStatsReq>,
 ) -> Result<Json<RebuildDeviceStatsRsp>, AppError> {
+    crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
-    access::require_analytical_write(&login.roles).c(h!())?;
     let device_id = authorize_file_registry_access(
         &env.dbx,
         &login,

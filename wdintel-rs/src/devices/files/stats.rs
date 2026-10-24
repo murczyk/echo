@@ -4,7 +4,8 @@
 //! counts in the current stats iff `stats_epoch = device_content_stat.epoch`.
 
 use crate::devices::config::{
-    DEVICE_STATS_BACKFILL_BATCH_SIZE, DEVICE_STATS_TIMEZONE,
+    DEVICE_STATS_BACKFILL_BATCH_SIZE, DEVICE_STATS_LIVE_LOCK_TIMEOUT_MS,
+    DEVICE_STATS_TIMEZONE,
 };
 use crate::devices::files::types::{
     DeviceDayStat, DeviceExtensionStat, DeviceStats,
@@ -14,8 +15,8 @@ use anyhow::{ensure, Context, Result};
 use chrono::{DateTime, FixedOffset, NaiveDate, SecondsFormat, Utc};
 use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    DatabaseTransaction, IsolationLevel, QueryResult, Statement,
-    TransactionTrait,
+    DatabaseTransaction, EntityTrait, IsolationLevel, QueryOrder, QueryResult,
+    QuerySelect, Statement, TransactionTrait,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -127,14 +128,40 @@ pub(in crate::devices) async fn record_content_completed_in(
     upload_id: Uuid,
     now: DateTime<FixedOffset>,
 ) -> Result<()> {
-    let epoch = lock_content_stat(transaction, device_id, now)
-        .await
-        .context(h!())?;
-    apply_uploads_in(transaction, device_id, epoch, &[upload_id], now)
-        .await
-        .context(h!())
+    // Stats never block or fail an upload: the savepoint bounds the wait for
+    // the stats row lock and undoes partial writes on any error. A skipped
+    // upload stays pending (`content_pending`) until the next rebuild.
+    let savepoint = transaction.begin().await.context(h!())?;
+    let result = async {
+        savepoint
+            .execute_unprepared(&format!(
+                "set local lock_timeout = '{DEVICE_STATS_LIVE_LOCK_TIMEOUT_MS}ms'"
+            ))
+            .await
+            .context(h!())?;
+        let epoch = lock_content_stat(&savepoint, device_id, now)
+            .await
+            .context(h!())?;
+        apply_uploads_in(&savepoint, device_id, epoch, &[upload_id], now)
+            .await
+            .context(h!())
+    }
+    .await;
+    match result {
+        Ok(()) => savepoint.commit().await.context(h!()),
+        Err(error) => {
+            savepoint.rollback().await.context(h!())?;
+            crate::types::warn!(
+                "Device stats skipped for upload {upload_id}: {error:#}"
+            );
+            Ok(())
+        }
+    }
 }
 
+/// Errors are contained in a savepoint so stats never fail a sync batch. No
+/// lock timeout: a skipped increment has no pending marker and would be lost,
+/// and the only long holder is an admin-triggered tree recount.
 pub(in crate::devices) async fn record_tree_inserted_in(
     transaction: &DatabaseTransaction,
     device_id: Uuid,
@@ -144,6 +171,28 @@ pub(in crate::devices) async fn record_tree_inserted_in(
     if directory_count == 0 && file_count == 0 {
         return Ok(());
     }
+    let savepoint = transaction.begin().await.context(h!())?;
+    let result =
+        increment_tree_in(&savepoint, device_id, directory_count, file_count)
+            .await;
+    match result {
+        Ok(()) => savepoint.commit().await.context(h!()),
+        Err(error) => {
+            savepoint.rollback().await.context(h!())?;
+            crate::types::warn!(
+                "Device tree stats skipped for device {device_id}: {error:#}"
+            );
+            Ok(())
+        }
+    }
+}
+
+async fn increment_tree_in(
+    transaction: &DatabaseTransaction,
+    device_id: Uuid,
+    directory_count: u64,
+    file_count: u64,
+) -> Result<()> {
     transaction
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -684,6 +733,21 @@ pub(in crate::devices) async fn read_many(
     Ok(stats)
 }
 
+/// Stats are decorative on read paths: a failure is logged and yields `None`
+/// so device listing and summaries keep working.
+pub(in crate::devices) async fn read_many_or_none(
+    db: &DatabaseConnection,
+    device_ids: &[Uuid],
+) -> Option<HashMap<Uuid, DeviceStats>> {
+    match read_many(db, device_ids).await {
+        Ok(stats) => Some(stats),
+        Err(error) => {
+            crate::types::warn!("Device stats unavailable: {error:#}");
+            None
+        }
+    }
+}
+
 fn get_u64(row: &QueryResult, column: &str) -> Result<u64> {
     u64::try_from(row.try_get::<i64>("", column).context(h!())?).context(h!())
 }
@@ -693,4 +757,68 @@ fn get_datetime(row: &QueryResult, column: &str) -> Result<Option<String>> {
         .try_get::<Option<DateTime<Utc>>>("", column)
         .context(h!())?
         .map(|value| value.to_rfc3339_opts(SecondsFormat::AutoSi, true)))
+}
+
+/// Rebuilds devices sequentially with the same reset → backfill → tree
+/// recount as the endpoint, so it never blocks uploads beyond one batch.
+/// Failures are logged per device and reported at the end.
+pub(crate) async fn rebuild_oneoff(
+    mode: crate::types::Mode,
+    ps: crate::OneoffRebuildDeviceStatsPs,
+) -> Result<(), crate::error::AppError> {
+    let config = crate::config::read_config(mode).context(h!())?;
+    let main_db = crate::new_pg_pool_from_config(&config)
+        .await
+        .context(h!())?;
+    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
+        .await
+        .context(h!())?
+        .context("[file_registry] configuration section is missing")
+        .context(h!())?;
+    let device_ids = if ps.device_ids.is_empty() {
+        crate::entities::device::Entity::find()
+            .select_only()
+            .column(crate::entities::device::Column::Id)
+            .order_by_asc(crate::entities::device::Column::Id)
+            .into_tuple::<Uuid>()
+            .all(&main_db)
+            .await
+            .context(h!())?
+    } else {
+        ps.device_ids
+    };
+
+    let total = device_ids.len();
+    let mut failed = Vec::new();
+    for (index, device_id) in device_ids.into_iter().enumerate() {
+        let started = std::time::Instant::now();
+        match rebuild(file_registry_db.connection(), device_id).await {
+            Ok(stats) => log::info!(
+                "[{}/{total}] device {device_id}: {} dirs, {} files, {} uploads, {} bytes, {} batches in {:.1?}",
+                index + 1,
+                stats.directory_count,
+                stats.file_count,
+                stats.content_count,
+                stats.content_bytes,
+                stats.batch_count,
+                started.elapsed(),
+            ),
+            Err(error) => {
+                log::error!(
+                    "[{}/{total}] device {device_id} failed: {error:#}",
+                    index + 1
+                );
+                failed.push(device_id);
+            }
+        }
+    }
+    if !failed.is_empty() {
+        return Err(anyhow::anyhow!(
+            "device stats rebuild failed for {} of {total} devices: {failed:?}",
+            failed.len()
+        )
+        .into());
+    }
+    log::info!("device stats rebuilt for {total} devices");
+    Ok(())
 }

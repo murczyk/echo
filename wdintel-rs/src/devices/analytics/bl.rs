@@ -13,6 +13,7 @@ use super::types::{
 use crate::devices::devices::query::{
     self as device_query, DeviceReadScope, FileRegistryDeviceAccess,
 };
+use crate::devices::files::stats;
 use crate::devices::files::{
     normalize_file_metadata, parse_source_path, FilesystemError,
 };
@@ -536,6 +537,9 @@ pub(super) async fn device_summary(
         query::device_summary(file_registry_db.connection(), device_id)
             .await
             .c(h!())?;
+    let mut stats =
+        stats::read_many_or_none(file_registry_db.connection(), &[device_id])
+            .await;
     summary.items.sort_by(|left, right| {
         left.tag_name
             .cmp(&right.tag_name)
@@ -559,6 +563,7 @@ pub(super) async fn device_summary(
                 ),
             })
             .collect(),
+        stats: stats.as_mut().and_then(|stats| stats.remove(&device_id)),
     })
 }
 

@@ -9,6 +9,8 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import type { DeviceRowView } from '../helpers';
+import { DeviceActivityChart } from './DeviceActivityChart';
+import { DeviceSizeLabel } from './DeviceSizeLabel';
 
 export function DeviceMobileList({
   table,
@@ -58,7 +60,7 @@ export function DeviceMobileList({
         }}
       >
         <MenuItem value="">Без сортування</MenuItem>
-        {['name', 'createdAt', 'updatedAt'].flatMap((id) => [
+        {['name', 'createdAt'].flatMap((id) => [
           <MenuItem key={`${id}:asc`} value={`${id}:asc`}>
             {table.getColumn(id)?.columnDef.header} ↑
           </MenuItem>,
@@ -116,10 +118,15 @@ export function DeviceMobileList({
                 />
               ) : null}
             </div>
-            {visible('updatedAt') ? (
+            {visible('size') ? (
               <p className="m-0 text-[length:var(--echo-typography-font-size-xs)] text-echo-text/70">
-                Оновлено: {row.updatedAtLabel}
+                Розмір: <DeviceSizeLabel row={row} />
               </p>
+            ) : null}
+            {visible('activity') && row.activity.length > 0 ? (
+              <div className="py-echo-sm">
+                <DeviceActivityChart days={row.activity} />
+              </div>
             ) : null}
             <details className="mt-echo-sm text-[length:var(--echo-typography-font-size-sm)]">
               <summary className="min-h-echo-control-lg cursor-pointer py-echo-md text-echo-primary">

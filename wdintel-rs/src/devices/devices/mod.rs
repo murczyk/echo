@@ -58,11 +58,8 @@ pub(crate) async fn list(
         Some(file_registry_db) => {
             let device_ids: Vec<_> =
                 result.devices.iter().map(|device| device.id).collect();
-            Some(
-                stats::read_many(file_registry_db.connection(), &device_ids)
-                    .await
-                    .c(h!())?,
-            )
+            stats::read_many_or_none(file_registry_db.connection(), &device_ids)
+                .await
         }
         None => None,
     };

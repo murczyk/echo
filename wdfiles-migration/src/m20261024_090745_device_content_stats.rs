@@ -11,9 +11,7 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
                 alter table file_content_upload
-                    add column stats_epoch bigint not null default 0,
-                    add constraint file_content_upload_stats_epoch_check
-                        check (stats_epoch >= 0);
+                    add column stats_epoch bigint not null default 0;
 
                 create table device_content_stat (
                     device_id uuid not null,
@@ -99,7 +97,6 @@ impl MigrationTrait for Migration {
                 drop table device_content_stat;
 
                 alter table file_content_upload
-                    drop constraint file_content_upload_stats_epoch_check,
                     drop column stats_epoch;
                 "#,
             )
