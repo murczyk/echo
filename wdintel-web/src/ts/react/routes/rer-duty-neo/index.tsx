@@ -8,7 +8,7 @@ import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
 } from '../shared/message-card/MessageWriteAccess';
-import { canReplyToMessages, canWriteMessages, hasRole } from '../../utils/roles';
+import { canWriteMessages, hasRole } from '../../utils/roles';
 import { DutyExcludeMenuContext } from '../shared/message-card/DutyExcludeMenu';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { canUseRadioFeatures } from '../../utils/roles';
@@ -135,11 +135,7 @@ export function RerDutyNeoPage({
       invokingControl?: HTMLElement,
       sourceMessageId?: number,
     ) => {
-      if (
-        !canWriteMessages(currentUser?.roles) &&
-        !(key.startsWith('reply:') && canReplyToMessages(currentUser?.roles))
-      )
-        return;
+      if (!canWriteMessages(currentUser?.roles)) return;
       const focusTarget =
         invokingControl ??
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);
@@ -407,6 +403,16 @@ export function RerDutyNeoPage({
                 : behavior,
           );
           if (!element) continue;
+          if (replyNavigationRef.current) {
+            element.getAnimations?.({ subtree: true }).forEach((animation) => {
+              if (
+                animation instanceof CSSAnimation &&
+                animation.animationName === 'message-feed-linked-highlight'
+              ) {
+                animation.currentTime = 0;
+              }
+            });
+          }
           if (columnRefsRef.current[feedId]?.highlightLinkedMessage?.(id)) return true;
         }
         return false;

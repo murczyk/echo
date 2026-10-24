@@ -1518,7 +1518,7 @@ test('#3360 keeps an OFF reading anchor stable while a long snackbar error is sh
   expect(snackbarBox!.width).toBeLessThanOrEqual(520);
   expect(snackbarBox!.x).toBeGreaterThanOrEqual(24);
   expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(1280);
-  const closeButton = page.getByRole('button', { name: 'Закрити сповіщення' });
+  const closeButton = snackbar.getByRole('button', { name: 'Закрити сповіщення' });
   await expect(closeButton).toBeVisible();
   const closeButtonBox = await closeButton.boundingBox();
   expect(closeButtonBox).not.toBeNull();
@@ -1570,7 +1570,7 @@ test('#3400 keeps an unbroken snackbar error within the narrow viewport @regress
   expect(snackbarBox!.width).toBeLessThanOrEqual(374);
   expect(snackbarBox!.x).toBeGreaterThanOrEqual(8);
   expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(390);
-  const closeButton = page.getByRole('button', { name: 'Закрити сповіщення' });
+  const closeButton = snackbar.getByRole('button', { name: 'Закрити сповіщення' });
   await expect(closeButton).toBeVisible();
   const closeButtonBox = await closeButton.boundingBox();
   expect(closeButtonBox).not.toBeNull();

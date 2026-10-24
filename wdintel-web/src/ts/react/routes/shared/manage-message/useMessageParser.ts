@@ -23,7 +23,6 @@ export type UseMessageParserOptions = {
   isEditMode?: boolean;
   isReportMode?: boolean;
   radioFeaturesAllowed?: boolean;
-  unitFeaturesAllowed?: boolean;
   debounceMs?: number;
   onPristineSourceCleared?: () => void;
 };
@@ -63,7 +62,6 @@ export function useMessageParser(
   const isEditMode = options?.isEditMode ?? false;
   const isReportMode = options?.isReportMode ?? false;
   const radioFeaturesAllowed = options?.radioFeaturesAllowed ?? true;
-  const unitFeaturesAllowed = options?.unitFeaturesAllowed ?? true;
   const parserActive = active && !isEditMode && !isReportMode;
   const debounceMs = options?.debounceMs ?? DEFAULT_MESSAGE_PARSE_DEBOUNCE_MS;
   const onPristineSourceCleared = options?.onPristineSourceCleared;
@@ -232,7 +230,6 @@ export function useMessageParser(
         snapshot.scalars.freq = undefined;
         snapshot.scalars.post = undefined;
       }
-      if (!unitFeaturesAllowed) snapshot.scalars.unit = undefined;
       applyParserResult(reconcileParserSnapshot(ownershipRef.current, getValues(), snapshot));
       setParseStatus('success');
       if (parsed.ai_callsign_warning) {
@@ -250,7 +247,7 @@ export function useMessageParser(
         setParsing(false);
       }
     }
-  }, [applyParserResult, busy, getValues, radioFeaturesAllowed, unitFeaturesAllowed, setErrorMsg]);
+  }, [applyParserResult, busy, getValues, radioFeaturesAllowed, setErrorMsg]);
 
   const acceptParsedField = useCallback(
     (field: ParserFieldName) => {

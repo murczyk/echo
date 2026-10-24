@@ -205,6 +205,7 @@ function MessageFeedInner<T>(
       highlightedMessageId === null ? null : scroll.getItemElement(highlightedMessageId);
     if (highlightedElementRef.current !== nextElement) {
       highlightedElementRef.current?.removeAttribute('data-message-feed-highlighted');
+      highlightedElementRef.current?.removeAttribute('data-message-feed-highlight-kind');
       highlightedElementRef.current = nextElement;
     }
     const clearLinkedHighlight = (event: AnimationEvent) => {
@@ -221,8 +222,6 @@ function MessageFeedInner<T>(
     );
     nextElement?.addEventListener('animationend', clearLinkedHighlight);
     return () => {
-      nextElement?.removeAttribute('data-message-feed-highlighted');
-      nextElement?.removeAttribute('data-message-feed-highlight-kind');
       nextElement?.removeEventListener('animationend', clearLinkedHighlight);
     };
   }, [

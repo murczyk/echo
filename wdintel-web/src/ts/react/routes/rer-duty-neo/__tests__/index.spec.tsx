@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { minimalInboxMessage } from '../inbox-message-mocks';
-import { clearActiveFeedFilter, emptyFilter } from '../utils';
+import { buildInboxReq, clearActiveFeedFilter, emptyFilter } from '../utils';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
@@ -415,6 +415,7 @@ function buildFeedsState() {
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
     setFeedInitialTarget: vi.fn(),
+    buildReqForFeed: vi.fn((feed, options) => buildInboxReq({ ...options, filter: feed.filter })),
     addFrequencyToFilter: vi.fn(),
     toggleGroup: vi.fn(),
     selectAllGroups: vi.fn(),

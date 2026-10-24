@@ -10,7 +10,80 @@ import {
   withReplyActors,
 } from './message-replies.fixtures';
 
+test('@regression #3612 analysis: reply navigation keeps the newest message at the end without blank space', async ({
+  browser,
+  baseURL,
+}) => {
+  await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+    await page!.setViewportSize({ width: 1920, height: 1000 });
+    const actor = await fixture.attach(page!, 'analysis', 'user-1');
+    fixture.setPageLimit(20);
+    const source = fixture.seed('user-2', 'Oldest source');
+    for (let i = 0; i < 100; i++) fixture.seed('user-2', `History ${i}`);
+    const newest = fixture.seed('user-1', 'Newest reply at the end');
+    fixture.respondWithReplies([relation(1, source, newest)]);
+    await visit(actor, 'group-1', '&newestFirst=false');
+    await expect(row(actor, source.id)).toBeInViewport();
+    await row(actor, source.id).getByRole('link').filter({ hasText: newest.text }).click();
+    const target = row(actor, newest.id);
+    await expect(target).toBeInViewport();
+    await expect
+      .poll(() =>
+        target.evaluate((element) => {
+          const scroller = element.closest('[data-message-feed-scroller]')!;
+          return scroller.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom;
+        }),
+      )
+      .toBeLessThan(32);
+    await expect(page!.locator('[data-direct-message-anchor-spacer]')).toHaveCount(0);
+    await page!.screenshot({ path: test.info().outputPath('analysis-newest-reply-landed.png') });
+  });
+});
+
 for (const screen of ['duty', 'analysis'] as const) {
+  test(`@regression #3612 ${screen}: read-only users can view chains without reply actions on desktop or mobile`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      const actor = await fixture.attach(page!, screen, 'user-1');
+      const source = fixture.seed('user-2', 'Read-only source');
+      const reply = fixture.seed('user-1', 'Read-only reply');
+      fixture.respondWithReplies([relation(1, source, reply)]);
+      await visit(actor);
+      const user = await page!.evaluate(() =>
+        fetch('/api/user').then((response) => response.json()),
+      );
+      for (const role of ['CyberViewer', 'CyberViewerRestricted']) {
+        await page!.route('**/api/user', (route) =>
+          route.fulfill({ json: { ...user, roles: [role] } }),
+        );
+        await page!.setViewportSize({ width: 1920, height: 1000 });
+        await visit(actor);
+        const card = row(actor, source.id);
+        await expect(card.getByRole('link').filter({ hasText: reply.text })).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Відповісти', exact: true })).toHaveCount(0);
+        await expect(
+          page!.getByRole('button', { name: 'Додати повідомлення', exact: true }),
+        ).toHaveCount(0);
+        await page!.setViewportSize({ width: 390, height: 844 });
+        if (screen === 'analysis') {
+          for (const label of ['Закрити ліву панель', 'Закрити фільтри']) {
+            const close = page!.getByRole('button', { name: label, exact: true });
+            if (await close.isVisible()) await close.click();
+          }
+        }
+        await card.getByRole('button', { name: 'Більше дій', exact: true }).click();
+        await expect(page!.getByRole('menu')).toBeVisible();
+        await expect(page!.getByRole('menuitem', { name: 'Відповісти', exact: true })).toHaveCount(
+          0,
+        );
+        await page!.screenshot({ path: test.info().outputPath(`${screen}-${role}-read-only.png`) });
+        await page!.keyboard.press('Escape');
+      }
+    });
+  });
+
   test(`@regression #3612 ${screen}: compact reply items open a scrolling overlay and navigate in the source feed`, async ({
     browser,
     baseURL,
@@ -79,7 +152,13 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(panel).toHaveCount(0);
       await expect(row(actor, target.id)).toBeInViewport();
       expect(page!.context().pages()).toHaveLength(1);
-      expect(page!.url()).toBe(url);
+      const beforeNavigation = new URL(url);
+      const afterNavigation = new URL(page!.url());
+      beforeNavigation.searchParams.delete('messagesPage');
+      afterNavigation.searchParams.delete('messagesPage');
+      beforeNavigation.searchParams.sort();
+      afterNavigation.searchParams.sort();
+      expect(afterNavigation.href).toBe(beforeNavigation.href);
       if (screen === 'duty') await expect(row(actor, other.id)).toBeInViewport();
       await page!.screenshot({
         path: test.info().outputPath(`${screen}-reply-landed.png`),
@@ -146,6 +225,74 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
       await expect(card).not.toHaveCSS('outline-style', 'solid');
       await page!.screenshot({ path: test.info().outputPath(`${screen}-outline-cleared.png`) });
+      await link.click();
+      await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+      await expect
+        .poll(() =>
+          card.evaluate((element) => {
+            const animation = element
+              .getAnimations()
+              .find(
+                (animation) =>
+                  animation instanceof CSSAnimation &&
+                  animation.animationName === 'message-feed-linked-highlight',
+              );
+            return Number(animation?.currentTime ?? 0);
+          }),
+        )
+        .toBeGreaterThan(1200);
+      await link.click();
+      await expect
+        .poll(() =>
+          card.evaluate((element) => {
+            const animation = element
+              .getAnimations()
+              .find(
+                (animation) =>
+                  animation instanceof CSSAnimation &&
+                  animation.animationName === 'message-feed-linked-highlight',
+              );
+            return Number(animation?.currentTime ?? Infinity);
+          }),
+        )
+        .toBeLessThan(1000);
+      if (screen === 'analysis') {
+        const animationStartedAt = await card.evaluate(
+          (element) =>
+            element
+              .getAnimations()
+              .find(
+                (animation) =>
+                  animation instanceof CSSAnimation &&
+                  animation.animationName === 'message-feed-linked-highlight',
+              )?.startTime,
+        );
+        expect(animationStartedAt).toBeDefined();
+        await page!.route('**/api/rer/bookmark/add', (route) => route.fulfill({ status: 204 }));
+        await target.getByRole('button', { name: 'Додати в закладки', exact: true }).click();
+        await expect(
+          target.getByRole('button', { name: 'Прибрати з закладок', exact: true }),
+        ).toBeVisible();
+        await page!.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+            ),
+        );
+        expect(
+          await card.evaluate(
+            (element) =>
+              element
+                .getAnimations()
+                .find(
+                  (animation) =>
+                    animation instanceof CSSAnimation &&
+                    animation.animationName === 'message-feed-linked-highlight',
+                )?.startTime,
+          ),
+        ).toBe(animationStartedAt);
+      }
+      await expect(target).not.toHaveAttribute('data-message-feed-highlighted', 'true');
       await page!.emulateMedia({ reducedMotion: 'reduce' });
       await link.click();
       await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');

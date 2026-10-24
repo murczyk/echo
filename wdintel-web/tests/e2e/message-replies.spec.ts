@@ -12,7 +12,6 @@ test.describe('@regression #3612 message replies', () => {
       const screen = host === 'duty' ? 'Duty' : 'Analysis';
       const href = `/rer-${host}-neo?m=3612-original`;
       let created = false;
-      let reader = false;
       let replyRequests = 0;
       let unavailable = false;
       let headDeleted = false;
@@ -193,7 +192,6 @@ test.describe('@regression #3612 message replies', () => {
             to: [],
             locations: [],
             dmr: [],
-            unit_v2: reader ? 'Protected unit' : undefined,
           },
         }),
       );
@@ -202,11 +200,6 @@ test.describe('@regression #3612 message replies', () => {
         expect(payload.engaged_message_id).toBe(id);
         expect(payload.cited_signal_message_ids).toBeUndefined();
         expect(payload.parent_signal_message_ids).toBeUndefined();
-        if (reader) {
-          expect(payload.unit).toBeUndefined();
-          expect(payload.unit_id).toBeUndefined();
-          expect(payload.create_unit).toBeUndefined();
-        }
         created = true;
         await route.fulfill({ json: { signal_message_id: 501 } });
       });
@@ -243,40 +236,6 @@ test.describe('@regression #3612 message replies', () => {
       await expect(panel).toContainText('Моя нова відповідь');
       await page.keyboard.press('Escape');
       await expect(panel).toHaveCount(0);
-      const user = await page.evaluate(() =>
-        fetch('/api/user').then((response) => response.json()),
-      );
-      await page.route('**/api/user', (route) =>
-        route.fulfill({ json: { ...user, roles: ['CyberViewerRestricted'] } }),
-      );
-      reader = true;
-      await page.setViewportSize({ width: 390, height: 844 });
-      await page.reload();
-      if (host === 'analysis')
-        await page.getByRole('button', { name: 'Закрити фільтри', exact: true }).click();
-      await expect(
-        page.getByRole('button', { name: 'Додати повідомлення', exact: true }),
-      ).toHaveCount(0);
-      await card.getByRole('button', { name: 'Більше дій', exact: true }).click();
-      await page.getByRole('menuitem', { name: 'Відповісти', exact: true }).click();
-      await expect(editor).toBeVisible();
-      await expect(
-        editor.getByRole('button', { name: 'Налаштування парсингу', exact: true }),
-      ).toBeEnabled();
-      await page.evaluate(() =>
-        window.dispatchEvent(
-          new CustomEvent('user-settings-updated', {
-            detail: { messageSortBy: 'creation', messageAutoParseEnabled: false },
-          }),
-        ),
-      );
-      await editor
-        .getByRole('textbox', { name: 'Текст повідомлення', exact: true })
-        .fill('Відповідь читача');
-      await expect(editor.getByRole('combobox', { name: 'Підрозділ', exact: true })).toBeDisabled();
-      await editor.getByRole('button', { name: 'Розпарсити', exact: true }).click();
-      await editor.getByRole('button', { name: 'Створити', exact: true }).click();
-      await expect(editor).toHaveCount(0);
       headDeleted = true;
       await page.evaluate(
         (detail) => window.dispatchEvent(new CustomEvent('echo-message-replies-poll', { detail })),

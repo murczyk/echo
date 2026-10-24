@@ -116,7 +116,3 @@ export function hasAnyRole(
 export function canWriteMessages(roles: readonly string[] | null | undefined): boolean {
   return hasAnyRole(roles, ['Rer', 'Cyber']);
 }
-
-export function canReplyToMessages(roles: readonly string[] | null | undefined): boolean {
-  return hasRerOrCyber(roles);
-}

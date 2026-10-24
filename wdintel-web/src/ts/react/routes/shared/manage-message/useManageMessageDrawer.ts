@@ -1,4 +1,4 @@
-import { canUseRadioFeatures, canWriteMessages } from '../../../utils/roles';
+import { canUseRadioFeatures } from '../../../utils/roles';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -129,7 +129,6 @@ export function useManageMessageDrawer({
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
   const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
-  const unitFeaturesAllowed = !isReplyMode || canWriteMessages(currentUser?.roles);
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
   const reportParents = isPresent(reportSource)
@@ -413,7 +412,7 @@ export function useManageMessageDrawer({
   const formValues = useWatch({ control });
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
-      active: formReady && unitFeaturesAllowed,
+      active: formReady,
       search: formValues.unit ?? '',
       recentNames: recentValues.unit,
       replaceRecentNames: replaceUnitValues,
@@ -674,7 +673,6 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportMode,
     radioFeaturesAllowed,
-    unitFeaturesAllowed,
     onPristineSourceCleared: resetPristineCreateFields,
   });
   const handleAcceptParsedField = useCallback(

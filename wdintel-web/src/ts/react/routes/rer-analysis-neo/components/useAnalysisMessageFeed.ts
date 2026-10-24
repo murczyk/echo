@@ -105,6 +105,7 @@ export function useAnalysisMessageFeed({
             messageId: directMessageNavigation.targetMessageId,
             active: directMessageNavigation.focusActive,
             behavior: directMessageNavigation.scrollBehavior,
+            constrainToContent: directMessageNavigation.constrainToContent,
             onRelease: directMessageNavigation.onClearFocus,
           }
         : null,
@@ -112,6 +113,7 @@ export function useAnalysisMessageFeed({
       directMessageNavigation?.targetMessageId,
       directMessageNavigation?.focusActive,
       directMessageNavigation?.scrollBehavior,
+      directMessageNavigation?.constrainToContent,
       directMessageNavigation?.onClearFocus,
     ],
   );
@@ -163,7 +165,10 @@ export function useAnalysisMessageFeed({
     onViewportCaptureChange,
     resetKey: scrollResetKey,
     initialPositioningReady: !directMessageNavigation?.contextLoading,
-    loadEdgesOnLayout: !isLoading && !directMessageNavigation?.contextLoading,
+    loadEdgesOnLayout:
+      !isLoading &&
+      !directMessageNavigation?.contextLoading &&
+      !directMessageNavigation?.focusActive,
     hasReachedStart: isLoading || !hasMoreAbove,
     onLoadOlder: directMessageNavigation
       ? (load(above) ?? (() => undefined))

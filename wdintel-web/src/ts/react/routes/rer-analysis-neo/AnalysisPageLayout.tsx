@@ -7,7 +7,7 @@ import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
 } from '../shared/message-card/MessageWriteAccess';
-import { canReplyToMessages, canWriteMessages, hasRole } from '../../utils/roles';
+import { canWriteMessages, hasRole } from '../../utils/roles';
 import { RadioFeaturesProvider } from '../shared/RadioFeatures';
 import { Box } from '@mui/material';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -222,11 +222,7 @@ export function RerAnalysisNeoPage({
   );
   const requestEditorIntent = useCallback(
     (key: string, commit: () => void, invokingControl?: HTMLElement, sourceMessageId?: number) => {
-      if (
-        !canWriteMessages(page.currentUser?.roles) &&
-        !(key.startsWith('reply:') && canReplyToMessages(page.currentUser?.roles))
-      )
-        return;
+      if (!canWriteMessages(page.currentUser?.roles)) return;
       const focusTarget =
         invokingControl ??
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);

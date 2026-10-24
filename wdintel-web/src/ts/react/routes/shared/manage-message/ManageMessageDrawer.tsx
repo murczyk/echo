@@ -1,6 +1,6 @@
 import { CitedMessageCard } from '../message-replies/CitedMessageCard';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
-import { canReplyToMessages, canWriteMessages, hasRole } from '../../../utils/roles';
+import { canWriteMessages, hasRole } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
 import {
   forwardRef,
@@ -434,9 +434,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
     const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
     const isReplyMode = !props.editTarget && !props.reportSource && props.engagedMessageId != null;
-    const canWrite =
-      canWriteMessages(props.currentUser?.roles) ||
-      (isReplyMode && canReplyToMessages(props.currentUser?.roles));
+    const canWrite = canWriteMessages(props.currentUser?.roles);
     const returnFocusRef = useRef<HTMLElement | null>(null);
     const wasOpenRef = useRef(false);
     if (props.open && !wasOpenRef.current) {
@@ -1005,10 +1003,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                               'UnitsEditor',
                             )}
                             onUnitFocus={drawerState.onUnitFocus}
-                            unitLocked={
-                              drawerState.unitLocked ||
-                              (isReplyMode && !canWriteMessages(props.currentUser?.roles))
-                            }
+                            unitLocked={drawerState.unitLocked}
                             callsignOptions={drawerState.callsignOptions}
                             callsignLoading={drawerState.callsignLoading}
                             callsignInput={drawerState.callsignInput}

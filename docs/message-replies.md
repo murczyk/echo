@@ -83,8 +83,10 @@ bindings. Rendering citations must not fall back to fetching full inbox messages
 
 The server checks source and counterpart visibility independently using existing
 group, datasource, ownership, and intelligence-parent access rules. Deleted and
-inaccessible bodies and usable links are not returned. Authenticated readers,
-including viewer roles, can reply to readable sources. Normal creation/editing
+inaccessible bodies and usable links are not returned. The frontend exposes reply
+actions and the editor only to users who can create messages (`canWriteMessages`);
+viewer roles can still read and navigate chains. The existing server also accepts
+replies from authenticated readers; this frontend change does not alter API authorization. Normal creation/editing
 and privileged unit/device/report operations retain their existing authorization.
 Ungrouped ownership follows the preferred sender before `login_id`; inherited
 read access uses direct report/comment parents, matching the inbox read endpoint.
@@ -155,10 +157,12 @@ returns the entire thread in one response, so this is not server pagination.
 Clicking a preview navigates in the current feed and tab through existing message
 navigation APIs. Reply landings ease out over 300 ms, remain interruptible by
 reader scrolling or a newer navigation, and skip spatial motion when reduced
-motion is enabled. Distant targets still load only a bounded window. The navigation outline fades and clears after two seconds; the
-editor source outline remains active while composing. Duty uses the originating column and constrains reply landings
-to loaded content, avoiding empty space under the newest reply. Analysis uses its
-focused window without expanding the date range. Targets outside the current
+motion is enabled. Distant targets still load only a bounded window. The navigation outline fades and clears after two seconds,
+restarting on repeated navigation to the same message; the editor source outline remains active while composing.
+Duty uses the originating column. Both screens constrain reply landings to loaded content,
+avoiding empty space under the newest reply. Analysis suppresses layout-triggered paging
+while a target is pinned; reader input releases the target.
+Analysis uses its focused window without expanding the date range. Targets outside the current
 filters show `Поза поточними фільтрами` before clicking. The page batches
 candidate-only checks through the existing matching-filters API (100 IDs per
 request, a bounded cache per feed), shares checks between cards, and invalidates
@@ -217,7 +221,11 @@ mirror resync or manual historical reconciliation is required.
   failed-load recovery, and missed events.
 - `wdintel-web/tests/e2e/message-replies.spec.ts`: both screens' citation/chain
   display, tombstones, unavailable citations, in-feed navigation, desktop/mobile
-  composition, viewer permissions, and timestamp preference changes without fetching.
+  composition and timestamp preference changes without fetching.
+- `wdintel-web/tests/e2e/message-replies-frontend.spec.ts`: viewer-only action restrictions,
+  repeated navigation highlights, and bounded reply landings on both screens.
+  The shared browser fixture mirrors chronological around-message windows with up to
+  one page on each side and chronological before/after counts.
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.polling.spec.tsx`
   and `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`: existing scheduling,
   scrolling, and unread safeguards remain applicable to the shared card.

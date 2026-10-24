@@ -298,7 +298,7 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
           });
           return;
         }
-        if (body.newest_first) ordered.reverse();
+        if (!body.around_message_ref && body.newest_first) ordered.reverse();
         const target = body.around_message_ref
           ? ordered.findIndex(
               (message) =>
@@ -308,13 +308,13 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
           : -1;
         const start =
           target >= 0
-            ? Math.max(0, target - Math.floor(pageLimit / 2))
+            ? Math.max(0, target - pageLimit)
             : body.load_latest && !body.newest_first
               ? Math.max(0, ordered.length - pageLimit)
               : 0;
         const response = {
           inbox_items: ordered
-            .slice(start, start + pageLimit)
+            .slice(start, target >= 0 ? target + pageLimit + 1 : start + pageLimit)
             .map((message) => [message.id, inboxMessage(message)]),
           callsigns: [],
           signal_profiles: {},

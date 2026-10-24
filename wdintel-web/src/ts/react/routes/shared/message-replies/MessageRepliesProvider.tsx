@@ -20,7 +20,7 @@ import type {
 import { usePowerSnackbar } from '../../../components/PowerSnackbar';
 import { isUnauthorizedError } from '../../../services/api/client';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
-import { canReplyToMessages } from '../../../utils/roles';
+import { canWriteMessages } from '../../../utils/roles';
 import { ANALYSIS_SYSTEM_COUNT_INTERVAL_MS } from '../../rer-analysis-neo/config';
 import {
   ManageMessageDrawer,
@@ -172,7 +172,7 @@ export function MessageRepliesProvider({
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   useEffect(() => () => filters.dispose(), [filters]);
-  const canReply = canReplyToMessages(currentUser?.roles);
+  const canReply = canWriteMessages(currentUser?.roles);
   const value = useMemo(
     () => ({ store, filters, open: canReply ? onReply : undefined, navigate: onNavigate }),
     [store, filters, onReply, canReply, onNavigate],
