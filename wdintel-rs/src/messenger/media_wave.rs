@@ -5,9 +5,7 @@ use crate::config::MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR;
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
-use crate::messenger::media::{
-    ensure_media_access, fetch_media_bytes, is_audio_media,
-};
+use crate::messenger::media::{fetch_media_bytes, is_audio_media};
 use crate::types::{warn, Env, ShortContext};
 use actix_web::http::header;
 use actix_web::{get, HttpResponse};
@@ -15,7 +13,6 @@ use milgeo_audio_wave::{
     generate_spectrogram_png, generate_wave_png, PngGenRequest, PngGenResult,
     PNG_CONTENT_DISPOSITION, PNG_CONTENT_TYPE,
 };
-use sea_orm::EntityTrait;
 use uuid::Uuid;
 
 fn audio_temp_suffix(media: &signal_message_media::Model) -> &'static str {
@@ -118,15 +115,12 @@ async fn load_authorized_audio_media_meta(
     login: &uuid::Uuid,
     media_id: Uuid,
 ) -> Result<signal_message_media::Model, AppError> {
-    let media = signal_message_media::Entity::find_by_id(media_id)
-        .one(&env.dbx)
+    let media = crate::messenger::audio_ref::authorized(env, login, media_id)
         .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)?;
+        .c(h!())?;
     if !is_audio_media(&media) {
         return Err(AppError::NotFound);
     }
-    ensure_media_access(&env.dbx, login, media.signal_message_id).await?;
     Ok(media)
 }
 
@@ -162,6 +156,20 @@ async fn serve_cached_or_generate_png(
         AudioPngKind::Spectrogram => "spectrogram",
     };
     let media = load_authorized_audio_media_meta(env, login, media_id).await?;
+    if super::audio_ref::is_reference(&media) {
+        let representation = match kind {
+            AudioPngKind::Wave => crate::devices::audio::types::DeviceAudioRepresentation::Wave,
+            AudioPngKind::Spectrogram => crate::devices::audio::types::DeviceAudioRepresentation::Spectrogram,
+        };
+        return crate::devices::audio::message_representation(
+            env,
+            *login,
+            media_id,
+            representation,
+            None,
+        )
+        .await;
+    }
     if let Some(bytes) = read_cached_png(output_path).await? {
         return Ok(png_http_response(bytes));
     }

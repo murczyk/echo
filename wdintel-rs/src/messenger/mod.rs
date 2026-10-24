@@ -19,6 +19,7 @@ use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
 pub mod alerts;
 pub mod attachments;
+pub(crate) mod audio_ref;
 pub mod bl;
 pub mod dedupe;
 pub mod group;
@@ -239,6 +240,9 @@ pub async fn group_update(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
+    group::native::require_external_group(&txn, &req.master_key)
+        .await
+        .c(h!())?;
     let res = bl::bl_group_update(&req, &txn).await.c(h!())?;
 
     txn.commit().await.c(h!())?;

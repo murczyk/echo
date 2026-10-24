@@ -120,7 +120,7 @@
 - **User role or permission:** authenticated user, feature-gated editor
 - **Preconditions:** group list is empty or populated
 - **User action or external event:** open My Groups
-- **Expected observable result:** tab, empty state, table, and feature-flagged editing appear
+- **Expected observable result:** tab, empty state, table, and feature-flagged editing appear. Help distinguishes administrator-created Echo groups from messenger connection instructions and explains that group administration does not grant access to messages.
 - **Loading/empty/error/success behavior:** empty and populated states differ
 - **URL, localStorage, or user-settings persistence:** none
 - **API endpoint and compatibility requirements:** `listMyAdminGroups`

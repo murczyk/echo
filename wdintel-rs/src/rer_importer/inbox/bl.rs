@@ -164,17 +164,17 @@ fn inbox_message_summary(
 }
 
 async fn load_attachment_info(
+    env: &Env,
     message_ids: &HashSet<i64>,
     dbx: &DatabaseConnection,
 ) -> Result<(HashMap<i64, i64>, HashMap<i64, Vec<String>>), AppError> {
-    let rows = signal_message_media::Entity::find()
-        .filter(
-            signal_message_media::Column::SignalMessageId
-                .is_in(message_ids.iter().copied()),
-        )
-        .all(dbx)
-        .await
-        .c(h!())?;
+    let rows = crate::messenger::audio_ref::for_messages(
+        env,
+        dbx,
+        &message_ids.iter().copied().collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
 
     let mut counts = HashMap::new();
     let mut names: HashMap<i64, Vec<String>> = HashMap::new();
@@ -194,6 +194,7 @@ async fn load_attachment_info(
 }
 
 async fn load_intelligence_report_summaries(
+    env: &Env,
     message_ids: &[i64],
     allowed_groups: &[String],
     login: &uuid::Uuid,
@@ -263,7 +264,7 @@ async fn load_intelligence_report_summaries(
         .map(|item| (item.id, item))
         .collect::<HashMap<_, _>>();
     let (attachment_counts, media_file_names) =
-        load_attachment_info(&related_ids, dbx).await.c(h!())?;
+        load_attachment_info(env, &related_ids, dbx).await.c(h!())?;
     let group_rows = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId
@@ -825,6 +826,7 @@ pub async fn aggregate_to_inbox_messages(
             .await
             .c(h!())?;
     let mut intelligence_report_summaries = load_intelligence_report_summaries(
+        env,
         &message_ids,
         &sigint_groups,
         login,
@@ -901,15 +903,10 @@ pub async fn aggregate_to_inbox_messages(
     let mut message_unit_ids = load_message_unit_ids(&message_ids, &env.dbx)
         .await
         .c(h!())?;
-    let media_entries = signal_message_media::Entity::find()
-        .filter(
-            signal_message_media::Column::SignalMessageId
-                .eq_any(message_ids.clone()),
-        )
-        .order_by_asc(signal_message_media::Column::Id)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let media_entries =
+        crate::messenger::audio_ref::for_messages(env, &env.dbx, &message_ids)
+            .await
+            .c(h!())?;
     let transcriptions_by_media =
         load_completed_audio_transcriptions(&env.dbx, &media_entries)
             .await

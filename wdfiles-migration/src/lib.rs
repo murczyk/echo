@@ -1,3 +1,4 @@
+mod m20261023_071318_device_audio_forwarding;
 pub use sea_orm_migration::prelude::*;
 
 mod m20260719_174625_create_file_registry_device_file;
@@ -96,6 +97,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261016_172538_retire_device_audio_asr_executor::Migration),
             Box::new(m20261017_101924_drop_device_audio_transcription_backfill::Migration),
             Box::new(m20261019_101619_file_archive_registry::Migration),
+            Box::new(m20261023_071318_device_audio_forwarding::Migration),
         ]
     }
 }

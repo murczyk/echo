@@ -32,6 +32,7 @@ export type DeviceUpsertForm = {
   unitId: number | null;
   externalUrl: string;
   customFields: DeviceCustomFieldDraft[];
+  audioForwarding?: DeviceUpdatePatchInput['audioForwarding'];
 };
 
 export type DeviceCustomFieldDraftError = {
@@ -235,6 +236,7 @@ export function buildUpdateDevicePatch(
   }
 
   if (permissions.analyticalData) {
+    if (form.audioForwarding !== undefined) req.audioForwarding = form.audioForwarding;
     const name = form.name.trim();
     const deviceAorIds = device.aors.map((aor) => aor.id);
     const arraysEqual =
@@ -251,6 +253,7 @@ export function buildUpdateDevicePatch(
 
 export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): boolean {
   return (
+    patch.audioForwarding !== undefined ||
     patch.name !== undefined ||
     patch.aorIds !== undefined ||
     patch.unitId !== undefined ||

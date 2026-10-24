@@ -1,5 +1,19 @@
 # Admin page contracts
 
+## Echo native groups
+
+- **Behavior ID:** `admin-native-groups-lifecycle`
+- **Affected route:** `/admin/directions-neo`, system administrators only.
+- **Expected observable result:** «Створити групу» creates a private Echo Native group, preselecting the creator as an administrator and directly invited user. Empty groups appear immediately. Editing, assigning directions, and removing directions use the same native form, preserving global access settings. Selecting directions requires an AOR; unassigned groups may have no AOR.
+- **Access:** successful creation and the creator's message visibility are reported separately. Group administration does not grant message-reading access. Messenger ingestion controls are absent; network/category controls retain their existing meaning. Native forms support the shared group-color picker; updates that omit the color retain the current value.
+- **Archive:** archived native groups expose read-only settings. Restoring returns the group to the unassigned list without restoring directions.
+- **Loading/error/success behavior:** API failures display a dismissible toast and preserve the form. Successful save closes the form before refreshing lists and checking access, so a follow-up failure cannot be presented as failed creation.
+- **Known race/idempotency constraints:** retries within the open creation form use the same operation UUID, including when the server saved a group but its response was lost. Forms cannot be dismissed while saving.
+- **API:** generated contracts for `/api/messenger/native-groups/create`, `/get`, `/update`; existing archive/unarchive endpoints.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/admin-directions-neo/NativeGroupDialog.tsx`, `wdintel-web/src/ts/react/routes/admin-directions-neo/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-native-groups.spec.ts`, `wdintel-web/tests/e2e/admin-group-ingestion.spec.ts`.
+- **Original Echo issue:** https://github.com/echoua/echo/issues/3646.
+
 ## KPI dashboard
 
 - **Issue:** [#3826](https://github.com/echoua/echo/issues/3826).

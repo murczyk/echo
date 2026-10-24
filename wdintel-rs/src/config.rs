@@ -6,6 +6,10 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const DATASOURCE_ECHO_NATIVE_KIND: &str = "echo_native";
+pub const DATASOURCE_ECHO_NATIVE_GROUP_PREFIX: &str = "echo_native.";
+pub const DATASOURCE_NATIVE_VALIDATION_BATCH_SIZE: usize = 1000;
+
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
 pub const HTTP_REDIRECT_MAX_HEADER_BYTES: usize = 2048;
 
@@ -480,6 +484,11 @@ pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
 pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
+pub const DEVICE_AUDIO_FORWARDING_IDLE_MS: u64 = 1000;
+pub const DEVICE_AUDIO_FORWARDING_PAGE_SIZE: u64 = 100;
+pub const DEVICE_AUDIO_FORWARDING_LEASE_SECS: i32 = 120;
+pub const DEVICE_AUDIO_FORWARDING_RETRY_SECS: i32 = 30;
+
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
 pub const ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE: u64 = 200;
 pub const ECHO_AUDIO_TRANSCRIPTION_DEVICE_SOURCE_PREFIX: &str = "device-audio/";
@@ -1297,6 +1306,11 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+delete from signal_message_audio_ref;
+delete from device_audio_forwarding_delivery;
+delete from device_audio_forwarding_group;
+delete from device_audio_forwarding_settings;
+
 LOCK TABLE signal_message IN SHARE MODE;
 DELETE FROM group_stats_recalculation_day;
 DELETE FROM ai_callsign_reparse_run;
@@ -1392,7 +1406,7 @@ DELETE FROM goi_knowledge;
 DELETE FROM group_admin_data;
 DELETE FROM datasource_group;
 DELETE FROM signal_group;
-DELETE FROM datasource;
+DELETE FROM datasource WHERE kind <> 'echo_native';
 DELETE FROM report_history;
 DELETE FROM delta_kv;
 DELETE FROM system_settings;

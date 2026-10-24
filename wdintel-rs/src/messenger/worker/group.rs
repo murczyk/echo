@@ -30,6 +30,18 @@ pub async fn sync_groups(
     }
     let unsorted_groups =
         echo_im::list_groups(client_name, txn).await.c(h!())?;
+    crate::datasource::native::require_external_datasource(txn, datasource.id)
+        .await
+        .c(h!())?;
+    crate::datasource::native::require_external_group_keys(
+        txn,
+        &unsorted_groups
+            .iter()
+            .map(|group| group.id.clone())
+            .collect_vec(),
+    )
+    .await
+    .c(h!())?;
     let group_statuses = unsorted_groups
         .iter()
         .map(|g| (g.id.clone(), g.name.clone(), g.deleted_by_messenger))
@@ -163,6 +175,7 @@ pub async fn sync_groups(
                     is_aviation_group: NotSet,
                     color_key: NotSet,
                     fetch_new_messages: NotSet,
+                    created_by_login_id: NotSet,
                 };
                 crate::messenger::group::add_group(model, txn)
                     .await

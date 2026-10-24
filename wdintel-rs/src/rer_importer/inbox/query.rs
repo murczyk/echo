@@ -73,7 +73,24 @@ fn message_has_media_exists(
             signal_message_media::Column::SignalMessageId,
         )));
     }
-    Expr::exists(media_query)
+    let mut audio_query = Query::select()
+        .expr(Expr::value(1))
+        .from(Alias::new("signal_message_audio_ref"))
+        .and_where(
+            Expr::col((
+                Alias::new("signal_message_audio_ref"),
+                Alias::new("signal_message_id"),
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .to_owned();
+    if let Some(scope) = scope {
+        audio_query.and_where(scope.condition((
+            Alias::new("signal_message_audio_ref"),
+            Alias::new("signal_message_id"),
+        )));
+    }
+    Expr::exists(media_query).or(Expr::exists(audio_query))
 }
 
 fn message_source_group_is_not_ignored_exists() -> SimpleExpr {

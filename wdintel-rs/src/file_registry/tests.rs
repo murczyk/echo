@@ -699,6 +699,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261017_101924_drop_device_audio_transcription_backfill"
                 .to_string(),
             "m20261019_101619_file_archive_registry".to_string(),
+            "m20261023_071318_device_audio_forwarding".to_string(),
         ]
     );
 }

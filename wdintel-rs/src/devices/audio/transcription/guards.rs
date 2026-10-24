@@ -12,6 +12,7 @@ pub(in crate::devices::audio) struct MainGuard {
     device_id: Uuid,
     archived: Option<bool>,
     pub global_enabled: bool,
+    devices_enabled: bool,
 }
 
 impl MainGuard {
@@ -44,7 +45,7 @@ impl MainGuard {
         policy: bool,
     ) -> anyhow::Result<Self> {
         let transaction = runtime.dbx.begin().await.c(h!())?;
-        let global_enabled = if policy {
+        let (global_enabled, devices_enabled) = if policy {
             system_settings::Entity::find()
                 .filter(system_settings::Column::Deleted.eq(false))
                 .order_by_desc(system_settings::Column::UpdatedAt)
@@ -58,11 +59,12 @@ impl MainGuard {
                 .one(&transaction)
                 .await
                 .c(h!())?
-                .is_some_and(|(transcription, devices)| {
-                    transcription && devices
+                .map(|(transcription, devices)| {
+                    (transcription && devices, devices)
                 })
+                .unwrap_or((false, false))
         } else {
-            false
+            (false, false)
         };
         let archived = device::Entity::find_by_id(device_id)
             .select_only()
@@ -77,7 +79,23 @@ impl MainGuard {
             device_id,
             archived,
             global_enabled,
+            devices_enabled,
         })
+    }
+
+    pub async fn forwarding_snapshot(
+        &self,
+    ) -> anyhow::Result<crate::devices::audio::forwarding::Snapshot> {
+        let mut snapshot = crate::devices::audio::forwarding::snapshot(
+            &self.transaction,
+            self.device_id,
+        )
+        .await
+        .c(h!())?;
+        if !self.active() || !self.devices_enabled {
+            snapshot.groups.clear();
+        }
+        Ok(snapshot)
     }
 
     pub async fn commit_files(

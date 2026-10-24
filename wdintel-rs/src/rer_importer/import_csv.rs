@@ -616,7 +616,7 @@ async fn load_rer_csv_import_options(
     dbx: &DatabaseConnection,
     config: &Config,
 ) -> anyhow::Result<RerCsvImportOptions> {
-    let groups = signal_group::Entity::find()
+    let groups = external_csv_import_groups()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
         .order_by_asc(signal_group::Column::Name)
@@ -654,7 +654,8 @@ async fn find_target_rer_csv_import_group(
     let group = if master_key.trim().is_empty() {
         None
     } else {
-        signal_group::Entity::find_by_id(master_key)
+        external_csv_import_groups()
+            .filter(signal_group::Column::MasterKey.eq(master_key))
             .filter(signal_group::Column::Deleted.eq(false))
             .filter(signal_group::Column::IsArchived.eq(false))
             .one(dbx)
@@ -729,7 +730,7 @@ async fn oneoff_rer_csv_import_at(
         }
         None => {
             let group_name = config.signal_import_group_name.clone();
-            let group = signal_group::Entity::find()
+            let group = external_csv_import_groups()
                 .filter(signal_group::Column::Deleted.eq(false))
                 .filter(signal_group::Column::Name.eq(group_name))
                 .order_by_desc(signal_group::Column::CreatedAt)
@@ -1185,7 +1186,7 @@ pub async fn rer_delta_csv_import_go(
         .c(h!())?;
 
     let group_name = config.signal_import_group_name.clone();
-    let group = signal_group::Entity::find()
+    let group = external_csv_import_groups()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::Name.eq(group_name))
         .order_by_desc(signal_group::Column::CreatedAt)
@@ -1210,6 +1211,9 @@ pub async fn rer_delta_csv_import_go(
         .map(|m| m.map(|dg| dg.datasource_id))
         .unwrap_or(None)
         .unwrap_or(crate::config::SIGNAL_DATASOURCE_ID);
+    crate::datasource::native::require_external_datasource(dbx, datasource_id)
+        .await
+        .c(h!())?;
 
     let sender_name = config.signal_import_fiven_name.clone();
     let signal_profile = signal_profile::Entity::find()
@@ -1509,6 +1513,11 @@ pub fn parse_delta_csv_method3(
     Ok(res)
 }
 
+fn external_csv_import_groups() -> Select<signal_group::Entity> {
+    signal_group::Entity::find()
+        .filter(crate::datasource::native::external_group_condition())
+}
+
 pub async fn ensure_import_group_exists(
     dbx: &sea_orm::DatabaseConnection,
     config: &Config,
@@ -1537,8 +1546,11 @@ pub async fn ensure_import_group_exists(
         }
     };
 
+    crate::datasource::native::require_external_datasource(dbx, datasource_id)
+        .await
+        .c(h!())?;
     let group_name = config.signal_import_group_name.clone();
-    let group = signal_group::Entity::find()
+    let group = external_csv_import_groups()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::Name.eq(group_name.clone()))
         .order_by_desc(signal_group::Column::CreatedAt)
@@ -2194,6 +2206,28 @@ mod tests {
         )
         .await
         .unwrap();
+        let native_source =
+            crate::datasource::native::load(&env.dbx).await.unwrap();
+        let native_key = format!(
+            "{}{}",
+            crate::config::DATASOURCE_ECHO_NATIVE_GROUP_PREFIX,
+            Uuid::new_v4()
+        );
+        crate::functest::tests::mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(native_key.clone()),
+                name: Set(Some(env.config.signal_import_group_name.clone())),
+                datasource_id: Set(Some(native_source.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(find_target_rer_csv_import_group(&env.dbx, &native_key)
+            .await
+            .unwrap()
+            .is_none());
         let options = load_rer_csv_import_options(&env.dbx, &env.config)
             .await
             .unwrap();
@@ -2209,6 +2243,10 @@ mod tests {
             .signal_groups
             .iter()
             .any(|group| group.master_key == archived_group_id));
+        assert!(!options
+            .signal_groups
+            .iter()
+            .any(|group| group.master_key == native_key));
         assert!(
             find_target_rer_csv_import_group(&env.dbx, &archived_group_id)
                 .await

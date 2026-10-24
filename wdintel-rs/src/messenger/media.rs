@@ -1067,6 +1067,9 @@ pub async fn delete_stored_media_files(
         return;
     }
     for media in media {
+        if super::audio_ref::is_reference(media) {
+            continue;
+        }
         crate::messenger::media_local_cache::remove_unreferenced_best_effort(
             config, media,
         )
@@ -1083,6 +1086,9 @@ pub async fn delete_stored_media_files(
         return;
     };
     for media in media {
+        if super::audio_ref::is_reference(media) {
+            continue;
+        }
         let mut object_keys = vec![
             media_object_key(media),
             storage::nested_object_key(&media.id),
@@ -1134,6 +1140,9 @@ pub async fn delete_local_media_files(
         return;
     }
     for media in media {
+        if super::audio_ref::is_reference(media) {
+            continue;
+        }
         crate::messenger::media_cache::remove_cached_media_file_best_effort(
             config, media.id,
         )
@@ -1445,6 +1454,9 @@ pub async fn fetch_media_bytes(
     env: &crate::types::Env,
     media: &signal_message_media::Model,
 ) -> Result<Vec<u8>, AppError> {
+    if super::audio_ref::is_reference(media) {
+        return Ok(super::audio_ref::bytes(env, media).await.c(h!())?);
+    }
     if !media.is_encrypted {
         return Err(AppError::BL {
             msg: format!(

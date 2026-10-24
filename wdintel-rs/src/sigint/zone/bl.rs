@@ -227,7 +227,7 @@ pub async fn update_group_aviation_if_present(
     Ok(is_aviation_group)
 }
 
-async fn update_group_disable_network_assignment_if_present(
+pub(crate) async fn update_group_disable_network_assignment_if_present(
     disable_network_assignment: Option<bool>,
     master_key: &str,
     txn: &DatabaseTransaction,
@@ -399,7 +399,7 @@ pub async fn bl_zones_datasources_group_add(
     Ok(is_secret)
 }
 
-async fn update_group_admin_data(
+pub(crate) async fn update_group_admin_data(
     txn: &DatabaseTransaction,
     master_key: &str,
     short_note: Option<String>,
@@ -649,6 +649,19 @@ pub async fn replace_group_admin_logins(
     .c(h!())?
     .into_iter()
     .collect::<HashSet<_>>();
+
+    if crate::datasource::native::is_native_group(txn, master_key)
+        .await
+        .c(h!())?
+    {
+        let logins = admin_logins
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        crate::messenger::group::native::ensure_active_admin(txn, &logins)
+            .await
+            .c(h!())?;
+    }
 
     signal_group_admin::Entity::update_many()
         .col_expr(signal_group_admin::Column::Deleted, Expr::value(true))

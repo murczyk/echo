@@ -128,7 +128,7 @@ pub async fn copy_signal_messages(
         let message =
             messages.get(&source.id).ok_or(AppError::NotFound).c(h!())?;
         payloads.push(
-            copy_signal_message_payload(&env.dbx, source, message)
+            copy_signal_message_payload(env, &env.dbx, source, message)
                 .await
                 .c(h!())?,
         );
@@ -137,6 +137,7 @@ pub async fn copy_signal_messages(
 }
 
 async fn copy_signal_message_payload<C>(
+    env: &Env,
     dbx: &C,
     source: crate::entities::signal_message::Model,
     message: &crate::rer_importer::types::InboxMessage,
@@ -145,8 +146,12 @@ where
     C: sea_orm::ConnectionTrait,
 {
     let tag_ids = message.tags.clone().unwrap_or_default();
-    let copy_inputs =
+    let mut copy_inputs =
         query::find_copy_signal_message_inputs(dbx, source.id, &tag_ids)
+            .await
+            .c(h!())?;
+    copy_inputs.media =
+        crate::messenger::audio_ref::for_messages(env, dbx, &[source.id])
             .await
             .c(h!())?;
 
@@ -420,6 +425,15 @@ async fn save_signal_message(
         .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
 
     let txn = env.dbx.begin().await.c(h!())?;
+    if let Some(message_id) = signal_message_id {
+        crate::messenger::group::native::lock_message_groups_if_native(
+            &txn,
+            message_id,
+            payload.signal_group_master_key.as_deref().map(str::trim),
+        )
+        .await
+        .c(h!())?;
+    }
     let allowed_groups =
         crate::messenger::group::get_identity_sigint_groups(&txn, login)
             .await
@@ -548,27 +562,35 @@ async fn save_signal_message(
         .c(h!())?;
     let (retained_media_count, media_to_delete) = match signal_message_id {
         Some(signal_message_id) => {
-            load_edit_media(&txn, signal_message_id, &deleted_media_ids)
+            load_edit_media(env, &txn, signal_message_id, &deleted_media_ids)
                 .await
                 .c(h!())?
         }
         None => {
-            let media =
-                load_copy_media(&txn, copy_source_signal_message_ids, &payload)
-                    .await
-                    .c(h!())?;
+            let media = load_copy_media(
+                env,
+                &txn,
+                copy_source_signal_message_ids,
+                &payload,
+            )
+            .await
+            .c(h!())?;
             (media.len(), vec![])
         }
     };
     let existing_media = match signal_message_id {
-        Some(signal_message_id) => {
-            query::find_signal_message_media(&txn, signal_message_id)
+        Some(signal_message_id) => crate::messenger::audio_ref::for_messages(
+            env,
+            &txn,
+            &[signal_message_id],
+        )
+        .await
+        .c(h!())?,
+        None => {
+            load_copy_media(env, &txn, copy_source_signal_message_ids, &payload)
                 .await
                 .c(h!())?
         }
-        None => load_copy_media(&txn, copy_source_signal_message_ids, &payload)
-            .await
-            .c(h!())?,
     };
     validate_attachment_updates(
         signal_message_id.is_some(),
@@ -989,19 +1011,19 @@ fn has_direct_submit_content(payload: &DirectSubmitPayload) -> bool {
 }
 
 async fn load_edit_media(
+    env: &Env,
     txn: &DatabaseTransaction,
     signal_message_id: i64,
     deleted_media_ids: &[Uuid],
 ) -> Result<(usize, Vec<crate::entities::signal_message_media::Model>), AppError>
 {
-    let media = crate::entities::signal_message_media::Entity::find()
-        .filter(
-            crate::entities::signal_message_media::Column::SignalMessageId
-                .eq(signal_message_id),
-        )
-        .all(txn)
-        .await
-        .c(h!())?;
+    let media = crate::messenger::audio_ref::for_messages(
+        env,
+        txn,
+        &[signal_message_id],
+    )
+    .await
+    .c(h!())?;
     let deleted_media_ids =
         deleted_media_ids.iter().copied().collect::<HashSet<_>>();
     let (media_to_delete, retained_media): (Vec<_>, Vec<_>) = media
@@ -1011,6 +1033,7 @@ async fn load_edit_media(
 }
 
 async fn load_copy_media(
+    env: &Env,
     txn: &DatabaseTransaction,
     source_signal_message_ids: &[i64],
     payload: &DirectSubmitPayload,
@@ -1024,10 +1047,13 @@ async fn load_copy_media(
         }
         return Ok(vec![]);
     }
-    let source_media =
-        query::find_signal_messages_media(txn, source_signal_message_ids)
-            .await
-            .c(h!())?;
+    let source_media = crate::messenger::audio_ref::for_messages_locked(
+        env,
+        txn,
+        source_signal_message_ids,
+    )
+    .await
+    .c(h!())?;
     let deleted_media_ids = parse_media_ids(
         payload.deleted_media_ids.as_deref().unwrap_or_default(),
     )
@@ -1107,6 +1133,13 @@ async fn persist_direct_submit_item(
 ) -> Result<SubmittedInboxItem, AppError> {
     let (datasource_id, groups) = match signal_group {
         Some(signal_group) => {
+            crate::messenger::group::native::lock_for_publish_if_native(
+                txn,
+                &signal_group.master_key,
+                login,
+            )
+            .await
+            .c(h!())?;
             let datasource_id = signal_group.datasource_id.unwrap_or(
                 query::resolve_datasource_id_for_group(
                     txn,
@@ -1400,6 +1433,17 @@ async fn finish_direct_submit(
         if !is_new_message {
             for rename in &attachment_updates.renames {
                 let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
+                if crate::messenger::audio_ref::rename(
+                    &txn,
+                    signal_message_id,
+                    id,
+                    rename.file_name.trim(),
+                )
+                .await
+                .c(h!())?
+                {
+                    continue;
+                }
                 crate::entities::signal_message_media::ActiveModel {
                     id: Set(id),
                     file_name: Set(Some(rename.file_name.trim().to_string())),
@@ -1451,6 +1495,16 @@ async fn finish_direct_submit(
         converted_result_keys.extend(replacement_converted_result_keys);
 
         if !media_to_delete.is_empty() {
+            crate::messenger::audio_ref::delete(
+                &txn,
+                signal_message_id,
+                &media_to_delete
+                    .iter()
+                    .map(|media| media.id)
+                    .collect::<Vec<_>>(),
+            )
+            .await
+            .c(h!())?;
             crate::entities::signal_message_media::Entity::delete_many()
                 .filter(
                     crate::entities::signal_message_media::Column::Id
@@ -1466,10 +1520,14 @@ async fn finish_direct_submit(
                 .c(h!())?;
 
         if !parent_signal_message_ids.is_empty() {
-            let mut source_media =
-                load_copy_media(&txn, copy_source_signal_message_ids, payload)
-                    .await
-                    .c(h!())?;
+            let mut source_media = load_copy_media(
+                env,
+                &txn,
+                copy_source_signal_message_ids,
+                payload,
+            )
+            .await
+            .c(h!())?;
             for rename in &attachment_updates.renames {
                 let id = parse_attachment_media_id(&rename.media_id).c(h!())?;
                 let media = source_media
@@ -1489,6 +1547,7 @@ async fn finish_direct_submit(
                 media.file_name = Some(rename.file_name.trim().to_string());
             }
             query::copy_signal_message_media(
+                env,
                 &txn,
                 signal_message_id,
                 submitted.signal_message_uuid,
@@ -1530,6 +1589,9 @@ async fn finish_direct_submit(
             .iter()
             .map(|media| media.id)
             .collect::<Vec<_>>();
+        crate::messenger::audio_ref::reconcile(env, &txn, signal_message_id)
+            .await
+            .c(h!())?;
         crate::transcriber::media_queue::reconcile_message(
             &txn,
             signal_message_id,

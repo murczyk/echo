@@ -17,8 +17,7 @@ use anyhow::Context;
 use sea_orm::{
     AccessMode, ColumnTrait, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IsolationLevel,
-    QueryFilter, QuerySelect, RelationTrait, Statement, TransactionTrait,
-    Value,
+    QueryFilter, QuerySelect, Statement, TransactionTrait, Value,
 };
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -105,7 +104,7 @@ where
         return Ok(HashMap::new());
     }
     let rows = dbx.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
-        format!("select media.id, queue.transcribed_value from signal_message_media media join transcription_source source on source.source_key = {} join echo_gpu_transcription_queue queue on queue.source_id=source.id where media.id=any($1) and queue.state='completed' and queue.transcribed_value is not null", media_queue::SOURCE_KEY_SQL),
+        format!("select media.id, queue.transcribed_value from signal_message_media media join transcription_source source on source.source_key = {} join echo_gpu_transcription_queue queue on queue.source_id=source.id where media.id=any($1) and queue.state='completed' and queue.transcribed_value is not null union all select ref.id, queue.transcribed_value from signal_message_audio_ref ref join echo_gpu_transcription_queue queue on queue.source_id=ref.transcription_source_id where ref.id=any($1) and queue.state='completed' and queue.transcribed_value is not null", media_queue::SOURCE_KEY_SQL),
         [source_ids.to_vec().into()])).await.c(h!())?;
     rows.into_iter()
         .map(|row| {
@@ -885,7 +884,7 @@ pub async fn message_transcriptions(
     env: actix_web::web::Data<Env>,
     path: actix_web::web::Path<(i64,)>,
 ) -> Result<Json<Vec<MessageTranscriptionRsp>>, AppError> {
-    let login = crate::users::login_id_from_identity(&user)?;
+    let login = crate::users::login_id_from_identity(&user).c(h!())?;
     crate::users::ensure_base_role_by_id(&env.dbx, &login)
         .await
         .c(h!())?;
@@ -893,18 +892,29 @@ pub async fn message_transcriptions(
         .await
         .c(h!())?;
     crate::messenger::media::ensure_media_access(&env.dbx, &login, path.0)
-        .await?;
-
-    let media = signal_message_media::Entity::find()
-        .join(
-            sea_orm::JoinType::InnerJoin,
-            signal_message_media::Relation::SignalMessage.def(),
-        )
-        .filter(signal_message_media::Column::SignalMessageId.eq(path.0))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .all(&env.dbx)
         .await
         .c(h!())?;
+
+    if signal_message::Entity::find_by_id(path.0)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .is_none()
+    {
+        return Ok(Json(Vec::new()));
+    }
+
+    let media = crate::messenger::audio_ref::for_messages(
+        env.as_ref(),
+        &env.dbx,
+        &[path.0],
+    )
+    .await
+    .c(h!())?;
     let transcriptions_by_media = completed_transcriptions(
         &env.dbx,
         &media.iter().map(|media| media.id).collect::<Vec<_>>(),
@@ -1355,11 +1365,88 @@ mod tests {
             &app,
             test::TestRequest::post()
                 .uri(&format!("/api/transcriber/messages/{}", message.id))
-                .cookie(cookie)
+                .cookie(cookie.clone())
                 .to_request(),
         )
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let group = crate::functest::tests::find_test_signal_group(&env.dbx)
+            .await
+            .unwrap();
+        crate::functest::tests::mk_signal_message_group(
+            &env.dbx,
+            crate::entities::signal_message_group::ActiveModel {
+                signal_message_id: Set(media.signal_message_id),
+                group_master_key: Set(Some(group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"update echo_gpu_transcription_queue set state='completed', transcribed_value='recognized speech' where source_id=any($1)"#,
+                [vec![media.id, device_source].into()],
+            ))
+            .await
+            .unwrap();
+        let uri =
+            format!("/api/transcriber/messages/{}", media.signal_message_id);
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&uri)
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = test::read_body_json(response).await;
+        assert_eq!(
+            body,
+            serde_json::json!([{
+                "media_id": media.id,
+                "text": "recognized speech"
+            }])
+        );
+
+        // #3646: group membership remains after soft deletion; neither audio kind is readable.
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Deleted,
+                sea_orm::sea_query::Expr::value(true),
+            )
+            .filter(signal_message::Column::Id.eq(media.signal_message_id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        for with_audio_reference in [false, true] {
+            if with_audio_reference {
+                crate::entities::signal_message_audio_ref::ActiveModel {
+                    id: Set(Uuid::now_v7()),
+                    signal_message_id: Set(media.signal_message_id),
+                    audio_id: Set(Uuid::now_v7()),
+                    transcription_source_id: Set(device_source),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+            }
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&uri)
+                    .cookie(cookie.clone())
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let body: serde_json::Value = test::read_body_json(response).await;
+            assert_eq!(body, serde_json::json!([]));
+        }
     }
 
     struct TranscriptionResultsFixture {

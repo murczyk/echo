@@ -113,6 +113,12 @@ pub async fn zones_datasources_group_update(
         .c(h!())?
         .c(h!())?;
 
+    crate::messenger::group::native::require_external_group(
+        &txn,
+        &szd.group_master_key,
+    )
+    .await
+    .c(h!())?;
     let rsp = bl_szd_group_update(&req, &szd, &txn).await.c(h!())?;
     log_sigint_zone_datasource_event(
         &szd,
@@ -155,6 +161,19 @@ pub async fn zones_datasources_group_add(
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
+    crate::messenger::group::native::require_external_group(
+        &txn,
+        &req.master_key,
+    )
+    .await
+    .c(h!())?;
+    crate::datasource::native::ensure_group_datasource_compatible(
+        &txn,
+        &req.master_key,
+        req.datasource_id,
+    )
+    .await
+    .c(h!())?;
     signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
@@ -350,6 +369,12 @@ pub async fn zones_datasources_group_delete(
         .await
         .c(h!())?
     {
+        crate::messenger::group::native::lock_for_edit_if_native(
+            &txn,
+            &szd.group_master_key,
+        )
+        .await
+        .c(h!())?;
         szd.clone().delete(&txn).await.c(h!())?;
         txn.commit().await.c(h!())?;
         log_sigint_zone_datasource_event(
@@ -554,6 +579,34 @@ pub async fn my_admin_group_update(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
+    let is_native = crate::messenger::group::native::lock_for_edit_if_native(
+        &txn,
+        &req.master_key,
+    )
+    .await
+    .c(h!())?;
+    if is_native
+        && req
+            .area_of_responsibility_ids
+            .as_ref()
+            .is_none_or(Vec::is_empty)
+    {
+        let has_zones = sigint_zone_datasource::Entity::find()
+            .filter(
+                sigint_zone_datasource::Column::GroupMasterKey
+                    .eq(&req.master_key),
+            )
+            .count(&txn)
+            .await
+            .c(h!())?
+            > 0;
+        if has_zones {
+            return Err(AppError::BL {
+                msg: "Для групи в напрямку виберіть хоча б одну смугу."
+                    .to_string(),
+            });
+        }
+    }
     ensure_my_admin_group_access(&txn, &login, &req.master_key)
         .await
         .c(h!())?;

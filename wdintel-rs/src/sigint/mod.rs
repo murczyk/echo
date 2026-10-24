@@ -330,6 +330,7 @@ where
     signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::Name.eq(group_name.to_string()))
+        .filter(crate::datasource::native::external_group_condition())
         .order_by_desc(signal_group::Column::CreatedAt)
         .one(dbx)
         .await

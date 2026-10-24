@@ -1,5 +1,17 @@
 {
   "migrations": {
+    "echo:m20261023_071318_device_audio_forwarding": {
+      "changes": [
+        { "table": "public.device_audio_forwarding_settings", "strategy": "excluded" },
+        { "table": "public.device_audio_forwarding_group", "strategy": "excluded" },
+        { "table": "public.device_audio_forwarding_delivery", "strategy": "excluded" },
+        { "table": "public.signal_message_audio_ref", "strategy": "replicated_snapshot" },
+        { "table": "public.signal_message_audio_search", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20261022_071804_signal_group_creator": {
+      "changes": [{ "table": "public.signal_group", "strategy": "cdc_additive" }]
+    },
     "echo:m20261022_151553_iggy_unit_refresh_queue": {
       "changes": [{ "table": "public.api_integration_iggy_unit_refresh", "strategy": "excluded" }]
     },
@@ -861,7 +873,8 @@
         { "table": "public.attachment_job", "strategy": "excluded" },
         { "table": "public.ai_position_mention", "strategy": "excluded" }
       ]
-    }
+    },
+    "echo:m20261021_131746_echo_native_datasource": { "changes": [] }
   },
   "dependencies": {
     "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },

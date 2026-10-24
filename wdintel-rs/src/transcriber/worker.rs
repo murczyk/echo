@@ -168,7 +168,7 @@ async fn notify_completed(
     if sources.is_empty() {
         return Ok(());
     }
-    let sql = format!("select distinct media.signal_message_id as id from transcription_source source join signal_message_media media on {}=source.source_key join signal_message message on message.id=media.signal_message_id and not message.deleted where source.id=any($1)", super::media_queue::SOURCE_KEY_SQL);
+    let sql = format!("select distinct media.signal_message_id as id from transcription_source source join signal_message_media media on {}=source.source_key join signal_message message on message.id=media.signal_message_id and not message.deleted where source.id=any($1) union select ref.signal_message_id as id from signal_message_audio_ref ref join signal_message message on message.id=ref.signal_message_id and not message.deleted where ref.transcription_source_id=any($1)", super::media_queue::SOURCE_KEY_SQL);
     let messages = env
         .dbx
         .query_all_raw(Statement::from_sql_and_values(

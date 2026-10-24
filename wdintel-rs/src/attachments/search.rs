@@ -326,7 +326,12 @@ fn message_literal_predicate(
         let media_filter = media_filter(message, scope);
         format!("exists(select 1 from signal_message_media media where {media_filter} and (coalesce(media.file_name,'') {operator} or exists(select 1 from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision where chunk.media_id=media.id and (chunk.text {operator} or chunk.member {operator} or chunk.summary {operator}))))")
     };
-    format!("({body} or {attachment})")
+    let audio = if scope == "body" || scope == "document" {
+        "false".into()
+    } else {
+        format!("exists(select 1 from signal_message_audio_search audio_search where audio_search.signal_message_id={message} and audio_search.file_name {operator})")
+    };
+    format!("({body} or {attachment} or {audio})")
 }
 
 fn exists_term(
@@ -359,6 +364,16 @@ fn exists_term(
             }
         ));
         sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {}{chunk}", if correlated { format!("{key}={message} and ") } else { String::new() }));
+    }
+    if scope != "body" && scope != "document" {
+        let filename =
+            filename.replace("media.file_name", "audio_search.file_name");
+        let correlation = if correlated {
+            format!("audio_search.signal_message_id={message} and ")
+        } else {
+            String::new()
+        };
+        sources.push(format!("select audio_search.signal_message_id from signal_message_audio_search audio_search where {correlation}{filename}"));
     }
     if correlated {
         format!(

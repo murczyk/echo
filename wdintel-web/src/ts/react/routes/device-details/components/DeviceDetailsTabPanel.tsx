@@ -1,6 +1,7 @@
 import type { DeviceFileSelection } from '../../device-files/device-file-archive';
 import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
-import { Box, Paper, Tab, Tabs, CircularProgress } from '@mui/material';
+import { Box, Paper, Tab, Tabs, CircularProgress, Tooltip } from '@mui/material';
+import WarningIcon from '@mui/icons-material/Warning';
 import type { ReactNode } from 'react';
 
 import type { AiAgentFileCitation } from '../../../../../Bindings';
@@ -22,6 +23,7 @@ export function DeviceDetailsTabPanel({
   audio,
   audioEditor,
   audioSettings,
+  audioForwardingConfigured,
   mobileFiles,
   mobile = false,
   activeTab,
@@ -45,6 +47,7 @@ export function DeviceDetailsTabPanel({
   audio: DeviceAudioState;
   audioEditor: DeviceAudioEditorState;
   audioSettings: DeviceAudioSettingsState;
+  audioForwardingConfigured?: boolean;
   mobileFiles?: ReactNode;
   mobile?: boolean;
   activeTab: DeviceDetailsTab;
@@ -81,7 +84,16 @@ export function DeviceDetailsTabPanel({
     >
       <Box
         hidden={mobile && activeTab === 'files' && selectedFile !== null}
-        sx={{ px: 2, pt: 0.5, borderBottom: 1, borderColor: 'divider' }}
+        sx={{
+          px: 2,
+          pt: 0.5,
+          borderBottom: 1,
+          borderColor: 'divider',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          '&[hidden]': { display: 'none' },
+        }}
       >
         <Tabs
           value={activeTab}
@@ -90,7 +102,13 @@ export function DeviceDetailsTabPanel({
           variant={mobile ? 'fullWidth' : 'scrollable'}
           scrollButtons="auto"
           allowScrollButtonsMobile
-          sx={{ minHeight: 42, '& .MuiTabs-indicator': { height: 2 } }}
+          sx={{
+            minHeight: 42,
+            minWidth: 0,
+            flex: 1,
+            '& .MuiTabs-indicator': { height: 2 },
+            ...(mobile ? { '& .MuiTab-root': { minWidth: 0, px: 0.5, fontSize: '0.75rem' } } : {}),
+          }}
         >
           <Tab
             id="device-details-analytical-tab"
@@ -117,6 +135,23 @@ export function DeviceDetailsTabPanel({
             label="Аудіо"
           />
         </Tabs>
+        {audioForwardingConfigured === false ? (
+          <Tooltip
+            title="Пересилання аудіо в групи не налаштоване для цього пристрою."
+            arrow
+            describeChild
+          >
+            <Box
+              component="span"
+              role="img"
+              aria-label="Пересилання аудіо не налаштоване"
+              tabIndex={0}
+              sx={{ display: 'inline-flex', flexShrink: 0, cursor: 'help' }}
+            >
+              <WarningIcon color="warning" fontSize="small" />
+            </Box>
+          </Tooltip>
+        ) : null}
       </Box>
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>

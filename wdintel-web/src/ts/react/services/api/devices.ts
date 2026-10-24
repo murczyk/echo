@@ -1,5 +1,6 @@
 import type {
   DeviceArchiveStatus,
+  DeviceAudioForwardingSettings,
   DeviceFileContentRef,
   DeviceAnalyticsSummaryReq,
   LocateDeviceFileReq,
@@ -64,6 +65,7 @@ export type DeviceUpdatePatchInput = {
   name?: NonNullable<UpdateDeviceReq['name']>;
   aorIds?: NonNullable<UpdateDeviceReq['aorIds']>;
   unitId?: UpdateDeviceReq['unitId'];
+  audioForwarding?: NonNullable<UpdateDeviceReq['audioForwarding']>;
 };
 
 export type DeviceSettingsInput = Partial<DeviceSettingsReq>;
@@ -78,6 +80,7 @@ function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatc
   if (input.name !== undefined) req.name = input.name;
   if (input.aorIds !== undefined) req.aorIds = input.aorIds;
   if (input.unitId !== undefined) req.unitId = input.unitId;
+  if (input.audioForwarding !== undefined) req.audioForwarding = input.audioForwarding;
 
   return req;
 }
@@ -382,4 +385,12 @@ export async function ensureDeviceArchive(
   return transformSnakeToCamel(
     await postJson(deviceArchiveUrl(deviceId, fileId, revision), undefined, options),
   );
+}
+
+export async function getDeviceAudioForwarding(
+  deviceId: string,
+  options?: RequestOptions,
+): Promise<DeviceAudioForwardingSettings> {
+  const data = await postJson('/api/device/audio/forwarding', { device_id: deviceId }, options);
+  return transformSnakeToCamel<DeviceAudioForwardingSettings>(data);
 }

@@ -505,6 +505,12 @@ pub(super) async fn publish(
             .await
             .c(h!())?,
     );
+    let forwarding = policy
+        .as_ref()
+        .c(h!())?
+        .forwarding_snapshot()
+        .await
+        .c(h!())?;
     let transaction = runtime.file_database().c(h!())?.begin().await.c(h!())?;
     let enabled = super::transcription::publication_setting(
         &transaction,
@@ -550,6 +556,14 @@ pub(super) async fn publish(
             audio.id,
             enabled,
             policy.as_ref(),
+        )
+        .await
+        .c(h!())?;
+        super::forwarding::publish(
+            &transaction,
+            &audio,
+            current.actor_id,
+            &forwarding,
         )
         .await
         .c(h!())?;
