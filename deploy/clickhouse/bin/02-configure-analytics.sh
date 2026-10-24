@@ -280,6 +280,8 @@ GRANT SELECT ON $CLICKHOUSE_RAW_DB.* TO $CLICKHOUSE_GATEWAY_USER;
 GRANT SELECT ON $CLICKHOUSE_CURRENT_DB.* TO $CLICKHOUSE_GATEWAY_USER;
 SQL
 
+"$SCRIPT_DIR/reconcile-gateway-limits.sh"
+
 log "Rendering Temporal server configuration"
 temporal_password_yaml=$(toml_or_yaml_double_quote "$TEMPORAL_PASSWORD")
 temporal_password_yaml=$(sed_replacement_escape "$temporal_password_yaml")

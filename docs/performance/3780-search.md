@@ -193,6 +193,16 @@ Compare count plans on both sides of that boundary before changing it.
 PostgreSQL candidate text-search union deduplication and quoted substring
 predicates also need representative plan evidence before further optimization.
 
+For an analytics inbox request using direct unit IDs without the ordinary
+header/network unit branch, apply the same bounded unit membership predicate
+to both `sigint_inbox_item.id` and `signal_message.id`. Their join equates these
+IDs, so results and authorization are unchanged; filtering both inputs prevents
+the native join from first building a hash table over the full message history.
+Keep the extra predicate off the combined header-unit OR direct-ID branch.
+Nonempty, empty, denied and combined-unit cases are covered by the existing
+unit-ID regression. Gateway resource limits and resource-specific fallback are
+described in the [analytics operations guide](../../deploy/clickhouse/README.md#gateway-resource-limits).
+
 ## Analysis search modes
 
 `search_mode` is optional on analysis, inbox, and callsign-graph requests.

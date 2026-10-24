@@ -1468,6 +1468,16 @@ async fn build_analytics_filtered_inbox_query(
         req.units_exact_match_only.unwrap_or(false),
         &req.selected_unit_ids,
     );
+    let query = if !resolved_units.selected.present {
+        query.apply_if(
+            req.selected_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
+            |query, ids| {
+                query.filter(analytics_message_has_linked_unit_ids(ids, &scope))
+            },
+        )
+    } else {
+        query
+    };
     let query =
         apply_resolved_analytics_aor_filter(query, &resolved_aors, &scope);
     Ok(Some((query, has_unit_filters)))
