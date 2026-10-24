@@ -247,6 +247,7 @@ init user route _ =
                 , selected = B.Docx
                 }
             , reportReoNoComments = False
+            , reportReoSummaryOnly = False
 
             -- , reportIframeUrl = Nothing
             , reportActiveNetworksAorsSelect =
@@ -4215,6 +4216,11 @@ update user shared route msg model =
             , E.none
             )
 
+        ReportReoSummaryOnlyToggle ->
+            ( { model | reportReoSummaryOnly = not model.reportReoSummaryOnly }
+            , E.none
+            )
+
         ReportSposobUnitNameInput unitName ->
             ( { model | reportSposobUnitName = unitName }
             , E.none
@@ -4969,6 +4975,7 @@ reportTemplateToApiType model template =
                 (B.Reo
                     { adjacentFreqsDistance = model.reportAdjacentFreqsRangeSelect.selected
                     , noComments = model.reportReoNoComments
+                    , summaryOnly = model.reportReoSummaryOnly
                     }
                     model.reportReoFileTypeSelect.selected
                 )
