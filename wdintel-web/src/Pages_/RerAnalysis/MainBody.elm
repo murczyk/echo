@@ -845,6 +845,21 @@ view user model shared route =
                             ]
                             [ text "Без коментарів" ]
                         ]
+                    , div [ class "form-check mt-2" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.reportReoSummaryOnly
+                            , id "report-reo-summary-only"
+                            , onClick ReportReoSummaryOnlyToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-reo-summary-only"
+                            ]
+                            [ text "Лише підсумкова активність" ]
+                        ]
                     ]
             , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|
                 let
