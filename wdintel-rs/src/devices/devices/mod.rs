@@ -13,6 +13,7 @@ use self::types::{
     ListDevicesReq, ListDevicesRsp, UpdateDeviceCommand, UpdateDeviceReq,
 };
 use crate::devices::access;
+use crate::devices::files::stats;
 use crate::devices::types::{parse_uuid, NullablePatch, RequiredPatch};
 use crate::error::AppError;
 use crate::h;
@@ -53,7 +54,19 @@ pub(crate) async fn list(
         .await
         .c(h!())?;
     let result = bl::list(&env.dbx, &login, command).await.c(h!())?;
-    Ok(Json(map_device_list(result)))
+    let stats = match &env.file_registry_db {
+        Some(file_registry_db) => {
+            let device_ids: Vec<_> =
+                result.devices.iter().map(|device| device.id).collect();
+            Some(
+                stats::read_many(file_registry_db.connection(), &device_ids)
+                    .await
+                    .c(h!())?,
+            )
+        }
+        None => None,
+    };
+    Ok(Json(map_device_list(result, stats)))
 }
 
 #[post("/api/device/unit-stats")]

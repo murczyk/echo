@@ -1319,3 +1319,105 @@ pub struct FileSyncSessionItemsRsp {
     pub results: Vec<FileSyncSessionItemResult>,
     pub next_cursor: Option<String>,
 }
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct RebuildDeviceStatsReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct RebuildDeviceStatsRsp {
+    pub directory_count: u64,
+    pub file_count: u64,
+    pub content_count: u64,
+    pub content_bytes: u64,
+    pub batch_count: u64,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceStats {
+    pub directory_count: u64,
+    pub file_count: u64,
+    pub content_count: u64,
+    pub content_bytes: u64,
+    pub first_content_at: Option<String>,
+    pub last_content_at: Option<String>,
+    /// Completed uploads exist that are not counted yet (backfill needed or running).
+    pub content_pending: bool,
+    pub backfilled_at: Option<String>,
+    pub extensions: Vec<DeviceExtensionStat>,
+    pub days: Vec<DeviceDayStat>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceExtensionStat {
+    pub extension: String,
+    pub content_count: u64,
+    pub content_bytes: u64,
+    pub last_content_at: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceDayStat {
+    /// Kyiv calendar date, `YYYY-MM-DD`.
+    pub day: String,
+    pub extension: String,
+    pub content_count: u64,
+    pub content_bytes: u64,
+}

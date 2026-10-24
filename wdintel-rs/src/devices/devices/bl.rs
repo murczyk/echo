@@ -464,7 +464,10 @@ mod mapping {
         DeviceUnitStat as DeviceUnitStatDto, DeviceUnitStatsRsp,
         ListDevicesRsp, UnitSummary,
     };
+    use crate::devices::files::types::DeviceStats;
     use crate::devices::types::format_datetime;
+    use crate::types::Uuid;
+    use std::collections::HashMap;
 
     pub(in crate::devices) fn map_device_details(
         device: DeviceCurrentState,
@@ -488,12 +491,18 @@ mod mapping {
 
     pub(in crate::devices) fn map_device_list(
         result: ListDevicesResult,
+        mut stats: Option<HashMap<Uuid, DeviceStats>>,
     ) -> ListDevicesRsp {
         ListDevicesRsp {
             list: result
                 .devices
                 .into_iter()
-                .map(map_device_list_item)
+                .map(|device| {
+                    let device_stats = stats
+                        .as_mut()
+                        .and_then(|stats| stats.remove(&device.id));
+                    map_device_list_item(device, device_stats)
+                })
                 .collect(),
             total: result.total,
             has_more: result.has_more,
@@ -518,7 +527,10 @@ mod mapping {
         }
     }
 
-    fn map_device_list_item(device: DeviceCurrentState) -> DeviceListItem {
+    fn map_device_list_item(
+        device: DeviceCurrentState,
+        stats: Option<DeviceStats>,
+    ) -> DeviceListItem {
         DeviceListItem {
             id: device.id.hyphenated().to_string(),
             name: device.name,
@@ -529,6 +541,7 @@ mod mapping {
             created_at: format_datetime(device.created_at),
             updated_at: format_datetime(device.updated_at),
             archived_at: device.archived_at.map(format_datetime),
+            stats,
         }
     }
 

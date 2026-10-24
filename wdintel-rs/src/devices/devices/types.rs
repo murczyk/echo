@@ -1,3 +1,4 @@
+use crate::devices::files::types::DeviceStats;
 use crate::devices::types::{
     deserialize_canonical_uuid, NullablePatch, RequiredPatch,
 };
@@ -145,6 +146,8 @@ pub struct DeviceListItem {
     pub created_at: String,
     pub updated_at: String,
     pub archived_at: Option<String>,
+    /// `None` when the file registry is not configured.
+    pub stats: Option<DeviceStats>,
 }
 
 #[derive(

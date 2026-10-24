@@ -1,3 +1,4 @@
+use super::super::stats::record_tree_inserted_in;
 use super::super::{
     ltree::child_hierarchy_path, map_transaction_body_error,
     normalize_file_metadata, parse_source_path, DomainFileEntryKind,
@@ -283,6 +284,8 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
     select
         (select count(*) from accepted_input) as expected_mutated_count,
         (select count(*) from mutation_results) as mutated_count,
+        (select count(*) from mutation_results where outcome = 'created')
+            as created_file_count,
         (select count(*) from inserted_revisions) as revision_count,
         (select count(*) from marked_stale_uploads) as stale_upload_count,
         (select count(*) from accepted_items) as accepted_count,
@@ -329,6 +332,11 @@ struct RejectedMutation {
     batch_index: i32,
     item_index: i32,
 }
+struct PersistedSyncItems {
+    stale_upload_count: u64,
+    created_file_count: u64,
+}
+
 struct PreparedAcceptedItem {
     item: file_sync_item::Model,
     mutation: PreparedFileMutation,
@@ -412,6 +420,8 @@ pub(super) async fn apply_sync_items(
     let expected_new_hierarchy_count = new_mutations.len();
     let new_hierarchies =
         resolve_new_file_hierarchies(transaction, &new_mutations, now).await?;
+    let inserted_directory_count = new_hierarchies.inserted_directory_count;
+    let new_hierarchies = new_hierarchies.files;
     if new_hierarchies.len() != expected_new_hierarchy_count {
         return Err(FilesystemError::Invariant(
             "mutation_hierarchy_result_count_mismatch",
@@ -443,14 +453,23 @@ pub(super) async fn apply_sync_items(
         ));
     }
 
-    persist_sync_items(
+    let persisted = persist_sync_items(
         transaction,
         device_id,
         accepted_items,
         rejected_items,
         metrics,
     )
+    .await?;
+    record_tree_inserted_in(
+        transaction,
+        device_id,
+        inserted_directory_count,
+        persisted.created_file_count,
+    )
     .await
+    .map_err(map_transaction_body_error)?;
+    Ok(persisted.stale_upload_count)
 }
 
 async fn load_current_files(
@@ -647,9 +666,12 @@ async fn persist_sync_items(
     mut accepted_items: Vec<AcceptedMutation>,
     rejected_items: Vec<RejectedMutation>,
     metrics: Option<&Metrics>,
-) -> Result<u64, FilesystemError> {
+) -> Result<PersistedSyncItems, FilesystemError> {
     if accepted_items.is_empty() && rejected_items.is_empty() {
-        return Ok(0);
+        return Ok(PersistedSyncItems {
+            stale_upload_count: 0,
+            created_file_count: 0,
+        });
     }
     accepted_items
         .sort_unstable_by_key(|item| (item.batch_index, item.item_index));
@@ -747,8 +769,18 @@ async fn persist_sync_items(
         counts.try_get("", "stale_upload_count").map_err(|error| {
             map_transaction_body_error(anyhow::Error::new(error).context(h!()))
         })?;
-    u64::try_from(stale_upload_count)
-        .map_err(|_| FilesystemError::Invariant("stale_upload_count_invalid"))
+    let created_file_count: i64 =
+        counts.try_get("", "created_file_count").map_err(|error| {
+            map_transaction_body_error(anyhow::Error::new(error).context(h!()))
+        })?;
+    Ok(PersistedSyncItems {
+        stale_upload_count: u64::try_from(stale_upload_count).map_err(
+            |_| FilesystemError::Invariant("stale_upload_count_invalid"),
+        )?,
+        created_file_count: u64::try_from(created_file_count).map_err(
+            |_| FilesystemError::Invariant("created_file_count_invalid"),
+        )?,
+    })
 }
 
 async fn lock_source_state(

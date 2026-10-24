@@ -9,6 +9,7 @@ mod path;
 pub(crate) mod preview;
 pub(in crate::devices) mod query;
 pub(crate) mod sessions;
+pub(in crate::devices) mod stats;
 pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
@@ -45,10 +46,13 @@ use self::types::{
     CountDeviceFileSubtreesRsp, FileSyncSessionItemsRsp, FileSyncSessionRsp,
     JournalDeviceFilesReq, JournalDeviceFilesRsp, ListDeviceFileRootsReq,
     ListDeviceFileRootsRsp, RawApplyFileSyncBatchReq, RawSyncDeviceFilesReq,
-    SearchDeviceFilesReq, SearchDeviceFilesRsp, StartFileSyncSessionReq,
-    SyncDeviceFilesRsp,
+    RebuildDeviceStatsReq, RebuildDeviceStatsRsp, SearchDeviceFilesReq,
+    SearchDeviceFilesRsp, StartFileSyncSessionReq, SyncDeviceFilesRsp,
 };
 use crate::devices::access;
+use crate::devices::devices::query::{
+    authorize_file_registry_access, FileRegistryDeviceAccess,
+};
 use crate::devices::types::{parse_datetime, parse_uuid};
 use crate::error::AppError;
 use crate::h;
@@ -126,6 +130,37 @@ pub(crate) async fn subtree_counts(
     .await
     .c(h!())?;
     Ok(Json(map_subtree_counts(counts)))
+}
+
+#[post("/api/device/stats/rebuild")]
+pub(crate) async fn rebuild_stats(
+    env: Data<Env>,
+    user: Identity,
+    Json(body): Json<RebuildDeviceStatsReq>,
+) -> Result<Json<RebuildDeviceStatsRsp>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    access::require_analytical_write(&login.roles).c(h!())?;
+    let device_id = authorize_file_registry_access(
+        &env.dbx,
+        &login,
+        parse_uuid(&body.device_id),
+        FileRegistryDeviceAccess::Read,
+    )
+    .await
+    .c(h!())?;
+    let rebuilt =
+        stats::rebuild(env.file_registry_db().c(h!())?.connection(), device_id)
+            .await
+            .c(h!())?;
+    Ok(Json(RebuildDeviceStatsRsp {
+        directory_count: rebuilt.directory_count,
+        file_count: rebuilt.file_count,
+        content_count: rebuilt.content_count,
+        content_bytes: rebuilt.content_bytes,
+        batch_count: rebuilt.batch_count,
+    }))
 }
 
 #[post("/api/device/files/browse")]
