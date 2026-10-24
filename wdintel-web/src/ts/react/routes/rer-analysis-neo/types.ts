@@ -267,6 +267,7 @@ export type AnalysisPageState = {
   loadingAfterWindow: boolean;
   directMessageLoading: boolean;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  loadedReplyTarget?: { messageId: number } | null;
   onLinkedMessageMounted: (messageId: number) => void;
   networkDisplayMap: Record<number, string>;
   networks: Network[];

@@ -148,16 +148,32 @@ exposing content or a navigation action. Their neutral bubbles show the gray tex
 `Повідомлення видалено`, without an icon. Separate head/reply deletion flags keep surviving replies
 visible after deletion of the head.
 
-The card shows up to two latest other thread members, keeping their creation-time
-order. Threads with more than two members
-offer `Усі повідомлення N`, with the count badge only on that button. It opens a lazily mounted anchored popover with
+The card shows the immediately previous and next thread members in creation-time
+order. The first member shows only its next neighbor; the last shows only its
+previous neighbor. Compact previews on Analysis follow the feed direction:
+`спочатку нові` places the newer neighbor above the current marker, and the older
+neighbor below it; oldest-first reverses those positions. Continuation markers
+follow the same direction. Duty and the full popup retain chronological order. A compact vertical stepper uses gray dots for neighbors and
+a blue dot beside a dashed horizontal divider for the current card, including
+the first and last positions. Solid vertical lines connect the steps. Thin gray
+dashed extensions above/below the outer dots indicate more members beyond the
+displayed neighbors. The current
+step has no visible text or duplicate preview. Deleted and unavailable neighbors retain their
+slots. `Усі повідомлення` and its count badge sit beside `Ланцюжок` only for
+threads with more than two members.
+The header wraps when its container is too narrow. The button opens a lazily mounted anchored popover with
 its own bounded scroll; the card height does not grow. The backend currently
 returns the entire thread in one response, so this is not server pagination.
 
 Clicking a preview navigates in the current feed and tab through existing message
-navigation APIs. Reply landings ease out over 300 ms, remain interruptible by
+navigation APIs. Analysis scrolls directly to a loaded target and highlights it,
+without resolving its context, fetching a window, or reloading the list. Only
+targets outside the loaded window use remote navigation. Reply landings ease out over 300 ms, remain interruptible by
 reader scrolling or a newer navigation, and skip spatial motion when reduced
-motion is enabled. Distant targets still load only a bounded window. The navigation outline fades and clears after two seconds,
+motion is enabled. Analysis keeps the loaded list visible while resolving a reply
+window, defers focused-window reload until that response arrives, and does not
+cover the list with a refresh skeleton. Filter refreshes keep their normal loading
+behavior. Distant targets still load only a bounded window. The navigation outline fades and clears after two seconds,
 restarting on repeated navigation to the same message; the editor source outline remains active while composing.
 Duty uses the originating column. Both screens constrain reply landings to loaded content,
 avoiding empty space under the newest reply. Analysis suppresses layout-triggered paging

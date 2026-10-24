@@ -671,6 +671,7 @@ export function RerAnalysisNeoPage({
       <MessageDeleteAccessContext.Provider value={hasRole(page.currentUser?.roles, 'DeleteMsg')}>
         <MessageRepliesProvider
           screen="Analysis"
+          newestFirst={page.newestFirst}
           onReply={openReplyComposer}
           onNavigate={page.navigateReply}
           filterRequests={

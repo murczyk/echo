@@ -39,6 +39,7 @@ type ReplyContext = {
   open?: (target: ReplyTarget) => void;
   navigate: ReplyNavigation;
   filters: ReplyFilterStore;
+  newestFirst: boolean;
 };
 const Context = createContext<ReplyContext | null>(null);
 const EMPTY = { loaded: false, relations: [], messages: new Map() };
@@ -95,6 +96,10 @@ export function useReplyNavigation() {
   return useContext(Context)?.navigate;
 }
 
+export function useReplyNewestFirst() {
+  return useContext(Context)?.newestFirst ?? false;
+}
+
 export function useMessageReplies(id: number) {
   const context = useContext(Context);
   useEffect(() => (id > 0 ? context?.store.attach(id) : undefined), [context?.store, id]);
@@ -142,6 +147,7 @@ export function MessageRepliesProvider({
   onReply,
   onNavigate,
   filterRequests = {},
+  newestFirst = false,
 }: {
   screen: MessageReplyScreen;
   currentUser: User | null;
@@ -149,6 +155,7 @@ export function MessageRepliesProvider({
   onReply: (target: ReplyTarget) => void;
   onNavigate: ReplyNavigation;
   filterRequests?: Readonly<Record<string, Partial<InboxMessagesReq>>>;
+  newestFirst?: boolean;
 }) {
   const { notify } = usePowerSnackbar();
   const onErrorRef = useRef((error: unknown) => {});
@@ -174,8 +181,14 @@ export function MessageRepliesProvider({
   useEffect(() => () => filters.dispose(), [filters]);
   const canReply = canWriteMessages(currentUser?.roles);
   const value = useMemo(
-    () => ({ store, filters, open: canReply ? onReply : undefined, navigate: onNavigate }),
-    [store, filters, onReply, canReply, onNavigate],
+    () => ({
+      store,
+      filters,
+      open: canReply ? onReply : undefined,
+      navigate: onNavigate,
+      newestFirst: screen === 'Analysis' && newestFirst,
+    }),
+    [store, filters, onReply, canReply, onNavigate, screen, newestFirst],
   );
 
   useEffect(() => {

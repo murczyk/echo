@@ -105,6 +105,7 @@ type Props = {
   unitsMap?: Record<number, Unit>;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
   onLinkedMessageMounted?: (messageId: number) => void;
+  loadedReplyTarget?: { messageId: number } | null;
   editorHighlightedMessageId?: number | null;
 };
 
@@ -170,6 +171,7 @@ function AnalysisMessagesPaneComponent({
   unitsMap,
   directMessageNavigation,
   onLinkedMessageMounted,
+  loadedReplyTarget,
   editorHighlightedMessageId,
 }: Props) {
   const theme = useTheme();
@@ -200,6 +202,7 @@ function AnalysisMessagesPaneComponent({
     loadingBeforeWindow,
     loadingAfterWindow,
     isLoading,
+    showLoadingSkeleton,
     newestFirst,
     pageNavigationTarget,
     viewportPreservationKey,
@@ -257,6 +260,7 @@ function AnalysisMessagesPaneComponent({
   );
 
   useEffect(() => {
+    if (loadedReplyTarget != null) return;
     if (directMessageNavigation == null) {
       highlightedNavigationTargetRef.current = null;
       return;
@@ -273,7 +277,26 @@ function AnalysisMessagesPaneComponent({
       }
       if (directMessageNavigation.focusActive) onLinkedMessageMounted?.(targetId);
     }
-  }, [directMessageNavigation, messages, onLinkedMessageMounted]);
+  }, [directMessageNavigation, messages, onLinkedMessageMounted, loadedReplyTarget]);
+
+  useEffect(() => {
+    if (loadedReplyTarget == null) return;
+    const feed = feedRef.current;
+    const element = feed?.scrollToMessage(
+      loadedReplyTarget.messageId,
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    );
+    if (!element) return;
+    element.getAnimations?.({ subtree: true }).forEach((animation) => {
+      if (
+        animation instanceof CSSAnimation &&
+        animation.animationName === 'message-feed-linked-highlight'
+      ) {
+        animation.currentTime = 0;
+      }
+    });
+    feed?.highlightLinkedMessage(loadedReplyTarget.messageId);
+  }, [loadedReplyTarget]);
 
   const showCopiedFeedback = useCallback(
     (value: string) => {

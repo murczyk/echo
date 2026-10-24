@@ -180,7 +180,9 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(row(actor, current.id)).toBeVisible();
       await expect(row(actor, first.id)).toHaveCount(0);
       const currentRow = row(actor, current.id);
-      await expect(currentRow.getByRole('link').filter({ hasText: /Thread \d{3}/ })).toHaveCount(2);
+      await expect(currentRow.getByRole('link').filter({ hasText: /Thread \d{3}/ })).toHaveText([
+        'Thread 099',
+      ]);
       const before = (await currentRow.boundingBox())!;
       const openPages = actor.page.context().pages().length;
       const panel = await openThread(actor, current, 100);

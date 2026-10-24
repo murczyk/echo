@@ -270,7 +270,7 @@ export async function deleteMessage(actor: Actor, message: Message) {
 
 export async function openThread(actor: Actor, message: Message, count: number) {
   const button = row(actor, message.id).getByRole('button', {
-    name: `Усі повідомлення ${count}`,
+    name: count > 2 ? `Усі повідомлення ${count}` : 'Усі повідомлення',
     exact: true,
   });
   await expect(button).toBeVisible();

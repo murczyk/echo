@@ -252,6 +252,7 @@ export function useRerAnalysisNeoPage(
   );
   const replyNavigationRef = useRef(false);
   const [replyNavigationVersion, setReplyNavigationVersion] = useState(0);
+  const [loadedReplyTarget, setLoadedReplyTarget] = useState<{ messageId: number } | null>(null);
   const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
   const [targetMessageQueryState, setTargetMessageQueryState] = useState(initialQueryState);
   const [highlightTargetMessage, setHighlightTargetMessage] = useState(true);
@@ -441,6 +442,7 @@ export function useRerAnalysisNeoPage(
     }
     const isContextRefresh = targetMessageLoadedRef.current;
     if (isContextRefresh) {
+      setLoadedReplyTarget(null);
       targetMessageContextSawReloadRef.current = false;
       targetMessageContextPreviousMessagesRef.current = dataMessagesRef.current;
       setTargetMessageContextLoading(true);
@@ -588,6 +590,17 @@ export function useRerAnalysisNeoPage(
       const reference = new URL(message.href, window.location.origin).searchParams.get('m');
       if (!reference) return;
       targetMessageControllerRef.current?.cancel();
+      if (dataMessagesRef.current?.some(([id]) => id === message.id)) {
+        setDirectMessageError(null);
+        setTargetMessageFocusActive(false);
+        setTargetMessageLoading(false);
+        setTargetMessageContextLoading(false);
+        setTargetMessageContextResponsePending(false);
+        setLoadedReplyTarget({ messageId: message.id });
+        setCenterTabState('messages');
+        return;
+      }
+      setLoadedReplyTarget(null);
       replyNavigationRef.current = true;
       targetMessageLoadedRef.current = false;
       setDirectMessageError(null);
@@ -596,6 +609,7 @@ export function useRerAnalysisNeoPage(
       setTargetMessageFocusActive(true);
       setHighlightTargetMessage(true);
       setTargetMessageContextActive(true);
+      setTargetMessageContextResponsePending(true);
       setTargetMessageLoading(true);
       setReplyNavigationVersion((version) => version + 1);
       setCenterTabState('messages');
@@ -611,6 +625,7 @@ export function useRerAnalysisNeoPage(
 
   const clearTargetMessageContext = useCallback(() => {
     targetMessageControllerRef.current?.cancel();
+    setLoadedReplyTarget(null);
     setTargetMessageContextActive(false);
     setTargetMessageLoading(false);
     setTargetMessageContextLoading(false);
@@ -1551,7 +1566,9 @@ export function useRerAnalysisNeoPage(
     messageActionLoading: data.messageActionLoading,
     botTagAction: data.botTagAction,
     messagesLoading: targetMessageLoading || data.messagesLoading,
-    showMessagesLoading,
+    showMessagesLoading:
+      showMessagesLoading &&
+      !(replyNavigationRef.current && targetMessageContextActive && !targetMessageContextLoading),
     messagesOverallCount: data.messagesOverallCount,
     messagesPaging: data.messagesPaging,
     messagesTotalCount: directMessageNavigation?.totalCount ?? data.messagesTotalCount,
@@ -1566,6 +1583,7 @@ export function useRerAnalysisNeoPage(
     loadingAfterWindow: data.loadingAfterWindow,
     directMessageLoading,
     directMessageNavigation,
+    loadedReplyTarget,
     onLinkedMessageMounted,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,

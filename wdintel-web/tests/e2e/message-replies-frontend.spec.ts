@@ -112,9 +112,7 @@ for (const screen of ['duty', 'analysis'] as const) {
       } else await visit(actor);
       const card = row(actor, current.id);
       const chain = card.getByRole('region', { name: 'Відповіді', exact: true });
-      await expect(chain.getByRole('link')).toHaveCount(2);
-      await expect(chain.getByRole('link').first()).toHaveText('Reply item 38');
-      await expect(chain.getByRole('link').last()).toHaveText('Reply item 39');
+      await expect(chain.getByRole('link')).toHaveText(['Reply item 39']);
       await expect(row(actor, target.id)).toHaveCount(0);
       const before = await card.boundingBox();
       const url = page!.url();
@@ -344,7 +342,7 @@ for (const screen of ['duty', 'analysis'] as const) {
         relation(3, root, lowId, { createdAt: now - 2_000 }),
         relation(4, root, current, { createdAt: now - 1_000 }),
       ]);
-      await visit(actor);
+      await visit(actor, 'group-1', '&newestFirst=false');
       for (const basis of ['interception', 'creation'] as const) {
         await page!.evaluate(
           (messageSortBy) =>
@@ -357,10 +355,48 @@ for (const screen of ['duty', 'analysis'] as const) {
           name: 'Відповіді',
           exact: true,
         });
-        const preview = chain.getByRole('listitem');
-        await expect(preview).toHaveCount(2);
-        await expect(preview.nth(0)).toContainText(highId.text);
-        await expect(preview.nth(1)).toContainText(root.text);
+        const positions = [
+          [first, [lowId.text]],
+          [lowId, [first.text, highId.text]],
+          [highId, [lowId.text, root.text]],
+          [root, [highId.text, current.text]],
+          [current, [root.text]],
+        ] as const;
+        for (const [message, expected] of positions) {
+          const neighbors = row(actor, message.id).getByRole('region', {
+            name: 'Відповіді',
+            exact: true,
+          });
+          await expect(neighbors.getByRole('link')).toHaveText([...expected]);
+          await expect(
+            neighbors.getByRole('separator', { name: 'Поточне повідомлення', exact: true }),
+          ).toHaveCount(1);
+          const all = neighbors.getByRole('button', { name: 'Усі повідомлення 5', exact: true });
+          await expect(all).toBeVisible();
+        }
+        if (screen === 'analysis') {
+          const unitsError = page!
+            .getByRole('alert')
+            .filter({ hasText: 'Помилка оновлення підрозділів' });
+          if (await unitsError.isVisible()) {
+            await unitsError
+              .getByRole('button', { name: 'Закрити сповіщення', exact: true })
+              .click();
+          }
+          const newestFirst = page!.getByRole('checkbox', { name: 'спочатку нові' });
+          await newestFirst.check();
+          await expect(
+            row(actor, highId.id)
+              .getByRole('region', { name: 'Відповіді', exact: true })
+              .getByRole('link'),
+          ).toHaveText([root.text, lowId.text]);
+          await newestFirst.uncheck();
+          await expect(
+            row(actor, highId.id)
+              .getByRole('region', { name: 'Відповіді', exact: true })
+              .getByRole('link'),
+          ).toHaveText([lowId.text, root.text]);
+        }
         const allMessages = chain.getByRole('button', { name: /^Усі повідомлення/ });
         await expect(allMessages).toHaveText('Усі повідомлення 5');
         await allMessages.click();
@@ -690,8 +726,17 @@ for (const screen of ['duty', 'analysis'] as const) {
       const latest = fixture.seed('user-1', 'Newest loaded reply');
       fixture.respondWithReplies([relation(1, source, latest)]);
       await visit(actor);
+      await expect(row(actor, source.id)).toBeAttached();
+      await expect(row(actor, latest.id)).toBeAttached();
+      const navigationRequests = () =>
+        actor.requests.filter(({ path }) =>
+          ['/api/rer-importer/get-inbox', '/api/rer-importer/inbox-item-context'].includes(path),
+        ).length;
+      const requestsBeforeNavigation = navigationRequests();
       await row(actor, latest.id).getByRole('link').filter({ hasText: source.text }).click();
       await expect(row(actor, source.id)).toBeInViewport();
+      if (screen === 'analysis') expect(navigationRequests()).toBe(requestsBeforeNavigation);
+      await expect(page!.locator('.message-feed-refresh-overlay')).toHaveCount(0);
       const scroller = row(actor, source.id).locator(
         'xpath=ancestor::*[@data-message-feed-scroller]',
       );
@@ -715,6 +760,7 @@ for (const screen of ['duty', 'analysis'] as const) {
           ])
         )[0];
       const positions = await navigateToLatest();
+      if (screen === 'analysis') expect(navigationRequests()).toBe(requestsBeforeNavigation);
       expect(new Set(positions.map(Math.round)).size).toBeGreaterThan(3);
       await expect(row(actor, latest.id)).toBeInViewport();
       if (screen === 'duty')

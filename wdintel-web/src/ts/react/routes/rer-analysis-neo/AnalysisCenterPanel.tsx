@@ -475,6 +475,7 @@ export function AnalysisCenterPanel({
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
             onLinkedMessageMounted={page.onLinkedMessageMounted}
+            loadedReplyTarget={page.loadedReplyTarget}
           />
         </Box>
 

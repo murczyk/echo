@@ -33,6 +33,7 @@ type Options = {
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
   isLoading: boolean;
+  showLoadingSkeleton?: boolean;
   newestFirst: boolean;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
@@ -54,6 +55,7 @@ export function useAnalysisMessageFeed({
   loadingBeforeWindow,
   loadingAfterWindow,
   isLoading,
+  showLoadingSkeleton = true,
   newestFirst,
   pageNavigationTarget,
   viewportPreservationKey,
@@ -119,10 +121,15 @@ export function useAnalysisMessageFeed({
   );
   const displayedMessages = useMemo(
     () =>
-      directMessageNavigation?.contextLoading
+      directMessageNavigation?.contextLoading && showLoadingSkeleton
         ? messages.filter(([id]) => id === directMessageNavigation.targetMessageId)
         : messages,
-    [messages, directMessageNavigation?.contextLoading, directMessageNavigation?.targetMessageId],
+    [
+      messages,
+      directMessageNavigation?.contextLoading,
+      directMessageNavigation?.targetMessageId,
+      showLoadingSkeleton,
+    ],
   );
   const above = directMessageNavigation
     ? getFocusedLoadDirection('above', directMessageNavigation.newestFirst)
