@@ -21,7 +21,7 @@ to several threads. `thread_id` keeps surviving members together after physical
 deletion of the head. All message foreign keys use `ON DELETE SET NULL`;
 relationships and surviving messages persist when either endpoint is removed. `deleted` means either endpoint was deleted, rather
 than that the relationship should be hidden. Deleted endpoints remain in `Ланцюжок`
-and its count, and display a cancel icon followed by `Видалено` without fetching
+and its count, and display a neutral bubble labeled `Повідомлення видалено` without fetching
 the deleted citation body, timestamp, or link. Endpoint deletion flags are returned
 separately so deleting a head does not hide surviving replies. Missing or
 inaccessible messages are shown as unavailable, without assuming deletion.
@@ -122,6 +122,9 @@ Dates use the application timezone and `DD.MM.YYYY · HH:mm`; an absent selected
 timestamp uses `Час невідомий`. Duty ordering, filtering, unread cursors, and
 notifications retain the [creation-time contract](duty/README.md#creation-time-contract).
 
+The editor records input before notifying the parser. Deferred parser effects read
+the current form values so an older empty render cannot clear a newer draft.
+
 Available thread items are ordered by `(CitedMessage.createdAt, CitedMessage.id)`:
 message creation in Echo, regardless of relation creation, interception time or
 the Analysis time-basis setting. This includes late-arriving native originals;
@@ -155,7 +158,12 @@ reader scrolling or a newer navigation, and skip spatial motion when reduced
 motion is enabled. Distant targets still load only a bounded window. The navigation outline fades and clears after two seconds; the
 editor source outline remains active while composing. Duty uses the originating column and constrains reply landings
 to loaded content, avoiding empty space under the newest reply. Analysis uses its
-focused window without expanding the date range. Filtered-out targets produce a
+focused window without expanding the date range. Targets outside the current
+filters show `Поза поточними фільтрами` before clicking. The page batches
+candidate-only checks through the existing matching-filters API (100 IDs per
+request, a bounded cache per feed), shares checks between cards, and invalidates
+results when filters or messages change. Returned full-message data is used only
+for membership checks, never as a citation-content fallback. Filtered-out targets produce a
 notification asking the user to change filters; filters are not changed implicitly.
 
 The current E1–E10 scenarios remain in
@@ -181,6 +189,8 @@ also checks mounted cards on the existing 30-second system interval, recovering
 missed events. Polling refreshes complete anchor snapshots, including empty ones.
 Version guards reject responses invalidated in flight, and failures retry during
 scheduled work. Saving a reply explicitly refreshes the displayed chain.
+An invalidated first hydration retries only the still-unloaded anchors immediately,
+so a newly created card does not wait for the next scheduled polling cycle.
 If a request is already running, the explicit refresh follows it and rejects its
 older snapshot. An unavailable editor citation ends its loading state while
 preserving the draft.

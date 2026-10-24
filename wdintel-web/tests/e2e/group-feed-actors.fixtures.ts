@@ -174,6 +174,8 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
           (!selectedGroups?.length || message.groups.some((key) => selectedGroups.includes(key))) &&
           (!selectedSenders?.length || selectedSenders.includes(message.sender)) &&
           (!search || message.text.toLowerCase().includes(search.toLowerCase())) &&
+          (!request.only_with_media ||
+            Boolean((options.messageFields?.(message)?.media as unknown[] | undefined)?.length)) &&
           (since == null || time(message) >= since) &&
           (till == null || time(message) <= till) &&
           (!after || compare(message, after) > 0) &&

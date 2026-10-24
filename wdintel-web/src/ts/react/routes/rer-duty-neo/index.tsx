@@ -849,6 +849,9 @@ export function RerDutyNeoPage({
           screen="Duty"
           onReply={openReplyComposer}
           onNavigate={navigateReply}
+          filterRequests={Object.fromEntries(
+            messageFeeds.map((feed) => [feed.id, feeds.buildReqForFeed(feed, {})]),
+          )}
           currentUser={currentUser}
         >
           {content}

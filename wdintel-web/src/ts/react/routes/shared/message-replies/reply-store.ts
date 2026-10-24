@@ -108,6 +108,7 @@ export class ReplyStore {
   private load = async (requested: number[]) => {
     if (this.controller || this.disposed || !requested.length) return;
     const controller = new AbortController();
+    const staleInitial = new Set<number>();
     this.controller = controller;
     try {
       for (let offset = 0; offset < requested.length; offset += MAX_ANCHORS) {
@@ -135,7 +136,11 @@ export class ReplyStore {
           relationsByAnchor.set(id, relationsByThread.get(threadId) ?? []);
         });
         ids.forEach((id) => {
-          if (!this.references.has(id) || versions.get(id) !== (this.versions.get(id) ?? 0)) return;
+          if (!this.references.has(id)) return;
+          if (versions.get(id) !== (this.versions.get(id) ?? 0)) {
+            if (this.initial.has(id)) staleInitial.add(id);
+            return;
+          }
           const relations = relationsByAnchor.get(id) ?? [];
           const messages = new Map<number, CitedMessage>();
           const anchor = projections.get(id);
@@ -173,8 +178,10 @@ export class ReplyStore {
         this.refreshQueued = false;
         queueMicrotask(() => void this.flush());
       } else {
-        // Only newly mounted anchors may start an immediate follow-up; invalidations wait for polling.
-        const remaining = Array.from(this.initial).filter((id) => !requested.includes(id));
+        // Finish initial hydration; refreshes of loaded cards still wait for polling.
+        const remaining = Array.from(this.initial).filter(
+          (id) => !requested.includes(id) || staleInitial.has(id),
+        );
         if (remaining.length && !this.disposed) queueMicrotask(() => void this.load(remaining));
       }
     }

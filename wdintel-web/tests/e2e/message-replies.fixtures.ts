@@ -205,14 +205,16 @@ export async function withReplyActors(
       try {
         await run(fixture, pages);
       } finally {
-        for (const { page, user, screen } of fixture.actors) {
-          const path = test.info().outputPath(`${user}-${screen}-browser.png`);
-          await page.screenshot({ path });
-          await test.info().attach(`${user}-${screen}-browser`, {
-            path,
-            contentType: 'image/png',
-          });
-        }
+        await Promise.allSettled(
+          fixture.actors.map(async ({ page, user, screen }) => {
+            const path = test.info().outputPath(`${user}-${screen}-browser.png`);
+            await page.screenshot({ path });
+            await test.info().attach(`${user}-${screen}-browser`, {
+              path,
+              contentType: 'image/png',
+            });
+          }),
+        );
       }
     },
     { actorCount: 3, messageFields: (message) => fixture.messageFields(message) },
@@ -237,6 +239,9 @@ export async function beginReply(actor: Actor, source: Message) {
 
 export async function fillReply(actor: Actor, text: string) {
   await editor(actor).getByRole('textbox', { name: 'Текст повідомлення', exact: true }).fill(text);
+  await expect(
+    editor(actor).getByRole('textbox', { name: 'Текст повідомлення', exact: true }),
+  ).toHaveValue(text);
 }
 
 export async function saveReply(actor: Actor, text: string) {

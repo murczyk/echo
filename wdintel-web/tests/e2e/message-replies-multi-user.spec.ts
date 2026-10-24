@@ -144,10 +144,13 @@ test('@reply #3612 E8: an edit updates previews for other users without changing
     for (const actor of [b, c]) {
       await expect(row(actor, reply.id)).toContainText('After editing');
       await expect(row(actor, reply.id)).toContainText('Reply stays unchanged');
-      const panel = await openThread(actor, source, 2);
-      await expectThread(panel, ['After editing', 'Reply stays unchanged']);
+      const panel = row(actor, reply.id).getByRole('region', { name: 'Відповіді', exact: true });
+      await expectThread(panel, ['After editing']);
       await expect(panel.getByText('Before editing', { exact: true })).toHaveCount(0);
-      await closeThread(actor);
+      await expectThread(
+        row(actor, source.id).getByRole('region', { name: 'Відповіді', exact: true }),
+        ['Reply stays unchanged'],
+      );
     }
   });
 });

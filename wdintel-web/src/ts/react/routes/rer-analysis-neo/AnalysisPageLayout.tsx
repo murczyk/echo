@@ -677,6 +677,11 @@ export function RerAnalysisNeoPage({
           screen="Analysis"
           onReply={openReplyComposer}
           onNavigate={page.navigateReply}
+          filterRequests={
+            page.inboxReq
+              ? { analysis: { ...page.inboxReq, onlyWithMedia: page.queryState.onlyWithMedia } }
+              : {}
+          }
           currentUser={page.currentUser}
         >
           {content}

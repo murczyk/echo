@@ -260,6 +260,9 @@ test.describe('@regression #3612 message replies', () => {
       await card.getByRole('button', { name: 'Більше дій', exact: true }).click();
       await page.getByRole('menuitem', { name: 'Відповісти', exact: true }).click();
       await expect(editor).toBeVisible();
+      await expect(
+        editor.getByRole('button', { name: 'Налаштування парсингу', exact: true }),
+      ).toBeEnabled();
       await page.evaluate(() =>
         window.dispatchEvent(
           new CustomEvent('user-settings-updated', {

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { inboxMessageWithMockImages } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 import { row, selectGroup } from './group-feed-actors.fixtures';
 import {
   beginReply,
@@ -50,13 +51,17 @@ for (const screen of ['duty', 'analysis'] as const) {
         await expect(row(actor, replyId)).toContainText(`Reply ${scope}`);
         await expect(card).not.toHaveCSS('outline-style', 'solid');
         const reply = fixture.messages.find(({ id }) => id === replyId)!;
-        const panel = await openThread(actor, reply, 2);
-        await expectThread(panel, [`Original ${scope}`, `Reply ${scope}`]);
-        await panel.getByText(`Original ${scope}`, { exact: true }).click();
-        await expect(panel).toHaveCount(0);
+        const chain = row(actor, reply.id).getByRole('region', { name: 'Відповіді', exact: true });
+        await expectThread(chain, [`Original ${scope}`]);
+        await expect(chain.getByRole('button', { name: /Усі повідомлення/ })).toHaveCount(0);
+        await chain.getByRole('link').click();
         await expect(row(actor, source.id)).toBeInViewport();
-        const reverse = await openThread(actor, source, 2);
-        await reverse.getByText(`Reply ${scope}`, { exact: true }).click();
+        const reverse = row(actor, source.id).getByRole('region', {
+          name: 'Відповіді',
+          exact: true,
+        });
+        await expectThread(reverse, [`Reply ${scope}`]);
+        await reverse.getByRole('link').click();
         await expect(row(actor, replyId)).toBeInViewport();
         await expect(row(actor, replyId).getByText('group-2', { exact: true })).toHaveCount(0);
       }
@@ -82,10 +87,13 @@ for (const screen of ['duty', 'analysis'] as const) {
       await beginReply(actor, report);
       await saveReply(actor, 'Ordinary reply');
       const reply = fixture.messages.at(-1)!;
-      const panel = await openThread(actor, reply, 2);
-      await expectThread(panel, ['Grouped intelligence report', 'Ordinary reply']);
+      const panel = row(actor, reply.id).getByRole('region', { name: 'Відповіді', exact: true });
+      await expectThread(panel, ['Grouped intelligence report']);
       await expect(panel.getByText('Intelligence source', { exact: true })).toHaveCount(0);
-      await closeThread(actor);
+      await expectThread(
+        row(actor, report.id).getByRole('region', { name: 'Відповіді', exact: true }),
+        ['Ordinary reply'],
+      );
       await expect(row(actor, report.id)).toContainText('Intelligence source');
       await expect(
         row(actor, reply.id).getByText('Intelligence source', { exact: true }),
@@ -124,10 +132,21 @@ for (const screen of ['duty', 'analysis'] as const) {
       });
       await beginReply(actor, b);
       await saveReply(actor, 'B reply');
-      const first = await openThread(actor, a, 2);
-      await expectThread(first, ['A original', 'A reply']);
-      await closeThread(actor);
-      await expectThread(await openThread(actor, b, 2), ['B original', 'B reply']);
+      await expectThread(row(actor, a.id).getByRole('region', { name: 'Відповіді', exact: true }), [
+        'A reply',
+      ]);
+      await expectThread(
+        row(actor, aReply.id).getByRole('region', { name: 'Відповіді', exact: true }),
+        ['A original'],
+      );
+      const bReply = fixture.messages.at(-1)!;
+      await expectThread(row(actor, b.id).getByRole('region', { name: 'Відповіді', exact: true }), [
+        'B reply',
+      ]);
+      await expectThread(
+        row(actor, bReply.id).getByRole('region', { name: 'Відповіді', exact: true }),
+        ['B original'],
+      );
     });
   });
 
@@ -210,6 +229,7 @@ for (const screen of ['duty', 'analysis'] as const) {
     browser,
     baseURL,
   }) => {
+    test.setTimeout(60_000);
     await withReplyActors(browser, baseURL, async (fixture, [page, otherPage]) => {
       const actor = await fixture.attach(page!, screen, 'user-1');
       const peer = await fixture.attach(
@@ -233,7 +253,7 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(row(actor, source.id)).toBeVisible();
       await expect(row(actor, excluded.id)).toHaveCount(0);
       const url = actor.page.url();
-      const panel = await openThread(actor, source, 2);
+      const panel = row(actor, source.id).getByRole('region', { name: 'Відповіді', exact: true });
       const filters = actor.requests
         .filter(({ path }) => path === '/api/rer-importer/get-inbox')
         .at(-1)!.body;
@@ -242,11 +262,14 @@ for (const screen of ['duty', 'analysis'] as const) {
       );
       const item = panel.getByRole('listitem').filter({ hasText: 'Other sender reply' });
       await expect(item).toContainText('Поза поточними фільтрами');
+      await actor.page.screenshot({
+        path: test.info().outputPath(`${screen}-reply-outside-filters.png`),
+      });
       await item.getByText('Other sender reply', { exact: true }).click();
       await expect(actor.page.getByText(/змін.*фільтр/i).first()).toBeVisible();
       expect(actor.page.url()).toBe(url);
       await expect(row(actor, excluded.id)).toHaveCount(0);
-      if (await panel.isVisible()) await closeThread(actor);
+
       await fixture.nextCreate(peer, 'New excluded reply', source.id, () => {
         const reply = fixture.add(peer.user, 'New excluded reply');
         fixture.respondWithReplies([relation(1, source, excluded), relation(2, source, reply)]);
@@ -264,21 +287,49 @@ for (const screen of ['duty', 'analysis'] as const) {
       await closeThread(actor);
       if (screen === 'analysis') {
         const reply = fixture.messages.at(-1)!;
-        fixture.respondWithReplies([]);
+        fixture.respondWithReplies([relation(1, source, excluded), relation(2, source, reply)]);
         const from = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
         const till = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
-        await visit(actor, 'all', `&fromDateTime=${from}T00:00&toDateTime=${till}T23:59`);
-        const dateUrl = actor.page.url();
+        await visit(
+          actor,
+          'all',
+          `&filterPanelOpen=true&fromDateTime=${from}T00:00&toDateTime=${till}T23:59`,
+        );
+        const dateUrl = new URL(actor.page.url());
         await expect(row(actor, excluded.id)).toHaveCount(0);
         const datePanel = await openThread(actor, source, 3);
+        await expect(
+          datePanel.getByRole('listitem').filter({ hasText: 'New excluded reply' }),
+        ).not.toContainText('Поза поточними фільтрами');
         await expect(
           datePanel.getByRole('listitem').filter({ hasText: 'Other sender reply' }),
         ).toContainText('Поза поточними фільтрами');
         await datePanel.getByText('Other sender reply', { exact: true }).click();
         await expect(actor.page.getByText(/змін.*фільтр/i).first()).toBeVisible();
-        expect(actor.page.url()).toBe(dateUrl);
+        const afterDateJump = new URL(actor.page.url());
+        expect(afterDateJump.origin + afterDateJump.pathname).toBe(
+          dateUrl.origin + dateUrl.pathname,
+        );
+        expect(Array.from(afterDateJump.searchParams).sort()).toEqual(
+          Array.from(dateUrl.searchParams).sort(),
+        );
         await expect(row(actor, excluded.id)).toHaveCount(0);
         if (await datePanel.isVisible()) await closeThread(actor);
+        fixture.setMessageFields(source, { media: inboxMessageWithMockImages().media });
+        await visit(actor, 'all', '&only_with_media=true&filterPanelOpen=true');
+        await expect(row(actor, source.id)).toBeVisible();
+        await expect(row(actor, excluded.id)).toHaveCount(0);
+        const mediaPanel = await openThread(actor, source, 3);
+        await expect(
+          mediaPanel.getByRole('listitem').filter({ hasText: 'Other sender reply' }),
+        ).toContainText('Поза поточними фільтрами');
+        await expect(
+          mediaPanel.getByRole('listitem').filter({ hasText: 'New excluded reply' }),
+        ).toContainText('Поза поточними фільтрами');
+        await actor.page.screenshot({
+          path: test.info().outputPath('analysis-reply-media-filter.png'),
+        });
+        await closeThread(actor);
       }
       await selectGroup(actor, 'group-2');
       await expect(row(actor, source.id)).toHaveCount(0);

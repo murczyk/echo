@@ -35,6 +35,27 @@ afterEach(() => vi.resetAllMocks());
 
 // Regression: https://github.com/echoua/echo/issues/3612
 describe('reply refresh scheduling and stale deletion protection', () => {
+  it('retries a first hydration invalidated in flight without waiting for another polling cycle (#3612)', async () => {
+    let resolve!: (value: Response) => void;
+    fetchReplies.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    fetchReplies.mockResolvedValue(response());
+    const store = new ReplyStore('Duty', vi.fn());
+    store.attach(20);
+    await settle();
+    store.invalidate([20]);
+    resolve({ replies: [], replyMessages: [] });
+    await settle();
+    await settle();
+    expect(store.get(20).loaded).toBe(true);
+    expect(store.get(20).relations).toHaveLength(1);
+    expect(fetchReplies).toHaveBeenCalledTimes(2);
+    store.dispose();
+  });
+
   it('hydrates siblings for a reply anchor and invalidates its whole thread (#3612)', async () => {
     const thread = response();
     thread.replies.push({ ...thread.replies[0], id: 2, replySignalMessageId: 30, createdAt: 200 });
@@ -92,9 +113,15 @@ describe('reply refresh scheduling and stale deletion protection', () => {
 
   it('does not restore a stale preview when deletion arrives during an in-flight response', async () => {
     let resolve!: (value: Response) => void;
-    fetchReplies.mockReturnValue(
+    let resolveFresh!: (value: Response) => void;
+    fetchReplies.mockReturnValueOnce(
       new Promise((done) => {
         resolve = done;
+      }),
+    );
+    fetchReplies.mockReturnValueOnce(
+      new Promise((done) => {
+        resolveFresh = done;
       }),
     );
     const store = new ReplyStore('Analysis', vi.fn());
@@ -104,8 +131,8 @@ describe('reply refresh scheduling and stale deletion protection', () => {
     resolve(response());
     await settle();
     expect(store.get(10).relations).toHaveLength(0);
-    fetchReplies.mockResolvedValue(response(true));
-    await store.flush();
+    resolveFresh(response(true));
+    await settle();
     expect(store.get(10).relations[0].deleted).toBe(true);
     expect(store.get(10).messages.has(20)).toBe(false);
     store.dispose();

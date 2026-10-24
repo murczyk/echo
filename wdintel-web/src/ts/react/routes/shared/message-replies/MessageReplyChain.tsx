@@ -2,7 +2,7 @@ import { Popover } from '@mui/material';
 import { useMemo, useRef, useState } from 'react';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
 import { CitedMessageCard } from './CitedMessageCard';
-import { useReplyNavigation } from './MessageRepliesProvider';
+import { useReplyNavigation, useReplyFilterMatches } from './MessageRepliesProvider';
 import type { ReplySnapshot } from './reply-store';
 
 const COMPACT_REPLY_LIMIT = 2;
@@ -47,6 +47,11 @@ export function MessageReplyChain({
       entry.message && !entry.deleted ? (available.next().value ?? entry) : entry,
     );
   }, [snapshot]);
+  const ids = useMemo(
+    () => entries.flatMap((entry) => (entry.message && !entry.deleted ? [entry.message.id] : [])),
+    [entries],
+  );
+  const excluded = useReplyFilterMatches(ids, sourceRef);
   const previews = entries.filter((entry) => entry.messageId !== id).slice(-COMPACT_REPLY_LIMIT);
   if (!entries.length) return null;
   const renderList = (all: boolean) => (
@@ -59,7 +64,9 @@ export function MessageReplyChain({
         >
           {all ? (
             <span aria-hidden="true" className="relative flex w-5 shrink-0 justify-center">
-              <span className="relative z-1 mt-3.5 size-2 rounded-full bg-echo-divider" />
+              <span
+                className={`relative z-1 mt-3.5 size-2 rounded-full ${entry.messageId === id ? 'bg-(--color-action)' : 'bg-echo-divider'}`}
+              />
               {index < entries.length - 1 ? (
                 <span className="absolute top-4 -bottom-6 w-px bg-echo-divider" />
               ) : null}
@@ -70,6 +77,7 @@ export function MessageReplyChain({
               showTimestamp={all}
               deleted={entry.deleted}
               message={entry.message}
+              outsideFilters={entry.messageId != null && excluded.has(entry.messageId)}
               timeBasis={timeBasis}
               onNavigate={
                 navigate

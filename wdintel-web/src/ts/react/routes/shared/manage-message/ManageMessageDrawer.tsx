@@ -795,7 +795,9 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             aria-label="Цитоване повідомлення"
                             className="col-span-full mb-echo-sm min-w-0"
                           >
-                            <Typography variant="subtitle2">Відповідь на повідомлення</Typography>
+                            <Typography variant="subtitle2" className="mb-echo-xs!">
+                              Відповідь на повідомлення
+                            </Typography>
                             {props.citationLoading ? (
                               <CircularProgress size={20} aria-label="Завантаження цитати" />
                             ) : (
@@ -929,8 +931,9 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                                     <TextField
                                       {...field}
                                       onChange={(event) => {
-                                        drawerState.handleBodyChange(event.target.value);
-                                        field.onChange(event);
+                                        const value = event.target.value;
+                                        field.onChange(value);
+                                        drawerState.handleBodyChange(value);
                                       }}
                                       label="Текст повідомлення"
                                       fullWidth

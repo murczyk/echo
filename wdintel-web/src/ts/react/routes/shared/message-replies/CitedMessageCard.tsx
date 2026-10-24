@@ -10,12 +10,14 @@ export function CitedMessageCard({
   deleted = false,
   timeBasis,
   showTimestamp = true,
+  outsideFilters = false,
   onNavigate,
 }: {
   message?: CitedMessage;
   deleted?: boolean;
   timeBasis: MessageTimeBasis;
   showTimestamp?: boolean;
+  outsideFilters?: boolean;
   onNavigate?: ReplyNavigation;
 }) {
   const className = 'block min-w-0 rounded-echo-xl bg-echo-text/5 p-echo-sm text-left';
@@ -38,6 +40,11 @@ export function CitedMessageCard({
         </span>
       ) : null}
       <span className="block truncate text-echo-text">{message.preview || 'Без тексту'}</span>
+      {outsideFilters ? (
+        <span className="block text-echo-xs text-echo-text opacity-50">
+          Поза поточними фільтрами
+        </span>
+      ) : null}
     </>
   );
   if (!onNavigate) return <div className={className}>{content}</div>;

@@ -6,10 +6,17 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   useSyncExternalStore,
 } from 'react';
-import type { ReactNode } from 'react';
-import type { CitedMessage, InboxMessage, MessageReplyScreen, User } from '../../../../../Bindings';
+import type { ReactNode, RefObject } from 'react';
+import type {
+  CitedMessage,
+  InboxMessage,
+  InboxMessagesReq,
+  MessageReplyScreen,
+  User,
+} from '../../../../../Bindings';
 import { usePowerSnackbar } from '../../../components/PowerSnackbar';
 import { isUnauthorizedError } from '../../../services/api/client';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
@@ -22,6 +29,7 @@ import {
 } from '../manage-message/ManageMessageDrawer';
 import { inboxChangedEvents } from '../useInboxChangedMessageIds';
 import { ReplyStore } from './reply-store';
+import { ReplyFilterStore } from './reply-filter-store';
 import { MESSAGE_REPLY_POLL_EVENT } from './events';
 
 export type ReplyTarget = { id: number; message: InboxMessage; focus: HTMLElement | null };
@@ -30,10 +38,58 @@ type ReplyContext = {
   store: ReplyStore;
   open?: (target: ReplyTarget) => void;
   navigate: ReplyNavigation;
+  filters: ReplyFilterStore;
 };
 const Context = createContext<ReplyContext | null>(null);
 const EMPTY = { loaded: false, relations: [], messages: new Map() };
 const noop = () => () => {};
+const noVersion = () => 0;
+const NO_EXCLUDED = new Set<number>();
+
+export function useReplyFilterMatches(ids: number[], source: RefObject<HTMLElement>) {
+  const filters = useContext(Context)?.filters;
+  const subscribe = useCallback(
+    (listener: () => void) => filters?.subscribe(listener, ids) ?? noop(),
+    [filters, ids],
+  );
+  const version = useSyncExternalStore(subscribe, filters?.getVersion ?? noVersion);
+  const [result, setResult] = useState<{
+    filters: typeof filters;
+    version: number;
+    ids: number[];
+    excluded: Set<number>;
+  }>();
+  useEffect(() => {
+    if (!filters || !source.current || !ids.length) return;
+    let active = true;
+    const scope =
+      source.current.closest<HTMLElement>('[data-duty-feed-id]')?.dataset.dutyFeedId ?? 'analysis';
+    void filters
+      .check(scope, ids)
+      .then((matches) => {
+        if (active)
+          setResult({
+            filters,
+            version,
+            ids,
+            excluded: new Set(
+              Array.from(matches)
+                .filter(([, matches]) => !matches)
+                .map(([id]) => id),
+            ),
+          });
+      })
+      .catch(() => {
+        /* The shared store reports API errors. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [filters, version, ids, source]);
+  return result?.filters === filters && result?.version === version && result?.ids === ids
+    ? result.excluded
+    : NO_EXCLUDED;
+}
 
 export function useReplyNavigation() {
   return useContext(Context)?.navigate;
@@ -85,12 +141,14 @@ export function MessageRepliesProvider({
   children,
   onReply,
   onNavigate,
+  filterRequests = {},
 }: {
   screen: MessageReplyScreen;
   currentUser: User | null;
   children: ReactNode;
   onReply: (target: ReplyTarget) => void;
   onNavigate: ReplyNavigation;
+  filterRequests?: Readonly<Record<string, Partial<InboxMessagesReq>>>;
 }) {
   const { notify } = usePowerSnackbar();
   const onErrorRef = useRef((error: unknown) => {});
@@ -106,17 +164,26 @@ export function MessageRepliesProvider({
     () => new ReplyStore(screen, (error) => onErrorRef.current(error)),
     [screen, identity],
   );
+  const filterKey = JSON.stringify(filterRequests);
+  const filters = useMemo(
+    () => new ReplyFilterStore(JSON.parse(filterKey), (error) => onErrorRef.current(error)),
+    [filterKey, identity],
+  );
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  useEffect(() => () => filters.dispose(), [filters]);
   const canReply = canReplyToMessages(currentUser?.roles);
   const value = useMemo(
-    () => ({ store, open: canReply ? onReply : undefined, navigate: onNavigate }),
-    [store, onReply, canReply, onNavigate],
+    () => ({ store, filters, open: canReply ? onReply : undefined, navigate: onNavigate }),
+    [store, filters, onReply, canReply, onNavigate],
   );
 
   useEffect(() => {
-    const onInbox = (event: Event) =>
-      store.invalidate(
-        inboxChangedEvents((event as CustomEvent).detail).map((entry) => entry.messageId),
-      );
+    const onInbox = (event: Event) => {
+      const ids = inboxChangedEvents((event as CustomEvent).detail).map((entry) => entry.messageId);
+      store.invalidate(ids);
+      filtersRef.current.invalidate(ids);
+    };
     const onPoll = (event: Event) => {
       if ((event as CustomEvent).detail === screen) void store.flush();
     };
