@@ -169,6 +169,7 @@ type alias Model =
         , selected : B.ReoReportFileType
         }
     , reportReoNoComments : Bool
+    , reportReoSummaryOnly : Bool
     , reportActiveNetworksAorsSelect :
         { state : Select.State
         , items : List (Select.MenuItem Int)

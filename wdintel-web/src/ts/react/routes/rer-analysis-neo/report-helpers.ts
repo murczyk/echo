@@ -42,6 +42,7 @@ export type AnalysisReportState = {
   reoAdjacentFreqsDistance: number;
   reoFileType: ReoReportFileType;
   reoNoComments: boolean;
+  reoSummaryOnly: boolean;
   senderAdvancedFreqs: boolean;
   senderAggregation: SenderAggregation;
   sposobUnitName: string;
@@ -80,6 +81,7 @@ export function createDefaultReportState(): AnalysisReportState {
     reoAdjacentFreqsDistance: 0,
     reoFileType: 'Docx',
     reoNoComments: false,
+    reoSummaryOnly: false,
     senderAdvancedFreqs: false,
     senderAggregation: 'ByProfile',
     sposobUnitName: '',
@@ -142,6 +144,7 @@ export function reportTemplateToType(state: AnalysisReportState): ReportType | n
           {
             adjacentFreqsDistance: state.reoAdjacentFreqsDistance,
             noComments: state.reoNoComments,
+            summaryOnly: state.reoSummaryOnly,
           },
           state.reoFileType,
         ],

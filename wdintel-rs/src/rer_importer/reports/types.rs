@@ -79,6 +79,8 @@ pub struct ReoReportSettings {
     pub adjacent_freqs_distance: f64,
     #[serde(default)]
     pub no_comments: bool,
+    #[serde(default)]
+    pub summary_only: bool,
 }
 
 #[derive(

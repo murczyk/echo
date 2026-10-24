@@ -143,6 +143,7 @@ type Msg
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | ReportReoNoCommentsToggle
+    | ReportReoSummaryOnlyToggle
     | ReportSposobUnitNameInput String
     | DeleteMessageConfirm
     | DeleteMessageCancel
