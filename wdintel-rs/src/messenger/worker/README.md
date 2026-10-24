@@ -22,6 +22,18 @@ Manual message creation in the web UI and group metadata synchronization
 (including renames and deletions) remain available. Turning the setting on
 resumes consumption of new messages; it does not schedule a historical import.
 
+Callsign highlighting sends one batch lexeme request for all requested
+callsigns, preserving their order and the existing token offsets and morphology.
+An incomplete batch response fails processing instead of silently dropping
+callsigns. This replaces per-callsign HTTP waits inside the import transaction;
+the existing HTTP, database and queue retry limits remain unchanged.
+
+Reprocessing acquires/enqueues the palette highlight job before changing
+derived point tokens, matching the highlight worker's lock order. Both the
+queue change and token invalidation remain in the same transaction, so a failed
+import does not lose the pending highlight. Existing failed messenger snapshots
+retain their normal retry schedule; deployment does not purge or reset them.
+
 The migration declares `replicated_snapshot` with `targeted_resnapshot: true`
 for `public.signal_group`. Deployment automatically reconciles only that table's
 PeerDB mapping, including quiet and empty tables, then refreshes current-state

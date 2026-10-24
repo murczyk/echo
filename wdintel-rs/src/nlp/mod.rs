@@ -83,7 +83,11 @@ pub async fn token_lexemes(
 pub async fn token_lexemes_batch(
     rq: &reqwest::Client,
     tokens: Vec<String>,
-) -> Result<Vec<Vec<String>>, AppError> {
+) -> anyhow::Result<Vec<Vec<String>>> {
+    if tokens.is_empty() {
+        return Ok(vec![]);
+    }
+    let expected_count = tokens.len();
     let local_url =
         format!("{}/api/token/lexeme/batch", crate::config::NLP_ADDR);
     let req = TokenNormalFormBatchPyReq { tokens };
@@ -102,6 +106,10 @@ pub async fn token_lexemes_batch(
         println!("> error: {e:?}\nrsp_t: {rsp_t}");
     }
     let rsp_data = rsp_e.c(h!())?;
+    anyhow::ensure!(
+        rsp_data.len() == expected_count,
+        "NLP lexeme batch returned an incomplete response"
+    );
     let result: Vec<Vec<String>> =
         rsp_data.into_iter().map(|x| x.lexeme).collect();
     Ok(result)
