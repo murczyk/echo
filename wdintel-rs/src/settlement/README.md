@@ -49,7 +49,7 @@ Adding or removing an inbox location requeues the remaining names, including
 previously undefined rows, so earlier joint choices can be reconsidered. Clearing
 linked rows also invalidates group statistics. Unchanged text sets preserve
 processed rows; reordering and repeated names do not requeue them. Already linked
-settlements remain fixed votes, with the majority and 50 km limits, when no
+settlements remain fixed votes, with the majority and 30 km limits, when no
 resolved network anchors are available. Retries preserve unresolved outliers.
 Explicit relinking oneoffs recompute all names together. Per-name caches contain
 independent candidate drafts; each item's election runs separately. Database-only
