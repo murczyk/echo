@@ -980,6 +980,32 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
     force_correlation: bool,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        force_correlation,
+        scope,
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    )
+}
+
+pub(in crate::rer_importer) fn analytics_message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    scope: &AnalyticsMessageIdScope,
+) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        false,
+        Some(scope),
+        Expr::col((signal_message::Entity, signal_message::Column::Id)),
+    )
+}
+
+fn linked_unit_ids_condition(
+    unit_ids: &[i64],
+    force_correlation: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    message_id: sea_query::Expr,
+) -> SimpleExpr {
     let link_alias = Alias::new("selected_unit_link");
     let unit_alias = Alias::new("selected_unit_by_id");
     let mut query = Query::select();
@@ -1000,7 +1026,7 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::ItemId,
             ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+            .eq(message_id),
         )
         .and_where(
             Expr::col((
@@ -9339,6 +9365,7 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
         "analytics_error"
             | "analytics_timeout"
             | "analytics_saturated"
+            | "analytics_resource_limit"
             | "analytics_unhealthy"
             | "analytics_unavailable"
             | "attachment_history_incomplete"
@@ -9436,6 +9463,23 @@ fn analytics_failure_reason(
     let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
+        let message = error.to_string();
+        let normalized = message.to_ascii_lowercase();
+        let native_exception =
+            message.contains("pg_clickhouse: DB::Exception:");
+        let memory_limit = message.contains("MEMORY_LIMIT_EXCEEDED")
+            || (native_exception
+                && normalized.contains("memory limit")
+                && normalized.contains("exceeded"));
+        let concurrency_limit = message
+            .contains("TOO_MANY_SIMULTANEOUS_QUERIES")
+            || (native_exception
+                && normalized.contains("too many simultaneous queries"));
+        if (memory_limit && !normalized.contains("(total)"))
+            || concurrency_limit
+        {
+            return "analytics_resource_limit";
+        }
         if error
             .downcast_ref::<crate::attachments::analytics::AttachmentSearchCoverageError>()
             .is_some()

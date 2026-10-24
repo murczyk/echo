@@ -6483,6 +6483,56 @@ async fn rer_analysis_unit_id_filter_keeps_same_name_units_distinct() {
         .unwrap();
     assert_eq!(item_ids, vec![second_message.id]);
 
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::UnitV2,
+            Expr::value("Header branch"),
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(second_message.id))
+        .exec(db)
+        .await
+        .unwrap();
+    for (selected_units, selected_unit_ids, denied_unit_ids, expected) in [
+        (
+            None,
+            vec![first_unit.id, second_unit.id],
+            Some(vec![first_unit.id]),
+            vec![second_message.id],
+        ),
+        (
+            Some(vec!["Header branch".to_string()]),
+            vec![first_unit.id],
+            None,
+            vec![first_message.id, second_message.id],
+        ),
+        (
+            Some(vec![]),
+            vec![first_unit.id],
+            None,
+            vec![first_message.id],
+        ),
+        (None, vec![-1], None, vec![]),
+    ] {
+        let inbox_req = InboxMessagesReq {
+            selected_units,
+            selected_unit_ids: Some(selected_unit_ids),
+            denied_unit_ids,
+            ..inbox_req.clone()
+        };
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login_id,
+                &fixture.env,
+                &inbox_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected);
+    }
+
     let first_unit_id = first_unit.id;
     let mut first_unit = first_unit.into_active_model();
     first_unit.deleted = Set(true);
@@ -9409,6 +9459,42 @@ async fn count_stats_analytics_success_skips_postgres() {
     assert_eq!(result, "analytics");
     assert!(!postgres_polled.load(std::sync::atomic::Ordering::SeqCst));
     assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn count_stats_analytics_resource_limits_preserve_circuit_3780() {
+    for (message, opens_circuit) in [
+        ("Code: 241. Query memory limit exceeded (MEMORY_LIMIT_EXCEEDED)", false),
+        ("Code: 241. Memory limit (for user) exceeded (MEMORY_LIMIT_EXCEEDED)", false),
+        ("Code: 202. Too many simultaneous queries (TOO_MANY_SIMULTANEOUS_QUERIES)", false),
+        ("Code: 241. (total) memory limit exceeded (MEMORY_LIMIT_EXCEEDED)", true),
+        ("pg_clickhouse: DB::Exception: Query memory limit exceeded: maximum 2 GiB", false),
+        ("pg_clickhouse: DB::Exception: Memory limit (for user) exceeded", false),
+        ("pg_clickhouse: DB::Exception: Too many simultaneous queries for user echo_gateway", false),
+        ("pg_clickhouse: DB::Exception: (total) memory limit exceeded", true),
+    ] {
+        let retry_state = AtomicU64::new(0);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let analytics_query = async {
+            Err::<&str, AppError>(anyhow::anyhow!(message).context(h!()).into())
+        };
+        let response = with_count_stats_analytics_fallback(
+            Some(analytics_query),
+            None,
+            core::time::Duration::from_secs(1),
+            async { Ok::<_, AppError>("postgres") },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response, "postgres");
+        assert_eq!(analytics_retry_attempt(&retry_state).is_none(), opens_circuit);
+    }
+    assert!(analytics_fallback_needs_capacity(
+        "analytics_resource_limit"
+    ));
 }
 
 #[tokio::test]
