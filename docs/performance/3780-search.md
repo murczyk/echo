@@ -203,6 +203,23 @@ Nonempty, empty, denied and combined-unit cases are covered by the existing
 unit-ID regression. Gateway resource limits and resource-specific fallback are
 described in the [analytics operations guide](../../deploy/clickhouse/README.md#gateway-resource-limits).
 
+Frequency and ordinary-unit inbox filters read analytics candidates in disjoint
+message-ID ranges of at most four million IDs. Tag, network, metadata and daily
+activity statistics use ranges of one million IDs. At most two range queries
+run concurrently per operation; existing query deadlines, memory limits and
+fallback admission limits remain in effect. Every range uses the original
+authorization and filter predicates, including bounds on related tables.
+Inbox candidates are merged using the requested timestamp and ID ordering before
+applying the page limit. Statistics sum distinct-message counts across disjoint
+ID ranges, retaining per-message deduplication and metadata normalization.
+A failed range fails the complete analytics attempt and uses the existing
+PostgreSQL fallback; partial totals are never returned. No migration, resnapshot
+or gateway configuration change is required.
+
+The PostgreSQL unit-match breakdown reads only the requested filtered counts,
+without discarded overall totals. Requests without a unit-name filter reuse one
+count; aggregate-cache reads and recovery-conflict retries remain available.
+
 ## Analysis search modes
 
 `search_mode` is optional on analysis, inbox, and callsign-graph requests.

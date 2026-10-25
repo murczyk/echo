@@ -413,19 +413,40 @@ pub fn parse_location_with_aor(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let settlements_data = select_settlements_data(&settlements_lock, m_aor_id);
-    let (location, allow_fuzzy) =
+    let fuzzy_prefix_len = location
+        .split_inclusive('\n')
+        .take(crate::config::LOCATION_MESSAGE_FUZZY_MAX_LINES)
+        .map(str::len)
+        .sum();
+    let (fuzzy_prefix, exact_suffix) = location.split_at(fuzzy_prefix_len);
+    let (_, allow_fuzzy) =
         normalize_location_context(&location, settlements_data);
-    let result = location
+    let result = [(fuzzy_prefix, allow_fuzzy), (exact_suffix, false)]
+        .into_iter()
+        .flat_map(|(location, allow_fuzzy)| {
+            find_locations_in_text(location, settlements_data, allow_fuzzy)
+        })
+        .collect();
+    Ok(deduplicate_settlement_names(result))
+}
+
+fn find_locations_in_text(
+    location: &str,
+    settlements_data: &SettlementsData,
+    allow_fuzzy: bool,
+) -> Vec<SettlementDetails> {
+    let (location, context_allows_fuzzy) =
+        normalize_location_context(location, settlements_data);
+    location
         .split(['(', ')', ',', '/', ';', '\n', '–', '—'])
         .flat_map(|phrase| {
             find_matching_settlements(
                 normalize_location_phrase(phrase, &settlements_data.2),
                 settlements_data,
-                allow_fuzzy,
+                allow_fuzzy && context_allows_fuzzy,
             )
         })
-        .collect();
-    Ok(deduplicate_settlement_names(result))
+        .collect()
 }
 
 fn normalize_location_context(
@@ -1803,6 +1824,45 @@ mod tests {
         location: String,
     ) -> anyhow::Result<Vec<SettlementDetails>> {
         parse_location_with_aor(settlements, location, None)
+    }
+
+    #[test]
+    fn settlement_fuzzy_prefix_3780_preserves_exact_suffix() {
+        let settlement = SettlementDetails {
+            id: Some(1),
+            name: "ЗАПОРІЖЖЯ".to_string(),
+            ..Default::default()
+        };
+        let mut trie = Trie::new();
+        trie.insert(&settlement.name, settlement.clone());
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: Arc::new((
+                vec![],
+                vec![],
+                trie,
+                BTreeMap::new(),
+                BTreeMap::new(),
+            )),
+            ..Default::default()
+        }));
+        for (location, expected) in [
+            ("\n\n\n\nЗАПОРІЖЯ", vec![1]),
+            ("\n\n\n\n\nЗАПОРІЖЯ", vec![]),
+            ("\r\n\r\n\r\n\r\nЗАПОРІЖЯ", vec![1]),
+            ("\r\n\r\n\r\n\r\n\r\nЗАПОРІЖЯ", vec![]),
+            ("\n\n\n\n\nЗАПОРІЖЖЯ", vec![1]),
+        ] {
+            let actual = parse_location_with_aor(
+                settlements.clone(),
+                location.to_string(),
+                None,
+            )
+            .unwrap()
+            .into_iter()
+            .filter_map(|settlement| settlement.id)
+            .collect_vec();
+            assert_eq!(actual, expected, "{location:?}");
+        }
     }
 
     fn test_settlements_array(data: Vec<SettlementDetails>) -> Vec<String> {

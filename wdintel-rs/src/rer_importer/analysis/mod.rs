@@ -28,6 +28,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
@@ -72,6 +73,78 @@ impl AnalyticsMessageIdScope {
             }
         }
     }
+
+    fn chunks(self, chunk_size: i64) -> Vec<Self> {
+        assert!(chunk_size > 0);
+        let Self::Inclusive { min_id, max_id } = self else {
+            return vec![self];
+        };
+        let mut chunks = Vec::new();
+        let mut min_id = min_id;
+        while min_id <= max_id {
+            let end =
+                std::cmp::min(min_id.saturating_add(chunk_size - 1), max_id);
+            chunks.push(Self::Inclusive {
+                min_id,
+                max_id: end,
+            });
+            if end == max_id {
+                break;
+            }
+            min_id = end + 1;
+        }
+        chunks
+    }
+}
+
+pub(super) async fn analytics_message_id_chunks(
+    db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    chunk_size: i64,
+) -> anyhow::Result<Vec<AnalyticsMessageIdScope>> {
+    let scope = if let AnalyticsMessageIdScope::From(min_id) = scope {
+        let max_id = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "max_id")
+            .into_tuple::<Option<i64>>()
+            .one(db)
+            .await
+            .context(h!())?
+            .flatten();
+        match max_id {
+            Some(max_id) => {
+                AnalyticsMessageIdScope::Inclusive { min_id, max_id }
+            }
+            None => AnalyticsMessageIdScope::Empty,
+        }
+    } else {
+        scope
+    };
+    Ok(scope.chunks(chunk_size))
+}
+
+pub(super) async fn load_analytics_message_id_chunks<T, F, Fut>(
+    db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    load: F,
+) -> anyhow::Result<Vec<T>>
+where
+    F: Fn(AnalyticsMessageIdScope) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let scopes = analytics_message_id_chunks(
+        db,
+        scope,
+        ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .context(h!())?;
+    stream::iter(scopes)
+        .map(load)
+        .buffered(ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect()
+        .await
+        .context(h!())
 }
 
 pub(super) async fn ensure_analytics_search_coverage(
