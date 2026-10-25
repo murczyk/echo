@@ -2741,6 +2741,36 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                 let ids =
                     messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
                 assert_eq!(ids, expected);
+                let tail = crate::rer_importer::inbox::query::load_postgres_fresh_tail_inbox_candidates(
+                    db,
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    test_dt(2026, 3, 1, 9, 0),
+                )
+                .await
+                .unwrap();
+                assert_eq!(tail, expected);
+                let tail_query = crate::rer_importer::inbox::query::build_postgres_fresh_tail_inbox_digest_query(
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    test_dt(2026, 3, 1, 9, 0),
+                )
+                .await
+                .unwrap();
+                let tail = db
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        tail_query,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    tail.try_get::<i64>("", "count").unwrap(),
+                    if page_index == 0 { 26 } else { 6 }
+                );
                 assert_eq!(
                     messages.len(),
                     if page_index == 0 {
@@ -2763,6 +2793,168 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                 } else {
                     assert!(ids.iter().all(|id| !first_ids.contains(id)));
                 }
+            }
+        }
+    }
+}
+
+async fn seed_fresh_tail_search_messages_3780(
+    fixture: &RerAnalysisFixture,
+    unit_id: i64,
+    date: NaiveDateTime,
+) -> i64 {
+    let db = &fixture.env.dbx;
+    let mut old_id = 0;
+    for (index, text) in ["Береза коридор", "Вільха", "Береза стара"]
+        .into_iter()
+        .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            text,
+            "155.2750",
+            if index == 2 {
+                date - chrono::Duration::hours(1)
+            } else {
+                date
+            },
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        if index == 2 {
+            old_id = message.id;
+        }
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::UnitV2,
+                Expr::value("3780 fresh tail"),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(message.id))
+            .exec(db)
+            .await
+            .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(unit_id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        if index == 1 {
+            signal_message_media::ActiveModel {
+                id: Set(uuid::Uuid::new_v4()),
+                signal_message_id: Set(message.id),
+                file_name: Set(Some("Береза.txt".into())),
+                content_type: Set("text/plain".into()),
+                size_bytes: Set(1),
+                is_encrypted: Set(true),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+    }
+    old_id
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_fresh_tail_search_preserves_matches_and_unit_filters_3780() {
+    use crate::rer_importer::inbox::query::{
+        build_postgres_fresh_tail_inbox_digest_query,
+        load_postgres_fresh_tail_inbox_candidates,
+    };
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 3, 2, 10, 0);
+    let old_id =
+        seed_fresh_tail_search_messages_3780(&fixture, unit.id, date).await;
+    for (selected_units, selected_unit_ids) in [
+        (None, None),
+        (Some(vec!["3780 fresh tail".to_string()]), None),
+        (None, Some(vec![unit.id])),
+    ] {
+        for search_mode in [
+            AnalysisSearchMode::Fuzzy,
+            AnalysisSearchMode::Exact,
+            AnalysisSearchMode::Substring,
+        ] {
+            for search in [
+                "Береза",
+                "-Береза",
+                "Береза or Вільха",
+                "155.275 Береза",
+                "\"Береза\" -відсутній",
+            ] {
+                let req = InboxMessagesReq {
+                    since_date_inclusive_ms: Some(
+                        (date - chrono::Duration::days(1))
+                            .and_utc()
+                            .timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        (date + chrono::Duration::days(1))
+                            .and_utc()
+                            .timestamp_millis(),
+                    ),
+                    search: Some(search.into()),
+                    search_mode: Some(search_mode),
+                    selected_units: selected_units.clone(),
+                    selected_unit_ids: selected_unit_ids.clone(),
+                    nolimit: Some(true),
+                    ..Default::default()
+                };
+                let mut expected =
+                    inbox_map_item_ids(&fixture.env, &login.id, &req).await;
+                expected.retain(|id| *id != old_id);
+                let cutoff = date - chrono::Duration::minutes(1);
+                let actual = load_postgres_fresh_tail_inbox_candidates(
+                    db,
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    cutoff,
+                )
+                .await
+                .unwrap();
+                assert_eq!(actual, expected, "{search_mode:?}: {search}");
+                let query = build_postgres_fresh_tail_inbox_digest_query(
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    cutoff,
+                )
+                .await
+                .unwrap();
+                let row = db
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        query,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    row.try_get::<i64>("", "count").unwrap(),
+                    expected.len() as i64
+                );
+                assert_eq!(
+                    row.try_get::<Option<NaiveDateTime>>(
+                        "",
+                        "first_element_ts"
+                    )
+                    .unwrap(),
+                    (!expected.is_empty()).then_some(date)
+                );
             }
         }
     }
@@ -10674,8 +10866,10 @@ async fn analytics_chunked_frequency_candidates_3780_preserve_order_and_access()
 #[tokio::test]
 #[serial]
 async fn analytics_chunked_latest_candidates_3780_preserve_limits_and_units() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     let fixture = mk_rer_analysis_fixture().await.unwrap();
-    seed_chunked_messages_3780(&fixture).await;
+    let messages = seed_chunked_messages_3780(&fixture).await;
     let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
         .await
         .unwrap();
@@ -10711,6 +10905,58 @@ async fn analytics_chunked_latest_candidates_3780_preserve_limits_and_units() {
             .unwrap()
             .unwrap();
         assert_eq!(actual, expected);
+    }
+    let recent = chrono::Utc::now().naive_utc() - chrono::Duration::hours(1);
+    let old = recent - chrono::Duration::days(10);
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for recent_count in [messages.len(), 3, 0] {
+        for (index, message) in messages.iter().enumerate() {
+            signal_message::Entity::update_many()
+                .col_expr(
+                    signal_message::Column::CreatedAt,
+                    Expr::value(if index < recent_count {
+                        recent
+                    } else {
+                        old
+                    }),
+                )
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(&fixture.env.dbx)
+                .await
+                .unwrap();
+        }
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSTimestamp,
+            InboxMessagesSortBy::IMSCreatedAt,
+        ] {
+            let req = InboxMessagesReq {
+                selected_units: Some(vec!["3780 header".to_string()]),
+                sort_by: Some(sort_by),
+                load_latest: Some(true),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(expected.len(), INBOX_MESSAGES_PAGE_LIMIT);
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected, "{sort_by:?}, recent={recent_count}");
+            if recent_count == messages.len() {
+                assert_eq!(candidate_queries.load(Ordering::SeqCst), 2);
+            }
+        }
     }
 }
 
