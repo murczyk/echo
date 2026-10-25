@@ -204,9 +204,14 @@ unit-ID regression. Gateway resource limits and resource-specific fallback are
 described in the [analytics operations guide](../../deploy/clickhouse/README.md#gateway-resource-limits).
 
 Frequency and unit inbox filters, including selected and denied unit IDs, read
-analytics candidates in disjoint message-ID ranges of at most four million IDs.
-Tag, network, metadata and daily activity statistics use ranges of one million
-IDs. At most two range queries
+analytics candidates in disjoint message-ID ranges, capped at four million IDs
+for closed ranges. Tag, network, metadata and daily activity statistics cap
+closed ranges at one million IDs. Recent scopes resolve a high-water mark using
+PostgreSQL's indexed maximum message ID and retain a lower-bound-only final range,
+so messages arriving during
+planning remain eligible. Closed scopes retain their upper bounds; empty scopes
+issue no range queries. Unit-name, network-association and AOR lookups are shared
+across inbox ranges within each operation. At most two range queries
 run concurrently per operation; existing query deadlines, memory limits and
 fallback admission limits remain in effect. Every range uses the original
 authorization and filter predicates, including bounds on related tables.
@@ -216,6 +221,27 @@ ID ranges, retaining per-message deduplication and metadata normalization.
 A failed range fails the complete analytics attempt and uses the existing
 PostgreSQL fallback; partial totals are never returned. No migration, resnapshot
 or gateway configuration change is required.
+
+Local range-planning checks on 2026-10-25 used PostgreSQL 14.24 and ClickHouse
+26.3.12.3 with 38.8 million synthetic, sequential message IDs. PostgreSQL's
+`SELECT MAX(id)` on a bigint primary key produced `Result -> Limit -> Index Only
+Scan Backward`, returning one index row with four shared-buffer hits, one heap
+fetch, no temporary I/O and 0.037 ms execution time. The read had an eight-second
+statement timeout. This isolates the range-planning access path; it does not
+measure the complete inbox or facet query.
+
+The equivalent ClickHouse current-state fixture used
+`ReplacingMergeTree(_peerdb_version) ORDER BY id`, `FINAL` and
+`_peerdb_is_deleted = 0`, matching the reconciled current-view semantics. After
+one million newer row versions, `EXPLAIN indexes=1 SELECT MAX(id)` selected all
+4,865 granules with an unrestricted primary-key condition. A one-million-ID
+bounded distinct count selected 123 of 4,863 granules from one part; a separate
+range containing 100,000 newer tombstones correctly counted 900,000 live IDs.
+The local queries used two threads, a 2-GiB memory cap and an eight-second
+execution limit. These synthetic checks establish indexed range selection and
+current-version deletion handling. Production gateway plans, replication
+freshness, concurrent memory use and end-to-end latency still require the
+ordinary approved canary before rollout; no environment repair is implied.
 
 The PostgreSQL unit-match breakdown reads only the requested filtered counts,
 without discarded overall totals. Requests without a unit-name filter reuse one

@@ -1229,6 +1229,7 @@ pub(super) async fn fetch_daily_group_activity_with_db(
     req: &AnalysisStatsReq,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     accessible_groups: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisDailyGroupActivity>, AppError> {
@@ -1237,6 +1238,7 @@ pub(super) async fn fetch_daily_group_activity_with_db(
         req,
         &login,
         db,
+        source_db,
         accessible_groups,
         scope,
     )
@@ -1248,6 +1250,7 @@ pub(super) async fn fetch_daily_group_activity_for_login_with_db(
     req: &AnalysisStatsReq,
     login: &uuid::Uuid,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     accessible_groups: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> anyhow::Result<Vec<AnalysisDailyGroupActivity>> {
@@ -1262,7 +1265,7 @@ pub(super) async fn fetch_daily_group_activity_for_login_with_db(
         .await
         .context(h!());
     };
-    let rows = load_analytics_message_id_chunks(db, *scope, |scope| {
+    let rows = load_analytics_message_id_chunks(source_db, *scope, |scope| {
         let accessible_groups = accessible_groups.clone();
         async move {
             query_daily_group_activity(
@@ -3313,25 +3316,26 @@ pub(super) async fn fetch_analytics_metadata_for_login_with_scope(
     )
     .await
     .context(h!())?;
-    let responses = load_analytics_message_id_chunks(db, *scope, |scope| {
-        let master_keys = master_keys.clone();
-        let units = units.as_ref();
-        async move {
-            fetch_metadata_stats_with_units(
-                req,
-                login,
-                db,
-                master_keys,
-                Some(&scope),
-                units,
-                true,
-            )
-            .await
-            .context(h!())
-        }
-    })
-    .await
-    .context(h!())?;
+    let responses =
+        load_analytics_message_id_chunks(source_db, *scope, |scope| {
+            let master_keys = master_keys.clone();
+            let units = units.as_ref();
+            async move {
+                fetch_metadata_stats_with_units(
+                    req,
+                    login,
+                    db,
+                    master_keys,
+                    Some(&scope),
+                    units,
+                    true,
+                )
+                .await
+                .context(h!())
+            }
+        })
+        .await
+        .context(h!())?;
     let mut result = empty_metadata_stats();
     for response in responses {
         result.ccs.extend(response.ccs);
@@ -4498,7 +4502,7 @@ pub(super) async fn fetch_analytics_tags_for_login_with_scope(
     )
     .await
     .context(h!())?;
-    let rows = load_analytics_message_id_chunks(db, *scope, |scope| {
+    let rows = load_analytics_message_id_chunks(source_db, *scope, |scope| {
         let units = units.as_ref();
         let master_keys = &master_keys;
         async move {
@@ -6839,6 +6843,7 @@ pub(super) async fn fetch_networks_analytics_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
     scope: &AnalyticsMessageIdScope,
@@ -6848,6 +6853,7 @@ pub(super) async fn fetch_networks_analytics_with_db(
         &req.0,
         &login,
         db,
+        source_db,
         master_keys,
         tag_access,
         scope,
@@ -6860,6 +6866,7 @@ pub(super) async fn fetch_analytics_networks_for_login_with_scope(
     req: &AnalysisStatsReq,
     login: &uuid::Uuid,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
     scope: &AnalyticsMessageIdScope,
@@ -6870,7 +6877,7 @@ pub(super) async fn fetch_analytics_networks_for_login_with_scope(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let rows = load_analytics_message_id_chunks(db, *scope, |scope| {
+    let rows = load_analytics_message_id_chunks(source_db, *scope, |scope| {
         let master_keys = master_keys.clone();
         async move {
             let statement = build_networks_analytics_query_with_scope(

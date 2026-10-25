@@ -10621,38 +10621,51 @@ async fn analytics_chunked_frequency_candidates_3780_preserve_order_and_access()
         InboxMessagesSortBy::IMSTimestamp,
         InboxMessagesSortBy::IMSCreatedAt,
     ] {
-        for (selected_freqs, denied_freqs) in [
-            (Some(vec!["3780.1".to_string()]), None),
-            (None, Some(vec!["3780.2".to_string()])),
-            (
-                Some(vec!["3780.1".to_string(), "".to_string()]),
-                Some(vec!["".to_string()]),
-            ),
-        ] {
-            let mut req = InboxMessagesReq {
-                selected_freqs,
-                denied_freqs,
-                sort_by: Some(sort_by),
-                since_date_inclusive_ms: Some(
-                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        for (newest_first, nolimit) in
+            [(true, false), (false, false), (true, true), (false, true)]
+        {
+            for (selected_freqs, denied_freqs) in [
+                (Some(vec!["3780.1".to_string()]), None),
+                (None, Some(vec!["3780.2".to_string()])),
+                (
+                    Some(vec!["3780.1".to_string(), "".to_string()]),
+                    Some(vec!["".to_string()]),
                 ),
-                till_date_inclusive_ms: Some(
-                    test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
-                ),
-                newest_first: Some(true),
-                ..Default::default()
-            };
-            for _page in 0..2 {
-                let expected =
-                    inbox_map_item_ids(&fixture.env, &login, &req).await;
-                let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
-                    &login, &fixture.env, &req, &fixture.env.dbx, 90_000,
-                )
-                .await
-                .unwrap()
-                .unwrap();
-                assert_eq!(actual, expected, "{sort_by:?}");
-                req.before_id_noninclusive = expected.last().copied();
+            ] {
+                let mut req = InboxMessagesReq {
+                    selected_freqs,
+                    denied_freqs,
+                    sort_by: Some(sort_by),
+                    since_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    newest_first: Some(newest_first),
+                    nolimit: Some(nolimit),
+                    ..Default::default()
+                };
+                for _page in 0..2 {
+                    let expected =
+                        inbox_map_item_ids(&fixture.env, &login, &req).await;
+                    let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                        &login,
+                        &fixture.env,
+                        &req,
+                        &fixture.env.dbx,
+                        90_000,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(actual, expected, "{sort_by:?}");
+                    if newest_first {
+                        req.before_id_noninclusive = expected.last().copied();
+                    } else {
+                        req.since_id_noninclusive = expected.last().copied();
+                    }
+                }
             }
         }
     }
@@ -11000,6 +11013,56 @@ fn analytics_message_id_chunks_3780_cover_boundaries_without_overlap() {
     }
     .chunks(width)
     .is_empty());
+    assert!(AnalyticsMessageIdScope::Empty.chunks(width).is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_recent_scope_3780_keeps_replication_tail_open() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let min_id = messages.iter().map(|message| message.id).min().unwrap();
+    let max_id = messages.iter().map(|message| message.id).max().unwrap();
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(min_id),
+        width,
+    )
+    .await
+    .unwrap();
+    let arriving = signal_message::ActiveModel {
+        id: Set(max_id + width),
+        body: Set(Some("3780 arriving during chunk planning".to_string())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let mut ids = Vec::new();
+    for scope in scopes {
+        ids.extend(
+            signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(scope.condition(signal_message::Column::Id))
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(ids.len(), messages.len() + 1);
+    assert!(ids.contains(&arriving.id));
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(arriving.id + 1),
+        width,
+    )
+    .await
+    .unwrap();
+    assert_eq!(scopes, vec![AnalyticsMessageIdScope::From(arriving.id + 1)]);
 }
 
 #[tokio::test]
@@ -11070,6 +11133,7 @@ async fn analytics_chunked_facets_3780_preserve_distinct_counts_and_metadata() {
             &req,
             &login,
             db,
+            db,
             master_keys.clone(),
             &access,
             &scope,
@@ -11088,6 +11152,7 @@ async fn analytics_chunked_facets_3780_preserve_distinct_counts_and_metadata() {
                 &req,
                 &login,
                 db,
+                db,
                 master_keys.clone(),
                 None,
             )
@@ -11096,6 +11161,7 @@ async fn analytics_chunked_facets_3780_preserve_distinct_counts_and_metadata() {
         let daily = stats::fetch_daily_group_activity_for_login_with_db(
             &req,
             &login,
+            db,
             db,
             master_keys.clone(),
             Some(&scope),

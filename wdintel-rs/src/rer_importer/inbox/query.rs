@@ -9,7 +9,7 @@ use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::analytics_unit::{
     apply_resolved_analytics_unit_filters_with_ids,
-    resolve_analytics_unit_filters,
+    resolve_analytics_unit_filters, ResolvedAnalyticsUnitFilters,
 };
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
@@ -1156,22 +1156,36 @@ async fn load_chunked_analytics_inbox_candidates(
         return Ok(None);
     };
     let chunks = analytics_message_id_chunks(
-        db,
+        &env.dbx,
         scope,
         crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE,
     )
     .await
     .context(h!())?;
-    let rows = stream::iter(chunks)
-        .map(|scope| async move {
-            let (query, _) = build_analytics_filtered_inbox_query_with_scope(
-                login, env, req, scope,
-            )
+    let (resolved_units, resolved_aors) =
+        resolve_analytics_inbox_filters(&env.dbx, req)
             .await
             .context(h!())?;
-            scan_inbox_candidate_rows(db, query, req)
-                .await
-                .context(h!())
+    let rows = stream::iter(chunks)
+        .map(|scope| {
+            let resolved_units = &resolved_units;
+            let resolved_aors = &resolved_aors;
+            async move {
+                let (query, _) =
+                    build_analytics_filtered_inbox_query_with_filters(
+                        login,
+                        env,
+                        req,
+                        scope,
+                        resolved_units,
+                        resolved_aors,
+                    )
+                    .await
+                    .context(h!())?;
+                scan_inbox_candidate_rows(db, query, req)
+                    .await
+                    .context(h!())
+            }
         })
         .buffered(crate::config::ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
         .try_collect::<Vec<_>>()
@@ -1564,17 +1578,49 @@ async fn build_analytics_filtered_inbox_query_with_scope(
     req: &InboxMessagesReq,
     scope: AnalyticsMessageIdScope,
 ) -> anyhow::Result<(Select<signal_message::Entity>, bool)> {
+    let (resolved_units, resolved_aors) =
+        resolve_analytics_inbox_filters(&env.dbx, req)
+            .await
+            .context(h!())?;
+    build_analytics_filtered_inbox_query_with_filters(
+        login,
+        env,
+        req,
+        scope,
+        &resolved_units,
+        &resolved_aors,
+    )
+    .await
+    .context(h!())
+}
+
+async fn resolve_analytics_inbox_filters(
+    source_db: &DatabaseConnection,
+    req: &InboxMessagesReq,
+) -> anyhow::Result<(ResolvedAnalyticsUnitFilters, ResolvedAnalyticsAorFilter)>
+{
     let resolved_units = resolve_analytics_unit_filters(
-        &env.dbx,
+        source_db,
         &req.selected_units,
         &req.denied_units,
         req.units_exact_match_only,
     )
     .await
     .context(h!())?;
-    let resolved_aors = resolve_analytics_aor_filter(&env.dbx, req)
+    let resolved_aors = resolve_analytics_aor_filter(source_db, req)
         .await
         .context(h!())?;
+    Ok((resolved_units, resolved_aors))
+}
+
+async fn build_analytics_filtered_inbox_query_with_filters(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    scope: AnalyticsMessageIdScope,
+    resolved_units: &ResolvedAnalyticsUnitFilters,
+    resolved_aors: &ResolvedAnalyticsAorFilter,
+) -> anyhow::Result<(Select<signal_message::Entity>, bool)> {
     let mut analytics_req = req.clone();
     analytics_req.selected_units = None;
     analytics_req.selected_unit_ids = None;
@@ -1595,7 +1641,7 @@ async fn build_analytics_filtered_inbox_query_with_scope(
     let has_unit_filters = resolved_units.has_filters();
     let query = apply_resolved_analytics_unit_filters_with_ids(
         query,
-        &resolved_units,
+        resolved_units,
         &scope,
         req.units_exact_match_only.unwrap_or(false),
         &req.selected_unit_ids,
@@ -1611,7 +1657,7 @@ async fn build_analytics_filtered_inbox_query_with_scope(
         query
     };
     let query =
-        apply_resolved_analytics_aor_filter(query, &resolved_aors, &scope);
+        apply_resolved_analytics_aor_filter(query, resolved_aors, &scope);
     Ok((query, has_unit_filters))
 }
 
