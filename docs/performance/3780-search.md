@@ -203,9 +203,10 @@ Nonempty, empty, denied and combined-unit cases are covered by the existing
 unit-ID regression. Gateway resource limits and resource-specific fallback are
 described in the [analytics operations guide](../../deploy/clickhouse/README.md#gateway-resource-limits).
 
-Frequency and ordinary-unit inbox filters read analytics candidates in disjoint
-message-ID ranges of at most four million IDs. Tag, network, metadata and daily
-activity statistics use ranges of one million IDs. At most two range queries
+Frequency and unit inbox filters, including selected and denied unit IDs, read
+analytics candidates in disjoint message-ID ranges of at most four million IDs.
+Tag, network, metadata and daily activity statistics use ranges of one million
+IDs. At most two range queries
 run concurrently per operation; existing query deadlines, memory limits and
 fallback admission limits remain in effect. Every range uses the original
 authorization and filter predicates, including bounds on related tables.

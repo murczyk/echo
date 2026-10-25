@@ -1092,14 +1092,12 @@ pub(crate) async fn load_analytics_inbox_candidates(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<Vec<i64>>, AppError> {
-    if [
-        &req.selected_freqs,
-        &req.denied_freqs,
-        &req.selected_units,
-        &req.denied_units,
-    ]
-    .into_iter()
-    .any(|filters| filters.as_ref().is_some_and(|values| !values.is_empty()))
+    if [&req.selected_freqs, &req.denied_freqs]
+        .into_iter()
+        .any(|filters| {
+            filters.as_ref().is_some_and(|values| !values.is_empty())
+        })
+        || inbox_count_has_unit_filter(req)
     {
         return Ok(load_chunked_analytics_inbox_candidates(
             login,

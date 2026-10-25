@@ -10701,6 +10701,136 @@ async fn analytics_chunked_latest_candidates_3780_preserve_limits_and_units() {
     }
 }
 
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
+{
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    let units = seed_chunked_unit_links_3780(&fixture, &messages, login).await;
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for (selected_unit_ids, denied_unit_ids, total, chunked) in [
+        (Some(vec![units[0]]), None, 28, true),
+        (Some(vec![units[1]]), None, 3, true),
+        (None, Some(vec![units[0]]), 4, true),
+        (
+            Some(vec![units[0], units[1]]),
+            Some(vec![units[1]]),
+            28,
+            true,
+        ),
+        (Some(vec![units[2]]), None, 0, true),
+        (None, Some(vec![units[2]]), 32, true),
+        (Some(vec![]), Some(vec![]), 32, false),
+    ] {
+        for nolimit in [false, true] {
+            let req = InboxMessagesReq {
+                selected_unit_ids: selected_unit_ids.clone(),
+                denied_unit_ids: denied_unit_ids.clone(),
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                ),
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                newest_first: Some(true),
+                nolimit: Some(nolimit),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(
+                expected.len(),
+                if nolimit {
+                    total
+                } else {
+                    std::cmp::min(total, INBOX_MESSAGES_PAGE_LIMIT)
+                }
+            );
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                candidate_queries.load(Ordering::SeqCst),
+                if chunked { 2 } else { 1 },
+                "selected={selected_unit_ids:?}, denied={denied_unit_ids:?}"
+            );
+        }
+    }
+}
+
+async fn seed_chunked_unit_links_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+    login: uuid::Uuid,
+) -> Vec<i64> {
+    let db = &fixture.env.dbx;
+    let mut units = Vec::new();
+    for deleted in [false, false, true] {
+        units.push(
+            mk_sigint_unit(
+                db,
+                sigint_unit::ActiveModel {
+                    name: Set("3780 shared unit name".to_string()),
+                    created_by_login_id: Set(login),
+                    deleted: Set(deleted),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let mut links = Vec::new();
+    for message in messages {
+        let index = (message.id - base)
+            % crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+        let unit_index = match index {
+            28..=30 => 1,
+            31 => 2,
+            _ => 0,
+        };
+        links.push(sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(units[unit_index]),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        });
+        if message.id == base {
+            links.push(sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(message.id),
+                unit_id: Set(units[unit_index]),
+                kind: Set(SigintInboxItemUnitKind::Network),
+                ..Default::default()
+            });
+        }
+    }
+    sigint_inbox_item_unit::Entity::insert_many(links)
+        .exec(db)
+        .await
+        .unwrap();
+    units
+}
+
 async fn seed_chunked_messages_3780(
     fixture: &RerAnalysisFixture,
 ) -> Vec<signal_message::Model> {
