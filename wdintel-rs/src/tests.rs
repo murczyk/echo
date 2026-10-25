@@ -270,6 +270,57 @@ pub mod test {
         );
     }
 
+    #[tokio::test]
+    async fn literal_body_index_recovery_validates_existing_definition_3780() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let db = crate::new_pg_pool_from_conn_string_with_max_connections(
+            mk_conn_string(&config),
+            1,
+        )
+        .await
+        .unwrap();
+        db.execute_unprepared(
+            r#"
+create temporary table sigint_inbox_item (id bigint, body_noheader jsonb);
+insert into sigint_inbox_item values (1, '{"body":"test"}'), (1, null);
+            "#,
+        )
+        .await
+        .unwrap();
+        let manager = SchemaManager::new(&db);
+        let migration = Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name() == "m20261025_180900_inbox_body_literal_index"
+            })
+            .unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.down(&manager).await.unwrap();
+        for definition in [
+            r#"(id)"#,
+            r#"using gin(body_noheader)"#,
+            r#"using gin((coalesce(body_noheader->>'other','')) gin_trgm_ops)"#,
+            r#"using gin((coalesce(body_noheader->>'body','')) gin_trgm_ops) where id > 0"#,
+            r#"using gin((coalesce(body_noheader->>'body','')) collate "C" gin_trgm_ops)"#,
+        ] {
+            db.execute_unprepared(&format!(
+                r#"create index sigint_inbox_item_body_literal_idx on sigint_inbox_item {definition}"#
+            ))
+            .await
+            .unwrap();
+            let error = migration.up(&manager).await.unwrap_err();
+            assert!(error.to_string().contains("requires recovery"));
+            db.execute_unprepared(
+                r#"drop index sigint_inbox_item_body_literal_idx"#,
+            )
+            .await
+            .unwrap();
+        }
+        migration.up(&manager).await.unwrap();
+        db.close().await.unwrap();
+    }
+
     async fn postgres_setting(
         db: &DatabaseConnection,
         setting: &str,

@@ -674,9 +674,36 @@ async fn ocr_coordinate_boundaries_and_precision_3714() {
 async fn attachment_coordinates_without_summary_and_revisions_3714() {
     let (env, _, message) = fixture().await;
     let job = attachment(&env, message, "coordinates.txt").await;
+    execute(
+        &env.dbx,
+        r#"
+with engine as (
+    insert into ai_engine(id,name,url,model_name,enabled,created_at,updated_at)
+    values(gen_random_uuid(),'3780 publication ' || gen_random_uuid(),
+        'https://example.invalid','legacy',true,now(),now())
+    returning id
+)
+insert into media_summary(
+    media_id,source_kind,source_digest,source_char_count,state,
+    lease_expires_at,source_text,ai_engine_name,model_name,ai_engine_id
+)
+select $1,'ocr_text',$2,11,'running',now()+interval '5 minutes',
+    'legacy text','legacy','legacy',id from engine
+        "#,
+        vec![job.media_id.into(), "a".repeat(64).into()],
+    )
+    .await
+    .unwrap();
     publish(&env, &job, package("48.469429° N 37.315640° E"), vec![1])
         .await
         .unwrap();
+    assert!(
+        crate::entities::media_summary::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none()
+    );
     let media = signal_message_media::Entity::find_by_id(job.media_id)
         .one(&env.dbx)
         .await

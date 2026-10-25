@@ -99,6 +99,9 @@ requiring approval for the named target; do not delete migration records or
 drop a valid index as part of verification.
 If index creation succeeded and only statistics refresh failed, the migration
 can resume against a valid, ready index. Its validation rejects invalid builds.
+Retries also verify the GIN expression, trigram operator class, collation and
+absence of a partial predicate. A ready index with a different definition
+requires separate operator reconciliation; the migration leaves it intact.
 
 For unbounded latest pages, verify both dense recent traffic and a sparse/empty
 two-day creation-time probe. Dense probes must match the full-history top 20;

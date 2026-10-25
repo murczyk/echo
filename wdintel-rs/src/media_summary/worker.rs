@@ -930,18 +930,23 @@ mod tests {
         )
         .await
         .unwrap());
-        let legacy = super::claim_next(db).await.unwrap().unwrap();
+        super::claim_next(db).await.unwrap().unwrap();
         db.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DbBackend::Postgres,
-            "UPDATE attachment_document SET revision=gen_random_uuid() WHERE media_id=$1",
+            r#"UPDATE attachment_document SET revision=gen_random_uuid() WHERE media_id=$1"#,
             [media.into()],
         )).await.unwrap();
         db.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DbBackend::Postgres,
-            "UPDATE media_summary SET lease_expires_at=now()-interval '1 second' WHERE media_id=$1",
+            r#"UPDATE media_summary SET lease_expires_at=now()-interval '1 second' WHERE media_id=$1"#,
             [media.into()],
         )).await.unwrap();
         assert!(super::claim_next(db).await.unwrap().is_none());
+        let legacy = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
         media_summary::Entity::delete_many()
             .filter(media_summary::Column::MediaId.eq(media))
             .exec(db)
@@ -963,6 +968,115 @@ mod tests {
             .is_none());
     }
 
+    async fn assert_reclaimed_lease_3780(
+        db: &sea_orm::DatabaseConnection,
+        media: uuid::Uuid,
+    ) {
+        use crate::attachments::store::execute;
+        use crate::entities::media_summary;
+        use sea_orm::EntityTrait;
+
+        assert!(super::super::enqueue_for_reprocessing(
+            db,
+            media,
+            "ocr_text",
+            "reclaimed text"
+        )
+        .await
+        .unwrap());
+        super::claim_next(db).await.unwrap().unwrap();
+        execute(
+            db,
+            r#"
+update media_summary set lease_expires_at=now()-interval '1 second'
+where media_id=$1
+            "#,
+            vec![media.into()],
+        )
+        .await
+        .unwrap();
+        let expired = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let current = super::claim_next(db).await.unwrap().unwrap();
+        assert_eq!(current.attempts, expired.attempts + 1);
+        assert!(!super::complete(db, &expired, lease_result_3780(), None)
+            .await
+            .unwrap());
+        assert_eq!(
+            super::retry_or_fail(db, &expired, "expired error".into())
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            media_summary::Entity::find_by_id(media)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap(),
+            current
+        );
+        assert_current_retry_and_failure_3780(db, &current).await;
+    }
+
+    async fn assert_current_retry_and_failure_3780(
+        db: &sea_orm::DatabaseConnection,
+        current: &crate::entities::media_summary::Model,
+    ) {
+        use crate::attachments::store::execute;
+        use crate::entities::media_summary;
+        use sea_orm::EntityTrait;
+
+        let media = current.media_id;
+        assert_eq!(
+            super::retry_or_fail(db, current, "current error".into())
+                .await
+                .unwrap(),
+            Some(false)
+        );
+        let retry = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retry.state, "retry_wait");
+        assert_eq!(retry.last_error.as_deref(), Some("current error"));
+        assert_eq!(retry.source_text.as_deref(), Some("reclaimed text"));
+        execute(
+            db,
+            r#"
+update media_summary
+set next_attempt_at=now()-interval '1 second', attempts=$2
+where media_id=$1
+            "#,
+            vec![
+                media.into(),
+                (crate::config::MEDIA_SUMMARY_MAX_ATTEMPTS - 1).into(),
+            ],
+        )
+        .await
+        .unwrap();
+        let current = super::claim_next(db).await.unwrap().unwrap();
+        assert_eq!(
+            super::retry_or_fail(db, &current, "terminal error".into())
+                .await
+                .unwrap(),
+            Some(true)
+        );
+        let failed = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(failed.state, "failed");
+        assert_eq!(failed.last_error.as_deref(), Some("terminal error"));
+        assert!(failed.source_text.is_none());
+        assert!(super::claim_next(db).await.unwrap().is_none());
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn superseded_media_summaries_preserve_current_jobs_and_documents_3780(
@@ -972,6 +1086,7 @@ mod tests {
 
         let (env, media, settings) = lease_fixture_3780().await;
         assert_requeued_lease_3780(&env.dbx, media).await;
+        assert_reclaimed_lease_3780(&env.dbx, media).await;
         assert_document_supersedes_lease_3780(&env.dbx, media).await;
         media_summary_settings::Entity::update_many()
             .set(media_summary_settings::ActiveModel {
