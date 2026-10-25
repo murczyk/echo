@@ -388,6 +388,71 @@ async fn attachment_search_retains_former_owners_and_deleted_membership_3780() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn latest_inbox_probe_retains_attachment_change_guards_3780() {
+    use crate::functest::tests::find_test_login;
+    use crate::rer_importer::inbox::query::load_analytics_inbox_candidates;
+    use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
+
+    let (env, _, message) = fixture().await;
+    let source = &env.dbx;
+    let login = find_test_login(source).await.unwrap();
+    let job = attachment(&env, message, "before-rename.txt").await;
+    publish(&env, &job, package("Береза"), vec![1])
+        .await
+        .unwrap();
+    ready_coverage(source).await;
+    let analytics = snapshot_membership(&env).await;
+    execute(
+        source,
+        r#"UPDATE signal_message_media SET file_name='after-rename.txt' WHERE id=$1"#,
+        vec![job.media_id.into()],
+    )
+    .await
+    .unwrap();
+    for removed in [false, true] {
+        if removed {
+            execute(
+                source,
+                r#"DELETE FROM signal_message_group WHERE signal_message_id=$1"#,
+                vec![message.into()],
+            )
+            .await
+            .unwrap();
+            reconcile_search_changes(source).await.unwrap();
+        }
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSTimestamp,
+            InboxMessagesSortBy::IMSCreatedAt,
+        ] {
+            for search in ["Береза", "-Береза"] {
+                let req = InboxMessagesReq {
+                    load_latest: Some(true),
+                    sort_by: Some(sort_by),
+                    search: Some(search.into()),
+                    ..Default::default()
+                };
+                let error = load_analytics_inbox_candidates(
+                    &login.id, &env, &req, &analytics, 90_000,
+                )
+                .await
+                .unwrap_err();
+                let error = anyhow::Error::from(error);
+                assert!(
+                    error.chain().any(|error| error
+                        .downcast_ref::<AttachmentSearchCoverageError>()
+                        .is_some()),
+                    "{error:#}"
+                );
+            }
+        }
+    }
+    analytics.close().await.unwrap();
+    source.execute_unprepared(r#"DROP SCHEMA attachment_search_replica_3780 CASCADE; DELETE FROM public.echo_analytics_attachment_search"#).await.unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn attachment_search_bootstrap_overflow_and_retention_stay_conservative_3780(
 ) {
     let (env, group, message) = fixture().await;

@@ -51,25 +51,36 @@ work is substantial; no controlled endpoint speedup or peak-load SLA is claimed.
 
 ## Validation and delivery
 
-Use the dedicated `wd_test_3780_skhid_followup` and
-`wd_files_test_3780_skhid_followup` databases, with the source restored from
+Review validation used the dedicated `wd_test_3780_branch_review` and
+`wd_files_test_3780_branch_review` databases, with the source restored from
 the standard test dump. The existing pagination regression now compares
 fresh-tail IDs/counts across all three ordering bases and cursor directions.
 The latest-page regression covers dense, sparse and empty recent windows,
 creation-time ties, old interception dates, deleted/inaccessible messages and
 the original unlimited behavior. A database-backed search regression compares
 body/filename, negative, OR, quoted and structured-frequency searches in all
-three modes with and without ordinary/direct-ID unit filters.
+three modes with and without ordinary/direct-ID unit filters. It also checks
+current attachment chunks, excludes stale revisions, and verifies combined and
+denied unit filters against explicit expected matches through both indexed and
+ordinary digest queries.
+
+The latest-page reconciliation regression snapshots a lagged replica, merges a
+backdated source arrival, rejects deleted or inaccessible replica candidates,
+and verifies that source fallback fills the page. A separate latest-probe
+regression preserves positive/negative attachment-change fallback before and
+after change-ledger reconciliation, including membership visible only in the
+replica and all three requested ordering bases.
 
 | Check | Result |
 | --- | --- |
 | `cargo fmt --all -- --check` and `git diff --check` | Passed |
 | `cargo check -p wdintel-rs --all-targets --all-features` | Passed |
 | `cargo clippy -p wdintel-rs --all-targets --all-features -- -D warnings` | Passed |
-| `cargo test -p wdintel-rs --bin wdintel-rs 3780 -- --test-threads=1` | 34 passed; one existing ignored test |
+| `cargo test -p wdintel-rs --bin wdintel-rs 3780 -- --test-threads=1` | 36 passed; one existing ignored test |
 | `cargo test -p wdintel-rs --bin wdintel-rs hybrid_inbox -- --test-threads=1` | 2 passed |
-| `cargo test -p wdintel-rs --bin wdintel-rs attachments::tests -- --test-threads=1` | 19 passed; overlaps the issue-filtered suite |
+| `cargo test -p wdintel-rs --bin wdintel-rs attachments::tests -- --test-threads=1` | 20 passed; overlaps the issue-filtered suite |
 | `just build-front` | Passed |
+| Five #3546 Duty/settings Vitest suites | 81 passed |
 | New documentation's relative links | Resolved |
 
 No migration, model/binding generation, data repair, gateway setting change,
