@@ -7943,6 +7943,191 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn hybrid_latest_inbox_reconciles_replica_lag_3780() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let ids = seed_latest_inbox_messages_3780(&env, &group, now).await;
+        let analytics = snapshot_latest_inbox_replica_3780(&env).await;
+        let req = InboxMessagesReq {
+            load_latest: Some(true),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            ..Default::default()
+        };
+        let candidates = load_analytics_inbox_candidates(
+            &login.id, &env, &req, &analytics, 90_000,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            candidates,
+            ids[4..].iter().rev().copied().collect::<Vec<_>>()
+        );
+        let arrival = seed_message_with_media(
+            &env,
+            &group,
+            None,
+            "latest-backdated-arrival",
+        )
+        .await
+        .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(now - Duration::days(30)),
+            )
+            .filter(signal_message::Column::Id.eq(arrival.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let tail = load_postgres_fresh_tail_inbox_candidates(
+            &env.dbx,
+            &login.id,
+            &env,
+            &req,
+            now - Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tail, vec![arrival.id]);
+        let candidates = merge_inbox_candidate_ids(candidates, tail);
+        let mut diagnostics = InboxReadDiagnostics::new(None);
+        let rows = hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            &candidates,
+            &mut diagnostics,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let expected = ids[5..]
+            .iter()
+            .copied()
+            .chain([arrival.id])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            expected
+        );
+        invalidate_latest_inbox_candidates_3780(&env, &ids).await;
+        assert!(hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            &candidates,
+            &mut diagnostics,
+        )
+        .await
+        .unwrap()
+        .is_none());
+        assert_eq!(diagnostics.reason, "candidate_revalidation_incomplete");
+        let rows = get_inbox_messages_with_internal_lower_bound(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            None,
+        )
+        .await
+        .unwrap();
+        let expected = ids[3..22]
+            .iter()
+            .copied()
+            .chain([arrival.id])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            expected
+        );
+        analytics.close().await.unwrap();
+        env.dbx
+            .execute_unprepared(r#"DROP SCHEMA inbox_replica_3780 CASCADE"#)
+            .await
+            .unwrap();
+    }
+
+    async fn seed_latest_inbox_messages_3780(
+        env: &Arc<Env>,
+        group: &datasource_group::Model,
+        now: NaiveDateTime,
+    ) -> Vec<i64> {
+        let mut ids = Vec::new();
+        for index in 0..INBOX_MESSAGES_PAGE_LIMIT + 4 {
+            let message = seed_message_with_media(
+                env,
+                group,
+                None,
+                &format!("latest-replica-{index}"),
+            )
+            .await
+            .unwrap();
+            ids.push(message.id);
+        }
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(now - Duration::hours(1)),
+            )
+            .filter(signal_message::Column::Id.is_in(ids.clone()))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ids
+    }
+
+    async fn invalidate_latest_inbox_candidates_3780(env: &Env, ids: &[i64]) {
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(ids[ids.len() - 1]))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message_group::Entity::delete_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(ids[ids.len() - 2]),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    async fn snapshot_latest_inbox_replica_3780(
+        env: &Env,
+    ) -> DatabaseConnection {
+        env.dbx
+            .execute_unprepared(
+                r#"
+            DROP SCHEMA IF EXISTS inbox_replica_3780 CASCADE;
+            CREATE SCHEMA inbox_replica_3780;
+            CREATE TABLE inbox_replica_3780.signal_message AS
+                SELECT * FROM public.signal_message;
+            CREATE TABLE inbox_replica_3780.sigint_inbox_item AS
+                SELECT * FROM public.sigint_inbox_item;
+            CREATE TABLE inbox_replica_3780.signal_message_group AS
+                SELECT * FROM public.signal_message_group;
+        "#,
+            )
+            .await
+            .unwrap();
+        let mut options =
+            ConnectOptions::new(crate::mk_conn_string(&env.config));
+        options
+            .max_connections(1)
+            .map_sqlx_postgres_opts(|options| {
+                options.options([("search_path", "inbox_replica_3780,public")])
+            });
+        Database::connect(options).await.unwrap()
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn hybrid_inbox_preserves_messages_without_inbox_rows() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
