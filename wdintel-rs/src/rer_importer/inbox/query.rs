@@ -660,8 +660,13 @@ where
         matches!(
             purpose,
             InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
-        ),
+        ) || search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
+            == InboxMessagesSortBy::IMSDatetime
+            && (req.since_date_inclusive_ms.is_some()
+                || req.till_date_inclusive_ms.is_some()
+                || internal_lower_bound.is_some()),
     )
     .c(h!())?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;

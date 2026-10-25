@@ -1187,8 +1187,9 @@ fn apply_group_stats_filters(
         query,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let query =
@@ -2017,8 +2018,9 @@ fn build_senders_filtered_query(
         senders_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let senders_res =
@@ -2172,8 +2174,9 @@ where
         query,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let query =
@@ -2525,8 +2528,9 @@ fn build_posts_filtered_query(
         post_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let post_res =
@@ -2997,6 +3001,7 @@ fn build_freqs_filtered_query(
         req.search_mode,
         scope.is_some(),
         scope,
+        true,
     )
     .context(h!())?;
     let freqs_res =
@@ -4317,8 +4322,9 @@ fn build_callsigns_filtered_query(
         callsigns_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .c(h!())?;
     let callsigns_res = filter_selected_device_names(
@@ -5088,8 +5094,9 @@ fn build_tags_filtered_query_with_owner_condition(
         tags_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .c(h!())?;
     let tags_res =
@@ -5615,8 +5622,9 @@ fn build_units_filtered_query(
         units_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let units_res =
@@ -5976,8 +5984,9 @@ fn build_facet_messages_query(
         locations_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let locations_res =
@@ -6682,8 +6691,9 @@ fn build_aor_messages_query(
         messages,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let messages =
@@ -7120,8 +7130,9 @@ fn build_network_analytics_messages_query(
         messages,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let messages =
@@ -8284,8 +8295,9 @@ async fn fetch_selected_count_for_login_with_conn(
         selected_count_res,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     let selected_count_res = filter_selected_device_names(
