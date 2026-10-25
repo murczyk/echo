@@ -22,8 +22,8 @@ use crate::utils::worker_watch;
 use chrono::{Duration as ChronoDuration, Utc};
 use milgeo_rs::coordinates::{Coords, CoordsResult};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseBackend, DatabaseConnection,
-    EntityTrait, FromQueryResult, QueryFilter, Statement,
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, Statement,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashSet};
@@ -202,6 +202,37 @@ fn record_coordinate_drops(
 async fn claim_next(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Option<media_summary_entity::Model>> {
+    loop {
+        let Some(job) = claim_candidate(dbx).await.c(h!())? else {
+            return Ok(None);
+        };
+        let deleted = dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+delete from media_summary job
+where job.media_id = $1
+  and job.state = 'running'
+  and job.lease_expires_at = $2
+  and exists (
+    select 1 from attachment_document document
+    where document.media_id = job.media_id
+      and document.revision is not null
+  )
+                "#,
+                [job.media_id.into(), job.lease_expires_at.into()],
+            ))
+            .await
+            .c(h!())?;
+        if deleted.rows_affected() == 0 {
+            return Ok(Some(job));
+        }
+    }
+}
+
+async fn claim_candidate(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Option<media_summary_entity::Model>> {
     let now = Utc::now().naive_utc();
     let lease_expires_at =
         now + ChronoDuration::seconds(MEDIA_SUMMARY_LEASE_SECS);
@@ -217,11 +248,7 @@ with candidate as (
     ) or (
       state = 'running'
       and lease_expires_at <= $1
-    )) and not exists (
-      select 1 from attachment_document document
-      where document.media_id = media_summary.media_id
-        and document.revision is not null
-    )
+    ))
   order by next_attempt_at, created_at, media_id
   for update skip locked
   limit 1
@@ -920,7 +947,7 @@ mod tests {
         media: uuid::Uuid,
     ) {
         use crate::entities::media_summary;
-        use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+        use sea_orm::{ConnectionTrait, EntityTrait};
 
         assert!(super::super::enqueue_for_reprocessing(
             db,
@@ -930,7 +957,7 @@ mod tests {
         )
         .await
         .unwrap());
-        super::claim_next(db).await.unwrap().unwrap();
+        let legacy = super::claim_next(db).await.unwrap().unwrap();
         db.execute_raw(sea_orm::Statement::from_sql_and_values(
             sea_orm::DbBackend::Postgres,
             r#"UPDATE attachment_document SET revision=gen_random_uuid() WHERE media_id=$1"#,
@@ -942,16 +969,6 @@ mod tests {
             [media.into()],
         )).await.unwrap();
         assert!(super::claim_next(db).await.unwrap().is_none());
-        let legacy = media_summary::Entity::find_by_id(media)
-            .one(db)
-            .await
-            .unwrap()
-            .unwrap();
-        media_summary::Entity::delete_many()
-            .filter(media_summary::Column::MediaId.eq(media))
-            .exec(db)
-            .await
-            .unwrap();
         assert!(!super::complete(db, &legacy, lease_result_3780(), None)
             .await
             .unwrap());
@@ -966,6 +983,45 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        assert_late_summaries_are_removed_3780(db, &legacy).await;
+    }
+
+    async fn assert_late_summaries_are_removed_3780(
+        db: &sea_orm::DatabaseConnection,
+        legacy: &crate::entities::media_summary::Model,
+    ) {
+        use crate::entities::media_summary;
+        use sea_orm::{
+            ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        };
+
+        for state in ["queued", "retry_wait"] {
+            let mut late = legacy.clone().into_active_model();
+            late.state = Set(state.into());
+            late.lease_expires_at = Set(None);
+            late.next_attempt_at = Set(chrono::Utc::now().naive_utc());
+            late.insert(db).await.unwrap();
+            assert!(super::claim_next(db).await.unwrap().is_none());
+            assert!(media_summary::Entity::find_by_id(legacy.media_id)
+                .one(db)
+                .await
+                .unwrap()
+                .is_none());
+        }
+        let mut completed = legacy.clone().into_active_model();
+        completed.state = Set("completed".into());
+        completed.source_text = Set(None);
+        completed.lease_expires_at = Set(None);
+        completed.summary = Set(Some("published document summary".into()));
+        let completed = completed.insert(db).await.unwrap();
+        assert!(super::claim_next(db).await.unwrap().is_none());
+        assert_eq!(
+            media_summary::Entity::find_by_id(legacy.media_id)
+                .one(db)
+                .await
+                .unwrap(),
+            Some(completed)
+        );
     }
 
     async fn assert_reclaimed_lease_3780(
