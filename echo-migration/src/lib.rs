@@ -2,6 +2,7 @@ mod m20260906_094818_ai_callsign_feedback;
 mod m20261015_092940_messenger_alerts;
 mod m20261015_150117_signal_group_fetch_new_messages;
 mod m20261023_071318_device_audio_forwarding;
+mod m20261025_180900_inbox_body_literal_index;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1175,6 +1176,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261021_131746_echo_native_datasource::Migration),
             Box::new(m20261022_071804_signal_group_creator::Migration),
             Box::new(m20261023_071318_device_audio_forwarding::Migration),
+            Box::new(m20261025_180900_inbox_body_literal_index::Migration),
         ]
     }
 }
