@@ -1363,7 +1363,8 @@ async fn new_pg_pool_from_conn_string_with_runtime_config(
         None,
         false,
         pg_runtime_pool_options(postgres_runtime, role),
-        false,
+        matches!(role, Some(PgRuntimePoolRole::Web))
+            .then_some(POSTGRES_RUNTIME_WEB_PLAN_CACHE_MODE),
     )
     .await
     .c(h!())?)
@@ -1381,7 +1382,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
         connect_timeout,
         connect_lazy,
         None,
-        true,
+        Some(ANALYTICS_PLAN_CACHE_MODE),
     )
     .await
     .c(h!())?)
@@ -1397,7 +1398,7 @@ pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
         None,
         false,
         None,
-        false,
+        None,
     )
     .await
 }
@@ -1416,7 +1417,7 @@ pub(crate) async fn new_pg_runtime_pool_from_conn_string_with_max_connections(
             config.postgres_runtime.as_ref(),
             pg_runtime_pool_role(),
         ),
-        false,
+        None,
     )
     .await
 }
@@ -1427,7 +1428,7 @@ async fn new_pg_pool_from_conn_string_with_options(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
     runtime: Option<PgRuntimePoolOptions>,
-    force_custom_plan: bool,
+    plan_cache_mode: Option<&'static str>,
 ) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(max_connections)
@@ -1447,22 +1448,23 @@ async fn new_pg_pool_from_conn_string_with_options(
 
     if let Some(runtime) = runtime {
         opt.set_application_name(runtime.application_name);
-        opt.map_sqlx_postgres_opts(move |options| {
-            options.options([
+    }
+    opt.map_sqlx_postgres_opts(move |mut options| {
+        if let Some(runtime) = runtime {
+            options = options.options([
                 ("statement_timeout", runtime.statement_timeout_ms),
                 ("lock_timeout", runtime.lock_timeout_ms),
                 (
                     "idle_in_transaction_session_timeout",
                     runtime.idle_in_transaction_session_timeout_ms,
                 ),
-            ])
-        });
-    }
-    if force_custom_plan {
-        opt.map_sqlx_postgres_opts(|options| {
-            options.options([("plan_cache_mode", ANALYTICS_PLAN_CACHE_MODE)])
-        });
-    }
+            ]);
+        }
+        if let Some(plan_cache_mode) = plan_cache_mode {
+            options = options.options([("plan_cache_mode", plan_cache_mode)]);
+        }
+        options
+    });
 
     sea_orm::Database::connect(opt).await
 }

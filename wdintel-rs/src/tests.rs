@@ -196,6 +196,10 @@ pub mod test {
         );
         assert_eq!(postgres_setting(&runtime, "lock_timeout").await, "15ms");
         assert_eq!(
+            postgres_setting(&runtime, "plan_cache_mode").await,
+            "force_custom_plan"
+        );
+        assert_eq!(
             postgres_setting(&runtime, "idle_in_transaction_session_timeout",)
                 .await,
             "50ms"
@@ -208,6 +212,10 @@ pub mod test {
         assert!(has_postgres_error_code(&error, "57014"));
 
         let operator = crate::new_pg_pool_from_config(&config).await.unwrap();
+        assert_eq!(
+            postgres_setting(&operator, "plan_cache_mode").await,
+            "auto"
+        );
         operator
             .execute_unprepared("select pg_sleep(0.1)")
             .await

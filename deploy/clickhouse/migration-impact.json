@@ -1,5 +1,6 @@
 {
   "migrations": {
+    "echo:m20261025_180900_inbox_body_literal_index": { "changes": [] },
     "echo:m20261023_071318_device_audio_forwarding": {
       "changes": [
         { "table": "public.device_audio_forwarding_settings", "strategy": "excluded" },

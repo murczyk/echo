@@ -93,6 +93,7 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
                         None,
                         correlated,
                         inline_tsquery,
+                        true,
                     )
                     .unwrap(),
                 )
@@ -137,26 +138,47 @@ async fn attachment_search_modes_respect_word_boundaries_and_case_3780() {
         (AnalysisSearchMode::Substring, "НоРа", true),
         (AnalysisSearchMode::Exact, "-нора", true),
         (AnalysisSearchMode::Substring, "-нора", false),
+        (AnalysisSearchMode::Exact, "звичайне", true),
+        (AnalysisSearchMode::Exact, "звичайн", false),
+        (AnalysisSearchMode::Substring, "звичайн", true),
+        (AnalysisSearchMode::Fuzzy, "\"звичайне\"", true),
+        (AnalysisSearchMode::Substring, "\"%\"", true),
     ] {
-        let predicate = super::search::message_filter_with_mode(
-            query,
-            "all",
-            Some(mode),
-            false,
-        )
-        .unwrap();
-        let actual = sigint_inbox_item::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SignalMessage.def(),
-            )
-            .filter(sigint_inbox_item::Column::Id.eq(message))
-            .filter(predicate)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_some();
-        assert_eq!(actual, matches, "{mode:?}: {query}");
+        for correlated in [false, true] {
+            for predicate in [
+                super::search::message_filter_with_mode(
+                    query,
+                    "all",
+                    Some(mode),
+                    correlated,
+                )
+                .unwrap(),
+                super::search::analysis_message_filter(
+                    query,
+                    Some(mode),
+                    correlated,
+                    false,
+                    true,
+                )
+                .unwrap(),
+            ] {
+                let actual = sigint_inbox_item::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        sigint_inbox_item::Relation::SignalMessage.def(),
+                    )
+                    .filter(sigint_inbox_item::Column::Id.eq(message))
+                    .filter(predicate)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .is_some();
+                assert_eq!(
+                    actual, matches,
+                    "{mode:?}: {query}, correlated={correlated}"
+                );
+            }
+        }
     }
     execute(
         &env.dbx,

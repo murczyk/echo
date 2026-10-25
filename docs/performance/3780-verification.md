@@ -3,7 +3,8 @@
 Use this checklist after each independently approved deployment, after
 30–60 minutes of normal load, during a later peak period and again the next
 day. The [25 October Skhid observations](../../archive/2026-10-12-perf/iteration8/findings.md)
-are an initial reference, not an acceptance threshold or proof of peak capacity.
+and [Pivnich follow-up](../../archive/2026-10-12-perf/iteration9/findings.md)
+are references, not acceptance thresholds or proof of peak capacity.
 Keep exact filters and raw message/request identifiers private.
 
 ## Read-only inspection
@@ -69,6 +70,36 @@ open-ended ID scopes must retain messages arriving after range planning;
 closed scopes must keep their upper bounds. Any failed range must fail the
 whole analytics attempt rather than return partial totals.
 
+For full-period source search, compare broad scopes with one selected nonempty
+frequency over all five date ranges. Check pages, counts and group/sender/tag
+facets, and confirm the frequency facet still ignores its own selected filter.
+After migration `m20261025_180900_inbox_body_literal_index`, inspect
+`pg_index.indisvalid`/`indisready` for `sigint_inbox_item_body_literal_idx` and
+representative exact/substring plans. Include common/rare words, short patterns
+without useful trigrams, quoted wildcards, empty/null bodies and current/stale
+attachment revisions. During an approved index build, watch
+`pg_stat_progress_create_index`, free disk, source write latency and replication
+lag; concurrent creation still consumes CPU, I/O, WAL and permanent index space.
+Confirm the migration's `ANALYZE` completed: fresh expression statistics are
+needed to choose a scoped scan for common body terms. Inspect attachment-ID
+subplan rows and backend memory under simultaneous broad filename/content
+searches; the distinct attachment-ID array grows with matching media, even
+though body matches are never collected into that array. Include creation-time
+and unbounded latest reads of attachment-only messages without an inbox row.
+Verify `SHOW plan_cache_mode` on web source/replica connections and exercise the
+same prepared search statement repeatedly with rare/common terms and varied
+dates. Web pools should use custom plans and retain statement/lock/idle-transaction
+deadlines; worker/operator plan policy stays unchanged. Include planning time
+and CPU in the comparison, since custom plans trade extra planning for better
+parameter-specific execution.
+An interrupted concurrent build can leave an invalid index with the same name.
+Inspect its catalog state and migration history before retrying. Prepare any
+`DROP INDEX CONCURRENTLY` and migration retry as a separate recovery operation
+requiring approval for the named target; do not delete migration records or
+drop a valid index as part of verification.
+If index creation succeeded and only statistics refresh failed, the migration
+can resume against a valid, ready index. Its validation rejects invalid builds.
+
 For unbounded latest pages, verify both dense recent traffic and a sparse/empty
 two-day creation-time probe. Dense probes must match the full-history top 20;
 sparse probes must still fill from older messages. Include equal creation times,
@@ -94,6 +125,15 @@ deadlocks, lock timeouts and idle-transaction terminations. Let previously stuck
 snapshots take their normal scheduled retries; do not reset attempts. Verify
 persisted active message/inbox state or an expected duplicate trace after a
 snapshot leaves the queue. Queue disappearance alone does not prove ingestion.
+
+For legacy media summaries, compare completed/retry/failed/superseded attempt
+metrics and queue age. In an isolated test environment, publish a new attachment
+document or requeue/delete a job while an older AI attempt is in flight. Its
+result/error must leave the replacement untouched, emit a superseded outcome,
+and avoid publishing an inbox update or enqueueing positions from obsolete
+work. A current document must prevent new legacy claims. Investigate repeated
+supersession and missing AOR assignments separately; neither justifies changing
+access settings or resetting jobs during read-only verification.
 
 Keep the issue open while representative broad scopes remain unmeasured,
 source timeouts recur, interactive tails worsen, or replication/ingestion falls

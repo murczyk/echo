@@ -279,9 +279,34 @@ The user contract is [Analysis search](../content/analysis-search.md#режим�
 Nonempty exact and substring searches use PostgreSQL. Gateway plans on
 `echo-kharkiv2` showed local literal-body filtering through the JSON compatibility
 views, including an unbounded foreign-table read for the self-correlated regex
-shape. These modes therefore apply body predicates directly to the already
-filtered inbox relation and do not attempt that gateway path. Fuzzy routing is
-unchanged. Read-only unit-count diagnostics with the incident's group scope and
+shape. These modes remain on PostgreSQL and do not attempt that gateway path.
+Full-period source searches collect distinct matching filename, current
+attachment-chunk and audio-filename IDs separately. The body predicate remains
+on the inbox relation, combined with `id = ANY(ARRAY(...))` attachment membership.
+With an obligatory inbox row, PostgreSQL can combine the body GIN trigram index
+and inbox primary key in a bitmap OR, or choose a scoped scan for common terms.
+Optional inbox rows use message IDs for membership so attachment-only messages
+remain searchable. Hydration and fresh-tail reads retain candidate-ID checks.
+Body and wildcard-only filename predicates preserve empty/null behavior;
+other filename predicates use the existing trigram index directly.
+
+Source queries with one selected nonempty frequency also correlate search terms
+to candidate IDs. The frequency facet keeps its existing strategy because it
+deliberately ignores its own selected-frequency filter. Broad source queries
+retain indexed match-set planning. These choices preserve authorization, dates,
+negation, attachment revision checks and analytics eligibility. The concurrent
+source-index migration refreshes expression statistics with `ANALYZE` and
+requires no analytics resnapshot; see the
+[Pivnich measurements and rollout checks](../../archive/2026-10-12-perf/iteration9/findings.md).
+
+Web source and replica pools force custom prepared-statement plans so a common
+literal term can use its own selectivity rather than a cached rare-term plan.
+Runtime statement/lock/idle-transaction deadlines remain applied in the same
+connection-options mapper. Analytics retains its existing custom-plan setting;
+worker, file-registry and operator pools retain their existing plan-cache policy.
+Monitor planning CPU alongside execution cost when accepting this change.
+
+Read-only unit-count diagnostics with the incident's group scope and
 `нора` took 66 ms for one day and 3.68 s for 30 days on 15 October 2026; the
 30-day plan still scanned large joined relations and spilled temporary data.
 These isolated timings do not establish a latency guarantee under concurrency

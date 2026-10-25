@@ -3705,16 +3705,23 @@ pub(crate) fn filter_search_with_correlated_terms<Q>(
 where
     Q: QueryFilter + QuerySelect,
 {
-    Ok(
-        filter_search_with_scope(
-            q,
-            search,
-            search_mode,
-            correlated_terms,
-            None,
-        )
-        .c(h!())?,
+    Ok(filter_search_with_scope(
+        q,
+        search,
+        search_mode,
+        correlated_terms,
+        None,
+        false,
     )
+    .c(h!())?)
+}
+
+pub(in crate::rer_importer) fn search_uses_candidate_ids(
+    selected_freqs: &Option<Vec<String>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> bool {
+    scope.is_some()
+        || matches!(selected_freqs.as_deref(), Some([frequency]) if !frequency.is_empty())
 }
 
 pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
@@ -3723,6 +3730,7 @@ pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
     search_mode: Option<AnalysisSearchMode>,
     correlated_terms: bool,
     scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
@@ -3735,6 +3743,7 @@ where
             search_mode,
             correlated_terms,
             scope.is_some(),
+            inbox_required,
         )
         .c(h!())?;
         q2 = q2.filter(predicate);
@@ -4613,8 +4622,9 @@ fn build_summary_table_filtered_messages_query_with_access(
         q,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
@@ -6992,8 +7002,9 @@ fn build_new_callsign_filtered_items_query(
         query,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .c(h!())?;
     let query = filter_selected_device_names(query, &req.selected_device_names)

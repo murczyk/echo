@@ -2998,6 +2998,213 @@ async fn assert_fresh_tail_search_3780(
     );
 }
 
+async fn assert_full_period_search_results_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    mut expected: Vec<i64>,
+) {
+    let mut actual = inbox_map_item_ids(&fixture.env, login, req).await;
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected, "{req:?}");
+    let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+        login,
+        &fixture.env,
+        req,
+    )
+    .await
+    .unwrap();
+    let row = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        expected.len() as i64
+    );
+    let mut stats_req = mk_analysis_stats_req(
+        req.since_date_inclusive_ms.unwrap(),
+        req.till_date_inclusive_ms.unwrap(),
+    );
+    stats_req.selected_groups = req.selected_groups.clone();
+    stats_req.selected_freqs = req.selected_freqs.clone();
+    stats_req.search = req.search.clone();
+    stats_req.search_mode = req.search_mode;
+    let groups = fetch_group_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert_eq!(
+        groups
+            .get(&fixture.alpha.signal_group.master_key)
+            .copied()
+            .unwrap_or(0),
+        expected.len() as i64,
+        "{req:?}"
+    );
+    let sender_counts = fetch_sender_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert_eq!(
+        sender_counts.values().sum::<i64>(),
+        expected.len() as i64,
+        "{req:?}"
+    );
+}
+
+async fn assert_attachment_search_without_inbox_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    message: i64,
+    date: NaiveDateTime,
+) {
+    let db = &fixture.env.dbx;
+    sigint_inbox_item::Entity::delete_by_id(message)
+        .exec(db)
+        .await
+        .unwrap();
+    for sort_by in [
+        InboxMessagesSortBy::IMSCreatedAt,
+        InboxMessagesSortBy::IMSDatetime,
+    ] {
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: (sort_by
+                == InboxMessagesSortBy::IMSCreatedAt)
+                .then_some(date.and_utc().timestamp_millis()),
+            selected_groups: Some(vec![fixture
+                .alpha
+                .signal_group
+                .master_key
+                .clone()]),
+            search: Some("\"Береза.txt\"".into()),
+            search_mode: Some(AnalysisSearchMode::Exact),
+            sort_by: Some(sort_by),
+            nolimit: Some(true),
+            load_latest: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            inbox_map_item_ids(&fixture.env, login, &req).await,
+            vec![message]
+        );
+        let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+            login,
+            &fixture.env,
+            &req,
+        )
+        .await
+        .unwrap();
+        let row = db
+            .query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.try_get::<i64>("", "count").unwrap(), 1);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 10, 25, 10, 0);
+    let ids = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, unit.id],
+        date,
+    )
+    .await;
+    let mut other_frequency = 0;
+    for (index, group, datetime, deleted) in [
+        (0, &fixture.alpha, date, false),
+        (1, &fixture.secret_live, date, false),
+        (2, &fixture.alpha, date - chrono::Duration::days(32), false),
+        (3, &fixture.alpha, date, true),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            "Береза",
+            if index == 0 { "155.3000" } else { "155.2750" },
+            datetime,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        if deleted {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+        if index == 0 {
+            other_frequency = message.id;
+        }
+    }
+    for days in [1, 7, 8, 16, 31] {
+        for selected_freqs in [None, Some(vec!["155.2750".into()])] {
+            for search_mode in [
+                AnalysisSearchMode::Fuzzy,
+                AnalysisSearchMode::Exact,
+                AnalysisSearchMode::Substring,
+            ] {
+                for (search, indexes) in [
+                    ("Береза", vec![0, 1, 2, 3]),
+                    ("-Береза", vec![4]),
+                    ("\"зміна позиції\"", vec![3]),
+                ] {
+                    let req = InboxMessagesReq {
+                        since_date_inclusive_ms: Some(
+                            (date - chrono::Duration::days(days))
+                                .and_utc()
+                                .timestamp_millis(),
+                        ),
+                        till_date_inclusive_ms: Some(
+                            (date + chrono::Duration::hours(1))
+                                .and_utc()
+                                .timestamp_millis(),
+                        ),
+                        selected_groups: Some(vec![fixture
+                            .alpha
+                            .signal_group
+                            .master_key
+                            .clone()]),
+                        selected_freqs: selected_freqs.clone(),
+                        search: Some(search.into()),
+                        search_mode: Some(search_mode),
+                        nolimit: Some(true),
+                        ..Default::default()
+                    };
+                    let mut expected = indexes
+                        .iter()
+                        .map(|index| ids[*index])
+                        .collect::<Vec<_>>();
+                    if selected_freqs.is_none() && search == "Береза" {
+                        expected.push(other_frequency);
+                    }
+                    assert_full_period_search_results_3780(
+                        &fixture, &login.id, &req, expected,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+    assert_attachment_search_without_inbox_3780(
+        &fixture, &login.id, ids[1], date,
+    )
+    .await;
+}
+
 #[tokio::test]
 #[serial]
 async fn postgres_fresh_tail_search_preserves_matches_and_unit_filters_3780() {
