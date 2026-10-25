@@ -1,5 +1,6 @@
 use crate::config::{
     ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE,
+    ANALYTICS_INBOX_LATEST_PROBE_BUCKET_MS, ANALYTICS_INBOX_LATEST_PROBE_DAYS,
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES,
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS,
     ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS, INBOX_COUNT_INDEXED_MAX_DAYS,
@@ -831,6 +832,9 @@ async fn build_unit_filtered_inbox_digest_query(
             let mut candidate_req = req.clone();
             candidate_req.selected_units = None;
             candidate_req.denied_units = None;
+            if created_at_lower_bound.is_some() {
+                candidate_req.search = None;
+            }
             let candidates = build_filtered_inbox_query_with_scope(
                 &env.dbx,
                 login,
@@ -843,6 +847,12 @@ async fn build_unit_filtered_inbox_digest_query(
             )
             .await
             .context(h!())?;
+            let candidates = apply_fresh_tail_inbox_search(
+                candidates,
+                req,
+                created_at_lower_bound,
+            )
+            .c(h!())?;
             let candidates = apply_inbox_created_at_bounds(
                 candidates,
                 created_at_lower_bound,
@@ -857,6 +867,9 @@ async fn build_unit_filtered_inbox_digest_query(
     candidate_req.selected_units = None;
     candidate_req.denied_units = None;
     candidate_req.selected_unit_ids = None;
+    if created_at_lower_bound.is_some() {
+        candidate_req.search = None;
+    }
     let query = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
@@ -869,6 +882,9 @@ async fn build_unit_filtered_inbox_digest_query(
     )
     .await
     .context(h!())?;
+    let query =
+        apply_fresh_tail_inbox_search(query, req, created_at_lower_bound)
+            .c(h!())?;
     let query = filter_inbox_units_with_materialized_networks(
         query,
         req,
@@ -904,6 +920,23 @@ fn apply_inbox_created_at_bounds(
     query
 }
 
+fn apply_fresh_tail_inbox_search(
+    query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+    created_at_lower_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Select<signal_message::Entity>> {
+    if created_at_lower_bound.is_none() {
+        return Ok(query);
+    }
+    filter_search_with_correlated_terms(
+        query,
+        &req.search,
+        req.search_mode,
+        true,
+    )
+    .c(h!())
+}
+
 async fn build_inbox_digest_query_with_created_at_bounds(
     login: &uuid::Uuid,
     env: &Env,
@@ -929,11 +962,15 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     } else {
         InboxQueryPurpose::Digest
     };
+    let mut candidate_req = req.clone();
+    if created_at_lower_bound.is_some() {
+        candidate_req.search = None;
+    }
     let q = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
         env,
-        req,
+        &candidate_req,
         None,
         None,
         purpose,
@@ -941,6 +978,8 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     )
     .await
     .context(h!())?;
+    let q = apply_fresh_tail_inbox_search(q, req, created_at_lower_bound)
+        .c(h!())?;
     let q = apply_inbox_created_at_bounds(
         q,
         created_at_lower_bound,
@@ -1086,6 +1125,48 @@ async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
 }
 
 pub(crate) async fn load_analytics_inbox_candidates(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<Option<Vec<i64>>, AppError> {
+    if inbox_request_is_unbounded_latest(req) && req.nolimit != Some(true) {
+        let mut recent_req = req.clone();
+        recent_req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+        let since = (Utc::now()
+            - Duration::days(ANALYTICS_INBOX_LATEST_PROBE_DAYS))
+        .timestamp_millis();
+        recent_req.since_date_inclusive_ms = Some(
+            since - since.rem_euclid(ANALYTICS_INBOX_LATEST_PROBE_BUCKET_MS),
+        );
+        if let Some(ids) = load_scoped_analytics_inbox_candidates(
+            login,
+            env,
+            &recent_req,
+            db,
+            freshness_max_age_ms,
+        )
+        .await
+        .context(h!())?
+        {
+            if ids.len() == INBOX_MESSAGES_PAGE_LIMIT {
+                return Ok(Some(ids));
+            }
+        }
+    }
+    Ok(load_scoped_analytics_inbox_candidates(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn load_scoped_analytics_inbox_candidates(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
@@ -2309,11 +2390,13 @@ pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     req: &InboxMessagesReq,
     created_at_lower_bound: NaiveDateTime,
 ) -> Result<Vec<i64>, AppError> {
+    let mut candidate_req = req.clone();
+    candidate_req.search = None;
     let query = build_filtered_inbox_query_with_scope(
         dbx,
         login,
         env,
-        req,
+        &candidate_req,
         None,
         None,
         InboxQueryPurpose::Candidates,
@@ -2322,6 +2405,9 @@ pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     .await
     .context(h!())?
     .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound));
+    let query =
+        apply_fresh_tail_inbox_search(query, req, Some(created_at_lower_bound))
+            .c(h!())?;
     Ok(scan_inbox_candidate_pages(dbx, query, req)
         .await
         .context(h!())?)

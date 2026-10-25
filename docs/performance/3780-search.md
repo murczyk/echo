@@ -23,6 +23,23 @@ repeatable-read transaction. The transaction ends before secondary enrichment.
 Unlimited reads keep their existing behavior. This prevents the planner from
 aggregating tags and metadata for the entire requested period before filtering.
 
+PostgreSQL fresh-tail pages and counts correlate text predicates to the outer
+message IDs, including filename and attachment branches. Their creation-time
+lower bound limits candidate messages before text checks; they do not construct
+a search-match union across the entire history. Full-period PostgreSQL reads
+retain their existing text strategy.
+
+Unbounded, limited `load_latest` analytics pages first probe the last two days
+by message creation time, rounding the lower boundary down to a minute so
+requests can share the existing short-lived ID-bounds cache. This preserves
+the existing effective ordering of these requests. A full 20-ID page is
+sufficient because every excluded message is older than the probe's
+creation-time boundary. Sparse or empty probes repeat
+the existing complete-history selection so older matches are retained.
+Explicit time/cursor scopes and unlimited reads keep their existing behavior.
+Source freshness, authorization, revalidation and fresh-tail merging still
+apply; the probe does not assume message IDs follow interception time.
+
 ## Attachment coverage
 
 `attachment_document` and `attachment_chunk` are included in the publication
@@ -163,6 +180,9 @@ retained. To roll back application routing, deploy the prior backend; source
 history and CDC data remain available.
 
 ## Verification
+
+Use the [production verification checklist](3780-verification.md) for repeatable
+post-deployment windows, representative workloads and ingestion checks.
 
 Run the #3780 database regressions for paginated search and attachment coverage,
 the existing authorization/tag/metadata and analytics-fallback tests, and the
