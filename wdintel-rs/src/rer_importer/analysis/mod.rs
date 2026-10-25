@@ -28,6 +28,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
@@ -72,6 +73,86 @@ impl AnalyticsMessageIdScope {
             }
         }
     }
+
+    fn chunks(self, chunk_size: i64) -> Vec<Self> {
+        assert!(chunk_size > 0);
+        if self.is_empty() {
+            return Vec::new();
+        }
+        let Self::Inclusive { min_id, max_id } = self else {
+            return vec![self];
+        };
+        let mut chunks = Vec::new();
+        let mut min_id = min_id;
+        while min_id <= max_id {
+            let end =
+                std::cmp::min(min_id.saturating_add(chunk_size - 1), max_id);
+            chunks.push(Self::Inclusive {
+                min_id,
+                max_id: end,
+            });
+            if end == max_id {
+                break;
+            }
+            min_id = end + 1;
+        }
+        chunks
+    }
+}
+
+pub(super) async fn analytics_message_id_chunks(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    chunk_size: i64,
+) -> anyhow::Result<Vec<AnalyticsMessageIdScope>> {
+    if let AnalyticsMessageIdScope::From(min_id) = scope {
+        let max_id = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "max_id")
+            .into_tuple::<Option<i64>>()
+            .one(source_db)
+            .await
+            .context(h!())?
+            .flatten();
+        let mut chunks = AnalyticsMessageIdScope::Inclusive {
+            min_id,
+            max_id: std::cmp::max(max_id.unwrap_or(min_id), min_id),
+        }
+        .chunks(chunk_size);
+        if let Some(last) = chunks.last_mut() {
+            let AnalyticsMessageIdScope::Inclusive { min_id, .. } = *last
+            else {
+                unreachable!();
+            };
+            *last = AnalyticsMessageIdScope::From(min_id);
+        }
+        return Ok(chunks);
+    }
+    Ok(scope.chunks(chunk_size))
+}
+
+pub(super) async fn load_analytics_message_id_chunks<T, F, Fut>(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    load: F,
+) -> anyhow::Result<Vec<T>>
+where
+    F: Fn(AnalyticsMessageIdScope) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let scopes = analytics_message_id_chunks(
+        source_db,
+        scope,
+        ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .context(h!())?;
+    stream::iter(scopes)
+        .map(load)
+        .buffered(ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect()
+        .await
+        .context(h!())
 }
 
 pub(super) async fn ensure_analytics_search_coverage(
@@ -7524,6 +7605,7 @@ pub async fn activity_daily(
                 &analytics_req.0,
                 analytics_user,
                 &db,
+                postgres_db,
                 analytics_groups,
                 Some(&scope),
             )
@@ -7533,6 +7615,7 @@ pub async fn activity_daily(
             stats::fetch_daily_group_activity_with_db(
                 &postgres_req.0,
                 postgres_user,
+                postgres_db,
                 postgres_db,
                 postgres_groups,
                 None,
@@ -8723,6 +8806,7 @@ async fn network_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &postgres_env.dbx,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 &message_id_scope,

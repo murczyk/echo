@@ -8298,6 +8298,16 @@ async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     .await
     .unwrap();
 
+    let matches = stats::count_unit_exact_match_breakdown_for_login(
+        &req,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+        &fixture.env,
+        master_keys.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(matches, (7, 0));
+
     let (count_overall, count_selected) = stats::fetch_counts_for_login(
         &req,
         &test_identity_login_id(&fixture.env, &test_identity).await,
@@ -10595,6 +10605,624 @@ fn new_callsign_thresholds_keep_existing_boundary_semantics() {
         vec!["exact-30d", "exact-7d", "never"]
     );
     assert_eq!(result.not_seen_30days, vec!["exact-30d", "never"]);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_frequency_candidates_3780_preserve_order_and_access()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    for sort_by in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ] {
+        for (newest_first, nolimit) in
+            [(true, false), (false, false), (true, true), (false, true)]
+        {
+            for (selected_freqs, denied_freqs) in [
+                (Some(vec!["3780.1".to_string()]), None),
+                (None, Some(vec!["3780.2".to_string()])),
+                (
+                    Some(vec!["3780.1".to_string(), "".to_string()]),
+                    Some(vec!["".to_string()]),
+                ),
+            ] {
+                let mut req = InboxMessagesReq {
+                    selected_freqs,
+                    denied_freqs,
+                    sort_by: Some(sort_by),
+                    since_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    newest_first: Some(newest_first),
+                    nolimit: Some(nolimit),
+                    ..Default::default()
+                };
+                for _page in 0..2 {
+                    let expected =
+                        inbox_map_item_ids(&fixture.env, &login, &req).await;
+                    let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                        &login,
+                        &fixture.env,
+                        &req,
+                        &fixture.env.dbx,
+                        90_000,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(actual, expected, "{sort_by:?}");
+                    if newest_first {
+                        req.before_id_noninclusive = expected.last().copied();
+                    } else {
+                        req.since_id_noninclusive = expected.last().copied();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_latest_candidates_3780_preserve_limits_and_units() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    for req in [
+        InboxMessagesReq {
+            selected_freqs: Some(vec!["3780.1".to_string()]),
+            load_latest: Some(true),
+            ..Default::default()
+        },
+        InboxMessagesReq {
+            selected_freqs: Some(vec!["3780.1".to_string()]),
+            load_latest: Some(true),
+            nolimit: Some(true),
+            ..Default::default()
+        },
+        InboxMessagesReq {
+            selected_units: Some(vec!["3780 header".to_string()]),
+            load_latest: Some(true),
+            ..Default::default()
+        },
+    ] {
+        let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+        assert!(!expected.is_empty());
+        let actual =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &req,
+                &fixture.env.dbx,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
+{
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    let units = seed_chunked_unit_links_3780(&fixture, &messages, login).await;
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for (selected_unit_ids, denied_unit_ids, total, chunked) in [
+        (Some(vec![units[0]]), None, 28, true),
+        (Some(vec![units[1]]), None, 3, true),
+        (None, Some(vec![units[0]]), 4, true),
+        (
+            Some(vec![units[0], units[1]]),
+            Some(vec![units[1]]),
+            28,
+            true,
+        ),
+        (Some(vec![units[2]]), None, 0, true),
+        (None, Some(vec![units[2]]), 32, true),
+        (Some(vec![]), Some(vec![]), 32, false),
+    ] {
+        for nolimit in [false, true] {
+            let req = InboxMessagesReq {
+                selected_unit_ids: selected_unit_ids.clone(),
+                denied_unit_ids: denied_unit_ids.clone(),
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                ),
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                newest_first: Some(true),
+                nolimit: Some(nolimit),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(
+                expected.len(),
+                if nolimit {
+                    total
+                } else {
+                    std::cmp::min(total, INBOX_MESSAGES_PAGE_LIMIT)
+                }
+            );
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                candidate_queries.load(Ordering::SeqCst),
+                if chunked { 2 } else { 1 },
+                "selected={selected_unit_ids:?}, denied={denied_unit_ids:?}"
+            );
+        }
+    }
+}
+
+async fn seed_chunked_unit_links_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+    login: uuid::Uuid,
+) -> Vec<i64> {
+    let db = &fixture.env.dbx;
+    let mut units = Vec::new();
+    for deleted in [false, false, true] {
+        units.push(
+            mk_sigint_unit(
+                db,
+                sigint_unit::ActiveModel {
+                    name: Set("3780 shared unit name".to_string()),
+                    created_by_login_id: Set(login),
+                    deleted: Set(deleted),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let mut links = Vec::new();
+    for message in messages {
+        let index = (message.id - base)
+            % crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+        let unit_index = match index {
+            28..=30 => 1,
+            31 => 2,
+            _ => 0,
+        };
+        links.push(sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(units[unit_index]),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        });
+        if message.id == base {
+            links.push(sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(message.id),
+                unit_id: Set(units[unit_index]),
+                kind: Set(SigintInboxItemUnitKind::Network),
+                ..Default::default()
+            });
+        }
+    }
+    sigint_inbox_item_unit::Entity::insert_many(links)
+        .exec(db)
+        .await
+        .unwrap();
+    units
+}
+
+async fn seed_chunked_messages_3780(
+    fixture: &RerAnalysisFixture,
+) -> Vec<signal_message::Model> {
+    let db = &fixture.env.dbx;
+    let base: i64 = signal_message::Entity::find()
+        .select_only()
+        .column_as(signal_message::Column::Id.max(), "max_id")
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        + 1;
+    let date = test_dt(2026, 3, 2, 10, 0);
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let messages = signal_message::Entity::insert_many((0..34).map(|index| {
+        let created_at = date + chrono::Duration::seconds((index * 17) % 37);
+        signal_message::ActiveModel {
+            id: Set(base + index + (index % 2) * width),
+            body: Set(Some(format!("3780 chunk {index}"))),
+            created_at: Set(created_at),
+            timestamp: Set(Some(created_at)),
+            deleted: Set(index == 32),
+            datasource_group_id: Set(Some(fixture.alpha.datasource_group.id)),
+            ..Default::default()
+        }
+    }))
+    .exec_with_returning(db)
+    .await
+    .unwrap();
+    sigint_inbox_item::Entity::insert_many(messages.iter().map(|message| {
+        let index = (message.id - base) % width;
+        let freq = match index {
+            29 => Some("3780.2"),
+            30 => Some(""),
+            31 => None,
+            _ => Some("3780.1"),
+        };
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            datetime: Set(message.timestamp),
+            freq: Set(freq.map(str::to_string)),
+            unit_v2: Set(Some("3780 header".to_string())),
+            ..Default::default()
+        }
+    }))
+    .exec(db)
+    .await
+    .unwrap();
+    let mut memberships = Vec::new();
+    for message in &messages {
+        let index = (message.id - base) % width;
+        let groups = match index {
+            0 => vec![&fixture.alpha, &fixture.beta],
+            33 => vec![&fixture.secret_hidden],
+            _ => vec![&fixture.alpha],
+        };
+        for group in groups {
+            memberships.push(signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    group.signal_group.master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(group.datasource_group.id)),
+                created_at: Set(date),
+                ..Default::default()
+            });
+        }
+    }
+    signal_message_group::Entity::insert_many(memberships)
+        .exec(db)
+        .await
+        .unwrap();
+    messages
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_tag_counts_3780_deduplicate_messages_per_tag() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    for message in &messages {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag.id),
+                confidence: Set(1.0),
+                model: Set(
+                    (message.id - base == 28).then(|| "3780".to_string())
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(base),
+            tag_id: Set(tag.id),
+            confidence: Set(1.0),
+            model: Set(Some("3780 duplicate actor".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login, false)
+        .await
+        .unwrap();
+    let mut req = mk_analysis_stats_req(
+        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+    );
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for without_model_tags in [false, true] {
+        req.without_model_tags = Some(without_model_tags);
+        req.denied_tags = Some(vec![tag.id]);
+        let rows = stats::fetch_analytics_tags_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &access,
+            &AnalyticsMessageIdScope::From(base),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag_id, tag.id);
+        assert_eq!(rows[0].count, 29);
+    }
+}
+
+#[test]
+fn analytics_message_id_chunks_3780_cover_boundaries_without_overlap() {
+    let width = crate::config::ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE;
+    let chunks = AnalyticsMessageIdScope::Inclusive {
+        min_id: i64::MAX - width,
+        max_id: i64::MAX,
+    }
+    .chunks(width);
+    assert_eq!(
+        chunks,
+        vec![
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: i64::MAX - width,
+                max_id: i64::MAX - 1,
+            },
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: i64::MAX,
+                max_id: i64::MAX,
+            },
+        ]
+    );
+    assert!(AnalyticsMessageIdScope::Inclusive {
+        min_id: 2,
+        max_id: 1,
+    }
+    .chunks(width)
+    .is_empty());
+    assert!(AnalyticsMessageIdScope::Empty.chunks(width).is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_recent_scope_3780_keeps_replication_tail_open() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let min_id = messages.iter().map(|message| message.id).min().unwrap();
+    let max_id = messages.iter().map(|message| message.id).max().unwrap();
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(min_id),
+        width,
+    )
+    .await
+    .unwrap();
+    let arriving = signal_message::ActiveModel {
+        id: Set(max_id + width),
+        body: Set(Some("3780 arriving during chunk planning".to_string())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let mut ids = Vec::new();
+    for scope in scopes {
+        ids.extend(
+            signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(scope.condition(signal_message::Column::Id))
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(ids.len(), messages.len() + 1);
+    assert!(ids.contains(&arriving.id));
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(arriving.id + 1),
+        width,
+    )
+    .await
+    .unwrap();
+    assert_eq!(scopes, vec![AnalyticsMessageIdScope::From(arriving.id + 1)]);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_facets_3780_preserve_distinct_counts_and_metadata() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    seed_chunked_metadata_and_networks_3780(&fixture, &messages).await;
+    let db = &fixture.env.dbx;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login, false)
+        .await
+        .unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let scope = AnalyticsMessageIdScope::From(base);
+    let mut req = mk_analysis_stats_req(
+        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+    );
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for basis in [
+        None,
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+    ] {
+        req.message_time_basis = basis;
+        let expected_metadata = stats::fetch_metadata_stats_with_db(
+            &req,
+            &login,
+            db,
+            master_keys.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        let metadata = stats::fetch_analytics_metadata_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &scope,
+        )
+        .await
+        .unwrap();
+        assert_eq!(metadata, expected_metadata);
+        assert_eq!(metadata.ccs.iter().map(|row| row.count).sum::<i64>(), 29);
+        assert_eq!(metadata.senders.len(), 1);
+        assert_eq!(metadata.senders[0].count, 29);
+        for (selected_units, expected) in [
+            (None, (29, 0)),
+            (Some(vec!["3780 header".to_string()]), (0, 29)),
+            (Some(vec!["3780 absent".to_string()]), (0, 0)),
+        ] {
+            let mut req = req.clone();
+            req.selected_units = selected_units;
+            let counts = stats::count_unit_exact_match_breakdown_for_login(
+                &Json(req),
+                &login,
+                fixture.env.as_ref(),
+                master_keys.clone(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(counts, expected);
+        }
+        let networks = stats::fetch_analytics_networks_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &access,
+            &scope,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            networks,
+            vec![AnalysisStatsNetwork {
+                network_id: fixture.network_wide.network.id,
+                count: 29,
+            }]
+        );
+        let expected_daily =
+            stats::fetch_daily_group_activity_for_login_with_db(
+                &req,
+                &login,
+                db,
+                db,
+                master_keys.clone(),
+                None,
+            )
+            .await
+            .unwrap();
+        let daily = stats::fetch_daily_group_activity_for_login_with_db(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            Some(&scope),
+        )
+        .await
+        .unwrap();
+        let counts = |rows: Vec<stats::AnalysisDailyGroupActivity>| {
+            rows.into_iter()
+                .map(|row| ((row.msg_date, row.group), row.value))
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(counts(daily), counts(expected_daily));
+    }
+}
+
+async fn seed_chunked_metadata_and_networks_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+) {
+    let db = &fixture.env.dbx;
+    db.execute_unprepared(
+        r#"
+        CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+        CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
+        SELECT sigint_inbox_item_id, sigint_network_id
+        FROM sigint_inbox_item_network
+    "#,
+    )
+    .await
+    .unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    for message in messages {
+        mk_sigint_inbox_item_metadata(
+            db,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                color_code: Set(Some(
+                    if message.id == base { " 3780 " } else { "3780" }
+                        .to_string(),
+                )),
+                hash_id: Set(Some("3780-hash".to_string())),
+                sender_id: Set(Some(" 3780-sender ".to_string())),
+                sender_name: Set(Some("3780-sender".to_string())),
+                call_group_id: Set(Some("3780-receiver".to_string())),
+                call_group_name: Set(Some("3780-receiver".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            db,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(fixture.network_wide.network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test]

@@ -1022,6 +1022,31 @@ mod tests {
     }
 
     #[test]
+    fn long_message_settlement_fuzzy_prefix_3780() {
+        let paths = crate::config::get_settlement_paths(Some(
+            "bilhorodska_oblast_rf,brestska_oblast_rb,bryanska_oblast_rf,dnipropetrovska_oblast,donetska_oblast,homelska_oblast_rb,kharkivska_oblast,kurska_oblast_rf,luhanska_oblast,sumska_oblast".to_string(),
+        ))
+        .unwrap();
+        let settlements = Arc::new(RwLock::new(
+            crate::location::load_settlements_data_config(paths, Mode::Test)
+                .unwrap(),
+        ));
+        let header = "Звіт перехоплення\n\nПідрозділ: УКХ р/м невизначеного підрозділу;\nПозивні: Абракадабра\n\n";
+        let expected =
+            extract_unit(settlements.clone(), header, vec![]).unwrap();
+        let body = format!(
+            "{header}{}",
+            "Абвгдежзийклмнопрстуфхцчшщ повторення абвгдежзийклмнопрстуфхцчшщ.\n"
+                .repeat(160)
+        );
+        let started = std::time::Instant::now();
+        let actual = extract_unit(settlements, &body, vec![]).unwrap();
+        assert!(started.elapsed() < std::time::Duration::from_secs(30));
+        assert_eq!(actual.unit, expected.unit);
+        assert_eq!(actual.locality_v2, expected.locality_v2);
+    }
+
+    #[test]
     fn settlement_header_regressions_3383() {
         #[derive(Deserialize)]
         struct HeaderFixture {

@@ -28,6 +28,15 @@ An incomplete batch response fails processing instead of silently dropping
 callsigns. This replaces per-callsign HTTP waits inside the import transaction;
 the existing HTTP, database and queue retry limits remain unchanged.
 
+Settlement parsing allows fuzzy matches only in the first five physical message
+lines, including blank lines, with a shared budget of 1,000 normalized candidate
+characters, counting a separator per word. Oversized words and multiword fuzzy
+spans cannot exceed the budget. Exact matches remain available throughout the
+message, including names crossing the budget boundary. This bounds the
+full-message fallback used when a unit field has no location field, so long
+message bodies do not repeatedly traverse the entire settlement dictionary
+while holding the import transaction open.
+
 Reprocessing acquires/enqueues the palette highlight job before changing
 derived point tokens, matching the highlight worker's lock order. Both the
 queue change and token invalidation remain in the same transaction, so a failed
