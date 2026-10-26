@@ -1266,6 +1266,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::reports::report_docx_task_launch)
             .service(crate::report_history::report_history_list)
             .service(crate::report_history::report_history_admin_list)
+            .configure(crate::kpi::configure)
             .service(crate::report_history::report_history_admin_rerun)
             .service(crate::report_history::report_history_status)
             .service(crate::report_history::report_history_download)

@@ -11,7 +11,7 @@ export function MetricCard({
   description,
 }: {
   title: string;
-  value: number;
+  value: number | string | null;
   description: string;
 }) {
   return (
@@ -21,7 +21,7 @@ export function MetricCard({
     >
       <h2 className="m-0 text-echo-base font-semibold">{title}</h2>
       <p className="my-echo-sm text-echo-lg font-bold tabular-nums" aria-label="Кількість">
-        {value}
+        {value ?? 'Недоступно'}
       </p>
       <p className="m-0 text-echo-sm">{description}</p>
     </section>

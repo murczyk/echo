@@ -945,6 +945,154 @@ reportHistoryRowEncoder struct =
         ]
 
 
+type alias KpiPeriod =
+    { since : Int
+    , until : Int
+    }
+
+
+kpiPeriodEncoder : KpiPeriod -> Json.Encode.Value
+kpiPeriodEncoder struct =
+    Json.Encode.object
+        [ ( "since", (Json.Encode.int) struct.since )
+        , ( "until", (Json.Encode.int) struct.until )
+        ]
+
+
+type alias KpiCount =
+    { id : String
+    , label : String
+    , count : Int
+    }
+
+
+kpiCountEncoder : KpiCount -> Json.Encode.Value
+kpiCountEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "count", (Json.Encode.int) struct.count )
+        ]
+
+
+type alias KpiDuration =
+    { samples : Int
+    , excluded : Int
+    , medianSeconds : Maybe (Float)
+    , p90Seconds : Maybe (Float)
+    }
+
+
+kpiDurationEncoder : KpiDuration -> Json.Encode.Value
+kpiDurationEncoder struct =
+    Json.Encode.object
+        [ ( "samples", (Json.Encode.int) struct.samples )
+        , ( "excluded", (Json.Encode.int) struct.excluded )
+        , ( "medianSeconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.medianSeconds )
+        , ( "p90Seconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.p90Seconds )
+        ]
+
+
+type alias KpiReportsRsp =
+    { period : KpiPeriod
+    , total : Int
+    , done : Int
+    , failed : Int
+    , byKind : List (KpiCount)
+    , byAuthor : List (KpiCount)
+    , byDay : List (KpiCount)
+    , generation : KpiDuration
+    }
+
+
+kpiReportsRspEncoder : KpiReportsRsp -> Json.Encode.Value
+kpiReportsRspEncoder struct =
+    Json.Encode.object
+        [ ( "period", (kpiPeriodEncoder) struct.period )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "done", (Json.Encode.int) struct.done )
+        , ( "failed", (Json.Encode.int) struct.failed )
+        , ( "byKind", (Json.Encode.list (kpiCountEncoder)) struct.byKind )
+        , ( "byAuthor", (Json.Encode.list (kpiCountEncoder)) struct.byAuthor )
+        , ( "byDay", (Json.Encode.list (kpiCountEncoder)) struct.byDay )
+        , ( "generation", (kpiDurationEncoder) struct.generation )
+        ]
+
+
+type alias KpiNotificationsRsp =
+    { period : KpiPeriod
+    , total : Int
+    , byStatus : List (KpiCount)
+    , transport : KpiDuration
+    }
+
+
+kpiNotificationsRspEncoder : KpiNotificationsRsp -> Json.Encode.Value
+kpiNotificationsRspEncoder struct =
+    Json.Encode.object
+        [ ( "period", (kpiPeriodEncoder) struct.period )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "byStatus", (Json.Encode.list (kpiCountEncoder)) struct.byStatus )
+        , ( "transport", (kpiDurationEncoder) struct.transport )
+        ]
+
+
+type alias KpiActivityRsp =
+    { period : KpiPeriod
+    , available : Bool
+    , reason : Maybe (String)
+    , observedFrom : Maybe (String)
+    , observedUntil : Maybe (String)
+    , accounts : Maybe (Int)
+    , byDay : List (KpiCount)
+    , byPage : List (KpiCount)
+    , queueEnqueued : Int
+    , queueDropped : Int
+    , unmappedAccountGroups : Int
+    }
+
+
+kpiActivityRspEncoder : KpiActivityRsp -> Json.Encode.Value
+kpiActivityRspEncoder struct =
+    Json.Encode.object
+        [ ( "period", (kpiPeriodEncoder) struct.period )
+        , ( "available", (Json.Encode.bool) struct.available )
+        , ( "reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reason )
+        , ( "observedFrom", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.observedFrom )
+        , ( "observedUntil", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.observedUntil )
+        , ( "accounts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.accounts )
+        , ( "byDay", (Json.Encode.list (kpiCountEncoder)) struct.byDay )
+        , ( "byPage", (Json.Encode.list (kpiCountEncoder)) struct.byPage )
+        , ( "queueEnqueued", (Json.Encode.int) struct.queueEnqueued )
+        , ( "queueDropped", (Json.Encode.int) struct.queueDropped )
+        , ( "unmappedAccountGroups", (Json.Encode.int) struct.unmappedAccountGroups )
+        ]
+
+
+type alias KpiRequestsRsp =
+    { period : KpiPeriod
+    , available : Bool
+    , reason : Maybe (String)
+    , total : Maybe (Int)
+    , serverErrors : Maybe (Int)
+    , clientErrors : Maybe (Int)
+    , byStatus : List (KpiCount)
+    }
+
+
+kpiRequestsRspEncoder : KpiRequestsRsp -> Json.Encode.Value
+kpiRequestsRspEncoder struct =
+    Json.Encode.object
+        [ ( "period", (kpiPeriodEncoder) struct.period )
+        , ( "available", (Json.Encode.bool) struct.available )
+        , ( "reason", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reason )
+        , ( "total", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.total )
+        , ( "serverErrors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.serverErrors )
+        , ( "clientErrors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.clientErrors )
+        , ( "byStatus", (Json.Encode.list (kpiCountEncoder)) struct.byStatus )
+        ]
+
+
 type alias ReportHistoryLogEntry =
     { login : String
     , timestamp : String

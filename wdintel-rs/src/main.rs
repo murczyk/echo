@@ -47,6 +47,7 @@ pub mod importer;
 pub mod inbox;
 mod install;
 pub mod kml;
+pub mod kpi;
 pub mod kv;
 mod location;
 pub mod log_api;

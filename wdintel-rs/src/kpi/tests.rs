@@ -1,0 +1,220 @@
+use super::{configure, history, types::KpiPeriod};
+use crate::entities::login;
+use crate::functest::tests::{
+    cleanup_locked, find_test_signal_group, mk_login, mk_sigint_important,
+    mk_sigint_inbox_item,
+};
+use crate::h;
+use crate::types::{Env, ShortContext};
+use actix_identity::Identity;
+use actix_web::web;
+use chrono::{DateTime, Duration, TimeZone, Utc};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Set, Statement};
+
+// https://github.com/echoua/echo/issues/3826
+#[tokio::test]
+async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let author = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set("kpi-history-author".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .c(h!())?;
+    let since = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let until = since + Duration::days(7);
+    let period = KpiPeriod {
+        since: since.timestamp_millis(),
+        until: until.timestamp_millis(),
+    };
+    env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres, r#"
+        insert into report_history (report_kind, requested_by_login_id, request, created_at, status, retry_count, started_at, completed_at, log)
+        values ('kpi', $1, '{}', $2, 'done', 3, $2, $2 + interval '10 seconds', '[]'),
+            ('kpi', $1, '{}', $2 + interval '1 day', 'done', 0, $2 + interval '1 day', $2 + interval '1 day 30 seconds', '[]'),
+            ('kpi', $1, '{}', $2 + interval '2 days', 'done', 0, $2 + interval '2 days', $2, '[]'),
+            ('kpi', $1, '{}', $2, 'failed', 0, null, null, '[]'),
+            ('kpi', $1, '{}', $3, 'done', 0, null, null, '[]')
+    "#, [author.id.into(), since.naive_utc().into(), until.naive_utc().into()])).await.c(h!())?;
+    let result = history::reports(&env, &period).await.c(h!())?;
+    assert_eq!((result.total, result.done, result.failed), (4, 3, 1));
+    assert_eq!(result.by_author.len(), 1);
+    assert_eq!(result.by_author[0].count, 3);
+    assert_eq!(result.by_kind[0].count, 3);
+    assert_eq!(result.by_day.iter().map(|row| row.count).sum::<i64>(), 3);
+    assert_eq!(
+        (result.generation.samples, result.generation.excluded),
+        (2, 1)
+    );
+    assert_eq!(result.generation.median_seconds, Some(20.0));
+    assert_eq!(result.generation.p90_seconds, Some(28.0));
+    let notifications = history::notifications(&env, &period).await.c(h!())?;
+    assert_eq!(notifications.total, 0);
+    assert_eq!(notifications.transport.median_seconds, None);
+    seed_notification_deliveries(&env, author.id, since)
+        .await
+        .c(h!())?;
+    let notifications = history::notifications(&env, &period).await.c(h!())?;
+    assert_eq!(notifications.total, 3);
+    assert_eq!(
+        (
+            notifications.transport.samples,
+            notifications.transport.excluded
+        ),
+        (1, 1)
+    );
+    assert_eq!(notifications.transport.median_seconds, Some(10.0));
+    assert_eq!(
+        notifications
+            .by_status
+            .iter()
+            .map(|row| row.count)
+            .sum::<i64>(),
+        3
+    );
+    assert!(KpiPeriod {
+        since: period.until,
+        until: period.since
+    }
+    .bounds()
+    .is_err());
+    assert!(KpiPeriod {
+        since: period.since,
+        until: (since + Duration::days(91)).timestamp_millis()
+    }
+    .bounds()
+    .is_err());
+    Ok(())
+}
+
+async fn sign_in(
+    request: actix_web::HttpRequest,
+    login: web::Path<String>,
+) -> actix_web::HttpResponse {
+    use actix_web::HttpMessage;
+    Identity::login(&request.extensions(), login.into_inner()).unwrap();
+    actix_web::HttpResponse::NoContent().finish()
+}
+
+#[actix_web::test]
+async fn kpi_endpoints_require_admin_before_reading_any_source(
+) -> anyhow::Result<()> {
+    use actix_identity::IdentityMiddleware;
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{cookie::Key, http::StatusCode, test, App};
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let sessions =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).c(h!())?)
+            .await
+            .c(h!())?;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(sessions, Key::generate()))
+            .route("/test/login/{login}", web::post().to(sign_in))
+            .configure(configure),
+    )
+    .await;
+    let regular = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            roles: Set(serde_json::json!(["Rer"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .c(h!())?;
+    let admin = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            roles: Set(serde_json::json!(["Admin"])),
+            ..Default::default()
+        },
+    )
+    .await
+    .c(h!())?;
+    for (login, expected) in [
+        (regular.id, StatusCode::FORBIDDEN),
+        (admin.id, StatusCode::BAD_REQUEST),
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{login}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+        for path in ["reports", "notifications", "activity", "requests"] {
+            let uri = format!("/api/kpi/{path}");
+            let period = KpiPeriod { since: 1, until: 0 };
+            let anonymous = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&uri)
+                    .set_json(&period)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&uri)
+                    .cookie(cookie.clone())
+                    .set_json(&period)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), expected, "{uri}");
+        }
+    }
+    Ok(())
+}
+
+async fn seed_notification_deliveries(
+    env: &Env,
+    author_id: uuid::Uuid,
+    since: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let message = mk_sigint_inbox_item(&env.dbx, Default::default())
+        .await
+        .c(h!())?;
+    let important = mk_sigint_important(
+        &env.dbx,
+        crate::entities::sigint_important::ActiveModel {
+            signal_message_id: Set(message.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .c(h!())?;
+    let group = find_test_signal_group(&env.dbx).await.c(h!())?;
+    let event = uuid::Uuid::now_v7();
+    env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+        "insert into notification_event (id, operation_id, actor_login_id, signal_message_id, sigint_important_id, group_master_key) values ($1,$2,$3,$4,$5,$6)",
+        [event.into(), uuid::Uuid::now_v7().into(), author_id.into(), message.id.into(), important.id.into(), group.master_key.into()]
+    )).await.c(h!())?;
+    for (offset, status, seconds) in [
+        (0, "sent", Some(10_i64)),
+        (1, "sent", Some(-1)),
+        (2, "failed", None),
+        (7, "sent", Some(100)),
+    ] {
+        let recipient = mk_login(&env.dbx, Default::default()).await.c(h!())?;
+        let receipt = uuid::Uuid::now_v7();
+        env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "insert into notification_receipt (id,event_id,recipient_login_id) values ($1,$2,$3)",
+            [receipt.into(), event.into(), recipient.id.into()]
+        )).await.c(h!())?;
+        env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
+            "insert into messenger_alert_delivery (id,receipt_id,recipient_login_id,recipient_profile_id,message_url,status,created_at,sent_at) values ($1,$2,$3,'kpi-test','/test',$4,$5,$6)",
+            [uuid::Uuid::now_v7().into(),receipt.into(),recipient.id.into(),status.into(),(since + Duration::days(offset)).naive_utc().into(),seconds.map(|seconds| (since + Duration::days(offset) + Duration::seconds(seconds)).naive_utc()).into()]
+        )).await.c(h!())?;
+    }
+    Ok(())
+}
