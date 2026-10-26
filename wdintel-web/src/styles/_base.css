@@ -710,6 +710,29 @@ html[data-bs-theme='dark'] .message-card-root {
     gap: 24px;
   }
 
+  .message-card-content-layout--with-timestamp {
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: var(--echo-spacing-sm);
+    align-items: start;
+  }
+
+  .message-card-content-layout--with-timestamp > .message-card-main {
+    grid-column: 1;
+    grid-row: 1 / 3;
+  }
+
+  .message-card-content-layout--with-timestamp > .message-card-details-region {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .message-card-content-layout--with-timestamp > .message-card-timestamp-footer {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: end;
+    margin-top: 0;
+  }
+
   .message-card-details-region {
     margin-top: 0;
     padding-top: 0;

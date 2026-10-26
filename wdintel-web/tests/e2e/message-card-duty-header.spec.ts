@@ -329,7 +329,6 @@ test.describe('message card Duty header @regression', () => {
       await page.goto('/rer-duty-neo?state-short=short-1');
 
       const card = page.locator('.message-card-root').first();
-      const content = card.locator('.message-card-content-layout');
       const footer = card.locator('[data-message-card-timestamp-footer="true"]');
       await expect(footer).toHaveText(boundary.before);
       await card.screenshot({ path: testInfo.outputPath('before-boundary.png') });
@@ -339,13 +338,28 @@ test.describe('message card Duty header @regression', () => {
         await page.setViewportSize({ width, height: 900 });
         await expect(footer).toHaveCSS('position', 'static');
         await expect
-          .poll(async () => {
-            const contentBounds = await content.boundingBox();
-            const footerBounds = await footer.boundingBox();
-            return footerBounds!.y >= contentBounds!.y + contentBounds!.height;
-          })
+          .poll(() =>
+            card.evaluate((element) => {
+              const contentBounds = element
+                .querySelector('.message-card-content-layout')
+                ?.getBoundingClientRect();
+              const detailsBounds = element
+                .querySelector('.message-card-details-region')
+                ?.getBoundingClientRect();
+              const footerBounds = element
+                .querySelector('[data-message-card-timestamp-footer="true"]')
+                ?.getBoundingClientRect();
+              return (
+                contentBounds != null &&
+                detailsBounds != null &&
+                footerBounds != null &&
+                footerBounds.top >= detailsBounds.bottom &&
+                footerBounds.bottom >= contentBounds.bottom - 1
+              );
+            }),
+          )
           .toBe(true);
-        await card.screenshot({ path: testInfo.outputPath(`after-boundary-${width}.png`) });
+        await page.screenshot({ path: testInfo.outputPath(`after-boundary-${width}.png`) });
       }
     });
   }

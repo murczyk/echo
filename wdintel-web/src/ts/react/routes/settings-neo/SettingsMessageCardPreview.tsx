@@ -62,7 +62,7 @@ export function SettingsMessageCardPreview({
           </div>
         </div>
         <div className="message-card-divider" aria-hidden="true" />
-        <div className="message-card-content-layout">
+        <div className="message-card-content-layout message-card-content-layout--with-timestamp">
           <div className="message-card-main">
             <div data-message-text-preview-limit={messageTextPreviewLines ?? 'off'}>
               <PreviewLines widths={[96, 88, 72]} />
@@ -164,9 +164,9 @@ export function SettingsMessageCardPreview({
               </div>
             </Collapse>
           </div>
-        </div>
-        <div className="message-card-timestamp-footer">
-          <div className="h-2.25 w-6.5 rounded-sm bg-echo-text-muted/25" />
+          <div className="message-card-timestamp-footer">
+            <div className="h-2.25 w-6.5 rounded-sm bg-echo-text-muted/25" />
+          </div>
         </div>
       </div>
     </section>

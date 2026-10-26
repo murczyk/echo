@@ -267,6 +267,7 @@ function PointBlacklistPaletteDialog({
 
 export function MessageCardMessageBody({
   metadata,
+  timestampFooter,
   messageId,
   msg,
   tagsMap,
@@ -303,6 +304,7 @@ export function MessageCardMessageBody({
   onDownloadStart,
 }: {
   metadata?: ReactNode;
+  timestampFooter?: ReactNode;
   messageId: number;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
@@ -1006,7 +1008,9 @@ export function MessageCardMessageBody({
           }}
         />
       ) : null}
-      <div className="message-card-content-layout">
+      <div
+        className={`message-card-content-layout${timestampFooter != null ? ' message-card-content-layout--with-timestamp' : ''}`}
+      >
         <div className="message-card-main">
           {messageTextSection}
           {hasAttachmentContent ? (
@@ -1179,6 +1183,7 @@ export function MessageCardMessageBody({
             {replyContent}
           </div>
         ) : null}
+        {timestampFooter}
       </div>
       {messageComments.length > 0 ? (
         <MessageCardComments

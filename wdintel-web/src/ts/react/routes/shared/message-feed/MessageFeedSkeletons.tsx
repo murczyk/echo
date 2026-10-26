@@ -66,7 +66,7 @@ export function MessageFeedSkeletons({
                 </div>
               </div>
               <div className="message-card-divider" />
-              <div className="message-card-content-layout">
+              <div className="message-card-content-layout message-card-content-layout--with-timestamp">
                 <div className="message-card-main">
                   <div>
                     {lines.map((width, lineIndex) => (
@@ -103,14 +103,14 @@ export function MessageFeedSkeletons({
                     ))}
                   </div>
                 </div>
-              </div>
-              <div className="message-card-timestamp-footer">
-                <Skeleton
-                  animation={animation}
-                  variant="rounded"
-                  width={40}
-                  height="calc(1rem * 12 / 14)"
-                />
+                <div className="message-card-timestamp-footer">
+                  <Skeleton
+                    animation={animation}
+                    variant="rounded"
+                    width={40}
+                    height="calc(1rem * 12 / 14)"
+                  />
+                </div>
               </div>
             </div>
           </div>

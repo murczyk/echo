@@ -393,6 +393,9 @@ function MessageCardComponent({
     readOnly,
   };
   const visibleMessageComments = messageComments;
+  const timestampFooter = (
+    <MessageCardTimestampFooter msg={msg} referenceTimeMs={referenceTimeMs} />
+  );
 
   return (
     <li
@@ -415,6 +418,7 @@ function MessageCardComponent({
         <MessageCardHeader {...headerProps} />
         <div className="message-card-divider" aria-hidden="true" />
         <MessageCardContentWithDownloadGuard
+          timestampFooter={visibleMessageComments.length === 0 ? timestampFooter : undefined}
           metadata={
             <MessageCardMetadata
               msg={msg}
@@ -468,7 +472,7 @@ function MessageCardComponent({
           isDownloadStarting={downloadGuard.isDownloadStarting}
           onDownloadStart={downloadGuard.onDownloadStart}
         />
-        <MessageCardTimestampFooter msg={msg} referenceTimeMs={referenceTimeMs} />
+        {visibleMessageComments.length > 0 ? timestampFooter : null}
       </MessageCardRoot>
     </li>
   );

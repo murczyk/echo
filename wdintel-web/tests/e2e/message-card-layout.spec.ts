@@ -109,6 +109,13 @@ for (const host of ['analysis', 'duty'] as const) {
       { text: 'Коротке повідомлення без вкладень.', media: [] },
       { text: 'Коротке повідомлення з вкладенням.', media: media.slice(0, 1) },
     ];
+    const comment = {
+      id: 1,
+      messageId: firstId + 3,
+      comment: 'Коментар під усім повідомленням.',
+      login: 'peer',
+      sigintPostName: null,
+    };
     response.inbox_items = variants.map((variant, index) => [
       firstId + index,
       {
@@ -123,6 +130,8 @@ for (const host of ['analysis', 'duty'] as const) {
         coords: null,
         pointTokens: [],
         intelligence_reports: [],
+        extendedForm: index === 2 ? 'Додаткова інформація праворуч. '.repeat(16) : null,
+        messageComments: index === 3 ? [comment] : [],
       } as never,
     ]);
     await installMessageCardMediaPreviewAssetRoutes(page);
@@ -137,6 +146,12 @@ for (const host of ['analysis', 'duty'] as const) {
         route.fulfill({ json: emptyNetworksListResponse() }),
       );
     }
+    await page.route('**/api/user/author-identities', (route) =>
+      route.fulfill({ json: { authors: [] } }),
+    );
+    await page.route('**/api/rer/message/comments-batch', (route) =>
+      route.fulfill({ json: { data: [{ messageId: firstId + 3, comments: [comment] }] } }),
+    );
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
@@ -160,6 +175,9 @@ for (const host of ['analysis', 'duty'] as const) {
       for (const [index, variant] of variants.entries()) {
         const card = page.locator(`[data-message-id="${firstId + index}"] .message-card-root`);
         await card.scrollIntoViewIfNeeded();
+        if (index === 3) {
+          await expect(card.getByText(comment.comment, { exact: true })).toBeVisible();
+        }
         const layout = card.locator('.message-card-content-layout');
         const main = card.locator('.message-card-main');
         const details = card.locator('.message-card-details-region');
@@ -252,6 +270,29 @@ for (const host of ['analysis', 'duty'] as const) {
         const footer = card.locator('[data-message-card-timestamp-footer="true"]');
         await expect(footer).toHaveText(`11:${16 + index}`);
         await expect(footer.locator('.message-card-text')).toHaveCSS('font-size', '12px');
+        const footerGeometry = await card.evaluate((element) => {
+          const box = (selector: string) => {
+            const rect = element.querySelector(selector)!.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, height: rect.height };
+          };
+          return {
+            main: box('.message-card-main'),
+            details: box('.message-card-details-region'),
+            footer: box('[data-message-card-timestamp-footer]'),
+          };
+        });
+        expect(footerGeometry.footer.top).toBeGreaterThanOrEqual(footerGeometry.details.bottom);
+        if (columns === 2 && index < 2) {
+          expect(footerGeometry.footer.bottom).toBeCloseTo(footerGeometry.main.bottom, 0);
+        } else {
+          expect(footerGeometry.footer.top).toBeGreaterThanOrEqual(footerGeometry.main.bottom);
+        }
+        if (index === 3) {
+          const comment = await card
+            .getByText('Коментар під усім повідомленням.', { exact: true })
+            .boundingBox();
+          expect(footerGeometry.footer.top).toBeGreaterThanOrEqual(comment!.y + comment!.height);
+        }
         expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
           true,
         );
