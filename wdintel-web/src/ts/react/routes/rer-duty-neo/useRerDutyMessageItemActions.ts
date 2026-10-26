@@ -130,7 +130,9 @@ export function useRerDutyMessageItemActions(params: Params) {
               ? {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
-                    msgId === id ? [msgId, { ...msg, important }] : [msgId, msg],
+                    msgId === id
+                      ? [msgId, { ...msg, important, aiImportant: false }]
+                      : [msgId, msg],
                   ),
                 }
               : w,

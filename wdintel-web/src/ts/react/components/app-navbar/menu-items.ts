@@ -227,6 +227,12 @@ export const aiAgentAdminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/ai/transcript-analysis' },
+    activeName: 'ai-agent-transcript-analysis',
+    label: 'Аналіз транскрипцій',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/ai/positions' },
     activeName: 'ai-agent-positions',
     label: 'Позиції',

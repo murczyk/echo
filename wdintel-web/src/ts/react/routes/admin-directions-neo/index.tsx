@@ -192,6 +192,7 @@ type GroupEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   selectedUsers: string[];
   selectedUserDetails: SignalGroupLogin[];
@@ -212,6 +213,7 @@ type OrphanEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   shortNote: string;
   longNote: string;
@@ -710,6 +712,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     interseptionKind: 'rer',
     disableNetworkAssignment: false,
     isAviationGroup: false,
+    aiTranscriptAnalysisEnabled: false,
     fetchNewMessages: true,
     isArchived: false,
     groupStats: {
@@ -735,6 +738,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
       isAviationGroup: false,
+      aiTranscriptAnalysisEnabled: false,
       fetchNewMessages: true,
       allowedUsers: [],
       allowedUserDetails: [],
@@ -2020,6 +2024,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: group.interseptionKind,
             disableNetworkAssignment: group.disableNetworkAssignment,
             isAviationGroup: group.isAviationGroup,
+            aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
             fetchNewMessages: group.fetchNewMessages,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
@@ -2092,6 +2097,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
+      aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
       fetchNewMessages: group.fetchNewMessages,
       selectedUsers: group.allowedUsers,
       selectedUserDetails: group.allowedUserDetails,
@@ -2119,6 +2125,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
+      aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
       fetchNewMessages: group.fetchNewMessages,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
@@ -2250,6 +2257,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
       isAviationGroup: editDialog.isAviationGroup,
+      aiTranscriptAnalysisEnabled: editDialog.aiTranscriptAnalysisEnabled,
       fetchNewMessages: editDialog.fetchNewMessages,
       userLogins: selectedUsers,
       organismIds: selectedOrganismIds,
@@ -2286,6 +2294,7 @@ function AdminDirectionsNeoPageBody() {
           interseptionKind: updatedGroup.interseptionKind,
           disableNetworkAssignment: updatedGroup.disableNetworkAssignment,
           isAviationGroup: updatedGroup.isAviationGroup,
+          aiTranscriptAnalysisEnabled: updatedGroup.aiTranscriptAnalysisEnabled,
           fetchNewMessages: updatedGroup.fetchNewMessages,
           adminData:
             updatedGroup.shortNote || updatedGroup.longNote
@@ -2321,6 +2330,7 @@ function AdminDirectionsNeoPageBody() {
         interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
         isAviationGroup: orphanEditDialog.isAviationGroup,
+        aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
         fetchNewMessages: orphanEditDialog.fetchNewMessages,
       });
 
@@ -2340,6 +2350,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
+            aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
             colorKey: updated.colorKey,
             fetchNewMessages: orphanEditDialog.fetchNewMessages,
           };
@@ -2361,6 +2372,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
+            aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
             colorKey: updated.colorKey,
             fetchNewMessages: orphanEditDialog.fetchNewMessages,
           };
@@ -2406,6 +2418,7 @@ function AdminDirectionsNeoPageBody() {
       zoneId,
       datasourceId,
       masterKey: assignDialog.group.masterKey,
+      aiTranscriptAnalysisEnabled: null,
       isSecret: assignDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? assignDialog.interseptionKind : null,
       userLogins: selectedUsers,
@@ -2452,6 +2465,7 @@ function AdminDirectionsNeoPageBody() {
               interseptionKind: assignDialog.interseptionKind,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
               isAviationGroup: assignDialog.group.isAviationGroup,
+              aiTranscriptAnalysisEnabled: assignDialog.group.aiTranscriptAnalysisEnabled,
               fetchNewMessages: assignDialog.group.fetchNewMessages,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
@@ -2719,6 +2733,18 @@ function AdminDirectionsNeoPageBody() {
             label="Авіаційна група"
           />
           <FormControlLabel
+            label="Автоматично аналізувати транскрипції аудіо"
+            control={
+              <Switch
+                checked={editDialog?.aiTranscriptAnalysisEnabled ?? false}
+                disabled={editDialog?.isSaving}
+                onChange={(_, aiTranscriptAnalysisEnabled) => {
+                  if (editDialog) setEditDialog({ ...editDialog, aiTranscriptAnalysisEnabled });
+                }}
+              />
+            }
+          />
+          <FormControlLabel
             control={
               <Switch
                 checked={editDialog?.fetchNewMessages ?? true}
@@ -2913,6 +2939,19 @@ function AdminDirectionsNeoPageBody() {
               />
             }
             label="Авіаційна група"
+          />
+          <FormControlLabel
+            label="Автоматично аналізувати транскрипції аудіо"
+            control={
+              <Switch
+                checked={orphanEditDialog?.aiTranscriptAnalysisEnabled ?? false}
+                disabled={orphanEditDialog?.isSaving}
+                onChange={(_, aiTranscriptAnalysisEnabled) => {
+                  if (orphanEditDialog)
+                    setOrphanEditDialog({ ...orphanEditDialog, aiTranscriptAnalysisEnabled });
+                }}
+              />
+            }
           />
           <FormControlLabel
             control={

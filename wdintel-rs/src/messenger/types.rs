@@ -187,6 +187,7 @@ pub struct GroupUpdateReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub is_aviation_group: Option<bool>,
+    pub ai_transcript_analysis_enabled: Option<bool>,
     pub fetch_new_messages: Option<bool>,
 }
 

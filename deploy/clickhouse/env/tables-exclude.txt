@@ -165,3 +165,8 @@ public.api_integration_iggy_unit_refresh
 public.device_audio_forwarding_settings
 public.device_audio_forwarding_group
 public.device_audio_forwarding_delivery
+
+public.ai_transcript_analysis_settings
+public.ai_transcript_analysis_test_message
+public.ai_transcript_analysis_test_result
+public.ai_transcript_analysis_job

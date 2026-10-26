@@ -11524,6 +11524,7 @@ async fn collect_group_names(
             signal_group::Column::InterseptionKind,
             signal_group::Column::DisableNetworkAssignment,
             signal_group::Column::IsAviationGroup,
+            signal_group::Column::AiTranscriptAnalysisEnabled,
             signal_group::Column::ColorKey,
             signal_group::Column::FetchNewMessages,
         ])
@@ -11535,6 +11536,7 @@ async fn collect_group_names(
             sea_orm_active_enums::InterseptionKind,
             bool,
             Option<bool>,
+            Option<bool>,
             Option<String>,
             Option<bool>,
         )>()
@@ -11544,7 +11546,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11570,6 +11572,7 @@ async fn collect_group_names(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        ai_transcript_analysis_enabled,
         color_key,
         fetch_new_messages,
     ) in signal_groups
@@ -11587,6 +11590,8 @@ async fn collect_group_names(
                 interseption_kind: interseption_kind.into(),
                 disable_network_assignment,
                 is_aviation_group: is_aviation_group.unwrap_or(false),
+                ai_transcript_analysis_enabled: ai_transcript_analysis_enabled
+                    .unwrap_or(false),
                 fetch_new_messages: fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
@@ -11626,6 +11631,7 @@ async fn collect_group_names(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
             group_stats: stats,
             admin_data: group_admin_data,

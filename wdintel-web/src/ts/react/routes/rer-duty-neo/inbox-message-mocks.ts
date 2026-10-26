@@ -52,6 +52,7 @@ export function minimalInboxMessage(overrides: Partial<InboxMessage> = {}): Inbo
     callsignsAlg2: [],
     checked: false,
     important: false,
+    aiImportant: false,
     bookmarked: false,
     timestamp: 1,
     createdAt: overrides.createdAtOrder == null ? 1 : overrides.createdAtOrder / 1000,

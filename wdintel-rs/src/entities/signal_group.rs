@@ -26,6 +26,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub color_key: Option<String>,
     pub created_by_login_id: Option<Uuid>,
+    pub ai_transcript_analysis_enabled: Option<bool>,
+    pub ai_transcript_analysis_enabled_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -2306,6 +2306,7 @@ fn generic_submit_item_to_inbox_message(
         callsigns_alg2: vec![],
         checked: true,
         important: false,
+        ai_important: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         created_at: None,
