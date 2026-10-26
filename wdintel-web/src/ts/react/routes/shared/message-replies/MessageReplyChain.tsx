@@ -155,12 +155,12 @@ export function MessageReplyChain({
             type="button"
             aria-haspopup="dialog"
             aria-expanded={anchor != null}
-            className="inline-flex items-center gap-echo-xs rounded-echo-sm! px-echo-sm py-echo-xs text-(--color-action) transition-colors hover:bg-(--color-action)/10 focus-visible:outline-2 focus-visible:outline-echo-focus"
+            className="message-card-chain-expand"
             onClick={(event) => setAnchor(event.currentTarget)}
           >
             Усі повідомлення{' '}
             {entries.length > 2 ? (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-(--color-action)/20 px-1 text-echo-xs">
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-(--color-action)/20 px-1">
                 {entries.length}
               </span>
             ) : null}
