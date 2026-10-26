@@ -1,3 +1,5 @@
+import { useMessageReplies } from '../message-replies/MessageRepliesProvider';
+import { MessageReplyChain } from '../message-replies/MessageReplyChain';
 import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
 import { useContext } from 'react';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
@@ -237,6 +239,7 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
+  const replies = useMessageReplies(id);
   const canWrite = useMessageWriteAccess();
   const canDelete = useMessageDeleteAccess();
   if (!canDelete) onDelete = undefined;
@@ -370,6 +373,8 @@ function MessageCardComponent({
     mapHref,
     analysisHref,
     rightInsetPx: rightHeaderInsetPx,
+    onReply:
+      replies.open == null ? undefined : (focus) => replies.open?.({ id, message: msg, focus }),
     onBookmark,
     onImportant,
     onCreateReport:
@@ -420,6 +425,15 @@ function MessageCardComponent({
               etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}
             />
+          }
+          replyContent={
+            replies.snapshot.relations.length ? (
+              <MessageReplyChain
+                id={id}
+                snapshot={replies.snapshot}
+                timeBasis={displayMode === 'duty' ? 'creation' : messageTimeBasis}
+              />
+            ) : null
           }
           messageId={id}
           msg={msg}

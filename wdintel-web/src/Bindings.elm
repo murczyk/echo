@@ -1541,6 +1541,93 @@ tagPresenceFilterEncoder enum =
         WithoutTags ->
             Json.Encode.string "WithoutTags"
 
+type MessageReplyScreen
+    = Duty
+    | Analysis
+
+
+messageReplyScreenEncoder : MessageReplyScreen -> Json.Encode.Value
+messageReplyScreenEncoder enum =
+    case enum of
+        Duty ->
+            Json.Encode.string "Duty"
+        Analysis ->
+            Json.Encode.string "Analysis"
+
+type alias MessageRepliesReq =
+    { signalMessageIds : List (Int)
+    , screen : MessageReplyScreen
+    }
+
+
+messageRepliesReqEncoder : MessageRepliesReq -> Json.Encode.Value
+messageRepliesReqEncoder struct =
+    Json.Encode.object
+        [ ( "signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.signalMessageIds )
+        , ( "screen", (messageReplyScreenEncoder) struct.screen )
+        ]
+
+
+type alias MessageReply =
+    { id : Int
+    , threadId : Int
+    , originalSignalMessageId : Maybe (Int)
+    , replySignalMessageId : Maybe (Int)
+    , createdAt : Int
+    , deleted : Bool
+    , originalDeleted : Bool
+    , replyDeleted : Bool
+    }
+
+
+messageReplyEncoder : MessageReply -> Json.Encode.Value
+messageReplyEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "thread_id", (Json.Encode.int) struct.threadId )
+        , ( "original_signal_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.originalSignalMessageId )
+        , ( "reply_signal_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.replySignalMessageId )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "deleted", (Json.Encode.bool) struct.deleted )
+        , ( "original_deleted", (Json.Encode.bool) struct.originalDeleted )
+        , ( "reply_deleted", (Json.Encode.bool) struct.replyDeleted )
+        ]
+
+
+type alias CitedMessage =
+    { id : Int
+    , timestamp : Maybe (Int)
+    , createdAt : Int
+    , preview : String
+    , href : String
+    }
+
+
+citedMessageEncoder : CitedMessage -> Json.Encode.Value
+citedMessageEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "preview", (Json.Encode.string) struct.preview )
+        , ( "href", (Json.Encode.string) struct.href )
+        ]
+
+
+type alias MessageRepliesRsp =
+    { replies : List (MessageReply)
+    , replyMessages : List (CitedMessage)
+    }
+
+
+messageRepliesRspEncoder : MessageRepliesRsp -> Json.Encode.Value
+messageRepliesRspEncoder struct =
+    Json.Encode.object
+        [ ( "replies", (Json.Encode.list (messageReplyEncoder)) struct.replies )
+        , ( "reply_messages", (Json.Encode.list (citedMessageEncoder)) struct.replyMessages )
+        ]
+
+
 type alias InboxMessagesReq =
     { sinceIdNoninclusive : Maybe (Int)
     , beforeIdNoninclusive : Maybe (Int)
@@ -10822,6 +10909,7 @@ type alias DirectSubmitPayload =
     , retainedMediaIds : Maybe (List (String))
     , parentSignalMessageIds : List (Int)
     , copySourceSignalMessageIds : List (Int)
+    , engagedMessageId : Maybe (Int)
     }
 
 
@@ -10853,6 +10941,7 @@ directSubmitPayloadEncoder struct =
         , ( "retained_media_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.retainedMediaIds )
         , ( "parent_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.parentSignalMessageIds )
         , ( "copy_source_signal_message_ids", (Json.Encode.list (Json.Encode.int)) struct.copySourceSignalMessageIds )
+        , ( "engaged_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.engagedMessageId )
         ]
 
 
@@ -20074,6 +20163,66 @@ tagPresenceFilterDecoder =
                 )
         ]
 
+messageReplyScreenDecoder : Json.Decode.Decoder MessageReplyScreen
+messageReplyScreenDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Duty" ->
+                            Json.Decode.succeed Duty
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Analysis" ->
+                            Json.Decode.succeed Analysis
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+messageRepliesReqDecoder : Json.Decode.Decoder MessageRepliesReq
+messageRepliesReqDecoder =
+    Json.Decode.succeed MessageRepliesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_message_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "screen" (messageReplyScreenDecoder)))
+
+
+messageReplyDecoder : Json.Decode.Decoder MessageReply
+messageReplyDecoder =
+    Json.Decode.succeed MessageReply
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "thread_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_signal_message_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reply_signal_message_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "original_deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reply_deleted" (Json.Decode.bool)))
+
+
+citedMessageDecoder : Json.Decode.Decoder CitedMessage
+citedMessageDecoder =
+    Json.Decode.succeed CitedMessage
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "preview" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "href" (Json.Decode.string)))
+
+
+messageRepliesRspDecoder : Json.Decode.Decoder MessageRepliesRsp
+messageRepliesRspDecoder =
+    Json.Decode.succeed MessageRepliesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "replies" (Json.Decode.list (messageReplyDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reply_messages" (Json.Decode.list (citedMessageDecoder))))
+
+
 inboxMessagesReqDecoder : Json.Decode.Decoder InboxMessagesReq
 inboxMessagesReqDecoder =
     Json.Decode.succeed InboxMessagesReq
@@ -26236,6 +26385,7 @@ directSubmitPayloadDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retained_media_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "copy_source_signal_message_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engaged_message_id" (Json.Decode.nullable (Json.Decode.int))))
 
 
 directSubmitAttachmentUpdatesDecoder : Json.Decode.Decoder DirectSubmitAttachmentUpdates

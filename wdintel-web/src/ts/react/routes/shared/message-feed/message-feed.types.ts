@@ -16,6 +16,8 @@ export type MessageFeedPolicy = {
 export type MessageFeedFocus = {
   messageId: number;
   active: boolean;
+  constrainToContent?: boolean;
+  behavior?: ScrollBehavior;
   onRelease?: () => void;
 };
 

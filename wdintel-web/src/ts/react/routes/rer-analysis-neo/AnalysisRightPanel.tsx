@@ -21,6 +21,12 @@ export function AnalysisRightPanel({
   showNarrowCloseButton = true,
 }: Props) {
   if (!rightPanelVisible) return null;
+  if (page.threadMode)
+    return (
+      <Box data-analysis-right-panel sx={{ p: 2, color: 'text.secondary' }}>
+        Аналітика недоступна під час перегляду ланцюжка.
+      </Box>
+    );
 
   return (
     <Box

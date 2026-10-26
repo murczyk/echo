@@ -31,6 +31,11 @@ import {
 import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
 import { inboxMessagesEqual } from '../shared/message-card/message-card-message-updates';
+import { useAnalysisThreadData } from './use-analysis-thread-data';
+
+const noScopedPage = async () => false;
+const noScopedLoad = async () => undefined;
+const noScopedInvalidation = () => undefined;
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
@@ -527,6 +532,7 @@ export function useAnalysisData({
   authUserName,
   currentUser,
   deferInitialLoad = false,
+  threadMessageId = null,
   hideNetworks = false,
   canUseDevices = false,
   focusedWindow = null,
@@ -541,6 +547,15 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
+  const thread = useAnalysisThreadData({
+    messageId: threadMessageId,
+    enabled: !deferInitialLoad && currentUser != null && authUserName != null,
+    queryState,
+    newestFirst,
+    onError,
+  });
+  const threadActive = threadMessageId != null;
+  deferInitialLoad ||= threadActive;
   const focusedMessage = useMemo(
     () =>
       focusedWindow?.inbox.inboxItems.find(
@@ -555,8 +570,15 @@ export function useAnalysisData({
   );
   const reloadTriggerKey = useMemo(
     () =>
-      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${focusedMessageActive ? 'focused' : newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}|focus=${focusedMessageActive ? (focusedMessage?.[0] ?? 'pending') : 'off'}`,
-    [focusedMessage, focusedMessageActive, newestFirst, optionsFreqValues, queryState],
+      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${focusedMessageActive ? 'focused' : newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}|focus=${focusedMessageActive ? (focusedMessage?.[0] ?? 'pending') : 'off'}|thread=${threadMessageId ?? 'off'}`,
+    [
+      focusedMessage,
+      focusedMessageActive,
+      newestFirst,
+      optionsFreqValues,
+      queryState,
+      threadMessageId,
+    ],
   );
   const realtimeScopeKeyRef = useRef(reloadTriggerKey);
   realtimeScopeKeyRef.current = reloadTriggerKey;
@@ -585,7 +607,7 @@ export function useAnalysisData({
 
   const messageList = useAnalysisMessageList({
     deferInitialLoad,
-    messageWindowLimit: ANALYSIS_MESSAGE_WINDOW_LIMIT,
+    messageWindowLimit: threadActive ? Number.MAX_SAFE_INTEGER : ANALYSIS_MESSAGE_WINDOW_LIMIT,
     focusedMessageId: focusedMessage?.[0] ?? null,
     focusedMessageActive,
     focusedTargetMessageIndex:
@@ -606,6 +628,50 @@ export function useAnalysisData({
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
+  useEffect(() => {
+    if (!threadActive) return;
+    messageList.setMessages(thread.messages);
+    messageList.setHasLoadedInitialMessages(!thread.loading);
+    messageList.setNoMoreToLoad(true);
+    messageList.setMessageComments(
+      Object.fromEntries(
+        thread.messages.map(([id, message]) => [id, message.messageComments ?? []]),
+      ),
+    );
+    messageList.setAorEntries(
+      Array.from(
+        new Map(
+          thread.inbox.signalGroups.flatMap((group) =>
+            (group.areasOfResponsibility ?? []).map(({ id, name }) => [id, { id, name }] as const),
+          ),
+        ).values(),
+      ),
+    );
+    referenceState.setOptions(thread.options);
+    referenceState.setProfiles(thread.inbox.signalProfiles);
+    referenceState.setGroupInfos(
+      Object.fromEntries(thread.inbox.signalGroups.map((group) => [group.masterKey, group])),
+    );
+    referenceState.setTagsMap(thread.tags.tagsMap);
+    referenceState.setTagsOrder(thread.tags.tagsOrder);
+    referenceState.setUnitsMap(thread.units);
+    referenceState.setSummaryCallsignsInfo(
+      Object.fromEntries(thread.inbox.callsigns.map((callsign) => [callsign.callsign, callsign])),
+    );
+    void loadMissingNetworksForMessages(thread.messages);
+  }, [
+    threadActive,
+    thread.messages,
+    thread.options,
+    thread.inbox,
+    thread.tags,
+    thread.units,
+    thread.loading,
+    messageList.setMessages,
+    messageList.setHasLoadedInitialMessages,
+    messageList.setNoMoreToLoad,
+    loadMissingNetworksForMessages,
+  ]);
   const realtimeMessageWindowRef = useRef({
     messages: messageList.messages,
     firstLoadedMessageIndex: messageList.firstLoadedMessageIndex,
@@ -655,6 +721,11 @@ export function useAnalysisData({
     setTagsMap: referenceState.setTagsMap,
     setTagsOrder: referenceState.setTagsOrder,
   });
+  useEffect(() => {
+    if (!threadActive) return;
+    messageList.invalidateMessagePaging();
+    invalidateFilterSectionLoads();
+  }, [threadActive, messageList.invalidateMessagePaging, invalidateFilterSectionLoads]);
 
   const mapData = useAnalysisMapData({
     canShowSettlements: currentUser?.roles.includes('Admin') ?? false,
@@ -1069,12 +1140,16 @@ export function useAnalysisData({
       completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
       failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
       reconcileTagMutation: (messageId) =>
-        refreshChangedMessagesTargeted([messageId], { immediate: true }),
+        threadActive
+          ? thread.refresh()
+          : refreshChangedMessagesTargeted([messageId], { immediate: true }),
       registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
-      refreshTagFacet,
+      refreshTagFacet: threadActive ? noScopedLoad : refreshTagFacet,
       reloadRef,
       referenceState,
-      messageList,
+      messageList: threadActive
+        ? { ...messageList, refreshMessageCounts: noScopedInvalidation }
+        : messageList,
       mapData,
       sidebarData,
     }),
@@ -1154,6 +1229,7 @@ export function useAnalysisData({
 
   useInboxChangedMessageIds({
     ignoreEvent: (event) => {
+      if (threadActive) return true;
       if (event.origin == null) return false;
       const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
       if (disposition === 'reconcile') {
@@ -1164,7 +1240,7 @@ export function useAnalysisData({
     onMessageIds: refreshChangedMessages,
   });
 
-  reloadRef.current = reload;
+  reloadRef.current = threadActive ? thread.refresh : reload;
 
   return {
     callsignGraph: sidebarData.callsignGraph,
@@ -1239,9 +1315,13 @@ export function useAnalysisData({
     pageIndex: messageList.pageIndex,
     onPrependLocalMessage: useCallback(
       (messageId: number, message: InboxMessage) => {
+        if (threadActive) {
+          void thread.refresh();
+          return;
+        }
         messageList.setMessages((current) => [[messageId, message], ...current]);
       },
-      [messageList.setMessages],
+      [threadActive, thread.refresh, messageList.setMessages],
     ),
     onUpdateLocalMessage,
     onDeleteMessage: messageActionState.onDeleteMessage,
@@ -1272,5 +1352,43 @@ export function useAnalysisData({
     topLocations: sidebarData.topLocations,
     topUnits: sidebarData.topUnits,
     renameSummaryUnit: messageActionState.renameSummaryUnit,
+    ...(threadActive
+      ? {
+          threadDeletedCount: thread.deletedCount,
+          threadAnchorId: thread.anchorId,
+          counts: null,
+          countsLoading: false,
+          filtersLoading: false,
+          messagesLoading: thread.loading,
+          messagesLoadedForCurrentQuery: !thread.loading,
+          hasLoadedInitialMessages: !thread.loading,
+          messagesOverallCount: thread.inbox.inboxItems.length,
+          messagesTotalCount: thread.messages.length,
+          messagesTotalLoading: thread.loading,
+          messagesPaging: false,
+          firstLoadedMessageIndex: 0,
+          pageIndex: 0,
+          noMoreToLoad: true,
+          hasMoreBeforeWindow: false,
+          hasMoreAfterWindow: false,
+          focusedHasMoreEarlier: false,
+          focusedHasMoreLater: false,
+          reload: thread.refresh,
+          loadFilterSection: noScopedLoad,
+          invalidateFilterSectionLoads: noScopedInvalidation,
+          invalidateFilterSectionLoadsForPatch: noScopedInvalidation,
+          isFilterSectionLoading: () => false,
+          isFilterSectionEmptyLoading: () => false,
+          isFilterSectionStale: () => false,
+          loadFirstPage: noScopedPage,
+          loadLastPage: noScopedPage,
+          loadNextPage: noScopedPage,
+          loadPrevPage: noScopedPage,
+          loadMoreMessages: noScopedPage,
+          loadPreviousMessages: noScopedPage,
+          loadFocusedEarlier: noScopedPage,
+          loadFocusedLater: noScopedPage,
+        }
+      : {}),
   };
 }

@@ -219,6 +219,7 @@ export type SubmitDmrMetadata = {
 };
 
 export type DirectSubmitRequest = {
+  engaged_message_id?: DirectSubmitPayload['engagedMessageId'];
   full_body?: string;
   text?: string;
   comment?: string;

@@ -1,5 +1,15 @@
 {
   "migrations": {
+    "echo:m20261023_084855_message_reply_threads": {
+      "changes": [{ "table": "public.message_reply", "strategy": "cdc_additive" }]
+    },
+    "echo:m20261022_161645_message_reply": {
+      "changes": [
+        { "table": "public.message_reply", "strategy": "replicated_snapshot" },
+        { "table": "public.message_reply_source", "strategy": "excluded" },
+        { "table": "public.message_reply_change", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261025_180900_inbox_body_literal_index": { "changes": [] },
     "echo:m20261023_071318_device_audio_forwarding": {
       "changes": [

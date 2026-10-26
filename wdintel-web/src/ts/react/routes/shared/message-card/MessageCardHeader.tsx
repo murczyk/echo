@@ -1,3 +1,4 @@
+import ReplyIcon from '@mui/icons-material/Reply';
 import { AuthorLabel } from '../../../components/AuthorLabel';
 import { useRadioFeatures } from '../RadioFeatures';
 import MessageIcon from '@mui/icons-material/Message';
@@ -79,6 +80,7 @@ type ActionIconsRowProps = {
   copiedFeedbackId: string | null;
   onBookmark?: () => void;
   onImportant?: () => void;
+  onReply?: (focusTarget: HTMLElement) => void;
   onCreateReport?: (focusTarget: HTMLElement) => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
@@ -415,6 +417,7 @@ function ActionIconsRow({
   navigationMenuItems = [],
   onBookmark,
   onImportant,
+  onReply,
   onCreateReport,
   onCopyText,
   onCopyFreq,
@@ -450,6 +453,7 @@ function ActionIconsRow({
   const [stackedLayout, setStackedLayout] = useState(false);
   const [mobileActions, setMobileActions] = useState(false);
   const [overflowPanel, setOverflowPanel] = useState<OverflowPanel>('main');
+  const canShowReply = !readOnly && isPresent(onReply);
   const canShowPrimaryActions =
     !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
   const canShowExcludeMenu =
@@ -474,6 +478,18 @@ function ActionIconsRow({
           icon: <NoteAddIcon fontSize="small" />,
           selected: false,
           onClick: (event) => onCreateReport(overflowMenuTriggerRef.current ?? event.currentTarget),
+        }
+      : null,
+    mobileActions && canShowReply
+      ? {
+          key: 'reply',
+          title: 'Відповісти',
+          icon: <ReplyIcon fontSize="small" />,
+          selected: false,
+          onClick: (event) => {
+            const focusTarget = overflowMenuTriggerRef.current ?? event.currentTarget;
+            window.setTimeout(() => onReply(focusTarget), 0);
+          },
         }
       : null,
     mobileActions && canShowPrimaryActions
@@ -642,6 +658,7 @@ function ActionIconsRow({
   }
 
   if (
+    !canShowReply &&
     !canShowPrimaryActions &&
     !canShowNavigationMenu &&
     !canShowExcludeMenu &&
@@ -657,6 +674,14 @@ function ActionIconsRow({
         title="Створити розвіддонесення"
         icon={<NoteAddIcon className="message-card-action-btn__icon" />}
         onClick={(event) => onCreateReport(event.currentTarget)}
+      />
+    ) : null,
+    canShowReply && !mobileActions ? (
+      <ActionIconButton
+        key="reply"
+        title="Відповісти"
+        icon={<ReplyIcon className="message-card-action-btn__icon" />}
+        onClick={(event) => onReply(event.currentTarget)}
       />
     ) : null,
     canShowPrimaryActions && !mobileActions ? (
@@ -1253,6 +1278,7 @@ export type MessageCardHeaderProps = {
   topRight?: ReactNode;
   onBookmark?: () => void;
   onImportant?: () => void;
+  onReply?: (focusTarget: HTMLElement) => void;
   onCreateReport?: (focusTarget: HTMLElement) => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
@@ -1379,6 +1405,7 @@ function MessageCardHeaderComponent({
   topRight,
   onBookmark,
   onImportant,
+  onReply,
   onCreateReport,
   onCopyText,
   onCopyFreq,
@@ -1465,6 +1492,7 @@ function MessageCardHeaderComponent({
             navigationMenuItems={navigationMenuItems}
             onBookmark={onBookmark}
             onImportant={onImportant}
+            onReply={onReply}
             onCreateReport={onCreateReport}
             onCopyText={onCopyText}
             onCopyFreq={onCopyFreq}
