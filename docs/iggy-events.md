@@ -28,7 +28,21 @@ read/send access to the configured streams. Historical destinations and topics
 no longer registered by an integration are outside the command's scope, but
 are included by the local storage-policy job. The command stops at the first
 error, retaining changes already applied. Serialize it with other topic edits
-and verify explicit `message_expiry = 2592000000000` microseconds afterward.
+and the storage-policy job, and verify explicit
+`message_expiry = 2592000000000` microseconds afterward.
+
+Inventory current and historical destinations before running the command;
+integration URLs may name other Iggy hosts, which must be included in the
+approval. Keep old destinations available until queued events have drained.
+Use an Echo binary containing explicit retention reconciliation, and confirm
+each integration's credentials can read, create, and update its streams/topics;
+`--topics-only` does not grant these rights. With both native and storage-policy
+cleanup stopped under approval, reconcile and verify both inbox and analytics
+topics, preserving names, partition counts, compression, replication, size
+limits, and user permissions. Keep cleanup stopped until every intended topic
+passes verification. On failure, inspect changes already applied and obtain
+approval for recovery beyond the original scope. Repeating the command is
+idempotent, but does not resolve stale consumers or authorize offset changes.
 
 See the [rollout and verification procedure](../echo-iggy/STORAGE_POLICY.md#approved-rollout)
 before installing or enabling cleanup. These changes require approval for

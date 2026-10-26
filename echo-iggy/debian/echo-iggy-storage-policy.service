@@ -12,6 +12,7 @@ TimeoutStartSec=10min
 UMask=0077
 RuntimeDirectory=echo-iggy-storage-policy
 RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

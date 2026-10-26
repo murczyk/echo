@@ -37,7 +37,9 @@ class StoragePolicy3835Tests(unittest.TestCase):
         return path
 
     def run_policy(self, api, max_bytes=policy.MAX_STORAGE_BYTES, apply=True, **kwargs):
-        with contextlib.redirect_stdout(io.StringIO()):
+        path = next(self.data_path.rglob("*.log"), None)
+        opened = path.open("rb") if path else contextlib.nullcontext()
+        with opened, contextlib.redirect_stdout(io.StringIO()):
             policy.run_policy(api, self.data_path, max_bytes, 30, apply, **kwargs)
 
     def test_3835_budget_uses_allocated_bytes_and_never_deletes_active_segments(self):
@@ -89,10 +91,28 @@ class StoragePolicy3835Tests(unittest.TestCase):
             policy.INDEX_RECORD.pack(0, 1, self.old)
             + policy.INDEX_RECORD.pack(1, 2, self.recent)
         )
-        self.segment(0, 2, self.recent)
+        self.segment(0, 3, self.recent)
         self.run_policy(FakeApi(self.data_path))
         self.assertFalse(old.exists())
         self.assertTrue(spanning.exists())
+
+    def test_3835_dry_run_reports_exact_batch_and_consumer_barriers(self):
+        oldest = self.segment(0, 0, self.old)
+        self.segment(0, 1, self.old)
+        self.segment(0, 2, self.recent)
+        offset = oldest.parent / "offsets/groups/42"
+        offset.parent.mkdir(parents=True)
+        offset.write_bytes((0).to_bytes(8, "little"))
+        api = FakeApi(self.data_path)
+        output = io.StringIO()
+        with oldest.open("rb"), contextlib.redirect_stdout(output):
+            policy.run_policy(api, self.data_path, policy.MAX_STORAGE_BYTES, 30, max_deletions=1)
+        events = [json.loads(line) for line in output.getvalue().splitlines()]
+        self.assertEqual(events[0]["batch_segments"], 1)
+        self.assertEqual([event["scheduled"] for event in events[1:]], [True, False])
+        self.assertEqual(events[2]["consumer_offsets"], [{"kind": "groups", "id": "42", "offset": 0}])
+        self.assertEqual(events[1]["segment"], str(oldest))
+        self.assertEqual(api.mutations, [])
 
     def test_3835_repairs_repeated_policy_resets_without_overwriting_other_settings(self):
         self.segment(0, 0, self.recent)
@@ -119,6 +139,27 @@ class StoragePolicy3835Tests(unittest.TestCase):
         self.assertTrue(old.exists())
         self.assertEqual(api.deletions, [])
 
+    def test_3835_reconciliation_preserves_settings_changed_after_inventory(self):
+        self.segment(0, 0, self.recent)
+        self.segment(1, 0, self.recent)
+        api = FakeApi(self.data_path)
+        for topic in api.topics.values():
+            topic["message_expiry"] = 2**64 - 1
+        request = api.request
+
+        def update_other_topic(method, path, body=None):
+            result = request(method, path, body)
+            if method == "PUT" and path == "/streams/0/topics/0":
+                api.topics[1].update(name="renamed", compression_algorithm="none", max_topic_size=123456)
+            return result
+
+        api.request = update_other_topic
+        self.run_policy(api)
+        self.assertEqual(api.topics[1]["name"], "renamed")
+        self.assertEqual(api.topics[1]["compression_algorithm"], "none")
+        self.assertEqual(api.topics[1]["max_topic_size"], 123456)
+        self.assertEqual(api.topics[1]["message_expiry"], 30 * 86400 * 1_000_000)
+
     def test_3835_blocked_consumers_stop_cleanup_without_advancing_offsets(self):
         old = self.segment(0, 0, self.old)
         active = self.segment(0, 1, self.recent)
@@ -139,7 +180,7 @@ class StoragePolicy3835Tests(unittest.TestCase):
         self.runtime.write_text("[data_maintenance.messages]\ncleaner_enabled = false\n")
         api.topics[0]["partitions"] = []
         api.topics[0]["message_expiry"] = 2**64 - 1
-        with self.assertRaisesRegex(RuntimeError, "do not match"):
+        with self.assertRaisesRegex(RuntimeError, "no local partitions"):
             self.run_policy(api)
         self.assertEqual(api.mutations, [])
 
@@ -155,6 +196,18 @@ class StoragePolicy3835Tests(unittest.TestCase):
         path.with_suffix(".index").symlink_to(self.runtime)
         with self.assertRaisesRegex(RuntimeError, "symlink"):
             self.run_policy(api)
+        self.assertEqual(api.mutations, [])
+
+    def test_3835_rejects_corrupt_index_bounds_before_reconciliation(self):
+        oldest = self.segment(0, 0, self.old)
+        self.segment(0, 2, self.recent)
+        api = FakeApi(self.data_path)
+        api.topics[0]["message_expiry"] = 2**64 - 1
+        for offset, position, message in ((0, 0, "index bounds"), (0, 4097, "index bounds"), (2, 4096, "overlap")):
+            with self.subTest(offset=offset, position=position):
+                oldest.with_suffix(".index").write_bytes(policy.INDEX_RECORD.pack(offset, position, self.old))
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.run_policy(api)
         self.assertEqual(api.mutations, [])
 
     def test_3835_reports_the_consumer_holding_a_sealed_segment(self):
@@ -195,6 +248,42 @@ class StoragePolicy3835Tests(unittest.TestCase):
                 with policy.policy_lock(path, True):
                     self.fail("Concurrent cleanup acquired the lock")
 
+    def test_3835_replaced_or_modified_segments_are_not_deleted(self):
+        oldest = self.segment(0, 0, self.old)
+        self.segment(0, 1, self.recent)
+        api = FakeApi(self.data_path)
+        for replace in (False, True):
+            segment = policy.storage_snapshot(self.data_path)[1][(0, 0, 0)][0]
+            if replace:
+                replacement = oldest.with_suffix(".replacement")
+                replacement.write_bytes(oldest.read_bytes())
+                replacement.replace(oldest)
+            else:
+                with oldest.open("ab") as log:
+                    log.write(b"unexpected write")
+            with self.assertRaisesRegex(RuntimeError, "changed before deletion"):
+                policy.delete_segment(api, segment)
+        self.assertEqual(api.mutations, [])
+
+    def test_3835_rechecks_native_cleaner_after_reconciliation(self):
+        oldest = self.segment(0, 0, self.old)
+        self.segment(0, 1, self.recent)
+        api = FakeApi(self.data_path)
+        api.topics[0]["message_expiry"] = 2**64 - 1
+        request = api.request
+
+        def enable_cleaner(method, path, body=None):
+            result = request(method, path, body)
+            if method == "PUT":
+                self.runtime.write_text("[data_maintenance.messages]\ncleaner_enabled = true\n")
+            return result
+
+        api.request = enable_cleaner
+        with self.assertRaisesRegex(RuntimeError, "native cleaner"):
+            self.run_policy(api)
+        self.assertTrue(oldest.exists())
+        self.assertEqual(api.deletions, [])
+
     def test_3835_refuses_an_api_listener_from_another_local_server(self):
         self.runtime.write_text(
             "[data_maintenance.messages]\ncleaner_enabled = false\n"
@@ -203,6 +292,29 @@ class StoragePolicy3835Tests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             policy.verify_runtime(self.data_path, "http://127.0.0.1:3001")
         policy.verify_runtime(self.data_path, "http://127.0.0.1:3000")
+
+    def test_3835_refuses_unknown_versions_and_unrelated_local_api_processes(self):
+        self.segment(0, 0, self.recent)
+        api = FakeApi(self.data_path)
+        api.server_version = "0.9.0"
+        with self.assertRaisesRegex(RuntimeError, "Unsupported Iggy"):
+            self.run_policy(api)
+        api.server_version = "0.8.1-edge.1"
+        with self.assertRaisesRegex(RuntimeError, "does not own"):
+            policy.verify_server(api, self.data_path)
+        self.assertEqual(api.mutations, [])
+
+    def test_3835_empty_storage_requires_empty_api_inventory(self):
+        api = FakeApi(self.data_path)
+        self.run_policy(api)
+        api.topics[0] = dict.fromkeys(policy.TOPIC_SETTINGS, 0)
+        api.topics[0].update(id=0, created_at=1, partitions=[])
+        with self.assertRaisesRegex(RuntimeError, "no local partitions"):
+            self.run_policy(api)
+        api.topics[0]["partitions"] = [{"id": 0}]
+        with self.assertRaisesRegex(RuntimeError, "do not match"):
+            self.run_policy(api)
+        self.assertEqual(api.mutations, [])
 
 
 class FakeApi:
@@ -213,6 +325,7 @@ class FakeApi:
             topic_id = int(path.name)
             self.topics[topic_id] = {
                 "id": topic_id, "name": f"topic-{topic_id}",
+                "created_at": 1,
                 "compression_algorithm": "gzip", "replication_factor": 3,
                 "max_topic_size": 2**64 - 1,
                 "message_expiry": 30 * 86400 * 1_000_000,
@@ -222,8 +335,11 @@ class FakeApi:
         self.deletions = []
         self.ignore_updates = False
         self.block_deletions = False
+        self.server_version = "0.8.1-edge.1"
 
     def request(self, method, path, body=None):
+        if method == "GET" and path == "/stats":
+            return {"process_id": os.getpid(), "iggy_server_version": self.server_version}
         if method == "GET" and path == "/streams":
             return [{"id": 0}]
         if method == "GET" and path == "/streams/0/topics":

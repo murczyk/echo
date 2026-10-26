@@ -7,6 +7,7 @@ import heapq
 import json
 import os
 from pathlib import Path
+import stat
 import struct
 import sys
 import time
@@ -22,6 +23,7 @@ except ModuleNotFoundError:
 MAX_STORAGE_BYTES = 100_000_000_000
 RETENTION_DAYS = 30
 MAX_DELETIONS = 1_000
+SUPPORTED_SERVER_VERSIONS = {"0.8.1-edge.1", "0.8.2-edge.1"}
 INDEX_RECORD = struct.Struct("<IIQ")
 TOPIC_SETTINGS = (
     "name", "compression_algorithm", "replication_factor", "max_topic_size",
@@ -36,6 +38,7 @@ class Segment:
     end_timestamp: int
     end_offset: int
     allocated_bytes: int
+    file_identity: tuple
 
 
 class NoRedirects(urllib.request.HTTPRedirectHandler):
@@ -72,6 +75,31 @@ class IggyApi:
         with self.http.open(request, timeout=30) as response:
             payload = response.read()
         return json.loads(payload) if payload else None
+
+
+def verify_server(api, data_path, require_storage=True):
+    stats = api.request("GET", "/stats")
+    version = stats["iggy_server_version"]
+    if version not in SUPPORTED_SERVER_VERSIONS:
+        raise RuntimeError(f"Unsupported Iggy storage/API version: {version}")
+    process_id = stats["process_id"]
+    if type(process_id) is not int or process_id <= 0:
+        raise RuntimeError("Invalid local Iggy process ID")
+    if not require_storage:
+        return
+    streams = data_path.resolve()
+    for descriptor in Path(f"/proc/{process_id}/fd").iterdir():
+        try:
+            target = descriptor.readlink()
+            if not target.is_relative_to(streams):
+                continue
+            opened = descriptor.stat()
+            stored = target.stat()
+        except FileNotFoundError:
+            continue
+        if (opened.st_dev, opened.st_ino) == (stored.st_dev, stored.st_ino):
+            return
+    raise RuntimeError("API process does not own the local Iggy storage")
 
 
 def verify_runtime(data_path, base_url=None):
@@ -111,9 +139,21 @@ def partition_files(data_path):
     return allocated, partitions
 
 
+def segment_identity(base):
+    identity = []
+    for suffix in (".log", ".index"):
+        path = base.with_suffix(suffix)
+        details = path.lstat()
+        if not stat.S_ISREG(details.st_mode) or details.st_nlink != 1:
+            raise RuntimeError(f"Unsafe segment file: {path}")
+        identity.append((details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns, details.st_ctime_ns))
+    return tuple(identity)
+
+
 def read_segment(base, partition):
     log_path = base.with_suffix(".log")
     index_path = base.with_suffix(".index")
+    identity = segment_identity(base)
     size = index_path.stat().st_size
     if size == 0 or size % INDEX_RECORD.size:
         raise RuntimeError(f"Invalid sealed segment index: {index_path}")
@@ -121,10 +161,14 @@ def read_segment(base, partition):
         first = INDEX_RECORD.unpack(index.read(INDEX_RECORD.size))
         index.seek(-INDEX_RECORD.size, os.SEEK_END)
         last = INDEX_RECORD.unpack(index.read(INDEX_RECORD.size))
+    if not (first[0] <= last[0] and 0 < first[1] <= last[1] <= identity[0][2]):
+        raise RuntimeError(f"Invalid sealed segment index bounds: {index_path}")
     if not (0 < first[2] <= last[2] <= (time.time() + 60) * 1_000_000):
         raise RuntimeError(f"Invalid segment timestamps: {index_path}")
+    if segment_identity(base) != identity:
+        raise RuntimeError(f"Segment changed during inventory: {base}")
     allocated = sum(path.stat().st_blocks * 512 for path in (log_path, index_path))
-    return Segment(log_path, partition, last[2], int(base.name) + last[0], allocated)
+    return Segment(log_path, partition, last[2], int(base.name) + last[0], allocated, identity)
 
 
 def storage_snapshot(data_path):
@@ -138,6 +182,9 @@ def storage_snapshot(data_path):
             if not base.with_suffix(".log").is_file() or not base.with_suffix(".index").is_file():
                 raise RuntimeError(f"Incomplete segment files: {base}")
         sealed[key] = [read_segment(base, key) for base in bases[:-1]]
+        for segment, following in zip(sealed[key], bases[1:]):
+            if segment.end_offset >= int(following.name):
+                raise RuntimeError(f"Sealed segment offsets overlap: {segment.path}")
     return allocated, sealed
 
 
@@ -168,12 +215,19 @@ def reconcile_topics(api, partitions, expiry, apply):
         for topic in api.request("GET", f"/streams/{stream_id}/topics"):
             path = f"/streams/{stream_id}/topics/{topic['id']}"
             topic = api.request("GET", path)
-            topics.append((path, topic))
+            if not topic["partitions"]:
+                raise RuntimeError(f"API topic has no local partitions: {path}")
+            if any(name not in topic for name in TOPIC_SETTINGS):
+                raise RuntimeError(f"Incomplete API topic settings: {path}")
+            topics.append((path, topic_identity(topic)))
             for partition in topic["partitions"]:
                 known.add((stream_id, topic["id"], partition["id"]))
     if known != set(partitions):
         raise RuntimeError("API partitions do not match the local storage; refusing deletion")
-    for path, topic in topics:
+    for path, identity in topics:
+        topic = api.request("GET", path)
+        if topic_identity(topic) != identity:
+            raise RuntimeError(f"Topic changed during reconciliation: {path}")
         settings = {name: topic[name] for name in TOPIC_SETTINGS}
         if settings["message_expiry"] == expiry:
             continue
@@ -186,10 +240,18 @@ def reconcile_topics(api, partitions, expiry, apply):
                 raise RuntimeError(f"Topic policy verification failed: {path}")
 
 
+def topic_identity(topic):
+    return topic["id"], topic["created_at"], tuple(sorted(partition["id"] for partition in topic["partitions"]))
+
+
 def delete_segment(api, segment):
     logs = sorted(segment.path.parent.glob("*.log"), key=lambda path: int(path.stem))
-    if len(logs) < 2 or logs[0] != segment.path:
+    if (len(logs) < 2 or logs[0] != segment.path
+            or segment_identity(segment.path.with_suffix("")) != segment.file_identity):
         raise RuntimeError(f"Partition changed before deletion: {segment.path}")
+    blockers = blocking_offsets(segment)
+    if blockers:
+        raise RuntimeError(f"Segment deletion was blocked: {segment.path}; consumer offsets={json.dumps(blockers)}")
     stream, topic, partition = segment.partition
     path = f"/streams/{stream}/topics/{topic}/partitions/{partition}?segments_count=1"
     api.request("DELETE", path)
@@ -205,24 +267,41 @@ def blocking_offsets(segment):
     blockers = []
     for kind in ("consumers", "groups"):
         for path in sorted((segment.path.parent / "offsets" / kind).glob("*")):
-            offset = struct.unpack("<Q", path.read_bytes())[0]
+            data = path.read_bytes()
+            if len(data) != 8:
+                raise RuntimeError(f"Invalid stored consumer offset: {path}")
+            offset = struct.unpack("<Q", data)[0]
             if offset < segment.end_offset:
                 blockers.append({"kind": kind, "id": path.name, "offset": offset})
     return blockers
 
 
+def report_plan(plan, allocated, projected, max_bytes, cutoff, apply, max_deletions):
+    emit(action="plan", apply=apply, allocated_bytes=allocated, max_bytes=max_bytes,
+         segments=len(plan), projected_bytes=projected, cutoff_microseconds=cutoff,
+         batch_segments=min(len(plan), max_deletions),
+         batch_projected_bytes=allocated - sum(segment.allocated_bytes for segment in plan[:max_deletions]))
+    for index, segment in enumerate(plan):
+        emit(action="candidate", segment=str(segment.path), partition=segment.partition,
+             end_offset=segment.end_offset, end_timestamp=segment.end_timestamp,
+             allocated_bytes=segment.allocated_bytes, scheduled=index < max_deletions,
+             reason="age" if segment.end_timestamp < cutoff else "budget",
+             consumer_offsets=blocking_offsets(segment))
+
+
 def run_policy(api, data_path, max_bytes, retention_days, apply=False, max_deletions=MAX_DELETIONS):
     verify_runtime(data_path, getattr(api, "base_url", None))
     allocated, partitions = storage_snapshot(data_path)
+    verify_server(api, data_path, require_storage=bool(partitions))
     expiry = retention_days * 86400 * 1_000_000
     cutoff = int(time.time() * 1_000_000) - expiry
     reconcile_topics(api, partitions, expiry, apply)
     plan, projected = deletion_plan(allocated, partitions, max_bytes, cutoff)
-    emit(action="plan", apply=apply, allocated_bytes=allocated, max_bytes=max_bytes,
-         segments=len(plan), projected_bytes=projected, cutoff_microseconds=cutoff)
+    report_plan(plan, allocated, projected, max_bytes, cutoff, apply, max_deletions)
     if not apply:
         return
     for segment in plan[:max_deletions]:
+        verify_runtime(data_path, getattr(api, "base_url", None))
         delete_segment(api, segment)
     allocated, partitions = storage_snapshot(data_path)
     pending, _ = deletion_plan(allocated, partitions, max_bytes, cutoff)

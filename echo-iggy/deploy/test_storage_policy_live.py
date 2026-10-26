@@ -1,6 +1,7 @@
 import base64
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -130,6 +131,13 @@ interval = "10 ms"
         active = {key: max((self.data_path / f"{key[0]}/topics/{key[1]}/partitions/{key[2]}").glob("*.log"))
                   for key in partitions}
         budget = allocated - oldest.allocated_bytes + 128 * 1024
+        with tempfile.TemporaryDirectory(prefix="echo-3835-copy-") as folder:
+            copied = Path(folder) / "local_data"
+            shutil.copytree(self.root / "local_data", copied)
+            with self.assertRaisesRegex(RuntimeError, "does not own"):
+                policy.run_policy(self.api, copied / "streams", budget, 30, apply=True)
+        self.assertTrue(oldest.path.exists())
+        self.assertEqual(self.api.request("GET", "/streams/0/topics/0")["message_expiry"], 2**64 - 1)
         self.run_policy(budget)
         self.assertFalse(oldest.path.exists())
         self.assertTrue(all(path.exists() for path in active.values()))
@@ -156,10 +164,21 @@ interval = "10 ms"
         self.api.request("GET", "/streams/0/topics/0/messages?consumer_id=23&partition_id=0&kind=first&value=0&count=1&auto_commit=true")
         allocated, partitions = policy.storage_snapshot(self.data_path)
         oldest = partitions[(0, 0, 0)][0]
+        before = self.segment_files()
+        offset = oldest.path.parent / "offsets/consumers/23"
+        committed = offset.read_bytes()
         with self.assertRaisesRegex(RuntimeError, "consumer offsets"):
             self.run_policy(allocated - oldest.allocated_bytes)
         self.assertTrue(oldest.path.exists())
-        self.assertEqual(policy.storage_snapshot(self.data_path)[0], allocated)
+        self.assertEqual(self.segment_files(), before)
+        self.assertEqual(offset.read_bytes(), committed)
+
+    def segment_files(self):
+        return {
+            path: (details.st_dev, details.st_ino, details.st_size)
+            for path in self.data_path.rglob("*") if path.suffix in {".log", ".index"}
+            for details in [path.stat()]
+        }
 
 
 if __name__ == "__main__":
