@@ -1,0 +1,126 @@
+{
+  "date": "2026-10-26",
+  "branch": "3780-26oct",
+  "base_main": "4880216abc379475477868b8ad8e786a9bbd865b",
+  "deployed": false,
+  "native_probe_query_log": [
+    {
+      "query_id": "echo3780-26oct-page-chunk-before",
+      "type": "QueryFinish",
+      "query_duration_ms": 913,
+      "memory_usage": 168855107,
+      "read_rows": 35724412,
+      "result_rows": 20,
+      "exception_code": 0
+    },
+    {
+      "query_id": "echo3780-26oct-page-chunk-after",
+      "type": "QueryFinish",
+      "query_duration_ms": 586,
+      "memory_usage": 111529270,
+      "read_rows": 23878780,
+      "result_rows": 20,
+      "exception_code": 0
+    },
+    {
+      "query_id": "echo3780-26oct-network-bounds-after",
+      "type": "QueryFinish",
+      "query_duration_ms": 125,
+      "memory_usage": 163395168,
+      "read_rows": 1674219,
+      "result_rows": 1,
+      "exception_code": 0
+    }
+  ],
+  "frequency_probes": [
+    {
+      "label": "frequency-native-full-chunk",
+      "ok": true,
+      "wall_ms": 1321,
+      "error": ""
+    },
+    {
+      "label": "frequency-native-full-chunk",
+      "ok": true,
+      "wall_ms": 1035,
+      "error": ""
+    },
+    {
+      "label": "frequency-source-page-locations",
+      "ok": true,
+      "wall_ms": 4852,
+      "error": ""
+    }
+  ],
+  "frequency_source_tail": {
+    "label": "frequency-source-fresh-tail",
+    "ok": true,
+    "error": "",
+    "execution_ms": 109.497,
+    "shared_reads": 64,
+    "temp_written": 0
+  },
+  "frequency_source_page_locations": {
+    "planning_ms": 20.951,
+    "execution_ms": 4030.094,
+    "Actual Rows": 30.0,
+    "Shared Hit Blocks": 1265593,
+    "Shared Read Blocks": 140558,
+    "Temp Written Blocks": 0,
+    "Temp Read Blocks": 0
+  },
+  "frequency_hybrid_probes": [
+    {
+      "label": "frequency-hybrid-source-tail",
+      "ok": true,
+      "wall_ms": 1002,
+      "error": ""
+    },
+    {
+      "label": "frequency-hybrid-history-chunk",
+      "ok": true,
+      "wall_ms": 1420,
+      "error": ""
+    },
+    {
+      "label": "frequency-hybrid-history-chunk",
+      "ok": true,
+      "wall_ms": 1261,
+      "error": ""
+    },
+    {
+      "label": "frequency-source-page-count-verification",
+      "ok": true,
+      "wall_ms": 5315,
+      "error": ""
+    },
+    {
+      "label": "frequency-hybrid-source-page-match",
+      "ok": true,
+      "frequencies_checked": 30
+    }
+  ],
+  "validation": {
+    "cargo_fmt": "passed",
+    "git_diff_check": "passed",
+    "cargo_check_all_targets_all_features": "passed",
+    "cargo_clippy_all_targets_all_features_deny_warnings": "passed",
+    "issue_3780_tests": {
+      "passed": 42,
+      "ignored": 1
+    },
+    "hybrid_inbox_tests": {
+      "passed": 2
+    },
+    "attachment_tests": {
+      "passed": 20
+    },
+    "frequency_tests": {
+      "passed": 7
+    },
+    "frontend_build": "passed",
+    "duty_settings_tests": {
+      "passed": 82
+    }
+  }
+}

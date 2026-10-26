@@ -27,6 +27,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use self::bl::*;
 use self::types::*;
 
+mod analytics;
 pub mod bl;
 mod summary;
 pub mod types;
@@ -714,12 +715,7 @@ pub async fn list_freqs(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms)?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms)?;
 
-    #[derive(FromQueryResult)]
-    struct FreqRes {
-        freq: Option<String>,
-        message_count: i64,
-        location_v2: Option<String>,
-    }
+    let mut page_locations_query = None;
 
     enum FreqPeriodSource {
         Rows(Vec<(String, i64, Option<String>)>),
@@ -897,51 +893,12 @@ pub async fn list_freqs(
                     .order_by(sigint_inbox_item::Column::Datetime, Order::Asc);
             }
 
-            let uniq_alias = Alias::new("uniq");
-            let mut main_query = Query::select()
-                .expr_as(Expr::cust("count(1)"), "message_count")
-                .column((uniq_alias.clone(), "freq"))
-                .expr_as(
-                    Expr::cust("string_agg(distinct uniq.location_v2, '')"),
-                    "location_v2",
-                )
-                .from_subquery(
-                    dedup_freq_per.to_owned().into_query(),
-                    uniq_alias.clone(),
-                )
-                .add_group_by([Expr::cust("freq")])
-                .to_owned();
-
-            main_query.and_where(
-                Expr::col((uniq_alias.clone(), "freq")).is_not_null(),
-            );
-            if req.filter_unknown_network.unwrap_or(false) {
-                main_query.and_where(unknown_network_freq_filter("uniq.freq"));
-            }
-
-            if let Some(sort_by) = &req.sort_by {
-                for sort in sort_by {
-                    let (col, order) = match sort {
-                        ListFreqsSortBy::FreqAsc => ("freq", Order::Asc),
-                        ListFreqsSortBy::FreqDesc => ("freq", Order::Desc),
-                        ListFreqsSortBy::MessageCountAsc => {
-                            ("message_count", Order::Asc)
-                        }
-                        ListFreqsSortBy::MessageCountDesc => {
-                            ("message_count", Order::Desc)
-                        }
-                    };
-
-                    let expr = Expr::cust(col);
-                    main_query.order_by_expr(expr, order);
-                }
-            }
-            main_query.order_by_expr(Expr::cust("freq"), Order::Asc);
-            // This bounds returned groups, not the message scan or aggregation.
-            if req.after_freq_nonincl.is_none() {
-                main_query.limit((LIMIT + 1) as u64);
-            }
-            FreqPeriodSource::Sql(main_query.to_string(PostgresQueryBuilder))
+            page_locations_query = Some(dedup_freq_per.clone());
+            FreqPeriodSource::Sql(build_frequency_counts_query(
+                dedup_freq_per,
+                &req,
+                Some(LIMIT),
+            ))
         }
     };
 
@@ -953,22 +910,11 @@ pub async fn list_freqs(
 
     let freqs_period = match freqs_period {
         FreqPeriodSource::Rows(rows) => rows,
-        FreqPeriodSource::Sql(sql) => env
-            .dbx
-            .query_all_raw(Statement::from_string(
-                DatabaseBackend::Postgres,
-                sql,
-            ))
-            .await
-            .c(h!())?
-            .iter()
-            .flat_map(|row| {
-                let freq_res = FreqRes::from_query_result(row, "").unwrap();
-                freq_res.freq.clone().map(|freq| {
-                    (freq, freq_res.message_count, freq_res.location_v2.clone())
-                })
-            })
-            .collect(),
+        FreqPeriodSource::Sql(sql) => {
+            analytics::load_counts(&env, &user, &req, sql, LIMIT)
+                .await
+                .c(h!())?
+        }
     };
     // println!("> freqs in period count: {}", freqs_period.len());
 
@@ -987,6 +933,14 @@ pub async fn list_freqs(
         .iter()
         .map(|(freq, _, _)| freq.clone())
         .collect::<Vec<_>>();
+
+    let page_locations = if let Some(query) = page_locations_query {
+        load_frequency_page_locations(&env.dbx, query, &page_freqs)
+            .await
+            .c(h!())?
+    } else {
+        HashMap::new()
+    };
 
     let before_since = dt_since - chrono::Duration::days(PERIOD_DAYS);
     let before_res = if req.skip_new_status {
@@ -1007,6 +961,8 @@ pub async fn list_freqs(
         load_freq_networks(&env.dbx, page_freqs).await.c(h!())?;
     let mut freqs = vec![];
     for (freq, message_count, location_v2) in freqs_period {
+        let location_v2 =
+            location_v2.or_else(|| page_locations.get(&freq).cloned());
         let networks = networks_by_freq
             .get(&freq)
             .map(Vec::as_slice)
@@ -1045,6 +1001,98 @@ pub async fn list_freqs(
         show_load_more,
         freqs,
     }))
+}
+
+fn build_frequency_counts_query(
+    candidates: Select<signal_message::Entity>,
+    req: &ListFreqsReq,
+    limit: Option<usize>,
+) -> String {
+    let mut count_candidates = candidates
+        .select_only()
+        .column(sigint_inbox_item::Column::Freq);
+    if needs_unit_join(&req.filter_unit, &req.filter_further_investigation) {
+        count_candidates =
+            count_candidates.column_as(signal_message::Column::Id, "dedup_key");
+    }
+    let uniq_alias = Alias::new("uniq");
+    let mut main_query = Query::select()
+        .expr_as(Expr::cust("count(1)"), "message_count")
+        .column((uniq_alias.clone(), "freq"))
+        .from_subquery(count_candidates.into_query(), uniq_alias.clone())
+        .add_group_by([Expr::cust("freq")])
+        .to_owned();
+
+    main_query.and_where(Expr::col((uniq_alias.clone(), "freq")).is_not_null());
+    if req.filter_unknown_network.unwrap_or(false) {
+        main_query.and_where(unknown_network_freq_filter("uniq.freq"));
+    }
+
+    ordered_frequency_query(main_query, req, limit)
+}
+
+fn ordered_frequency_query(
+    mut query: sea_query::SelectStatement,
+    req: &ListFreqsReq,
+    limit: Option<usize>,
+) -> String {
+    if let Some(sort_by) = &req.sort_by {
+        for sort in sort_by {
+            let (col, order) = match sort {
+                ListFreqsSortBy::FreqAsc => ("freq", Order::Asc),
+                ListFreqsSortBy::FreqDesc => ("freq", Order::Desc),
+                ListFreqsSortBy::MessageCountAsc => {
+                    ("message_count", Order::Asc)
+                }
+                ListFreqsSortBy::MessageCountDesc => {
+                    ("message_count", Order::Desc)
+                }
+            };
+
+            let expr = Expr::cust(col);
+            query.order_by_expr(expr, order);
+        }
+    }
+    query.order_by_expr(Expr::cust("freq"), Order::Asc);
+    // This bounds returned groups, not the message scan or aggregation.
+    if let Some(limit) = limit.filter(|_| req.after_freq_nonincl.is_none()) {
+        query.limit((limit + 1) as u64);
+    }
+    query.to_string(PostgresQueryBuilder)
+}
+
+async fn load_frequency_page_locations(
+    db: &DatabaseConnection,
+    candidates: Select<signal_message::Entity>,
+    frequencies: &[String],
+) -> anyhow::Result<HashMap<String, String>> {
+    #[derive(FromQueryResult)]
+    struct FrequencyLocations {
+        freq: String,
+        location_v2: Option<String>,
+    }
+    let candidates = candidates
+        .filter(sigint_inbox_item::Column::Freq.is_in(frequencies.to_vec()))
+        .into_query();
+    let query = Query::select()
+        .column((Alias::new("uniq"), Alias::new("freq")))
+        .expr_as(
+            Expr::cust("string_agg(distinct uniq.location_v2, '')"),
+            "location_v2",
+        )
+        .from_subquery(candidates, Alias::new("uniq"))
+        .group_by_col((Alias::new("uniq"), Alias::new("freq")))
+        .to_string(PostgresQueryBuilder);
+    let locations = FrequencyLocations::find_by_statement(
+        Statement::from_string(DbBackend::Postgres, query),
+    )
+    .all(db)
+    .await
+    .c(h!())?;
+    Ok(locations
+        .into_iter()
+        .filter_map(|row| row.location_v2.map(|location| (row.freq, location)))
+        .collect())
 }
 
 fn unknown_network_freq_filter(freq_expr: &str) -> SimpleExpr {
@@ -1388,37 +1436,26 @@ pub async fn filters_list_freq_search<Q>(
 where
     Q: QueryFilter + QuerySelect + Clone,
 {
-    let mut q = q.clone();
-
-    q = q.filter(message_in_groups_exists(
-        crate::messenger::group::get_identity_sigint_groups_noimport(
-            &env.dbx,
-            user,
-            &env.config,
-        )
-        .await
-        .c(h!())?,
-    ));
-
-    q = q.filter(signal_message::Column::Deleted.eq(false));
-    q = q.filter(sigint_inbox_item::Column::Datetime.gte(dt_since));
-    q = q.filter(sigint_inbox_item::Column::Datetime.lt(dt_till));
-
-    if let Some(filter_group_master_keys) = filter_group_master_keys {
-        q = q
-            .filter(message_in_groups_exists(filter_group_master_keys.clone()));
-    };
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        user,
+        &env.config,
+    )
+    .await
+    .c(h!())?;
+    let mut q = frequency_base_filters(
+        q,
+        dt_since,
+        dt_till,
+        filter_freq,
+        groups,
+        filter_group_master_keys,
+        None,
+    );
 
     if let Some(filter_sender_profile_ids) = filter_sender_profile_ids {
         let subquery = message_ids_for_senders(filter_sender_profile_ids);
         q = q.filter(signal_message::Column::Id.in_subquery(subquery));
-    };
-
-    if let Some(filter_freq) = filter_freq {
-        q = q.filter(Expr::cust_with_values(
-            "sigint_inbox_item.freq ilike $1",
-            vec![format!("{filter_freq}%").as_str()],
-        ));
     };
 
     let needs_unit_join =
@@ -1478,6 +1515,48 @@ where
     };
 
     Ok(q)
+}
+
+fn frequency_base_filters<Q>(
+    q: Q,
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+    frequency: &Option<String>,
+    groups: Vec<String>,
+    selected_groups: &Option<Vec<String>>,
+    scope: Option<&crate::rer_importer::analysis::AnalyticsMessageIdScope>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    use crate::rer_importer::analysis::message_in_groups_exists_with_scope;
+    let mut q = q
+        .filter(message_in_groups_exists_with_scope(groups, scope))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.gte(since))
+        .filter(sigint_inbox_item::Column::Datetime.lt(till));
+    if let Some(scope) = scope {
+        q = q
+            .filter(scope.condition((
+                signal_message::Entity,
+                signal_message::Column::Id,
+            )))
+            .filter(scope.condition((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )));
+    }
+    if let Some(groups) = selected_groups {
+        q = q
+            .filter(message_in_groups_exists_with_scope(groups.clone(), scope));
+    }
+    if let Some(frequency) = frequency {
+        q = q.filter(Expr::cust_with_values(
+            "sigint_inbox_item.freq ilike $1",
+            vec![format!("{frequency}%")],
+        ));
+    }
+    q
 }
 
 #[post("/api/sigint/latest-frequencies")]
@@ -1847,7 +1926,8 @@ pub async fn freq_search(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_sigint_inbox_item, mk_signal_group, mk_signal_message,
+        cleanup, mk_sigint_inbox_item, mk_sigint_network,
+        mk_sigint_network_freq, mk_signal_group, mk_signal_message,
         mk_signal_message_group,
     };
     use chrono::Duration;
@@ -1859,10 +1939,30 @@ mod tests {
         datetime: NaiveDateTime,
         freq: Option<&str>,
         deleted: bool,
-    ) {
+    ) -> i64 {
+        create_frequency_message_with_id(
+            db,
+            group_master_key,
+            datetime,
+            freq,
+            deleted,
+            None,
+        )
+        .await
+    }
+
+    async fn create_frequency_message_with_id(
+        db: &DatabaseConnection,
+        group_master_key: &str,
+        datetime: NaiveDateTime,
+        freq: Option<&str>,
+        deleted: bool,
+        id: Option<i64>,
+    ) -> i64 {
         let message = mk_signal_message(
             db,
             signal_message::ActiveModel {
+                id: id.map(Set).unwrap_or(NotSet),
                 created_at: Set(datetime),
                 timestamp: Set(Some(datetime)),
                 deleted: Set(deleted),
@@ -1900,6 +2000,435 @@ mod tests {
         )
         .await
         .unwrap();
+        message.id
+    }
+
+    async fn seed_frequency_page_3780(
+        env: &Env,
+        date: NaiveDateTime,
+    ) -> (i64, i64) {
+        mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("3780-frequency-page".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for index in 0..35 {
+            let frequency = if index == 10 {
+                "3780-10".to_owned()
+            } else {
+                format!("3780.{index:02}")
+            };
+            create_frequency_message(
+                &env.dbx,
+                "3780-frequency-page",
+                date,
+                Some(&frequency),
+                false,
+            )
+            .await;
+            sigint_inbox_item::Entity::update_many()
+                .col_expr(
+                    sigint_inbox_item::Column::LocationV2,
+                    Expr::value(if index == 1 {
+                        None
+                    } else {
+                        Some(format!("area-{index}"))
+                    }),
+                )
+                .filter(sigint_inbox_item::Column::Freq.eq(frequency))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+        }
+        create_frequency_message(
+            &env.dbx,
+            "3780-frequency-page",
+            date,
+            Some("3780.00"),
+            false,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "3780-frequency-page",
+            date,
+            Some("3780.35"),
+            true,
+        )
+        .await;
+        create_frequency_message(
+            &env.dbx,
+            "3780-frequency-page",
+            date,
+            None,
+            false,
+        )
+        .await;
+        mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set("3780-frequency-denied".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let max_id = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "id")
+            .into_tuple::<Option<i64>>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .flatten()
+            .unwrap();
+        let last_id =
+            max_id + crate::config::ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE;
+        create_frequency_message_with_id(
+            &env.dbx,
+            "3780-frequency-page",
+            date,
+            Some("3780.00"),
+            false,
+            Some(last_id),
+        )
+        .await;
+        create_frequency_message_with_id(
+            &env.dbx,
+            "3780-frequency-denied",
+            date,
+            Some("3780.36"),
+            false,
+            Some(last_id + 1),
+        )
+        .await;
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(last_id),
+                group_master_key: Set(Some("3780-frequency-denied".into())),
+                datasource_group_id: Set(None),
+                created_at: Set(date),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(date + Duration::minutes(15)),
+            )
+            .filter(signal_message::Column::Id.eq(last_id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        (max_id, last_id)
+    }
+
+    async fn seed_frequency_assignments_3780(
+        db: &DatabaseConnection,
+        date: NaiveDateTime,
+    ) {
+        for (frequency, deleted_network, deleted_frequency, active_to) in [
+            ("3780.00", false, false, None),
+            ("3780.01", true, false, None),
+            ("3780.02", false, true, None),
+            ("3780.03", false, false, Some(date)),
+        ] {
+            let network = mk_sigint_network(
+                db,
+                sigint_network::ActiveModel {
+                    deleted: Set(deleted_network),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_network_freq(
+                db,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(network.id),
+                    freq: Set(frequency.to_owned()),
+                    deleted: Set(deleted_frequency),
+                    active_to: Set(active_to),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn frequency_replica_3780(env: &Env) -> DatabaseConnection {
+        let replica = crate::new_pg_pool_from_conn_string_with_max_connections(
+            crate::mk_conn_string(&env.config),
+            1,
+        )
+        .await
+        .unwrap();
+        replica
+            .execute_unprepared(
+                r#"
+                CREATE TEMP TABLE sigint_network AS
+                    SELECT id, deleted FROM public.sigint_network;
+                CREATE TEMP TABLE sigint_network_freq AS
+                    SELECT network_id, freq, active_to, deleted
+                    FROM public.sigint_network_freq;
+                "#,
+            )
+            .await
+            .unwrap();
+        replica
+    }
+
+    async fn frequency_page_counts_3780(
+        source: &DatabaseConnection,
+        replica: &DatabaseConnection,
+        request: &ListFreqsReq,
+        max_id: i64,
+        date: NaiveDateTime,
+    ) -> Vec<analytics::FrequencyCount> {
+        analytics::load_hybrid_counts(
+            source,
+            replica,
+            request,
+            &["3780-frequency-page".to_owned()],
+            crate::rer_importer::analysis::AnalyticsMessageIdScope::Inclusive {
+                min_id: 1,
+                max_id,
+            },
+            date + Duration::minutes(15),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn frequency_page_3780_reconciles_networks_before_pagination() {
+        let env = cleanup().await.unwrap();
+        let date = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - Duration::hours(1);
+        let (max_id, _) = seed_frequency_page_3780(&env, date).await;
+        let request: ListFreqsReq =
+            serde_json::from_value(serde_json::json!({
+                "since_date_inclusive_ms": date.and_utc().timestamp_millis(),
+                "till_date_noninclusive_ms": (date + Duration::hours(1)).and_utc().timestamp_millis(),
+                "new_only": false, "include_non_active": true,
+                "filter_unknown_network": true,
+            }))
+            .unwrap();
+        let replica = frequency_replica_3780(&env).await;
+        let counts = frequency_page_counts_3780(
+            &env.dbx, &replica, &request, max_id, date,
+        )
+        .await;
+        let mut ranked_request = request.clone();
+        ranked_request.sort_by = Some(vec![ListFreqsSortBy::MessageCountDesc]);
+        let ranked =
+            analytics::order_counts(&env.dbx, &ranked_request, counts, 30)
+                .await
+                .unwrap();
+        assert_eq!(
+            (ranked[0].freq.as_str(), ranked[0].message_count),
+            ("3780.00", 3)
+        );
+        seed_frequency_assignments_3780(&env.dbx, date).await;
+        let counts = frequency_page_counts_3780(
+            &env.dbx, &replica, &request, max_id, date,
+        )
+        .await;
+        let ordered = analytics::order_counts(&env.dbx, &request, counts, 30)
+            .await
+            .unwrap();
+        assert_eq!(ordered.len(), 31);
+        assert_eq!(ordered[0].freq, "3780.01");
+        assert_eq!(ordered[30].freq, "3780.31");
+        assert!(ordered.iter().all(|row| row.freq != "3780.00"));
+
+        let replica = frequency_replica_3780(&env).await;
+        sigint_network_freq::Entity::update_many()
+            .col_expr(sigint_network_freq::Column::Deleted, Expr::value(true))
+            .filter(sigint_network_freq::Column::Freq.eq("3780.00"))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let counts = frequency_page_counts_3780(
+            &env.dbx,
+            &replica,
+            &ranked_request,
+            max_id,
+            date,
+        )
+        .await;
+        let ordered =
+            analytics::order_counts(&env.dbx, &ranked_request, counts, 30)
+                .await
+                .unwrap();
+        assert_eq!(
+            (ordered[0].freq.as_str(), ordered[0].message_count),
+            ("3780.00", 3)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn frequency_page_3780_keeps_counts_locations_and_pagination() {
+        let env = cleanup().await.unwrap();
+        let date = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - Duration::hours(1);
+        let (max_id, last_id) = seed_frequency_page_3780(&env, date).await;
+        let candidates = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .select_only()
+            .columns([
+                sigint_inbox_item::Column::Freq,
+                sigint_inbox_item::Column::LocationV2,
+            ])
+            .filter(signal_message::Column::Deleted.eq(false))
+            .filter(message_in_groups_exists(vec![
+                "3780-frequency-page".into()
+            ]));
+        let mut request: ListFreqsReq =
+            serde_json::from_value(serde_json::json!({
+                "since_date_inclusive_ms": date.and_utc().timestamp_millis(),
+                "till_date_noninclusive_ms": (date + Duration::hours(1)).and_utc().timestamp_millis(),
+                "new_only": false, "include_non_active": true,
+            }))
+            .unwrap();
+        let groups = vec!["3780-frequency-page".to_owned()];
+        for selected_groups in [
+            None,
+            Some(groups.clone()),
+            Some(vec![]),
+            Some(vec!["3780-frequency-denied".to_owned()]),
+        ] {
+            request.filter_group_master_keys = selected_groups;
+            let expected_query = frequency_base_filters(
+                candidates.clone(),
+                date,
+                date + Duration::hours(1),
+                &request.filter_freq,
+                groups.clone(),
+                &request.filter_group_master_keys,
+                None,
+            );
+            let expected = env
+                .dbx
+                .query_all_raw(Statement::from_string(
+                    DbBackend::Postgres,
+                    build_frequency_counts_query(
+                        expected_query,
+                        &request,
+                        None,
+                    ),
+                ))
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|row| {
+                    (
+                        row.try_get::<String>("", "freq").unwrap(),
+                        row.try_get::<i64>("", "message_count").unwrap(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let actual_rows = analytics::load_counts_for_scope(
+                &env.dbx, &env.dbx, &request, &groups,
+                crate::rer_importer::analysis::AnalyticsMessageIdScope::Inclusive {
+                    min_id: 1, max_id: last_id + 1,
+                },
+                None,
+            ).await.unwrap();
+            let ordered =
+                analytics::order_counts(&env.dbx, &request, actual_rows, 30)
+                    .await
+                    .unwrap();
+            let actual = analytics::load_counts_for_scope(
+                &env.dbx, &env.dbx, &request, &groups,
+                crate::rer_importer::analysis::AnalyticsMessageIdScope::Inclusive { min_id: 1, max_id: last_id + 1 }, None,
+            ).await.unwrap().into_iter().map(|row| (row.freq, row.message_count)).collect::<BTreeMap<_, _>>();
+            let hybrid = analytics::load_hybrid_counts(
+                &env.dbx, &env.dbx, &request, &groups,
+                crate::rer_importer::analysis::AnalyticsMessageIdScope::Inclusive { min_id: 1, max_id },
+                date + Duration::minutes(15),
+            ).await.unwrap().into_iter().map(|row| (row.freq, row.message_count)).collect::<BTreeMap<_, _>>();
+            assert_eq!(hybrid, expected);
+            assert_eq!(actual, expected);
+            if request.filter_group_master_keys.is_none() {
+                assert_eq!(actual.get("3780.00"), Some(&3));
+                assert_eq!(actual.len(), 35);
+                assert_eq!(ordered[0].freq, "3780.00");
+                assert_eq!(ordered[10].freq, "3780-10");
+            }
+        }
+        request.filter_group_master_keys = None;
+        for (cursor, first, count, more) in [
+            (None, "3780.00", 30, true),
+            (Some("3780.29"), "3780.30", 5, false),
+        ] {
+            request.after_freq_nonincl = cursor.map(str::to_owned);
+            let rows = env
+                .dbx
+                .query_all_raw(Statement::from_string(
+                    DbBackend::Postgres,
+                    build_frequency_counts_query(
+                        candidates.clone(),
+                        &request,
+                        Some(30),
+                    ),
+                ))
+                .await
+                .unwrap();
+            let rows = rows
+                .into_iter()
+                .map(|row| {
+                    (
+                        row.try_get::<String>("", "freq").unwrap(),
+                        row.try_get::<i64>("", "message_count").unwrap(),
+                        None,
+                    )
+                })
+                .collect();
+            let (page, has_more) = select_freq_page(
+                rows,
+                request.after_freq_nonincl.as_deref(),
+                30,
+            );
+            assert_eq!(page.len(), count);
+            assert_eq!(page[0].0, first);
+            assert_eq!(has_more, more);
+            if cursor.is_none() {
+                assert_eq!(page[0].1, 3);
+            }
+            let frequencies =
+                page.iter().map(|row| row.0.clone()).collect::<Vec<_>>();
+            let locations = load_frequency_page_locations(
+                &env.dbx,
+                candidates.clone(),
+                &frequencies,
+            )
+            .await
+            .unwrap();
+            assert!(locations
+                .keys()
+                .all(|frequency| frequencies.contains(frequency)));
+            assert!(!locations.contains_key("3780.01"));
+            if cursor.is_none() {
+                assert_eq!(
+                    locations.get("3780.00").map(String::as_str),
+                    Some("area-0")
+                );
+            }
+        }
     }
 
     #[tokio::test]

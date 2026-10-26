@@ -50,7 +50,7 @@ pub mod stats;
 mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AnalyticsMessageIdScope {
+pub(crate) enum AnalyticsMessageIdScope {
     Empty,
     From(i64),
     Inclusive { min_id: i64, max_id: i64 },
@@ -61,7 +61,7 @@ impl AnalyticsMessageIdScope {
         matches!(self, Self::Empty)
     }
 
-    pub(super) fn condition<C>(self, column: C) -> SimpleExpr
+    pub(crate) fn condition<C>(self, column: C) -> SimpleExpr
     where
         C: IntoColumnRef,
     {
@@ -131,7 +131,7 @@ pub(super) async fn analytics_message_id_chunks(
     Ok(scope.chunks(chunk_size))
 }
 
-pub(super) async fn load_analytics_message_id_chunks<T, F, Fut>(
+pub(crate) async fn load_analytics_message_id_chunks<T, F, Fut>(
     source_db: &DatabaseConnection,
     scope: AnalyticsMessageIdScope,
     load: F,
@@ -338,7 +338,7 @@ pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
     message_in_groups_exists_with_scope(keys, None)
 }
 
-pub(super) fn message_in_groups_exists_with_scope(
+pub(crate) fn message_in_groups_exists_with_scope(
     keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {

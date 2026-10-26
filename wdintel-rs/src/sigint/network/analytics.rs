@@ -433,11 +433,22 @@ pub(crate) async fn load_network_group_activity(
     if datasource_group_ids.is_empty() {
         return Ok(NetworkGroupsActivitySummaryRsp::default());
     }
-    let (network_bounds, period_bounds) = tokio::try_join!(
-        load_networks_message_id_bounds(source_db, network_ids),
-        load_message_id_bounds_for_period(analytics_db, since, till),
+    let network_bounds =
+        load_networks_message_id_bounds(source_db, network_ids)
+            .await
+            .context(h!())?;
+    let Some(network_bounds) = network_bounds else {
+        return Ok(NetworkGroupsActivitySummaryRsp::default());
+    };
+    let period_bounds = load_message_id_bounds_for_period(
+        analytics_db,
+        since,
+        till,
+        network_bounds,
     )
+    .await
     .context(h!())?;
+    let network_bounds = Some(network_bounds);
     let (
         Some((network_min_id, network_max_id)),
         Some((period_min_id, period_max_id)),
@@ -839,46 +850,53 @@ async fn load_message_id_bounds_for_period(
     db: &DatabaseConnection,
     since: NaiveDateTime,
     till: NaiveDateTime,
+    network_bounds: (i64, i64),
 ) -> Result<Option<(i64, i64)>, AppError> {
-    let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
-        r#"
-        SELECT min(message_id) AS min_id, max(message_id) AS max_id
-        FROM (
-            SELECT id AS message_id
-            FROM sigint_inbox_item
-            WHERE datetime >= $1
-              AND datetime < $2
-
-            UNION ALL
-
-            SELECT signal_message.id AS message_id
-            FROM signal_message
-            JOIN sigint_inbox_item
-              ON sigint_inbox_item.id = signal_message.id
-            WHERE sigint_inbox_item.datetime IS NULL
-              AND signal_message.timestamp IS NOT NULL
-              AND signal_message.timestamp >= $1
-              AND signal_message.timestamp < $2
-
-            UNION ALL
-
-            SELECT signal_message.id AS message_id
-            FROM signal_message
-            JOIN sigint_inbox_item
-              ON sigint_inbox_item.id = signal_message.id
-            WHERE sigint_inbox_item.datetime IS NULL
-              AND signal_message.timestamp IS NULL
-              AND signal_message.created_at >= $1
-              AND signal_message.created_at < $2
-        ) activity_messages
-        "#,
-    )
-    .bind(since)
-    .bind(till)
-    .fetch_one(db.get_postgres_connection_pool())
-    .await
-    .c(h!())?;
-    Ok(bounds.min_id.zip(bounds.max_id))
+    let mut min_id: Option<i64> = None;
+    let mut max_id: Option<i64> = None;
+    let mut start = network_bounds.0;
+    while start <= network_bounds.1 {
+        let end = std::cmp::min(
+            start.saturating_add(
+                crate::config::ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE
+                    - 1,
+            ),
+            network_bounds.1,
+        );
+        let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
+            r#"
+            SELECT min(inbox_item.id) AS min_id, max(inbox_item.id) AS max_id
+            FROM sigint_inbox_item inbox_item
+            JOIN signal_message ON signal_message.id = inbox_item.id
+            WHERE inbox_item.id BETWEEN $3 AND $4
+              AND signal_message.id BETWEEN $3 AND $4
+              AND COALESCE(inbox_item.datetime, signal_message.timestamp,
+                           signal_message.created_at) >= $1
+              AND COALESCE(inbox_item.datetime, signal_message.timestamp,
+                           signal_message.created_at) < $2
+            "#,
+        )
+        .bind(since)
+        .bind(till)
+        .bind(start)
+        .bind(end)
+        .fetch_one(db.get_postgres_connection_pool())
+        .await
+        .c(h!())?;
+        if let Some(id) = bounds.min_id {
+            min_id =
+                Some(min_id.map_or(id, |previous| std::cmp::min(previous, id)));
+        }
+        if let Some(id) = bounds.max_id {
+            max_id =
+                Some(max_id.map_or(id, |previous| std::cmp::max(previous, id)));
+        }
+        if end == network_bounds.1 {
+            break;
+        }
+        start = end + 1;
+    }
+    Ok(min_id.zip(max_id))
 }
 
 async fn load_network_callsign_activity_rows(
@@ -910,56 +928,27 @@ async fn load_network_callsign_message_id_bounds(
     network_id: i64,
     period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
 ) -> Result<Option<(i64, i64)>, AppError> {
-    let network_bounds = load_network_message_id_bounds(source_db, network_id);
-    let Some((since, till)) = period_bounds else {
-        return Ok(network_bounds.await.context(h!())?);
-    };
-    let (network_bounds, period_bounds) = tokio::try_join!(
-        network_bounds,
-        load_activity_message_id_bounds_for_period(analytics_db, since, till,),
-    )
-    .context(h!())?;
-    let (
-        Some((network_min_id, network_max_id)),
-        Some((period_min_id, period_max_id)),
-    ) = (network_bounds, period_bounds)
+    let Some(network_bounds) =
+        load_network_message_id_bounds(source_db, network_id)
+            .await
+            .context(h!())?
     else {
         return Ok(None);
     };
-    let min_item_id = std::cmp::max(network_min_id, period_min_id);
-    let max_item_id = std::cmp::min(network_max_id, period_max_id);
-    Ok((min_item_id <= max_item_id).then_some((min_item_id, max_item_id)))
-}
-
-async fn load_activity_message_id_bounds_for_period(
-    db: &DatabaseConnection,
-    since: NaiveDateTime,
-    till: NaiveDateTime,
-) -> Result<Option<(i64, i64)>, AppError> {
-    let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
-        r#"
-        SELECT min(inbox_item.id) AS min_id, max(inbox_item.id) AS max_id
-        FROM sigint_inbox_item inbox_item
-        JOIN signal_message
-            ON signal_message.id = inbox_item.id
-        WHERE COALESCE(
-            inbox_item.datetime,
-            signal_message.timestamp,
-            signal_message.created_at
-        ) >= $1
-          AND COALESCE(
-            inbox_item.datetime,
-            signal_message.timestamp,
-            signal_message.created_at
-        ) <= $2
-        "#,
+    let Some((since, till)) = period_bounds else {
+        return Ok(Some(network_bounds));
+    };
+    let till = till
+        .checked_add_signed(Duration::microseconds(1))
+        .context(h!())?;
+    Ok(load_message_id_bounds_for_period(
+        analytics_db,
+        since,
+        till,
+        network_bounds,
     )
-    .bind(since)
-    .bind(till)
-    .fetch_one(db.get_postgres_connection_pool())
     .await
-    .c(h!())?;
-    Ok(bounds.min_id.zip(bounds.max_id))
+    .context(h!())?)
 }
 
 pub(crate) async fn load_network_freq_callsigns(
@@ -1201,9 +1190,10 @@ async fn load_network_freq_callsign_group_message_id_bounds(
     let till = till
         .checked_add_signed(Duration::microseconds(1))
         .context(h!())?;
-    let period_bounds = load_message_id_bounds_for_period(db, since, till)
-        .await
-        .context(h!())?;
+    let period_bounds =
+        load_message_id_bounds_for_period(db, since, till, network_bounds)
+            .await
+            .context(h!())?;
     Ok(intersect_message_id_bounds(
         network_bounds,
         period_bounds,
@@ -1320,6 +1310,99 @@ mod tests {
                 Some((ids[0], ids[2]))
             );
         }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_period_bounds_3780_preserve_fallbacks_and_chunk_boundaries(
+    ) {
+        use crate::entities::{sigint_inbox_item, signal_message};
+        use crate::functest::tests::{
+            cleanup, mk_sigint_inbox_item, mk_signal_message,
+        };
+        let env = cleanup().await.unwrap();
+        let base = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "id")
+            .into_tuple::<Option<i64>>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .flatten()
+            .unwrap_or(0)
+            + 1;
+        let width =
+            crate::config::ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE;
+        let since = dt(3, 2);
+        let till = dt(3, 3);
+        let old = dt(3, 1);
+        for (offset, datetime, timestamp, created_at) in [
+            (0, None, Some(old), since),
+            (1, Some(since), Some(old), old),
+            (width, None, Some(since), old),
+            (width + 1, None, None, till),
+            (width * 2, Some(old), Some(since), since),
+        ] {
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    id: Set(base + offset),
+                    timestamp: Set(timestamp),
+                    created_at: Set(created_at),
+                    datasource_group_id: Set(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    date: Set(None),
+                    time: Set(None),
+                    datetime: Set(datetime),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let bounds = (base, base + width * 2);
+        assert_eq!(
+            load_message_id_bounds_for_period(&env.dbx, since, till, bounds)
+                .await
+                .unwrap(),
+            Some((base + 1, base + width))
+        );
+        assert_eq!(
+            load_message_id_bounds_for_period(&env.dbx, till, dt(3, 4), bounds)
+                .await
+                .unwrap(),
+            Some((base + width + 1, base + width + 1))
+        );
+        assert_eq!(
+            load_message_id_bounds_for_period(
+                &env.dbx,
+                dt(4, 1),
+                dt(4, 2),
+                bounds
+            )
+            .await
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            load_message_id_bounds_for_period(
+                &env.dbx,
+                since,
+                till,
+                (base, base)
+            )
+            .await
+            .unwrap(),
+            None
+        );
     }
 
     fn dt(month: u32, day: u32) -> NaiveDateTime {

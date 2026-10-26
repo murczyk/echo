@@ -11206,6 +11206,7 @@ async fn analytics_chunked_frequency_candidates_3780_preserve_order_and_access()
                     Some(vec!["3780.1".to_string(), "".to_string()]),
                     Some(vec!["".to_string()]),
                 ),
+                (None, None),
             ] {
                 let mut req = InboxMessagesReq {
                     selected_freqs,
@@ -11363,19 +11364,14 @@ async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
             callback_queries.fetch_add(1, Ordering::SeqCst);
         }
     });
-    for (selected_unit_ids, denied_unit_ids, total, chunked) in [
-        (Some(vec![units[0]]), None, 28, true),
-        (Some(vec![units[1]]), None, 3, true),
-        (None, Some(vec![units[0]]), 4, true),
-        (
-            Some(vec![units[0], units[1]]),
-            Some(vec![units[1]]),
-            28,
-            true,
-        ),
-        (Some(vec![units[2]]), None, 0, true),
-        (None, Some(vec![units[2]]), 32, true),
-        (Some(vec![]), Some(vec![]), 32, false),
+    for (selected_unit_ids, denied_unit_ids, total) in [
+        (Some(vec![units[0]]), None, 28),
+        (Some(vec![units[1]]), None, 3),
+        (None, Some(vec![units[0]]), 4),
+        (Some(vec![units[0], units[1]]), Some(vec![units[1]]), 28),
+        (Some(vec![units[2]]), None, 0),
+        (None, Some(vec![units[2]]), 32),
+        (Some(vec![]), Some(vec![]), 32),
     ] {
         for nolimit in [false, true] {
             let req = InboxMessagesReq {
@@ -11411,7 +11407,7 @@ async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
             assert_eq!(actual, expected);
             assert_eq!(
                 candidate_queries.load(Ordering::SeqCst),
-                if chunked { 2 } else { 1 },
+                2,
                 "selected={selected_unit_ids:?}, denied={denied_unit_ids:?}"
             );
         }
@@ -11547,6 +11543,67 @@ async fn seed_chunked_messages_3780(
         .await
         .unwrap();
     messages
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_inbox_counts_3780_keep_access_and_fresh_tail_split()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    let req = InboxMessagesReq {
+        sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+        since_date_inclusive_ms: Some(
+            test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        ),
+        till_date_inclusive_ms: Some(
+            test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+        ),
+        ..Default::default()
+    };
+    let split = test_dt(2026, 3, 2, 10, 0) + chrono::Duration::seconds(18);
+    let full = crate::rer_importer::inbox::query::load_analytics_inbox_digest(
+        &login,
+        &fixture.env,
+        &req,
+        &fixture.env.dbx,
+        90_000,
+        None,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(full.0, 32);
+    let historical =
+        crate::rer_importer::inbox::query::load_analytics_inbox_digest(
+            &login,
+            &fixture.env,
+            &req,
+            &fixture.env.dbx,
+            90_000,
+            Some(split),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let source = crate::rer_importer::inbox::query::build_postgres_fresh_tail_inbox_digest_query(
+        &login, &fixture.env, &req, split,
+    ).await.unwrap();
+    let tail = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, source))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        historical.0 + tail.try_get::<i64>("", "count").unwrap(),
+        full.0
+    );
+    assert_eq!(historical.1, full.1);
 }
 
 #[tokio::test]

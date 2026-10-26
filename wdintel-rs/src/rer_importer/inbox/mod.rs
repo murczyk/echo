@@ -1838,20 +1838,19 @@ async fn query_inbox_digest_with_analytics(
         "inbox messages count",
         analytics_inbox_request_supported(&req),
         |db| async move {
-            let query = build_analytics_inbox_digest_query(
+            let digest = load_analytics_inbox_digest(
                 &login,
                 &analytics_env,
                 &analytics_req,
                 &db,
                 freshness_max_age_ms,
+                None,
             )
-            .await?;
-            match query {
-                Some(query) => query_inbox_digest(db, query).await,
+            .await
+            .context(h!())?;
+            match digest {
+                Some(digest) => Ok(digest),
                 None => {
-                    debug!(
-                        "inbox messages count cursor is newer than analytics; using PostgreSQL"
-                    );
                     query_inbox_digest(
                         analytics_env.replica(),
                         analytics_lag_fallback_q,
@@ -1931,31 +1930,23 @@ async fn query_rer_duty_inbox_digest_with_fresh_tail(
         "rer duty inbox messages count",
         true,
         |db| async move {
-            let postgres_tail = query_inbox_digest(
-                postgres_tail_db,
-                postgres_tail_query,
+            let postgres_tail =
+                query_inbox_digest(postgres_tail_db, postgres_tail_query)
+                    .await
+                    .context(h!())?;
+            let Some(historical) = load_analytics_inbox_digest(
+                &login,
+                &analytics_env,
+                &analytics_req,
+                &db,
+                freshness_max_age_ms,
+                Some(fresh_tail_lower_bound),
             )
             .await
-            .context(h!())?;
-            let Some(query) =
-                build_historical_analytics_inbox_digest_query(
-                    &login,
-                    &analytics_env,
-                    &analytics_req,
-                    &db,
-                    freshness_max_age_ms,
-                    fresh_tail_lower_bound,
-                )
-                .await
-                .context(h!())?
+            .context(h!())?
             else {
-                debug!(
-                    "rer duty inbox messages count cursor is newer than analytics; using PostgreSQL fresh tail"
-                );
                 return Ok(postgres_tail);
             };
-            let historical =
-                query_inbox_digest(db, query).await.context(h!())?;
             merge_inbox_digests(historical, postgres_tail)
         },
         |_db| query_inbox_digest(postgres_fallback_db, postgres_query),
@@ -4238,7 +4229,7 @@ async fn load_postgres_fresh_tail_candidate_ids(
     Ok(ids)
 }
 
-fn analytics_fresh_tail_lower_bound(
+pub(crate) fn analytics_fresh_tail_lower_bound(
     now: NaiveDateTime,
     freshness_max_age_ms: u64,
     minimum_tail_minutes: i64,
