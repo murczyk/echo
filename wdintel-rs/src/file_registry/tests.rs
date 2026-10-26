@@ -1347,6 +1347,7 @@ async fn assert_file_content_schema(connection: &DatabaseConnection) {
                 "timestamp with time zone",
                 "timestamptz",
             ),
+            ("stats_epoch", "NO", Some("0"), "bigint", "int8"),
         ],
     )
     .await;
