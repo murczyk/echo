@@ -21,8 +21,10 @@ preference. Analysis alone retains the event/creation-time choice; its saved
   selection use `createdAtOrder` (microseconds), falling back only to
   `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
 - Cards use creation time for the primary absolute header timestamp. Their independent
-  relative receipt-age footer also uses `createdAt`; event dates remain message metadata,
-  and editing an event date cannot move a card in the feed.
+  receipt-time footer also uses `createdAt`: `HH:mm` today, `DD.MM, HH:mm` on other
+  dates this year, and `DD.MM.YYYY, HH:mm` in other years (Kyiv calendar).
+  The header date always includes the year. Event dates remain message metadata, and editing an
+  event date cannot move a card in the feed.
 - The sorting chooser exists only under Settings → Analysis. Existing Analysis
   preferences and its shared API/storage field are preserved.
 

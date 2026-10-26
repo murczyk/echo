@@ -16,7 +16,7 @@ async function setupAnalysisNeoPage(
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
   for (const messageSortBy of ['interception', 'creation'] as const) {
-    test(`shows the selected Analysis timestamp and receipt age at wide and narrow card widths (${messageSortBy})`, async ({
+    test(`shows the selected Analysis timestamp and receipt time at wide and narrow card widths (${messageSortBy})`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -35,11 +35,11 @@ test.describe('@smoke @regression', () => {
       const timestamp = card.locator('[data-message-card-timestamp-item="true"]');
       const expected =
         messageSortBy === 'creation'
-          ? ['Дата і час створення повідомлення', '17.07, 03:30']
-          : ['Дата і час перехоплення', '14.07, 08:45'];
+          ? ['Дата і час створення повідомлення', '17.07.2026, 03:30']
+          : ['Дата і час перехоплення', '14.07.2026, 08:45'];
       await expect(timestamp).toHaveAttribute('title', expected[0]);
       await expect(timestamp).toContainText(expected[1]);
-      await expect(card.locator('[title="Час від отримання повідомлення"]')).toBeVisible();
+      await expect(card.locator('[title="Час отримання повідомлення"]')).toBeVisible();
       await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
         'position',
         'static',
@@ -51,7 +51,7 @@ test.describe('@smoke @regression', () => {
         if (item) item.style.width = '330px';
       });
       await expect(timestamp).toContainText(expected[1]);
-      await expect(card.locator('[title="Час від отримання повідомлення"]')).toBeVisible();
+      await expect(card.locator('[title="Час отримання повідомлення"]')).toBeVisible();
       await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
         'position',
         'static',

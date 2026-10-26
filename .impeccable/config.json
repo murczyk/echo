@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "wdintel-web/src/styles/_base.css"
+        ],
+        "createdAt": "2026-10-26T09:09:07.175Z",
+        "reason": "Agent: existing message-card-intelligence-report uses a neutral theme border to distinguish a linked report/quote, not a decorative accent on the outer card; confirmed unchanged in HEAD and outside the four requested UI changes."
+      }
+    ]
+  }
+}

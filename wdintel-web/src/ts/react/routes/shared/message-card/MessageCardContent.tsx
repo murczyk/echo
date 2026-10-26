@@ -1007,135 +1007,138 @@ export function MessageCardMessageBody({
         />
       ) : null}
       <div className="message-card-content-layout">
-        {hasMessageText ? (
-          <div className="message-card-message-region">{messageTextSection}</div>
-        ) : null}
-        {hasAttachmentContent ? (
-          <div className="message-card-attachments-region">
-            {unpreviewableRawCoordinates != null ? (
-              <MessageCardRawCoordinates coordinates={unpreviewableRawCoordinates} />
-            ) : null}
-            {attachmentCounters}
-            {isMediaVisible || (!collapseMediaPreviews && coordinateMapAttachment != null) ? (
-              <MessageCardImageList
-                images={isMediaVisible ? images : []}
-                videos={isMediaVisible ? videoAttachments : []}
-                trailingContent={!collapseMediaPreviews ? coordinateMapAttachment : null}
-                selectedImageIndex={
-                  selectedSummaryImageIndex >= 0 ? selectedSummaryImageIndex : null
-                }
-                selectedVideoIndex={
-                  selectedSummaryVideoIndex >= 0 ? selectedSummaryVideoIndex : null
-                }
-                onOpen={(index) => {
-                  blurActiveElement();
-                  setAttachmentPreviewIndex(index);
-                }}
-                onOpenVideo={(index) => {
-                  blurActiveElement();
-                  setAttachmentPreviewIndex(images.length + index);
-                }}
-                isDownloadStarting={isDownloadStarting}
-                onDownloadStart={onDownloadStart}
-              />
-            ) : null}
-            {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
-              <MessageCardAttachmentPreviewProvider
-                attachments={previewAttachments}
-                initialIndex={attachmentPreviewIndex}
-                onClose={() => setAttachmentPreviewIndex(null)}
-                onPreviewActivated={pauseInlineAudioPlayers}
-                isDownloadStarting={isDownloadStarting}
-                onDownloadStart={onDownloadStart}
-              />
-            ) : null}
-            {isDocumentVisible && hasDocumentAttachments ? (
-              <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
-                {documents.map((document, index) => {
-                  const previewIndex = previewableDocuments.findIndex(
-                    (previewableDocument) => previewableDocument.href === document.href,
-                  );
-                  return (
-                    <MessageMediaDocumentLink
-                      key={document.id ?? document.href}
-                      document={document}
-                      index={index}
-                      selected={selectedSummaryDocumentIndex === index}
-                      onPreview={
-                        previewIndex >= 0
-                          ? () => {
-                              blurActiveElement();
-                              setAttachmentPreviewIndex(
-                                images.length + videoAttachments.length + previewIndex,
-                              );
-                            }
-                          : undefined
-                      }
-                      isDownloadStarting={isDownloadStarting}
-                      onDownloadStart={onDownloadStart}
-                    />
-                  );
-                })}
-                {downloadAttachments.map((attachment) => {
-                  const selected =
-                    selectedSummaryMediaIdentity != null &&
-                    summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
-                  const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
-                  return kmzPreviewIndex >= 0 ? (
-                    <KmzAttachmentPreviewLink
-                      key={attachment.id}
-                      mediaId={resolveMediaAttachmentId(attachment)}
-                      originalHref={String(attachment.href ?? '')}
-                      fileName={mediaAttachmentDisplayName(attachment)}
-                      sizeBytes={attachment.sizeBytes ?? null}
-                      contentType={mediaAttachmentContentType(attachment)}
-                      initialStatus={attachment.kmzConversionStatus ?? 'pending'}
-                      selected={selected}
-                      onPreview={() => {
-                        blurActiveElement();
-                        setAttachmentPreviewIndex(kmzPreviewStartIndex + kmzPreviewIndex);
-                      }}
-                      isDownloadStarting={isDownloadStarting}
-                      onDownloadStart={onDownloadStart}
-                    />
-                  ) : (
-                    <MessageMediaDownloadLink
+        <div className="message-card-main">
+          {messageTextSection}
+          {hasMessageText && hasAttachmentContent ? (
+            <div className="message-card-divider" aria-hidden="true" />
+          ) : null}
+          {hasAttachmentContent ? (
+            <div className="message-card-attachments-region">
+              {unpreviewableRawCoordinates != null ? (
+                <MessageCardRawCoordinates coordinates={unpreviewableRawCoordinates} />
+              ) : null}
+              {attachmentCounters}
+              {isMediaVisible || (!collapseMediaPreviews && coordinateMapAttachment != null) ? (
+                <MessageCardImageList
+                  images={isMediaVisible ? images : []}
+                  videos={isMediaVisible ? videoAttachments : []}
+                  trailingContent={!collapseMediaPreviews ? coordinateMapAttachment : null}
+                  selectedImageIndex={
+                    selectedSummaryImageIndex >= 0 ? selectedSummaryImageIndex : null
+                  }
+                  selectedVideoIndex={
+                    selectedSummaryVideoIndex >= 0 ? selectedSummaryVideoIndex : null
+                  }
+                  onOpen={(index) => {
+                    blurActiveElement();
+                    setAttachmentPreviewIndex(index);
+                  }}
+                  onOpenVideo={(index) => {
+                    blurActiveElement();
+                    setAttachmentPreviewIndex(images.length + index);
+                  }}
+                  isDownloadStarting={isDownloadStarting}
+                  onDownloadStart={onDownloadStart}
+                />
+              ) : null}
+              {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
+                <MessageCardAttachmentPreviewProvider
+                  attachments={previewAttachments}
+                  initialIndex={attachmentPreviewIndex}
+                  onClose={() => setAttachmentPreviewIndex(null)}
+                  onPreviewActivated={pauseInlineAudioPlayers}
+                  isDownloadStarting={isDownloadStarting}
+                  onDownloadStart={onDownloadStart}
+                />
+              ) : null}
+              {isDocumentVisible && hasDocumentAttachments ? (
+                <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
+                  {documents.map((document, index) => {
+                    const previewIndex = previewableDocuments.findIndex(
+                      (previewableDocument) => previewableDocument.href === document.href,
+                    );
+                    return (
+                      <MessageMediaDocumentLink
+                        key={document.id ?? document.href}
+                        document={document}
+                        index={index}
+                        selected={selectedSummaryDocumentIndex === index}
+                        onPreview={
+                          previewIndex >= 0
+                            ? () => {
+                                blurActiveElement();
+                                setAttachmentPreviewIndex(
+                                  images.length + videoAttachments.length + previewIndex,
+                                );
+                              }
+                            : undefined
+                        }
+                        isDownloadStarting={isDownloadStarting}
+                        onDownloadStart={onDownloadStart}
+                      />
+                    );
+                  })}
+                  {downloadAttachments.map((attachment) => {
+                    const selected =
+                      selectedSummaryMediaIdentity != null &&
+                      summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
+                    const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
+                    return kmzPreviewIndex >= 0 ? (
+                      <KmzAttachmentPreviewLink
+                        key={attachment.id}
+                        mediaId={resolveMediaAttachmentId(attachment)}
+                        originalHref={String(attachment.href ?? '')}
+                        fileName={mediaAttachmentDisplayName(attachment)}
+                        sizeBytes={attachment.sizeBytes ?? null}
+                        contentType={mediaAttachmentContentType(attachment)}
+                        initialStatus={attachment.kmzConversionStatus ?? 'pending'}
+                        selected={selected}
+                        onPreview={() => {
+                          blurActiveElement();
+                          setAttachmentPreviewIndex(kmzPreviewStartIndex + kmzPreviewIndex);
+                        }}
+                        isDownloadStarting={isDownloadStarting}
+                        onDownloadStart={onDownloadStart}
+                      />
+                    ) : (
+                      <MessageMediaDownloadLink
+                        key={attachment.id}
+                        attachment={attachment}
+                        selected={selected}
+                        isDownloadStarting={isDownloadStarting}
+                        onDownloadStart={onDownloadStart}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
+              {hasVisibleSummary ? (
+                <MessageCardMediaSummaryCarousel
+                  items={summaryScope}
+                  selectedIdentity={selectedSummaryMediaIdentity}
+                  onSelectedIdentityChange={setSelectedSummaryIdentity}
+                />
+              ) : null}
+              {collapseMediaPreviews ? coordinateMapAttachment : null}
+              {hasVisibleAudioContent ? (
+                <div className="mt-1 flex w-full flex-col items-start gap-[8px]">
+                  {audioAttachments.map((attachment) => (
+                    <MessageMediaAudioPlayer
                       key={attachment.id}
                       attachment={attachment}
-                      selected={selected}
                       isDownloadStarting={isDownloadStarting}
                       onDownloadStart={onDownloadStart}
+                      onPlayerChange={(player, previousPlayer) => {
+                        if (player) inlineAudioPlayersRef.current.add(player);
+                        if (previousPlayer) inlineAudioPlayersRef.current.delete(previousPlayer);
+                      }}
                     />
-                  );
-                })}
-              </div>
-            ) : null}
-            {hasVisibleSummary ? (
-              <MessageCardMediaSummaryCarousel
-                items={summaryScope}
-                selectedIdentity={selectedSummaryMediaIdentity}
-                onSelectedIdentityChange={setSelectedSummaryIdentity}
-              />
-            ) : null}
-            {collapseMediaPreviews ? coordinateMapAttachment : null}
-            {hasVisibleAudioContent ? (
-              <div className="mt-1 flex w-full flex-col items-start gap-[8px]">
-                {audioAttachments.map((attachment) => (
-                  <MessageMediaAudioPlayer
-                    key={attachment.id}
-                    attachment={attachment}
-                    isDownloadStarting={isDownloadStarting}
-                    onDownloadStart={onDownloadStart}
-                    onPlayerChange={(player, previousPlayer) => {
-                      if (player) inlineAudioPlayersRef.current.add(player);
-                      if (previousPlayer) inlineAudioPlayersRef.current.delete(previousPlayer);
-                    }}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
         {hasDetailsContent ? (
           <div className="message-card-details-region">
             {metadata ? <div className="message-card-main-section">{metadata}</div> : null}

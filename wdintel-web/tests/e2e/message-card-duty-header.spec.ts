@@ -134,14 +134,14 @@ async function installTaggedVisualFixture(page: Page): Promise<void> {
   });
 }
 
-async function installReceiptAgeFixture(page: Page): Promise<void> {
+async function installReceiptAgeFixture(page: Page, createdAt: number): Promise<void> {
   const message = minimalInboxMessage({
     messageUid: 'receipt-age-message',
     text: 'Довге повідомлення, яке займає ліві колонки картки та залишає вільний простір унизу праворуч. '.repeat(
       12,
     ),
-    createdAt: Date.now() - 60_000,
-    createdAtOrder: Date.now() - 60_000,
+    createdAt,
+    createdAtOrder: createdAt,
   });
   await installRerDutyShortStateMocks(page, {
     inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
@@ -181,18 +181,25 @@ async function installMixedTagVisualFixture(
 
 test.describe('message card Duty header @regression', () => {
   // Regression: https://github.com/echoua/echo/issues/3324
-  test('ECHO-3324 reaches three card columns in a single Duty feed and adapts to its workspace @regression', async ({
+  test('ECHO-3324 keeps text and attachments together in two card columns and adapts to its workspace @regression', async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openMessageCardPreviewHost(page, 'duty');
     await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
+    await expect(page.locator('[data-duty-feed-column]')).toHaveCSS('max-width', '960px');
     const card = page.locator('.message-card-root').first();
     const layout = card.locator('.message-card-content-layout');
     const columnCount = () =>
       layout.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
 
-    await expect.poll(columnCount).toBe(3);
+    await expect.poll(columnCount).toBe(2);
+    const text = card.locator('.message-card-message-text');
+    const attachments = card.locator('.message-card-attachments-region');
+    const textBounds = await text.boundingBox();
+    const attachmentsBounds = await attachments.boundingBox();
+    expect(attachmentsBounds!.x).toBe(textBounds!.x);
+    expect(attachmentsBounds!.y).toBeGreaterThanOrEqual(textBounds!.y + textBounds!.height);
     const tops = await layout.evaluate((element) =>
       Array.from(element.children, (child) => Math.round(child.getBoundingClientRect().top)),
     );
@@ -201,16 +208,19 @@ test.describe('message card Duty header @regression', () => {
     await page.getByRole('button', { name: 'Додати повідомлення' }).click();
     const editor = page.locator('[data-manage-message-presentation="embedded"]');
     await expect(editor).toBeVisible();
-    await expect.poll(columnCount).toBeLessThan(3);
+    await expect.poll(columnCount).toBe(1);
     await editor.getByRole('button', { name: 'Закрити', exact: true }).click();
     await expect(editor).toBeHidden();
-    await expect.poll(columnCount).toBe(3);
+    await expect.poll(columnCount).toBe(2);
 
     for (const [width, columns] of [
       [1000, 2],
       [720, 1],
       [448, 1],
-      [1440, 3],
+      [1512, 2],
+      [1920, 2],
+      [2560, 2],
+      [3440, 2],
     ]) {
       await page.setViewportSize({ width, height: 900 });
       await expect.poll(columnCount).toBe(columns);
@@ -289,26 +299,49 @@ test.describe('message card Duty header @regression', () => {
     expect(unitAlignment.textRight).toBeLessThanOrEqual(unitAlignment.cardRight);
   });
 
-  test('keeps Duty receipt age in its stable footer row without moving content geometry @regression', async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await installReceiptAgeFixture(page);
-    await page.goto('/rer-duty-neo?state-short=short-1');
+  for (const boundary of [
+    {
+      name: 'day',
+      now: '2026-10-24T20:50:00Z',
+      createdAt: '2026-10-24T20:49:00Z',
+      before: '23:49',
+      after: '24.10, 23:49',
+    },
+    {
+      name: 'year',
+      now: '2026-12-31T21:50:00Z',
+      createdAt: '2026-12-20T14:47:00Z',
+      before: '20.12, 16:47',
+      after: '20.12.2026, 16:47',
+    },
+  ]) {
+    test(`ECHO-3324 keeps absolute Duty receipt time in its footer across the Kyiv ${boundary.name} boundary @regression`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.clock.install({ time: new Date(boundary.now) });
+      await installReceiptAgeFixture(page, Date.parse(boundary.createdAt));
+      await page.goto('/rer-duty-neo?state-short=short-1');
 
-    const card = page.locator('.message-card-root').first();
-    const content = card.locator('.message-card-content-layout');
-    const footer = card.locator('[data-message-card-timestamp-footer="true"]');
-    for (const width of [1440, 448, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await expect(footer).toHaveCSS('position', 'static');
-      await expect
-        .poll(async () => {
-          const contentBounds = await content.boundingBox();
-          const footerBounds = await footer.boundingBox();
-          return footerBounds!.y >= contentBounds!.y + contentBounds!.height;
-        })
-        .toBe(true);
-    }
-  });
+      const card = page.locator('.message-card-root').first();
+      const content = card.locator('.message-card-content-layout');
+      const footer = card.locator('[data-message-card-timestamp-footer="true"]');
+      await expect(footer).toHaveText(boundary.before);
+      await card.screenshot({ path: testInfo.outputPath('before-boundary.png') });
+      await page.clock.fastForward(10 * 60_000 + 1_000);
+      await expect(footer).toHaveText(boundary.after);
+      for (const width of [1440, 448, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(footer).toHaveCSS('position', 'static');
+        await expect
+          .poll(async () => {
+            const contentBounds = await content.boundingBox();
+            const footerBounds = await footer.boundingBox();
+            return footerBounds!.y >= contentBounds!.y + contentBounds!.height;
+          })
+          .toBe(true);
+        await card.screenshot({ path: testInfo.outputPath(`after-boundary-${width}.png`) });
+      }
+    });
+  }
 });

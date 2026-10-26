@@ -19,7 +19,7 @@ import DeskIcon from '@mui/icons-material/Desk';
 import DeskOutlinedIcon from '@mui/icons-material/DeskOutlined';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
-import GroupsIcon from '@mui/icons-material/Groups';
+import SquareTwoToneIcon from '@mui/icons-material/SquareTwoTone';
 import FlagIcon from '@mui/icons-material/Flag';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import LaunchIcon from '@mui/icons-material/Launch';
@@ -47,7 +47,7 @@ import type {
   MessageEntityExcludeMenuOption,
   MessageEntityFilterKind,
 } from '../../rer-duty-neo/utils';
-import { formatDateNoYear, formatTime, messageRenderDistance } from '../../rer-duty-neo/utils';
+import { formatDateNoYear, formatTime } from '../../rer-duty-neo/utils';
 import {
   buildMessageCardNavigationMenuItems,
   type MessageCardEtalonDisplayModel,
@@ -56,7 +56,7 @@ import {
 } from './message-card.utils';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
-import { useRelativeTimeDisplayMs } from './useRelativeTimeDisplayMs';
+import { useMessageCardDateDisplayMs } from './useMessageCardDateDisplayMs';
 
 dayjs.extend(customParseFormat);
 
@@ -1328,9 +1328,17 @@ export function MessageCardTimestampFooter({
   referenceTimeMs,
 }: Pick<MessageCardHeaderProps, 'msg'> & { referenceTimeMs: number | null }) {
   const receiptTimestamp = Number.isFinite(msg.createdAt) ? msg.createdAt : null;
-  const [footerRef, displayMs] = useRelativeTimeDisplayMs(referenceTimeMs, receiptTimestamp);
+  const [footerRef, displayMs] = useMessageCardDateDisplayMs(referenceTimeMs, receiptTimestamp);
 
   if (receiptTimestamp == null) return null;
+
+  const receiptTime = dayjs(receiptTimestamp).tz(APP_TIME_ZONE);
+  const now = dayjs(displayMs ?? Date.now()).tz(APP_TIME_ZONE);
+  const receiptFormat = receiptTime.isSame(now, 'day')
+    ? 'HH:mm'
+    : receiptTime.year() === now.year()
+      ? 'DD.MM, HH:mm'
+      : 'DD.MM.YYYY, HH:mm';
 
   return (
     <div
@@ -1338,18 +1346,16 @@ export function MessageCardTimestampFooter({
       className="message-card-timestamp-footer"
       data-message-card-timestamp-footer="true"
     >
-      <span title="Час від отримання повідомлення">
-        <HeaderText className="message-card-relative-time opacity-50">
-          {messageRenderDistance(receiptTimestamp, displayMs ?? referenceTimeMs ?? Date.now())}
-        </HeaderText>
-      </span>
+      <time dateTime={receiptTime.toISOString()} title="Час отримання повідомлення">
+        <HeaderText className="opacity-50">{receiptTime.format(receiptFormat)}</HeaderText>
+      </time>
     </div>
   );
 }
 
 function formatCreationDateTime(createdAt: number | null | undefined): string {
   return Number.isFinite(createdAt)
-    ? dayjs(createdAt).tz(APP_TIME_ZONE).format('DD.MM, HH:mm')
+    ? dayjs(createdAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY, HH:mm')
     : '—';
 }
 
@@ -1357,8 +1363,8 @@ function formatAnalysisEventDateTime(msg: InboxMessage): string {
   const timestamp = msg.timestamp == null ? null : dayjs(msg.timestamp).tz(APP_TIME_ZONE);
   const parsedDate = dayjs(msg.date?.trim() ?? '', ['YYYY-MM-DD', 'DD.MM.YYYY'], true);
   const date = parsedDate.isValid()
-    ? parsedDate.format('DD.MM')
-    : msg.date?.trim() || timestamp?.format('DD.MM');
+    ? parsedDate.format('DD.MM.YYYY')
+    : msg.date?.trim() || timestamp?.format('DD.MM.YYYY');
   const time =
     msg.isTimeNull === true
       ? null
@@ -1443,8 +1449,8 @@ function MessageCardHeaderComponent({
       <div className="message-card-header-identity">
         <div ref={leftHeaderContentRef} data-message-card-header-left="true" className="min-w-0">
           <div className="message-card-header-unit" data-message-card-header-unit-row="true">
-            <span className="message-card-header-meta__icon message-card-header-meta__icon--group">
-              <GroupsIcon titleAccess="Підрозділ" />
+            <span className="message-card-header-meta__icon">
+              <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
             </span>
             <HeaderText wrap>{explicitUnit}</HeaderText>
           </div>
@@ -1452,7 +1458,7 @@ function MessageCardHeaderComponent({
         </div>
       </div>
       {!readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="message-card-header-actions flex items-center justify-center">
+        <div className="message-card-header-actions flex items-center justify-end">
           <ActionIconsRow
             id={id}
             msg={msg}

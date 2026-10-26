@@ -527,7 +527,7 @@ describe('MessageCard', () => {
       ).toHaveLength(1);
       expect(
         view.container.querySelector('[data-message-card-timestamp-footer="true"]')?.textContent,
-      ).toContain('1 хв');
+      ).toBe('03:30');
       expect(view.container.querySelector('.message-card-header-timestamps')?.classList).toContain(
         'message-card-header-timestamps--mobile-nowrap',
       );
@@ -777,7 +777,7 @@ describe('MessageCard', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
-    '#3515 keeps receipt age when a date-only interception timestamp is selected (%s)',
+    '#3515 keeps receipt time when a date-only interception timestamp is selected (%s)',
     async (messageTimeBasis) => {
       const view = await renderCard({
         messageTimeBasis,
@@ -795,12 +795,12 @@ describe('MessageCard', () => {
       });
       const timestamp = view.container.querySelector('[data-message-card-timestamp-item="true"]');
       expect(timestamp?.textContent).toContain(
-        messageTimeBasis === 'creation' ? '15.07, 13:00' : '15.07',
+        messageTimeBasis === 'creation' ? '15.07.2026, 13:00' : '15.07.2026',
       );
       expect(timestamp?.textContent).not.toContain('12:00');
-      expect(view.container.querySelector('.message-card-relative-time')?.textContent).toContain(
-        '1 хв',
-      );
+      expect(
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]')?.textContent,
+      ).toBe('13:00');
       expect(
         view.container.querySelector('[data-message-card-timestamp-footer="true"]'),
       ).not.toBeNull();
@@ -816,7 +816,7 @@ describe('MessageCard', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
-    '#3515 displays the selected absolute timestamp and independent receipt age in analysis (%s)',
+    '#3515 displays the selected absolute timestamp and independent receipt time in analysis (%s)',
     async (messageTimeBasis) => {
       for (const isTimeNull of [true, false, null]) {
         const view = await renderCard({
@@ -843,7 +843,11 @@ describe('MessageCard', () => {
             : 'Дата і час перехоплення',
         );
         expect(timestamps[0]?.textContent).toContain(
-          messageTimeBasis === 'creation' ? '17.07, 00:30' : isTimeNull ? '14.07' : '14.07, 08:45',
+          messageTimeBasis === 'creation'
+            ? '17.07.2026, 00:30'
+            : isTimeNull
+              ? '14.07.2026'
+              : '14.07.2026, 08:45',
         );
         if (messageTimeBasis === 'interception' && isTimeNull)
           expect(timestamps[0]?.textContent).not.toContain(':');
@@ -851,8 +855,8 @@ describe('MessageCard', () => {
         expect(timestamps[0]?.querySelector('.message-card-header-icon')).not.toBeNull();
         expect(timestamps[0]?.querySelector('.message-card-timestamp-icon')).toBeNull();
         const footer = view.container.querySelector('[data-message-card-timestamp-footer="true"]');
-        expect(footer?.querySelector('[title="Час від отримання повідомлення"]')).not.toBeNull();
-        expect(footer?.textContent).toContain('1 хв');
+        expect(footer?.querySelector('[title="Час отримання повідомлення"]')).not.toBeNull();
+        expect(footer?.textContent).toBe('00:30');
       }
     },
   );
@@ -889,15 +893,38 @@ describe('MessageCard', () => {
         ?.textContent,
     ).toContain('—');
     expect(
-      interceptionView.container.querySelector('.message-card-relative-time')?.textContent,
-    ).toContain('1 хв');
+      interceptionView.container.querySelector('[data-message-card-timestamp-footer="true"]')
+        ?.textContent,
+    ).toBe('00:30');
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each([
+    ['2026-10-26T08:16:00Z', '2026-10-26T12:00:00Z', '10:16'],
+    ['2026-10-25T08:16:00Z', '2026-10-26T12:00:00Z', '25.10, 10:16'],
+    ['2025-10-26T08:16:00Z', '2026-10-26T12:00:00Z', '26.10.2025, 10:16'],
+    ['2026-07-16T21:30:00Z', '2026-07-17T10:00:00Z', '00:30'],
+    ['2026-07-16T20:59:00Z', '2026-07-16T21:01:00Z', '16.07, 23:59'],
+    ['2026-12-31T21:30:00Z', '2026-12-31T22:01:00Z', '31.12.2026, 23:30'],
+    ['2025-12-31T22:30:00Z', '2026-01-02T12:00:00Z', '01.01, 00:30'],
+  ])(
+    '#3324 formats receipt time using the Kyiv calendar (%s)',
+    async (createdAt, now, expected) => {
+      const view = await renderCard({
+        referenceTimeMs: Date.parse(now),
+        msg: buildMessage({ createdAt: Date.parse(createdAt) }),
+      });
+      expect(
+        view.container.querySelector('[data-message-card-timestamp-footer="true"]')?.textContent,
+      ).toBe(expected);
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each([
-    { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07, 08:45' },
-    { date: null, time: null, isTimeNull: false, expected: '15.07, 12:00' },
-    { date: null, time: null, isTimeNull: true, expected: '15.07' },
+    { date: '2026-07-14', time: '08:45:00', isTimeNull: false, expected: '14.07.2026, 08:45' },
+    { date: null, time: null, isTimeNull: false, expected: '15.07.2026, 12:00' },
+    { date: null, time: null, isTimeNull: true, expected: '15.07.2026' },
   ])(
     '#3515 formats analysis event dates with timestamp fallback ($expected)',
     async ({ expected, ...fields }) => {

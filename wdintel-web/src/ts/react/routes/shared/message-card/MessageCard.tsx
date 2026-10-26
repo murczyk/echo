@@ -122,7 +122,7 @@ export type MessageCardProps = {
   hideBotTags?: boolean;
   hideNetworks?: boolean;
   tagsLoading?: boolean;
-  /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
+  /** Baseline "now" when the card is off-screen; visible dates update at Kyiv midnight. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
@@ -413,6 +413,7 @@ function MessageCardComponent({
           </div>
         )}
         <MessageCardHeader {...headerProps} />
+        <div className="message-card-divider" aria-hidden="true" />
         <MessageCardContentWithDownloadGuard
           metadata={
             <MessageCardMetadata
