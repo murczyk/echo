@@ -807,6 +807,15 @@ pub async fn aggregate_to_inbox_messages(
         .into_iter()
         .map(|imp| imp.signal_message_id)
         .collect::<HashSet<_>>();
+    #[derive(sea_orm::FromQueryResult)]
+    struct AiImportant {
+        message_id: i64,
+    }
+    let ai_important_ids = AiImportant::find_by_statement(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "select job.message_id from ai_transcript_analysis_job job join sigint_important importance on importance.id=job.important_id where job.message_id=any($1) and not importance.deleted",
+        [message_ids.clone().into()],
+    )).all(&env.dbx).await.c(h!())?.into_iter().map(|row| row.message_id).collect::<HashSet<_>>();
     let bookmarked_ids = sigint_bookmark::Entity::find()
         .filter(
             sigint_bookmark::Column::SignalMessageId
@@ -1184,6 +1193,7 @@ pub async fn aggregate_to_inbox_messages(
                 callsigns,
                 checked: message.checked.unwrap_or(false),
                 important: important_ids.contains(&message.id),
+                ai_important: ai_important_ids.contains(&message.id),
                 bookmarked: bookmarked_ids.contains(&message.id),
                 timestamp: message
                     .timestamp

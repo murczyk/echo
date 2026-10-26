@@ -29,6 +29,8 @@ pub struct NativeGroupSettings {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    #[serde(default)]
+    pub ai_transcript_analysis_enabled: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -469,6 +471,13 @@ async fn apply_settings(
     )
     .await
     .c(h!())?;
+    crate::ai_transcript_analysis::settings::set_group(
+        txn,
+        master_key,
+        settings.ai_transcript_analysis_enabled,
+    )
+    .await
+    .c(h!())?;
     zone_bl::update_group_aviation_if_present(
         Some(settings.is_aviation_group),
         master_key,
@@ -584,6 +593,9 @@ pub async fn detail(
             interseption_kind: group.interseption_kind.into(),
             disable_network_assignment: group.disable_network_assignment,
             is_aviation_group: group.is_aviation_group.unwrap_or(false),
+            ai_transcript_analysis_enabled: Some(
+                group.ai_transcript_analysis_enabled.unwrap_or(false),
+            ),
         },
     })
 }

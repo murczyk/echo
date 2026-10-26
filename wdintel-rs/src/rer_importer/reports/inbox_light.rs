@@ -35,6 +35,7 @@ pub(crate) fn blank_inbox_message() -> InboxMessage {
         callsigns_alg2: vec![],
         checked: false,
         important: false,
+        ai_important: false,
         bookmarked: false,
         timestamp: None,
         created_at: None,

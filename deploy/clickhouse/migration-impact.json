@@ -11,6 +11,15 @@
       ]
     },
     "echo:m20261025_180900_inbox_body_literal_index": { "changes": [] },
+    "echo:m20261024_143636_ai_transcript_analysis": {
+      "changes": [
+        { "table": "public.signal_group", "strategy": "cdc_additive" },
+        { "table": "public.ai_transcript_analysis_settings", "strategy": "excluded" },
+        { "table": "public.ai_transcript_analysis_test_message", "strategy": "excluded" },
+        { "table": "public.ai_transcript_analysis_test_result", "strategy": "excluded" },
+        { "table": "public.ai_transcript_analysis_job", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261023_071318_device_audio_forwarding": {
       "changes": [
         { "table": "public.device_audio_forwarding_settings", "strategy": "excluded" },

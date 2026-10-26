@@ -14,13 +14,13 @@ pub struct QueueMediaResult {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum MediaEligibility {
+pub(crate) enum MediaEligibility {
     Eligible,
     NonAudio,
     Oversized,
 }
 
-pub(super) fn media_eligibility(
+pub(crate) fn media_eligibility(
     media: &signal_message_media::Model,
 ) -> MediaEligibility {
     if !crate::messenger::media::is_audio_media(media) {
@@ -48,7 +48,16 @@ where
     {
         return Ok(QueueMediaResult::default());
     }
-
+    let messages = surviving
+        .iter()
+        .filter(|media| crate::messenger::media::is_audio_media(media))
+        .map(|media| media.signal_message_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    for message in messages {
+        crate::ai_transcript_analysis::worker::enqueue(dbx, message)
+            .await
+            .c(h!())?;
+    }
     let mut result = QueueMediaResult::default();
     for media in surviving {
         match media_eligibility(media) {
@@ -217,6 +226,76 @@ mod tests {
         reconcile(&env.dbx, &[], &[source_id]).await.unwrap();
 
         assert!(echo_gpu_client::lookup(&env.dbx, source_id)
+            .await
+            .unwrap()
+            .is_some());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn disabled_transcription_does_not_enqueue_analysis_3646() {
+        use crate::ai_transcript_analysis::settings;
+        use crate::entities::ai_transcript_analysis_job;
+        use crate::functest::tests::{
+            find_test_signal_group, mk_signal_message,
+        };
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let settings = system_settings::ActiveModel {
+            enable_audio_transcription: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        settings::set_group(&env.dbx, &group.master_key, Some(true))
+            .await
+            .unwrap();
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        env.dbx.execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            "insert into signal_message_group(signal_message_id,group_master_key) values($1,$2)",
+            [message.id.into(),group.master_key.into()],
+        )).await.unwrap();
+        let mut attachment = audio(8);
+        attachment.signal_message_id = message.id;
+        let attachment = attachment
+            .into_active_model()
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        assert!(crate::ai_transcript_analysis::worker::eligible(
+            &env.dbx, message.id
+        )
+        .await
+        .unwrap());
+        let result =
+            reconcile_message(&env.dbx, message.id, &[]).await.unwrap();
+        assert_eq!(result.queued, 0);
+        assert!(ai_transcript_analysis_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(crate::transcription::service::source_id(
+            &env.dbx,
+            &super::source_key(&attachment),
+        )
+        .await
+        .unwrap()
+        .is_none());
+        let mut settings = settings.into_active_model();
+        settings.enable_audio_transcription = Set(true);
+        settings.update(&env.dbx).await.unwrap();
+        let result =
+            reconcile_message(&env.dbx, message.id, &[]).await.unwrap();
+        assert_eq!(result.queued, 1);
+        assert!(ai_transcript_analysis_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
             .await
             .unwrap()
             .is_some());
