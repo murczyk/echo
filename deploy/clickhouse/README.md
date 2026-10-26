@@ -723,6 +723,12 @@ PostgreSQL snapshot remain on PostgreSQL. An analytical operation is retried
 from the beginning on PostgreSQL, so a failed attempt cannot mix partial
 analytical and PostgreSQL result sets.
 
+REO reports with “Лише підсумкова активність” aggregate one-week windows,
+independently of the configured full-report chunk size. Each analytics window
+has its own query timeout. If any window fails or times out, all partial totals
+are discarded and the complete summary restarts on PostgreSQL. The final
+DOCX/XLSX file combines activity across every window.
+
 Unit labels and explicit unit IDs retain their selected/denied, undefined,
 deleted-unit, and legacy saved-filter semantics. Unit and media filters use
 bounded existence queries so duplicate links and attachments do not multiply

@@ -15,6 +15,11 @@ struct ActivityRow {
     seances_qty: i64,
 }
 
+struct ActivityExpressions {
+    group: SimpleExpr,
+    eligible: SimpleExpr,
+}
+
 pub(super) async fn load_summary_messages(
     login: &uuid::Uuid,
     env: &Env,
@@ -22,12 +27,12 @@ pub(super) async fn load_summary_messages(
     no_comments: bool,
     only_comments_from_current_organism: bool,
 ) -> anyhow::Result<Vec<(i64, ReoInboxMessage)>> {
-    let db = &env.dbx;
     let chunks = inbox_report_period_chunks(
         req,
         crate::config::RER_REO_SUMMARY_CHUNKING_HOURS,
     )
-    .c(h!())?;
+    .context(h!())?;
+    let db = &env.dbx;
     let groups = crate::messenger::group::get_identity_sigint_groups(db, login)
         .await
         .c(h!())?;
@@ -40,8 +45,54 @@ pub(super) async fn load_summary_messages(
     } else {
         None
     };
-    let eligible = activity_eligible(no_comments, logins.as_deref());
-    let group = first_group(req, groups);
+    let expressions = ActivityExpressions {
+        group: first_group(req, groups),
+        eligible: activity_eligible(no_comments, logins.as_deref()),
+    };
+    let timeout = core::time::Duration::from_millis(
+        env.config
+            .analytics
+            .as_ref()
+            .map(|analytics| analytics.query_timeout_ms())
+            .unwrap_or(crate::config::ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT),
+    );
+    let load_chunks = |db: DatabaseConnection, timeout| {
+        let expressions = &expressions;
+        let chunks = &chunks;
+        async move {
+            Ok(load_summary_chunks(
+                &db,
+                login,
+                env,
+                req,
+                chunks,
+                expressions,
+                timeout,
+            )
+            .await
+            .context(h!())?)
+        }
+    };
+    crate::rer_importer::analysis::with_internally_timed_analytics_read_fallback(
+        env,
+        "REO summary interception scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(req),
+        |db| load_chunks(db, Some(timeout)),
+        |db| load_chunks(db, None),
+    )
+    .await
+    .context(h!())
+}
+
+async fn load_summary_chunks(
+    db: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+    expressions: &ActivityExpressions,
+    timeout: Option<core::time::Duration>,
+) -> anyhow::Result<Vec<(i64, ReoInboxMessage)>> {
     let mut activities =
         HashMap::<NetworkSummaryKey, Option<NetworkActivity>>::new();
     for (index, chunk) in chunks.iter().copied().enumerate() {
@@ -54,38 +105,21 @@ pub(super) async fn load_summary_messages(
         );
         let chunk_req = inbox_report_chunk_req(req, chunk);
         let rows = load_activity_chunk(
+            db,
             login,
             env,
             &chunk_req,
             chunk.end,
-            group.clone(),
-            eligible.clone(),
-        )
-        .await
-        .c(h!())?;
-        for row in rows {
-            let activity = if row.seances_qty > 0 {
-                Some(NetworkActivity {
-                    since: row.since.c(h!())?,
-                    till: row.till.c(h!())?,
-                    seances_qty: row.seances_qty as u64,
-                })
-            } else {
-                None
-            };
-            let key = NetworkSummaryKey {
-                network_id: row.network_id,
-                freq: row.freq,
-                master_key: row.summary_group_master_key,
-            };
-            let total = activities.entry(key).or_default();
-            if let Some(activity) = activity {
-                match total {
-                    Some(total) => total.merge(&activity),
-                    None => *total = Some(activity),
-                }
+            expressions.group.clone(),
+            expressions.eligible.clone(),
+        );
+        let rows = match timeout {
+            Some(timeout) => {
+                tokio::time::timeout(timeout, rows).await.c(h!())?.c(h!())?
             }
-        }
+            None => rows.await.c(h!())?,
+        };
+        merge_activity_rows(&mut activities, rows).context(h!())?;
     }
     Ok(activities
         .into_iter()
@@ -109,7 +143,38 @@ pub(super) async fn load_summary_messages(
         .collect())
 }
 
+fn merge_activity_rows(
+    activities: &mut HashMap<NetworkSummaryKey, Option<NetworkActivity>>,
+    rows: Vec<ActivityRow>,
+) -> anyhow::Result<()> {
+    for row in rows {
+        let activity = if row.seances_qty > 0 {
+            Some(NetworkActivity {
+                since: row.since.c(h!())?,
+                till: row.till.c(h!())?,
+                seances_qty: row.seances_qty as u64,
+            })
+        } else {
+            None
+        };
+        let key = NetworkSummaryKey {
+            network_id: row.network_id,
+            freq: row.freq,
+            master_key: row.summary_group_master_key,
+        };
+        let total = activities.entry(key).or_default();
+        if let Some(activity) = activity {
+            match total {
+                Some(total) => total.merge(&activity),
+                None => *total = Some(activity),
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn load_activity_chunk(
+    db: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
@@ -117,31 +182,16 @@ async fn load_activity_chunk(
     group: SimpleExpr,
     eligible: SimpleExpr,
 ) -> anyhow::Result<Vec<ActivityRow>> {
-    let load_chunk = |db: DatabaseConnection| {
-        let group = group.clone();
-        let eligible = eligible.clone();
-        async move {
-            let query = build_filtered_inbox_report_chunk_query(
-                &db, login, env, req, period_end,
-            )
-            .await
-            .c(h!())?;
-            Ok(activity_query(query, group, eligible)
-                .into_model::<ActivityRow>()
-                .all(&db)
-                .await
-                .c(h!())?)
-        }
-    };
-    crate::rer_importer::analysis::with_analytics_read_fallback(
-        env,
-        "REO summary chunk",
-        crate::rer_importer::analysis::analytics_inbox_request_supported(req),
-        load_chunk,
-        load_chunk,
+    let query = build_filtered_inbox_report_chunk_query(
+        db, login, env, req, period_end,
     )
     .await
-    .context(h!())
+    .c(h!())?;
+    activity_query(query, group, eligible)
+        .into_model::<ActivityRow>()
+        .all(db)
+        .await
+        .c(h!())
 }
 
 fn activity_query(

@@ -289,9 +289,9 @@ async fn load_reo_report_messages(
     summary_only: bool,
     no_comments: bool,
     only_comments_from_current_organism: bool,
-) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
+) -> anyhow::Result<Vec<(i64, ReoInboxMessage)>> {
     if summary_only {
-        return Ok(summary::load_summary_messages(
+        return summary::load_summary_messages(
             login,
             env,
             req,
@@ -299,7 +299,7 @@ async fn load_reo_report_messages(
             only_comments_from_current_organism,
         )
         .await
-        .c(h!())?);
+        .context(h!());
     }
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
@@ -309,7 +309,7 @@ async fn load_reo_report_messages(
         inbox_report_period_chunks(req, report_settings.chunking_hours)
             .context(h!())?;
     let chunks = &chunks;
-    Ok(crate::rer_importer::analysis::with_analytics_read_fallback(
+    crate::rer_importer::analysis::with_analytics_read_fallback(
         env,
         "REO report interception scan",
         crate::rer_importer::analysis::analytics_inbox_request_supported(req),
@@ -321,7 +321,7 @@ async fn load_reo_report_messages(
         },
     )
     .await
-    .context(h!())?)
+    .context(h!())
 }
 
 async fn load_reo_inbox_messages_chunks(

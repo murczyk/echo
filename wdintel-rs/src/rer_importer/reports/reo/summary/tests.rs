@@ -1,5 +1,6 @@
 use super::*;
 use crate::functest::tests::*;
+use crate::rer_importer::types::InboxMessagesSortBy;
 use sea_orm::ActiveValue::Set;
 use serial_test::serial;
 use std::io::Read;
@@ -14,6 +15,7 @@ async fn seed_message(
     let message = mk_signal_message(
         db,
         signal_message::ActiveModel {
+            created_at: Set(timestamp),
             timestamp: Set(Some(timestamp)),
             datasource_group_id: Set(Some(group.id)),
             ..Default::default()
@@ -134,7 +136,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     seed_message(
         db,
         &group,
-        since + chrono::Duration::hours(1),
+        since + chrono::Duration::weeks(1),
         "123.400",
         &[network.id, other_network.id],
     )
@@ -143,7 +145,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     seed_message(
         db,
         &group,
-        since + chrono::Duration::hours(2),
+        since + chrono::Duration::weeks(2),
         "456.700",
         &[],
     )
@@ -161,7 +163,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let peleng = seed_message(
         db,
         &group,
-        since + chrono::Duration::minutes(30),
+        since + chrono::Duration::weeks(1) - chrono::Duration::milliseconds(1),
         "123.400",
         &[network.id],
     )
@@ -170,7 +172,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let linked_peleng = seed_message(
         db,
         &group,
-        since + chrono::Duration::minutes(40),
+        since + chrono::Duration::weeks(1) + chrono::Duration::milliseconds(1),
         "123.400",
         &[network.id],
     )
@@ -179,7 +181,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let comment = seed_message(
         db,
         &group,
-        since + chrono::Duration::minutes(45),
+        since + chrono::Duration::weeks(1) + chrono::Duration::milliseconds(2),
         "123.400",
         &[network.id],
     )
@@ -226,7 +228,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let req = InboxMessagesReq {
         since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
         till_date_inclusive_ms: Some(
-            (since + chrono::Duration::hours(2))
+            (since + chrono::Duration::weeks(2))
                 .and_utc()
                 .timestamp_millis(),
         ),
@@ -234,11 +236,22 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
         nolimit: Some(true),
         ..Default::default()
     };
-    let chunks = inbox_report_period_chunks(&req, 1).c(h!())?;
     let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
         .await
         .c(h!())?;
-    for no_comments in [false, true] {
+    for (sort_by, no_comments) in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ]
+    .into_iter()
+    .flat_map(|sort_by| [false, true].map(|no_comments| (sort_by, no_comments)))
+    {
+        let req = InboxMessagesReq {
+            sort_by: Some(sort_by),
+            ..req.clone()
+        };
+        let chunks = inbox_report_period_chunks(&req, 24).c(h!())?;
         let messages =
             load_reo_inbox_messages_chunks(db, &login.id, &env, &req, &chunks)
                 .await
@@ -292,6 +305,94 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
             if no_comments { 2 } else { 4 }
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3889_summary_restarts_after_a_later_analytics_chunk_fails(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let db = &env.dbx;
+    let login = find_test_login(db).await.c(h!())?;
+    let group = find_test_datasource_group(db).await.c(h!())?;
+    let since = NaiveDate::from_ymd_opt(2026, 10, 1)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    for timestamp in [since, since + chrono::Duration::weeks(1)] {
+        seed_message(db, &group, timestamp, "123.400", &[])
+            .await
+            .c(h!())?;
+    }
+    let analytics = crate::new_pg_pool_from_conn_string_with_max_connections(
+        crate::mk_conn_string(&env.config),
+        1,
+    )
+    .await
+    .c(h!())?;
+    analytics
+        .execute_unprepared(
+            r#"
+BEGIN;
+CREATE VIEW public.echo_analytics_health AS
+    SELECT true AS singleton, true AS healthy,
+           CURRENT_TIMESTAMP AS checked_at;
+CREATE TEMP TABLE sigint_inbox_item AS TABLE public.sigint_inbox_item;
+UPDATE sigint_inbox_item SET freq = '999.999';
+DO $$
+DECLARE columns text;
+BEGIN
+    SELECT string_agg(
+        CASE WHEN attname = 'timestamp' THEN
+            'CASE WHEN timestamp = (SELECT MAX(timestamp) FROM public.signal_message)
+             THEN (1 / (id - id))::text::timestamp ELSE timestamp END AS timestamp'
+        ELSE quote_ident(attname) END,
+        ', ' ORDER BY attnum
+    ) INTO columns
+    FROM pg_attribute
+    WHERE attrelid = 'public.signal_message'::regclass
+      AND attnum > 0 AND NOT attisdropped;
+    EXECUTE 'CREATE TEMP VIEW signal_message AS SELECT ' || columns ||
+            ' FROM public.signal_message';
+END $$;
+"#,
+        )
+        .await
+        .c(h!())?;
+    let mut env = env.as_ref().clone();
+    env.analytics = Some(crate::types::AnalyticsPool {
+        conn: analytics.clone(),
+        retry_after_unix_ms_by_operation: Default::default(),
+    });
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        till_date_inclusive_ms: Some(
+            (since + chrono::Duration::weeks(1))
+                .and_utc()
+                .timestamp_millis()
+                - 1,
+        ),
+        selected_groups: Some(vec![group.group_master_key.clone()]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let first = load_summary_messages(&login.id, &env, &req, true, false).await;
+    req.till_date_inclusive_ms = Some(
+        (since + chrono::Duration::weeks(2))
+            .and_utc()
+            .timestamp_millis(),
+    );
+    let complete =
+        load_summary_messages(&login.id, &env, &req, true, false).await;
+    analytics.execute_unprepared("ROLLBACK").await.c(h!())?;
+    let first = first.c(h!())?;
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].1.freq.as_deref(), Some("999.999"));
+    let complete = complete.c(h!())?;
+    assert_eq!(complete.len(), 1);
+    assert_eq!(complete[0].1.freq.as_deref(), Some("123.400"));
+    assert_eq!(complete[0].1.activity.as_ref().unwrap().seances_qty, 2);
     Ok(())
 }
 
