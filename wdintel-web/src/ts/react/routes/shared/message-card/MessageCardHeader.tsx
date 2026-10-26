@@ -1135,7 +1135,7 @@ function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNet
         <PeopleOutlineOutlinedIcon />
       </span>
       <span className="inline-flex max-w-full items-center align-top [overflow-wrap:anywhere] break-words">
-        <strong>{label}</strong>
+        <HeaderText wrap>{label}</HeaderText>
         {badge ? (
           <span className="badge badge-no-unit-sm relative -top-[0.06em] ml-[0.35em] align-middle">
             в дорозвідці

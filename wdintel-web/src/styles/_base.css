@@ -215,9 +215,9 @@ a {
   border-radius: 6px;
   background-color: color-mix(in srgb, var(--color-error) 12%, transparent);
   color: var(--color-error);
-  font-size: 0.75rem;
+  font-size: calc(1rem * 12 / 14);
   font-weight: 600;
-  line-height: 1.25rem;
+  line-height: calc(1rem * 16 / 14);
 }
 
 .message-card-important-status__icon {
@@ -284,8 +284,35 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-message-text {
   overflow-wrap: anywhere;
+  font-size: calc(1rem * 16 / 14);
+  line-height: 1.5;
+}
+
+.message-card-message-text .text-marked {
+  line-height: inherit;
+}
+
+.message-card-root .audio-transcription {
+  font-size: calc(1rem * 16 / 14);
+  line-height: 1.5;
+}
+
+.message-card-secondary-text,
+.message-card-root .message-card-secondary-text {
   font-size: 1rem;
-  line-height: 1.43;
+  line-height: 1.5;
+}
+
+.message-card-root .message-card-comment-author,
+.message-card-summary-title {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: calc(20 / 14);
+}
+
+.message-card-caption {
+  font-size: calc(1rem * 12 / 14);
+  line-height: calc(16 / 12);
 }
 
 .message-card-text-toggle-row {
@@ -302,7 +329,9 @@ html[data-bs-theme='dark'] .message-card-root {
   margin: 0 0 0 -4px !important;
   padding: 0 4px !important;
   color: var(--color-action) !important;
-  font-size: 0.875rem !important;
+  font-size: calc(1rem * 12 / 14) !important;
+  font-weight: 500 !important;
+  line-height: calc(16 / 12) !important;
   text-transform: none !important;
 }
 
@@ -328,15 +357,16 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-attachment-counter {
   display: inline-flex;
-  height: 24px;
+  min-height: 24px;
   align-items: center;
   justify-content: center;
   min-width: 64px;
   gap: 4px;
   box-sizing: border-box;
   padding: 0 4px;
-  font-size: 10px;
-  line-height: 16px;
+  font-size: calc(1rem * 12 / 14);
+  font-weight: 500;
+  line-height: calc(16 / 12);
   border: 1px solid var(--echo-color-divider-subtle);
   border-radius: 4px;
   background: transparent;
@@ -856,15 +886,28 @@ html[data-bs-theme='dark'] .message-card-root {
   justify-content: flex-end;
   min-width: 0;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: calc(1rem * 12 / 14);
 }
 
-/* body2-parity text for MessageCard hot path (avoid MUI Typography/Emotion per card).
-   Theme uses htmlFontSize: 14 with a 14px app root, so body2 resolves to 1rem (14px),
-   not the default-theme 0.875rem (which would be 12.25px here). */
+/* Native hot-path text keeps the card's role scale relative to the 14px app root. */
 .message-card-text {
   font-size: 1rem;
-  line-height: 1.43;
+  line-height: calc(20 / 14);
+}
+
+.message-card-header-row .message-card-text {
+  font-size: calc(1rem * 16 / 14);
+  line-height: 1.5;
+}
+
+.message-card-header-unit .message-card-text {
+  font-weight: 500;
+}
+
+.message-card-timestamp-footer .message-card-text {
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: calc(16 / 12);
 }
 
 .message-card-text--nowrap {
@@ -1143,9 +1186,9 @@ html[data-bs-theme='dark'] .message-card-root {
   background: transparent;
   color: var(--color-action);
   font: inherit;
-  font-size: 10px;
+  font-size: calc(1rem * 12 / 14);
   font-weight: 500;
-  line-height: 16px;
+  line-height: calc(16 / 12);
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -1184,9 +1227,9 @@ html[data-bs-theme='dark'] .message-card-root {
   background: transparent;
   border-color: var(--message-card-tag-border);
   color: var(--echo-color-text);
-  font-size: 12px;
+  font-size: calc(1rem * 13 / 14);
   font-weight: 400;
-  line-height: 16px;
+  line-height: calc(18 / 13);
   opacity: 1;
 }
 

@@ -101,4 +101,21 @@ boundaries, including mobile, are in `/tmp/echo-3324-year-format-qa/`.
 All eight affected browser checks, 3517 Vitest tests, production build, and
 formatting passed. No commit or push was made.
 
+## Follow-up: rem-based card typography
+
+Message text and icon-adjacent metadata labels now compute to 16px at the app's
+14px root; the receipt footer computes to 12px. Message leading is exactly
+1.5rem (21px), including marked text that previously inherited a conflicting
+global line-height. These roles scale with the root font size: a 28px root gives
+32px message text, 42px leading, and a 24px footer. No global root/font-family,
+icon sizes, chips, attachment controls, or structural layout were changed.
+
+Both hosts passed all four content variants at 390–3440px, dark/light themes,
+and doubled root font size. Verified captures:
+`/tmp/echo-3324-typography-verified-qa/`. The matrix now waits for Duty's intended
+responsive feed remount before scrolling/capturing and samples geometry in one
+browser evaluation, avoiding measurements spanning two responsive layouts.
+The six header/date checks also passed; production build, 3517 Vitest tests,
+formatting, and the typography detector passed. No commit or push was made.
+
 final result: passed

@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-10-26T09:09:07.175Z",
         "reason": "Agent: existing message-card-intelligence-report uses a neutral theme border to distinguish a linked report/quote, not a decorative accent on the outer card; confirmed unchanged in HEAD and outside the four requested UI changes."
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "wdintel-web/src/ts/react/routes/shared/message-card/MessageCardComments.tsx"
+        ],
+        "createdAt": "2026-10-26T10:33:46.385Z",
+        "reason": "Agent review: HEAD already uses a neutral MUI divider border to group message comments, not a decorative colored card accent; preserve this comment-thread marker during the user-requested typography-only update."
       }
     ]
   }

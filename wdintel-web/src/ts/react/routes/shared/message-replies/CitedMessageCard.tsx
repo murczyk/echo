@@ -20,7 +20,8 @@ export function CitedMessageCard({
   outsideFilters?: boolean;
   onNavigate?: ReplyNavigation;
 }) {
-  const className = 'block min-w-0 rounded-echo-xl bg-echo-text/5 p-echo-sm text-left';
+  const className =
+    'message-card-secondary-text block min-w-0 rounded-echo-xl bg-echo-text/5 p-echo-sm text-left';
   if (deleted) {
     return (
       <div className={className} role="status">
@@ -33,7 +34,7 @@ export function CitedMessageCard({
   const content = (
     <>
       {showTimestamp ? (
-        <span className="block text-echo-sm text-(--color-action)">
+        <span className="message-card-caption block text-(--color-action)">
           {timestamp == null
             ? 'Час невідомий'
             : dayjs(timestamp).tz(APP_TIME_ZONE).format('DD.MM.YYYY · HH:mm')}
@@ -41,7 +42,7 @@ export function CitedMessageCard({
       ) : null}
       <span className="block truncate text-echo-text">{message.preview || 'Без тексту'}</span>
       {outsideFilters ? (
-        <span className="block text-echo-xs text-echo-text opacity-50">
+        <span className="message-card-caption block text-echo-text opacity-50">
           Поза поточними фільтрами
         </span>
       ) : null}

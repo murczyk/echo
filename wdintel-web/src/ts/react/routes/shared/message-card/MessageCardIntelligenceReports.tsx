@@ -86,7 +86,7 @@ function MessageSummaryDetails({
 
   return (
     <div
-      className={`flex min-w-0 items-start gap-1 text-base font-normal leading-[1.43] ${
+      className={`message-card-secondary-text flex min-w-0 items-start gap-1 font-normal ${
         isParent ? 'text-(--color-action)' : 'text-(--echo-color-text)'
       }`}
     >

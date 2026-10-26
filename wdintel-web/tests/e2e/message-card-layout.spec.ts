@@ -32,6 +32,7 @@ for (const host of ['analysis', 'duty'] as const) {
       {
         ...message,
         ...variant,
+        textMarked: index === 2 ? [{ CNTextC: { text: variant.text } }] : [],
         images: [],
         messageUid: `card-layout-${index}`,
         unit: '108 дшп 1 пдб вБпС',
@@ -67,6 +68,12 @@ for (const host of ['analysis', 'duty'] as const) {
 
     for (const width of [1512, 1920, 2560, 3440, 768, 490, 390]) {
       await page.setViewportSize({ width, height: 1080 });
+      if (host === 'duty') {
+        await expect(page.locator('[data-duty-feed-column]')).toHaveCSS(
+          'flex-basis',
+          width < 1024 ? '100%' : 'auto',
+        );
+      }
       if (host === 'analysis' && width <= 768) await page.keyboard.press('Escape');
       for (const [index, variant] of variants.entries()) {
         const card = page.locator(`[data-message-id="${firstId + index}"] .message-card-root`);
@@ -76,12 +83,39 @@ for (const host of ['analysis', 'duty'] as const) {
         const details = card.locator('.message-card-details-region');
         await expect(main).toBeVisible();
         await expect(details).toBeVisible();
+        const labelSizes = await card
+          .locator('.message-card-header-row .message-card-text')
+          .evaluateAll((labels) => [
+            ...new Set(labels.map((label) => getComputedStyle(label).fontSize)),
+          ]);
+        expect(labelSizes).toEqual(['16px']);
+        await expect(card.locator('.message-card-header-unit .message-card-text')).toHaveCSS(
+          'font-weight',
+          '500',
+        );
+        const metadataSizes = await card
+          .locator('.message-card-metadata .message-card-text')
+          .evaluateAll((labels) => [
+            ...new Set(labels.map((label) => getComputedStyle(label).fontSize)),
+          ]);
+        expect(metadataSizes).toEqual(['14px']);
+        if (variant.text) {
+          const text = main.locator('[data-message-card-text-content="true"]');
+          await expect(text).toHaveCSS('font-size', '16px');
+          await expect(text).toHaveCSS('line-height', '24px');
+        }
         const columns = await layout.evaluate(
           (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
         );
         expect(columns).toBe(width >= 1512 ? 2 : 1);
-        const mainBox = (await main.boundingBox())!;
-        const detailsBox = (await details.boundingBox())!;
+        const [mainBox, detailsBox] = await layout.evaluate((element) =>
+          ['.message-card-main', '.message-card-details-region'].map((selector) => {
+            const { x, y, width, height } = element
+              .querySelector(selector)!
+              .getBoundingClientRect();
+            return { x, y, width, height };
+          }),
+        );
         if (columns === 2) {
           expect(Math.abs(mainBox.y - detailsBox.y)).toBeLessThan(1);
           expect(detailsBox.x).toBeGreaterThanOrEqual(mainBox.x + mainBox.width);
@@ -124,6 +158,7 @@ for (const host of ['analysis', 'duty'] as const) {
         await expect(card.locator(':scope > .message-card-divider')).toBeVisible();
         const footer = card.locator('[data-message-card-timestamp-footer="true"]');
         await expect(footer).toHaveText(`11:${16 + index}`);
+        await expect(footer.locator('.message-card-text')).toHaveCSS('font-size', '12px');
         expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
           true,
         );
@@ -134,8 +169,26 @@ for (const host of ['analysis', 'duty'] as const) {
     }
     await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'light'));
     await page.setViewportSize({ width: 1920, height: 1080 });
+    if (host === 'duty') {
+      await expect(page.locator('[data-duty-feed-column]')).toHaveCSS('flex-basis', 'auto');
+    }
     const lightCard = page.locator(`[data-message-id="${firstId + 3}"] .message-card-root`);
     await lightCard.screenshot({ path: testInfo.outputPath(`${host}-1920-light.png`) });
+    await page.evaluate(() => {
+      document.documentElement.style.fontSize = '28px';
+    });
+    await expect(lightCard.locator('[data-message-card-text-content="true"]')).toHaveCSS(
+      'font-size',
+      '32px',
+    );
+    await expect(lightCard.locator('[data-message-card-text-content="true"]')).toHaveCSS(
+      'line-height',
+      '48px',
+    );
+    await expect(
+      lightCard.locator('[data-message-card-timestamp-footer] .message-card-text'),
+    ).toHaveCSS('font-size', '24px');
+    await lightCard.screenshot({ path: testInfo.outputPath(`${host}-1920-scaled-text.png`) });
     expect(errors).toEqual([]);
   });
 }
