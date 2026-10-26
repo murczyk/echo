@@ -51,6 +51,7 @@ server {
             proxy_pass https://goi-tiles-proxy.chimp-tiaki.ts.net/;
             proxy_ssl_server_name on;
             proxy_ssl_verify on;
+            proxy_ssl_verify_depth 4;
             proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
             proxy_set_header Host goi-tiles-proxy.chimp-tiaki.ts.net;
             proxy_read_timeout 120s;
