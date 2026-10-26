@@ -124,6 +124,7 @@ export function RerDutyNeoPage({
     networkVisibilityReady,
     dutyExcludeMenuEnabled,
     collapseMediaPreviews,
+    largeMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
   } = useRerDutyPageSettings();
@@ -706,7 +707,7 @@ export function RerDutyNeoPage({
   const content = (
     <RadioFeaturesProvider allowed={radioFeaturesAllowed}>
       <Box
-        className="w-full min-h-0"
+        className={`w-full min-h-0${largeMediaPreviews && !collapseMediaPreviews ? ' message-card-previews-large' : ''}`}
         data-duty-editor-layout
         style={{
           display: editorPresentation === 'embedded' ? 'grid' : 'flex',

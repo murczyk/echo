@@ -4,6 +4,7 @@ import type { InboxMessage } from '../../src/Bindings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
+import { emptyNetworksListResponse, emptyUnitsListResponse } from './fixture-responses';
 
 const groups = [
   { masterKey: 'group-a', name: 'Group Alpha', colorKey: 'blue' },
@@ -61,6 +62,55 @@ async function installGroupNavigationMocks(page: Page) {
 }
 
 test.describe('Duty group feed navigation', () => {
+  test('@regression #3324 keeps the group island below open feed panels and above messages', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'dark'));
+    await installGroupNavigationMocks(page);
+    await page.route('**/api/sigint/units', (route) =>
+      route.fulfill({ json: emptyUnitsListResponse() }),
+    );
+    await page.route('**/api/sigint/network-list', (route) =>
+      route.fulfill({ json: emptyNetworksListResponse() }),
+    );
+    const state = { messageFeeds: [['mf-island', {}]] };
+    await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const column = page.locator('[data-duty-feed-column]').first();
+    await expect(column.locator('[data-duty-message-id]')).toHaveCount(2);
+    const island = column.locator('[data-group-island]');
+    const islandIsOnTop = () =>
+      island.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return element.contains(
+          document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+        );
+      });
+    for (const width of [806, 1920, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(island).toBeVisible();
+      await expect.poll(islandIsOnTop).toBe(true);
+      for (const [name, pattern] of [
+        ['filters', /^Фільтри/],
+        ['notifications', /^Сповіщення(?: —|$)/],
+        ['highlights', /^Підсвітка$/],
+      ] as const) {
+        const toggle = column.getByRole('button', { name: pattern });
+        await toggle.click();
+        await page.mouse.move(0, 0);
+        await expect(page.getByRole('tooltip')).toHaveCount(0);
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect.poll(islandIsOnTop).toBe(false);
+        await column.screenshot({ path: testInfo.outputPath(`${width}-${name}.png`) });
+        await toggle.click();
+        await page.mouse.move(0, 0);
+        await expect(page.getByRole('tooltip')).toHaveCount(0);
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect.poll(islandIsOnTop).toBe(true);
+      }
+    }
+  });
+
   test('@regression #3727 preserves the draft and its group when the source column changes scope', async ({
     page,
   }) => {

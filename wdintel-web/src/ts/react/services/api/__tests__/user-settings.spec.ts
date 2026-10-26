@@ -32,6 +32,7 @@ describe('user-settings api', () => {
     await expect(fetchUserSettings()).resolves.toMatchObject({
       messageTextPreviewLines: expected,
       messageSortBy: 'interception',
+      largeMediaPreviews: false,
     });
   });
 });

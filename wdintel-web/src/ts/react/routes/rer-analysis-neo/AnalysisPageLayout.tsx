@@ -420,6 +420,11 @@ export function RerAnalysisNeoPage({
   const content = (
     <RadioFeaturesProvider allowed={page.radioFeaturesAllowed}>
       <Box
+        className={
+          page.largeMediaPreviews && !page.collapseMediaPreviews
+            ? 'message-card-previews-large'
+            : undefined
+        }
         sx={{
           height: '100%',
           minHeight: 0,

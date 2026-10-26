@@ -244,6 +244,11 @@ test.describe('message card Duty header @regression', () => {
     const timestampItems = card.locator('[data-message-card-timestamp-item="true"]');
     const creationTimestamp = card.locator('[data-message-card-timestamp-footer="true"]');
     const expandLabel = card.locator('.message-card-tag-expand__label');
+    const expandTags = card.getByRole('button', { name: 'Показати додаткові теги', exact: true });
+    await expect(expandTags).toBeVisible();
+    await expect(expandTags).toHaveCSS('font-size', '12px');
+    await expect(expandTags).toHaveCSS('padding', '0px 4px');
+    await expect(expandTags).toHaveCSS('border-radius', '6px');
 
     await expect(actions).toBeVisible();
     await expect(actions.getByRole('button', { name: 'Створити розвіддонесення' })).toBeVisible();

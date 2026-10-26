@@ -1009,9 +1009,6 @@ export function MessageCardMessageBody({
       <div className="message-card-content-layout">
         <div className="message-card-main">
           {messageTextSection}
-          {hasMessageText && hasAttachmentContent ? (
-            <div className="message-card-divider" aria-hidden="true" />
-          ) : null}
           {hasAttachmentContent ? (
             <div className="message-card-attachments-region">
               {unpreviewableRawCoordinates != null ? (

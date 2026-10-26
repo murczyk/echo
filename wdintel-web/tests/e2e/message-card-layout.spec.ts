@@ -164,6 +164,7 @@ for (const host of ['analysis', 'duty'] as const) {
         const main = card.locator('.message-card-main');
         const details = card.locator('.message-card-details-region');
         await expect(main).toBeVisible();
+        await expect(main.locator(':scope > .message-card-divider')).toHaveCount(0);
         await expect(details).toBeVisible();
         const labelSizes = await card
           .locator('.message-card-header-row .message-card-text')
@@ -190,6 +191,9 @@ for (const host of ['analysis', 'duty'] as const) {
           (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
         );
         expect(columns).toBe(width >= 1512 ? 2 : 1);
+        await expect(details).toHaveCSS('border-top-style', columns === 1 ? 'solid' : 'none');
+        await expect(details).toHaveCSS('padding-top', columns === 1 ? '12px' : '0px');
+        await expect(details).toHaveCSS('margin-top', columns === 1 ? '8px' : '0px');
         const [mainBox, detailsBox] = await layout.evaluate((element) =>
           ['.message-card-main', '.message-card-details-region'].map((selector) => {
             const { x, y, width, height } = element
@@ -232,7 +236,14 @@ for (const host of ['analysis', 'duty'] as const) {
               };
             });
             expect(positions.attachmentsX).toBe(positions.textX);
-            expect(positions.attachmentsTop).toBeGreaterThanOrEqual(positions.textBottom);
+            expect(positions.attachmentsTop - positions.textBottom).toBeGreaterThanOrEqual(16);
+          } else {
+            const topGap = await main.evaluate(
+              (element) =>
+                element.querySelector('.message-card-attachments-region')!.getBoundingClientRect()
+                  .top - element.getBoundingClientRect().top,
+            );
+            expect(topGap).toBe(0);
           }
         } else {
           await expect(main.locator('.message-card-attachments-region')).toHaveCount(0);

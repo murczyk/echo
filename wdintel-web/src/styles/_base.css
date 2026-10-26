@@ -229,10 +229,10 @@ a {
 }
 
 .message-card-thumbnail-shell {
-  width: 72px;
-  min-width: 72px;
-  max-width: 72px;
-  height: 72px;
+  width: var(--message-card-attachment-tile-size);
+  min-width: var(--message-card-attachment-tile-size);
+  max-width: var(--message-card-attachment-tile-size);
+  height: var(--message-card-attachment-tile-size);
   flex-shrink: 0;
 }
 
@@ -280,6 +280,16 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-main-section {
   min-width: 0;
+}
+
+.message-card-main {
+  gap: var(--echo-spacing-lg);
+}
+
+.message-card-details-region {
+  margin-top: var(--echo-spacing-sm);
+  padding-top: var(--echo-spacing-md);
+  border-top: 1px solid var(--message-card-divider-color);
 }
 
 .message-card-message-text {
@@ -410,6 +420,14 @@ html[data-bs-theme='dark'] .message-card-root {
 .message-card-root {
   --message-card-attachment-tile-size: 72px;
   --message-card-coordinate-tile-size: var(--message-card-attachment-tile-size);
+}
+
+.message-card-previews-large .message-card-root {
+  --message-card-attachment-tile-size: 144px;
+}
+
+.message-card-previews-large .message-card-gallery {
+  gap: var(--echo-spacing-xs);
 }
 
 .message-card-gallery [data-picture-thumb-layout],
@@ -690,6 +708,12 @@ html[data-bs-theme='dark'] .message-card-root {
   .message-card-content-layout {
     grid-template-columns: minmax(0, 1fr) minmax(220px, 32%);
     gap: 24px;
+  }
+
+  .message-card-details-region {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
   }
 }
 
@@ -1171,6 +1195,10 @@ html[data-bs-theme='dark'] .message-card-root {
   outline-offset: 2px;
 }
 
+html[data-bs-theme='dark'] .message-reply-chain-popover {
+  background-color: color-mix(in srgb, var(--echo-color-surface) 94%, var(--echo-color-text));
+}
+
 .message-card-tag-expand,
 .message-card-chain-expand {
   box-sizing: border-box;
@@ -1191,6 +1219,10 @@ html[data-bs-theme='dark'] .message-card-root {
   line-height: calc(16 / 12);
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.message-card-tag-expand {
+  border-radius: var(--echo-radius-md);
 }
 
 .message-card-tag-expand-wrapper {

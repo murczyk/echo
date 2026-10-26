@@ -33,6 +33,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setShowClassicDuty: (value: boolean) => void;
   setShowClassicAnalysis: (value: boolean) => void;
   setDutyCollapseMediaPreviews: (value: boolean) => void;
+  setLargeMediaPreviews: (value: boolean) => void;
   setMediaSummaryEnabled: (value: boolean) => void;
   setAiPositionHighlightsEnabled: (value: boolean) => void;
   setMessageTextPreviewLines: (value: MessageTextPreviewLineLimit) => void;
@@ -60,6 +61,7 @@ function normalizeDutySettings(
     showClassicAnalysis: settings?.showClassicAnalysis ?? false,
     dutyCollapseMediaPreviews:
       settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+    largeMediaPreviews: settings?.largeMediaPreviews ?? false,
     mediaSummaryEnabled: settings?.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
     aiPositionHighlightsEnabled: settings?.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled:
@@ -190,6 +192,8 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, showClassicAnalysis: value })),
     setDutyCollapseMediaPreviews: (value) =>
       setSettings((current) => ({ ...current, dutyCollapseMediaPreviews: value })),
+    setLargeMediaPreviews: (value) =>
+      setSettings((current) => ({ ...current, largeMediaPreviews: value })),
     setAiPositionHighlightsEnabled: (value) =>
       setSettings((current) => ({ ...current, aiPositionHighlightsEnabled: value })),
     setMediaSummaryEnabled: (value) =>

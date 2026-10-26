@@ -2219,6 +2219,10 @@ fn patch_backward_compatible_decoders(
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
         .replace(
+            r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]"#,
         )

@@ -26,6 +26,7 @@ export type RerDutyPageSettings = {
   networkVisibilityReady: boolean;
   dutyExcludeMenuEnabled: boolean;
   collapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
 };
@@ -56,6 +57,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
+  const [largeMediaPreviews, setLargeMediaPreviews] = useState(false);
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
@@ -71,6 +73,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
+        setLargeMediaPreviews(prefs.largeMediaPreviews ?? false);
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
@@ -78,6 +81,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
+        setLargeMediaPreviews(false);
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
       }
@@ -95,6 +99,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
           dutyCollapseMediaPreviews?: boolean;
+          largeMediaPreviews?: boolean;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
         }>
@@ -107,6 +112,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       }
       if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
         setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
+      }
+      if (typeof detail?.largeMediaPreviews === 'boolean') {
+        setLargeMediaPreviews(detail.largeMediaPreviews);
       }
       if (typeof detail?.mediaSummaryEnabled === 'boolean') {
         setMediaSummaryEnabled(detail.mediaSummaryEnabled);
@@ -198,6 +206,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     networkVisibilityReady: devicesSettingsStatus === 'success',
     dutyExcludeMenuEnabled,
     collapseMediaPreviews,
+    largeMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
   };

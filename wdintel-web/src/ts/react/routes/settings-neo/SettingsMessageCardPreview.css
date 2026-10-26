@@ -1,0 +1,80 @@
+.settings-message-card-preview {
+  display: flex;
+  width: 100%;
+  max-width: 960px;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.settings-message-card-preview__lines {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--echo-spacing-sm);
+  padding-block: var(--echo-spacing-xs);
+}
+
+.settings-message-card-preview__line {
+  height: var(--echo-spacing-sm);
+  border-radius: var(--echo-radius-sm);
+  background: color-mix(in srgb, var(--echo-color-text-muted) 35%, transparent);
+}
+
+.settings-message-card-preview__icon {
+  flex-shrink: 0;
+  color: var(--echo-color-primary);
+  font-size: var(--echo-size-icon-md) !important;
+}
+
+.settings-message-card-preview__tags,
+.settings-message-card-preview__summary,
+.settings-message-card-preview__position {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--echo-spacing-sm);
+}
+
+.settings-message-card-preview__tags {
+  flex-wrap: wrap;
+}
+
+.settings-message-card-preview__summary {
+  padding: var(--echo-spacing-sm);
+  border: 1px solid var(--echo-color-divider-subtle);
+  border-radius: var(--echo-radius-md);
+  background: color-mix(in srgb, var(--echo-color-primary) 5%, transparent);
+}
+
+.settings-message-card-preview__summary .settings-message-card-preview__line {
+  background: color-mix(in srgb, var(--echo-color-primary) 40%, transparent);
+}
+
+.settings-message-card-preview__position {
+  margin-block: var(--echo-spacing-xs);
+}
+
+.settings-message-card-preview__tile {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--echo-color-border);
+  border-radius: var(--echo-radius-lg);
+  background: var(--echo-color-primary);
+  color: var(--echo-color-on-primary);
+}
+
+.settings-message-card-preview :is(.message-card-thumbnail-shell, .message-card-thumbnail-control) {
+  transition-duration: 250ms;
+  transition-property: width, min-width, max-width, height;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-message-card-preview
+    :is(.message-card-thumbnail-shell, .message-card-thumbnail-control) {
+    transition-duration: 0s;
+  }
+}
