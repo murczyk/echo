@@ -1,0 +1,187 @@
+{
+  "date_utc": "2026-10-24",
+  "iteration": "stabilize ClickHouse outages",
+  "issue": 3780,
+  "remote_mutations": false,
+  "base_branch": "stable",
+  "base_commit": "5511181ff",
+  "skhid_package": "0.1.1~rc.202610240952-1",
+  "api_started_at_utc": "2026-10-24T11:34:59Z",
+  "incident": {
+    "window_utc": [
+      "11:47:20",
+      "11:47:23"
+    ],
+    "application_native_memory_failures": 5,
+    "server_budget_gib": 17.6,
+    "largest_reported_server_rss_gib": 18.03,
+    "largest_victim_tracked_memory_bytes": 5084789055,
+    "sample_join_build_rows": 23880081,
+    "sample_preallocated_hash_elements": 26295864,
+    "completed_inbox_fallbacks": 49,
+    "max_completed_inbox_fallback_ms": 17106
+  },
+  "diagnostics": {
+    "readonly": true,
+    "statement_limit_s": 8,
+    "per_query_cap_bytes": 2147483648,
+    "threads": {
+      "empty_scope": 2,
+      "nonempty_scope": 4
+    },
+    "cases": [
+      {
+        "scope": "nonempty_original",
+        "type": "ExceptionWhileProcessing",
+        "query_duration_ms": 2627,
+        "read_rows": 84908950,
+        "memory_usage": 2147335133,
+        "exception_code": 241
+      },
+      {
+        "scope": "empty_filtered",
+        "type": "QueryFinish",
+        "query_duration_ms": 6262,
+        "read_rows": 167700052,
+        "memory_usage": 162849901,
+        "exception_code": 0
+      },
+      {
+        "scope": "nonempty_filtered",
+        "type": "QueryFinish",
+        "query_duration_ms": 6184,
+        "read_rows": 273895118,
+        "memory_usage": 1979839882,
+        "exception_code": 0
+      }
+    ],
+    "caveats": [
+      "SQL variants ran sequentially on changing production data; cache and concurrency were uncontrolled.",
+      "Raw read rows include CDC versions and do not establish physical I/O or current logical counts.",
+      "The original shapes failed their memory cap; failure durations are not successful latency measurements.",
+      "The revised nonempty query still reads a large historical scope; no concurrent endpoint SLA is claimed."
+    ]
+  },
+  "nlp_batch": {
+    "fixture": "256 synthetic callsigns; production endpoint functions; local loopback; 3 sequential pairs; spaCy blank Russian tokenizer and pymorphy3",
+    "scalar_http_requests_per_highlight": 256,
+    "batch_http_requests_per_highlight": 1,
+    "scalar_lexeme_ms": [
+      114.41740600275807,
+      117.61421101982705,
+      123.07237699860707
+    ],
+    "batch_lexeme_ms": [
+      12.418340018484741,
+      12.15643301839009,
+      11.877975019160658
+    ],
+    "scalar_median_ms": 117.61421101982705,
+    "batch_median_ms": 12.15643301839009,
+    "responses_equal": true
+  },
+  "local_clickhouse_guard_verification": {
+    "version": "26.3.12.3",
+    "isolated_local_instance": true,
+    "scaled_test_limits": true,
+    "checks": [
+      {
+        "check": "per_query_memory",
+        "detail": "Code: 241. DB::Exception: Received from localhost:19000. DB::Exception: Query memory limit exceeded: would use 24.50 MiB (attempt to allocate chunk of 16.00 MiB), maximum: 20.48 MiB: While executing AggregatingTransform.",
+        "process_exit_code": 241,
+        "expected_native_error": "MEMORY_LIMIT_EXCEEDED"
+      },
+      {
+        "check": "memory_ceiling_cannot_be_raised",
+        "process_exit_code": 196,
+        "expected_native_error": "SETTING_CONSTRAINT_VIOLATION"
+      },
+      {
+        "check": "concurrent_query_limit",
+        "process_exit_code": 202,
+        "expected_native_error": "TOO_MANY_SIMULTANEOUS_QUERIES"
+      },
+      {
+        "check": "aggregate_user_memory",
+        "detail": "Code: 241. DB::Exception: Received from localhost:19000. DB::Exception: User memory limit exceeded: would use 6.50 MiB (attempt to allocate chunk of 6.50 MiB), maximum: 1.00 MiB. OvercommitTracker decision: Query was sel",
+        "process_exit_code": 241,
+        "expected_native_error": "MEMORY_LIMIT_EXCEEDED"
+      },
+      {
+        "check": "zero_cannot_disable_max_memory_usage",
+        "process_exit_code": 196,
+        "expected_native_error": "SETTING_CONSTRAINT_VIOLATION"
+      },
+      {
+        "check": "zero_cannot_disable_max_memory_usage_for_user",
+        "process_exit_code": 196,
+        "expected_native_error": "SETTING_CONSTRAINT_VIOLATION"
+      },
+      {
+        "check": "zero_cannot_disable_max_threads",
+        "process_exit_code": 196,
+        "expected_native_error": "SETTING_CONSTRAINT_VIOLATION"
+      },
+      {
+        "check": "zero_cannot_disable_max_concurrent_queries_for_user",
+        "process_exit_code": 196,
+        "expected_native_error": "SETTING_CONSTRAINT_VIOLATION"
+      }
+    ]
+  },
+  "separate_source_search": {
+    "window_utc": [
+      "12:06:53",
+      "12:09:58"
+    ],
+    "retained_http_503s": 33,
+    "native_application_errors_during_burst": 0,
+    "shape": "Fuzzy text search with 12 OR alternatives and negative quoted predicates; PostgreSQL query_policy route",
+    "resolution_claimed": false
+  },
+  "messenger": {
+    "stuck_snapshots_observed": 2,
+    "observed_attempts_each": 176,
+    "body_bytes_each": 12836,
+    "observed_source_deadlocks": 1,
+    "observed_source_lock_timeouts": 2,
+    "observed_source_idle_transaction_terminations": 6,
+    "live_queue_reset": false
+  },
+  "validation": {
+    "database_baseline": "standard test dump",
+    "test_db": "wd_test_3780_stabilize_clickhouse",
+    "file_registry_test_db": "wd_files_test_3780_stabilize_clickhouse",
+    "regressions_3780": {
+      "passed": 24,
+      "ignored": 1
+    },
+    "extended_unit_id_regression": "passed",
+    "cargo_fmt": "passed",
+    "frontend_build": "passed",
+    "cargo_check": "passed; all targets/features",
+    "clippy": "passed; all targets/features; -D warnings",
+    "highlighting_integration": {
+      "passed": 4
+    },
+    "deployment_guard_tests": "passed",
+    "local_clickhouse_enforcement": "8 checks passed"
+  },
+  "native_concurrency": {
+    "completed_or_failed_native_queries": 12784,
+    "observed_peak_concurrent": 17,
+    "time_at_or_above_16_s": 7.260795,
+    "method": "Sweep query_start_time_microseconds and query_duration_ms for finished/failed initial echo_gateway queries; excludes in-flight queries and is not a load test.",
+    "window_utc": [
+      "11:35:30",
+      "12:05:00"
+    ]
+  },
+  "gateway_limits": {
+    "user_memory_percent_of_server": 50,
+    "query_memory_percent_of_user": 25,
+    "max_threads": 4,
+    "max_concurrent_queries": 32,
+    "minimum_setting_value": 1
+  }
+}

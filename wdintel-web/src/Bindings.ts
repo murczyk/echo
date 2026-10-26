@@ -859,6 +859,11 @@ export type SignalGroupEntry = {
   colorKey: SignalGroupColor;
 };
 
+export type GroupCreationInfo = {
+  createdAt: number;
+  createdBy: string | null;
+};
+
 export type OrphanSignalGroupEntry = {
   masterKey: string;
   name: string;
@@ -2202,6 +2207,7 @@ export type DeviceDetails = {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  audioForwardingConfigured: boolean;
 };
 
 export type DeviceUnitStat = {
@@ -2248,6 +2254,53 @@ export type UpdateDeviceReq = {
   name: string | null;
   aorIds: Array<number> | null;
   unitId: number | null;
+  audioForwarding: DeviceAudioForwardingChange | null;
+};
+
+export type DeviceAudioForwardingChange = {
+  version: string | null;
+  enabled: boolean;
+  addGroups: Array<string>;
+  removeGroups: Array<string>;
+};
+
+export type DeviceAudioForwardingGroup = {
+  masterKey: string;
+  name: string;
+  selected: boolean;
+};
+
+export type DeviceAudioForwardingSettings = {
+  version: string | null;
+  enabled: boolean;
+  groups: Array<DeviceAudioForwardingGroup>;
+};
+
+export type DeviceAudioForwardingEntry = {
+  deviceId: string;
+  deviceName: string;
+  deviceArchived: boolean;
+  groupMasterKey: string;
+  groupName: string;
+  enabled: boolean;
+  version: string;
+};
+
+export type ListDeviceAudioForwardingReq = {
+  cursor: [string, string] | null;
+};
+
+export type ListDeviceAudioForwardingRsp = {
+  items: Array<DeviceAudioForwardingEntry>;
+  nextCursor: [string, string] | null;
+  totalCount: number;
+  pageSize: number;
+};
+
+export type RemoveDeviceAudioForwardingReq = {
+  deviceId: string;
+  groupMasterKey: string;
+  version: string;
 };
 
 export type DeviceFileRoot = {
@@ -3508,6 +3561,7 @@ export type RestartEchoRequest = {
 export type ReoReportSettings = {
   adjacentFreqsDistance: number;
   noComments: boolean;
+  summaryOnly: boolean;
 };
 
 export type ReoReportFileType =
@@ -7372,6 +7426,38 @@ export type GroupUpdateReq = {
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
   fetchNewMessages: boolean | null;
+};
+
+export type NativeGroupSettings = {
+  name: string;
+  colorKey: SignalGroupColor | null;
+  shortNote: string | null;
+  longNote: string | null;
+  isSecret: boolean;
+  userLogins: Array<string>;
+  organismIds: Array<number>;
+  adminLogins: Array<string>;
+  areaOfResponsibilityIds: Array<number>;
+  zoneIds: Array<number>;
+  interseptionKind: InterseptionKind;
+  disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
+};
+
+export type NativeGroupCreateReq = {
+  requestId: string;
+  settings: NativeGroupSettings;
+};
+
+export type NativeGroupUpdateReq = {
+  masterKey: string;
+  settings: NativeGroupSettings;
+};
+
+export type NativeGroupDetail = {
+  masterKey: string;
+  settings: NativeGroupSettings;
+  isArchived: boolean;
 };
 
 export type GroupEntryF1 = {

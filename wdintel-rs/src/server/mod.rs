@@ -1000,6 +1000,15 @@ fn spawn_background_workers(
         .await;
     });
     if env.file_registry_db.is_some() {
+        let forwarding_env = env.clone();
+        let forwarding_cancel = cancel_token.clone();
+        spawn_named_worker("device_audio_forwarding", bg_set, async move {
+            crate::devices::audio::forwarding::run(
+                forwarding_env,
+                forwarding_cancel,
+            )
+            .await;
+        });
         let archive_env = env.clone();
         let archive_cancel = cancel_token.clone();
         spawn_named_worker("device_file_archive", bg_set, async move {
@@ -1135,6 +1144,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group::handlers::orphan_signal_groups)
             .service(crate::messenger::group::handlers::archived_signal_groups)
             .service(crate::messenger::group::handlers::signal_group_archive)
+            .service(crate::messenger::group::native::create)
+            .service(crate::messenger::group::creation::get)
+            .service(crate::messenger::group::native::get)
+            .service(crate::messenger::group::native::update)
             .service(crate::messenger::group::handlers::signal_group_unarchive)
             .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
@@ -1429,6 +1442,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::fallback_upload)
             .service(crate::devices::audio::upload_routes())
             .service(crate::devices::audio::routes())
+            .service(crate::devices::audio::forwarding::get)
+            .service(crate::devices::audio::forwarding::list)
+            .service(crate::devices::audio::forwarding::remove)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)

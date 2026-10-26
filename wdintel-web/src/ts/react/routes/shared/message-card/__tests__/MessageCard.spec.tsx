@@ -946,7 +946,7 @@ describe('MessageCard', () => {
       }),
     });
     const player = view.container.querySelector('custom-audio-player');
-    expect(player?.getAttribute('src')).toBe('/api/messenger/media/large-audio');
+    expect(player?.getAttribute('src')).toBe('/api/messenger/media/large-audio?playback=1');
     expect(player?.hasAttribute('wave-src')).toBe(false);
     expect(player?.hasAttribute('spectrum-src')).toBe(false);
   });

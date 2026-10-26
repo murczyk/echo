@@ -26,14 +26,16 @@ time range.
 
 ## Settlement election
 
-Candidate loading reads canonical settlements, aliases, coordinates, and
-distances from the active Battle Line/AOR segment before calling the pure
-election in `settlement_clusters.rs`. Candidates retain the existing west/east
-distance limits.
+Inbox candidate loading reads names, aliases, and valid coordinates only from
+PostgreSQL, without JSON dictionary filtering or fallback. The inbox worker,
+diagnostic preview, and recalculation oneoff share this behavior. Candidates are
+ranked against the active Battle Line/AOR segment before the pure election in
+`settlement_clusters.rs`, retaining the existing west/east distance limits.
+Network candidates still use the configured JSON catalog scope and fallback.
 
 Without an anchor, each distinct normalized location name has one vote,
 including names with no eligible candidates. The election first maximizes the
-number of names whose candidates are all less than 50 km apart, then minimizes
+number of names whose candidates are all less than 30 km apart, then minimizes
 their total pairwise distance and total distance to the Battle Line. A result
 requires strictly more than half of all names. Unfitting names remain
 unresolved; tied best results leave the whole set unresolved. Distances within 1
@@ -49,7 +51,9 @@ unchanged name sets, and rebuild it on network restoration. The migration queues
 every existing non-deleted network with location names, including archived and
 scheduled networks. This PostgreSQL-only table is excluded from analytics
 replication. The settlement worker processes networks before inbox items using
-the same candidate loader and pure election. Every processed pending network
+the same geographic ranking and pure election with their respective candidate
+sources. Database-only inbox and catalog-based network caches are separate.
+Every processed pending network
 set queues recalculation, including when all names become unresolved. Frequency
 tasks also visit messages currently assigned to competing networks. The network
 worker requeues unresolved inbox locations in its existing bounded message
@@ -62,12 +66,14 @@ existing network decisions; removing a selection requeues against the defaults.
 
 Resolved locations of linked, non-deleted networks anchor inbox names. Anchored
 sets maximize matched names, minimize total distance to the nearest anchor, then
-minimize pairwise distances. Trusted anchors replace the majority and 50 km
+minimize pairwise distances. Trusted anchors replace the majority and 30 km
 requirements; ties leave the entire set unresolved. Previously resolved inbox
-locations also provide context for pending names when there are no network
-anchors. Explicit inbox recalculation uses network anchors too. Historical
-resolved inbox links remain intact until locations change or an explicit
-recalculation runs.
+locations remain fixed votes in the same majority election for pending names
+when there are no network anchors. They retain the 30 km pairwise limit; retrying
+an unresolved name cannot promote a distant outlier. If a fixed settlement is no
+longer eligible, pending names remain unresolved. Explicit inbox recalculation
+uses network anchors too. Historical resolved inbox links remain intact until
+locations change or an explicit recalculation runs.
 
 Network matching uses location evidence only after frequency, activity, AOR,
 post, and unit filtering still leave several candidates. All distinct message

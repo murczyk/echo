@@ -2741,6 +2741,36 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                 let ids =
                     messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
                 assert_eq!(ids, expected);
+                let tail = crate::rer_importer::inbox::query::load_postgres_fresh_tail_inbox_candidates(
+                    db,
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    test_dt(2026, 3, 1, 9, 0),
+                )
+                .await
+                .unwrap();
+                assert_eq!(tail, expected);
+                let tail_query = crate::rer_importer::inbox::query::build_postgres_fresh_tail_inbox_digest_query(
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    test_dt(2026, 3, 1, 9, 0),
+                )
+                .await
+                .unwrap();
+                let tail = db
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        tail_query,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    tail.try_get::<i64>("", "count").unwrap(),
+                    if page_index == 0 { 26 } else { 6 }
+                );
                 assert_eq!(
                     messages.len(),
                     if page_index == 0 {
@@ -2762,6 +2792,592 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
                     }
                 } else {
                     assert!(ids.iter().all(|id| !first_ids.contains(id)));
+                }
+            }
+        }
+    }
+}
+
+async fn seed_fresh_tail_search_messages_3780(
+    fixture: &RerAnalysisFixture,
+    unit_ids: [i64; 2],
+    date: NaiveDateTime,
+) -> Vec<i64> {
+    let db = &fixture.env.dbx;
+    let mut ids = Vec::new();
+    for (index, text) in [
+        "Береза коридор",
+        "Вільха",
+        "Береза стара",
+        "Вільха вкладення",
+        "Вільха застаріла ревізія",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            text,
+            "155.2750",
+            if index == 2 {
+                date - chrono::Duration::hours(1)
+            } else {
+                date
+            },
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        ids.push(message.id);
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::UnitV2,
+                Expr::value(if index == 3 {
+                    "3780 attachment tail"
+                } else {
+                    "3780 fresh tail"
+                }),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(message.id))
+            .exec(db)
+            .await
+            .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(unit_ids[usize::from(index == 3)]),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        if matches!(index, 1 | 3 | 4) {
+            seed_fresh_tail_search_attachment_3780(db, message.id, index).await;
+        }
+    }
+    ids
+}
+
+async fn seed_fresh_tail_search_attachment_3780(
+    db: &DatabaseConnection,
+    message_id: i64,
+    index: usize,
+) {
+    let media = signal_message_media::ActiveModel {
+        id: Set(uuid::Uuid::new_v4()),
+        signal_message_id: Set(message_id),
+        file_name: Set(Some(
+            if index == 1 {
+                "Береза.txt"
+            } else {
+                "content.txt"
+            }
+            .into(),
+        )),
+        content_type: Set("text/plain".into()),
+        size_bytes: Set(1),
+        is_encrypted: Set(true),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    if index == 1 {
+        return;
+    }
+    let revision = uuid::Uuid::new_v4();
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"
+        WITH document AS (
+            UPDATE attachment_document SET revision = $2
+            WHERE media_id = $1 RETURNING media_id
+        )
+        INSERT INTO attachment_chunk
+            (media_id, revision, ordinal, member, locator, text, markdown, html)
+        SELECT media_id, $3, 0, 'content.txt', '1',
+            'Береза зміна позиції', '', '' FROM document
+        "#,
+        [
+            media.id.into(),
+            revision.into(),
+            if index == 4 {
+                uuid::Uuid::new_v4()
+            } else {
+                revision
+            }
+            .into(),
+        ],
+    ))
+    .await
+    .unwrap();
+}
+
+fn fresh_tail_unit_filters_3780(
+    unit_ids: [i64; 2],
+) -> Vec<(InboxMessagesReq, Vec<usize>)> {
+    vec![
+        (InboxMessagesReq::default(), vec![0, 1, 3, 4]),
+        (
+            InboxMessagesReq {
+                selected_units: Some(vec!["3780 fresh tail".into()]),
+                ..Default::default()
+            },
+            vec![0, 1, 4],
+        ),
+        (
+            InboxMessagesReq {
+                selected_unit_ids: Some(vec![unit_ids[0]]),
+                ..Default::default()
+            },
+            vec![0, 1, 4],
+        ),
+        (
+            InboxMessagesReq {
+                selected_units: Some(vec!["3780 fresh tail".into()]),
+                selected_unit_ids: Some(vec![unit_ids[1]]),
+                ..Default::default()
+            },
+            vec![0, 1, 3, 4],
+        ),
+        (
+            InboxMessagesReq {
+                denied_units: Some(vec!["3780 fresh tail".into()]),
+                ..Default::default()
+            },
+            vec![3],
+        ),
+        (
+            InboxMessagesReq {
+                denied_unit_ids: Some(vec![unit_ids[0]]),
+                ..Default::default()
+            },
+            vec![3],
+        ),
+    ]
+}
+
+async fn assert_fresh_tail_search_3780(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    date: NaiveDateTime,
+    expected: &[i64],
+) {
+    use crate::rer_importer::inbox::query::{
+        build_postgres_fresh_tail_inbox_digest_query,
+        load_postgres_fresh_tail_inbox_candidates,
+    };
+
+    let db = &env.dbx;
+    let cutoff = date - chrono::Duration::minutes(1);
+    let actual =
+        load_postgres_fresh_tail_inbox_candidates(db, login, env, req, cutoff)
+            .await
+            .unwrap();
+    assert_eq!(actual, expected, "{req:?}");
+    let query =
+        build_postgres_fresh_tail_inbox_digest_query(login, env, req, cutoff)
+            .await
+            .unwrap();
+    let row = db
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        expected.len() as i64
+    );
+    assert_eq!(
+        row.try_get::<Option<NaiveDateTime>>("", "first_element_ts")
+            .unwrap(),
+        (!expected.is_empty()).then_some(date)
+    );
+}
+
+async fn assert_full_period_search_results_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    mut expected: Vec<i64>,
+) {
+    let mut actual = inbox_map_item_ids(&fixture.env, login, req).await;
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected, "{req:?}");
+    let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+        login,
+        &fixture.env,
+        req,
+    )
+    .await
+    .unwrap();
+    let row = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        expected.len() as i64
+    );
+    let mut stats_req = mk_analysis_stats_req(
+        req.since_date_inclusive_ms.unwrap(),
+        req.till_date_inclusive_ms.unwrap(),
+    );
+    stats_req.selected_groups = req.selected_groups.clone();
+    stats_req.selected_freqs = req.selected_freqs.clone();
+    stats_req.search = req.search.clone();
+    stats_req.search_mode = req.search_mode;
+    let groups = fetch_group_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert_eq!(
+        groups
+            .get(&fixture.alpha.signal_group.master_key)
+            .copied()
+            .unwrap_or(0),
+        expected.len() as i64,
+        "{req:?}"
+    );
+    let sender_counts = fetch_sender_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert_eq!(
+        sender_counts.values().sum::<i64>(),
+        expected.len() as i64,
+        "{req:?}"
+    );
+    let freqs = fetch_freq_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert!(!freqs.is_empty());
+    stats_req.selected_freqs = Some(vec!["999.9999".into()]);
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &stats_req)
+            .await
+            .unwrap(),
+        freqs,
+        "frequency facet must ignore its own selection: {req:?}"
+    );
+}
+
+async fn seed_full_period_audio_search_3780(
+    fixture: &RerAnalysisFixture,
+    date: NaiveDateTime,
+) -> i64 {
+    let db = &fixture.env.dbx;
+    let message = mk_analysis_message(
+        db,
+        "Аудіозапис",
+        "155.2750",
+        date,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"
+        with source as (
+            insert into transcription_source(id, source_key)
+            values ($1, '3780-audio/' || $1::text) returning id
+        ), audio as (
+            insert into signal_message_audio_ref
+                (id, signal_message_id, audio_id, transcription_source_id)
+            select $1, $2, $1, id from source returning id
+        )
+        insert into signal_message_audio_search(id, signal_message_id, file_name)
+        select id, $2, 'Береза.wav' from audio
+        "#,
+        [uuid::Uuid::new_v4().into(), message.id.into()],
+    ))
+    .await
+    .unwrap();
+    message.id
+}
+
+async fn assert_attachment_search_without_inbox_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    message: i64,
+    date: NaiveDateTime,
+) {
+    let db = &fixture.env.dbx;
+    for body in [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!({"body": null})),
+        Some(serde_json::json!({"body": ""})),
+    ] {
+        sigint_inbox_item::Entity::delete_by_id(message)
+            .exec(db)
+            .await
+            .unwrap();
+        if let Some(body) = body {
+            crate::functest::tests::mk_sigint_inbox_item(
+                db,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message),
+                    body_noheader: Set(Some(body)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        for sort_by in [
+            InboxMessagesSortBy::IMSCreatedAt,
+            InboxMessagesSortBy::IMSDatetime,
+        ] {
+            for search_mode in
+                [AnalysisSearchMode::Exact, AnalysisSearchMode::Substring]
+            {
+                for (search, matches) in [
+                    ("\"Береза.txt\"", true),
+                    ("-Невідомий", true),
+                    ("-Береза", false),
+                    ("\"%\"", true),
+                    ("-\"%\"", false),
+                ] {
+                    let req = InboxMessagesReq {
+                        since_date_inclusive_ms: (sort_by
+                            == InboxMessagesSortBy::IMSCreatedAt)
+                            .then_some(date.and_utc().timestamp_millis()),
+                        selected_groups: Some(vec![fixture
+                            .alpha
+                            .signal_group
+                            .master_key
+                            .clone()]),
+                        search: Some(search.into()),
+                        search_mode: Some(search_mode),
+                        sort_by: Some(sort_by),
+                        nolimit: Some(true),
+                        load_latest: Some(true),
+                        ..Default::default()
+                    };
+                    assert_optional_inbox_search_result_3780(
+                        fixture, login, &req, message, matches,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+}
+
+async fn assert_optional_inbox_search_result_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    message: i64,
+    matches: bool,
+) {
+    let actual = inbox_map_item_ids(&fixture.env, login, req).await;
+    assert_eq!(actual.contains(&message), matches, "{req:?}");
+    let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+        login,
+        &fixture.env,
+        req,
+    )
+    .await
+    .unwrap();
+    let row = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        actual.len() as i64,
+        "{req:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 10, 25, 10, 0);
+    let ids = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, unit.id],
+        date,
+    )
+    .await;
+    let audio = seed_full_period_audio_search_3780(&fixture, date).await;
+    let mut other_frequency = 0;
+    for (index, group, datetime, deleted) in [
+        (0, &fixture.alpha, date, false),
+        (1, &fixture.secret_live, date, false),
+        (2, &fixture.alpha, date - chrono::Duration::days(32), false),
+        (3, &fixture.alpha, date, true),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            "Береза",
+            if index == 0 { "155.3000" } else { "155.2750" },
+            datetime,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        if deleted {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+        if index == 0 {
+            other_frequency = message.id;
+        }
+    }
+    for days in [1, 7, 8, 16, 31] {
+        for selected_freqs in [None, Some(vec!["155.2750".into()])] {
+            for search_mode in [
+                AnalysisSearchMode::Fuzzy,
+                AnalysisSearchMode::Exact,
+                AnalysisSearchMode::Substring,
+            ] {
+                for (search, indexes) in [
+                    ("Береза", vec![0, 1, 2, 3]),
+                    ("-Береза", vec![4]),
+                    ("\"зміна позиції\"", vec![3]),
+                ] {
+                    let req = InboxMessagesReq {
+                        since_date_inclusive_ms: Some(
+                            (date - chrono::Duration::days(days))
+                                .and_utc()
+                                .timestamp_millis(),
+                        ),
+                        till_date_inclusive_ms: Some(
+                            (date + chrono::Duration::hours(1))
+                                .and_utc()
+                                .timestamp_millis(),
+                        ),
+                        selected_groups: Some(vec![fixture
+                            .alpha
+                            .signal_group
+                            .master_key
+                            .clone()]),
+                        selected_freqs: selected_freqs.clone(),
+                        search: Some(search.into()),
+                        search_mode: Some(search_mode),
+                        nolimit: Some(true),
+                        ..Default::default()
+                    };
+                    let mut expected = indexes
+                        .iter()
+                        .map(|index| ids[*index])
+                        .collect::<Vec<_>>();
+                    if search == "Береза" {
+                        expected.push(audio);
+                    }
+                    if selected_freqs.is_none() && search == "Береза" {
+                        expected.push(other_frequency);
+                    }
+                    assert_full_period_search_results_3780(
+                        &fixture, &login.id, &req, expected,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+    assert_attachment_search_without_inbox_3780(
+        &fixture, &login.id, ids[1], date,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_fresh_tail_search_preserves_matches_and_unit_filters_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let attachment_unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 3, 2, 10, 0);
+    let ids = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, attachment_unit.id],
+        date,
+    )
+    .await;
+    for (filters, eligible) in
+        fresh_tail_unit_filters_3780([unit.id, attachment_unit.id])
+    {
+        for search_mode in [
+            AnalysisSearchMode::Fuzzy,
+            AnalysisSearchMode::Exact,
+            AnalysisSearchMode::Substring,
+        ] {
+            for (search, matches) in [
+                ("Береза", vec![0, 1, 3]),
+                ("-Береза", vec![4]),
+                ("Береза or Вільха", vec![0, 1, 3, 4]),
+                ("155.275 Береза", vec![0, 1, 3]),
+                ("\"Береза\" -відсутній", vec![0, 1, 3]),
+                ("\"зміна позиції\"", vec![3]),
+            ] {
+                let req = InboxMessagesReq {
+                    since_date_inclusive_ms: Some(
+                        (date - chrono::Duration::hours(2))
+                            .and_utc()
+                            .timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        (date + chrono::Duration::days(1))
+                            .and_utc()
+                            .timestamp_millis(),
+                    ),
+                    search: Some(search.into()),
+                    search_mode: Some(search_mode),
+                    nolimit: Some(true),
+                    ..filters.clone()
+                };
+                let expected = matches
+                    .into_iter()
+                    .filter(|index| eligible.contains(index))
+                    .map(|index| ids[index])
+                    .collect::<Vec<_>>();
+                let mut full_period =
+                    inbox_map_item_ids(&fixture.env, &login.id, &req).await;
+                full_period.retain(|id| *id != ids[2]);
+                assert_eq!(full_period, expected, "{search_mode:?}: {search}");
+                for sort_by in [
+                    InboxMessagesSortBy::IMSDatetime,
+                    InboxMessagesSortBy::IMSCreatedAt,
+                ] {
+                    let req = InboxMessagesReq {
+                        sort_by: Some(sort_by),
+                        ..req.clone()
+                    };
+                    assert_fresh_tail_search_3780(
+                        &fixture.env,
+                        &login.id,
+                        &req,
+                        date,
+                        &expected,
+                    )
+                    .await;
                 }
             }
         }
@@ -6483,6 +7099,56 @@ async fn rer_analysis_unit_id_filter_keeps_same_name_units_distinct() {
         .unwrap();
     assert_eq!(item_ids, vec![second_message.id]);
 
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::UnitV2,
+            Expr::value("Header branch"),
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(second_message.id))
+        .exec(db)
+        .await
+        .unwrap();
+    for (selected_units, selected_unit_ids, denied_unit_ids, expected) in [
+        (
+            None,
+            vec![first_unit.id, second_unit.id],
+            Some(vec![first_unit.id]),
+            vec![second_message.id],
+        ),
+        (
+            Some(vec!["Header branch".to_string()]),
+            vec![first_unit.id],
+            None,
+            vec![first_message.id, second_message.id],
+        ),
+        (
+            Some(vec![]),
+            vec![first_unit.id],
+            None,
+            vec![first_message.id],
+        ),
+        (None, vec![-1], None, vec![]),
+    ] {
+        let inbox_req = InboxMessagesReq {
+            selected_units,
+            selected_unit_ids: Some(selected_unit_ids),
+            denied_unit_ids,
+            ..inbox_req.clone()
+        };
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login_id,
+                &fixture.env,
+                &inbox_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected);
+    }
+
     let first_unit_id = first_unit.id;
     let mut first_unit = first_unit.into_active_model();
     first_unit.deleted = Set(true);
@@ -8248,6 +8914,16 @@ async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     .await
     .unwrap();
 
+    let matches = stats::count_unit_exact_match_breakdown_for_login(
+        &req,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+        &fixture.env,
+        master_keys.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(matches, (7, 0));
+
     let (count_overall, count_selected) = stats::fetch_counts_for_login(
         &req,
         &test_identity_login_id(&fixture.env, &test_identity).await,
@@ -9412,6 +10088,42 @@ async fn count_stats_analytics_success_skips_postgres() {
 }
 
 #[tokio::test]
+async fn count_stats_analytics_resource_limits_preserve_circuit_3780() {
+    for (message, opens_circuit) in [
+        ("Code: 241. Query memory limit exceeded (MEMORY_LIMIT_EXCEEDED)", false),
+        ("Code: 241. Memory limit (for user) exceeded (MEMORY_LIMIT_EXCEEDED)", false),
+        ("Code: 202. Too many simultaneous queries (TOO_MANY_SIMULTANEOUS_QUERIES)", false),
+        ("Code: 241. (total) memory limit exceeded (MEMORY_LIMIT_EXCEEDED)", true),
+        ("pg_clickhouse: DB::Exception: Query memory limit exceeded: maximum 2 GiB", false),
+        ("pg_clickhouse: DB::Exception: Memory limit (for user) exceeded", false),
+        ("pg_clickhouse: DB::Exception: Too many simultaneous queries for user echo_gateway", false),
+        ("pg_clickhouse: DB::Exception: (total) memory limit exceeded", true),
+    ] {
+        let retry_state = AtomicU64::new(0);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let analytics_query = async {
+            Err::<&str, AppError>(anyhow::anyhow!(message).context(h!()).into())
+        };
+        let response = with_count_stats_analytics_fallback(
+            Some(analytics_query),
+            None,
+            core::time::Duration::from_secs(1),
+            async { Ok::<_, AppError>("postgres") },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response, "postgres");
+        assert_eq!(analytics_retry_attempt(&retry_state).is_none(), opens_circuit);
+    }
+    assert!(analytics_fallback_needs_capacity(
+        "analytics_resource_limit"
+    ));
+}
+
+#[tokio::test]
 async fn count_stats_analytics_error_retries_postgres_once() {
     let postgres_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let postgres_attempts_query = postgres_attempts.clone();
@@ -10509,6 +11221,678 @@ fn new_callsign_thresholds_keep_existing_boundary_semantics() {
         vec!["exact-30d", "exact-7d", "never"]
     );
     assert_eq!(result.not_seen_30days, vec!["exact-30d", "never"]);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_frequency_candidates_3780_preserve_order_and_access()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    for sort_by in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ] {
+        for (newest_first, nolimit) in
+            [(true, false), (false, false), (true, true), (false, true)]
+        {
+            for (selected_freqs, denied_freqs) in [
+                (Some(vec!["3780.1".to_string()]), None),
+                (None, Some(vec!["3780.2".to_string()])),
+                (
+                    Some(vec!["3780.1".to_string(), "".to_string()]),
+                    Some(vec!["".to_string()]),
+                ),
+            ] {
+                let mut req = InboxMessagesReq {
+                    selected_freqs,
+                    denied_freqs,
+                    sort_by: Some(sort_by),
+                    since_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    newest_first: Some(newest_first),
+                    nolimit: Some(nolimit),
+                    ..Default::default()
+                };
+                for _page in 0..2 {
+                    let expected =
+                        inbox_map_item_ids(&fixture.env, &login, &req).await;
+                    let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                        &login,
+                        &fixture.env,
+                        &req,
+                        &fixture.env.dbx,
+                        90_000,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(actual, expected, "{sort_by:?}");
+                    if newest_first {
+                        req.before_id_noninclusive = expected.last().copied();
+                    } else {
+                        req.since_id_noninclusive = expected.last().copied();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_latest_candidates_3780_preserve_limits_and_units() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    for req in [
+        InboxMessagesReq {
+            selected_freqs: Some(vec!["3780.1".to_string()]),
+            load_latest: Some(true),
+            ..Default::default()
+        },
+        InboxMessagesReq {
+            selected_freqs: Some(vec!["3780.1".to_string()]),
+            load_latest: Some(true),
+            nolimit: Some(true),
+            ..Default::default()
+        },
+        InboxMessagesReq {
+            selected_units: Some(vec!["3780 header".to_string()]),
+            load_latest: Some(true),
+            ..Default::default()
+        },
+    ] {
+        let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+        assert!(!expected.is_empty());
+        let actual =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &req,
+                &fixture.env.dbx,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual, expected);
+    }
+    let recent = chrono::Utc::now().naive_utc() - chrono::Duration::hours(1);
+    let old = recent - chrono::Duration::days(10);
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for recent_count in [messages.len(), 3, 0] {
+        for (index, message) in messages.iter().enumerate() {
+            signal_message::Entity::update_many()
+                .col_expr(
+                    signal_message::Column::CreatedAt,
+                    Expr::value(if index < recent_count {
+                        recent
+                    } else {
+                        old
+                    }),
+                )
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(&fixture.env.dbx)
+                .await
+                .unwrap();
+        }
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSTimestamp,
+            InboxMessagesSortBy::IMSCreatedAt,
+        ] {
+            let req = InboxMessagesReq {
+                selected_units: Some(vec!["3780 header".to_string()]),
+                sort_by: Some(sort_by),
+                load_latest: Some(true),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(expected.len(), INBOX_MESSAGES_PAGE_LIMIT);
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected, "{sort_by:?}, recent={recent_count}");
+            if recent_count == messages.len() {
+                assert_eq!(candidate_queries.load(Ordering::SeqCst), 2);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
+{
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    let units = seed_chunked_unit_links_3780(&fixture, &messages, login).await;
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for (selected_unit_ids, denied_unit_ids, total, chunked) in [
+        (Some(vec![units[0]]), None, 28, true),
+        (Some(vec![units[1]]), None, 3, true),
+        (None, Some(vec![units[0]]), 4, true),
+        (
+            Some(vec![units[0], units[1]]),
+            Some(vec![units[1]]),
+            28,
+            true,
+        ),
+        (Some(vec![units[2]]), None, 0, true),
+        (None, Some(vec![units[2]]), 32, true),
+        (Some(vec![]), Some(vec![]), 32, false),
+    ] {
+        for nolimit in [false, true] {
+            let req = InboxMessagesReq {
+                selected_unit_ids: selected_unit_ids.clone(),
+                denied_unit_ids: denied_unit_ids.clone(),
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                ),
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                newest_first: Some(true),
+                nolimit: Some(nolimit),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(
+                expected.len(),
+                if nolimit {
+                    total
+                } else {
+                    std::cmp::min(total, INBOX_MESSAGES_PAGE_LIMIT)
+                }
+            );
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                candidate_queries.load(Ordering::SeqCst),
+                if chunked { 2 } else { 1 },
+                "selected={selected_unit_ids:?}, denied={denied_unit_ids:?}"
+            );
+        }
+    }
+}
+
+async fn seed_chunked_unit_links_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+    login: uuid::Uuid,
+) -> Vec<i64> {
+    let db = &fixture.env.dbx;
+    let mut units = Vec::new();
+    for deleted in [false, false, true] {
+        units.push(
+            mk_sigint_unit(
+                db,
+                sigint_unit::ActiveModel {
+                    name: Set("3780 shared unit name".to_string()),
+                    created_by_login_id: Set(login),
+                    deleted: Set(deleted),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let mut links = Vec::new();
+    for message in messages {
+        let index = (message.id - base)
+            % crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+        let unit_index = match index {
+            28..=30 => 1,
+            31 => 2,
+            _ => 0,
+        };
+        links.push(sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(units[unit_index]),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        });
+        if message.id == base {
+            links.push(sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(message.id),
+                unit_id: Set(units[unit_index]),
+                kind: Set(SigintInboxItemUnitKind::Network),
+                ..Default::default()
+            });
+        }
+    }
+    sigint_inbox_item_unit::Entity::insert_many(links)
+        .exec(db)
+        .await
+        .unwrap();
+    units
+}
+
+async fn seed_chunked_messages_3780(
+    fixture: &RerAnalysisFixture,
+) -> Vec<signal_message::Model> {
+    let db = &fixture.env.dbx;
+    let base: i64 = signal_message::Entity::find()
+        .select_only()
+        .column_as(signal_message::Column::Id.max(), "max_id")
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        + 1;
+    let date = test_dt(2026, 3, 2, 10, 0);
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let messages = signal_message::Entity::insert_many((0..34).map(|index| {
+        let created_at = date + chrono::Duration::seconds((index * 17) % 37);
+        signal_message::ActiveModel {
+            id: Set(base + index + (index % 2) * width),
+            body: Set(Some(format!("3780 chunk {index}"))),
+            created_at: Set(created_at),
+            timestamp: Set(Some(created_at)),
+            deleted: Set(index == 32),
+            datasource_group_id: Set(Some(fixture.alpha.datasource_group.id)),
+            ..Default::default()
+        }
+    }))
+    .exec_with_returning(db)
+    .await
+    .unwrap();
+    sigint_inbox_item::Entity::insert_many(messages.iter().map(|message| {
+        let index = (message.id - base) % width;
+        let freq = match index {
+            29 => Some("3780.2"),
+            30 => Some(""),
+            31 => None,
+            _ => Some("3780.1"),
+        };
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            datetime: Set(message.timestamp),
+            freq: Set(freq.map(str::to_string)),
+            unit_v2: Set(Some("3780 header".to_string())),
+            ..Default::default()
+        }
+    }))
+    .exec(db)
+    .await
+    .unwrap();
+    let mut memberships = Vec::new();
+    for message in &messages {
+        let index = (message.id - base) % width;
+        let groups = match index {
+            0 => vec![&fixture.alpha, &fixture.beta],
+            33 => vec![&fixture.secret_hidden],
+            _ => vec![&fixture.alpha],
+        };
+        for group in groups {
+            memberships.push(signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    group.signal_group.master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(group.datasource_group.id)),
+                created_at: Set(date),
+                ..Default::default()
+            });
+        }
+    }
+    signal_message_group::Entity::insert_many(memberships)
+        .exec(db)
+        .await
+        .unwrap();
+    messages
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_tag_counts_3780_deduplicate_messages_per_tag() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    for message in &messages {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag.id),
+                confidence: Set(1.0),
+                model: Set(
+                    (message.id - base == 28).then(|| "3780".to_string())
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(base),
+            tag_id: Set(tag.id),
+            confidence: Set(1.0),
+            model: Set(Some("3780 duplicate actor".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login, false)
+        .await
+        .unwrap();
+    let mut req = mk_analysis_stats_req(
+        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+    );
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for without_model_tags in [false, true] {
+        req.without_model_tags = Some(without_model_tags);
+        req.denied_tags = Some(vec![tag.id]);
+        let rows = stats::fetch_analytics_tags_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &access,
+            &AnalyticsMessageIdScope::From(base),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag_id, tag.id);
+        assert_eq!(rows[0].count, 29);
+    }
+}
+
+#[test]
+fn analytics_message_id_chunks_3780_cover_boundaries_without_overlap() {
+    let width = crate::config::ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE;
+    let chunks = AnalyticsMessageIdScope::Inclusive {
+        min_id: i64::MAX - width,
+        max_id: i64::MAX,
+    }
+    .chunks(width);
+    assert_eq!(
+        chunks,
+        vec![
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: i64::MAX - width,
+                max_id: i64::MAX - 1,
+            },
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: i64::MAX,
+                max_id: i64::MAX,
+            },
+        ]
+    );
+    assert!(AnalyticsMessageIdScope::Inclusive {
+        min_id: 2,
+        max_id: 1,
+    }
+    .chunks(width)
+    .is_empty());
+    assert!(AnalyticsMessageIdScope::Empty.chunks(width).is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_recent_scope_3780_keeps_replication_tail_open() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let min_id = messages.iter().map(|message| message.id).min().unwrap();
+    let max_id = messages.iter().map(|message| message.id).max().unwrap();
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(min_id),
+        width,
+    )
+    .await
+    .unwrap();
+    let arriving = signal_message::ActiveModel {
+        id: Set(max_id + width),
+        body: Set(Some("3780 arriving during chunk planning".to_string())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let mut ids = Vec::new();
+    for scope in scopes {
+        ids.extend(
+            signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(scope.condition(signal_message::Column::Id))
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(ids.len(), messages.len() + 1);
+    assert!(ids.contains(&arriving.id));
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(arriving.id + 1),
+        width,
+    )
+    .await
+    .unwrap();
+    assert_eq!(scopes, vec![AnalyticsMessageIdScope::From(arriving.id + 1)]);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_facets_3780_preserve_distinct_counts_and_metadata() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    seed_chunked_metadata_and_networks_3780(&fixture, &messages).await;
+    let db = &fixture.env.dbx;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login, false)
+        .await
+        .unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let scope = AnalyticsMessageIdScope::From(base);
+    let mut req = mk_analysis_stats_req(
+        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+    );
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for basis in [
+        None,
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+    ] {
+        req.message_time_basis = basis;
+        let expected_metadata = stats::fetch_metadata_stats_with_db(
+            &req,
+            &login,
+            db,
+            master_keys.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        let metadata = stats::fetch_analytics_metadata_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &scope,
+        )
+        .await
+        .unwrap();
+        assert_eq!(metadata, expected_metadata);
+        assert_eq!(metadata.ccs.iter().map(|row| row.count).sum::<i64>(), 29);
+        assert_eq!(metadata.senders.len(), 1);
+        assert_eq!(metadata.senders[0].count, 29);
+        for (selected_units, expected) in [
+            (None, (29, 0)),
+            (Some(vec!["3780 header".to_string()]), (0, 29)),
+            (Some(vec!["3780 absent".to_string()]), (0, 0)),
+        ] {
+            let mut req = req.clone();
+            req.selected_units = selected_units;
+            let counts = stats::count_unit_exact_match_breakdown_for_login(
+                &Json(req),
+                &login,
+                fixture.env.as_ref(),
+                master_keys.clone(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(counts, expected);
+        }
+        let networks = stats::fetch_analytics_networks_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &access,
+            &scope,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            networks,
+            vec![AnalysisStatsNetwork {
+                network_id: fixture.network_wide.network.id,
+                count: 29,
+            }]
+        );
+        let expected_daily =
+            stats::fetch_daily_group_activity_for_login_with_db(
+                &req,
+                &login,
+                db,
+                db,
+                master_keys.clone(),
+                None,
+            )
+            .await
+            .unwrap();
+        let daily = stats::fetch_daily_group_activity_for_login_with_db(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            Some(&scope),
+        )
+        .await
+        .unwrap();
+        let counts = |rows: Vec<stats::AnalysisDailyGroupActivity>| {
+            rows.into_iter()
+                .map(|row| ((row.msg_date, row.group), row.value))
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(counts(daily), counts(expected_daily));
+    }
+}
+
+async fn seed_chunked_metadata_and_networks_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+) {
+    let db = &fixture.env.dbx;
+    db.execute_unprepared(
+        r#"
+        CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+        CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
+        SELECT sigint_inbox_item_id, sigint_network_id
+        FROM sigint_inbox_item_network
+    "#,
+    )
+    .await
+    .unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    for message in messages {
+        mk_sigint_inbox_item_metadata(
+            db,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                color_code: Set(Some(
+                    if message.id == base { " 3780 " } else { "3780" }
+                        .to_string(),
+                )),
+                hash_id: Set(Some("3780-hash".to_string())),
+                sender_id: Set(Some(" 3780-sender ".to_string())),
+                sender_name: Set(Some("3780-sender".to_string())),
+                call_group_id: Set(Some("3780-receiver".to_string())),
+                call_group_name: Set(Some("3780-receiver".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            db,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(fixture.network_wide.network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test]

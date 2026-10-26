@@ -188,6 +188,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         <DeviceUpsertDrawer
           open={page.editDialogOpen}
           mode="edit"
+          deviceId={page.editDeviceId}
           fieldPermissions={page.permissions.fieldPermissions}
           form={page.editForm}
           saving={page.editSubmitting}

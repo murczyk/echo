@@ -93,6 +93,7 @@ async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
                         None,
                         correlated,
                         inline_tsquery,
+                        true,
                     )
                     .unwrap(),
                 )
@@ -137,26 +138,47 @@ async fn attachment_search_modes_respect_word_boundaries_and_case_3780() {
         (AnalysisSearchMode::Substring, "НоРа", true),
         (AnalysisSearchMode::Exact, "-нора", true),
         (AnalysisSearchMode::Substring, "-нора", false),
+        (AnalysisSearchMode::Exact, "звичайне", true),
+        (AnalysisSearchMode::Exact, "звичайн", false),
+        (AnalysisSearchMode::Substring, "звичайн", true),
+        (AnalysisSearchMode::Fuzzy, "\"звичайне\"", true),
+        (AnalysisSearchMode::Substring, "\"%\"", true),
     ] {
-        let predicate = super::search::message_filter_with_mode(
-            query,
-            "all",
-            Some(mode),
-            false,
-        )
-        .unwrap();
-        let actual = sigint_inbox_item::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_inbox_item::Relation::SignalMessage.def(),
-            )
-            .filter(sigint_inbox_item::Column::Id.eq(message))
-            .filter(predicate)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_some();
-        assert_eq!(actual, matches, "{mode:?}: {query}");
+        for correlated in [false, true] {
+            for predicate in [
+                super::search::message_filter_with_mode(
+                    query,
+                    "all",
+                    Some(mode),
+                    correlated,
+                )
+                .unwrap(),
+                super::search::analysis_message_filter(
+                    query,
+                    Some(mode),
+                    correlated,
+                    false,
+                    true,
+                )
+                .unwrap(),
+            ] {
+                let actual = sigint_inbox_item::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        sigint_inbox_item::Relation::SignalMessage.def(),
+                    )
+                    .filter(sigint_inbox_item::Column::Id.eq(message))
+                    .filter(predicate)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .is_some();
+                assert_eq!(
+                    actual, matches,
+                    "{mode:?}: {query}, correlated={correlated}"
+                );
+            }
+        }
     }
     execute(
         &env.dbx,
@@ -652,9 +674,36 @@ async fn ocr_coordinate_boundaries_and_precision_3714() {
 async fn attachment_coordinates_without_summary_and_revisions_3714() {
     let (env, _, message) = fixture().await;
     let job = attachment(&env, message, "coordinates.txt").await;
+    execute(
+        &env.dbx,
+        r#"
+with engine as (
+    insert into ai_engine(id,name,url,model_name,enabled,created_at,updated_at)
+    values(gen_random_uuid(),'3780 publication ' || gen_random_uuid(),
+        'https://example.invalid','legacy',true,now(),now())
+    returning id
+)
+insert into media_summary(
+    media_id,source_kind,source_digest,source_char_count,state,
+    lease_expires_at,source_text,ai_engine_name,model_name,ai_engine_id
+)
+select $1,'ocr_text',$2,11,'running',now()+interval '5 minutes',
+    'legacy text','legacy','legacy',id from engine
+        "#,
+        vec![job.media_id.into(), "a".repeat(64).into()],
+    )
+    .await
+    .unwrap();
     publish(&env, &job, package("48.469429° N 37.315640° E"), vec![1])
         .await
         .unwrap();
+    assert!(
+        crate::entities::media_summary::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none()
+    );
     let media = signal_message_media::Entity::find_by_id(job.media_id)
         .one(&env.dbx)
         .await

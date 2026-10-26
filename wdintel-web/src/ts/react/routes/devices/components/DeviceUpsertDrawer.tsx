@@ -1,3 +1,4 @@
+import { DeviceAudioForwardingFields } from './DeviceAudioForwardingFields';
 import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
 import {
@@ -33,6 +34,7 @@ const EMPTY_CUSTOM_FIELD_ROW_ERRORS: Record<string, DeviceCustomFieldDraftError>
 
 type Props = {
   open: boolean;
+  deviceId?: string;
   mode: 'create' | 'edit';
   fieldPermissions: DeviceFieldPermissions;
   form: DeviceUpsertForm | null;
@@ -66,6 +68,7 @@ function selectedLookupOption(
 
 export function DeviceUpsertDrawer({
   open,
+  deviceId,
   mode,
   fieldPermissions,
   form,
@@ -232,6 +235,16 @@ export function DeviceUpsertDrawer({
               ) : null}
 
               {fieldPermissions.sourceData && fieldPermissions.analyticalData ? <Divider /> : null}
+
+              {open && mode === 'edit' && deviceId && fieldPermissions.analyticalData ? (
+                <DeviceAudioForwardingFields
+                  key={deviceId}
+                  deviceId={deviceId}
+                  disabled={formBlocked}
+                  value={form.audioForwarding}
+                  onChange={(audioForwarding) => patchForm({ audioForwarding })}
+                />
+              ) : null}
 
               {fieldPermissions.analyticalData ? (
                 <>

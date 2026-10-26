@@ -28,6 +28,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
@@ -72,6 +73,86 @@ impl AnalyticsMessageIdScope {
             }
         }
     }
+
+    fn chunks(self, chunk_size: i64) -> Vec<Self> {
+        assert!(chunk_size > 0);
+        if self.is_empty() {
+            return Vec::new();
+        }
+        let Self::Inclusive { min_id, max_id } = self else {
+            return vec![self];
+        };
+        let mut chunks = Vec::new();
+        let mut min_id = min_id;
+        while min_id <= max_id {
+            let end =
+                std::cmp::min(min_id.saturating_add(chunk_size - 1), max_id);
+            chunks.push(Self::Inclusive {
+                min_id,
+                max_id: end,
+            });
+            if end == max_id {
+                break;
+            }
+            min_id = end + 1;
+        }
+        chunks
+    }
+}
+
+pub(super) async fn analytics_message_id_chunks(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    chunk_size: i64,
+) -> anyhow::Result<Vec<AnalyticsMessageIdScope>> {
+    if let AnalyticsMessageIdScope::From(min_id) = scope {
+        let max_id = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "max_id")
+            .into_tuple::<Option<i64>>()
+            .one(source_db)
+            .await
+            .context(h!())?
+            .flatten();
+        let mut chunks = AnalyticsMessageIdScope::Inclusive {
+            min_id,
+            max_id: std::cmp::max(max_id.unwrap_or(min_id), min_id),
+        }
+        .chunks(chunk_size);
+        if let Some(last) = chunks.last_mut() {
+            let AnalyticsMessageIdScope::Inclusive { min_id, .. } = *last
+            else {
+                unreachable!();
+            };
+            *last = AnalyticsMessageIdScope::From(min_id);
+        }
+        return Ok(chunks);
+    }
+    Ok(scope.chunks(chunk_size))
+}
+
+pub(super) async fn load_analytics_message_id_chunks<T, F, Fut>(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    load: F,
+) -> anyhow::Result<Vec<T>>
+where
+    F: Fn(AnalyticsMessageIdScope) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let scopes = analytics_message_id_chunks(
+        source_db,
+        scope,
+        ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .context(h!())?;
+    stream::iter(scopes)
+        .map(load)
+        .buffered(ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect()
+        .await
+        .context(h!())
 }
 
 pub(super) async fn ensure_analytics_search_coverage(
@@ -980,6 +1061,32 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
     force_correlation: bool,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        force_correlation,
+        scope,
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    )
+}
+
+pub(in crate::rer_importer) fn analytics_message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    scope: &AnalyticsMessageIdScope,
+) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        false,
+        Some(scope),
+        Expr::col((signal_message::Entity, signal_message::Column::Id)),
+    )
+}
+
+fn linked_unit_ids_condition(
+    unit_ids: &[i64],
+    force_correlation: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    message_id: sea_query::Expr,
+) -> SimpleExpr {
     let link_alias = Alias::new("selected_unit_link");
     let unit_alias = Alias::new("selected_unit_by_id");
     let mut query = Query::select();
@@ -1000,7 +1107,7 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::ItemId,
             ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+            .eq(message_id),
         )
         .and_where(
             Expr::col((
@@ -3598,16 +3705,23 @@ pub(crate) fn filter_search_with_correlated_terms<Q>(
 where
     Q: QueryFilter + QuerySelect,
 {
-    Ok(
-        filter_search_with_scope(
-            q,
-            search,
-            search_mode,
-            correlated_terms,
-            None,
-        )
-        .c(h!())?,
+    Ok(filter_search_with_scope(
+        q,
+        search,
+        search_mode,
+        correlated_terms,
+        None,
+        false,
     )
+    .c(h!())?)
+}
+
+pub(in crate::rer_importer) fn search_uses_candidate_ids(
+    selected_freqs: &Option<Vec<String>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> bool {
+    scope.is_some()
+        || matches!(selected_freqs.as_deref(), Some([frequency]) if !frequency.is_empty())
 }
 
 pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
@@ -3616,6 +3730,7 @@ pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
     search_mode: Option<AnalysisSearchMode>,
     correlated_terms: bool,
     scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
@@ -3628,6 +3743,7 @@ where
             search_mode,
             correlated_terms,
             scope.is_some(),
+            inbox_required,
         )
         .c(h!())?;
         q2 = q2.filter(predicate);
@@ -4506,8 +4622,9 @@ fn build_summary_table_filtered_messages_query_with_access(
         q,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
@@ -6885,8 +7002,9 @@ fn build_new_callsign_filtered_items_query(
         query,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .c(h!())?;
     let query = filter_selected_device_names(query, &req.selected_device_names)
@@ -7498,6 +7616,7 @@ pub async fn activity_daily(
                 &analytics_req.0,
                 analytics_user,
                 &db,
+                postgres_db,
                 analytics_groups,
                 Some(&scope),
             )
@@ -7507,6 +7626,7 @@ pub async fn activity_daily(
             stats::fetch_daily_group_activity_with_db(
                 &postgres_req.0,
                 postgres_user,
+                postgres_db,
                 postgres_db,
                 postgres_groups,
                 None,
@@ -8697,6 +8817,7 @@ async fn network_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &postgres_env.dbx,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 &message_id_scope,
@@ -9339,6 +9460,7 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
         "analytics_error"
             | "analytics_timeout"
             | "analytics_saturated"
+            | "analytics_resource_limit"
             | "analytics_unhealthy"
             | "analytics_unavailable"
             | "attachment_history_incomplete"
@@ -9436,6 +9558,23 @@ fn analytics_failure_reason(
     let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
+        let message = error.to_string();
+        let normalized = message.to_ascii_lowercase();
+        let native_exception =
+            message.contains("pg_clickhouse: DB::Exception:");
+        let memory_limit = message.contains("MEMORY_LIMIT_EXCEEDED")
+            || (native_exception
+                && normalized.contains("memory limit")
+                && normalized.contains("exceeded"));
+        let concurrency_limit = message
+            .contains("TOO_MANY_SIMULTANEOUS_QUERIES")
+            || (native_exception
+                && normalized.contains("too many simultaneous queries"));
+        if (memory_limit && !normalized.contains("(total)"))
+            || concurrency_limit
+        {
+            return "analytics_resource_limit";
+        }
         if error
             .downcast_ref::<crate::attachments::analytics::AttachmentSearchCoverageError>()
             .is_some()

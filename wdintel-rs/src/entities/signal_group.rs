@@ -22,9 +22,10 @@ pub struct Model {
     pub disable_network_assignment: bool,
     pub interseption_kind: InterseptionKind,
     pub is_aviation_group: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
     #[sea_orm(column_type = "Text", nullable)]
     pub color_key: Option<String>,
-    pub fetch_new_messages: Option<bool>,
+    pub created_by_login_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -39,6 +40,8 @@ pub enum Relation {
     Datasource,
     #[sea_orm(has_many = "super::datasource_group::Entity")]
     DatasourceGroup,
+    #[sea_orm(has_many = "super::device_audio_forwarding_group::Entity")]
+    DeviceAudioForwardingGroup,
     #[sea_orm(has_many = "super::group_admin_data::Entity")]
     GroupAdminData,
     #[sea_orm(has_many = "super::group_stats_recalculation_task::Entity")]
@@ -70,6 +73,12 @@ impl Related<super::datasource::Entity> for Entity {
 impl Related<super::datasource_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DatasourceGroup.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingGroup.def()
     }
 }
 

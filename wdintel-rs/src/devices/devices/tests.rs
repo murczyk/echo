@@ -32,6 +32,7 @@ fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
         name: DevicePatchField::Missing,
         aor_ids: DevicePatchField::Missing,
         unit_id: DevicePatchField::Missing,
+        audio_forwarding: None,
     }
 }
 
@@ -1423,7 +1424,8 @@ mod mapping_tests {
     #[test]
     fn detail_and_list_have_distinct_exact_wire_shapes() {
         assert_eq!(
-            serde_json::to_value(map_device_details(device_state())).unwrap(),
+            serde_json::to_value(map_device_details(device_state(), false))
+                .unwrap(),
             json!({
                 "id": "018f0000-0000-7000-8000-000000000001",
                 "name": "Mapped device",
@@ -1435,7 +1437,8 @@ mod mapping_tests {
                 "archived": true,
                 "created_at": "2026-07-23T09:10:11Z",
                 "updated_at": "2026-07-23T09:10:11Z",
-                "archived_at": "2026-07-23T09:10:11Z"
+                "archived_at": "2026-07-23T09:10:11Z",
+                "audio_forwarding_configured": false
             }),
         );
 

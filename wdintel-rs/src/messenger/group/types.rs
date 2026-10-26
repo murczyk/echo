@@ -4,6 +4,12 @@ use crate::types::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::ser::SerializeStruct;
 
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct GroupCreationInfo {
+    pub created_at: i64,
+    pub created_by: Option<String>,
+}
+
 #[derive(
     Elm,
     ElmEncode,

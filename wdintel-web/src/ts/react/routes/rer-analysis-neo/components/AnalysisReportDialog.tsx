@@ -720,6 +720,11 @@ export function AnalysisReportDialog({
                 label="Без коментарів"
                 onChange={(value) => onUpdate({ reoNoComments: value })}
               />
+              <ReportCheckboxLabel
+                checked={report.reoSummaryOnly}
+                label="Лише підсумкова активність"
+                onChange={(value) => onUpdate({ reoSummaryOnly: value })}
+              />
             </Stack>
           ) : null}
 

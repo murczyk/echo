@@ -413,19 +413,45 @@ pub fn parse_location_with_aor(
         .map_err(|e| AppError::from(format!("{e:?}")))
         .c(h!())?;
     let settlements_data = select_settlements_data(&settlements_lock, m_aor_id);
-    let (location, allow_fuzzy) =
+    let fuzzy_prefix_len = location
+        .split_inclusive('\n')
+        .take(crate::config::LOCATION_MESSAGE_FUZZY_MAX_LINES)
+        .map(str::len)
+        .sum();
+    let (fuzzy_prefix, exact_suffix) = location.split_at(fuzzy_prefix_len);
+    let (_, allow_fuzzy) =
         normalize_location_context(&location, settlements_data);
-    let result = location
+    let result = [(fuzzy_prefix, allow_fuzzy), (exact_suffix, false)]
+        .into_iter()
+        .flat_map(|(location, allow_fuzzy)| {
+            find_locations_in_text(location, settlements_data, allow_fuzzy)
+        })
+        .collect();
+    Ok(deduplicate_settlement_names(result))
+}
+
+fn find_locations_in_text(
+    location: &str,
+    settlements_data: &SettlementsData,
+    allow_fuzzy: bool,
+) -> Vec<SettlementDetails> {
+    let (location, context_allows_fuzzy) =
+        normalize_location_context(location, settlements_data);
+    let mut fuzzy_chars_remaining = if allow_fuzzy && context_allows_fuzzy {
+        crate::config::LOCATION_MESSAGE_FUZZY_MAX_CHARS
+    } else {
+        0
+    };
+    location
         .split(['(', ')', ',', '/', ';', '\n', '–', '—'])
         .flat_map(|phrase| {
             find_matching_settlements(
                 normalize_location_phrase(phrase, &settlements_data.2),
                 settlements_data,
-                allow_fuzzy,
+                &mut fuzzy_chars_remaining,
             )
         })
-        .collect();
-    Ok(deduplicate_settlement_names(result))
+        .collect()
 }
 
 fn normalize_location_context(
@@ -668,7 +694,7 @@ fn trim_tail(name: String) -> String {
 fn find_matching_settlements(
     words: Vec<String>,
     config: &SettlementsData,
-    allow_fuzzy: bool,
+    fuzzy_chars_remaining: &mut usize,
 ) -> Vec<SettlementDetails> {
     let (_, regions, trie, _, _) = config;
     let mut result = vec![];
@@ -678,28 +704,40 @@ fn find_matching_settlements(
         let exact =
             match_location_span(&words[index..], 1, max_words, trie, false);
         let min_fuzzy_words = exact.as_ref().map_or(1, |(span, _)| span + 1);
-        let fuzzy = allow_fuzzy
+        let max_fuzzy_words = words[index..index + max_words]
+            .iter()
+            .scan(*fuzzy_chars_remaining, |remaining, word| {
+                *remaining = remaining.checked_sub(word.chars().count() + 1)?;
+                Some(())
+            })
+            .count();
+        let fuzzy = (min_fuzzy_words <= max_fuzzy_words)
             .then(|| {
                 match_location_span(
                     &words[index..],
                     min_fuzzy_words,
-                    max_words,
+                    max_fuzzy_words,
                     trie,
                     true,
                 )
             })
             .flatten();
         let matched = fuzzy.or(exact);
-        if let Some((span, matches)) = matched {
+        let span = matched.as_ref().map_or(1, |(span, _)| *span);
+        *fuzzy_chars_remaining = fuzzy_chars_remaining.saturating_sub(
+            words[index..index + span]
+                .iter()
+                .map(|word| word.chars().count() + 1)
+                .sum(),
+        );
+        if let Some((_, matches)) = matched {
             for (name, settlement) in matches {
                 if !regions.contains(&name) {
                     result.push(settlement);
                 }
             }
-            index += span;
-        } else {
-            index += 1;
         }
+        index += span;
     }
     result
 }
@@ -1803,6 +1841,73 @@ mod tests {
         location: String,
     ) -> anyhow::Result<Vec<SettlementDetails>> {
         parse_location_with_aor(settlements, location, None)
+    }
+
+    #[test]
+    fn settlement_fuzzy_prefix_3780_preserves_exact_suffix() {
+        let settlement = SettlementDetails {
+            id: Some(1),
+            name: "ЗАПОРІЖЖЯ".to_string(),
+            ..Default::default()
+        };
+        let mut trie = Trie::new();
+        trie.insert(&settlement.name, settlement.clone());
+        let multiword_settlement = SettlementDetails {
+            id: Some(2),
+            name: "НОВА КАХОВКА".to_string(),
+            ..Default::default()
+        };
+        trie.insert(&multiword_settlement.name, multiword_settlement.clone());
+        let settlements = Arc::new(RwLock::new(SettlementsDataConfig {
+            default_settlements_data: Arc::new((
+                vec![],
+                vec![],
+                trie,
+                BTreeMap::new(),
+                BTreeMap::new(),
+            )),
+            ..Default::default()
+        }));
+        for (location, expected) in [
+            ("\n\n\n\nЗАПОРІЖЯ", vec![1]),
+            ("\n\n\n\n\nЗАПОРІЖЯ", vec![]),
+            ("\r\n\r\n\r\n\r\nЗАПОРІЖЯ", vec![1]),
+            ("\r\n\r\n\r\n\r\n\r\nЗАПОРІЖЯ", vec![]),
+            ("\n\n\n\n\nЗАПОРІЖЖЯ", vec![1]),
+        ] {
+            let actual = parse_location_with_aor(
+                settlements.clone(),
+                location.to_string(),
+                None,
+            )
+            .unwrap()
+            .into_iter()
+            .filter_map(|settlement| settlement.id)
+            .collect_vec();
+            assert_eq!(actual, expected, "{location:?}");
+        }
+        let char_limit = crate::config::LOCATION_MESSAGE_FUZZY_MAX_CHARS;
+        for (location, expected) in [
+            (format!("{} ЗАПОРІЖЯ", "А".repeat(char_limit)), vec![]),
+            (format!("{}ЗАПОРІЖЯ", "АБВГ ".repeat(char_limit)), vec![]),
+            (format!("{}ЗАПОРІЖЯ", "АБВГ,".repeat(char_limit)), vec![]),
+            (format!("{} ЗАПОРІЖЖЯ", "А".repeat(char_limit)), vec![1]),
+            (
+                format!("{}НОВА КАХОВКА", "АБВГ ".repeat(char_limit / 5 - 1)),
+                vec![2],
+            ),
+        ] {
+            let actual = parse_location_with_aor(
+                settlements.clone(),
+                location.clone(),
+                None,
+            )
+            .unwrap()
+            .into_iter()
+            .filter_map(|settlement| settlement.id)
+            .collect_vec();
+            assert_eq!(actual, expected, "{location:?}");
+        }
     }
 
     fn test_settlements_array(data: Vec<SettlementDetails>) -> Vec<String> {

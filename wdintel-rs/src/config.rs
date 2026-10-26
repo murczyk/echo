@@ -6,6 +6,10 @@ use opendal::Operator;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+pub const DATASOURCE_ECHO_NATIVE_KIND: &str = "echo_native";
+pub const DATASOURCE_ECHO_NATIVE_GROUP_PREFIX: &str = "echo_native.";
+pub const DATASOURCE_NATIVE_VALIDATION_BATCH_SIZE: usize = 1000;
+
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
 pub const MESSAGE_REPLY_MAX_ANCHORS: usize = 512;
 pub const MESSAGE_REPLY_PREVIEW_CHARS: usize = 256;
@@ -69,6 +73,7 @@ pub const POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT: u64 = 3_000;
 pub const POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT: u64 =
     120_000;
 pub const POSTGRES_RUNTIME_TIMEOUT_MS_MAX: u64 = i32::MAX as u64;
+pub const POSTGRES_RUNTIME_WEB_PLAN_CACHE_MODE: &str = "force_custom_plan";
 pub const ONEOFF_KILL_OLD_QUERIES_DEFAULT_MINUTES: u64 = 3;
 pub const ONEOFF_KILL_OLD_QUERIES_QUERY_PREVIEW_CHARS: usize = 500;
 pub const INBOX_ITEM_CALLSIGN_SYNC_INSERT_BATCH_SIZE: usize = 1_000;
@@ -140,6 +145,8 @@ pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
 pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
+pub const LOCATION_MESSAGE_FUZZY_MAX_LINES: usize = 5;
+pub const LOCATION_MESSAGE_FUZZY_MAX_CHARS: usize = 1_000;
 pub const LOCATION_FUZZY_MIN_CHARS: usize = 5;
 pub const LOCATION_FUZZY_DISTANCE_DIVISOR: usize = 7;
 pub const LOCATION_FOREST_CONTEXT_WORDS: &[&str] =
@@ -484,6 +491,11 @@ pub const AI_AGENT_MATTERMOST_CHAT_RETRY_MAX_SEC: i64 = 15 * 60;
 pub const AI_AGENT_MATTERMOST_CHAT_CLAIM_LEASE_SEC: i64 = 30;
 pub const AI_AGENT_MATTERMOST_CHAT_PROMPT_MAX_CHARS: usize = 12 * 1024;
 pub const ECHO_AUDIO_TRANSCRIPTION_CONCURRENCY: usize = 1;
+pub const DEVICE_AUDIO_FORWARDING_IDLE_MS: u64 = 1000;
+pub const DEVICE_AUDIO_FORWARDING_PAGE_SIZE: u64 = 100;
+pub const DEVICE_AUDIO_FORWARDING_LEASE_SECS: i32 = 120;
+pub const DEVICE_AUDIO_FORWARDING_RETRY_SECS: i32 = 30;
+
 pub const ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES: i64 = 104_857_600;
 pub const ECHO_AUDIO_TRANSCRIPTION_BACKFILL_BATCH_SIZE: u64 = 200;
 pub const ECHO_AUDIO_TRANSCRIPTION_DEVICE_SOURCE_PREFIX: &str = "device-audio/";
@@ -1123,6 +1135,11 @@ pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
 pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
+pub const ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE: i64 = 4_000_000;
+pub const ANALYTICS_INBOX_LATEST_PROBE_DAYS: i64 = 2;
+pub const ANALYTICS_INBOX_LATEST_PROBE_BUCKET_MS: i64 = 60_000;
+pub const ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY: usize = 2;
 pub const ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS: i64 = 7;
 pub const ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS: u64 = 5_000;
 pub const ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES: usize = 2_048;
@@ -1245,7 +1262,7 @@ pub const BATTLE_LINE_AOR_ANCHOR_LONGITUDE: f64 = 32.225_445_087_959_685;
 // These temporary limits should be lifted once location parsing is improved.
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS: f64 = 75_000.0;
 pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS: f64 = 150_000.0;
-pub const BATTLE_LINE_SETTLEMENT_CLUSTER_MAX_DISTANCE_METERS: f64 = 50_000.0;
+pub const BATTLE_LINE_SETTLEMENT_CLUSTER_MAX_DISTANCE_METERS: f64 = 30_000.0;
 pub const BATTLE_LINE_SETTLEMENT_ELECTION_MAX_STATES: usize = 100_000;
 pub const BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES: usize = 64;
 pub const BATTLE_LINE_SETTLEMENT_ELECTION_TIE_METERS: f64 = 0.001;
@@ -1301,6 +1318,11 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+delete from signal_message_audio_ref;
+delete from device_audio_forwarding_delivery;
+delete from device_audio_forwarding_group;
+delete from device_audio_forwarding_settings;
+
 LOCK TABLE signal_message IN SHARE MODE;
 DELETE FROM message_reply_source;
 DELETE FROM message_reply;
@@ -1399,7 +1421,7 @@ DELETE FROM goi_knowledge;
 DELETE FROM group_admin_data;
 DELETE FROM datasource_group;
 DELETE FROM signal_group;
-DELETE FROM datasource;
+DELETE FROM datasource WHERE kind <> 'echo_native';
 DELETE FROM report_history;
 DELETE FROM delta_kv;
 DELETE FROM system_settings;

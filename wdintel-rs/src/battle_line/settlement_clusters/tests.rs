@@ -74,6 +74,33 @@ fn ranks_by_all_pairwise_distances_2133() {
 }
 
 #[test]
+fn fixed_inbox_votes_cannot_be_replaced_or_dropped_for_another_cluster_2133() {
+    let fixed = BTreeMap::from([("A".to_string(), 1)]);
+    let mut drafts = vec![
+        draft("A", &[(1, 0.0, 1.0), (2, 2.0, 1.0)]),
+        draft("B", &[(3, 2.01, 1.0)]),
+        draft("C", &[(4, 2.02, 1.0)]),
+    ];
+    resolve_cluster_with_fixed(&mut drafts, &fixed);
+    assert!(drafts
+        .iter()
+        .all(|draft| draft.chosen_candidate_index.is_none()));
+    assert_eq!(
+        elect_settlements_with_fixed(
+            &[
+                draft("A", &[(1, 0.0, 1.0)]),
+                draft("B", &[(2, 0.1, 1.0)]),
+                draft("OUTLIER", &[(3, 4.0, 1.0)]),
+                draft("MISSING", &[]),
+            ],
+            &[],
+            &fixed,
+        ),
+        vec![None; 4]
+    );
+}
+
+#[test]
 fn selects_strict_majority_and_leaves_outliers_unresolved_2133() {
     assert_eq!(
         chosen(vec![
@@ -119,8 +146,8 @@ fn rejects_tied_clusters_and_tied_majorities_2133() {
     assert_eq!(
         chosen(vec![
             draft("A", &[(1, 0.0, 1.0)]),
-            draft("B", &[(2, 0.3, 1.0)]),
-            draft("C", &[(3, 0.6, 1.0)]),
+            draft("B", &[(2, 0.2, 1.0)]),
+            draft("C", &[(3, 0.4, 1.0)]),
         ]),
         vec![None; 3]
     );
@@ -196,7 +223,7 @@ fn invalid_coordinates_and_distances_are_not_elected_2133() {
 }
 
 #[test]
-fn excludes_fifty_kilometers_and_accepts_just_below_2133() {
+fn excludes_thirty_kilometers_and_accepts_just_below_2133() {
     let first = Candidate {
         settlement_id: 1,
         coordinate: BattleLineCoordinate { lat: 0.0, lon: 0.0 },
@@ -204,7 +231,7 @@ fn excludes_fifty_kilometers_and_accepts_just_below_2133() {
         anchor_distance_m: 0.0,
     };
     let combination = Combination::default().extend(0, &first, false).unwrap();
-    for (distance, valid) in [(49_999.999, true), (50_000.001, false)] {
+    for (distance, valid) in [(29_999.999, true), (30_000.001, false)] {
         let second = Candidate {
             settlement_id: 2,
             coordinate: BattleLineCoordinate {

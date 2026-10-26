@@ -30,16 +30,25 @@ where
 {
     anyhow::ensure!(!source_key.is_empty(), "empty transcription source key");
     let transaction = db.begin().await.context(h!())?;
-    let source = transaction.query_one_raw(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        "insert into transcription_source(id,source_key) values($1,$2) on conflict(source_key) do update set source_key=excluded.source_key returning id",
-        [Uuid::now_v7().into(), source_key.into()],
-    )).await.context(h!())?.context("source registration returned no row").context(h!())?.try_get("", "id").context(h!())?;
+    let source = register(&transaction, source_key).await.context(h!())?;
     let outcome = echo_gpu_client::enqueue(&transaction, source)
         .await
         .context(h!())?;
     transaction.commit().await.context(h!())?;
     Ok((source, outcome))
+}
+
+pub(crate) async fn register<C: ConnectionTrait>(
+    db: &C,
+    source_key: &str,
+) -> Result<Uuid> {
+    anyhow::ensure!(!source_key.is_empty(), "empty transcription source key");
+    let source = db.query_one_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "insert into transcription_source(id,source_key) values($1,$2) on conflict(source_key) do update set source_key=excluded.source_key returning id",
+        [Uuid::now_v7().into(), source_key.into()],
+    )).await.context(h!())?.context("source registration returned no row").context(h!())?.try_get("", "id").context(h!())?;
+    Ok(source)
 }
 
 pub async fn source_key<C: ConnectionTrait>(

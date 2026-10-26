@@ -255,7 +255,7 @@ export function AudioPlayerHost({
     sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES;
   return (
     <NeutralAudioPlayerHost
-      href={href}
+      href={/^\/api\/messenger\/media\/[^/?]+$/.test(href) ? `${href}?playback=1` : href}
       displayName={displayName}
       storageKey={`echo-inbox-${mediaId || displayName}`}
       waveSrc={mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : ''}

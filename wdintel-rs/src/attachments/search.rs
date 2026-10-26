@@ -83,7 +83,7 @@ pub fn text_predicate(
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
     text_predicate_with_correlation(
-        query, message, scope, structured, values, false, None, false, false,
+        query, message, scope, structured, values, false, None, None, false,
     )
     .c(h!())
 }
@@ -97,7 +97,7 @@ fn text_predicate_with_correlation(
     values: &mut Vec<Value>,
     correlated: bool,
     search_mode: Option<AnalysisSearchMode>,
-    direct_body: bool,
+    direct_body_key: Option<&str>,
     inline_tsquery: bool,
 ) -> anyhow::Result<String> {
     let search_mode = search_mode.unwrap_or_default();
@@ -166,7 +166,8 @@ fn text_predicate_with_correlation(
                 &literal_pattern(token),
                 search_mode,
                 values,
-                direct_body,
+                direct_body_key,
+                correlated,
             )
         };
         alternatives.last_mut().unwrap().push(if negative {
@@ -196,7 +197,8 @@ fn text_predicate_with_correlation(
             &pattern,
             search_mode,
             values,
-            direct_body,
+            direct_body_key,
+            correlated,
         );
         filters.push(format!(
             "{}({predicate})",
@@ -308,25 +310,51 @@ fn message_literal_predicate(
     pattern: &str,
     search_mode: AnalysisSearchMode,
     values: &mut Vec<Value>,
-    direct_body: bool,
+    direct_body_key: Option<&str>,
+    correlated: bool,
 ) -> String {
     let operator = literal_operator(pattern, search_mode, values);
-    let body = if matches!(scope, "attachments" | "document") {
-        "false".into()
-    } else if direct_body || search_mode != AnalysisSearchMode::Fuzzy {
-        format!(
+    let mut sources = Vec::new();
+    let body = if !matches!(scope, "attachments" | "document")
+        && direct_body_key.is_some()
+    {
+        Some(format!(
             "coalesce(sigint_inbox_item.body_noheader->>'body','') {operator}"
-        )
+        ))
     } else {
-        format!("exists(select 1 from sigint_inbox_item literal_item where literal_item.id={message} and coalesce(literal_item.body_noheader->>'body','') {operator})")
+        if !matches!(scope, "attachments" | "document") {
+            sources.push(format!("select literal_item.id from sigint_inbox_item literal_item where {}coalesce(literal_item.body_noheader->>'body','') {operator}", if correlated { format!("literal_item.id={message} and ") } else { String::new() }));
+        }
+        None
     };
-    let attachment = if scope == "body" {
-        "false".into()
+    let filename = if pattern.chars().all(|ch| ch == '%') {
+        format!("coalesce(media.file_name,'') {operator}")
     } else {
-        let media_filter = media_filter(message, scope);
-        format!("exists(select 1 from signal_message_media media where {media_filter} and (coalesce(media.file_name,'') {operator} or exists(select 1 from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision where chunk.media_id=media.id and (chunk.text {operator} or chunk.member {operator} or chunk.summary {operator}))))")
+        format!("media.file_name {operator}")
     };
-    format!("({body} or {attachment})")
+    sources.extend(attachment_term_sources(
+        message,
+        scope,
+        &format!("(chunk.text {operator} or chunk.member {operator} or chunk.summary {operator})"),
+        &filename,
+        &format!("audio_search.file_name {operator}"),
+        correlated,
+    ));
+    if let Some(body) = &body {
+        if let Some(key) =
+            direct_body_key.filter(|_| !correlated && !sources.is_empty())
+        {
+            return format!(
+                "({body} or {key}=any(array({})))",
+                sources.join(" union ")
+            );
+        }
+    }
+    let matches = term_sources_predicate(message, sources, correlated);
+    match body {
+        Some(body) => format!("({body} or {matches})"),
+        None => matches,
+    }
 }
 
 fn exists_term(
@@ -344,23 +372,59 @@ fn exists_term(
             if correlated { format!("body_search.id={message} and ") } else { String::new() }
         ));
     }
+    sources.extend(attachment_term_sources(
+        message,
+        scope,
+        chunk,
+        filename,
+        &filename.replace("media.file_name", "audio_search.file_name"),
+        correlated,
+    ));
+    term_sources_predicate(message, sources, correlated)
+}
+
+fn attachment_term_sources(
+    message: &str,
+    scope: &str,
+    chunk: &str,
+    filename: &str,
+    audio: &str,
+    correlated: bool,
+) -> Vec<String> {
+    let mut sources = Vec::new();
     if scope != "body" {
         let key = if scope == "document" {
             "media.id"
         } else {
             "media.signal_message_id"
         };
-        sources.push(format!(
-            "select {key} from signal_message_media media where {}{filename}",
-            if correlated {
-                format!("{key}={message} and ")
-            } else {
-                String::new()
-            }
-        ));
-        sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {}{chunk}", if correlated { format!("{key}={message} and ") } else { String::new() }));
+        let correlation = if correlated {
+            format!("{} and ", media_filter(message, scope))
+        } else {
+            String::new()
+        };
+        sources.push(format!("select {key} from signal_message_media media where {correlation}{filename}"));
+        sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {correlation}{chunk}"));
     }
-    if correlated {
+    if scope != "body" && scope != "document" {
+        let correlation = if correlated {
+            format!("audio_search.signal_message_id={message} and ")
+        } else {
+            String::new()
+        };
+        sources.push(format!("select audio_search.signal_message_id from signal_message_audio_search audio_search where {correlation}{audio}"));
+    }
+    sources
+}
+
+fn term_sources_predicate(
+    message: &str,
+    sources: Vec<String>,
+    correlated: bool,
+) -> String {
+    if sources.is_empty() {
+        "false".into()
+    } else if correlated {
         format!(
             "({})",
             sources
@@ -393,7 +457,7 @@ pub(crate) fn message_filter_with_mode(
         &mut values,
         correlated,
         search_mode,
-        false,
+        None,
         false,
     )
     .c(h!())?;
@@ -405,6 +469,7 @@ pub(crate) fn analysis_message_filter(
     search_mode: Option<AnalysisSearchMode>,
     correlated: bool,
     inline_tsquery: bool,
+    inbox_required: bool,
 ) -> anyhow::Result<SimpleExpr> {
     let mut values = Vec::new();
     let sql = text_predicate_with_correlation(
@@ -415,7 +480,11 @@ pub(crate) fn analysis_message_filter(
         &mut values,
         correlated,
         search_mode,
-        true,
+        Some(if inbox_required {
+            "sigint_inbox_item.id"
+        } else {
+            "signal_message.id"
+        }),
         inline_tsquery,
     )
     .c(h!())?;

@@ -493,6 +493,7 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
     editSubmitting,
     editHasChanges,
     editNameRequired: editDevice?.name !== null,
+    editDeviceId: editDevice?.id,
     editLoadingDeviceId,
     busyDeviceId,
     aorOptions,
