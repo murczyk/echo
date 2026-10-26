@@ -378,22 +378,19 @@ async fn complete_job(
         transaction.commit().await.c(h!())?;
         return Ok(false);
     };
-    let current = inbox_item
-        .location_v2
-        .as_deref()
-        .map(crate::location::utils::to_location_list)
-        .unwrap_or_default();
+    if inbox_item.reviewed == Some(true) {
+        delete_job(&transaction, sigint_inbox_item_id)
+            .await
+            .context(h!())?;
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    }
     let settlements = normalize_settlements(ai_settlements);
-    let clear_location =
-        settlements.is_empty() && inbox_item.location.is_some();
-    let changed = settlements != current || clear_location;
+    let location_v2 = (!settlements.is_empty())
+        .then(|| crate::location::utils::format_locations_list(settlements));
+    let clear_location = location_v2.is_none() && inbox_item.location.is_some();
+    let changed = location_v2 != inbox_item.location_v2 || clear_location;
     let inbox_item_uuid = inbox_item.id_uuid;
-    let location_v2 = if changed {
-        (!settlements.is_empty())
-            .then(|| crate::location::utils::format_locations_list(settlements))
-    } else {
-        inbox_item.location_v2.clone()
-    };
     if changed {
         let mut inbox_item = inbox_item.into_active_model();
         inbox_item.location_v2 = Set(location_v2.clone());
@@ -570,7 +567,7 @@ async fn fail_job(
     Ok(())
 }
 
-async fn delete_job<C>(
+pub(crate) async fn delete_job<C>(
     dbx: &C,
     sigint_inbox_item_id: i64,
 ) -> Result<(), AppError>
@@ -615,6 +612,10 @@ fn truncate_error(error: String) -> String {
 mod group_tests;
 
 #[cfg(test)]
+#[path = "worker_reconciliation_tests.rs"]
+mod reconciliation_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         complete_job, enqueue_if_enabled, fail_job, load_worker_config,
@@ -623,6 +624,7 @@ mod tests {
     use crate::config::AI_SETTLEMENT_SETTINGS_ID;
     use crate::entities::{
         ai_engine, ai_settlement_settings, ai_settlement_worker_job,
+        api_integration, api_integration_iggy_event,
         group_stats_recalculation_task, sigint_inbox_item,
         sigint_inbox_item_settlement, signal_group, signal_message,
         signal_message_group,
@@ -692,11 +694,82 @@ mod tests {
         load_worker_config(dbx).await.unwrap().unwrap()
     }
 
+    async fn enable_settlement_events(
+        dbx: &sea_orm::DatabaseConnection,
+    ) -> api_integration::Model {
+        api_integration::ActiveModel {
+            api_user_login_id: Set(crate::users::system_login_id(dbx)
+                .await
+                .unwrap()),
+            sync_enabled: Set(true),
+            has_iggy_connection: Set(true),
+            iggy_url: Set(Some("tcp://localhost:8090".to_string())),
+            iggy_login: Set(Some("test".to_string())),
+            iggy_password: Set(Some("test".to_string())),
+            iggy_inbox_topic: Set(Some("test-inbox".to_string())),
+            iggy_analytics_topic: Set(Some("test-analytics".to_string())),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_settlement_link(
+        dbx: &sea_orm::DatabaseConnection,
+        inbox_item: &sigint_inbox_item::Model,
+        text: &str,
+        settlement_id: Option<i32>,
+        is_undefined: Option<bool>,
+    ) -> sigint_inbox_item_settlement::Model {
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(inbox_item.id),
+            item_uuid: Set(inbox_item.id_uuid),
+            settlement_text: Set(text.to_string()),
+            settlement_id: Set(settlement_id),
+            is_undefined: Set(is_undefined),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn settlement_events(
+        dbx: &sea_orm::DatabaseConnection,
+        integration_id: i64,
+        message_id: i64,
+    ) -> Vec<serde_json::Value> {
+        api_integration_iggy_event::Entity::find()
+            .filter(
+                api_integration_iggy_event::Column::ApiIntegrationId
+                    .eq(integration_id),
+            )
+            .filter(
+                api_integration_iggy_event::Column::SigintInboxItemId
+                    .eq(message_id),
+            )
+            .order_by_asc(api_integration_iggy_event::Column::Id)
+            .all(dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|event| event.payload)
+            .filter(|payload| {
+                payload["event_type"].as_str().is_some_and(|kind| {
+                    kind.starts_with("sigint_inbox_item_settlement_")
+                })
+            })
+            .collect()
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn replaces_code_locations_and_reconciles_links_2133() {
-        let env = crate::functest::tests::cleanup().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
         let config = enable_worker(&env.dbx).await;
+        let integration = enable_settlement_events(&env.dbx).await;
         let group_master_key = signal_group::Entity::find()
             .filter(signal_group::Column::Deleted.eq(false))
             .select_only()
@@ -726,23 +799,31 @@ mod tests {
         .unwrap();
         let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
-            location_v2: Set(Some("|Existing Mixed|SECOND|".to_string())),
+            location_v2: Set(Some("|EXISTING MIXED|SECOND|THIRD|".to_string())),
             parsed_unit_v2: Set(false),
             ..Default::default()
         }
         .insert(&env.dbx)
         .await
         .unwrap();
-        sigint_inbox_item_settlement::ActiveModel {
-            item_id: Set(message.id),
-            item_uuid: Set(inbox_item.id_uuid),
-            settlement_text: Set("SECOND".to_string()),
-            settlement_id: Set(Some(98911)),
-            ..Default::default()
+        let mut retained_ids = Vec::new();
+        for (text, settlement_id, is_undefined) in [
+            ("EXISTING MIXED", Some(79948), Some(false)),
+            ("SECOND", Some(98911), Some(false)),
+            ("THIRD", None, Some(true)),
+        ] {
+            let link = insert_settlement_link(
+                &env.dbx,
+                &inbox_item,
+                text,
+                settlement_id,
+                is_undefined,
+            )
+            .await;
+            if text != "SECOND" {
+                retained_ids.push(link.id);
+            }
         }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
         ai_settlement_worker_job::ActiveModel {
             sigint_inbox_item_id: Set(message.id),
             attempts: Set(0),
@@ -791,16 +872,20 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["EXISTING MIXED", "THIRD", "ВЕРХНЄ ГОРІХОВЕ", "ЗАЛИВНИЙ"]
         );
-        assert!(links
-            .iter()
-            .filter(|link| {
-                matches!(
-                    link.settlement_text.as_str(),
-                    "ВЕРХНЄ ГОРІХОВЕ" | "ЗАЛИВНИЙ"
-                )
-            })
-            .all(|link| link.settlement_id.is_none()
-                && link.is_undefined.is_none()));
+        assert!(links.iter().all(|link| link.settlement_id.is_none()
+            && link.is_undefined.is_none()
+            && link.item_uuid == inbox_item.id_uuid));
+        assert_eq!(
+            links[..2].iter().map(|link| link.id).collect::<Vec<_>>(),
+            retained_ids,
+        );
+        assert_eq!(
+            settlement_events(&env.dbx, integration.id, message.id).await,
+            [79948, 98911].map(|settlement_id| serde_json::json!({
+                "event_type": "sigint_inbox_item_settlement_unlinked",
+                "settlement_id": settlement_id,
+            })),
+        );
         assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await
@@ -823,7 +908,15 @@ mod tests {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let config = enable_worker(&env.dbx).await;
-        for location_v2 in [Some("|ГЛИБОКИЙ|МАЛИЙ|"), None] {
+        let integration = enable_settlement_events(&env.dbx).await;
+        for (location_v2, location) in [
+            (Some("|ГЛИБОКИЙ|МАЛИЙ|"), Some("глибокий, малий")),
+            (None, Some("глибокий, малий")),
+            (Some(""), None),
+            (Some("||"), None),
+            (Some("| |"), None),
+            (None, None),
+        ] {
             let message = crate::functest::tests::mk_signal_message(
                 &env.dbx,
                 signal_message::ActiveModel {
@@ -835,7 +928,7 @@ mod tests {
             .unwrap();
             let inbox_item = sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
-                location: Set(Some("глибокий, малий".to_string())),
+                location: Set(location.map(str::to_string)),
                 location_v2: Set(location_v2.map(str::to_string)),
                 parsed_unit_v2: Set(false),
                 ..Default::default()
@@ -843,25 +936,28 @@ mod tests {
             .insert(&env.dbx)
             .await
             .unwrap();
-            crate::battle_line::settlement_queue::reconcile_item_locations(
+            insert_settlement_link(
                 &env.dbx,
-                message.id,
-                inbox_item.id_uuid,
-                inbox_item.location_v2.as_deref(),
+                &inbox_item,
+                "ГЛИБОКИЙ",
+                Some(98911),
+                Some(false),
             )
-            .await
-            .unwrap();
+            .await;
             enqueue_if_enabled(&env.dbx, message.id).await.unwrap();
 
-            assert!(complete_job(
-                &env.dbx,
-                message.id,
-                "глибокий, малий",
-                &config,
-                vec![],
-            )
-            .await
-            .unwrap());
+            assert_eq!(
+                complete_job(
+                    &env.dbx,
+                    message.id,
+                    "глибокий, малий",
+                    &config,
+                    vec![],
+                )
+                .await
+                .unwrap(),
+                location_v2.is_some() || location.is_some(),
+            );
 
             let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
                 .one(&env.dbx)
@@ -870,6 +966,13 @@ mod tests {
                 .unwrap();
             assert_eq!(inbox_item.location_v2, None);
             assert_eq!(inbox_item.location, None);
+            assert_eq!(
+                settlement_events(&env.dbx, integration.id, message.id).await,
+                vec![serde_json::json!({
+                    "event_type": "sigint_inbox_item_settlement_unlinked",
+                    "settlement_id": 98911,
+                })],
+            );
             assert!(sigint_inbox_item_settlement::Entity::find()
                 .filter(
                     sigint_inbox_item_settlement::Column::ItemId.eq(message.id)
@@ -987,7 +1090,8 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial]
     async fn ignores_stale_or_already_completed_results_2133() {
-        let env = crate::functest::tests::cleanup().await.unwrap();
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
         let config = enable_worker(&env.dbx).await;
         let message = crate::functest::tests::mk_signal_message(
             &env.dbx,
@@ -998,8 +1102,9 @@ mod tests {
         )
         .await
         .unwrap();
-        sigint_inbox_item::ActiveModel {
+        let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
+            location: Set(Some("existing raw location".to_string())),
             location_v2: Set(Some("|EXISTING|".to_string())),
             parsed_unit_v2: Set(false),
             ..Default::default()
@@ -1007,6 +1112,14 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        let original_link = insert_settlement_link(
+            &env.dbx,
+            &inbox_item,
+            "EXISTING",
+            Some(98911),
+            Some(false),
+        )
+        .await;
         ai_settlement_worker_job::ActiveModel {
             sigint_inbox_item_id: Set(message.id),
             attempts: Set(0),
@@ -1048,6 +1161,28 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(job.attempts, 0);
+        fail_job(
+            &env.dbx,
+            message.id,
+            "new body",
+            &config,
+            "current request failed".to_string(),
+        )
+        .await
+        .unwrap();
+        let unchanged = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unchanged, inbox_item);
+        assert_eq!(
+            sigint_inbox_item_settlement::Entity::find_by_id(original_link.id)
+                .one(&env.dbx)
+                .await
+                .unwrap(),
+            Some(original_link),
+        );
 
         assert!(complete_job(
             &env.dbx,

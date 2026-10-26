@@ -32,6 +32,15 @@ be retained.
 Successful AI worker results replace the message's parsed locations and reconcile
 their settlement links. An empty result clears the locations and links. Failed
 requests and stale results leave the existing locations unchanged.
+Empty locations are stored as SQL `NULL`, including legacy empty strings and
+delimiter-only values. Replacements and removals also recalculate network
+assignments, queue affected frequency freshness and group statistics work, and
+emit settlement unlink events in the same transaction.
+Manual saves cancel pending settlement jobs in that transaction, so late AI
+results cannot replace or clear the submitted locations. Manual edits do not
+enqueue settlement jobs; explicit parser reprocessing can enqueue them again.
+Reviewed inbox items are protected at completion too, including jobs queued
+before this behavior was deployed.
 
 The **Воркер** tab at `/admin/ai/settlements` includes **Групи для обробки**.
 Select active, non-deleted, non-archived Signal groups and choose **Лише** to
