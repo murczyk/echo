@@ -2537,6 +2537,15 @@ where
             )
             .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::LoginId,
+                )),
+                None,
+            ))
+            // Keep EXISTS correlated so each parent probes the comment index.
+            .offset(0)
             .into_query();
         let linked_message = Alias::new("linked_message");
         let linked_comment_exists = intel_product::Entity::find()
@@ -2547,7 +2556,7 @@ where
             ))
             .join_as(
                 JoinType::InnerJoin,
-                intel_product::Relation::SignalMessage1.def(),
+                intel_product::Relation::SignalMessage2.def(),
                 linked_message.clone(),
             )
             .filter(
@@ -2565,9 +2574,24 @@ where
                 .eq(false),
             )
             .filter(
-                Expr::col((linked_message, signal_message::Column::Body))
+                Expr::col((linked_message.clone(), signal_message::Column::Body))
                     .ne(""),
             )
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::LoginId,
+                )),
+                Some(
+                    Func::lower(Expr::col((
+                        linked_message,
+                        signal_message::Column::Sender,
+                    )))
+                    .into(),
+                ),
+            ))
+            // Avoid hashing the full linked-message relation for a narrow page.
+            .offset(0)
             .into_query();
 
         q = q.filter(
@@ -2626,6 +2650,48 @@ where
     //     q.build(DbBackend::Postgres).to_string()
     // );
     Ok(q)
+}
+
+fn note_comment_author_filter(
+    author: SimpleExpr,
+    sender: Option<SimpleExpr>,
+) -> SimpleExpr {
+    let parsing_enabled = system_settings::Entity::find()
+        .select_only()
+        .column(system_settings::Column::SigintCommentParsingEnabled)
+        .filter(system_settings::Column::Deleted.eq(false))
+        .order_by_desc(system_settings::Column::UpdatedAt)
+        .limit(1)
+        .into_query();
+    let system_logins = login::Entity::find()
+        .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
+        .filter(Expr::value(true).in_subquery(parsing_enabled));
+    let unknown_author = author.clone().is_null();
+    let unknown_author = if let Some(sender) = sender {
+        let system_senders = system_logins
+            .clone()
+            .select_only()
+            .expr(Expr::cust_with_expr(
+                "unnest(ARRAY(VALUES ($1::text), (replace($1::text, '-', '')), \
+                 ('{' || $1::text || '}'), ('urn:uuid:' || $1::text)))",
+                Expr::col(login::Column::Id),
+            ))
+            .into_query();
+        unknown_author.and(
+            sender
+                .clone()
+                .is_null()
+                .or(sender.not_in_subquery(system_senders)),
+        )
+    } else {
+        unknown_author
+    };
+    unknown_author.or(author.not_in_subquery(
+        system_logins
+            .select_only()
+            .column(login::Column::Id)
+            .into_query(),
+    ))
 }
 
 fn selected_tags_accessible_expr(
@@ -9005,6 +9071,7 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // through PostgreSQL so every panel describes the same message set.
     req.message_time_basis
         != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
 }
 
@@ -9054,7 +9121,8 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_text_search_supported(&req.search, req.search_mode)
+    req.or_with_extended_form != Some(true)
+        && analytics_text_search_supported(&req.search, req.search_mode)
         && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
             || (req.load_latest == Some(true) && req.nolimit != Some(true)))
 }

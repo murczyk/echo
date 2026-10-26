@@ -4956,6 +4956,314 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     );
 }
 
+async fn seed_note_filter_comments(
+    fixture: &RerAnalysisFixture,
+) -> (BTreeSet<i64>, BTreeSet<i64>) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    let datetime = test_dt(2026, 3, 1, 10, 5);
+    let mut all_note_ids = BTreeSet::new();
+    let mut user_note_ids = BTreeSet::new();
+    for legacy in [true, false] {
+        for authors in [
+            vec![system_login_id],
+            vec![login.id],
+            vec![system_login_id, login.id],
+        ] {
+            let message = mk_analysis_message(
+                db,
+                "note-filter-message",
+                "940.9",
+                datetime,
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+            all_note_ids.insert(message.id);
+            if authors.contains(&login.id) {
+                user_note_ids.insert(message.id);
+            }
+            for author in authors {
+                if legacy {
+                    mk_sigint_comment(
+                        db,
+                        sigint_comment::ActiveModel {
+                            signal_message_id: Set(message.id),
+                            login_id: Set(author),
+                            comment: Set("note".to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                } else {
+                    crate::sigint::comments::create_linked_message_comment_from_ingestion(
+                        db,
+                        &fixture.env.config,
+                        message.id,
+                        &author,
+                        "note",
+                        datetime,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    }
+    (all_note_ids, user_note_ids)
+}
+
+async fn mk_note_filter_parent(
+    fixture: &RerAnalysisFixture,
+) -> signal_message::Model {
+    mk_analysis_message(
+        &fixture.env.dbx,
+        "note-filter-parent",
+        "940.9",
+        test_dt(2026, 3, 1, 10, 5),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap()
+}
+
+async fn seed_note_filter_sender_authors(
+    fixture: &RerAnalysisFixture,
+    all_note_ids: &mut BTreeSet<i64>,
+    user_note_ids: &mut BTreeSet<i64>,
+) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    for (author, sender, system_only) in [
+        (None, Some(system_login_id.to_string()), true),
+        (None, Some(system_login_id.to_string().to_uppercase()), true),
+        (None, Some(system_login_id.simple().to_string()), true),
+        (None, Some(system_login_id.braced().to_string()), true),
+        (None, Some(system_login_id.urn().to_string()), true),
+        (None, Some(login.id.to_string()), false),
+        (Some(login.id), Some(system_login_id.to_string()), false),
+        (Some(system_login_id), Some(login.id.to_string()), true),
+        (None, None, false),
+        (None, Some("non-UUID sender".to_string()), false),
+    ] {
+        let parent = mk_note_filter_parent(fixture).await;
+        let child = crate::sigint::comments::create_linked_message_comment_from_ingestion(
+            db,
+            &fixture.env.config,
+            parent.id,
+            &login.id,
+            "note",
+            test_dt(2026, 3, 1, 10, 5),
+            None,
+        )
+        .await
+        .unwrap();
+        signal_message::ActiveModel {
+            id: Set(child),
+            login_id: Set(author),
+            sender: Set(sender),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        all_note_ids.insert(parent.id);
+        if !system_only {
+            user_note_ids.insert(parent.id);
+        }
+    }
+}
+
+async fn seed_note_filter_non_notes(
+    fixture: &RerAnalysisFixture,
+) -> BTreeSet<i64> {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let parent = mk_note_filter_parent(fixture).await;
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            signal_message_id: Set(parent.id),
+            login_id: Set(login.id),
+            comment: Set(String::new()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut ids = BTreeSet::from([parent.id]);
+    for (body, deleted, relation_kind) in [
+        (Some(""), false, intel_product_filter::RELATION_KIND_COMMENT),
+        (None, false, intel_product_filter::RELATION_KIND_COMMENT),
+        (
+            Some("note"),
+            true,
+            intel_product_filter::RELATION_KIND_COMMENT,
+        ),
+        (
+            Some("report"),
+            false,
+            intel_product_filter::RELATION_KIND_REPORT,
+        ),
+    ] {
+        let parent = mk_note_filter_parent(fixture).await;
+        ids.insert(parent.id);
+        let child = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                login_id: Set(Some(login.id)),
+                body: Set(body.map(str::to_string)),
+                deleted: Set(deleted),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(child.id),
+            source_message_id: Set(parent.id),
+            relation_kind: Set(relation_kind),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            db,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(parent.id),
+                login_id: Set(login.id),
+                comment: Set("stale migrated note".to_string()),
+                migrated_signal_message_id: Set(Some(child.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    ids
+}
+
+async fn assert_note_filter_matches(
+    fixture: &RerAnalysisFixture,
+    request: &InboxMessagesReq,
+    candidates: &[i64],
+    expected: &BTreeSet<i64>,
+) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
+        .await
+        .unwrap();
+    for nolimit in [true, false] {
+        let request = InboxMessagesReq {
+            nolimit: Some(nolimit),
+            ..request.clone()
+        };
+        let messages = crate::rer_importer::inbox::get_inbox_messages(
+            &login.id,
+            &logins,
+            &fixture.env,
+            &request,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            messages.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>(),
+            *expected,
+        );
+    }
+    let mut stats_request = analysis_stats_req0(fixture);
+    stats_request.or_with_extended_form = Some(true);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &stats_request)
+            .await
+            .unwrap(),
+        expected.len() as i64,
+    );
+    let query =
+        crate::rer_importer::inbox::query::build_inbox_query_for_candidate_ids(
+            db,
+            &login.id,
+            &fixture.env,
+            request,
+            candidates,
+            false,
+        )
+        .await
+        .unwrap();
+    let matching_ids = db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.try_get_by::<i64, _>("id").unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(matching_ids, *expected);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_note_filter_respects_comment_parsing_setting() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let (mut all_note_ids, mut user_note_ids) =
+        seed_note_filter_comments(&fixture).await;
+    seed_note_filter_sender_authors(
+        &fixture,
+        &mut all_note_ids,
+        &mut user_note_ids,
+    )
+    .await;
+    let mut candidates = seed_note_filter_non_notes(&fixture).await;
+    candidates.extend(&all_note_ids);
+    let candidates = candidates.into_iter().collect::<Vec<_>>();
+    let request = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        or_with_extended_form: Some(true),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    for (index, (enabled, expected)) in [
+        (None, &all_note_ids),
+        (Some(true), &user_note_ids),
+        (Some(false), &all_note_ids),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if let Some(enabled) = enabled {
+            system_settings::ActiveModel {
+                sigint_comment_parsing_enabled: Set(enabled),
+                updated_at: Set(test_dt(2026, 3, 1, 12, index as u32)),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        system_settings::ActiveModel {
+            sigint_comment_parsing_enabled: Set(enabled != Some(true)),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        assert_note_filter_matches(&fixture, &request, &candidates, expected)
+            .await;
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible_message(
@@ -10213,7 +10521,13 @@ fn count_stats_analytics_supports_tag_filters() {
 
     req.or_without_coords = None;
     req.or_with_extended_form = Some(true);
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
+    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&InboxMessagesReq {
+        since_date_inclusive_ms: Some(0),
+        or_with_extended_form: Some(true),
+        ..Default::default()
+    }));
 
     req.or_with_extended_form = None;
     req.report_tags_only_this_unit = Some(true);
