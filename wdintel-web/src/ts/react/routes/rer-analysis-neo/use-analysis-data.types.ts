@@ -34,6 +34,7 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  threadMessageId?: number | null;
   hideNetworks?: boolean;
   canUseDevices?: boolean;
   focusedWindow?: InboxWindowRsp | null;
@@ -51,6 +52,8 @@ export type UseAnalysisDataProps = {
 };
 
 export type UseAnalysisDataResult = {
+  threadDeletedCount?: number;
+  threadAnchorId?: number | null;
   callsignGraph: NetworkCallsignRelationsRsp | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;

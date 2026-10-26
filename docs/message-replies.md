@@ -222,6 +222,42 @@ table uses the normal new-table analytics snapshot; source provenance and outbox
 tables are PostgreSQL-only and are declared in the packaged exclusions. No full
 mirror resync or manual historical reconciliation is required.
 
+## Chain in Analysis
+
+`Відкрити в Аналізі` opens a separate Analysis Neo tab constrained by
+`threadMessageId`. It appears in the full thread popup, or as a new-tab icon in
+the header of a two-message thread. The link initializes the date range to cover
+both creation and interception timestamps of the available members.
+
+This mode uses the existing reply API for membership, metadata hydration in
+batches of 100 IDs with `skip_group_stats`, and the existing
+`messages-by-id-matching-filters` endpoint for normal message filters. It never
+loads the ordinary inbox, global counts, statistics, or paginated callsign facets.
+Filter choices and their counts are derived from the accessible thread members;
+they describe the whole thread rather than being recalculated for each selected
+facet. Search, dates, groups, tags, callsigns, media and other message filters
+remain bounded to candidate IDs. Sorting follows the Analysis time preference
+and feed direction. All matching cards are held locally in this first version;
+there is no server pagination, so very long threads will need a later extension.
+
+Map, summary, reports, analytics, and the statistics-dependent `Тільки нові частоти`
+control remain visible but disabled. A notice explains the restriction. Exiting
+restores ordinary Analysis in the same tab and keeps the current filters.
+Thread-only filters do not overwrite the stored ordinary Analysis preferences.
+Filtered-out citations report that the reader needs to change filters; they
+cannot invoke ordinary around-message inbox loading.
+
+Known member changes refresh membership and data. Unrelated inbox events mark a
+refresh as pending and are coalesced on a 30-second interval to discover new
+replies without refreshing for every unrelated event. Removed members disappear
+from the Analysis feed; the banner reports tombstones and the chain popup retains
+their exact positions. When the URL anchor is removed, the URL is updated to an
+authorized surviving member so reloading the tab keeps the thread. Known anchors
+are retried in bounded batches when earlier members disappear. A previously
+saved link can be unavailable if its anchor was deleted before this tab learned
+other members. Access/load failures show an error and cannot fall back to an
+ordinary inbox. Requests are cancelled when filters or scope change.
+
 ## Regression coverage
 
 - `wdintel-rs/src/message_reply/tests.rs`: persistence, authorization boundaries,
@@ -238,6 +274,9 @@ mirror resync or manual historical reconciliation is required.
 - `wdintel-web/tests/e2e/message-replies.spec.ts`: both screens' citation/chain
   display, tombstones, unavailable citations, in-feed navigation, desktop/mobile
   composition and timestamp preference changes without fetching.
+- `wdintel-web/tests/e2e/message-reply-analysis.spec.ts`: opening from both screens,
+  scoped filtering/sorting, empty results, disabled analytics, deletion survival,
+  live replies, request failures, bounded batches, reload, and exiting the scope.
 - `wdintel-web/tests/e2e/message-replies-frontend.spec.ts`: viewer-only action restrictions,
   repeated navigation highlights, and bounded reply landings on both screens.
   The shared browser fixture mirrors chronological around-message windows with up to

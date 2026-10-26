@@ -128,9 +128,8 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(panel.getByRole('listitem')).toHaveCount(41);
       await expect(panel.locator('[aria-current="true"]')).toContainText(current.text);
       await expect(panel).not.toContainText('Оригінальне повідомлення');
-      await expect(panel.getByRole('link').first()).toContainText(
-        /\d{2}\.\d{2}\.\d{4} · \d{2}:\d{2}/,
-      );
+      const citations = panel.locator('[data-reply-list]').getByRole('link');
+      await expect(citations.first()).toContainText(/\d{2}\.\d{2}\.\d{4} · \d{2}:\d{2}/);
       await page!.screenshot({ path: test.info().outputPath(`${screen}-reply-stepper-top.png`) });
       const after = await card.boundingBox();
       expect(after!.height).toBeCloseTo(before!.height, 0);
@@ -139,14 +138,14 @@ for (const screen of ['duty', 'analysis'] as const) {
       expect(
         await scroller.evaluate((element) => element.scrollHeight > element.clientHeight),
       ).toBe(true);
-      await panel.getByRole('link').last().scrollIntoViewIfNeeded();
+      await citations.last().scrollIntoViewIfNeeded();
       await expect(panel.getByText('Reply item 39', { exact: true })).toBeInViewport();
       await page!.screenshot({
         path: test.info().outputPath(`${screen}-reply-popover.png`),
         animations: 'disabled',
       });
-      await panel.getByRole('link').first().scrollIntoViewIfNeeded();
-      await panel.getByRole('link').first().click();
+      await citations.first().scrollIntoViewIfNeeded();
+      await citations.first().click();
       await expect(panel).toHaveCount(0);
       await expect(row(actor, target.id)).toBeInViewport();
       expect(page!.context().pages()).toHaveLength(1);

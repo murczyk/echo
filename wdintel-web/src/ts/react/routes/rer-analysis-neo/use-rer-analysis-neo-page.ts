@@ -1,4 +1,8 @@
 import type { ReplyNavigation } from '../shared/message-replies/MessageRepliesProvider';
+import {
+  readThreadMessageId,
+  THREAD_MESSAGE_PARAM,
+} from '../shared/message-replies/thread-analysis-link';
 import { canWriteMessages } from '../../utils/roles';
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useMediaQuery } from '@mui/material';
@@ -151,6 +155,13 @@ export function useRerAnalysisNeoPage(
   authUserName: string | null,
   authUserRoles: readonly string[] = [],
 ): AnalysisPageViewModel {
+  const [threadMessageId, setThreadMessageId] = useState(readThreadMessageId);
+  const exitThread = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete(THREAD_MESSAGE_PARAM);
+    window.history.replaceState({}, '', `${url.pathname}?${url.searchParams}`);
+    setThreadMessageId(null);
+  }, []);
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
   const initialRadioFeaturesAllowed = canUseRadioFeatures(authUserRoles);
@@ -161,7 +172,10 @@ export function useRerAnalysisNeoPage(
   const [initialHasQueryState] = useState(hasQueryStateInWindow);
   const [initialQueryState] = useState<AnalysisQueryState>(() => {
     const state = initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed);
-    const storedFilters = initialHasQueryState ? null : readAnalysisScopeFilters({ kind: 'all' });
+    const storedFilters =
+      initialHasQueryState || threadMessageId != null
+        ? null
+        : readAnalysisScopeFilters({ kind: 'all' });
     return normalizeQueryState({
       ...state,
       ...storedFilters,
@@ -253,7 +267,9 @@ export function useRerAnalysisNeoPage(
   const replyNavigationRef = useRef(false);
   const [replyNavigationVersion, setReplyNavigationVersion] = useState(0);
   const [loadedReplyTarget, setLoadedReplyTarget] = useState<{ messageId: number } | null>(null);
-  const [targetMessageUid, setTargetMessageUid] = useState(parseMessageUidFromWindow);
+  const [targetMessageUid, setTargetMessageUid] = useState(() =>
+    threadMessageId == null ? parseMessageUidFromWindow() : null,
+  );
   const [targetMessageQueryState, setTargetMessageQueryState] = useState(initialQueryState);
   const [highlightTargetMessage, setHighlightTargetMessage] = useState(true);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
@@ -340,7 +356,9 @@ export function useRerAnalysisNeoPage(
     }
   }, [queryState, queryStateWithResolvedRoleDate]);
   const centerTab =
-    !radioFeaturesAllowed && selectedCenterTab === 'summary' ? 'messages' : selectedCenterTab;
+    threadMessageId != null || (!radioFeaturesAllowed && selectedCenterTab === 'summary')
+      ? 'messages'
+      : selectedCenterTab;
   const rightSidebarTab =
     !radioFeaturesAllowed && selectedSidebarTab === 'frequencies'
       ? 'callsigns'
@@ -600,6 +618,12 @@ export function useRerAnalysisNeoPage(
         setCenterTabState('messages');
         return;
       }
+      if (threadMessageId != null) {
+        setDirectMessageError(
+          'Повідомлення поза поточними фільтрами. Змініть фільтри, щоб побачити його.',
+        );
+        return;
+      }
       setLoadedReplyTarget(null);
       replyNavigationRef.current = true;
       targetMessageLoadedRef.current = false;
@@ -614,7 +638,7 @@ export function useRerAnalysisNeoPage(
       setReplyNavigationVersion((version) => version + 1);
       setCenterTabState('messages');
     },
-    [queryState],
+    [queryState, threadMessageId],
   );
 
   const clearTargetMessageFocus = useCallback(() => {
@@ -634,11 +658,13 @@ export function useRerAnalysisNeoPage(
   }, [clearTargetMessageFocus]);
 
   useEffect(() => {
+    if (threadMessageId != null) return;
     persistAnalysisScopeFilters({ kind: 'all' }, queryState);
-  }, [queryState]);
+  }, [queryState, threadMessageId]);
 
   useEffect(() => {
     const onPopState = () => {
+      setThreadMessageId(readThreadMessageId());
       replyNavigationRef.current = false;
       clearTargetMessageContext();
       setTargetMessageUid(null);
@@ -702,6 +728,7 @@ export function useRerAnalysisNeoPage(
   }, []);
 
   const data = useAnalysisData({
+    threadMessageId,
     canUseDevices,
     authUserName,
     currentUser,
@@ -719,13 +746,25 @@ export function useRerAnalysisNeoPage(
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
     rightPanelOpen,
-    rightSidebarVisible: rightPanelOpen,
+    rightSidebarVisible: threadMessageId == null && rightPanelOpen,
     rightSidebarTab,
-    shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
+    shouldLoadNewCallsigns:
+      threadMessageId == null && rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState: scopedEffectiveQueryState,
     hideNetworks,
   });
   const previousMessageGroupInfosRef = useRef<typeof data.groupInfos>({});
+  useEffect(() => {
+    if (
+      threadMessageId == null ||
+      data.threadAnchorId == null ||
+      data.threadAnchorId === threadMessageId
+    )
+      return;
+    const url = new URL(window.location.href);
+    url.searchParams.set(THREAD_MESSAGE_PARAM, String(data.threadAnchorId));
+    window.history.replaceState({}, '', `${url.pathname}?${url.searchParams}`);
+  }, [threadMessageId, data.threadAnchorId]);
   useEffect(() => {
     const previous = previousMessageGroupInfosRef.current;
     previousMessageGroupInfosRef.current = data.groupInfos;
@@ -1064,11 +1103,15 @@ export function useRerAnalysisNeoPage(
     [analysisReq, handleUnauthorized, setPageError],
   );
 
-  const setCenterTab = useCallback((tab: AnalysisCenterTab) => {
-    startCenterTabTransition(() => {
-      setCenterTabState(tab);
-    });
-  }, []);
+  const setCenterTab = useCallback(
+    (tab: AnalysisCenterTab) => {
+      if (threadMessageId != null && tab !== 'messages') return;
+      startCenterTabTransition(() => {
+        setCenterTabState(tab);
+      });
+    },
+    [threadMessageId],
+  );
 
   useEffect(() => {
     if (systemSettingsStatus !== 'success') return;
@@ -1267,6 +1310,7 @@ export function useRerAnalysisNeoPage(
 
   const setIncludeOnlyNewFreqs = useCallback(
     (value: boolean) => {
+      if (threadMessageId != null) return;
       data.invalidateFilterSectionLoadsForPatch({
         includeOnlyNewFreqs: value,
         freqsSelected: value ? dataNewFreqValues : [],
@@ -1286,10 +1330,15 @@ export function useRerAnalysisNeoPage(
         };
       });
     },
-    [data.invalidateFilterSectionLoadsForPatch, dataNewFreqValues],
+    [data.invalidateFilterSectionLoadsForPatch, dataNewFreqValues, threadMessageId],
   );
 
   useEffect(() => {
+    if (threadMessageId != null) {
+      if (queryState.includeOnlyNewFreqs)
+        setQueryState((current) => ({ ...current, includeOnlyNewFreqs: false }));
+      return;
+    }
     if (!queryState.includeOnlyNewFreqs) return;
     if (stringArraysEqual(queryState.freqsSelected, dataNewFreqValues)) return;
 
@@ -1307,6 +1356,7 @@ export function useRerAnalysisNeoPage(
     data.invalidateFilterSectionLoadsForPatch,
     dataNewFreqValues,
     queryState.includeOnlyNewFreqs,
+    threadMessageId,
   ]);
 
   const selectOnlyFreq = useCallback(
@@ -1326,6 +1376,10 @@ export function useRerAnalysisNeoPage(
 
   const showFreqOnMap = useCallback(
     (freq: string) => {
+      if (threadMessageId != null) {
+        setPageError('Мапа недоступна під час перегляду ланцюжка.');
+        return;
+      }
       startCenterTabTransition(() => {
         data.invalidateFilterSectionLoadsForPatch({
           freqsSelected: [freq],
@@ -1344,11 +1398,20 @@ export function useRerAnalysisNeoPage(
         }));
       });
     },
-    [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
+    [
+      data.invalidateFilterSectionLoadsForPatch,
+      dutySettings.analysisMapInSidebar,
+      threadMessageId,
+      setPageError,
+    ],
   );
 
   const openPointsOnMap = useCallback(
     (etalons: string[], _message: InboxMessage) => {
+      if (threadMessageId != null) {
+        setPageError('Мапа недоступна під час перегляду ланцюжка.');
+        return;
+      }
       const search = uniquePointEtalonsForMapSearch(etalons).join(',');
       if (search === '') {
         return;
@@ -1370,7 +1433,12 @@ export function useRerAnalysisNeoPage(
         }));
       });
     },
-    [data.invalidateFilterSectionLoadsForPatch, dutySettings.analysisMapInSidebar],
+    [
+      data.invalidateFilterSectionLoadsForPatch,
+      dutySettings.analysisMapInSidebar,
+      threadMessageId,
+      setPageError,
+    ],
   );
 
   const toggleLeftPanel = useCallback(() => {
@@ -1391,9 +1459,10 @@ export function useRerAnalysisNeoPage(
   }, [dutySettings.analysisMapInSidebar, rightSidebarTab]);
 
   useEffect(() => {
+    if (threadMessageId != null) return;
     if (!rightPanelOpen || rightSidebarTab !== 'newCallsigns') return;
     void data.loadNewCallsigns();
-  }, [data.loadNewCallsigns, isMobileLayout, rightPanelOpen, rightSidebarTab]);
+  }, [threadMessageId, data.loadNewCallsigns, isMobileLayout, rightPanelOpen, rightSidebarTab]);
 
   useEffect(() => {
     const sections = new Set<AnalysisFilterSectionId>();
@@ -1514,6 +1583,10 @@ export function useRerAnalysisNeoPage(
 
   return {
     navigateReply,
+    threadMode:
+      threadMessageId == null
+        ? null
+        : { deletedCount: data.threadDeletedCount ?? 0, exit: exitThread },
     authUserName,
     aorEntries: data.aorEntries,
     radioFeaturesAllowed,

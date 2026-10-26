@@ -167,7 +167,10 @@ export function RerAnalysisNeoPage({
   });
   const inlineRightDockVisible =
     editorPresentation === 'embedded' && (editorOpen || (!isNarrowLayout && rightPanelVisible));
-  const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar, page.radioFeaturesAllowed);
+  const centerTabs = getAnalysisCenterTabs(
+    page.threadMode ? false : page.analysisMapInSidebar,
+    page.radioFeaturesAllowed,
+  );
   const centerTab =
     page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
   const analysisMapVisible =

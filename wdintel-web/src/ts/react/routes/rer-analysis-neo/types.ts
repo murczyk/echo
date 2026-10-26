@@ -199,6 +199,7 @@ export function getAnalysisSidebarTabs(
 }
 
 export type AnalysisPageState = {
+  threadMode?: { deletedCount: number; exit: () => void } | null;
   radioFeaturesAllowed: boolean;
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];

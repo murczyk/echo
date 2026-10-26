@@ -8,6 +8,8 @@ import {
   useReplyNewestFirst,
 } from './MessageRepliesProvider';
 import type { ReplySnapshot } from './reply-store';
+import { threadAnalysisHref } from './thread-analysis-link';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 
 export function MessageReplyChain({
   id,
@@ -136,6 +138,18 @@ export function MessageReplyChain({
     >
       <div className="flex flex-wrap items-center justify-between gap-x-echo-sm">
         <div className="text-echo-text opacity-50">Ланцюжок</div>
+        {entries.length <= 2 ? (
+          <a
+            href={threadAnalysisHref(id, snapshot.messages)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Відкрити в Аналізі"
+            title="Відкрити в Аналізі"
+            className="rounded-echo-sm p-echo-xs text-(--color-action) hover:bg-(--color-action)/10 focus-visible:outline-2 focus-visible:outline-echo-focus"
+          >
+            <OpenInNewOutlinedIcon fontSize="small" />
+          </a>
+        ) : null}
         {entries.length > 2 ? (
           <button
             type="button"
@@ -170,7 +184,17 @@ export function MessageReplyChain({
             },
           }}
         >
-          <div className="border-b border-echo-divider p-echo-sm text-echo-text">Ланцюжок</div>
+          <div className="flex flex-wrap items-center justify-between gap-echo-sm border-b border-echo-divider p-echo-sm text-echo-text">
+            <span>Ланцюжок</span>
+            <a
+              href={threadAnalysisHref(id, snapshot.messages)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-echo-xs rounded-echo-sm p-echo-xs text-echo-sm text-(--color-action) no-underline hover:bg-(--color-action)/10 focus-visible:outline-2 focus-visible:outline-echo-focus"
+            >
+              Відкрити в Аналізі <OpenInNewOutlinedIcon fontSize="small" />
+            </a>
+          </div>
           <div
             data-reply-list
             className="max-h-[min(400px,60dvh)] overflow-y-auto overscroll-contain p-echo-sm"

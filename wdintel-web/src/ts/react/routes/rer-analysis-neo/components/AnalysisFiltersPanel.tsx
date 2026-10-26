@@ -214,6 +214,7 @@ export function AnalysisFiltersPanel({
             >
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
+                  threadOnly={page.threadMode != null}
                   counts={counts}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
@@ -278,6 +279,7 @@ export function AnalysisFiltersPanel({
             <>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
+                  threadOnly={page.threadMode != null}
                   counts={counts}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}

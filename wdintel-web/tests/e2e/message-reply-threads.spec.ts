@@ -54,14 +54,14 @@ for (const screen of ['duty', 'analysis'] as const) {
         const chain = row(actor, reply.id).getByRole('region', { name: 'Відповіді', exact: true });
         await expectThread(chain, [`Original ${scope}`]);
         await expect(chain.getByRole('button', { name: /Усі повідомлення/ })).toHaveCount(0);
-        await chain.getByRole('link').click();
+        await chain.getByRole('list').getByRole('link').click();
         await expect(row(actor, source.id)).toBeInViewport();
         const reverse = row(actor, source.id).getByRole('region', {
           name: 'Відповіді',
           exact: true,
         });
         await expectThread(reverse, [`Reply ${scope}`]);
-        await reverse.getByRole('link').click();
+        await reverse.getByRole('list').getByRole('link').click();
         await expect(row(actor, replyId)).toBeInViewport();
         await expect(row(actor, replyId).getByText('group-2', { exact: true })).toHaveCount(0);
       }

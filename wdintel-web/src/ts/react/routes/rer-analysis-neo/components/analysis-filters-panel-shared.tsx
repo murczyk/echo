@@ -7,6 +7,7 @@ import type { AnalysisPageActions, AnalysisPageState } from '../types';
 
 export type AnalysisFiltersPanelPage = Pick<
   AnalysisPageState,
+  | 'threadMode'
   | 'isDirty'
   | 'counts'
   | 'canResetFilters'

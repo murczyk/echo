@@ -371,7 +371,21 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const mapVisible = centerTab === 'map' || (rightSidebarVisible && rightSidebarTab === 'map');
 
   useEffect(() => {
-    if (deferInitialLoad) return;
+    if (deferInitialLoad) {
+      reloadAbortControllerRef.current?.abort();
+      reloadAbortControllerRef.current = null;
+      reloadRequestRef.current += 1;
+      lastReloadTriggerKeyRef.current = null;
+      lastReloadFocusedWindowRef.current = null;
+      summaryReloadPendingKeyRef.current = null;
+      summaryDebouncePendingKeyRef.current = null;
+      setLoadedMessagesTriggerKey(null);
+      if (reloadDebounceTimerRef.current != null) {
+        clearTimeout(reloadDebounceTimerRef.current);
+        reloadDebounceTimerRef.current = null;
+      }
+      return;
+    }
     const focusedWindowChanged =
       focusedMessageActive && lastReloadFocusedWindowRef.current !== focusedWindow;
     if (
