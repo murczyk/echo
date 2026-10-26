@@ -13,7 +13,6 @@ const GEOMETRY = {
     barWidth: 13,
     plotHeight: 36,
     plotTop: 2,
-    dayLabelFontSize: 8,
     barRadius: 2,
   },
   detailed: {
@@ -21,12 +20,12 @@ const GEOMETRY = {
     barWidth: 16,
     plotHeight: 140,
     plotTop: 8,
-    dayLabelFontSize: 10,
     barRadius: 3,
   },
 } as const;
 const Y_LABEL_WIDTH = 40;
 const Y_LABEL_FONT_SIZE = 11;
+const DAY_LABEL_FONT_SIZE = 12;
 
 type HoveredDay = {
   day: DeviceActivityDay;
@@ -204,42 +203,44 @@ export function DeviceActivityChart({ days, variant = 'compact' }: Props) {
               );
             })}
           </Box>
-          <Box
-            aria-hidden
-            sx={{
-              display: 'flex',
-              width: plotWidth,
-              pt: '3px',
-              color: 'text.secondary',
-              fontSize: geometry.dayLabelFontSize,
-              lineHeight: 1,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {days.map((day) => (
-              <Box
-                key={day.day}
-                sx={{
-                  width: geometry.bandWidth,
-                  flex: 'none',
-                  display: 'flex',
-                  justifyContent: 'center',
-                }}
-              >
+          {detailed ? (
+            <Box
+              aria-hidden
+              sx={{
+                display: 'flex',
+                width: plotWidth,
+                pt: '3px',
+                color: 'text.secondary',
+                fontSize: DAY_LABEL_FONT_SIZE,
+                lineHeight: 1,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {days.map((day) => (
                 <Box
-                  component="span"
+                  key={day.day}
                   sx={{
-                    whiteSpace: 'nowrap',
-                    writingMode: 'vertical-rl',
-                    transform: 'rotate(180deg)',
-                    opacity: day.contentCount > 0n ? 1 : 0.5,
+                    width: geometry.bandWidth,
+                    flex: 'none',
+                    display: 'flex',
+                    justifyContent: 'center',
                   }}
                 >
-                  {day.label}
+                  <Box
+                    component="span"
+                    sx={{
+                      whiteSpace: 'nowrap',
+                      writingMode: 'vertical-rl',
+                      transform: 'rotate(180deg)',
+                      opacity: day.contentCount > 0n ? 1 : 0.5,
+                    }}
+                  >
+                    {day.label}
+                  </Box>
                 </Box>
-              </Box>
-            ))}
-          </Box>
+              ))}
+            </Box>
+          ) : null}
         </Box>
       </Box>
       {detailed ? <CategoryLegend days={days} /> : null}
