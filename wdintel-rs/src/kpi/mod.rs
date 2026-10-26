@@ -2,7 +2,9 @@ mod history;
 mod observations;
 pub mod types;
 
-use crate::config::{KPI_MAX_PERIOD_DAYS, KPI_QUERY_TIMEOUT_MS};
+use crate::config::{
+    KPI_MAX_CLOCK_SKEW_SECONDS, KPI_MAX_PERIOD_DAYS, KPI_QUERY_TIMEOUT_MS,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
@@ -42,8 +44,9 @@ impl KpiPeriod {
             "KPI period exceeds {KPI_MAX_PERIOD_DAYS} days"
         );
         anyhow::ensure!(
-            until <= Utc::now(),
-            "KPI period cannot end in the future"
+            until
+                <= Utc::now() + Duration::seconds(KPI_MAX_CLOCK_SKEW_SECONDS),
+            "KPI period cannot end more than {KPI_MAX_CLOCK_SKEW_SECONDS} seconds in the future"
         );
         Ok((since.naive_utc(), until.naive_utc()))
     }

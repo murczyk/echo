@@ -12,6 +12,28 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Set, Statement};
 
 // https://github.com/echoua/echo/issues/3826
+#[test]
+fn presets_tolerate_bounded_browser_clock_skew() {
+    let until = Utc::now() + Duration::seconds(60);
+    for days in [7, 30, 90] {
+        assert!(KpiPeriod {
+            since: (until - Duration::days(days)).timestamp_millis(),
+            until: until.timestamp_millis(),
+        }
+        .bounds()
+        .is_ok());
+    }
+    let until = Utc::now()
+        + Duration::seconds(crate::config::KPI_MAX_CLOCK_SKEW_SECONDS + 60);
+    assert!(KpiPeriod {
+        since: (until - Duration::days(7)).timestamp_millis(),
+        until: until.timestamp_millis(),
+    }
+    .bounds()
+    .is_err());
+}
+
+// https://github.com/echoua/echo/issues/3826
 #[tokio::test]
 async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
 ) -> anyhow::Result<()> {

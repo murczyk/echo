@@ -11,6 +11,7 @@ pub const DATASOURCE_ECHO_NATIVE_GROUP_PREFIX: &str = "echo_native.";
 pub const DATASOURCE_NATIVE_VALIDATION_BATCH_SIZE: usize = 1000;
 
 pub const KPI_MAX_PERIOD_DAYS: i64 = 90;
+pub const KPI_MAX_CLOCK_SKEW_SECONDS: i64 = 300;
 pub const KPI_QUERY_TIMEOUT_MS: u64 = 10_000;
 pub const KPI_ACTIVITY_MAX_ROWS: usize = 100_000;
 pub const KPI_HISTORY_MAX_GROUPS: usize = 10_000;
