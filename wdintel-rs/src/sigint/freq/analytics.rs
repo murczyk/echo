@@ -19,15 +19,20 @@ pub(super) async fn load_counts(
     let supported =
         !needs_unit_join(&req.filter_unit, &req.filter_further_investigation)
             && req.filter_sender_profile_ids.is_none();
-    let counts = with_analytics_read_fallback(
-        env,
-        "frequency list",
-        supported,
-        |db| async move { load_analytics_counts(env, user, req, &db).await },
-        |_db| async move { Ok(query_counts(&env.dbx, postgres_sql).await.c(h!())?) },
-    )
-    .await
-    .c(h!())?;
+    let counts =
+        with_analytics_read_fallback(
+            env,
+            "frequency list",
+            supported,
+            |db| async move {
+                Ok(load_analytics_counts(env, user, req, &db).await.c(h!())?)
+            },
+            |_db| async move {
+                Ok(query_counts(&env.dbx, postgres_sql).await.c(h!())?)
+            },
+        )
+        .await
+        .c(h!())?;
     let rows = order_counts(&env.dbx, req, counts, limit).await.c(h!())?;
     Ok(rows
         .into_iter()
@@ -52,11 +57,14 @@ pub(super) async fn order_counts(
         .expr_as(Expr::cust("unnest($1::text[])"), "freq")
         .expr_as(Expr::cust("unnest($2::bigint[])"), "message_count")
         .to_owned();
-    let query = Query::select()
+    let mut query = Query::select()
         .column(Alias::new("freq"))
         .column(Alias::new("message_count"))
         .from_subquery(values, Alias::new("frequency_counts"))
         .to_owned();
+    if req.filter_unknown_network.unwrap_or(false) {
+        query.and_where(unknown_network_freq_filter("frequency_counts.freq"));
+    }
     FrequencyCount::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Postgres,
         ordered_frequency_query(query, req, Some(limit)),
@@ -85,7 +93,7 @@ async fn load_analytics_counts(
     user: &actix_identity::Identity,
     req: &ListFreqsReq,
     db: &DatabaseConnection,
-) -> Result<Vec<FrequencyCount>, AppError> {
+) -> anyhow::Result<Vec<FrequencyCount>> {
     let since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
@@ -111,11 +119,9 @@ async fn load_analytics_counts(
         max_age,
         crate::config::SIGINT_FREQUENCY_ANALYTICS_FRESH_TAIL_MINUTES,
     );
-    Ok(
-        load_hybrid_counts(&env.dbx, db, req, &groups, scope, cutoff)
-            .await
-            .c(h!())?,
-    )
+    load_hybrid_counts(&env.dbx, db, req, &groups, scope, cutoff)
+        .await
+        .c(h!())
 }
 
 pub(super) async fn load_hybrid_counts(
@@ -126,17 +132,27 @@ pub(super) async fn load_hybrid_counts(
     scope: crate::rer_importer::analysis::AnalyticsMessageIdScope,
     cutoff: NaiveDateTime,
 ) -> anyhow::Result<Vec<FrequencyCount>> {
-    let tail = frequency_candidates(req, groups, None)
+    let mut count_req = req.clone();
+    count_req.filter_unknown_network = None;
+    let tail = frequency_candidates(&count_req, groups, None)
         .c(h!())?
         .filter(signal_message::Column::CreatedAt.gte(cutoff));
-    let tail =
-        query_counts(source, build_frequency_counts_query(tail, req, None))
-            .await
-            .c(h!())?;
-    let historical =
-        load_counts_for_scope(source, db, req, groups, scope, Some(cutoff))
-            .await
-            .c(h!())?;
+    let tail = query_counts(
+        source,
+        build_frequency_counts_query(tail, &count_req, None),
+    )
+    .await
+    .c(h!())?;
+    let historical = load_counts_for_scope(
+        source,
+        db,
+        &count_req,
+        groups,
+        scope,
+        Some(cutoff),
+    )
+    .await
+    .c(h!())?;
     Ok(merge_counts([historical, tail]))
 }
 

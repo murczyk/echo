@@ -1926,7 +1926,8 @@ pub async fn freq_search(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, mk_sigint_inbox_item, mk_signal_group, mk_signal_message,
+        cleanup, mk_sigint_inbox_item, mk_sigint_network,
+        mk_sigint_network_freq, mk_signal_group, mk_signal_message,
         mk_signal_message_group,
     };
     use chrono::Duration;
@@ -2127,6 +2128,152 @@ mod tests {
             .await
             .unwrap();
         (max_id, last_id)
+    }
+
+    async fn seed_frequency_assignments_3780(
+        db: &DatabaseConnection,
+        date: NaiveDateTime,
+    ) {
+        for (frequency, deleted_network, deleted_frequency, active_to) in [
+            ("3780.00", false, false, None),
+            ("3780.01", true, false, None),
+            ("3780.02", false, true, None),
+            ("3780.03", false, false, Some(date)),
+        ] {
+            let network = mk_sigint_network(
+                db,
+                sigint_network::ActiveModel {
+                    deleted: Set(deleted_network),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_network_freq(
+                db,
+                sigint_network_freq::ActiveModel {
+                    network_id: Set(network.id),
+                    freq: Set(frequency.to_owned()),
+                    deleted: Set(deleted_frequency),
+                    active_to: Set(active_to),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+    }
+
+    async fn frequency_replica_3780(env: &Env) -> DatabaseConnection {
+        let replica = crate::new_pg_pool_from_conn_string_with_max_connections(
+            crate::mk_conn_string(&env.config),
+            1,
+        )
+        .await
+        .unwrap();
+        replica
+            .execute_unprepared(
+                r#"
+                CREATE TEMP TABLE sigint_network AS
+                    SELECT id, deleted FROM public.sigint_network;
+                CREATE TEMP TABLE sigint_network_freq AS
+                    SELECT network_id, freq, active_to, deleted
+                    FROM public.sigint_network_freq;
+                "#,
+            )
+            .await
+            .unwrap();
+        replica
+    }
+
+    async fn frequency_page_counts_3780(
+        source: &DatabaseConnection,
+        replica: &DatabaseConnection,
+        request: &ListFreqsReq,
+        max_id: i64,
+        date: NaiveDateTime,
+    ) -> Vec<analytics::FrequencyCount> {
+        analytics::load_hybrid_counts(
+            source,
+            replica,
+            request,
+            &["3780-frequency-page".to_owned()],
+            crate::rer_importer::analysis::AnalyticsMessageIdScope::Inclusive {
+                min_id: 1,
+                max_id,
+            },
+            date + Duration::minutes(15),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn frequency_page_3780_reconciles_networks_before_pagination() {
+        let env = cleanup().await.unwrap();
+        let date = Utc::now().naive_utc().with_nanosecond(0).unwrap()
+            - Duration::hours(1);
+        let (max_id, _) = seed_frequency_page_3780(&env, date).await;
+        let request: ListFreqsReq =
+            serde_json::from_value(serde_json::json!({
+                "since_date_inclusive_ms": date.and_utc().timestamp_millis(),
+                "till_date_noninclusive_ms": (date + Duration::hours(1)).and_utc().timestamp_millis(),
+                "new_only": false, "include_non_active": true,
+                "filter_unknown_network": true,
+            }))
+            .unwrap();
+        let replica = frequency_replica_3780(&env).await;
+        let counts = frequency_page_counts_3780(
+            &env.dbx, &replica, &request, max_id, date,
+        )
+        .await;
+        let mut ranked_request = request.clone();
+        ranked_request.sort_by = Some(vec![ListFreqsSortBy::MessageCountDesc]);
+        let ranked =
+            analytics::order_counts(&env.dbx, &ranked_request, counts, 30)
+                .await
+                .unwrap();
+        assert_eq!(
+            (ranked[0].freq.as_str(), ranked[0].message_count),
+            ("3780.00", 3)
+        );
+        seed_frequency_assignments_3780(&env.dbx, date).await;
+        let counts = frequency_page_counts_3780(
+            &env.dbx, &replica, &request, max_id, date,
+        )
+        .await;
+        let ordered = analytics::order_counts(&env.dbx, &request, counts, 30)
+            .await
+            .unwrap();
+        assert_eq!(ordered.len(), 31);
+        assert_eq!(ordered[0].freq, "3780.01");
+        assert_eq!(ordered[30].freq, "3780.31");
+        assert!(ordered.iter().all(|row| row.freq != "3780.00"));
+
+        let replica = frequency_replica_3780(&env).await;
+        sigint_network_freq::Entity::update_many()
+            .col_expr(sigint_network_freq::Column::Deleted, Expr::value(true))
+            .filter(sigint_network_freq::Column::Freq.eq("3780.00"))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let counts = frequency_page_counts_3780(
+            &env.dbx,
+            &replica,
+            &ranked_request,
+            max_id,
+            date,
+        )
+        .await;
+        let ordered =
+            analytics::order_counts(&env.dbx, &ranked_request, counts, 30)
+                .await
+                .unwrap();
+        assert_eq!(
+            (ordered[0].freq.as_str(), ordered[0].message_count),
+            ("3780.00", 3)
+        );
     }
 
     #[tokio::test]

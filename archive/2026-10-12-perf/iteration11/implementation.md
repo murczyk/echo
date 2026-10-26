@@ -42,6 +42,10 @@ configured freshness allowance. Historical analytics uses the opposite,
 exclusive cutoff, preventing duplicate counts and retaining backdated arrivals.
 Unsupported requests and analytics failures retain the source count path.
 Frequency metadata, locations and previously-seen status still use PostgreSQL.
+Unknown-network filtering is applied on source PostgreSQL to the merged counts
+before sorting and pagination, using current source assignments instead of
+replicated network metadata. The source fallback also retains that filter
+before its page limit.
 
 ## Production-scale read-only probes
 
