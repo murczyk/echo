@@ -746,6 +746,11 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let reply_env = env.clone();
+    let reply_cancel = cancel_token.clone();
+    spawn_named_worker("message_reply_worker", bg_set, async move {
+        crate::message_reply::worker::run(reply_env, reply_cancel).await;
+    });
     let messenger_alert_env = env.clone();
     let messenger_alert_cancel = cancel_token.clone();
     spawn_named_worker("messenger_alert_worker", bg_set, async move {
@@ -865,6 +870,15 @@ fn spawn_background_workers(
         .await;
     });
 
+    let transcript_env = env.clone();
+    let transcript_cancel = cancel_token.clone();
+    spawn_named_worker("ai_transcript_analysis_worker", bg_set, async move {
+        crate::ai_transcript_analysis::worker::run(
+            transcript_env,
+            transcript_cancel,
+        )
+        .await;
+    });
     let ai_settlement_env = env.clone();
     let ai_settlement_cancellation_token = cancel_token.clone();
     spawn_named_worker("ai_settlement_worker", bg_set, async move {
@@ -1170,6 +1184,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::inbox_item_context)
+            .service(crate::message_reply::message_replies)
             .service(crate::rer_importer::inbox::messages_by_id)
             .service(
                 crate::rer_importer::inbox::messages_by_id_matching_filters,
@@ -1343,6 +1358,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
             .service(crate::ai_callsign::save_ai_callsign_worker_settings)
             .service(crate::ai_settlement::get_ai_settlement_page)
+            .service(crate::ai_transcript_analysis::page)
+            .service(crate::ai_transcript_analysis::list_queue)
+            .service(crate::ai_transcript_analysis::reset)
+            .service(crate::ai_transcript_analysis::save_message)
+            .service(crate::ai_transcript_analysis::delete_message)
+            .service(crate::ai_transcript_analysis::test)
+            .service(crate::ai_transcript_analysis::save)
+            .service(crate::ai_transcript_analysis::recalculate)
+            .service(crate::ai_transcript_analysis::save_worker)
             .service(crate::ai_settlement::aliases::list_settlement_aliases)
             .service(crate::ai_settlement::aliases::search_alias_settlements)
             .service(crate::ai_settlement::aliases::save_settlement_alias)

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily GOI tile proxy certificate renewal
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=goi-tiles-router-renew-cert.service
+
+[Install]
+WantedBy=timers.target

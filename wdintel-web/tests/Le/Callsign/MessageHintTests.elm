@@ -90,6 +90,7 @@ message textMarked callsigns networkIds =
     , callsignsAlg2 = []
     , checked = False
     , important = False
+    , aiImportant = False
     , bookmarked = False
     , timestamp = Nothing
     , createdAt = Nothing

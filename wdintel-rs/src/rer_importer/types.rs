@@ -58,6 +58,8 @@ pub struct InboxMessage {
     pub callsigns_alg2: Vec<String>,
     pub checked: bool,
     pub important: bool,
+    #[serde(default)]
+    pub ai_important: bool,
     pub bookmarked: bool,
     pub timestamp: Option<i64>,
     #[serde(default)]
@@ -199,6 +201,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             callsigns_alg2: payload.callsigns_alg2,
             checked: payload.checked,
             important: payload.important,
+            ai_important: false,
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
             created_at: None,
@@ -1922,6 +1925,7 @@ mod tests {
         };
 
         let message = InboxMessage::from(payload.clone());
+        assert!(!message.ai_important);
         assert_eq!(message.created_at, None);
         assert_eq!(message.created_at_order, None);
         assert_eq!(message.is_own, None);
@@ -1949,6 +1953,7 @@ mod tests {
             .cloned()
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
+            "ai_important".to_string(),
             "callsign_tokens".to_string(),
             "created_at".to_string(),
             "created_at_order".to_string(),

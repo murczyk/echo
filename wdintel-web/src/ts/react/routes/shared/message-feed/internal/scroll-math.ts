@@ -3,6 +3,7 @@ import type { AnchorSnapshot } from '../message-feed.types';
 export const DEFAULT_TOP_LOAD_BUFFER_PX = 160;
 export const DEFAULT_BOTTOM_LOAD_BUFFER_PX = 320;
 export const DEFAULT_AT_BOTTOM_THRESHOLD_PX = 25;
+export const FEED_ITEM_SCROLL_MS = 300;
 export const INITIAL_BOTTOM_SETTLE_FRAMES = 12;
 export const INITIAL_BOTTOM_SETTLE_TIMEOUT_MS = 2000;
 /** Wait for scroll to settle before prefetching newer — avoids mid-fling window commits. */

@@ -18,6 +18,7 @@ messageStub =
     , callsignsAlg2 = []
     , checked = True
     , important = False
+    , aiImportant = False
     , bookmarked = False
     , coords = Nothing
     , coordsWithLocality = []

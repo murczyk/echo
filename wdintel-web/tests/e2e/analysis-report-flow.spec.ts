@@ -43,6 +43,63 @@ async function openReportsDialog(page: Page) {
 }
 
 test.describe('Analysis report characterization @regression', () => {
+  for (const fileType of ['Docx', 'Xlsx']) {
+    for (const summaryOnly of [false, true]) {
+      test(`#3864 launches REO ${fileType} with summaryOnly=${summaryOnly}`, async ({ page }) => {
+        await installAnalysisNeoApiMocks(page, {
+          userRoles: ['Rer', 'AdvancedReports'],
+          inboxResponse: createLoadedInboxResponse(),
+        });
+        const launchBodies: unknown[] = [];
+        await page.route('**/api/rer/report-docx-task-launch', async (route) => {
+          launchBodies.push(route.request().postDataJSON());
+          await route.fulfill({ contentType: 'application/json', body: '3864' });
+        });
+        await page.route('**/api/report-history/status', async (route) => {
+          await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify(
+              reportHistoryRow(3864, {
+                report_kind: 'reo',
+                status: 'planned',
+                bgtask_id: null,
+              }),
+            ),
+          });
+        });
+        await page.goto('/rer-analysis-neo?freqs=123.4');
+        const dialog = await openReportsDialog(page);
+        await dialog.getByRole('button', { name: /РЕО/ }).click();
+        const summaryCheckbox = dialog.getByRole('checkbox', {
+          name: 'Лише підсумкова активність',
+        });
+        await expect(summaryCheckbox).toBeEnabled();
+        await expect(summaryCheckbox).not.toBeChecked();
+        if (summaryOnly) {
+          await summaryCheckbox.check();
+        }
+        if (fileType === 'Xlsx') {
+          await dialog.getByRole('combobox', { name: 'Формат' }).click();
+          await page.getByRole('option', { name: 'xlsx', exact: true }).click();
+        }
+        await dialog.getByRole('button', { name: 'Завантажити docx/xlsx' }).click();
+        await expect.poll(() => launchBodies.length).toBe(1);
+        expect(launchBodies[0]).toEqual(
+          expect.objectContaining({
+            kind: 'reo',
+            report_type: {
+              Reo: [
+                { adjacent_freqs_distance: 0, no_comments: false, summary_only: summaryOnly },
+                fileType,
+              ],
+            },
+            req: expect.objectContaining({ selected_freqs: ['123.4'] }),
+          }),
+        );
+      });
+    }
+  }
+
   for (const [includeWithoutComments, onlyThisUnitComments] of [
     [true, true],
     [true, false],

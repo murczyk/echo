@@ -1,0 +1,122 @@
+Original gateway-generated native plan
+======================================
+
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+          Expression
+            Join (JOIN FillRightFirst)
+              Expression (Left Pre Join Actions)
+                Expression
+                  Join (JOIN FillRightFirst)
+                    Expression
+                      Join (JOIN FillRightFirst)
+                        Expression
+                          Join (JOIN FillRightFirst)
+                            Expression
+                              Join (JOIN FillRightFirst)
+                                Expression
+                                  Join (JOIN FillRightFirst)
+                                    Filter
+                                      ReadFromMergeTree (echo_cdc.sigint_inbox_item)
+                                    Expression
+                                      BuildRuntimeFilter (Build runtime join filter on __table5.c1)
+                                        Expression
+                                          Join (JOIN FillRightFirst)
+                                            Filter
+                                              ReadFromMergeTree (echo_cdc.sigint_inbox_item_unit)
+                                            Expression (Right Pre Join Actions)
+                                              BuildRuntimeFilter (Build runtime join filter on __table7.id)
+                                                Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))
+                                                  ReadFromMergeTree (echo_cdc.sigint_unit)
+                                Expression
+                                  BuildRuntimeFilter (Build runtime join filter on __table8.id)
+                                    Filter
+                                      ReadFromMergeTree (echo_cdc.signal_message)
+                            Expression
+                              BuildRuntimeFilter (Build runtime join filter on __table9.id)
+                                Filter
+                                  ReadFromMergeTree (echo_cdc.datasource_group)
+                        Expression (Right Pre Join Actions)
+                          BuildRuntimeFilter (Build runtime join filter on __table10.master_key)
+                            Expression (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))
+                              Filter ((((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))[split])
+                                ReadFromMergeTree (echo_cdc.signal_group)
+                    Expression
+                      BuildRuntimeFilter (Build runtime join filter on __table11.signal_message_id)
+                        Filter
+                          ReadFromMergeTree (echo_cdc.signal_message_group)
+              Expression (Right Pre Join Actions)
+                BuildRuntimeFilter (Build runtime join filter on __table12.signal_message_id)
+                  Filter (((Join filter + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))
+                    ReadFromMergeTree (echo_cdc.signal_message_group)
+
+Gateway-generated plan with unit membership on both inputs
+==========================================================
+
+Expression (Project names)
+  Limit (preliminary LIMIT)
+    Sorting (Sorting for ORDER BY)
+      Expression ((Before ORDER BY + Projection))
+        Aggregating
+          Expression
+            Join (JOIN FillRightFirst)
+              Expression (Left Pre Join Actions)
+                Expression
+                  Join (JOIN FillRightFirst)
+                    Expression
+                      Join (JOIN FillRightFirst)
+                        Expression
+                          Join (JOIN FillRightFirst)
+                            Expression
+                              Join (JOIN FillRightFirst)
+                                Expression
+                                  Join (JOIN FillRightFirst)
+                                    Expression
+                                      Join (JOIN FillRightFirst)
+                                        Filter
+                                          ReadFromMergeTree (echo_cdc.sigint_inbox_item)
+                                        Expression
+                                          BuildRuntimeFilter (Build runtime join filter on __table6.c1)
+                                            Expression
+                                              Join (JOIN FillRightFirst)
+                                                Filter
+                                                  ReadFromMergeTree (echo_cdc.sigint_inbox_item_unit)
+                                                Expression (Right Pre Join Actions)
+                                                  BuildRuntimeFilter (Build runtime join filter on __table8.id)
+                                                    Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))
+                                                      ReadFromMergeTree (echo_cdc.sigint_unit)
+                                    Expression
+                                      BuildRuntimeFilter (Build runtime join filter on __table9.id)
+                                        Filter
+                                          ReadFromMergeTree (echo_cdc.signal_message)
+                                Expression
+                                  BuildRuntimeFilter (Build runtime join filter on __table10.id)
+                                    Filter
+                                      ReadFromMergeTree (echo_cdc.datasource_group)
+                            Expression (Right Pre Join Actions)
+                              BuildRuntimeFilter (Build runtime join filter on __table11.master_key)
+                                Expression (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))
+                                  Filter ((((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))[split])
+                                    ReadFromMergeTree (echo_cdc.signal_group)
+                        Expression
+                          BuildRuntimeFilter (Build runtime join filter on __table12.signal_message_id)
+                            Filter
+                              ReadFromMergeTree (echo_cdc.signal_message_group)
+                    Expression
+                      BuildRuntimeFilter (Build runtime join filter on __table13.signal_message_id)
+                        Filter
+                          ReadFromMergeTree (echo_cdc.signal_message_group)
+              Expression (Right Pre Join Actions)
+                BuildRuntimeFilter (Build runtime join filter on __table14.c1)
+                  Expression
+                    Join (JOIN FillRightFirst)
+                      Expression (Left Pre Join Actions)
+                        Filter
+                          ReadFromMergeTree (echo_cdc.sigint_inbox_item_unit)
+                      Expression (Right Pre Join Actions)
+                        BuildRuntimeFilter (Build runtime join filter on __table16.id)
+                          Filter (((WHERE + (Change column names to column identifiers + (Convert VIEW subquery result to VIEW table structure + (Materialize constants after VIEW subquery + (Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))))) + (WHERE + Change column names to column identifiers)))
+                            ReadFromMergeTree (echo_cdc.sigint_unit)

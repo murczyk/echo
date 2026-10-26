@@ -86,6 +86,7 @@ import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
 import { AdminAiPositionPage, AdminAiPositionsPage } from '../admin-ai-positions';
 import { AdminAiSettlementsPage } from '../admin-ai-settlements';
+import { AdminAiTranscriptAnalysisPage } from '../admin-ai-transcript-analysis';
 import { AdminAiIntelReportsPage } from '../admin-ai-intel-reports';
 import { AdminOcrPage } from '../admin-ocr';
 import { AdminDocumentsPage } from '../admin-documents';
@@ -107,6 +108,7 @@ export type AiAgentAdminSection =
   | 'echo-proxies'
   | 'callsigns'
   | 'settlements'
+  | 'transcript-analysis'
   | 'positions'
   | 'position'
   | 'intelligence-reports'
@@ -2051,6 +2053,8 @@ export function AdminAiAgentPage({
       return <AdminAiCallsignsPage />;
     case 'settlements':
       return <AdminAiSettlementsPage />;
+    case 'transcript-analysis':
+      return <AdminAiTranscriptAnalysisPage />;
     case 'positions':
       return <AdminAiPositionsPage tab={tab} />;
     case 'position':

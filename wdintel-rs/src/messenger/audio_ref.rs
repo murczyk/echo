@@ -41,6 +41,9 @@ pub(crate) async fn attach(
             "update device_audio set automatic_transcription_pending=coalesce(automatic_transcription_pending,0) where id=$1", [audio.id.into()])).await.c(h!())?;
         echo_gpu_client::enqueue(db, source).await.c(h!())?;
     }
+    crate::ai_transcript_analysis::worker::enqueue(db, message)
+        .await
+        .c(h!())?;
     let id = row.try_get("", "id").c(h!())?;
     let current = reference(db, id).await.c(h!())?.c(h!())?;
     index_name(
@@ -289,6 +292,11 @@ pub(crate) async fn copy<C: ConnectionTrait>(
             .await
             .c(h!())?;
         }
+    }
+    if media.iter().any(is_reference) {
+        crate::ai_transcript_analysis::worker::enqueue(db, message)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }

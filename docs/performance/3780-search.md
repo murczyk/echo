@@ -23,6 +23,23 @@ repeatable-read transaction. The transaction ends before secondary enrichment.
 Unlimited reads keep their existing behavior. This prevents the planner from
 aggregating tags and metadata for the entire requested period before filtering.
 
+PostgreSQL fresh-tail pages and counts correlate text predicates to the outer
+message IDs, including filename and attachment branches. Their creation-time
+lower bound limits candidate messages before text checks; they do not construct
+a search-match union across the entire history. Full-period PostgreSQL reads
+retain their existing text strategy.
+
+Unbounded, limited `load_latest` analytics pages first probe the last two days
+by message creation time, rounding the lower boundary down to a minute so
+requests can share the existing short-lived ID-bounds cache. This preserves
+the existing effective ordering of these requests. A full 20-ID page is
+sufficient because every excluded message is older than the probe's
+creation-time boundary. Sparse or empty probes repeat
+the existing complete-history selection so older matches are retained.
+Explicit time/cursor scopes and unlimited reads keep their existing behavior.
+Source freshness, authorization, revalidation and fresh-tail merging still
+apply; the probe does not assume message IDs follow interception time.
+
 ## Attachment coverage
 
 `attachment_document` and `attachment_chunk` are included in the publication
@@ -164,6 +181,9 @@ history and CDC data remain available.
 
 ## Verification
 
+Use the [production verification checklist](3780-verification.md) for repeatable
+post-deployment windows, representative workloads and ingestion checks.
+
 Run the #3780 database regressions for paginated search and attachment coverage,
 the existing authorization/tag/metadata and analytics-fallback tests, and the
 Analysis/Duty browser regressions. Deployment tests cover mixed ordinary and
@@ -193,6 +213,60 @@ Compare count plans on both sides of that boundary before changing it.
 PostgreSQL candidate text-search union deduplication and quoted substring
 predicates also need representative plan evidence before further optimization.
 
+For an analytics inbox request using direct unit IDs without the ordinary
+header/network unit branch, apply the same bounded unit membership predicate
+to both `sigint_inbox_item.id` and `signal_message.id`. Their join equates these
+IDs, so results and authorization are unchanged; filtering both inputs prevents
+the native join from first building a hash table over the full message history.
+Keep the extra predicate off the combined header-unit OR direct-ID branch.
+Nonempty, empty, denied and combined-unit cases are covered by the existing
+unit-ID regression. Gateway resource limits and resource-specific fallback are
+described in the [analytics operations guide](../../deploy/clickhouse/README.md#gateway-resource-limits).
+
+Frequency and unit inbox filters, including selected and denied unit IDs, read
+analytics candidates in disjoint message-ID ranges, capped at four million IDs
+for closed ranges. Tag, network, metadata and daily activity statistics cap
+closed ranges at one million IDs. Recent scopes resolve a high-water mark using
+PostgreSQL's indexed maximum message ID and retain a lower-bound-only final range,
+so messages arriving during
+planning remain eligible. Closed scopes retain their upper bounds; empty scopes
+issue no range queries. Unit-name, network-association and AOR lookups are shared
+across inbox ranges within each operation. At most two range queries
+run concurrently per operation; existing query deadlines, memory limits and
+fallback admission limits remain in effect. Every range uses the original
+authorization and filter predicates, including bounds on related tables.
+Inbox candidates are merged using the requested timestamp and ID ordering before
+applying the page limit. Statistics sum distinct-message counts across disjoint
+ID ranges, retaining per-message deduplication and metadata normalization.
+A failed range fails the complete analytics attempt and uses the existing
+PostgreSQL fallback; partial totals are never returned. No migration, resnapshot
+or gateway configuration change is required.
+
+Local range-planning checks on 2026-10-25 used PostgreSQL 14.24 and ClickHouse
+26.3.12.3 with 38.8 million synthetic, sequential message IDs. PostgreSQL's
+`SELECT MAX(id)` on a bigint primary key produced `Result -> Limit -> Index Only
+Scan Backward`, returning one index row with four shared-buffer hits, one heap
+fetch, no temporary I/O and 0.037 ms execution time. The read had an eight-second
+statement timeout. This isolates the range-planning access path; it does not
+measure the complete inbox or facet query.
+
+The equivalent ClickHouse current-state fixture used
+`ReplacingMergeTree(_peerdb_version) ORDER BY id`, `FINAL` and
+`_peerdb_is_deleted = 0`, matching the reconciled current-view semantics. After
+one million newer row versions, `EXPLAIN indexes=1 SELECT MAX(id)` selected all
+4,865 granules with an unrestricted primary-key condition. A one-million-ID
+bounded distinct count selected 123 of 4,863 granules from one part; a separate
+range containing 100,000 newer tombstones correctly counted 900,000 live IDs.
+The local queries used two threads, a 2-GiB memory cap and an eight-second
+execution limit. These synthetic checks establish indexed range selection and
+current-version deletion handling. Production gateway plans, replication
+freshness, concurrent memory use and end-to-end latency still require the
+ordinary approved canary before rollout; no environment repair is implied.
+
+The PostgreSQL unit-match breakdown reads only the requested filtered counts,
+without discarded overall totals. Requests without a unit-name filter reuse one
+count; aggregate-cache reads and recovery-conflict retries remain available.
+
 ## Analysis search modes
 
 `search_mode` is optional on analysis, inbox, and callsign-graph requests.
@@ -205,9 +279,34 @@ The user contract is [Analysis search](../content/analysis-search.md#режим�
 Nonempty exact and substring searches use PostgreSQL. Gateway plans on
 `echo-kharkiv2` showed local literal-body filtering through the JSON compatibility
 views, including an unbounded foreign-table read for the self-correlated regex
-shape. These modes therefore apply body predicates directly to the already
-filtered inbox relation and do not attempt that gateway path. Fuzzy routing is
-unchanged. Read-only unit-count diagnostics with the incident's group scope and
+shape. These modes remain on PostgreSQL and do not attempt that gateway path.
+Full-period source searches collect distinct matching filename, current
+attachment-chunk and audio-filename IDs separately. The body predicate remains
+on the inbox relation, combined with `id = ANY(ARRAY(...))` attachment membership.
+With an obligatory inbox row, PostgreSQL can combine the body GIN trigram index
+and inbox primary key in a bitmap OR, or choose a scoped scan for common terms.
+Optional inbox rows use message IDs for membership so attachment-only messages
+remain searchable. Hydration and fresh-tail reads retain candidate-ID checks.
+Body and wildcard-only filename predicates preserve empty/null behavior;
+other filename predicates use the existing trigram index directly.
+
+Source queries with one selected nonempty frequency also correlate search terms
+to candidate IDs. The frequency facet keeps its existing strategy because it
+deliberately ignores its own selected-frequency filter. Broad source queries
+retain indexed match-set planning. These choices preserve authorization, dates,
+negation, attachment revision checks and analytics eligibility. The concurrent
+source-index migration refreshes expression statistics with `ANALYZE` and
+requires no analytics resnapshot; see the
+[Pivnich measurements and rollout checks](../../archive/2026-10-12-perf/iteration9/findings.md).
+
+Web source and replica pools force custom prepared-statement plans so a common
+literal term can use its own selectivity rather than a cached rare-term plan.
+Runtime statement/lock/idle-transaction deadlines remain applied in the same
+connection-options mapper. Analytics retains its existing custom-plan setting;
+worker, file-registry and operator pools retain their existing plan-cache policy.
+Monitor planning CPU alongside execution cost when accepting this change.
+
+Read-only unit-count diagnostics with the incident's group scope and
 `нора` took 66 ms for one day and 3.68 s for 30 days on 15 October 2026; the
 30-day plan still scanned large joined relations and spilled temporary data.
 These isolated timings do not establish a latency guarantee under concurrency

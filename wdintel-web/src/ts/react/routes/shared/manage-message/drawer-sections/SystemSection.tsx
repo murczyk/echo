@@ -1,4 +1,4 @@
-import React from 'react';
+import { useMemo } from 'react';
 import { Box, TextField, Autocomplete, CircularProgress } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useFormContext, Controller } from 'react-hook-form';
@@ -20,6 +20,7 @@ type Props = {
   isEditMode: boolean;
   isReportMode?: boolean;
   groupEditable?: boolean;
+  groupLocked?: boolean;
   cyberEchoEnabled: boolean;
   deviceNameOptions: string[];
   deviceNamesLoading: boolean;
@@ -34,6 +35,7 @@ export function SystemSection({
   isEditMode,
   isReportMode = false,
   groupEditable = false,
+  groupLocked = false,
   cyberEchoEnabled,
   deviceNameOptions,
   deviceNamesLoading,
@@ -46,7 +48,7 @@ export function SystemSection({
     formState: { errors },
   } = useFormContext<MessageFormData>();
 
-  const sortedSignalGroups = React.useMemo(() => {
+  const sortedSignalGroups = useMemo(() => {
     if (!recentValues?.group || recentValues.group.length === 0) return signalGroups;
 
     return [...signalGroups].sort((a, b) => {
@@ -107,7 +109,7 @@ export function SystemSection({
                 );
               }}
               loading={groupsLoading}
-              disabled={busy || (isEditMode && !groupEditable)}
+              disabled={busy || groupLocked || (isEditMode && !groupEditable)}
               value={signalGroupOptions.find((group) => group.masterKey === field.value) || null}
               onChange={(_, newValue) => field.onChange(newValue?.masterKey || '')}
               renderInput={(params) => (
@@ -119,7 +121,7 @@ export function SystemSection({
                   required
                   error={!!errors.signalGroupMasterKey}
                   helperText={errors.signalGroupMasterKey?.message}
-                  disabled={busy || (isEditMode && !groupEditable) || groupsLoading}
+                  disabled={busy || groupLocked || (isEditMode && !groupEditable) || groupsLoading}
                   slotProps={{
                     input: {
                       ...params.InputProps,

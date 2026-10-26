@@ -4036,8 +4036,10 @@ mod tests {
         use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 
         let env = cleanup().await.unwrap();
-        let message_ts =
-            round_to_5min(Utc::now().naive_utc()).unwrap() - Duration::days(1);
+        let message_ts = start_of_day(
+            get_local_date(Utc::now().naive_utc()) - Duration::days(1),
+        )
+        .unwrap();
         let group = mk_group_with_stats_message(
             &env.dbx,
             "stats-linked-units",

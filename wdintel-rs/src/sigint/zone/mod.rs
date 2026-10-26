@@ -135,6 +135,7 @@ pub async fn zones_datasources_group_update(
         interseption_kind: rsp.interseption_kind,
         disable_network_assignment: rsp.disable_network_assignment,
         is_aviation_group: rsp.is_aviation_group,
+        ai_transcript_analysis_enabled: rsp.ai_transcript_analysis_enabled,
         fetch_new_messages: rsp.fetch_new_messages,
         areas_of_responsibility: rsp
             .aor
@@ -289,6 +290,14 @@ pub async fn zones_datasources_group_add(
             .flatten()
             .unwrap_or(false);
 
+    let ai_transcript_analysis_enabled =
+        crate::ai_transcript_analysis::settings::set_group(
+            &txn,
+            &group_master_key,
+            req.ai_transcript_analysis_enabled,
+        )
+        .await
+        .c(h!())?;
     let fetch_new_messages = bl::update_group_fetch_new_messages_if_present(
         None,
         &group_master_key,
@@ -332,6 +341,7 @@ pub async fn zones_datasources_group_add(
             interseption_kind,
             disable_network_assignment,
             is_aviation_group,
+            ai_transcript_analysis_enabled,
             fetch_new_messages,
             areas_of_responsibility,
             group_master_key,

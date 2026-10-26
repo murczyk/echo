@@ -3,6 +3,7 @@ import type { MessageTextPreviewLineLimit } from '../../services/api/user-settin
 import type { FeedColumnModel } from './types';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import type { GroupScope } from '../shared/group-navigation';
+import type { MessageFeedFocus } from '../shared/message-feed';
 import { groupFilterScope } from '../shared/group-navigation';
 import { useDutyUnreadBoundaries } from './useDutyUnreadBoundaries';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
@@ -12,6 +13,7 @@ import {
   feedNeedsUnreadPrefetch,
   hasActiveFeedFilter,
   type MessageFeedState,
+  stableStringify,
   type TagsLayoutVariant,
 } from './utils';
 
@@ -19,6 +21,7 @@ export type DutyFeedColumnModelDeps = {
   feeds: RerDutyFeedsBundle;
   editorSourceFeedId: string | null;
   editorHighlightedMessageId: number | null;
+  linkedMessageFocus?: { feedId: string; filterSignature: string; focus: MessageFeedFocus } | null;
   narrowScreen: boolean;
   authUserName: string | null;
   currentUser: User | null;
@@ -73,6 +76,11 @@ function buildFeedColumnView(
   } = deps.feeds;
   return {
     narrowScreen: deps.narrowScreen,
+    linkedMessageFocus:
+      deps.linkedMessageFocus?.feedId === feed.id &&
+      deps.linkedMessageFocus.filterSignature === stableStringify(feed.filter)
+        ? deps.linkedMessageFocus.focus
+        : null,
     editorHighlightedMessageId:
       deps.editorSourceFeedId === feed.id ? deps.editorHighlightedMessageId : null,
     feedCount: messageFeeds.length,

@@ -24,6 +24,8 @@ use std::collections::*;
 use std::path::Path;
 use std::time::Instant;
 
+mod summary;
+
 const WIDTH_UNIT: usize = 1870;
 const DTM_FORMAT: &str = "%Y.%m.%d %H:%M:%S";
 const FUNCTIONALITY_DESC_DEFAULT: &str = "Склад кореспондентів - звичайний, інтенсивність роботи - звичайна, час роботи - звичайний, район роботи - старий/без змін.";
@@ -50,10 +52,19 @@ pub struct NetworkRow {
     pub identified_details: Vec<String>,
 }
 
+#[derive(Clone, Debug)]
 pub struct NetworkActivity {
     pub since: NaiveDateTime,
     pub till: NaiveDateTime,
     pub seances_qty: u64,
+}
+
+impl NetworkActivity {
+    fn merge(&mut self, other: &Self) {
+        self.since = std::cmp::min(self.since, other.since);
+        self.till = std::cmp::max(self.till, other.till);
+        self.seances_qty += other.seances_qty;
+    }
 }
 
 pub struct NetworkCorrespondent {
@@ -109,6 +120,7 @@ pub struct CallsignSummary {
 
 #[derive(Debug, Clone)]
 struct ReoInboxMessage {
+    activity: Option<NetworkActivity>,
     pub timestamp: Option<i64>,
     pub freq: Option<String>,
     pub coords: Option<String>,
@@ -117,6 +129,26 @@ struct ReoInboxMessage {
     pub callsign_tokens: Vec<CNCallsign>,
     pub network_ids: Option<Vec<i64>>,
     pub group_master_key: Option<String>,
+}
+
+impl ReoInboxMessage {
+    fn activity_summary(&self) -> anyhow::Result<Option<NetworkActivity>> {
+        if let Some(activity) = &self.activity {
+            return Ok(Some(activity.clone()));
+        }
+        let Some(timestamp) = self.timestamp else {
+            return Ok(None);
+        };
+        let timestamp = DateTime::from_timestamp_millis(timestamp)
+            .context(h!())?
+            .with_timezone(&crate::config::get_tz())
+            .naive_local();
+        Ok(Some(NetworkActivity {
+            since: timestamp,
+            till: timestamp,
+            seances_qty: 1,
+        }))
+    }
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -155,6 +187,17 @@ pub async fn report_docx_kind_reo(
     let start = Instant::now();
     let only_comments_from_current_organism =
         req.report_tags_only_this_unit.unwrap_or(false);
+    let (range_khz, no_comments, summary_only) = match req.report_type {
+        Some(ReportType::Reo(
+            ReoReportSettings {
+                adjacent_freqs_distance,
+                no_comments,
+                summary_only,
+            },
+            _,
+        )) => (adjacent_freqs_distance * 1000.0, no_comments, summary_only),
+        _ => (0.0, false, false),
+    };
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = Some(false);
     let report_settings =
@@ -177,22 +220,28 @@ pub async fn report_docx_kind_reo(
             &current_req,
         ),
         |db| async move {
-            load_reo_inbox_messages_chunks(
+            load_reo_report_messages(
                 &db,
                 &login,
                 env,
                 analytics_req,
                 analytics_chunks,
+                summary_only,
+                no_comments,
+                only_comments_from_current_organism,
             )
             .await
         },
         |db| async move {
-            load_reo_inbox_messages_chunks(
+            load_reo_report_messages(
                 &db,
                 &login,
                 env,
                 postgres_req,
                 postgres_chunks,
+                summary_only,
+                no_comments,
+                only_comments_from_current_organism,
             )
             .await
         },
@@ -205,17 +254,6 @@ pub async fn report_docx_kind_reo(
         messages.len()
     );
 
-    let (range_khz, no_comments) = match req.report_type {
-        Some(ReportType::Reo(
-            ReoReportSettings {
-                adjacent_freqs_distance,
-                no_comments,
-            },
-            _,
-        )) => (adjacent_freqs_distance * 1000.0, no_comments),
-        _ => (0.0, false),
-    };
-
     let start = Instant::now();
     let mut report = collect_report(
         messages,
@@ -225,7 +263,7 @@ pub async fn report_docx_kind_reo(
         range_khz,
         &current_req.selected_aors,
         only_comments_from_current_organism,
-        no_comments,
+        no_comments || summary_only,
     )
     .await
     .context(h!())?;
@@ -262,6 +300,7 @@ pub async fn report_docx_kind_reo(
                 network_summary,
                 outpath,
                 no_comments,
+                summary_only,
             )
         }
         _ => generate_docx_kind_reo(
@@ -269,6 +308,7 @@ pub async fn report_docx_kind_reo(
             network_summary,
             outpath,
             no_comments,
+            summary_only,
         ),
     };
 
@@ -278,6 +318,34 @@ pub async fn report_docx_kind_reo(
     );
 
     result
+}
+
+async fn load_reo_report_messages(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    chunks: &[ReportPeriodChunk],
+    summary_only: bool,
+    no_comments: bool,
+    only_comments_from_current_organism: bool,
+) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
+    if summary_only {
+        return Ok(summary::load_summary_messages(
+            dbx,
+            login,
+            env,
+            req,
+            chunks,
+            no_comments,
+            only_comments_from_current_organism,
+        )
+        .await
+        .c(h!())?);
+    }
+    Ok(load_reo_inbox_messages_chunks(dbx, login, env, req, chunks)
+        .await
+        .c(h!())?)
 }
 
 async fn load_reo_inbox_messages_chunks(
@@ -366,6 +434,7 @@ async fn load_reo_inbox_messages(
             Ok((
                 id,
                 ReoInboxMessage {
+                    activity: None,
                     timestamp: row.timestamp.map(|timestamp| {
                         timestamp.and_utc().timestamp_millis()
                     }),
@@ -462,6 +531,7 @@ fn generate_xlsx_kind_reo(
     network_summary: String,
     outpath: &Path,
     no_comments: bool,
+    summary_only: bool,
 ) -> Result<(), AppError> {
     let mut workbook = Workbook::new();
     let sheet = workbook
@@ -483,11 +553,15 @@ fn generate_xlsx_kind_reo(
         ("Час початку роботи радіомережі", 20),
         ("Час закінчення роботи радіомережі", 20),
         ("Сеанси", 8),
-        ("Склад кореспондентів радіомережі та приналежність", 30),
+    ];
+    if !summary_only {
+        headers.push(("Склад кореспондентів радіомережі та приналежність", 30));
+    }
+    headers.extend([
         ("Характер радіообміну", 30),
         ("Особливості функціонування радіомереж", 30),
-    ];
-    if !no_comments {
+    ]);
+    if !no_comments && !summary_only {
         headers.push(("Що було виявлено", 40));
     }
 
@@ -540,7 +614,9 @@ fn generate_xlsx_kind_reo(
             &coltitle,
             hostile_network,
             no_comments,
-        )?;
+            summary_only,
+        )
+        .c(h!())?;
         row_num += 1;
     }
 
@@ -563,7 +639,9 @@ fn generate_xlsx_kind_reo(
             &coltitle,
             undefined_network,
             no_comments,
-        )?;
+            summary_only,
+        )
+        .c(h!())?;
         row_num += 1;
     }
     let start = Instant::now();
@@ -579,6 +657,7 @@ fn generate_networks_sheet<'a>(
     cell_format: &Format,
     network_row: NetworkRow,
     no_comments: bool,
+    summary_only: bool,
 ) -> Result<&'a mut Worksheet, AppError> {
     let mut col_num = 0;
     let date_cell_format = cell_format.clone().set_num_format("dd.mm.yy hh:mm");
@@ -652,20 +731,21 @@ fn generate_networks_sheet<'a>(
         .context(h!())?;
     col_num += 1;
 
-    let correspondences =
-        get_processed_correspondence(network_row.correspondents).join(", ");
-
-    sheet
-        .write_string_with_format(
-            row_num,
-            col_num,
-            correspondences,
-            cell_format,
-        )
-        .context(h!())?
-        .set_column_width(col_num, 30)
-        .context(h!())?;
-    col_num += 1;
+    if !summary_only {
+        let correspondences =
+            get_processed_correspondence(network_row.correspondents).join(", ");
+        sheet
+            .write_string_with_format(
+                row_num,
+                col_num,
+                correspondences,
+                cell_format,
+            )
+            .context(h!())?
+            .set_column_width(col_num, 30)
+            .context(h!())?;
+        col_num += 1;
+    }
 
     if let Some(communication_kind) = network_row.communication_kind {
         sheet
@@ -694,7 +774,7 @@ fn generate_networks_sheet<'a>(
         .context(h!())?;
     col_num += 1;
 
-    if !no_comments {
+    if !no_comments && !summary_only {
         let identified_details = network_row.identified_details.join("\n");
         sheet
             .write_string_with_format(
@@ -716,10 +796,17 @@ fn generate_docx_kind_reo(
     network_summary: String,
     outpath: &Path,
     no_comments: bool,
+    summary_only: bool,
 ) -> Result<(), AppError> {
     let start = Instant::now();
     let config = DocxConfig {
-        columns_count: if no_comments { 5 } else { 6 },
+        columns_count: if summary_only {
+            4
+        } else if no_comments {
+            5
+        } else {
+            6
+        },
         width_unit: WIDTH_UNIT,
         highlight_color: "FF0000".to_string(),
         split_multiline_cells: true,
@@ -730,14 +817,18 @@ fn generate_docx_kind_reo(
     let mut header_cells = vec![
         mk_header_cell("Назва радіомережі", &config),
         mk_header_cell("Час роботи радіомережі", &config),
-        mk_header_cell(
+    ];
+    if !summary_only {
+        header_cells.push(mk_header_cell(
             "Склад кореспондентів радіомережі та приналежність",
             &config,
-        ),
+        ));
+    }
+    header_cells.extend([
         mk_header_cell("Характер радіообміну", &config),
         mk_header_cell("Особливості функціонування радіомереж", &config),
-    ];
-    if !no_comments {
+    ]);
+    if !no_comments && !summary_only {
         header_cells.push(mk_header_cell("Що було виявлено", &config));
     }
     rows_amrp.push(TableRow::new(header_cells));
@@ -748,7 +839,12 @@ fn generate_docx_kind_reo(
         &config,
     )]));
     for e in report.hostile_networks {
-        rows_amrp.push(render_network_row(e, &config, no_comments));
+        rows_amrp.push(render_network_row(
+            e,
+            &config,
+            no_comments,
+            summary_only,
+        ));
     }
     rows_amrp.push(TableRow::new(vec![mk_merged_text_cell(
         "Невизначені",
@@ -757,7 +853,12 @@ fn generate_docx_kind_reo(
         &config,
     )]));
     for e in report.undefined_networks {
-        rows_amrp.push(render_network_row(e, &config, no_comments));
+        rows_amrp.push(render_network_row(
+            e,
+            &config,
+            no_comments,
+            summary_only,
+        ));
     }
     let thin_border = TableBorder::new(TableBorderPosition::Top)
         .border_type(BorderType::Single)
@@ -781,7 +882,7 @@ fn generate_docx_kind_reo(
     info!("building docx took: {:?}", start.elapsed());
 
     let start = Instant::now();
-    let file = std::fs::File::create(outpath)?;
+    let file = std::fs::File::create(outpath).c(h!())?;
     docx.build().pack(file).context(h!())?;
     info!("writing docx to file took: {:?}", start.elapsed());
 
@@ -792,6 +893,7 @@ fn render_network_row(
     row: NetworkRow,
     config: &DocxConfig,
     no_comments: bool,
+    summary_only: bool,
 ) -> TableRow {
     let mut network_cell =
         mk_text_cell(&row.name, util::ParagraphStyle::Bold, config);
@@ -833,13 +935,6 @@ fn render_network_row(
         config,
     ));
 
-    let correspondents = get_processed_correspondence(row.correspondents);
-    let correspondents_cell = mk_multiline_text_cell(
-        correspondents,
-        util::ParagraphStyle::Default,
-        config,
-    );
-
     let functionality_details_cell = mk_text_cell(
         &row.functionality_details,
         util::ParagraphStyle::Default,
@@ -850,14 +945,16 @@ fn render_network_row(
         util::ParagraphStyle::Default,
         config,
     );
-    let mut cells = vec![
-        network_cell,
-        activity_cell,
-        correspondents_cell,
-        communication_kind_cell,
-        functionality_details_cell,
-    ];
-    if !no_comments {
+    let mut cells = vec![network_cell, activity_cell];
+    if !summary_only {
+        cells.push(mk_multiline_text_cell(
+            get_processed_correspondence(row.correspondents),
+            util::ParagraphStyle::Default,
+            config,
+        ));
+    }
+    cells.extend([communication_kind_cell, functionality_details_cell]);
+    if !no_comments && !summary_only {
         cells.push(mk_bullet_list_cell(row.identified_details, config));
     }
     TableRow::new(cells)
@@ -953,35 +1050,40 @@ async fn collect_report(
         .flat_map(|x| x.network_id)
         .unique()
         .collect();
-    let unit_callsigns = sigint_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_unit::Relation::SigintCallsign.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_unit::Relation::SigintNetworkUnit.def(),
-        )
-        .filter(sigint_callsign::Column::Callsign.eq_any(callsigns))
-        .filter(
-            sigint_network_unit::Column::NetworkId.eq_any(sigint_network_ids),
-        )
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .filter(sigint_callsign::Column::Deleted.eq(false))
-        .select_only()
-        .column_as(sigint_network_unit::Column::NetworkId, "network_id")
-        .column_as(sigint_unit::Column::Id, "unit_id")
-        .column_as(sigint_unit::Column::Name, "unit_name")
-        .column_as(sigint_callsign::Column::Position, "position")
-        .column_as(sigint_callsign::Column::Callsign, "callsign")
-        .column(sigint_unit::Column::Id)
-        .into_model::<CallsignSummary>()
-        .all(dbx)
-        .await
-        .context(h!())?
-        .into_iter()
-        .map(|c| ((c.network_id, c.callsign.clone()), c))
-        .collect::<HashMap<_, _>>();
+    let unit_callsigns = if callsigns.is_empty() {
+        HashMap::new()
+    } else {
+        sigint_unit::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                sigint_unit::Relation::SigintCallsign.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_unit::Relation::SigintNetworkUnit.def(),
+            )
+            .filter(sigint_callsign::Column::Callsign.eq_any(callsigns))
+            .filter(
+                sigint_network_unit::Column::NetworkId
+                    .eq_any(sigint_network_ids),
+            )
+            .filter(sigint_unit::Column::Deleted.eq(false))
+            .filter(sigint_callsign::Column::Deleted.eq(false))
+            .select_only()
+            .column_as(sigint_network_unit::Column::NetworkId, "network_id")
+            .column_as(sigint_unit::Column::Id, "unit_id")
+            .column_as(sigint_unit::Column::Name, "unit_name")
+            .column_as(sigint_callsign::Column::Position, "position")
+            .column_as(sigint_callsign::Column::Callsign, "callsign")
+            .column(sigint_unit::Column::Id)
+            .into_model::<CallsignSummary>()
+            .all(dbx)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|c| ((c.network_id, c.callsign.clone()), c))
+            .collect::<HashMap<_, _>>()
+    };
     info!(
         "collect_report: loading unit_callsigns took: {:?}, count: {}",
         start.elapsed(),
@@ -993,7 +1095,7 @@ async fn collect_report(
     let mut network_comments_map = HashMap::new();
     let mut linked_callsigns_map = HashMap::new();
     let mut unlinked_callsigns_map = HashMap::new();
-    let mut seances_map = HashMap::new();
+    let mut seances_map = HashMap::<NetworkSummaryKey, NetworkActivity>::new();
     let mut messages = messages;
     messages.sort_by_key(|(_, v)| v.freq.clone().unwrap_or("0.0".to_string()));
     for (id, message) in messages {
@@ -1005,18 +1107,15 @@ async fn collect_report(
         }
 
         let networks = get_network_summaries_for_message_id(id, &networks);
+        let activity = message.activity_summary().c(h!())?;
         for summary in networks {
             let network_key = summary.key;
 
-            if let Some(ts) = message.timestamp {
-                let mut data =
-                    seances_map.remove(&network_key).unwrap_or(vec![]);
-                let utc_datetime = DateTime::from_timestamp_millis(ts)
-                    .context(h!())?
-                    .with_timezone(&crate::config::get_tz())
-                    .naive_local();
-                data.push(utc_datetime);
-                seances_map.insert(network_key.clone(), data);
+            if let Some(activity) = &activity {
+                seances_map
+                    .entry(network_key.clone())
+                    .and_modify(|total| total.merge(activity))
+                    .or_insert_with(|| activity.clone());
             }
 
             let mut data = unlinked_callsigns_map
@@ -1102,12 +1201,14 @@ async fn collect_report(
             .flat_map(|(_, v)| v.iter())
             .cloned()
             .collect_vec();
-        let seances = seances_map
+        let activity = seances_map
             .iter()
             .filter(|(k, _)| network.keys.contains(k))
-            .flat_map(|(_, v)| v.iter())
-            .cloned()
-            .collect_vec();
+            .map(|(_, activity)| activity.clone())
+            .reduce(|mut total, activity| {
+                total.merge(&activity);
+                total
+            });
         let mut linked_callsigns = linked_callsigns_map
             .iter()
             .filter(|(k, _)| network.keys.contains(k))
@@ -1124,12 +1225,9 @@ async fn collect_report(
             .unique()
             .collect_vec();
         unlinked_callsigns.sort();
-        if seances.is_empty() {
+        let Some(activity) = activity else {
             continue;
-        }
-        let since = *seances.iter().min().context(h!())?;
-        let till = *seances.iter().max().context(h!())?;
-        let seances_qty = seances.len() as u64;
+        };
         let mut correspondents = vec![];
 
         let mut network_name = network.name.clone();
@@ -1159,11 +1257,6 @@ async fn collect_report(
                 position: None,
             })
         }
-        let activity = NetworkActivity {
-            since,
-            till,
-            seances_qty,
-        };
         let location = network
             .location
             .clone()
@@ -1632,6 +1725,7 @@ mod tests {
         network_ids: Option<Vec<i64>>,
     ) -> ReoInboxMessage {
         ReoInboxMessage {
+            activity: None,
             timestamp: Some(now.and_utc().timestamp_millis()),
             freq: Some("1000".to_string()),
             coords: None,

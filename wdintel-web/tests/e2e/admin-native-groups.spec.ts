@@ -145,6 +145,12 @@ test('@regression #3646 native group creation, access editing, archive and resto
   await page.getByRole('button', { name: 'Створити групу', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Назва групи' }).fill('Native test group');
+  await expect(
+    dialog.getByRole('checkbox', { name: 'Автоматично аналізувати транскрипції аудіо' }),
+  ).not.toBeChecked();
+  await dialog
+    .getByRole('checkbox', { name: 'Автоматично аналізувати транскрипції аудіо' })
+    .check();
   await expect(dialog.getByRole('checkbox', { name: 'Приватна група' })).toBeChecked();
   await expect(
     dialog.getByRole('checkbox', { name: 'Отримувати нові повідомлення з месенджера' }),
@@ -166,6 +172,7 @@ test('@regression #3646 native group creation, access editing, archive and resto
     interseptionKind: 'rer',
     disableNetworkAssignment: false,
     isAviationGroup: false,
+    aiTranscriptAnalysisEnabled: true,
   });
   await page
     .getByRole('row')

@@ -33,6 +33,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::ai_transcript_analysis_job::Entity")]
+    AiTranscriptAnalysisJob,
     #[sea_orm(
         belongs_to = "super::datasource_group::Entity",
         from = "Column::DatasourceGroupId",
@@ -71,6 +73,12 @@ pub enum Relation {
     SignalMessageMedia,
     #[sea_orm(has_many = "super::signal_message_media_conversion_job::Entity")]
     SignalMessageMediaConversionJob,
+}
+
+impl Related<super::ai_transcript_analysis_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiTranscriptAnalysisJob.def()
+    }
 }
 
 impl Related<super::datasource_group::Entity> for Entity {

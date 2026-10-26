@@ -425,6 +425,7 @@ export type InboxMessage = {
   callsignsAlg2: Array<string>;
   checked: boolean;
   important: boolean;
+  aiImportant: boolean;
   bookmarked: boolean;
   timestamp: number | null;
   createdAt: number | null;
@@ -585,6 +586,40 @@ export type TagPresenceFilter =
   | 'WithTags'
   | 'WithoutTags'
 ;
+
+export type MessageReplyScreen =
+  | 'Duty'
+  | 'Analysis'
+;
+
+export type MessageRepliesReq = {
+  signalMessageIds: Array<number>;
+  screen: MessageReplyScreen;
+};
+
+export type MessageReply = {
+  id: number;
+  threadId: number;
+  originalSignalMessageId: number | null;
+  replySignalMessageId: number | null;
+  createdAt: number;
+  deleted: boolean;
+  originalDeleted: boolean;
+  replyDeleted: boolean;
+};
+
+export type CitedMessage = {
+  id: number;
+  timestamp: number | null;
+  createdAt: number;
+  preview: string;
+  href: string;
+};
+
+export type MessageRepliesRsp = {
+  replies: Array<MessageReply>;
+  replyMessages: Array<CitedMessage>;
+};
 
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
@@ -818,6 +853,7 @@ export type SignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
@@ -837,6 +873,7 @@ export type OrphanSignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   isArchived: boolean;
   datasourceId: number | null;
@@ -3357,6 +3394,7 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
@@ -3379,6 +3417,7 @@ export type ZoneDatasourceGroupListRsp = {
 };
 
 export type ZoneDatasourceGroupAddReq = {
+  aiTranscriptAnalysisEnabled: boolean | null;
   zoneId: number;
   datasourceId: number;
   isSecret: boolean;
@@ -3398,6 +3437,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  aiTranscriptAnalysisEnabled: boolean | null;
   fetchNewMessages: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
@@ -3568,6 +3608,7 @@ export type RestartEchoRequest = {
 export type ReoReportSettings = {
   adjacentFreqsDistance: number;
   noComments: boolean;
+  summaryOnly: boolean;
 };
 
 export type ReoReportFileType =
@@ -4225,6 +4266,7 @@ export type DirectSubmitPayload = {
   retainedMediaIds: Array<string> | null;
   parentSignalMessageIds: Array<number>;
   copySourceSignalMessageIds: Array<number>;
+  engagedMessageId: number | null;
 };
 
 export type DirectSubmitAttachmentUpdates = {
@@ -6468,6 +6510,102 @@ export type AiSettlementEngineItem = {
   modelName: string;
 };
 
+export type AiTranscriptEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiTranscriptWorkerSettings = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiTranscriptResult = {
+  testMessageId: string;
+  aiEngineId: string;
+  important: boolean | null;
+  responseText: string;
+  error: string | null;
+  updatedAt: number | null;
+};
+
+export type AiTranscriptTestMessage = {
+  id: string;
+  message: string;
+  version: string;
+  results: Array<AiTranscriptResult>;
+};
+
+export type AiTranscriptVersion = {
+  id: string;
+  version: string;
+};
+
+export type AiTranscriptPage = {
+  prompt: string;
+  promptOverridden: boolean;
+  engines: Array<AiTranscriptEngineItem>;
+  messages: Array<AiTranscriptTestMessage>;
+  worker: AiTranscriptWorkerSettings;
+};
+
+export type AiTranscriptPrompt = {
+  prompt: string;
+  promptOverridden: boolean;
+};
+
+export type AiTranscriptMessageReq = {
+  id: string | null;
+  message: string;
+};
+
+export type AiTranscriptMessageIdReq = {
+  id: string;
+};
+
+export type AiTranscriptRunReq = {
+  prompt: string;
+  aiEngineIds: Array<string>;
+};
+
+export type AiTranscriptRunRsp = {
+  results: Array<AiTranscriptResult>;
+  messageVersions: Array<AiTranscriptVersion>;
+  engineVersions: Array<AiTranscriptVersion>;
+};
+
+export type AiTranscriptSaveReq = {
+  prompt: string;
+  results: Array<AiTranscriptResult>;
+  messageVersions: Array<AiTranscriptVersion>;
+  engineVersions: Array<AiTranscriptVersion>;
+};
+
+export type AiTranscriptQueueReq = {
+  beforeMessageId: number | null;
+};
+
+export type AiTranscriptQueueItem = {
+  messageId: number;
+  messageUuid: string | null;
+  messageUid: string | null;
+  groups: Array<string>;
+  createdAt: number;
+  state: string;
+  attempts: number;
+  nextAttemptAt: number;
+  completedAt: number | null;
+  important: boolean | null;
+  manualSuppressed: boolean;
+  lastError: string | null;
+};
+
+export type AiTranscriptQueueRsp = {
+  items: Array<AiTranscriptQueueItem>;
+  nextBeforeMessageId: number | null;
+};
+
 export type AiSettlementParseResultItem = {
   testMessageId: string;
   aiEngineId: string;
@@ -7430,6 +7568,7 @@ export type GroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  aiTranscriptAnalysisEnabled: boolean | null;
   fetchNewMessages: boolean | null;
 };
 
@@ -7447,6 +7586,7 @@ export type NativeGroupSettings = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean | null;
 };
 
 export type NativeGroupCreateReq = {

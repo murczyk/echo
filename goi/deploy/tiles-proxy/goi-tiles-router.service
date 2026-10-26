@@ -1,0 +1,24 @@
+[Unit]
+Description=GOI multi-host tile router
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=goi-tiles
+WorkingDirectory=/opt/goi-tiles-router
+ExecStart=/opt/goi-tiles-router/venv/bin/uvicorn app:app --host 127.0.0.1 --port 4006 --workers 1 --no-proxy-headers
+Restart=on-failure
+RestartSec=5s
+MemoryMax=1536M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+Environment=GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+Environment=GDAL_CACHEMAX=128
+Environment=VSI_CACHE=FALSE
+Environment=CPL_VSIL_CURL_CACHE_SIZE=16777216
+
+[Install]
+WantedBy=multi-user.target

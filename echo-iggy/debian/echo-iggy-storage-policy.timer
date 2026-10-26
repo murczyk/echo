@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Iggy disk and age retention every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+Unit=echo-iggy-storage-policy.service
+
+[Install]
+WantedBy=timers.target
