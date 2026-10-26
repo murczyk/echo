@@ -2537,10 +2537,15 @@ where
             )
             .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
-            .filter(note_comment_author_filter((
-                sigint_comment::Entity,
-                sigint_comment::Column::LoginId,
-            )))
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::LoginId,
+                )),
+                None,
+            ))
+            // Keep EXISTS correlated so each parent probes the comment index.
+            .offset(0)
             .into_query();
         let linked_message = Alias::new("linked_message");
         let linked_comment_exists = intel_product::Entity::find()
@@ -2572,10 +2577,21 @@ where
                 Expr::col((linked_message.clone(), signal_message::Column::Body))
                     .ne(""),
             )
-            .filter(note_comment_author_filter((
-                linked_message,
-                signal_message::Column::LoginId,
-            )))
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::LoginId,
+                )),
+                Some(
+                    Func::lower(Expr::col((
+                        linked_message,
+                        signal_message::Column::Sender,
+                    )))
+                    .into(),
+                ),
+            ))
+            // Avoid hashing the full linked-message relation for a narrow page.
+            .offset(0)
             .into_query();
 
         q = q.filter(
@@ -2636,10 +2652,10 @@ where
     Ok(q)
 }
 
-fn note_comment_author_filter<C>(column: C) -> SimpleExpr
-where
-    C: IntoColumnRef + Clone,
-{
+fn note_comment_author_filter(
+    author: SimpleExpr,
+    sender: Option<SimpleExpr>,
+) -> SimpleExpr {
     let parsing_enabled = system_settings::Entity::find()
         .select_only()
         .column(system_settings::Column::SigintCommentParsingEnabled)
@@ -2648,14 +2664,34 @@ where
         .limit(1)
         .into_query();
     let system_logins = login::Entity::find()
-        .select_only()
-        .column(login::Column::Id)
         .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
-        .filter(Expr::value(true).in_subquery(parsing_enabled))
-        .into_query();
-    Expr::col(column.clone())
-        .is_null()
-        .or(Expr::col(column).not_in_subquery(system_logins))
+        .filter(Expr::value(true).in_subquery(parsing_enabled));
+    let unknown_author = author.clone().is_null();
+    let unknown_author = if let Some(sender) = sender {
+        let system_senders = system_logins
+            .clone()
+            .select_only()
+            .expr(Expr::cust_with_expr(
+                "unnest(ARRAY(VALUES ($1::text), (replace($1::text, '-', '')), \
+                 ('{' || $1::text || '}'), ('urn:uuid:' || $1::text)))",
+                Expr::col(login::Column::Id),
+            ))
+            .into_query();
+        unknown_author.and(
+            sender
+                .clone()
+                .is_null()
+                .or(sender.not_in_subquery(system_senders)),
+        )
+    } else {
+        unknown_author
+    };
+    unknown_author.or(author.not_in_subquery(
+        system_logins
+            .select_only()
+            .column(login::Column::Id)
+            .into_query(),
+    ))
 }
 
 fn selected_tags_accessible_expr(
