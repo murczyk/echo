@@ -10,6 +10,88 @@ import {
 
 // Regression: https://github.com/echoua/echo/issues/3324
 for (const host of ['analysis', 'duty'] as const) {
+  test(`ECHO-3324 loading skeleton follows the current card layout (${host}) @regression`, async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'dark'));
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const response = buildMessageCardMediaPreviewInboxResponse();
+    if (host === 'analysis') {
+      await installAnalysisNeoApiMocks(page, { inboxResponse: response });
+    } else {
+      await installRerDutyShortStateMocks(page, { inboxResponse: response });
+      await page.route('**/api/sigint/units', (route) =>
+        route.fulfill({ json: emptyUnitsListResponse() }),
+      );
+      await page.route('**/api/sigint/network-list', (route) =>
+        route.fulfill({ json: emptyNetworksListResponse() }),
+      );
+    }
+    let releaseInbox!: () => void;
+    const pendingInbox = new Promise<void>((resolve) => {
+      releaseInbox = resolve;
+    });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      await pendingInbox;
+      await route.fulfill({ json: response });
+    });
+    try {
+      await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
+      await expect(
+        page.getByRole('button', {
+          name: host === 'analysis' ? 'analysis-tester' : 'operator',
+          exact: true,
+        }),
+      ).toBeVisible();
+      const skeleton = page.locator('[data-message-feed-skeleton-card]').first();
+      for (const width of [1512, 1920, 2560, 3440, 768, 390]) {
+        await page.setViewportSize({ width, height: 1080 });
+        if (host === 'analysis' && width <= 768) await page.keyboard.press('Escape');
+        await expect(skeleton).toBeVisible();
+        await expect(skeleton.locator('.message-card-header-unit')).toBeVisible();
+        await expect(skeleton.locator('.message-card-timestamp-item')).toBeVisible();
+        await expect(skeleton.locator(':scope > .message-card-divider')).toBeVisible();
+        await expect(skeleton.locator('.message-card-timestamp-footer')).toBeVisible();
+        await expect(skeleton.locator('button, a, input')).toHaveCount(0);
+        const geometry = await skeleton.evaluate((element) => {
+          const style = getComputedStyle(element);
+          const layout = element.querySelector('.message-card-content-layout')!;
+          const main = layout.querySelector('.message-card-main')!.getBoundingClientRect();
+          const details = layout
+            .querySelector('.message-card-details-region')!
+            .getBoundingClientRect();
+          return {
+            contentWidth:
+              element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+            columns: getComputedStyle(layout).gridTemplateColumns.split(' ').length,
+            stacked: details.top >= main.bottom,
+            gap: details.left - main.right,
+            overflows: element.scrollWidth > element.clientWidth,
+          };
+        });
+        expect(geometry.overflows).toBe(false);
+        expect(geometry.columns).toBe(geometry.contentWidth >= 760 ? 2 : 1);
+        if (geometry.columns === 1) expect(geometry.stacked).toBe(true);
+        else expect(geometry.gap).toBeCloseTo(24, 0);
+        if ([1920, 390].includes(width)) {
+          await skeleton.screenshot({ path: testInfo.outputPath(`${host}-${width}-skeleton.png`) });
+        }
+      }
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await expect(skeleton.locator('.MuiSkeleton-root').first()).toHaveCSS(
+        'animation-name',
+        'none',
+      );
+      await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'light'));
+      await skeleton.screenshot({ path: testInfo.outputPath(`${host}-390-skeleton-light.png`) });
+    } finally {
+      releaseInbox();
+    }
+    await expect(page.locator('[data-message-id]').first()).toBeVisible();
+    await expect(page.locator('[data-message-feed-skeleton="initial"]')).toHaveCount(0);
+  });
+
   test(`ECHO-3324 keeps four content variants in the same responsive card layout (${host}) @regression`, async ({
     page,
   }, testInfo) => {

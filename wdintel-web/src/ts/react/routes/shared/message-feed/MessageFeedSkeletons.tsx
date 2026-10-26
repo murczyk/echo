@@ -1,10 +1,10 @@
-import { Box, Skeleton } from '@mui/material';
+import { Skeleton } from '@mui/material';
 
 const messageCardSkeletons = [
-  { lines: [320, 180, 140], bodyHeight: 92 },
-  { lines: [240, 160], bodyHeight: 76 },
-  { lines: [280, 200, 160], bodyHeight: 88 },
-  { lines: [220, 180], bodyHeight: 76 },
+  [100, 94, 100, 88, 68],
+  [100, 86, 62],
+  [100, 92, 98, 74],
+  [100, 78, 54],
 ];
 
 type MessageFeedSkeletonsProps = {
@@ -32,43 +32,88 @@ export function MessageFeedSkeletons({
       className="message-feed-skeletons"
     >
       {Array.from({ length: isEdge ? 1 : count }, (_, index) => {
-        const card = messageCardSkeletons[index % messageCardSkeletons.length];
+        const lines = messageCardSkeletons[index % messageCardSkeletons.length];
         return (
-          <Box
-            key={index}
-            data-message-feed-skeleton-card
-            className="message-feed-skeleton-card"
-            sx={{ borderColor: 'divider' }}
-          >
-            <div className="message-feed-skeleton-card-header">
-              <Skeleton animation={animation} variant="rounded" width={card.lines[0]} height={20} />
-              <div className="message-feed-skeleton-card-meta">
-                {[88, 72, 96].map((width) => (
+          <div key={index} className="message-card-item" aria-hidden="true">
+            <div
+              data-message-feed-skeleton-card
+              className="message-card-root message-feed-skeleton-card"
+            >
+              <div className="message-feed-skeleton-card-identity">
+                <div className="message-card-header-unit message-feed-skeleton-card-identity-row">
                   <Skeleton
-                    key={width}
+                    animation={animation}
+                    variant="rectangular"
+                    width={12}
+                    height={12}
+                    className="message-feed-skeleton-card-unit-icon"
+                  />
+                  <Skeleton
                     animation={animation}
                     variant="rounded"
-                    width={width}
-                    height={24}
+                    width={240}
+                    height="calc(1rem * 16 / 14)"
                   />
-                ))}
-              </div>
-            </div>
-            <div className="message-feed-skeleton-card-body">
-              <Skeleton animation={animation} variant="rounded" height={card.bodyHeight} />
-              <div className="message-feed-skeleton-card-footer">
-                {card.lines.slice(1).map((width, lineIndex) => (
+                </div>
+                <div className="message-card-timestamp-item message-feed-skeleton-card-identity-row">
+                  <Skeleton animation={animation} variant="rounded" width={16} height={16} />
                   <Skeleton
-                    key={lineIndex}
                     animation={animation}
                     variant="rounded"
-                    width={width}
-                    height={16}
+                    width={180}
+                    height="calc(1rem * 16 / 14)"
                   />
-                ))}
+                </div>
+              </div>
+              <div className="message-card-divider" />
+              <div className="message-card-content-layout">
+                <div className="message-card-main">
+                  <div>
+                    {lines.map((width, lineIndex) => (
+                      <div key={lineIndex} className="message-feed-skeleton-card-text-line">
+                        <Skeleton
+                          animation={animation}
+                          variant="rounded"
+                          width={`${width}%`}
+                          height="calc(1rem * 16 / 14)"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="message-card-details-region">
+                  <div className="message-feed-skeleton-card-meta">
+                    <Skeleton animation={animation} variant="circular" width={16} height={16} />
+                    <Skeleton animation={animation} variant="rounded" width="30%" height="1rem" />
+                    <Skeleton animation={animation} variant="circular" width={16} height={16} />
+                    <Skeleton animation={animation} variant="rounded" width="22%" height="1rem" />
+                  </div>
+                  <Skeleton animation={animation} variant="rounded" width="82%" height="1rem" />
+                  <div className="message-card-divider" />
+                  <div className="message-feed-skeleton-card-tags">
+                    {[64, 96, 72].map((width) => (
+                      <Skeleton
+                        key={width}
+                        animation={animation}
+                        variant="rounded"
+                        width={width}
+                        height={24}
+                        className="message-feed-skeleton-card-tag"
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="message-card-timestamp-footer">
+                <Skeleton
+                  animation={animation}
+                  variant="rounded"
+                  width={40}
+                  height="calc(1rem * 12 / 14)"
+                />
               </div>
             </div>
-          </Box>
+          </div>
         );
       })}
     </Container>
