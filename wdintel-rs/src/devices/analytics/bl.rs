@@ -537,9 +537,12 @@ pub(super) async fn device_summary(
         query::device_summary(file_registry_db.connection(), device_id)
             .await
             .c(h!())?;
-    let mut stats =
-        stats::read_many_or_none(file_registry_db.connection(), &[device_id])
-            .await;
+    let mut stats = stats::read_many_or_none(
+        file_registry_db.connection(),
+        &[device_id],
+        stats::DayHistory::Full,
+    )
+    .await;
     summary.items.sort_by(|left, right| {
         left.tag_name
             .cmp(&right.tag_name)

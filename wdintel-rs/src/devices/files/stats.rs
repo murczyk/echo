@@ -21,9 +21,13 @@ use sea_orm::{
 use std::collections::HashMap;
 use uuid::Uuid;
 
+// Starts a missing row above every stamped upload (see RESET_CONTENT_STAT_SQL),
+// so uploads counted before a wipe show up as `content_pending`.
 const LOCK_CONTENT_STAT_SQL: &str = r#"
-insert into device_content_stat (device_id, updated_at)
-values ($1, $2)
+insert into device_content_stat (device_id, epoch, updated_at)
+select $1, coalesce(max(stats_epoch), 0) + 1, $2
+from file_content_upload
+where device_id = $1 and status = 'completed'
 on conflict (device_id) do update set updated_at = excluded.updated_at
 returning epoch
 "#;
@@ -302,13 +306,17 @@ async fn apply_uploads_in(
     Ok(())
 }
 
+// A missing stats row (wiped by hand) must not restart the epoch below what
+// uploads were already stamped with, or they would never count as pending.
 const RESET_CONTENT_STAT_SQL: &str = r#"
 insert into device_content_stat as stat (
-    device_id, backfill_started_at, updated_at
+    device_id, epoch, backfill_started_at, updated_at
 )
-values ($1, $2, $2)
+select $1, coalesce(max(stats_epoch), 0) + 1, $2, $2
+from file_content_upload
+where device_id = $1 and status = 'completed'
 on conflict (device_id) do update
-set epoch = stat.epoch + 1,
+set epoch = greatest(stat.epoch + 1, excluded.epoch),
     content_count = 0,
     content_bytes = 0,
     first_content_at = null,
@@ -645,11 +653,39 @@ where device_id = any($1)
 order by device_id, day, extension
 "#;
 
+const READ_RECENT_DAYS_SQL: &str = r#"
+select d.device_id, d.day, d.extension, d.content_count, d.content_bytes
+from unnest($1::uuid[]) as l (device_id)
+cross join lateral (
+    select max(day) as last_day
+    from device_content_stat_day
+    where device_id = l.device_id
+) as last
+join device_content_stat_day d
+  on d.device_id = l.device_id
+ and d.day >= least(
+     last.last_day,
+     (now() at time zone $2)::date - ($3::integer - 1)
+ )
+order by d.device_id, d.day, d.extension
+"#;
+
+#[derive(Clone, Copy)]
+pub(in crate::devices) enum DayHistory {
+    /// Every recorded day, for the single-device view.
+    Full,
+    /// The last `days` calendar days up to today in `DEVICE_STATS_TIMEZONE`;
+    /// a device idle for that whole window gets its latest upload day instead,
+    /// so list previews stay bounded but can still show when it was active.
+    Recent { days: i32 },
+}
+
 /// Reads stats for many devices from one repeatable-read snapshot, so totals
 /// and breakdowns agree. Devices without stats rows get zeroes.
 pub(in crate::devices) async fn read_many(
     db: &DatabaseConnection,
     device_ids: &[Uuid],
+    history: DayHistory,
 ) -> Result<HashMap<Uuid, DeviceStats>> {
     if device_ids.is_empty() {
         return Ok(HashMap::new());
@@ -709,11 +745,19 @@ pub(in crate::devices) async fn read_many(
             },
         );
     }
-    for row in transaction
-        .query_all_raw(query(READ_DAYS_SQL))
-        .await
-        .context(h!())?
-    {
+    let days_query = match history {
+        DayHistory::Full => query(READ_DAYS_SQL),
+        DayHistory::Recent { days } => Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            READ_RECENT_DAYS_SQL,
+            [
+                device_ids.to_vec().into(),
+                DEVICE_STATS_TIMEZONE.into(),
+                days.into(),
+            ],
+        ),
+    };
+    for row in transaction.query_all_raw(days_query).await.context(h!())? {
         let device_id: Uuid = row.try_get("", "device_id").context(h!())?;
         stats
             .get_mut(&device_id)
@@ -738,8 +782,9 @@ pub(in crate::devices) async fn read_many(
 pub(in crate::devices) async fn read_many_or_none(
     db: &DatabaseConnection,
     device_ids: &[Uuid],
+    history: DayHistory,
 ) -> Option<HashMap<Uuid, DeviceStats>> {
-    match read_many(db, device_ids).await {
+    match read_many(db, device_ids, history).await {
         Ok(stats) => Some(stats),
         Err(error) => {
             crate::types::warn!("Device stats unavailable: {error:#}");

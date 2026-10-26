@@ -37,11 +37,15 @@ type Props = {
   days: DeviceActivityDay[];
   /** `detailed` adds a y-axis with gridlines and a category legend and uses taller bars. */
   variant?: keyof typeof GEOMETRY;
+  /** Dims the bars, e.g. for activity outside the displayed window. */
+  faded?: boolean;
 };
+
+const FADED_BAR_OPACITY = 0.4;
 
 /** Same layout as `NetworkDetailsActivityChart`, but in fixed pixels inside a horizontal
  * scroller so the full history fits; it opens scrolled to the latest day. */
-export function DeviceActivityChart({ days, variant = 'compact' }: Props) {
+export function DeviceActivityChart({ days, variant = 'compact', faded = false }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<HoveredDay | null>(null);
 
@@ -162,7 +166,11 @@ export function DeviceActivityChart({ days, variant = 'compact' }: Props) {
               const x = bandX + (geometry.bandWidth - geometry.barWidth) / 2;
               let segmentTop = plotBottom;
               return (
-                <g key={day.day} data-day-index={index}>
+                <g
+                  key={day.day}
+                  data-day-index={index}
+                  opacity={faded ? FADED_BAR_OPACITY : undefined}
+                >
                   <rect
                     x={bandX}
                     y={0}

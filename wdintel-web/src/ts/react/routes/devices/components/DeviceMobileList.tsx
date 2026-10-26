@@ -9,7 +9,7 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import type { DeviceRowView } from '../helpers';
-import { DeviceActivityChart } from './DeviceActivityChart';
+import { DeviceRecentActivityCell } from './DeviceRecentActivityCell';
 import { DeviceSizeLabel } from './DeviceSizeLabel';
 
 export function DeviceMobileList({
@@ -123,9 +123,9 @@ export function DeviceMobileList({
                 Розмір: <DeviceSizeLabel row={row} />
               </p>
             ) : null}
-            {visible('activity') && row.activity.length > 0 ? (
+            {visible('activity') && row.activity !== null ? (
               <div className="py-echo-sm">
-                <DeviceActivityChart days={row.activity} />
+                <DeviceRecentActivityCell activity={row.activity} />
               </div>
             ) : null}
             <details className="mt-echo-sm text-[length:var(--echo-typography-font-size-sm)]">

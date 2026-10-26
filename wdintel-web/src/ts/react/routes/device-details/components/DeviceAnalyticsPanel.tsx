@@ -34,6 +34,7 @@ import {
   countDeviceFileTypes,
   formatDeviceBytes,
   formatDeviceCount,
+  isDeviceStatsIncomplete,
 } from '../../devices/device-activity';
 import { DeviceAnalyticsTagFilterControls } from '../../device-files/components/DeviceAnalyticsTagFilterControls';
 import { toDeviceFileLoadError } from '../../device-files/helpers';
@@ -382,7 +383,9 @@ export function DeviceAnalyticsPanel({
                   <b>{formatDeviceCount(BigInt(summary.filesWithContentCount))}</b> · Типів:{' '}
                   <b>{countDeviceFileTypes(summary.stats)}</b> · Розмір:{' '}
                   <b>{formatDeviceBytes(BigInt(summary.stats.contentBytes))}</b>
-                  {summary.stats.contentPending ? ' · статистика неповна' : ''}
+                  {isDeviceStatsIncomplete(summary.stats, summary.totalFileCount)
+                    ? ' · статистика неповна'
+                    : ''}
                 </Typography>
               </Stack>
             </AccordionSummary>

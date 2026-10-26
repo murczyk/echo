@@ -30,7 +30,7 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
-import { DeviceActivityChart } from './DeviceActivityChart';
+import { DeviceRecentActivityCell } from './DeviceRecentActivityCell';
 import { DeviceRowActions } from './DeviceRowActions';
 import { DeviceSizeLabel } from './DeviceSizeLabel';
 import { DeviceMobileList } from './DeviceMobileList';
@@ -138,7 +138,7 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         size: 250,
         enableSorting: false,
         meta: { overflowMode: 'none' },
-        Cell: ({ row }) => <DeviceActivityChart days={row.original.activity} />,
+        Cell: ({ row }) => <DeviceRecentActivityCell activity={row.original.activity} />,
       },
       {
         id: 'size',

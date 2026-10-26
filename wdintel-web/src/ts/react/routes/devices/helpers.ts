@@ -14,7 +14,11 @@ import type {
 } from '../../../../Bindings';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 import { HttpRequestError } from '../../services/api/client';
-import { buildDeviceActivity, formatDeviceBytes, type DeviceActivityDay } from './device-activity';
+import {
+  buildDeviceRecentActivity,
+  formatDeviceBytes,
+  type DeviceRecentActivity,
+} from './device-activity';
 import type { SelectedSidebarUnitFilter, UnitHierarchyFilter } from '../rer-callsigns-neo/types';
 
 export type DeviceArchivedFilterValue = 'active' | 'archived' | 'all';
@@ -55,7 +59,8 @@ export type DeviceRowView = DeviceListItem & {
   updatedAtLabel: string;
   createdAtLabel: string;
   archivedAtLabel: string;
-  activity: DeviceActivityDay[];
+  /** `null` when stats are unavailable. */
+  activity: DeviceRecentActivity | null;
   sizeLabel: string;
 };
 
@@ -207,7 +212,7 @@ export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
     updatedAtLabel: formatDeviceDateTime(device.updatedAt),
     createdAtLabel: formatDeviceDateTime(device.createdAt),
     archivedAtLabel: formatDeviceDateTime(device.archivedAt),
-    activity: buildDeviceActivity(device.stats),
+    activity: device.stats ? buildDeviceRecentActivity(device.stats) : null,
     sizeLabel: device.stats ? formatDeviceBytes(BigInt(device.stats.contentBytes)) : '—',
   };
 }

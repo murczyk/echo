@@ -82,7 +82,10 @@ impl MigrationTrait for Migration {
                 );
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                DbErr::Migration(format!("at {}:{}: {error}", file!(), line!()))
+            })?;
         Ok(())
     }
 
@@ -100,7 +103,10 @@ impl MigrationTrait for Migration {
                     drop column stats_epoch;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                DbErr::Migration(format!("at {}:{}: {error}", file!(), line!()))
+            })?;
         Ok(())
     }
 }

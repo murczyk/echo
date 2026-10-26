@@ -13,6 +13,7 @@ use self::types::{
     ListDevicesReq, ListDevicesRsp, UpdateDeviceCommand, UpdateDeviceReq,
 };
 use crate::devices::access;
+use crate::devices::config::DEVICE_STATS_LIST_ACTIVITY_DAYS;
 use crate::devices::files::stats;
 use crate::devices::types::{parse_uuid, NullablePatch, RequiredPatch};
 use crate::error::AppError;
@@ -58,8 +59,14 @@ pub(crate) async fn list(
         Some(file_registry_db) => {
             let device_ids: Vec<_> =
                 result.devices.iter().map(|device| device.id).collect();
-            stats::read_many_or_none(file_registry_db.connection(), &device_ids)
-                .await
+            stats::read_many_or_none(
+                file_registry_db.connection(),
+                &device_ids,
+                stats::DayHistory::Recent {
+                    days: DEVICE_STATS_LIST_ACTIVITY_DAYS,
+                },
+            )
+            .await
         }
         None => None,
     };

@@ -1,7 +1,10 @@
-import type { DeviceStats } from '../../../../Bindings';
+import type { DeviceDayStat, DeviceStats } from '../../../../Bindings';
 import { FILE_TYPE_CATEGORY_NAMES, fileTypeCategoryForExtension } from './file-type-categories';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Matches `DEVICE_STATS_LIST_ACTIVITY_DAYS`, the window the device list loads. */
+export const DEVICE_LIST_ACTIVITY_DAYS = 7;
+const KYIV_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' });
 const CURRENT_YEAR_DAY_FORMAT = new Intl.DateTimeFormat('uk-UA', {
   day: '2-digit',
   month: 'short',
@@ -43,15 +46,57 @@ export function buildDeviceActivity(
     if (day > lastDay) lastDay = day;
   }
 
-  const firstTime = Date.parse(`${firstDay}T00:00:00Z`);
-  const dayCount = Math.round((Date.parse(`${lastDay}T00:00:00Z`) - firstTime) / DAY_MS) + 1;
-  const window = Array.from({ length: dayCount }, (_, index) =>
-    new Date(firstTime + index * DAY_MS).toISOString().slice(0, 10),
-  );
+  const dayCount = Math.round((dayTime(lastDay) - dayTime(firstDay)) / DAY_MS) + 1;
+  return buildActivityDays(stats.days, dayRange(firstDay, dayCount), currentYear);
+}
+
+export type DeviceRecentActivity =
+  /** Exactly the `DEVICE_LIST_ACTIVITY_DAYS` days ending today. */
+  | { kind: 'recent'; days: DeviceActivityDay[] }
+  /** No uploads within the window: the latest day the device uploaded. */
+  | { kind: 'lastActive'; day: DeviceActivityDay }
+  | { kind: 'none' };
+
+/** Device-list preview of the Kyiv calendar days ending `today` (`YYYY-MM-DD`). */
+export function buildDeviceRecentActivity(
+  stats: DeviceStats,
+  today: string = currentKyivDay(),
+): DeviceRecentActivity {
+  const window = dayRange(addDays(today, 1 - DEVICE_LIST_ACTIVITY_DAYS), DEVICE_LIST_ACTIVITY_DAYS);
+  const currentYear = Number(today.slice(0, 4));
+  if (stats.days.some(({ day }) => day >= window[0] && day <= today)) {
+    return { kind: 'recent', days: buildActivityDays(stats.days, window, currentYear) };
+  }
+  let lastDay: string | null = null;
+  for (const { day } of stats.days) {
+    if (day < window[0] && (lastDay === null || day > lastDay)) lastDay = day;
+  }
+  if (lastDay === null) return { kind: 'none' };
+  return { kind: 'lastActive', day: buildActivityDays(stats.days, [lastDay], currentYear)[0] };
+}
+
+function dayTime(day: string): number {
+  return Date.parse(`${day}T00:00:00Z`);
+}
+
+function addDays(day: string, count: number): string {
+  return new Date(dayTime(day) + count * DAY_MS).toISOString().slice(0, 10);
+}
+
+function dayRange(firstDay: string, dayCount: number): string[] {
+  return Array.from({ length: dayCount }, (_, index) => addDays(firstDay, index));
+}
+
+/** One entry per `window` day, summing `rows` by category; rows outside the window are skipped. */
+function buildActivityDays(
+  rows: DeviceDayStat[],
+  window: string[],
+  currentYear: number,
+): DeviceActivityDay[] {
   const totals = new Map(
     window.map((day) => [day, new Map<string, DeviceActivityCategory>()] as const),
   );
-  for (const row of stats.days) {
+  for (const row of rows) {
     const categories = totals.get(row.day);
     if (!categories) continue;
     const category = fileTypeCategoryForExtension(row.extension);
@@ -108,6 +153,10 @@ export function formatDeviceCount(count: bigint): string {
 
 function roundDiv(value: bigint, divisor: bigint): bigint {
   return (value + divisor / 2n) / divisor;
+}
+
+function currentKyivDay(): string {
+  return KYIV_DAY_FORMAT.format(new Date());
 }
 
 function currentKyivYear(): number {
@@ -168,6 +217,13 @@ export function buildDeviceTypeBreakdown(stats: DeviceStats | null): DeviceTypeB
 /** Number of file type categories with at least one upload. */
 export function countDeviceFileTypes(stats: DeviceStats): number {
   return new Set(stats.extensions.map((row) => fileTypeCategoryForExtension(row.extension))).size;
+}
+
+/** Tree stats only count entries synced after they were introduced, and entries are never
+ * deleted, so a file count that differs from the live one means a rebuild is needed. The live count
+ * comes from a separate snapshot, so a sync in between can flag it briefly. */
+export function isDeviceStatsIncomplete(stats: DeviceStats, liveFileCount: number): boolean {
+  return stats.contentPending || stats.fileCount !== liveFileCount;
 }
 
 function compareTotals(left: DeviceTypeTotals, right: DeviceTypeTotals): number {
