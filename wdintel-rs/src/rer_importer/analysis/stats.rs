@@ -297,7 +297,7 @@ pub(super) async fn resolve_analytics_message_id_scope(
     .await
 }
 
-pub(in crate::rer_importer) async fn resolve_analytics_message_id_scope_for_range(
+pub(crate) async fn resolve_analytics_message_id_scope_for_range(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     db: &DatabaseConnection,

@@ -304,7 +304,11 @@ fn build_inbox_query_base(
     }
 
     let mut query = SignalMessage::find().join(
-        JoinType::LeftJoin,
+        if purpose == InboxQueryPurpose::Analytics {
+            JoinType::InnerJoin
+        } else {
+            JoinType::LeftJoin
+        },
         signal_message::Relation::SigintInboxItem.def(),
     );
     if matches!(
@@ -451,18 +455,10 @@ fn apply_flat_analytics_group_filters(
         .from_as(signal_message_group::Entity, access_alias)
         .cond_where(access_condition)
         .to_owned();
-    query = query
-        .filter(
-            Expr::col((signal_message::Entity, signal_message::Column::Id))
-                .in_subquery(membership.clone()),
-        )
-        .filter(
-            Expr::col((
-                sigint_inbox_item::Entity,
-                sigint_inbox_item::Column::Id,
-            ))
+    query = query.filter(
+        Expr::col((signal_message::Entity, signal_message::Column::Id))
             .in_subquery(membership),
-        );
+    );
 
     let denied_groups = req
         .denied_groups
@@ -1073,28 +1069,6 @@ pub(crate) async fn build_analytics_inbox_digest_query(
     )
 }
 
-pub(crate) async fn build_historical_analytics_inbox_digest_query(
-    login: &uuid::Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    db: &DatabaseConnection,
-    freshness_max_age_ms: u64,
-    created_at_upper_bound: NaiveDateTime,
-) -> Result<Option<String>, AppError> {
-    Ok(
-        build_analytics_inbox_digest_query_with_created_at_upper_bound(
-            login,
-            env,
-            req,
-            db,
-            freshness_max_age_ms,
-            Some(created_at_upper_bound),
-        )
-        .await
-        .context(h!())?,
-    )
-}
-
 async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
     login: &uuid::Uuid,
     env: &Env,
@@ -1127,6 +1101,95 @@ async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
         );
 
     Ok(Some(render_inbox_digest_query(q)))
+}
+
+pub(crate) async fn load_analytics_inbox_digest(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+    created_at_upper_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Option<super::InboxDigest>> {
+    ensure_inbox_analytics_search_coverage(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
+    let Some(scope) = resolve_analytics_inbox_message_id_scope(
+        req,
+        &env.dbx,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(None);
+    };
+    let chunks = analytics_message_id_chunks(
+        &env.dbx,
+        scope,
+        crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .c(h!())?;
+    let (resolved_units, resolved_aors) =
+        resolve_analytics_inbox_filters(&env.dbx, req)
+            .await
+            .c(h!())?;
+    let digests = stream::iter(chunks)
+        .map(|scope| {
+            let resolved_units = &resolved_units;
+            let resolved_aors = &resolved_aors;
+            async move {
+                let (query, _) =
+                    build_analytics_filtered_inbox_query_with_filters(
+                        login,
+                        env,
+                        req,
+                        scope,
+                        resolved_units,
+                        resolved_aors,
+                    )
+                    .await
+                    .c(h!())?;
+                let query = apply_inbox_created_at_bounds(
+                    query,
+                    None,
+                    created_at_upper_bound,
+                )
+                .select_only()
+                .column_as(
+                    Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                    "count",
+                )
+                .column_as(
+                    Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+                    "first_element_ts",
+                );
+                super::query_inbox_digest(
+                    db.clone(),
+                    render_inbox_digest_query(query),
+                )
+                .await
+                .c(h!())
+            }
+        })
+        .buffered(crate::config::ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await
+        .c(h!())?;
+    Ok(Some(
+        digests
+            .into_iter()
+            .try_fold((0, None), super::merge_inbox_digests)
+            .c(h!())?,
+    ))
 }
 
 pub(crate) async fn load_analytics_inbox_candidates(
@@ -1178,24 +1241,7 @@ async fn load_scoped_analytics_inbox_candidates(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<Vec<i64>>, AppError> {
-    if [&req.selected_freqs, &req.denied_freqs]
-        .into_iter()
-        .any(|filters| {
-            filters.as_ref().is_some_and(|values| !values.is_empty())
-        })
-        || inbox_count_has_unit_filter(req)
-    {
-        return Ok(load_chunked_analytics_inbox_candidates(
-            login,
-            env,
-            req,
-            db,
-            freshness_max_age_ms,
-        )
-        .await
-        .context(h!())?);
-    }
-    let Some((query, _)) = build_analytics_filtered_inbox_query(
+    Ok(load_chunked_analytics_inbox_candidates(
         login,
         env,
         req,
@@ -1203,15 +1249,7 @@ async fn load_scoped_analytics_inbox_candidates(
         freshness_max_age_ms,
     )
     .await
-    .context(h!())?
-    else {
-        return Ok(None);
-    };
-    Ok(Some(
-        scan_inbox_candidate_pages(db, query, req)
-            .await
-            .context(h!())?,
-    ))
+    .context(h!())?)
 }
 
 async fn load_chunked_analytics_inbox_candidates(
