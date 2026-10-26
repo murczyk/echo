@@ -4958,6 +4958,118 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
 
 #[tokio::test]
 #[serial]
+async fn rer_analysis_note_filter_respects_comment_parsing_setting() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    let datetime = test_dt(2026, 3, 1, 10, 5);
+    let mut all_note_ids = BTreeSet::new();
+    let mut user_note_ids = BTreeSet::new();
+    for legacy in [true, false] {
+        for authors in [
+            vec![system_login_id],
+            vec![login.id],
+            vec![system_login_id, login.id],
+        ] {
+            let message = mk_analysis_message(
+                db,
+                "note-filter-message",
+                "940.9",
+                datetime,
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+            all_note_ids.insert(message.id);
+            if authors.contains(&login.id) {
+                user_note_ids.insert(message.id);
+            }
+            for author in authors {
+                if legacy {
+                    mk_sigint_comment(
+                        db,
+                        sigint_comment::ActiveModel {
+                            signal_message_id: Set(message.id),
+                            login_id: Set(author),
+                            comment: Set("note".to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                } else {
+                    crate::sigint::comments::create_linked_message_comment_from_ingestion(
+                        db,
+                        &fixture.env.config,
+                        message.id,
+                        &author,
+                        "note",
+                        datetime,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    }
+    let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
+        .await
+        .unwrap();
+    let request = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        or_with_extended_form: Some(true),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let mut stats_request = analysis_stats_req0(&fixture);
+    stats_request.or_with_extended_form = Some(true);
+    for (enabled, expected) in [
+        (None, &all_note_ids),
+        (Some(true), &user_note_ids),
+        (Some(false), &all_note_ids),
+    ] {
+        if let Some(enabled) = enabled {
+            system_settings::Entity::update_many()
+                .col_expr(system_settings::Column::Deleted, Expr::value(true))
+                .exec(db)
+                .await
+                .unwrap();
+            system_settings::ActiveModel {
+                sigint_comment_parsing_enabled: Set(enabled),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        let messages = crate::rer_importer::inbox::get_inbox_messages(
+            &login.id,
+            &logins,
+            &fixture.env,
+            &request,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            messages.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>(),
+            *expected,
+        );
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &stats_request)
+                .await
+                .unwrap(),
+            expected.len() as i64,
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible_message(
 ) {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
@@ -10213,7 +10325,13 @@ fn count_stats_analytics_supports_tag_filters() {
 
     req.or_without_coords = None;
     req.or_with_extended_form = Some(true);
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
+    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&InboxMessagesReq {
+        since_date_inclusive_ms: Some(0),
+        or_with_extended_form: Some(true),
+        ..Default::default()
+    }));
 
     req.or_with_extended_form = None;
     req.report_tags_only_this_unit = Some(true);
