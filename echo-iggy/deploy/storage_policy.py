@@ -23,6 +23,7 @@ except ModuleNotFoundError:
 MAX_STORAGE_BYTES = 100_000_000_000
 RETENTION_DAYS = 30
 MAX_DELETIONS = 1_000
+PENDING_DELETION_FILE = Path("/var/lib/echo-iggy-storage-policy/pending-deletion.json")
 SUPPORTED_SERVER_VERSIONS = {"0.8.1-edge.1", "0.8.2-edge.1"}
 INDEX_RECORD = struct.Struct("<IIQ")
 TOPIC_SETTINGS = (
@@ -244,7 +245,7 @@ def topic_identity(topic):
     return topic["id"], topic["created_at"], tuple(sorted(partition["id"] for partition in topic["partitions"]))
 
 
-def delete_segment(api, segment):
+def delete_segment(api, segment, pending_file):
     logs = sorted(segment.path.parent.glob("*.log"), key=lambda path: int(path.stem))
     if (len(logs) < 2 or logs[0] != segment.path
             or segment_identity(segment.path.with_suffix("")) != segment.file_identity):
@@ -254,13 +255,37 @@ def delete_segment(api, segment):
         raise RuntimeError(f"Segment deletion was blocked: {segment.path}; consumer offsets={json.dumps(blockers)}")
     stream, topic, partition = segment.partition
     path = f"/streams/{stream}/topics/{topic}/partitions/{partition}?segments_count=1"
-    api.request("DELETE", path)
-    if segment.path.exists() or segment.path.with_suffix(".index").exists():
-        raise RuntimeError(
-            f"Segment deletion was blocked: {segment.path}; "
-            f"consumer offsets={json.dumps(blocking_offsets(segment))}; inspect server logs"
-        )
+    with deletion_guard(pending_file, segment):
+        api.request("DELETE", path)
+        if segment.path.exists() or segment.path.with_suffix(".index").exists():
+            raise RuntimeError(
+                f"Segment deletion was blocked: {segment.path}; "
+                f"consumer offsets={json.dumps(blocking_offsets(segment))}; inspect server logs; "
+                f"applies disabled until explicit recovery: {pending_file}"
+            )
     emit(action="deleted", segment=str(segment.path), allocated_bytes=segment.allocated_bytes)
+
+
+@contextlib.contextmanager
+def deletion_guard(pending_file, segment):
+    pending_file.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with pending_file.open("x") as marker:
+        json.dump({"segment": str(segment.path), "partition": segment.partition,
+                   "end_offset": segment.end_offset, "file_identity": segment.file_identity}, marker)
+        marker.flush()
+        os.fsync(marker.fileno())
+    sync_directory(pending_file.parent)
+    yield
+    pending_file.unlink()
+    sync_directory(pending_file.parent)
+
+
+def sync_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def blocking_offsets(segment):
@@ -289,7 +314,10 @@ def report_plan(plan, allocated, projected, max_bytes, cutoff, apply, max_deleti
              consumer_offsets=blocking_offsets(segment))
 
 
-def run_policy(api, data_path, max_bytes, retention_days, apply=False, max_deletions=MAX_DELETIONS):
+def run_policy(api, data_path, max_bytes, retention_days, apply=False, max_deletions=MAX_DELETIONS,
+               pending_file=PENDING_DELETION_FILE):
+    if apply and (pending_file.exists() or pending_file.is_symlink()):
+        raise RuntimeError(f"Unverified segment deletion; applies disabled until explicit recovery: {pending_file}")
     verify_runtime(data_path, getattr(api, "base_url", None))
     allocated, partitions = storage_snapshot(data_path)
     verify_server(api, data_path, require_storage=bool(partitions))
@@ -302,7 +330,7 @@ def run_policy(api, data_path, max_bytes, retention_days, apply=False, max_delet
         return
     for segment in plan[:max_deletions]:
         verify_runtime(data_path, getattr(api, "base_url", None))
-        delete_segment(api, segment)
+        delete_segment(api, segment, pending_file)
     allocated, partitions = storage_snapshot(data_path)
     pending, _ = deletion_plan(allocated, partitions, max_bytes, cutoff)
     emit(action="result", allocated_bytes=allocated, deleted_segments=min(len(plan), max_deletions),
@@ -340,12 +368,14 @@ def main():
     parser.add_argument("--max-bytes", type=positive, default=MAX_STORAGE_BYTES)
     parser.add_argument("--max-deletions", type=positive, default=MAX_DELETIONS)
     parser.add_argument("--lock-file", type=Path, default=Path("/run/echo-iggy-storage-policy/lock"))
+    parser.add_argument("--pending-file", type=Path, default=PENDING_DELETION_FILE)
     args = parser.parse_args()
     try:
         with policy_lock(args.lock_file, args.apply):
             verify_runtime(args.data_path, args.url)
             api = IggyApi(args.url, os.environ["IGGY_ROOT_USERNAME"], os.environ["IGGY_ROOT_PASSWORD"])
-            run_policy(api, args.data_path, args.max_bytes, RETENTION_DAYS, args.apply, args.max_deletions)
+            run_policy(api, args.data_path, args.max_bytes, RETENTION_DAYS, args.apply,
+                       args.max_deletions, args.pending_file)
     except Exception as error:
         emit(action="error", error=str(error))
         return 1

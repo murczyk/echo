@@ -15,6 +15,7 @@ class StoragePolicy3835Tests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         root = Path(self.temp.name)
+        self.pending_file = root / "policy-state/pending-deletion.json"
         self.data_path = root / "streams"
         self.data_path.mkdir()
         runtime = root / "runtime"
@@ -40,7 +41,8 @@ class StoragePolicy3835Tests(unittest.TestCase):
         path = next(self.data_path.rglob("*.log"), None)
         opened = path.open("rb") if path else contextlib.nullcontext()
         with opened, contextlib.redirect_stdout(io.StringIO()):
-            policy.run_policy(api, self.data_path, max_bytes, 30, apply, **kwargs)
+            policy.run_policy(api, self.data_path, max_bytes, 30, apply,
+                              pending_file=self.pending_file, **kwargs)
 
     def test_3835_budget_uses_allocated_bytes_and_never_deletes_active_segments(self):
         oldest = self.segment(0, 0, self.recent, size=1_000_000_000, sparse=True)
@@ -171,6 +173,95 @@ class StoragePolicy3835Tests(unittest.TestCase):
         self.assertTrue(active.exists())
         self.assertEqual([method for method, _ in api.mutations], ["DELETE"])
 
+    def test_3835_ambiguous_deletion_blocks_later_applies_until_explicit_recovery(self):
+        oldest = self.segment(0, 0, self.old)
+        newer = self.segment(0, 1, self.recent)
+        active = self.segment(0, 2, self.recent)
+        api = FakeApi(self.data_path)
+        request = api.request
+        loaded_segments = [oldest, newer, active]
+
+        def orphan_oldest(method, path, body=None):
+            if method != "DELETE":
+                return request(method, path, body)
+            api.mutations.append((method, path))
+            api.deletions.append(path)
+            segment = loaded_segments.pop(0)
+            if segment != oldest:
+                segment.unlink()
+                segment.with_suffix(".index").unlink()
+
+        api.request = orphan_oldest
+        with self.assertRaisesRegex(RuntimeError, "applies disabled until explicit recovery"):
+            self.run_policy(api)
+        self.assertEqual(json.loads(self.pending_file.read_text())["segment"], str(oldest))
+        api.topics[0]["message_expiry"] = 2**64 - 1
+        for _ in range(2):
+            with self.assertRaisesRegex(RuntimeError, "applies disabled until explicit recovery"):
+                self.run_policy(api)
+        self.run_policy(api, apply=False)
+        self.assertEqual(len(api.deletions), 1)
+        self.assertEqual([method for method, _ in api.mutations], ["DELETE"])
+        self.assertTrue(all(path.exists() for path in (oldest, newer, active)))
+        self.pending_file.unlink()
+        self.run_policy(FakeApi(self.data_path))
+        self.assertFalse(oldest.exists())
+        self.assertTrue(newer.exists())
+        self.assertTrue(active.exists())
+        self.assertFalse(self.pending_file.exists())
+
+    def test_3835_interrupted_deletions_keep_pending_marker_across_retries(self):
+        for error in (TimeoutError("Lost deletion response"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__):
+                oldest = self.segment(0, 0, self.old)
+                newer = self.segment(0, 1, self.recent)
+                self.segment(0, 2, self.recent)
+                api = FakeApi(self.data_path)
+                request = api.request
+
+                def lose_response(method, path, body=None):
+                    if method == "DELETE":
+                        self.assertEqual(json.loads(self.pending_file.read_text())["segment"], str(oldest))
+                        request(method, path, body)
+                        raise error
+                    return request(method, path, body)
+
+                api.request = lose_response
+                with self.assertRaises(type(error)):
+                    self.run_policy(api)
+                self.assertFalse(oldest.exists())
+                self.assertTrue(self.pending_file.exists())
+                with self.assertRaisesRegex(RuntimeError, "applies disabled until explicit recovery"):
+                    self.run_policy(api)
+                self.assertTrue(newer.exists())
+                self.assertEqual(len(api.deletions), 1)
+                self.pending_file.unlink()
+
+    def test_3835_partial_unlinks_block_retries_before_inventory(self):
+        for suffix in (".log", ".index"):
+            with self.subTest(suffix=suffix):
+                oldest = self.segment(0, 0, self.old)
+                newer = self.segment(0, 1, self.recent)
+                self.segment(0, 2, self.recent)
+                api = FakeApi(self.data_path)
+                api.block_deletions = True
+                request = api.request
+
+                def partial_unlink(method, path, body=None):
+                    result = request(method, path, body)
+                    if method == "DELETE":
+                        oldest.with_suffix(suffix).unlink()
+                    return result
+
+                api.request = partial_unlink
+                for _ in range(2):
+                    with self.assertRaisesRegex(RuntimeError, "applies disabled until explicit recovery"):
+                        self.run_policy(api)
+                self.assertTrue(self.pending_file.exists())
+                self.assertTrue(newer.exists())
+                self.assertEqual(len(api.deletions), 1)
+                self.pending_file.unlink()
+
     def test_3835_refuses_native_cleaner_and_mismatched_api_inventory(self):
         self.segment(0, 0, self.recent)
         api = FakeApi(self.data_path)
@@ -262,7 +353,7 @@ class StoragePolicy3835Tests(unittest.TestCase):
                 with oldest.open("ab") as log:
                     log.write(b"unexpected write")
             with self.assertRaisesRegex(RuntimeError, "changed before deletion"):
-                policy.delete_segment(api, segment)
+                policy.delete_segment(api, segment, self.pending_file)
         self.assertEqual(api.mutations, [])
 
     def test_3835_rechecks_native_cleaner_after_reconciliation(self):

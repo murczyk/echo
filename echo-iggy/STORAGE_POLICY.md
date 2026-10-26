@@ -31,9 +31,14 @@ the job verifies that the expected log and index disappeared. It preserves
 partition offsets and checks the sealed files' identities and the native
 cleaner state again before deletion. Changed files abort cleanup. It reads
 the total again afterward. Each run is bounded to 1,000 deletions and a
-ten-minute service timeout. A partially completed run
-is safe to retry: committed deletions stay committed, and the next run
-inventories the remaining files again.
+ten-minute service timeout. Verified deletions stay committed, and bounded
+runs can continue from the remaining files. Before each deletion, the job
+persists and syncs a pending marker to
+`/var/lib/echo-iggy-storage-policy/pending-deletion.json`. It removes the marker
+only after verifying that both segment files disappeared. An API error,
+interrupted request, or leftover file keeps the marker and blocks every later
+apply, including topic updates, until explicit recovery. The marker survives
+service restarts and host reboots; dry runs remain available for inspection.
 
 The policy is a cleanup target, not a filesystem quota. Active segments are
 never deleted, ingestion continues between checks, and allocated block counts
@@ -93,7 +98,7 @@ refuses to run when the effective native cleaner is enabled. Do not run other
 segment deletion tools concurrently. A single-host lock prevents overlapping
 maintenance invocations.
 The service preserves its runtime lock directory between runs; manual apply
-invocations must use the same lock file as the service.
+invocations must use the same lock and pending-marker files as the service.
 
 ## Approved rollout
 
@@ -169,6 +174,22 @@ has already committed; inspect the files and topic settings before retrying.
 Already deleted segments cannot be recovered by disabling the job or rolling
 back code.
 After errors, inspect committed progress before proposing a narrower retry.
+
+### Recovering an ambiguous deletion
+
+A pending marker requires investigation, not an automatic retry. The pinned
+server can remove a segment from memory and return success even when unlinking
+its files fails. Retrying against that orphan can delete a newer segment.
+
+Inspect the marker, server logs, both segment files, partition offsets, and
+retained messages. Propose recovery for the named host, including stopping the
+timer/job, any file repair or server restart needed to reconcile disk and
+memory, and removal of the marker. Each mutation requires explicit approval.
+Clear the marker only after the ambiguous deletion has been resolved and
+disk and server state agree; removing it alone is not recovery. Review a fresh
+dry run before an approved apply or timer restart. Manual invocations using
+`--pending-file` must share the service's durable marker path; do not bypass a
+marker by choosing a different path.
 
 ## Local verification
 

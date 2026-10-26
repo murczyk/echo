@@ -118,7 +118,8 @@ interval = "10 ms"
         result = subprocess.run(
             [sys.executable, str(Path(policy.__file__).resolve()), "--apply",
              "--data-path", str(self.data_path), "--url", self.url,
-             "--max-bytes", str(budget), "--lock-file", str(self.root / "policy.lock")],
+             "--max-bytes", str(budget), "--lock-file", str(self.root / "policy.lock"),
+             "--pending-file", str(self.root / "policy-state/pending-deletion.json")],
             env=self.env, capture_output=True, text=True, timeout=30,
         )
         if result.returncode:
