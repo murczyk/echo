@@ -59,7 +59,8 @@ export function ReportsHistory({ period }: { period: KpiPeriod }) {
           <p>
             Системні показники з report_history за часом створення запиту. Кожен запис рахується
             один раз, включно з повторними спробами в ньому. Окремий повторний запуск є новим
-            записом. Це поточний стан збереженої історії, включно з перенесеною legacy-історією.
+            записом. Це поточний стан збереженої історії report_history. Окремий legacy-журнал не
+            додається; його повноту та перенесення не підтверджено.
           </p>
           <div className="grid gap-echo-md echo-md:grid-cols-3">
             <MetricCard
@@ -80,8 +81,10 @@ export function ReportsHistory({ period }: { period: KpiPeriod }) {
           </div>
           <DurationCards duration={snapshot.data.generation} title="Тривалість генерації" />
           <p>
-            Від started_at до completed_at успішного запису; не час у черзі та не тривалість кожної
-            окремої спроби.
+            Від started_at до completed_at успішного запиту з фоновим завданням, включно зі
+            збереженням результату; не час у черзі та не тривалість кожної окремої спроби.
+            Синхронні, архівні та legacy-записи без підтвердженого часу генерації виключено з
+            тривалостей, але включено до кількості звітів.
           </p>
           <div className="grid items-start gap-echo-lg xl:grid-cols-3">
             <CountChart title="Успішні звіти за типами" rows={snapshot.data.byKind} />

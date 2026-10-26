@@ -39,15 +39,18 @@ async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
             ('kpi', $1, '{}', $2, 'failed', 0, null, null, '[]'),
             ('kpi', $1, '{}', $3, 'done', 0, null, null, '[]')
     "#, [author.id.into(), since.naive_utc().into(), until.naive_utc().into()])).await.c(h!())?;
+    seed_report_provenance(&env, author.id, since)
+        .await
+        .c(h!())?;
     let result = history::reports(&env, &period).await.c(h!())?;
-    assert_eq!((result.total, result.done, result.failed), (4, 3, 1));
+    assert_eq!((result.total, result.done, result.failed), (7, 6, 1));
     assert_eq!(result.by_author.len(), 1);
-    assert_eq!(result.by_author[0].count, 3);
-    assert_eq!(result.by_kind[0].count, 3);
-    assert_eq!(result.by_day.iter().map(|row| row.count).sum::<i64>(), 3);
+    assert_eq!(result.by_author[0].count, 6);
+    assert_eq!(result.by_kind[0].count, 6);
+    assert_eq!(result.by_day.iter().map(|row| row.count).sum::<i64>(), 6);
     assert_eq!(
         (result.generation.samples, result.generation.excluded),
-        (2, 1)
+        (2, 4)
     );
     assert_eq!(result.generation.median_seconds, Some(20.0));
     assert_eq!(result.generation.p90_seconds, Some(28.0));
@@ -87,6 +90,47 @@ async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
     }
     .bounds()
     .is_err());
+    Ok(())
+}
+
+async fn seed_report_provenance(
+    env: &Env,
+    author_id: uuid::Uuid,
+    since: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    env.dbx
+        .execute_unprepared(
+            r#"
+        with task as (
+            insert into bgtask (progress, loglines, running)
+            values (100, '[]', false) returning id
+        )
+        update report_history set bgtask_id = task.id from task;
+    "#,
+        )
+        .await
+        .c(h!())?;
+    env.dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+        insert into log_users_report_generation
+            (id, login_id, report_query, report_path, created_at)
+        values (42, $1, '{}', 'legacy', $2), (43, $1, '{}', 'unreconciled', $2);
+    "#,
+            [author_id.into(), since.naive_utc().into()],
+        ))
+        .await
+        .c(h!())?;
+    env.dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres, r#"
+        insert into report_history (report_kind, requested_by_login_id, request, created_at,
+            status, started_at, completed_at, bgtask_id, legacy_log_id, legacy_report_path)
+        values ('kpi', $1, '{}', $2, 'done', $2, $2, null, null, null),
+            ('kpi', $1, '{}', $2, 'done', $2, $2 + interval '300 seconds', null, null, 'archive'),
+            ('kpi', $1, '{}', $2, 'done', $2, $2 + interval '500 seconds',
+                (select max(id) from bgtask), 42, 'legacy'),
+            ('kpi', $1, '{}', $2 - interval '1 millisecond', 'done', null, null, null, null, null);
+    "#, [author_id.into(), since.naive_utc().into()])).await.c(h!())?;
     Ok(())
 }
 

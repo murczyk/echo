@@ -6,14 +6,16 @@ use sea_orm::{DatabaseBackend, FromQueryResult, Statement};
 
 const REPORTS_SQL: &str = r#"
 with reports as materialized (
-    select report_kind, requested_by_login_id, created_at, status, started_at, completed_at
+    select report_kind, requested_by_login_id, created_at, status, started_at, completed_at,
+        bgtask_id, legacy_log_id
     from report_history where created_at >= $1 and created_at < $2
 ), successful as (
     select * from reports where status = 'done'
 ), durations as (
     select extract(epoch from completed_at - started_at)::double precision seconds
     from successful
-    where started_at is not null and completed_at >= started_at
+    where bgtask_id is not null and legacy_log_id is null
+        and started_at is not null and completed_at >= started_at
 ), kinds as (
     select report_kind id, report_kind label, count(*)::bigint count
     from successful group by report_kind limit $3
