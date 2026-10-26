@@ -1086,6 +1086,8 @@ fn collect_blacklist() -> Vec<&'static str> {
         "КРАСНОДАРСЬКИЙ",
         "БАТАРЕЯ",
         "БАТАРЄЯ",
+        "ГЛИБОКИЙ",
+        "МАЛИЙ",
     ];
     words.extend_from_slice(crate::config::LOCATION_COUNTRY_NAMES);
     words.extend_from_slice(crate::config::LOCATION_CONTEXT_WORDS);
@@ -1937,6 +1939,9 @@ mod tests {
             ),
             ("РФ/РБ/Украина/Россия/Беларусь", vec![]),
             ("роти", vec![]),
+            ("глибокий", vec![]),
+            ("малий", vec![]),
+            ("ГЛИБОКИЙ; МаЛиЙ; н.п. Вовчанськ", vec!["ВОВЧАНСЬК"]),
             ("н.п. Українка; н.п. Південне", vec!["ПІВДЕННЕ", "УКРАЇНКА"]),
             ("південні околиці Вільча", vec!["ВІЛЬЧА"]),
             (

@@ -383,18 +383,23 @@ async fn complete_job(
         .as_deref()
         .map(crate::location::utils::to_location_list)
         .unwrap_or_default();
-    let settlements =
-        merge_current_and_ai_settlements(current.clone(), ai_settlements);
-    let changed = settlements != current;
+    let settlements = normalize_settlements(ai_settlements);
+    let clear_location =
+        settlements.is_empty() && inbox_item.location.is_some();
+    let changed = settlements != current || clear_location;
     let inbox_item_uuid = inbox_item.id_uuid;
     let location_v2 = if changed {
-        Some(crate::location::utils::format_locations_list(settlements))
+        (!settlements.is_empty())
+            .then(|| crate::location::utils::format_locations_list(settlements))
     } else {
         inbox_item.location_v2.clone()
     };
     if changed {
         let mut inbox_item = inbox_item.into_active_model();
         inbox_item.location_v2 = Set(location_v2.clone());
+        if clear_location {
+            inbox_item.location = Set(None);
+        }
         inbox_item.update(&transaction).await.c(h!())?;
     }
     crate::battle_line::settlement_queue::reconcile_item_locations(
@@ -591,23 +596,6 @@ pub(crate) fn normalize_settlements(settlements: Vec<String>) -> Vec<String> {
     normalized
 }
 
-pub(crate) fn merge_current_and_ai_settlements(
-    current: Vec<String>,
-    ai_settlements: Vec<String>,
-) -> Vec<String> {
-    let mut seen = current
-        .iter()
-        .map(|settlement| settlement.trim().to_uppercase())
-        .collect::<HashSet<_>>();
-    let mut settlements = current;
-    for settlement in normalize_settlements(ai_settlements) {
-        if seen.insert(settlement.clone()) {
-            settlements.push(settlement);
-        }
-    }
-    settlements
-}
-
 fn retry_delay_secs(attempts: i32) -> i64 {
     let exponent = u32::try_from(attempts.saturating_sub(1)).unwrap_or(0);
     AI_SETTLEMENT_WORKER_RETRY_BASE_SECS
@@ -630,8 +618,7 @@ mod group_tests;
 mod tests {
     use super::{
         complete_job, enqueue_if_enabled, fail_job, load_worker_config,
-        merge_current_and_ai_settlements, normalize_settlements,
-        retry_delay_secs, WorkerConfig,
+        normalize_settlements, retry_delay_secs, WorkerConfig,
     };
     use crate::config::AI_SETTLEMENT_SETTINGS_ID;
     use crate::entities::{
@@ -655,17 +642,6 @@ mod tests {
                 "".to_string(),
             ]),
             vec!["АРТІЛЬНЕ", "ШЕВ’ЯКІВКА"]
-        );
-    }
-
-    #[test]
-    fn appends_only_missing_ai_settlements() {
-        assert_eq!(
-            merge_current_and_ai_settlements(
-                vec!["Артільне".to_string(), "СТАРИЙ ХУТІР".to_string()],
-                vec!["артільне".to_string(), "ШЕВ’ЯКІВКА".to_string()],
-            ),
-            vec!["Артільне", "СТАРИЙ ХУТІР", "ШЕВ’ЯКІВКА"]
         );
     }
 
@@ -718,7 +694,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn preserves_pipe_delimited_locations_and_reconciles_links_2133() {
+    async fn replaces_code_locations_and_reconciles_links_2133() {
         let env = crate::functest::tests::cleanup().await.unwrap();
         let config = enable_worker(&env.dbx).await;
         let group_master_key = signal_group::Entity::find()
@@ -748,10 +724,20 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        sigint_inbox_item::ActiveModel {
+        let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
             location_v2: Set(Some("|Existing Mixed|SECOND|".to_string())),
             parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(message.id),
+            item_uuid: Set(inbox_item.id_uuid),
+            settlement_text: Set("SECOND".to_string()),
+            settlement_id: Set(Some(98911)),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -790,7 +776,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             inbox_item.location_v2.as_deref(),
-            Some("|Existing Mixed|SECOND|THIRD|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|")
+            Some("|EXISTING MIXED|THIRD|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|")
         );
         let links = sigint_inbox_item_settlement::Entity::find()
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(message.id))
@@ -803,13 +789,7 @@ mod tests {
                 .iter()
                 .map(|link| link.settlement_text.as_str())
                 .collect::<Vec<_>>(),
-            vec![
-                "Existing Mixed",
-                "SECOND",
-                "THIRD",
-                "ВЕРХНЄ ГОРІХОВЕ",
-                "ЗАЛИВНИЙ"
-            ]
+            vec!["EXISTING MIXED", "THIRD", "ВЕРХНЄ ГОРІХОВЕ", "ЗАЛИВНИЙ"]
         );
         assert!(links
             .iter()
@@ -835,6 +815,75 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn empty_ai_result_clears_code_locations_and_links_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let config = enable_worker(&env.dbx).await;
+        for location_v2 in [Some("|ГЛИБОКИЙ|МАЛИЙ|"), None] {
+            let message = crate::functest::tests::mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    body: Set(Some("глибокий, малий".to_string())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let inbox_item = sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                location: Set(Some("глибокий, малий".to_string())),
+                location_v2: Set(location_v2.map(str::to_string)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            crate::battle_line::settlement_queue::reconcile_item_locations(
+                &env.dbx,
+                message.id,
+                inbox_item.id_uuid,
+                inbox_item.location_v2.as_deref(),
+            )
+            .await
+            .unwrap();
+            enqueue_if_enabled(&env.dbx, message.id).await.unwrap();
+
+            assert!(complete_job(
+                &env.dbx,
+                message.id,
+                "глибокий, малий",
+                &config,
+                vec![],
+            )
+            .await
+            .unwrap());
+
+            let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(inbox_item.location_v2, None);
+            assert_eq!(inbox_item.location, None);
+            assert!(sigint_inbox_item_settlement::Entity::find()
+                .filter(
+                    sigint_inbox_item_settlement::Column::ItemId.eq(message.id)
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .is_empty());
+            assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .is_none());
+        }
     }
 
     #[tokio::test]
@@ -1023,7 +1072,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(inbox_item.location_v2.as_deref(), Some("|EXISTING|FRESH|"));
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|FRESH|"));
     }
 
     #[tokio::test]

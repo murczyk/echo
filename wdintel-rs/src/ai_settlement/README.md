@@ -29,6 +29,10 @@ be retained.
 
 ## Worker group restrictions
 
+Successful AI worker results replace the message's parsed locations and reconcile
+their settlement links. An empty result clears the locations and links. Failed
+requests and stale results leave the existing locations unchanged.
+
 The **Воркер** tab at `/admin/ai/settlements` includes **Групи для обробки**.
 Select active, non-deleted, non-archived Signal groups and choose **Лише** to
 process messages belonging to any selected group, or **Окрім** to exclude
