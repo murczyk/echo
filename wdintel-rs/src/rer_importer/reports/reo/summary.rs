@@ -16,14 +16,18 @@ struct ActivityRow {
 }
 
 pub(super) async fn load_summary_messages(
-    db: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
-    chunks: &[ReportPeriodChunk],
     no_comments: bool,
     only_comments_from_current_organism: bool,
 ) -> anyhow::Result<Vec<(i64, ReoInboxMessage)>> {
+    let db = &env.dbx;
+    let chunks = inbox_report_period_chunks(
+        req,
+        crate::config::RER_REO_SUMMARY_CHUNKING_HOURS,
+    )
+    .c(h!())?;
     let groups = crate::messenger::group::get_identity_sigint_groups(db, login)
         .await
         .c(h!())?;
@@ -49,16 +53,16 @@ pub(super) async fn load_summary_messages(
             chunk.till_ms
         );
         let chunk_req = inbox_report_chunk_req(req, chunk);
-        let query = build_filtered_inbox_report_chunk_query(
-            db, login, env, &chunk_req, chunk.end,
+        let rows = load_activity_chunk(
+            login,
+            env,
+            &chunk_req,
+            chunk.end,
+            group.clone(),
+            eligible.clone(),
         )
         .await
         .c(h!())?;
-        let rows = activity_query(query, group.clone(), eligible.clone())
-            .into_model::<ActivityRow>()
-            .all(db)
-            .await
-            .c(h!())?;
         for row in rows {
             let activity = if row.seances_qty > 0 {
                 Some(NetworkActivity {
@@ -103,6 +107,41 @@ pub(super) async fn load_summary_messages(
             )
         })
         .collect())
+}
+
+async fn load_activity_chunk(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+    group: SimpleExpr,
+    eligible: SimpleExpr,
+) -> anyhow::Result<Vec<ActivityRow>> {
+    let load_chunk = |db: DatabaseConnection| {
+        let group = group.clone();
+        let eligible = eligible.clone();
+        async move {
+            let query = build_filtered_inbox_report_chunk_query(
+                &db, login, env, req, period_end,
+            )
+            .await
+            .c(h!())?;
+            Ok(activity_query(query, group, eligible)
+                .into_model::<ActivityRow>()
+                .all(&db)
+                .await
+                .c(h!())?)
+        }
+    };
+    crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "REO summary chunk",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(req),
+        load_chunk,
+        load_chunk,
+    )
+    .await
+    .context(h!())
 }
 
 fn activity_query(

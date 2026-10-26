@@ -255,17 +255,10 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
         )
         .await
         .c(h!())?;
-        let messages = load_summary_messages(
-            db,
-            &login.id,
-            &env,
-            &req,
-            &chunks,
-            no_comments,
-            true,
-        )
-        .await
-        .c(h!())?;
+        let messages =
+            load_summary_messages(&login.id, &env, &req, no_comments, true)
+                .await
+                .c(h!())?;
         assert_eq!(messages.len(), 3);
         assert!(messages
             .iter()
@@ -298,6 +291,125 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
             network.activity.seances_qty,
             if no_comments { 2 } else { 4 }
         );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3889_long_summary_merges_weekly_activity_into_report_files(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let db = &env.dbx;
+    let login = find_test_login(db).await.c(h!())?;
+    let group = find_test_datasource_group(db).await.c(h!())?;
+    let network = mk_sigint_network(
+        db,
+        sigint_network::ActiveModel {
+            name: Set("Мережа 3889".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .c(h!())?;
+    system_settings::ActiveModel {
+        report_chunking_hours: Set(1),
+        limit_big_reports: Set(true),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .c(h!())?;
+    let since = NaiveDate::from_ymd_opt(2025, 8, 30)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    let till = since + chrono::Duration::weeks(60) + chrono::Duration::hours(1);
+    for timestamp in [
+        since,
+        since + chrono::Duration::weeks(1),
+        since + chrono::Duration::weeks(2),
+        till,
+        since - chrono::Duration::milliseconds(1),
+        till + chrono::Duration::milliseconds(1),
+    ] {
+        seed_message(db, &group, timestamp, "123.400", &[network.id])
+            .await
+            .c(h!())?;
+    }
+    for timestamp in [since + chrono::Duration::weeks(1), till] {
+        seed_message(db, &group, timestamp, "456.700", &[])
+            .await
+            .c(h!())?;
+    }
+    let req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        till_date_inclusive_ms: Some(till.and_utc().timestamp_millis()),
+        selected_groups: Some(vec![group.group_master_key.clone()]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let error =
+        load_reo_report_messages(&login.id, &env, &req, false, true, false)
+            .await
+            .unwrap_err();
+    assert!(
+        format!("{error:?}").contains("Період звіту утворює забагато частин")
+    );
+    let messages =
+        load_reo_report_messages(&login.id, &env, &req, true, true, false)
+            .await
+            .c(h!())?;
+    assert_eq!(messages.len(), 2);
+    for (_, message) in &messages {
+        let activity = message.activity.as_ref().unwrap();
+        let expected_since = if message.network_ids.is_some() {
+            assert_eq!(activity.seances_qty, 4);
+            since
+        } else {
+            assert_eq!(activity.seances_qty, 2);
+            since + chrono::Duration::weeks(1)
+        };
+        let local_time = |timestamp: NaiveDateTime| {
+            timestamp
+                .and_utc()
+                .with_timezone(&crate::config::get_tz())
+                .naive_local()
+        };
+        assert_eq!(activity.since, local_time(expected_since));
+        assert_eq!(activity.till, local_time(till));
+    }
+    for file_type in [ReoReportFileType::Docx, ReoReportFileType::Xlsx] {
+        let is_docx = file_type == ReoReportFileType::Docx;
+        let req: ReportPreviewReq = serde_json::from_value(serde_json::json!({
+            "kind": "reo",
+            "req": req,
+            "report_type": ReportType::Reo(ReoReportSettings {
+                adjacent_freqs_distance: 0.0,
+                no_comments: true,
+                summary_only: true,
+            }, file_type),
+        }))
+        .c(h!())?;
+        let output = tempfile::NamedTempFile::new().c(h!())?;
+        report_docx_kind_reo(&login.id, &env, &req, output.path())
+            .await
+            .c(h!())?;
+        let xml = archive_xml(
+            output.path(),
+            if is_docx {
+                "word/document.xml"
+            } else {
+                "xl/sharedStrings.xml"
+            },
+        );
+        assert!(xml.contains("Мережа 3889"));
+        assert!(xml.contains("123.400"));
+        assert!(xml.contains("456.700"));
+        if is_docx {
+            assert!(xml.contains("Сеанси: 4"));
+            assert!(xml.contains("Сеанси: 2"));
+        }
     }
     Ok(())
 }
