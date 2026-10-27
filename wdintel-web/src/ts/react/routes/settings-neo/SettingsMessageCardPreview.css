@@ -18,6 +18,20 @@
   height: var(--echo-spacing-sm);
   border-radius: var(--echo-radius-sm);
   background: color-mix(in srgb, var(--echo-color-text-muted) 35%, transparent);
+  transition: height 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.settings-message-card-preview
+  :is([data-message-card-header-left], [data-message-text-preview-limit])
+  .settings-message-card-preview__line {
+  height: calc(var(--message-card-primary-font-size) / 2);
+}
+
+[data-message-card-text-size='large']
+  .settings-message-card-preview
+  :is([data-message-card-header-left], [data-message-text-preview-limit])
+  .settings-message-card-preview__line {
+  height: calc(var(--message-card-primary-font-size) * 0.75);
 }
 
 .settings-message-card-preview__icon {
@@ -73,6 +87,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .settings-message-card-preview__line,
   .settings-message-card-preview
     :is(.message-card-thumbnail-shell, .message-card-thumbnail-control) {
     transition-duration: 0s;

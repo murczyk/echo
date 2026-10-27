@@ -26,12 +26,14 @@ function PreviewLines({ widths }: { widths: number[] }) {
 }
 
 export function SettingsMessageCardPreview({
+  largeMessageCardText,
   tagsLayout,
   mediaSummaryEnabled,
   attachmentPreviewMode,
   aiPositionHighlightsEnabled,
   messageTextPreviewLines,
 }: {
+  largeMessageCardText: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled: boolean;
   attachmentPreviewMode: MessageAttachmentPreviewMode;
@@ -44,6 +46,7 @@ export function SettingsMessageCardPreview({
   return (
     <section
       aria-label="Попередній перегляд картки повідомлення"
+      data-message-card-text-size={largeMessageCardText ? 'large' : 'compact'}
       className={
         attachmentPreviewMode === MessageAttachmentPreviewMode.Large
           ? 'message-card-previews-large'

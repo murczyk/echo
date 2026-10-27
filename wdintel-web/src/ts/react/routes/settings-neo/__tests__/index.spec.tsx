@@ -76,12 +76,14 @@ vi.mock('@mui/material', () => ({
     value,
     onChange,
     children,
+    'aria-label': ariaLabel,
   }: {
     value?: unknown;
     onChange?: (_event: unknown, val: unknown) => void;
     children?: ReactNode;
+    'aria-label'?: string;
   }) => (
-    <div data-toggle-group={String(value)}>
+    <div data-toggle-group={String(value)} aria-label={ariaLabel}>
       {Children.map(children, (child) => {
         if (!isValidElement(child)) return child;
         return cloneElement(child as any, {
@@ -410,6 +412,34 @@ describe('SettingsNeoPage', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3324
   it.each(['duty', 'analysis'] as const)(
+    'persists the card text size from %s and defaults older settings to compact text',
+    async (section) => {
+      await act(async () => {
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const group = () => container.querySelector('[aria-label="Розмір тексту картки"]');
+      expect(group()?.getAttribute('data-toggle-group')).toBe('false');
+      for (const largeMessageCardText of [true, false]) {
+        const button = group()?.querySelector<HTMLButtonElement>(
+          `[data-toggle-value="${largeMessageCardText}"]`,
+        );
+        expect(button).not.toBeNull();
+        await act(async () => button!.click());
+        expect(saveUserDutySettings).toHaveBeenLastCalledWith(
+          expect.objectContaining({ largeMessageCardText }),
+        );
+        await act(async () => {
+          root.render(<SettingsNeoPage section={section === 'duty' ? 'analysis' : 'duty'} />);
+        });
+        expect(group()?.getAttribute('data-toggle-group')).toBe(String(largeMessageCardText));
+      }
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each(['duty', 'analysis'] as const)(
     'persists all attachment modes from %s and shares the selection across settings tabs',
     async (section) => {
       await act(async () => {
@@ -500,6 +530,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       largeMediaPreviews: false,
+      largeMessageCardText: false,
       mediaSummaryEnabled: true,
       aiPositionHighlightsEnabled: false,
       messageAutoParseEnabled: false,

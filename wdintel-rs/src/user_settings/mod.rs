@@ -48,6 +48,7 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         show_classic_analysis: m.show_classic_analysis,
         duty_collapse_media_previews: m.duty_collapse_media_previews,
         large_media_previews: m.large_media_previews.unwrap_or(false),
+        large_message_card_text: m.large_message_card_text.unwrap_or(false),
         media_summary_enabled: m.media_summary_enabled,
         ai_position_highlights_enabled: m
             .ai_position_highlights_enabled
@@ -67,6 +68,9 @@ fn preserve_omitted_compatibility_fields(
     incoming: &mut UserDutySettingsDto,
     existing: &UserDutySettingsDto,
 ) {
+    if body.get("largeMessageCardText").is_none() {
+        incoming.large_message_card_text = existing.large_message_card_text;
+    }
     if body.get("largeMediaPreviews").is_none() {
         incoming.large_media_previews = existing.large_media_previews;
     }
@@ -111,7 +115,8 @@ pub async fn user_settings_put(
     let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let body = req.into_inner();
-    let needs_existing = body.get("largeMediaPreviews").is_none()
+    let needs_existing = body.get("largeMessageCardText").is_none()
+        || body.get("largeMediaPreviews").is_none()
         || body.get("messageSortBy").is_none()
         || body.get("messageAutoParseEnabled").is_none()
         || body.get("aiPositionHighlightsEnabled").is_none();
@@ -158,6 +163,7 @@ pub async fn user_settings_put(
         show_classic_analysis: Set(dto.show_classic_analysis),
         duty_collapse_media_previews: Set(dto.duty_collapse_media_previews),
         large_media_previews: Set(Some(dto.large_media_previews)),
+        large_message_card_text: Set(Some(dto.large_message_card_text)),
         media_summary_enabled: Set(dto.media_summary_enabled),
         ai_position_highlights_enabled: Set(Some(
             dto.ai_position_highlights_enabled,
@@ -184,6 +190,7 @@ pub async fn user_settings_put(
                 user_settings::Column::ShowClassicAnalysis,
                 user_settings::Column::DutyCollapseMediaPreviews,
                 user_settings::Column::LargeMediaPreviews,
+                user_settings::Column::LargeMessageCardText,
                 user_settings::Column::MediaSummaryEnabled,
                 user_settings::Column::AiPositionHighlightsEnabled,
                 user_settings::Column::MessageSortBy,

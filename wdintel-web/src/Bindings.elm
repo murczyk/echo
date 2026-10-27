@@ -31811,6 +31811,7 @@ type alias UserDutySettingsDto =
     , showClassicAnalysis : Bool
     , dutyCollapseMediaPreviews : Bool
     , largeMediaPreviews : Bool
+    , largeMessageCardText : Bool
     , mediaSummaryEnabled : Bool
     , messageSortBy : MessageTimeBasis
     , messageAutoParseEnabled : Bool
@@ -31832,6 +31833,7 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicAnalysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyCollapseMediaPreviews" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummaryEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))

@@ -1457,38 +1457,50 @@ function MessageCardHeaderComponent({
           {dateTimeBlock}
         </div>
       </div>
-      {!readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="message-card-header-actions flex items-center justify-end">
-          <ActionIconsRow
-            id={id}
-            msg={msg}
-            readOnly={readOnly}
-            displayMode={displayMode}
-            excludeMenuOptions={excludeMenuOptions}
-            etalonDisplayModel={etalonDisplayModel}
-            copiedFeedbackId={copiedFeedbackId}
-            navigationMenuItems={navigationMenuItems}
-            onBookmark={onBookmark}
-            onImportant={onImportant}
-            onReply={onReply}
-            onCreateReport={onCreateReport}
-            onCopyText={onCopyText}
-            onCopyFreq={onCopyFreq}
-            onCopyTextWithNetwork={onCopyTextWithNetwork}
-            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-            onCopyMessageLink={onCopyMessageLink}
-            onCopyEtalon={onCopyEtalon}
-            onCopyLocation={onCopyLocation}
-            onDelete={onDelete}
-            onEditDetails={onEditDetails}
-            onExcludeMessageEntity={onExcludeMessageEntity}
-            attachmentArchiveDownload={attachmentArchiveDownload}
-            headerRowRef={headerRowRef}
-            leftHeaderContentRef={leftHeaderContentRef}
-            rightHeaderContentRef={rightHeaderContentRef}
-            headerColumnGap={headerColumnGap}
-            onCompactChange={setCompactActions}
-          />
+      {msg.important || !readOnly || isPresent(attachmentArchiveDownload) ? (
+        <div className="message-card-header-actions flex items-center justify-end gap-2">
+          {msg.important ? (
+            <span
+              className="message-card-important-status"
+              title={msg.aiImportant ? 'Позначено ШІ' : undefined}
+              data-message-card-important-status="true"
+            >
+              <FlagIcon aria-hidden className="message-card-important-status__icon" />
+              Важливе
+            </span>
+          ) : null}
+          {!readOnly || isPresent(attachmentArchiveDownload) ? (
+            <ActionIconsRow
+              id={id}
+              msg={msg}
+              readOnly={readOnly}
+              displayMode={displayMode}
+              excludeMenuOptions={excludeMenuOptions}
+              etalonDisplayModel={etalonDisplayModel}
+              copiedFeedbackId={copiedFeedbackId}
+              navigationMenuItems={navigationMenuItems}
+              onBookmark={onBookmark}
+              onImportant={onImportant}
+              onReply={onReply}
+              onCreateReport={onCreateReport}
+              onCopyText={onCopyText}
+              onCopyFreq={onCopyFreq}
+              onCopyTextWithNetwork={onCopyTextWithNetwork}
+              onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+              onCopyMessageLink={onCopyMessageLink}
+              onCopyEtalon={onCopyEtalon}
+              onCopyLocation={onCopyLocation}
+              onDelete={onDelete}
+              onEditDetails={onEditDetails}
+              onExcludeMessageEntity={onExcludeMessageEntity}
+              attachmentArchiveDownload={attachmentArchiveDownload}
+              headerRowRef={headerRowRef}
+              leftHeaderContentRef={leftHeaderContentRef}
+              rightHeaderContentRef={rightHeaderContentRef}
+              headerColumnGap={headerColumnGap}
+              onCompactChange={setCompactActions}
+            />
+          ) : null}
         </div>
       ) : null}
       <div ref={rightHeaderContentRef} data-message-card-header-right="true" aria-hidden="true" />

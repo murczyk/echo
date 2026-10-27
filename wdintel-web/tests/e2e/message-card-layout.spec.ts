@@ -10,6 +10,85 @@ import {
 
 // Regression: https://github.com/echoua/echo/issues/3324
 for (const host of ['analysis', 'duty'] as const) {
+  test(`#3324 keeps the important badge left of actions at every card width (${host}) @regression`, async ({
+    page,
+  }, testInfo) => {
+    await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'dark'));
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    const response = buildMessageCardMediaPreviewInboxResponse();
+    Object.assign(response.inbox_items[0][1], {
+      important: true,
+      aiImportant: true,
+      createdAt: Date.UTC(2026, 9, 26, 12),
+      unit: '108 дшп 1 пдб вБпС',
+      media: [],
+      images: [],
+      coords: null,
+    });
+    if (host === 'analysis') await installAnalysisNeoApiMocks(page, { inboxResponse: response });
+    else await installRerDutyShortStateMocks(page, { inboxResponse: response });
+    await page.route('**/api/sigint/units', (route) =>
+      route.fulfill({ json: emptyUnitsListResponse() }),
+    );
+    await page.route('**/api/sigint/network-list', (route) =>
+      route.fulfill({ json: emptyNetworksListResponse() }),
+    );
+    await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
+    await expect(
+      page.getByRole('button', {
+        name: host === 'analysis' ? 'analysis-tester' : 'operator',
+        exact: true,
+      }),
+    ).toBeVisible();
+    const card = page.locator('.message-card-root').first();
+    const badge = card.locator('[data-message-card-important-status="true"]');
+    for (const width of [390, 520, 768, 1512, 1920, 2560, 3440]) {
+      await page.setViewportSize({ width, height: 1080 });
+      if (host === 'analysis' && width === 390) {
+        const closeFilters = page.getByRole('button', { name: 'Закрити фільтри', exact: true });
+        await closeFilters.click();
+        await expect(closeFilters).toBeHidden();
+      }
+      await expect(badge).toBeVisible();
+      await expect(badge).toHaveText('Важливе');
+      await expect(badge).toHaveAttribute('title', 'Позначено ШІ');
+      await expect
+        .poll(() =>
+          card.evaluate((element) => {
+            const identity = element.querySelector('.message-card-header-identity')!;
+            const badge = element.querySelector('[data-message-card-important-status]')!;
+            const actions = element.querySelector('[aria-label="Дії повідомлення"]')!;
+            const identityBounds = identity.getBoundingClientRect();
+            const badgeBounds = badge.getBoundingClientRect();
+            const actionsBounds = actions.getBoundingClientRect();
+            return (
+              badge.contains(
+                document.elementFromPoint(
+                  badgeBounds.left + 1,
+                  badgeBounds.top + badgeBounds.height / 2,
+                ),
+              ) &&
+              identityBounds.right <= badgeBounds.left &&
+              badgeBounds.right <= actionsBounds.left &&
+              Math.abs(
+                badgeBounds.top +
+                  badgeBounds.height / 2 -
+                  actionsBounds.top -
+                  actionsBounds.height / 2,
+              ) <= 1 &&
+              element.scrollWidth <= element.clientWidth
+            );
+          }),
+        )
+        .toBe(true);
+      if (width === 390 || width === 1920)
+        await page.screenshot({
+          path: testInfo.outputPath(`${host}-important-${width}.png`),
+          animations: 'disabled',
+        });
+    }
+  });
+
   test(`ECHO-3324 loading skeleton follows the current card layout (${host}) @regression`, async ({
     page,
   }, testInfo) => {
@@ -189,7 +268,7 @@ for (const host of ['analysis', 'duty'] as const) {
           .evaluateAll((labels) => [
             ...new Set(labels.map((label) => getComputedStyle(label).fontSize)),
           ]);
-        expect(labelSizes).toEqual(['16px']);
+        expect(labelSizes).toEqual(['14px']);
         await expect(card.locator('.message-card-header-unit .message-card-text')).toHaveCSS(
           'font-weight',
           '500',
@@ -202,8 +281,8 @@ for (const host of ['analysis', 'duty'] as const) {
         expect(metadataSizes).toEqual(['14px']);
         if (variant.text) {
           const text = main.locator('[data-message-card-text-content="true"]');
-          await expect(text).toHaveCSS('font-size', '16px');
-          await expect(text).toHaveCSS('line-height', '24px');
+          await expect(text).toHaveCSS('font-size', '14px');
+          await expect(text).toHaveCSS('line-height', '21px');
         }
         const columns = await layout.evaluate(
           (element) => getComputedStyle(element).gridTemplateColumns.split(' ').length,
@@ -313,11 +392,11 @@ for (const host of ['analysis', 'duty'] as const) {
     });
     await expect(lightCard.locator('[data-message-card-text-content="true"]')).toHaveCSS(
       'font-size',
-      '32px',
+      '28px',
     );
     await expect(lightCard.locator('[data-message-card-text-content="true"]')).toHaveCSS(
       'line-height',
-      '48px',
+      '42px',
     );
     await expect(
       lightCard.locator('[data-message-card-timestamp-footer] .message-card-text'),

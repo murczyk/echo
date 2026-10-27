@@ -33,6 +33,7 @@ describe('user-settings api', () => {
       messageTextPreviewLines: expected,
       messageSortBy: 'interception',
       largeMediaPreviews: false,
+      largeMessageCardText: false,
     });
   });
 });

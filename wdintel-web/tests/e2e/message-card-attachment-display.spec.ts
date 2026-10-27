@@ -23,6 +23,7 @@ const COMPACT_SETTINGS: UserDutySettings = {
   showClassicAnalysis: false,
   dutyCollapseMediaPreviews: false,
   largeMediaPreviews: false,
+  largeMessageCardText: false,
   mediaSummaryEnabled: true,
   messageAutoParseEnabled: false,
   aiPositionHighlightsEnabled: false,
@@ -31,18 +32,27 @@ const COMPACT_SETTINGS: UserDutySettings = {
 async function openAttachmentHost(
   page: Page,
   host: MessageCardMediaPreviewHost,
-  settings: Omit<UserDutySettings, 'largeMediaPreviews'> & { largeMediaPreviews?: boolean },
+  settings: Omit<UserDutySettings, 'largeMediaPreviews' | 'largeMessageCardText'> & {
+    largeMediaPreviews?: boolean;
+    largeMessageCardText?: boolean;
+  },
   coordinateResponse?: (route: Route) => Promise<void>,
   messageText?: string,
+  enableAudioTranscription = false,
 ) {
   await page.addInitScript(() => localStorage.setItem('echo-theme-mode', 'dark'));
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
     withCompleteCoordinateError: coordinateResponse != null,
     messageText,
   });
+  Object.assign(inboxResponse.inbox_items[0][1], {
+    createdAt: Date.UTC(2026, 9, 26, 12),
+    createdAtOrder: Date.UTC(2026, 9, 26, 12) * 1000,
+  });
   await installMessageCardMediaPreviewAssetRoutes(page);
-  if (host === 'analysis') await installAnalysisNeoApiMocks(page, { inboxResponse });
-  else await installRerDutyShortStateMocks(page, { inboxResponse });
+  if (host === 'analysis')
+    await installAnalysisNeoApiMocks(page, { inboxResponse, enableAudioTranscription });
+  else await installRerDutyShortStateMocks(page, { inboxResponse, enableAudioTranscription });
   let currentSettings = settings;
   await page.route('**/api/sigint/units', (route) =>
     route.fulfill({ json: emptyUnitsListResponse() }),
@@ -125,6 +135,50 @@ async function expectCoordinateTile(card: Locator, mode: keyof typeof EXPECTED_T
 // Regression: https://github.com/echoua/echo/issues/3324
 for (const host of ['analysis', 'duty'] as const) {
   test.describe(`ECHO-3324 ${host} attachment display @regression`, () => {
+    test('defaults legacy text size to compact and changes only primary text roles', async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1920, height: 1080 });
+      const { largeMessageCardText: _largeMessageCardText, ...legacySettings } = COMPACT_SETTINGS;
+      const { card, updateSettings } = await openAttachmentHost(
+        page,
+        host,
+        legacySettings,
+        undefined,
+        undefined,
+        true,
+      );
+      const text = card.locator('.message-card-message-text');
+      const date = card.locator('.message-card-timestamp-item .message-card-text');
+      const unit = card.locator('.message-card-header-unit .message-card-text');
+      const transcription = card.locator('.audio-transcription');
+      const metadata = card.locator('.message-card-metadata .message-card-text').first();
+      const icon = card.locator('.message-card-unit-icon');
+      const footer = card.locator('.message-card-timestamp-footer .message-card-text');
+      await expect(text).toHaveCSS('font-size', '14px');
+      for (const [largeMessageCardText, fontSize, lineHeight] of [
+        [false, '14px', '21px'],
+        [true, '16px', '24px'],
+        [false, '14px', '21px'],
+      ] as const) {
+        await updateSettings({ ...COMPACT_SETTINGS, largeMessageCardText });
+        for (const label of [text, date, unit, transcription]) {
+          await expect(label).toHaveCSS('font-size', fontSize);
+          await expect(label).toHaveCSS('line-height', lineHeight);
+        }
+        await expect(metadata).toHaveCSS('font-size', '14px');
+        await expect(icon).toHaveCSS('font-size', '16px');
+        await expect(footer).toHaveCSS('font-size', '12px');
+      }
+      await updateSettings({ ...COMPACT_SETTINGS, largeMessageCardText: true });
+      await page.reload();
+      await expect(text).toHaveCSS('font-size', '16px');
+      await page.setViewportSize({ width: 390, height: 1080 });
+      await expect(text).toHaveCSS('font-size', '16px');
+      await updateSettings({ ...COMPACT_SETTINGS, largeMessageCardText: false });
+      await expect(text).toHaveCSS('font-size', '14px');
+    });
+
     test('prepares coordinate maps before they enter the feed viewport without loading distant maps', async ({
       page,
     }) => {

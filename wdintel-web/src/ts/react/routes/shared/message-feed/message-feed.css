@@ -83,7 +83,7 @@
 }
 
 .message-feed-skeleton-card .message-feed-skeleton-card-identity-row {
-  min-height: calc(1rem * 24 / 14);
+  min-height: calc(var(--message-card-primary-font-size) * 1.5);
   align-items: center;
 }
 
@@ -103,7 +103,7 @@
 
 .message-feed-skeleton-card-text-line {
   display: flex;
-  height: calc(1rem * 24 / 14);
+  height: calc(var(--message-card-primary-font-size) * 1.5);
   align-items: center;
 }
 

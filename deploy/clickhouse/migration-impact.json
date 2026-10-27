@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20261026_190000_message_card_text_size": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20261026_110911_large_media_previews": {
       "changes": [
         {

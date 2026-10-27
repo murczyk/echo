@@ -52,7 +52,7 @@ export function MessageFeedSkeletons({
                     animation={animation}
                     variant="rounded"
                     width={240}
-                    height="calc(1rem * 16 / 14)"
+                    height="var(--message-card-primary-font-size)"
                   />
                 </div>
                 <div className="message-card-timestamp-item message-feed-skeleton-card-identity-row">
@@ -61,7 +61,7 @@ export function MessageFeedSkeletons({
                     animation={animation}
                     variant="rounded"
                     width={180}
-                    height="calc(1rem * 16 / 14)"
+                    height="var(--message-card-primary-font-size)"
                   />
                 </div>
               </div>
@@ -75,7 +75,7 @@ export function MessageFeedSkeletons({
                           animation={animation}
                           variant="rounded"
                           width={`${width}%`}
-                          height="calc(1rem * 16 / 14)"
+                          height="var(--message-card-primary-font-size)"
                         />
                       </div>
                     ))}

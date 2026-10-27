@@ -185,6 +185,7 @@ a {
 }
 
 .message-card-root {
+  --message-card-primary-font-size: 1rem;
   --message-card-metadata-icon-color: var(--lynch-color);
   --message-card-timestamp-icon-color: color-mix(in srgb, var(--color-text) 50%, transparent);
   --message-card-tag-background: var(--echo-color-surface-inactive);
@@ -294,7 +295,7 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-message-text {
   overflow-wrap: anywhere;
-  font-size: calc(1rem * 16 / 14);
+  font-size: var(--message-card-primary-font-size);
   line-height: 1.5;
 }
 
@@ -303,7 +304,7 @@ html[data-bs-theme='dark'] .message-card-root {
 }
 
 .message-card-root .audio-transcription {
-  font-size: calc(1rem * 16 / 14);
+  font-size: var(--message-card-primary-font-size);
   line-height: 1.5;
 }
 
@@ -424,6 +425,10 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-previews-large .message-card-root {
   --message-card-attachment-tile-size: 144px;
+}
+
+[data-message-card-text-size='large'] .message-card-root {
+  --message-card-primary-font-size: calc(1rem * 16 / 14);
 }
 
 .message-card-previews-large .message-card-gallery {
@@ -943,7 +948,7 @@ html[data-bs-theme='dark'] .message-card-root {
 }
 
 .message-card-header-row .message-card-text {
-  font-size: calc(1rem * 16 / 14);
+  font-size: var(--message-card-primary-font-size);
   line-height: 1.5;
 }
 

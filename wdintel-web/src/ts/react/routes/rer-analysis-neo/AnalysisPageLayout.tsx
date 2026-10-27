@@ -425,6 +425,7 @@ export function RerAnalysisNeoPage({
             ? 'message-card-previews-large'
             : undefined
         }
+        data-message-card-text-size={page.largeMessageCardText ? 'large' : 'compact'}
         sx={{
           height: '100%',
           minHeight: 0,

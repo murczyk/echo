@@ -516,9 +516,11 @@ describe('MessageCard', () => {
       expect(visibleActions).toEqual(['Створити розвіддонесення', 'Більше дій']);
       const overflowAction = view.container.querySelector('button[aria-label="Більше дій"]');
 
-      expect(
-        view.container.querySelector('[data-message-card-important-status="true"]'),
-      ).toBeNull();
+      const importantStatus = view.container.querySelector(
+        '[data-message-card-important-status="true"]',
+      );
+      expect(importantStatus?.textContent).toContain('Важливе');
+      expect(importantStatus?.nextElementSibling?.contains(overflowAction)).toBe(true);
       expect(
         view.container.querySelector('.message-card-header-actions')?.contains(overflowAction),
       ).toBe(true);
@@ -731,6 +733,24 @@ describe('MessageCard', () => {
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain('Редагувати');
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each(['duty', 'analysis'] as const)(
+    'keeps the AI important status visible without actions on a read-only %s card',
+    async (displayMode) => {
+      const view = await renderCard({
+        readOnly: true,
+        displayMode,
+        msg: buildMessage({ important: true, aiImportant: true }),
+      });
+      const importantStatus = view.container.querySelector(
+        '[data-message-card-important-status="true"]',
+      );
+      expect(importantStatus?.textContent).toContain('Важливе');
+      expect(importantStatus?.getAttribute('title')).toBe('Позначено ШІ');
+      expect(view.container.querySelector('[aria-label="Дії повідомлення"]')).toBeNull();
+    },
+  );
 
   it('keeps attachment archive download without report creation on a read-only card', async () => {
     const view = await renderCard({

@@ -36,6 +36,8 @@ export type SettingsMessageCardProps = {
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
   attachmentPreviewMode: MessageAttachmentPreviewMode;
+  largeMessageCardText: boolean;
+  onLargeMessageCardTextChange: (value: boolean) => void;
   onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
   loadInProgress: boolean;
 };
@@ -51,6 +53,8 @@ export function SettingsMessageCard({
   aiPositionHighlightsEnabledGlobally,
   onAiPositionHighlightsEnabledChange,
   attachmentPreviewMode,
+  largeMessageCardText,
+  onLargeMessageCardTextChange,
   onAttachmentPreviewModeChange,
   loadInProgress,
 }: SettingsMessageCardProps) {
@@ -60,6 +64,36 @@ export function SettingsMessageCard({
         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
           Картка повідомлення
         </Typography>
+
+        <Stack spacing={1}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Розмір тексту:
+          </Typography>
+          <Box>
+            <ToggleButtonGroup
+              aria-label="Розмір тексту картки"
+              value={largeMessageCardText}
+              exclusive
+              color="primary"
+              size="small"
+              disabled={loadInProgress}
+              onChange={(_, value: boolean | null) => {
+                if (isPresent(value)) onLargeMessageCardTextChange(value);
+              }}
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  fontSize: 14,
+                  px: 2,
+                  py: 1,
+                },
+              }}
+            >
+              <ToggleButton value={false}>Стандартний</ToggleButton>
+              <ToggleButton value={true}>Збільшений</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        </Stack>
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -183,6 +217,7 @@ export function SettingsMessageCard({
         </fieldset>
 
         <SettingsMessageCardPreview
+          largeMessageCardText={largeMessageCardText}
           tagsLayout={tagsLayout}
           mediaSummaryEnabled={mediaSummaryEnabled}
           attachmentPreviewMode={attachmentPreviewMode}

@@ -7756,6 +7756,7 @@ export type UserDutySettingsDto = {
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;

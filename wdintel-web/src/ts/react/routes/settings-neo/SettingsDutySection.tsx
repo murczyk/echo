@@ -42,6 +42,8 @@ export type SettingsDutySectionProps = {
   showClassicDuty: boolean;
   onShowClassicDutyChange: (value: boolean) => void;
   attachmentPreviewMode: MessageAttachmentPreviewMode;
+  largeMessageCardText: boolean;
+  onLargeMessageCardTextChange: (value: boolean) => void;
   onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
 };
 
@@ -69,6 +71,8 @@ export function SettingsDutySection({
   showClassicDuty,
   onShowClassicDutyChange,
   attachmentPreviewMode,
+  largeMessageCardText,
+  onLargeMessageCardTextChange,
   onAttachmentPreviewModeChange,
 }: SettingsDutySectionProps) {
   return (
@@ -116,6 +120,8 @@ export function SettingsDutySection({
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             attachmentPreviewMode={attachmentPreviewMode}
+            largeMessageCardText={largeMessageCardText}
+            onLargeMessageCardTextChange={onLargeMessageCardTextChange}
             onAttachmentPreviewModeChange={onAttachmentPreviewModeChange}
             loadInProgress={loadInProgress}
           />

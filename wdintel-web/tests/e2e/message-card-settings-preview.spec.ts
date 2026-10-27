@@ -58,6 +58,24 @@ for (const section of ['duty', 'analysis'] as const) {
       exact: true,
     });
     await expect(preview).toHaveText('');
+    const textSize = page.getByRole('group', { name: 'Розмір тексту картки', exact: true });
+    await expect(
+      textSize.getByRole('button', { name: 'Стандартний', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    const textLine = preview
+      .locator('[data-message-text-preview-limit] .settings-message-card-preview__line')
+      .first();
+    const compactHeight = (await textLine.boundingBox())!.height;
+    await textSize.getByRole('button', { name: 'Збільшений', exact: true }).click();
+    await expect
+      .poll(async () => (await textLine.boundingBox())!.height)
+      .toBeGreaterThanOrEqual(compactHeight * 1.5);
+    await preview.screenshot({
+      path: testInfo.outputPath(`${section}-1920-large-text-preview.png`),
+    });
+    await expect.poll(() => (settings as Record<string, unknown>).largeMessageCardText).toBe(true);
+    await textSize.getByRole('button', { name: 'Стандартний', exact: true }).click();
+    await expect.poll(async () => (await textLine.boundingBox())!.height).toBe(compactHeight);
     await expect(preview.locator('.message-card-root > .message-card-divider')).toBeVisible();
     const tile = preview.locator('.message-card-thumbnail-shell').first();
     await expect(tile).toHaveCSS('width', '72px');
@@ -101,6 +119,11 @@ for (const section of ['duty', 'analysis'] as const) {
       await preview.screenshot({ path: testInfo.outputPath(`${section}-${width}-preview.png`) });
     }
     await page.emulateMedia({ reducedMotion: 'reduce' });
+    await textSize.getByRole('button', { name: 'Збільшений', exact: true }).click();
+    await expect(textLine).toHaveCSS('transition-duration', '0s');
+    await preview.screenshot({
+      path: testInfo.outputPath(`${section}-390-large-text-preview.png`),
+    });
     await page.getByRole('button', { name: 'Збільшені', exact: true }).click();
     await expect(tile).toHaveCSS('width', '144px');
     await expect(tile).toHaveCSS('transition-duration', '0s');
