@@ -1,0 +1,505 @@
+use crate::{config::*, h, types::ShortContext};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, DbBackend, DbErr, ExecResult,
+    QueryResult, RuntimeErr, Statement,
+};
+use sqlx::{pool::PoolConnection, Connection, PgConnection, PgPool, Postgres};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{Arc, Mutex, OnceLock, Weak},
+    time::{Duration, Instant},
+};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone)]
+pub(crate) struct RequestId(pub(crate) String);
+
+struct ReadContext {
+    request_id: String,
+    source_pools: Vec<usize>,
+    login: OnceLock<uuid::Uuid>,
+}
+
+tokio::task_local! {
+    static READ_CONTEXT: ReadContext;
+}
+
+static SOURCE_READS: once_cell::sync::Lazy<Arc<Semaphore>> =
+    once_cell::sync::Lazy::new(|| {
+        Arc::new(Semaphore::new(ANALYSIS_SOURCE_READ_MAX_CONCURRENT))
+    });
+static LOGIN_READS: once_cell::sync::Lazy<
+    Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
+> = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+static LOGIN_OPERATIONS: once_cell::sync::Lazy<
+    Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
+> = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+
+pub(crate) fn pool_identity(db: &DatabaseConnection) -> usize {
+    Arc::as_ptr(&db.get_postgres_connection_pool().connect_options()) as usize
+}
+
+pub(crate) fn request_id() -> String {
+    READ_CONTEXT
+        .try_with(|context| context.request_id.clone())
+        .unwrap_or_else(|_| "-".into())
+}
+
+pub(crate) fn set_login(login: uuid::Uuid) {
+    let _ = READ_CONTEXT.try_with(|context| context.login.set(login));
+}
+
+pub(crate) async fn scope<T>(
+    request_id: String,
+    source_pools: Vec<usize>,
+    future: impl Future<Output = T>,
+) -> T {
+    READ_CONTEXT
+        .scope(
+            ReadContext {
+                request_id,
+                source_pools,
+                login: OnceLock::new(),
+            },
+            future,
+        )
+        .await
+}
+
+pub(crate) fn connection(db: &DatabaseConnection) -> ReadConnection<'_> {
+    ReadConnection { db }
+}
+
+pub(crate) struct ReadConnection<'a> {
+    db: &'a DatabaseConnection,
+}
+
+fn login_reads(
+    queues: &Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
+    login: uuid::Uuid,
+) -> anyhow::Result<Arc<Semaphore>> {
+    let mut queues = queues
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    queues.retain(|_, queue| queue.strong_count() > 0);
+    if let Some(queue) = queues.get(&login).and_then(Weak::upgrade) {
+        return Ok(queue);
+    }
+    if queues.len() >= ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES {
+        return Err(DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into()))
+            .c(h!());
+    }
+    let queue = Arc::new(Semaphore::new(ANALYSIS_SOURCE_READ_MAX_PER_LOGIN));
+    queues.insert(login, Arc::downgrade(&queue));
+    Ok(queue)
+}
+
+async fn acquire_reads(
+) -> anyhow::Result<(Option<OwnedSemaphorePermit>, OwnedSemaphorePermit)> {
+    let started = Instant::now();
+    let login = READ_CONTEXT
+        .try_with(|context| context.login.get().copied())
+        .ok()
+        .flatten();
+    let acquire = async {
+        let login = match login {
+            Some(login) => Some(
+                login_reads(&LOGIN_READS, login)
+                    .c(h!())?
+                    .acquire_owned()
+                    .await
+                    .c(h!())?,
+            ),
+            None => None,
+        };
+        let global = SOURCE_READS.clone().acquire_owned().await.c(h!())?;
+        anyhow::Ok((login, global))
+    };
+    let result = tokio::time::timeout(
+        Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
+        acquire,
+    )
+    .await;
+    log::info!(target: "analytics_route", "request_id={} stage=source_admission outcome={} elapsed_ms={}", request_id(), if matches!(result, Ok(Ok(_))) { "success" } else { "rejected" }, started.elapsed().as_millis());
+    match result {
+        Ok(result) => result,
+        Err(_) => {
+            Err(DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into())).c(h!())
+        }
+    }
+}
+
+pub(crate) async fn acquire_operation(
+) -> anyhow::Result<Option<OwnedSemaphorePermit>> {
+    let login = READ_CONTEXT
+        .try_with(|context| context.login.get().copied())
+        .ok()
+        .flatten();
+    let Some(login) = login else { return Ok(None) };
+    tokio::time::timeout(
+        Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
+        login_reads(&LOGIN_OPERATIONS, login)
+            .c(h!())?
+            .acquire_owned(),
+    )
+    .await
+    .map_err(|_| DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into()))
+    .c(h!())?
+    .map(Some)
+    .c(h!())
+}
+
+#[derive(Clone, Copy)]
+struct BackendIdentity {
+    pid: i32,
+    started: chrono::DateTime<chrono::Utc>,
+}
+
+struct ReadLease {
+    connection: Option<PoolConnection<Postgres>>,
+    pool: PgPool,
+    backend: Option<BackendIdentity>,
+    request_id: String,
+    started: Instant,
+    permits: Option<(Option<OwnedSemaphorePermit>, OwnedSemaphorePermit)>,
+}
+
+impl Drop for ReadLease {
+    fn drop(&mut self) {
+        let Some(connection) = self.connection.take() else {
+            return;
+        };
+        let pool = self.pool.clone();
+        let backend = self.backend;
+        let request_id = self.request_id.clone();
+        let elapsed_ms = self.started.elapsed().as_millis();
+        let permits = self.permits.take();
+        tokio::spawn(async move {
+            let _permits = permits;
+            if let Some(backend) = backend {
+                cancel_backend(&pool, backend, &request_id, elapsed_ms).await;
+            }
+            // Keep the checked-out connection until cancellation finishes, then discard it.
+            let _ = tokio::time::timeout(
+                Duration::from_millis(POSTGRES_READ_CANCEL_TIMEOUT_MS),
+                connection.close(),
+            )
+            .await;
+        });
+    }
+}
+
+async fn cancel_backend(
+    pool: &PgPool,
+    backend: BackendIdentity,
+    request_id: &str,
+    elapsed_ms: u128,
+) {
+    let cancel = async {
+        let mut control = PgConnection::connect_with(&pool.connect_options())
+            .await
+            .c(h!())?;
+        let cancelled = sqlx::query_scalar::<_, bool>(sqlx::AssertSqlSafe("SELECT COALESCE((SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE pid=$1 AND backend_start=$2 AND usename=current_user),false)")).bind(backend.pid).bind(backend.started).fetch_one(&mut control).await.c(h!())?;
+        anyhow::Ok(cancelled)
+    };
+    let result = tokio::time::timeout(
+        Duration::from_millis(POSTGRES_READ_CANCEL_TIMEOUT_MS),
+        cancel,
+    )
+    .await;
+    log::warn!(target: "analytics_route", "request_id={request_id} stage=source_sql outcome=cancelled cancel_sent={} elapsed_ms={elapsed_ms}", matches!(result, Ok(Ok(true))));
+}
+
+pub(crate) struct ReadTransaction {
+    lease: tokio::sync::Mutex<ReadLease>,
+}
+
+pub(crate) async fn begin(
+    db: &DatabaseConnection,
+) -> anyhow::Result<ReadTransaction> {
+    let mut lease = read_lease(db, connection(db).is_source_read())
+        .await
+        .c(h!())?;
+    sqlx::query(sqlx::AssertSqlSafe(
+        "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    ))
+    .execute(&mut **lease.connection.as_mut().c(h!())?)
+    .await
+    .map_err(query_error)
+    .c(h!())?;
+    Ok(ReadTransaction {
+        lease: tokio::sync::Mutex::new(lease),
+    })
+}
+
+async fn read_lease(
+    db: &DatabaseConnection,
+    active: bool,
+) -> anyhow::Result<ReadLease> {
+    let permits = if active {
+        Some(acquire_reads().await.c(h!())?)
+    } else {
+        None
+    };
+    let pool = db.get_postgres_connection_pool();
+    let started = Instant::now();
+    let acquired = if active {
+        tokio::time::timeout(
+            Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
+            pool.acquire(),
+        )
+        .await
+        .map_err(|_| {
+            log::warn!(target: "analytics_route", "request_id={} stage=source_pool outcome=rejected elapsed_ms={}", request_id(), started.elapsed().as_millis());
+            DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into())
+        })
+        .c(h!())?
+    } else {
+        pool.acquire().await
+    };
+    log::info!(target: "analytics_route", "request_id={} stage=source_pool outcome={} elapsed_ms={}", request_id(), if acquired.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+    let connection = acquired.map_err(query_error).c(h!())?;
+    let mut lease = ReadLease {
+        connection: Some(connection),
+        pool: pool.clone(),
+        backend: None,
+        request_id: request_id(),
+        started: Instant::now(),
+        permits,
+    };
+    if active {
+        lease.backend = Some(
+            backend_identity(&mut **lease.connection.as_mut().c(h!())?)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(lease)
+}
+
+impl ReadTransaction {
+    pub(crate) async fn commit(self) -> anyhow::Result<()> {
+        let mut lease = self.lease.into_inner();
+        sqlx::query(sqlx::AssertSqlSafe("COMMIT"))
+            .execute(&mut **lease.connection.as_mut().c(h!())?)
+            .await
+            .map_err(query_error)
+            .c(h!())?;
+        drop(lease.connection.take());
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl ConnectionTrait for ReadTransaction {
+    fn get_database_backend(&self) -> DbBackend {
+        DbBackend::Postgres
+    }
+    async fn execute_raw(
+        &self,
+        statement: Statement,
+    ) -> Result<ExecResult, DbErr> {
+        let mut lease = self.lease.lock().await;
+        let connection =
+            &mut **lease.connection.as_mut().expect("active read transaction");
+        let values = sea_query_sqlx::SqlxValues(
+            statement
+                .values
+                .unwrap_or_else(|| sea_orm::sea_query::Values(Vec::new())),
+        );
+        sqlx::query_with(sqlx::AssertSqlSafe(statement.sql.as_str()), values)
+            .execute(connection)
+            .await
+            .map(Into::into)
+            .map_err(query_error)
+    }
+    async fn execute_unprepared(&self, sql: &str) -> Result<ExecResult, DbErr> {
+        let mut lease = self.lease.lock().await;
+        let connection =
+            &mut **lease.connection.as_mut().expect("active read transaction");
+        sqlx::raw_sql(sqlx::AssertSqlSafe(sql))
+            .execute(connection)
+            .await
+            .map(Into::into)
+            .map_err(query_error)
+    }
+    async fn query_one_raw(
+        &self,
+        statement: Statement,
+    ) -> Result<Option<QueryResult>, DbErr> {
+        let mut lease = self.lease.lock().await;
+        read_rows(
+            lease.connection.as_mut().expect("active read transaction"),
+            statement,
+            true,
+            true,
+        )
+        .await
+        .map(|rows| rows.into_iter().next())
+        .map_err(boundary_error)
+    }
+    async fn query_all_raw(
+        &self,
+        statement: Statement,
+    ) -> Result<Vec<QueryResult>, DbErr> {
+        let mut lease = self.lease.lock().await;
+        read_rows(
+            lease.connection.as_mut().expect("active read transaction"),
+            statement,
+            false,
+            true,
+        )
+        .await
+        .map_err(boundary_error)
+    }
+}
+
+async fn backend_identity(
+    connection: &mut PgConnection,
+) -> anyhow::Result<BackendIdentity> {
+    let (pid, started) = sqlx::query_as::<_, (i32, chrono::DateTime<chrono::Utc>)>(sqlx::AssertSqlSafe("SELECT pid,backend_start FROM pg_stat_activity WHERE pid=pg_backend_pid()")).fetch_one(connection).await.map_err(query_error).c(h!())?;
+    Ok(BackendIdentity { pid, started })
+}
+
+async fn read_rows(
+    connection: &mut PgConnection,
+    statement: Statement,
+    one: bool,
+    in_transaction: bool,
+) -> anyhow::Result<Vec<QueryResult>> {
+    let started = Instant::now();
+    let result =
+        read_rows_inner(connection, statement, one, in_transaction).await;
+    log::info!(target: "analytics_route", "request_id={} stage=source_sql outcome={} elapsed_ms={}", request_id(), if result.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+    result
+}
+
+async fn read_rows_inner(
+    connection: &mut PgConnection,
+    statement: Statement,
+    one: bool,
+    in_transaction: bool,
+) -> anyhow::Result<Vec<QueryResult>> {
+    let scoped = statement.sql.contains(ANALYSIS_SOURCE_SEARCH_SQL_HINT);
+    if scoped {
+        if !in_transaction {
+            sqlx::query(sqlx::AssertSqlSafe("BEGIN READ ONLY"))
+                .execute(&mut *connection)
+                .await
+                .map_err(query_error)
+                .c(h!())?;
+        }
+        sqlx::query(sqlx::AssertSqlSafe("SET LOCAL jit=off"))
+            .execute(&mut *connection)
+            .await
+            .map_err(query_error)
+            .c(h!())?;
+    }
+    let values = sea_query_sqlx::SqlxValues(
+        statement
+            .values
+            .unwrap_or_else(|| sea_orm::sea_query::Values(Vec::new())),
+    );
+    let query =
+        sqlx::query_with(sqlx::AssertSqlSafe(statement.sql.as_str()), values);
+    let rows = if one {
+        query
+            .fetch_optional(&mut *connection)
+            .await
+            .map(|row| row.into_iter().collect::<Vec<_>>())
+    } else {
+        query.fetch_all(&mut *connection).await
+    };
+    let rows = rows.map_err(query_error).c(h!())?;
+    if scoped && !in_transaction {
+        sqlx::query(sqlx::AssertSqlSafe("COMMIT"))
+            .execute(connection)
+            .await
+            .map_err(query_error)
+            .c(h!())?;
+    }
+    Ok(rows.into_iter().map(Into::into).collect())
+}
+
+impl ReadConnection<'_> {
+    fn is_source_read(&self) -> bool {
+        READ_CONTEXT
+            .try_with(|context| {
+                context.source_pools.contains(&pool_identity(self.db))
+            })
+            .unwrap_or(false)
+    }
+
+    async fn read(
+        &self,
+        statement: Statement,
+        one: bool,
+    ) -> anyhow::Result<Vec<QueryResult>> {
+        let mut lease = read_lease(self.db, true).await.c(h!())?;
+        let result = read_rows(
+            &mut **lease.connection.as_mut().c(h!())?,
+            statement,
+            one,
+            false,
+        )
+        .await;
+        if result.is_ok() {
+            drop(lease.connection.take());
+        } else {
+            lease.backend = None;
+        }
+        result
+    }
+}
+
+fn query_error(error: sqlx::Error) -> DbErr {
+    DbErr::Query(RuntimeErr::SqlxError(error.into()))
+}
+
+fn boundary_error(error: anyhow::Error) -> DbErr {
+    match error.downcast::<DbErr>() {
+        Ok(error) => error,
+        Err(error) => DbErr::Custom(format!("{error:#}")),
+    }
+}
+
+#[async_trait::async_trait]
+impl ConnectionTrait for ReadConnection<'_> {
+    fn get_database_backend(&self) -> DbBackend {
+        self.db.get_database_backend()
+    }
+    async fn execute_raw(
+        &self,
+        statement: Statement,
+    ) -> Result<ExecResult, DbErr> {
+        self.db.execute_raw(statement).await
+    }
+    async fn execute_unprepared(&self, sql: &str) -> Result<ExecResult, DbErr> {
+        self.db.execute_unprepared(sql).await
+    }
+    async fn query_one_raw(
+        &self,
+        statement: Statement,
+    ) -> Result<Option<QueryResult>, DbErr> {
+        if !self.is_source_read() {
+            return self.db.query_one_raw(statement).await;
+        }
+        self.read(statement, true)
+            .await
+            .map(|rows| rows.into_iter().next())
+            .map_err(boundary_error)
+    }
+    async fn query_all_raw(
+        &self,
+        statement: Statement,
+    ) -> Result<Vec<QueryResult>, DbErr> {
+        if !self.is_source_read() {
+            return self.db.query_all_raw(statement).await;
+        }
+        self.read(statement, false).await.map_err(boundary_error)
+    }
+}

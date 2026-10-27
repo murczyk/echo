@@ -78,6 +78,16 @@ impl From<String> for AppError {
 impl From<anyhow::Error> for AppError {
     fn from(value: anyhow::Error) -> Self {
         for err in value.chain() {
+            if let Some(sea_orm::DbErr::Custom(reason)) =
+                err.downcast_ref::<sea_orm::DbErr>()
+            {
+                if reason == crate::config::ANALYSIS_SOURCE_READ_QUEUE_ERROR {
+                    return AppError::ServiceUnavailable {
+                        msg: "Аналітична система перевантажена. Спробуйте повторити запит.".into(),
+                        retry_after_secs: 1,
+                    };
+                }
+            }
             if let Some(error) = err.downcast_ref::<AppError>() {
                 match error {
                     AppError::BL { msg } => {
@@ -135,6 +145,26 @@ impl From<anyhow::Error> for AppError {
 }
 
 impl actix_web::error::ResponseError for AppError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        use actix_web::http::StatusCode;
+        if self.is_runtime_shutting_down() {
+            return StatusCode::SERVICE_UNAVAILABLE;
+        }
+        match self {
+            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::Unauthenticated => StatusCode::UNAUTHORIZED,
+            Self::Forbidden(_) | Self::ForbiddenWithHeader { .. } => {
+                StatusCode::FORBIDDEN
+            }
+            Self::ServiceUnavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::BL { .. } | Self::Form(_) | Self::BadRequestJson { .. } => {
+                StatusCode::BAD_REQUEST
+            }
+            Self::ConflictJson { .. } => StatusCode::CONFLICT,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
     fn error_response(
         &self,
     ) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
@@ -299,9 +329,7 @@ impl AppError {
 
 impl From<sea_orm::DbErr> for AppError {
     fn from(value: sea_orm::DbErr) -> Self {
-        AppError::AnyhowError {
-            source: anyhow::Error::new(value),
-        }
+        Self::from(anyhow::Error::new(value))
     }
 }
 

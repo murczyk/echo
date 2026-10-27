@@ -32,7 +32,10 @@ mod session_tests;
 
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
     let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
-    Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)
+    let login =
+        Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)?;
+    crate::read_query::set_login(login);
+    Ok(login)
 }
 
 pub(crate) async fn load_active_login(

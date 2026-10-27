@@ -4,7 +4,7 @@ use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     middleware::Next,
-    Error,
+    Error, HttpMessage,
 };
 use std::time::Duration;
 
@@ -41,6 +41,22 @@ pub(super) async fn enforce<B: MessageBody>(
         return next.call(req).await;
     }
     let path = req.path().to_owned();
+    let request_id = req
+        .extensions()
+        .get::<crate::read_query::RequestId>()
+        .map(|id| id.0.clone())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let source_pools = req
+        .app_data::<actix_web::web::Data<crate::types::Env>>()
+        .map(|env| {
+            let mut pools = vec![crate::read_query::pool_identity(&env.dbx)];
+            pools.extend(env.replicas.iter().map(|replica| {
+                crate::read_query::pool_identity(&replica.conn)
+            }));
+            pools
+        })
+        .unwrap_or_default();
+    crate::read_query::scope(request_id, source_pools, async move {
     let started = tokio::time::Instant::now();
     match tokio::time::timeout(
         Duration::from_millis(ANALYTICS_HTTP_READ_TIMEOUT_MS),
@@ -52,8 +68,8 @@ pub(super) async fn enforce<B: MessageBody>(
         Err(_) => {
             log::warn!(
                 target: "analytics_route",
-                "path={} outcome=error reason=request_deadline elapsed_ms={} deadline_ms={ANALYTICS_HTTP_READ_TIMEOUT_MS}",
-                path,
+                "request_id={} path={} outcome=error reason=request_deadline elapsed_ms={} deadline_ms={ANALYTICS_HTTP_READ_TIMEOUT_MS}",
+                crate::read_query::request_id(), path,
                 started.elapsed().as_millis(),
             );
             let error = AppError::ServiceUnavailable {
@@ -63,6 +79,7 @@ pub(super) async fn enforce<B: MessageBody>(
             Err(error.into())
         }
     }
+    }).await
 }
 
 #[cfg(test)]
@@ -108,5 +125,82 @@ mod tests {
         assert_eq!(response.headers().get("retry-after").unwrap(), "1");
         drop(held);
         assert!(queue.try_lock().is_ok());
+    }
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn deadline_retains_request_and_actual_503_response_3780() {
+        use crate::server::middleware::{
+            mk_activity_middleware, ActivityDetails,
+        };
+        use redis::AsyncCommands;
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let mut redis = crate::new_redis_for_db(&config, 15).await.unwrap();
+        let entered = web::Data::new(tokio::sync::Notify::new());
+        let request_id =
+            std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+        let recorded_id = request_id.clone();
+        let app = test::init_service(App::new()
+            .app_data(entered.clone())
+            .wrap(actix_web::middleware::from_fn(enforce))
+            .wrap(actix_web::middleware::from_fn(mk_activity_middleware(Some(redis.clone()))))
+            .route("/api/rer/analysis/stats/messages/count", web::post().to(move |req: actix_web::HttpRequest, entered: web::Data<tokio::sync::Notify>| {
+                let recorded_id = recorded_id.clone();
+                async move {
+                    *recorded_id.lock().unwrap() = Some(req.extensions().get::<crate::read_query::RequestId>().unwrap().0.clone());
+                    entered.notify_one();
+                    std::future::pending::<HttpResponse>().await
+                }
+            }))).await;
+        let running = actix_web::rt::spawn(async move {
+            test::try_call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/rer/analysis/stats/messages/count")
+                    .to_request(),
+            )
+            .await
+        });
+        entered.notified().await;
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_millis(
+            ANALYTICS_HTTP_READ_TIMEOUT_MS,
+        ))
+        .await;
+        tokio::task::yield_now().await;
+        tokio::time::resume();
+        let error = running.await.unwrap().unwrap_err();
+        assert_eq!(error.as_response_error().status_code(), 503);
+        let request_id = request_id.lock().unwrap().clone().unwrap();
+        let members: Vec<String> =
+            redis.zrange("echo-md-requests", 0, -1).await.unwrap();
+        let mut records = Vec::new();
+        for member in members
+            .into_iter()
+            .filter(|member| member.contains(&request_id))
+        {
+            let key = format!("echo-md-requests:{member}");
+            let payload: String = redis.get(&key).await.unwrap();
+            records.push(
+                serde_json::from_str::<ActivityDetails>(&payload).unwrap(),
+            );
+            let _: () = redis.zrem("echo-md-requests", member).await.unwrap();
+            let _: () = redis.del(key).await.unwrap();
+        }
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.event_type == "request")
+                .count(),
+            1
+        );
+        let response = records
+            .iter()
+            .find(|record| record.event_type == "response")
+            .unwrap();
+        assert_eq!(response.response_status, Some(503));
+        assert_eq!(response.request_id, request_id);
     }
 }

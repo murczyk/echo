@@ -92,7 +92,8 @@ enum AnalyticsInboxCandidateIds {
 
 struct AnalyticsInboxUnavailable {
     reason: &'static str,
-    fallback_permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    fallback_permit:
+        Option<crate::rer_importer::analysis::SourceFallbackPermit>,
 }
 
 enum HybridInboxCandidateLoad {
@@ -1601,7 +1602,7 @@ async fn query_inbox_digest(
     db: DatabaseConnection,
     query: String,
 ) -> Result<InboxDigest, AppError> {
-    let query_res = db
+    let query_res = crate::read_query::connection(&db)
         .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, query))
         .await
         .c(h!())?
@@ -4509,13 +4510,7 @@ async fn get_postgres_inbox_page(
     req: &InboxMessagesReq,
     internal_lower_bound: Option<NaiveDateTime>,
 ) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
-    let transaction = dbx
-        .begin_with_config(
-            Some(IsolationLevel::RepeatableRead),
-            Some(AccessMode::ReadOnly),
-        )
-        .await
-        .c(h!())?;
+    let transaction = crate::read_query::begin(dbx).await.c(h!())?;
     let ids = load_postgres_inbox_page_ids(
         &transaction,
         login,
@@ -4657,9 +4652,12 @@ async fn fetch_inbox_messages_with_statement(
     req: &InboxMessagesReq,
     statement: Statement,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let messages = fetch_inbox_message_descriptions(dbx, statement)
-        .await
-        .c(h!())?;
+    let messages = fetch_inbox_message_descriptions(
+        &crate::read_query::connection(dbx),
+        statement,
+    )
+    .await
+    .c(h!())?;
     Ok(
         aggregate_to_inbox_messages(login, messages, logins, &req, &env)
             .await

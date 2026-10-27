@@ -3257,6 +3257,8 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
             ] {
                 for (search, indexes) in [
                     ("Береза", vec![0, 1, 2, 3]),
+                    ("Береза or Вільха or Сосна or Клен or Ясен or Дуб or Граб or Тис or Бук or Кедр or Липа or Осика -\"невідоме місце\" -\"відсутня фраза\" -\"немає тексту\" -\"неіснуючий запис\"", vec![0, 1, 2, 3, 4]),
+                    ("Береза or Вільха -\"зміна позиції\" -\"відсутня фраза\"", vec![0, 1, 2, 4]),
                     ("-Береза", vec![4]),
                     ("\"зміна позиції\"", vec![3]),
                 ] {
@@ -3286,10 +3288,10 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
                         .iter()
                         .map(|index| ids[*index])
                         .collect::<Vec<_>>();
-                    if search == "Береза" {
+                    if search == "Береза" || search.starts_with("Береза or ") {
                         expected.push(audio);
                     }
-                    if selected_freqs.is_none() && search == "Береза" {
+                    if selected_freqs.is_none() && (search == "Береза" || search.starts_with("Береза or ")) {
                         expected.push(other_frequency);
                     }
                     assert_full_period_search_results_3780(
@@ -10980,8 +10982,9 @@ fn analysis_split_count_failure_opens_the_circuit_for_later_dimensions() {
 }
 
 #[test]
-fn fallback_capacity_only_limits_analytics_incident_routes() {
+fn fallback_capacity_limits_source_search_and_incident_routes_3780() {
     for reason in [
+        "query_policy",
         "analytics_error",
         "analytics_timeout",
         "analytics_saturated",
@@ -10996,7 +10999,6 @@ fn fallback_capacity_only_limits_analytics_incident_routes() {
     ] {
         assert!(analytics_fallback_needs_capacity(reason));
     }
-    assert!(!analytics_fallback_needs_capacity("query_policy"));
     assert!(!analytics_fallback_needs_capacity("unconfigured"));
 }
 

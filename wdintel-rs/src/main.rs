@@ -68,6 +68,7 @@ pub mod operator;
 pub mod orbit;
 pub mod organism;
 pub mod palitra;
+pub(crate) mod read_query;
 pub mod report_history;
 pub mod rer_importer;
 pub mod rer_report_admin;

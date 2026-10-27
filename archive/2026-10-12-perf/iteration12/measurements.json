@@ -1,0 +1,189 @@
+{
+  "issue": 3780,
+  "host": "echo-skhid",
+  "inspection_date_utc": "2026-10-26",
+  "package": "0.1.1~rc.202610261229-1",
+  "failure_window_utc": {
+    "start": "2026-10-26T12:50:00Z",
+    "end_exclusive": "2026-10-26T15:00:00Z"
+  },
+  "remote_mutations": false,
+  "confirmed_http_503_total": 143,
+  "mechanisms": {
+    "fallback_saturated": 26,
+    "http_deadline": 41,
+    "postgres_statement_timeout": 76
+  },
+  "retained_response_503_count": 102,
+  "deadline_requests_missing_completion": 41,
+  "request_context_coverage": {
+    "retained_503_request_events": 102,
+    "uncompleted_request_events_matching_deadlines": 41,
+    "request_payloads_recorded": false,
+    "four_negative_phrase_search": {
+      "retained_statement_timeout_responses": 67,
+      "missing_deadline_completions": 27,
+      "total": 94
+    },
+    "exact_search": {
+      "retained_statement_timeout_responses": 6,
+      "total": 6
+    },
+    "other": {
+      "statement_timeout": 3,
+      "capacity_rejected": 26,
+      "deadline": 14,
+      "total": 43
+    },
+    "classification_note": "Referer-mode buckets: six explicitly Exact referers, two additional Exact SQL shapes had default-mode referers. POST bodies unavailable."
+  },
+  "timeout_operations": {
+    "analysis stats tags": 17,
+    "analysis stats senders": 14,
+    "analysis stats groups": 16,
+    "analysis stats senders count": 2,
+    "inbox messages": 12,
+    "analysis stats freqs": 8,
+    "analysis stats posts count": 1,
+    "analysis stats groups count": 1,
+    "analysis stats freqs count": 1,
+    "analysis stats callsigns count": 1,
+    "analysis stats networks": 2,
+    "inbox map": 1
+  },
+  "deadline_paths": {
+    "/api/rer/analysis/stats/groups/count": 9,
+    "/api/rer/analysis/stats/senders/count": 8,
+    "/api/rer/analysis/stats/units/count": 3,
+    "/api/rer/analysis/stats/locations/count": 3,
+    "/api/rer/analysis/stats/tags/count": 2,
+    "/api/rer/analysis/stats/posts/count": 7,
+    "/api/rer/analysis/stats/freqs/count": 8,
+    "/api/rer/analysis/stats/messages/count": 1
+  },
+  "rejection_operations": {
+    "inbox message candidates": 3,
+    "analysis stats senders count": 2,
+    "analysis stats tags": 1,
+    "analysis stats groups count": 2,
+    "analysis stats freqs count": 2,
+    "analysis stats messages count": 1,
+    "analysis stats posts count": 1,
+    "analysis stats callsigns count": 1,
+    "analysis stats units count": 1,
+    "analysis stats locations count": 1,
+    "analysis stats tags count": 1,
+    "analysis stats aors count": 1,
+    "analysis stats networks count": 1,
+    "analysis stats freqs": 2,
+    "rer duty inbox messages count": 5,
+    "analysis stats unit matches count": 1
+  },
+  "attachment_guard_reasons": {
+    "recent_message_change": 1089
+  },
+  "fallback_admission": {
+    "concurrent_slots": 8,
+    "queue_timeout_ms": 250,
+    "confirmed_execution_intervals_occupying_slots_at_first_rejection": 8,
+    "first_rejection_utc": "2026-10-26T13:20:19.175346Z"
+  },
+  "source_pg_errors": {
+    "statement_timeout_events": 89,
+    "complex_fuzzy": 78,
+    "exact": 8,
+    "other": 3,
+    "mapped_to_http_timeout": 76,
+    "client_lost_events": 10,
+    "lock_timeout_events": 2,
+    "note": "SQL errors are not HTTP request counts; submitted work can outlive callers. Two non-text network/frequency SQL timeouts are separate from the mapped HTTP errors."
+  },
+  "plans": {
+    "fuzzy_group_generic": {
+      "nodes": 254,
+      "distinct_or_unique_aggregates": 17,
+      "body_search_inputs": 12,
+      "media_inputs": 32,
+      "estimated_cost": 33578932.75,
+      "note": "Generic parameterized plan, not an execution or an exact parameter-specific cost estimate."
+    },
+    "exact_network_original": {
+      "estimated_cost": 6541913.88,
+      "parallel_signal_message_seq_scan_estimated_rows": 12014151,
+      "parallel_group_link_seq_scan_estimated_rows": 13941037
+    },
+    "exact_network_inbox_id_prototype": {
+      "estimated_cost": 29468.43,
+      "body_gin_index_planned": true,
+      "full_query_execution_under_8s": false,
+      "failed_probe_count": 2,
+      "note": "Equivalent joined-ID substitution is not a validated latency fix."
+    },
+    "exact_isolation": [
+      {
+        "probe": "attachment_matches",
+        "ok": true,
+        "execution_ms": 511.713,
+        "shared_read": 7259,
+        "shared_hit": 7353,
+        "temp_written": 0
+      },
+      {
+        "probe": "body_matches",
+        "ok": false,
+        "outcome": "statement_timeout_after_3_seconds"
+      }
+    ]
+  },
+  "native_memory": {
+    "post_deploy_error_241": 3,
+    "operation": "network group activity",
+    "limit_scope": "per-query 2.2 GiB",
+    "all_three_fallbacks_completed": true,
+    "not_directly_attributed_to_143_http_failures": true
+  },
+  "limitations": [
+    "Request IDs are not propagated into route/SQL logs; statement-to-request links use operation, completion time and filter structure.",
+    "Request referers describe UI context, not authoritative POST payloads.",
+    "Production query diagnostics were read-only, used an 8-second or shorter statement timeout and started with plain EXPLAIN.",
+    "No production filters, assignments, retries, services, indexes, deployments, health metadata or limits were changed.",
+    "Both exact query prototypes exceeded their budgets; no production fix is claimed."
+  ],
+  "query_workloads": {
+    "complex_fuzzy": {
+      "postgres_statement_timeout": 67,
+      "http_deadline": 27,
+      "total": 94
+    },
+    "exact_regex": {
+      "postgres_statement_timeout": 8,
+      "inbox_pages": 3,
+      "tag_facets": 3,
+      "network_facets": 2,
+      "explicit_exact_mode_referers": 6,
+      "default_mode_referers": 2,
+      "attribution": "One matching 503 response per executed regex statement, using operation and completion within 1.1 seconds."
+    },
+    "other": {
+      "fallback_saturated": 26,
+      "http_deadline": 14,
+      "map_statement_timeout": 1,
+      "total": 41
+    }
+  },
+  "later_window_utc": {
+    "start": "2026-10-26T15:00:00Z",
+    "end_exclusive": "2026-10-26T15:30:00Z",
+    "retained_503_responses": 2,
+    "fallback_saturated": 2,
+    "http_deadlines_missing_response": 2,
+    "confirmed_503_total": 4
+  },
+  "source_shape_http_classification": {
+    "complex_fuzzy": 94,
+    "exact": 8,
+    "remaining": 41,
+    "exact_explicit_referer": 6,
+    "exact_default_referer": 2
+  }
+}

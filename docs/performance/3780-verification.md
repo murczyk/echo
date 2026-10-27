@@ -20,6 +20,11 @@ hostname, Tailscale hostname and direct-IP API hostname.
    inbox counts and each relevant facet, record request count, successful
    completions, 5xx/503 counts, p50/p95/maximum and requests above two seconds.
    Exclude intentional event-stream long polls from interactive latency.
+   Cross-check deadline logs against retained request/response pairs: releases
+   before the deadline-recorder repair can omit a 503 completion entirely.
+   Count those separately instead of claiming zero failures from response-only
+   telemetry. Updated releases should retain one actual-status completion per
+   request, including a 60-second deadline.
    Investigate tails even when p95 and error counts improve; lower traffic or
    faster rejection is not evidence of recovery.
 2. Aggregate `analytics_route` by operation, route, outcome and reason. Compare
@@ -29,6 +34,13 @@ hostname, Tailscale hostname and direct-IP API hostname.
    `attachment_search_coverage` reasons: tracking, retention, historical
    coverage, pending-ID overflow and relevant recent changes have different
    causes. Complete history does not make a recent-change fallback incorrect.
+   Correlate request IDs across count-queue, source-admission, source-pool and
+   SQL stages; distinguish ten-second queue rejection from SQL execution and
+   whole-request expiry. During comparable multi-user traffic, verify useful
+   completions for another user while one user loads several facets. Check
+   active source backends after expiry and `cancel_sent` failures; a completed
+   HTTP response does not prove database cancellation. Verify source pools keep
+   their normal JIT setting after bounded complex searches.
 3. On the paired analytics host, read existing `echo_analytics_health` and
    `echo_analytics_attachment_search` rows, and source slot activity/LSN lag.
    Check freshness repeatedly rather than trusting one healthy sample. Run

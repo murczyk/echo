@@ -3801,16 +3801,64 @@ pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
 where
     Q: QueryFilter + QuerySelect,
 {
+    filter_search_with_source_scope(
+        q,
+        search,
+        search_mode,
+        correlated_terms,
+        scope,
+        inbox_required,
+        None,
+    )
+}
+
+pub(in crate::rer_importer) fn filter_search_with_source_scope<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
+    source_scope: Option<
+        crate::attachments::analytics::SearchCoverageScope<'_>,
+    >,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        let predicate = crate::attachments::search::analysis_message_filter(
-            search,
-            search_mode,
-            correlated_terms,
-            scope.is_some(),
-            inbox_required,
-        )
+        let source_scope = match source_scope {
+            Some(source_scope)
+                if scope.is_none()
+                    && !correlated_terms
+                    && crate::attachments::search::use_source_search_scope(
+                        search,
+                        search_mode,
+                        &source_scope,
+                    )
+                    .c(h!())? =>
+            {
+                Some(source_scope)
+            }
+            _ => None,
+        };
+        let predicate = if let Some(source_scope) = source_scope {
+            crate::attachments::search::scoped_analysis_message_filter(
+                search,
+                search_mode,
+                &source_scope,
+            )
+        } else {
+            crate::attachments::search::analysis_message_filter(
+                search,
+                search_mode,
+                correlated_terms,
+                scope.is_some(),
+                inbox_required,
+            )
+        }
         .c(h!())?;
         q2 = q2.filter(predicate);
 
@@ -9159,8 +9207,7 @@ struct AnalyticsRetryCancellationGuard<'a> {
 pub(crate) struct AnalyticsReadOutcome<T> {
     pub(crate) value: T,
     pub(crate) postgres_reason: Option<&'static str>,
-    pub(crate) postgres_fallback_permit:
-        Option<tokio::sync::OwnedSemaphorePermit>,
+    pub(crate) postgres_fallback_permit: Option<SourceFallbackPermit>,
 }
 
 pub(crate) fn postgres_pool_identity(db: &DatabaseConnection) -> usize {
@@ -9240,6 +9287,7 @@ where
     A: std::future::Future<Output = Result<T, AppError>>,
     P: std::future::Future<Output = Result<T, AppError>>,
 {
+    let request_id = crate::read_query::request_id();
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
@@ -9253,7 +9301,7 @@ where
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
                 }
-                info!(target: "analytics_route", "operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
+                info!(target: "analytics_route", "request_id={request_id} operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(response);
             }
             Ok(Err(err)) => {
@@ -9299,7 +9347,7 @@ where
     let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
     });
-    info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
+    info!(target: "analytics_route", "request_id={request_id} operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
         if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
     response
 }
@@ -9405,6 +9453,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
+    let request_id = crate::read_query::request_id();
     let analytics_retry_state = env
         .analytics
         .as_ref()
@@ -9463,7 +9512,7 @@ where
         let open_circuit = match response {
             Some(Ok(response)) => {
                 retry_attempt.record_success();
-                info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
+                info!(target: "analytics_route", "request_id={request_id} operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(AnalyticsReadOutcome {
                     value: response,
                     postgres_reason: None,
@@ -9502,10 +9551,18 @@ where
         );
     }
 
+    let queue_started = std::time::Instant::now();
     let _postgres_queue_guard = match postgres_queue {
-        Some(queue) => Some(queue.lock_owned().await),
+        Some(queue) => Some(tokio::time::timeout(
+            std::time::Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
+            queue.lock_owned(),
+        ).await.map_err(|_| {
+            warn!(target: "analytics_route", "request_id={} operation={operation:?} route=postgres stage=count_queue outcome=rejected reason=count_queue_timeout elapsed_ms={}", crate::read_query::request_id(), queue_started.elapsed().as_millis());
+            AppError::ServiceUnavailable { msg: "Аналітична система перевантажена. Спробуйте повторити запит.".into(), retry_after_secs: 1 }
+        }).c(h!())?),
         None => None,
     };
+    info!(target: "analytics_route", "request_id={} operation={operation:?} stage=count_queue outcome=success elapsed_ms={}", crate::read_query::request_id(), queue_started.elapsed().as_millis());
     let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
     {
         Some(
@@ -9520,7 +9577,7 @@ where
     let response = postgres_query(env.replica())
         .await
         .map_err(|error| map_postgres_runtime_timeout(error, operation));
-    info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
+    info!(target: "analytics_route", "request_id={request_id} operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
         if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
     response.map(|value| AnalyticsReadOutcome {
         value,
@@ -9532,7 +9589,8 @@ where
 pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
     matches!(
         reason,
-        "analytics_error"
+        "query_policy"
+            | "analytics_error"
             | "analytics_timeout"
             | "analytics_saturated"
             | "analytics_resource_limit"
@@ -9547,9 +9605,16 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
     )
 }
 
+pub(crate) struct SourceFallbackPermit {
+    _login: Option<tokio::sync::OwnedSemaphorePermit>,
+    _global: tokio::sync::OwnedSemaphorePermit,
+}
+
 pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
     operation: &str,
-) -> Result<tokio::sync::OwnedSemaphorePermit, AppError> {
+) -> Result<SourceFallbackPermit, AppError> {
+    let request_id = crate::read_query::request_id();
+    let login = crate::read_query::acquire_operation().await.c(h!())?;
     let timeout = core::time::Duration::from_millis(
         ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS,
     );
@@ -9561,11 +9626,14 @@ pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
     )
     .await
     {
-        Ok(Ok(permit)) => Ok(permit),
+        Ok(Ok(permit)) => Ok(SourceFallbackPermit {
+            _login: login,
+            _global: permit,
+        }),
         Ok(Err(_)) | Err(_) => {
             warn!(
                 target: "analytics_route",
-                "operation={operation:?} route=postgres outcome=rejected reason=fallback_saturated"
+                "request_id={request_id} operation={operation:?} route=postgres outcome=rejected reason=fallback_saturated"
             );
             Err(AppError::ServiceUnavailable {
                 msg: "Аналітична система перевантажена. Спробуйте повторити запит."

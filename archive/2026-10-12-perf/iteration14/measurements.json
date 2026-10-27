@@ -1,0 +1,1356 @@
+{
+  "issue": 3780,
+  "date_utc": "2026-10-27",
+  "target": "echo-pivnich",
+  "evidence_frozen_through_utc": "2026-10-27T10:57:00Z",
+  "investigator_remote_mutations": false,
+  "outage_code_changed": false,
+  "method": {
+    "sources": [
+      "existing activity request/response telemetry",
+      "source service journals captured before retention expired",
+      "source PostgreSQL collector log",
+      "existing paired ClickHouse system.query_log",
+      "existing health/history state",
+      "package/service/config inspection"
+    ],
+    "application_http_replay": false,
+    "failing_sql_replay": false,
+    "health_check_execution": false,
+    "cache_or_log_flush": false,
+    "raw_filters_keys_ids_sql_published": false,
+    "native_scope": "All echo_gateway queries, not only the selected HTTP routes",
+    "native_read_rows": "Sum of ClickHouse logged rows read, including current-state/CDC processing; not unique messages",
+    "limits": [
+      "Traffic, filters and cache state uncontrolled",
+      "Short source journal retention",
+      "Three initial request-cohort completions missing and unclassified",
+      "Response-completion cohorts differ from request-start cohorts",
+      "Native query attempts are not HTTP request counts"
+    ]
+  },
+  "deployment": {
+    "before_package": "0.1.1~rc.202610252223-1",
+    "after_package": "0.1.1~rc.202610261229-1",
+    "performed_by": "user",
+    "api_start_utc": "2026-10-27T10:24:21Z",
+    "worker_start_utc": "2026-10-27T10:24:46Z",
+    "automatic_restarts_when_checked": 0,
+    "local_uncommitted_fix_present": false
+  },
+  "runtime": {
+    "source_statement_timeout_ms": 30000,
+    "source_lock_timeout_ms": 3000,
+    "analytics_query_timeout_ms": 30000,
+    "analytics_freshness_max_age_ms": 90000,
+    "analytics_retry_cooldown_ms": 30000,
+    "gateway_user_settings": {
+      "max_memory_usage": 2362232012,
+      "max_memory_usage_for_user": 9448928051,
+      "max_threads": 4,
+      "max_concurrent_queries_for_user": 32
+    },
+    "existing_health_observed_healthy_at_utc": [
+      "2026-10-27T10:31:13Z",
+      "2026-10-27T10:38:57.553978Z"
+    ],
+    "attachment_history_complete": true
+  },
+  "http_scope": [
+    "/api/rer/analysis/%",
+    "/api/rer-importer/get-inbox%",
+    "/api/sigint/network-group-activity-summary"
+  ],
+  "http_windows": {
+    "before": {
+      "since_inclusive_utc": "2026-10-27T10:15:00Z",
+      "till_exclusive_utc": "2026-10-27T10:24:00Z",
+      "retained_responses": 8745,
+      "retained_503": 70,
+      "retained_500": 0,
+      "by_path_status": [
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "status": 200,
+          "responses": 983,
+          "max_ms": 11538
+        },
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "status": 503,
+          "responses": 11,
+          "max_ms": 268
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "status": 200,
+          "responses": 7256,
+          "max_ms": 11496
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "status": 503,
+          "responses": 34,
+          "max_ms": 2088
+        },
+        {
+          "path": "/api/rer/analysis/saved-filters",
+          "status": 200,
+          "responses": 6,
+          "max_ms": 5
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "status": 200,
+          "responses": 28,
+          "max_ms": 7591
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 644
+        },
+        {
+          "path": "/api/rer/analysis/stats/callsigns/count",
+          "status": 200,
+          "responses": 31,
+          "max_ms": 5117
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "status": 200,
+          "responses": 3,
+          "max_ms": 8783
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 262
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "status": 200,
+          "responses": 31,
+          "max_ms": 7378
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 1011
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "status": 200,
+          "responses": 6,
+          "max_ms": 17692
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "status": 503,
+          "responses": 2,
+          "max_ms": 266
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "status": 200,
+          "responses": 33,
+          "max_ms": 7470
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 515
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations/count",
+          "status": 200,
+          "responses": 29,
+          "max_ms": 7371
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "status": 200,
+          "responses": 30,
+          "max_ms": 6448
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 977
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks",
+          "status": 200,
+          "responses": 3,
+          "max_ms": 8572
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks/count",
+          "status": 200,
+          "responses": 28,
+          "max_ms": 11727
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts",
+          "status": 200,
+          "responses": 14,
+          "max_ms": 465
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "status": 200,
+          "responses": 30,
+          "max_ms": 5102
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 545
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders",
+          "status": 200,
+          "responses": 5,
+          "max_ms": 17401
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders",
+          "status": 503,
+          "responses": 3,
+          "max_ms": 346
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "status": 200,
+          "responses": 32,
+          "max_ms": 7401
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "status": 503,
+          "responses": 2,
+          "max_ms": 759
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "status": 200,
+          "responses": 41,
+          "max_ms": 17399
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "status": 503,
+          "responses": 5,
+          "max_ms": 267
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "status": 200,
+          "responses": 28,
+          "max_ms": 7704
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 2348
+        },
+        {
+          "path": "/api/rer/analysis/stats/units",
+          "status": 200,
+          "responses": 2,
+          "max_ms": 99
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/count",
+          "status": 200,
+          "responses": 30,
+          "max_ms": 12114
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 7403
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "status": 503,
+          "responses": 2,
+          "max_ms": 1228
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "status": 200,
+          "responses": 8,
+          "max_ms": 29192
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "status": 503,
+          "responses": 4,
+          "max_ms": 31771
+        }
+      ]
+    },
+    "after": {
+      "since_inclusive_utc": "2026-10-27T10:25:00Z",
+      "till_exclusive_utc": "2026-10-27T10:34:00Z",
+      "retained_responses": 8520,
+      "retained_503": 6,
+      "retained_500": 0,
+      "by_path_status": [
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "status": 200,
+          "responses": 999,
+          "max_ms": 9596
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "status": 200,
+          "responses": 7231,
+          "max_ms": 9032
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-group-stats",
+          "status": 200,
+          "responses": 1,
+          "max_ms": 115
+        },
+        {
+          "path": "/api/rer/analysis/saved-filters",
+          "status": 200,
+          "responses": 4,
+          "max_ms": 6
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors",
+          "status": 200,
+          "responses": 1,
+          "max_ms": 85
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4615
+        },
+        {
+          "path": "/api/rer/analysis/stats/callsigns/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 5062
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "status": 200,
+          "responses": 2,
+          "max_ms": 3841
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4938
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "status": 200,
+          "responses": 1,
+          "max_ms": 3948
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4684
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4667
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4940
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 9643
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts",
+          "status": 200,
+          "responses": 8,
+          "max_ms": 559
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4881
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4743
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "status": 200,
+          "responses": 30,
+          "max_ms": 5056
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "status": 200,
+          "responses": 20,
+          "max_ms": 4636
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/count",
+          "status": 200,
+          "responses": 21,
+          "max_ms": 9146
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "status": 200,
+          "responses": 7,
+          "max_ms": 4772
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "status": 200,
+          "responses": 9,
+          "max_ms": 10291
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "status": 503,
+          "responses": 6,
+          "max_ms": 36620
+        }
+      ]
+    },
+    "later": {
+      "since_inclusive_utc": "2026-10-27T10:42:00Z",
+      "till_exclusive_utc": "2026-10-27T10:47:00Z",
+      "retained_responses": 4804,
+      "retained_503": 1,
+      "retained_500": 0,
+      "by_path_status": [
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "status": 200,
+          "responses": 496,
+          "max_ms": 12607
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "status": 200,
+          "responses": 4066,
+          "max_ms": 12170
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-group-stats",
+          "status": 200,
+          "responses": 1,
+          "max_ms": 136
+        },
+        {
+          "path": "/api/rer/analysis/saved-filters",
+          "status": 200,
+          "responses": 2,
+          "max_ms": 5
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 6447
+        },
+        {
+          "path": "/api/rer/analysis/stats/callsigns/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 6540
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "status": 200,
+          "responses": 2,
+          "max_ms": 2660
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "status": 200,
+          "responses": 17,
+          "max_ms": 6514
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 32212
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 34129
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 6822
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 34547
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks/count",
+          "status": 200,
+          "responses": 17,
+          "max_ms": 8543
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts",
+          "status": 200,
+          "responses": 1,
+          "max_ms": 382
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 32375
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 6948
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 7114
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 6825
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/count",
+          "status": 200,
+          "responses": 19,
+          "max_ms": 11975
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "status": 200,
+          "responses": 9,
+          "max_ms": 6713
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "status": 200,
+          "responses": 11,
+          "max_ms": 33867
+        }
+      ]
+    },
+    "recurrence": {
+      "since_inclusive_utc": "2026-10-27T10:54:00Z",
+      "till_exclusive_utc": "2026-10-27T10:57:00Z",
+      "retained_responses": 3062,
+      "retained_503": 11,
+      "retained_500": 0,
+      "by_path_status": [
+        {
+          "path": "/api/rer/analysis/stats/metadata",
+          "status": 200,
+          "responses": 3,
+          "max_ms": 28741
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "status": 200,
+          "responses": 26,
+          "max_ms": 31493
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 28168
+        },
+        {
+          "path": "/api/rer/analysis/stats/callsigns/count",
+          "status": 200,
+          "responses": 23,
+          "max_ms": 6404
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "status": 200,
+          "responses": 23,
+          "max_ms": 6290
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations",
+          "status": 200,
+          "responses": 3,
+          "max_ms": 270
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "status": 200,
+          "responses": 26,
+          "max_ms": 32368
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors",
+          "status": 200,
+          "responses": 1,
+          "max_ms": 430
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "status": 503,
+          "responses": 7,
+          "max_ms": 3795
+        },
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "status": 200,
+          "responses": 324,
+          "max_ms": 12115
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "status": 200,
+          "responses": 26,
+          "max_ms": 32824
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "status": 200,
+          "responses": 2373,
+          "max_ms": 11929
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts",
+          "status": 200,
+          "responses": 4,
+          "max_ms": 631
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "status": 200,
+          "responses": 7,
+          "max_ms": 7173
+        },
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "status": 503,
+          "responses": 3,
+          "max_ms": 590
+        },
+        {
+          "path": "/api/rer/analysis/saved-filters",
+          "status": 200,
+          "responses": 3,
+          "max_ms": 4
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "status": 200,
+          "responses": 24,
+          "max_ms": 15424
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks/count",
+          "status": 200,
+          "responses": 21,
+          "max_ms": 7745
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders",
+          "status": 200,
+          "responses": 17,
+          "max_ms": 8400
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "status": 200,
+          "responses": 25,
+          "max_ms": 11747
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations/count",
+          "status": 200,
+          "responses": 24,
+          "max_ms": 6461
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "status": 200,
+          "responses": 23,
+          "max_ms": 5983
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "status": 503,
+          "responses": 1,
+          "max_ms": 633
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "status": 200,
+          "responses": 18,
+          "max_ms": 15186
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "status": 200,
+          "responses": 4,
+          "max_ms": 7068
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/count",
+          "status": 200,
+          "responses": 24,
+          "max_ms": 11696
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks",
+          "status": 200,
+          "responses": 11,
+          "max_ms": 14725
+        }
+      ]
+    }
+  },
+  "request_cohort_completion_audit": {
+    "before": {
+      "requests": 8746,
+      "missing_completion": 3,
+      "by_path": [
+        {
+          "path": "/api/rer/analysis/stats/units/count",
+          "requests": 30,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks",
+          "requests": 3,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks/count",
+          "requests": 28,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders",
+          "requests": 8,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "requests": 12,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/units",
+          "requests": 2,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "requests": 29,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "requests": 32,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations/count",
+          "requests": 29,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/saved-filters",
+          "requests": 6,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "requests": 29,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/callsigns/count",
+          "requests": 31,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "requests": 994,
+          "missing_completion": 1
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "requests": 34,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "requests": 8,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "requests": 34,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "requests": 31,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "requests": 4,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "requests": 31,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "requests": 7291,
+          "missing_completion": 2
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts",
+          "requests": 14,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "requests": 46,
+          "missing_completion": 0
+        }
+      ]
+    },
+    "after": {
+      "requests": 8521,
+      "missing_completion": 0,
+      "by_path": [
+        {
+          "path": "/api/rer/analysis/stats/aors",
+          "requests": 1,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups",
+          "requests": 1,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-group-stats",
+          "requests": 1,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/networks/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/sigint/network-group-activity-summary",
+          "requests": 15,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/units/matches/count",
+          "requests": 7,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs",
+          "requests": 2,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags",
+          "requests": 30,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/callsigns/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/tags/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer-importer/get-inbox",
+          "requests": 999,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/senders/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/messages/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/saved-filters",
+          "requests": 4,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/locations/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/freqs/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/aors/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/groups/count",
+          "requests": 20,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer-importer/get-inbox-count",
+          "requests": 7233,
+          "missing_completion": 0
+        },
+        {
+          "path": "/api/rer/analysis/stats/posts",
+          "requests": 8,
+          "missing_completion": 0
+        }
+      ]
+    },
+    "response_lookup_through_utc": "2026-10-27T10:45:00Z",
+    "missing_causes": "Unclassified; do not infer timeout status"
+  },
+  "initial_source_burst": {
+    "service_unavailable": 71,
+    "fallback_rejections": 68,
+    "source_sql_timeouts": 3,
+    "selected_http_503": 70,
+    "excluded_http_503_other_route": 1,
+    "first_fallback_saturation": {
+      "first_rejection_utc": "2026-10-27T10:17:00.619692+00:00",
+      "operation": "analysis stats senders",
+      "rejection_count": 68,
+      "confirmed_overlapping_intervals": 8,
+      "intervals": [
+        {
+          "operation": "analysis stats senders",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 3279
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 3329
+        },
+        {
+          "operation": "analysis stats groups",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 3385
+        },
+        {
+          "operation": "analysis stats groups",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 5853
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 5856
+        },
+        {
+          "operation": "analysis stats senders",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 17383
+        },
+        {
+          "operation": "analysis stats groups",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 17382
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "attachment_history_incomplete",
+          "elapsed_ms": 17384
+        }
+      ]
+    },
+    "first_shared_user_memory_error_in_retained_app_journal_utc": "2026-10-27T10:17:44.133Z",
+    "history_guard_detail": "recent_message_change",
+    "history_complete": true,
+    "broad_selected_http_burst_utc": [
+      "2026-10-27T10:17:00Z",
+      "2026-10-27T10:19:00Z"
+    ]
+  },
+  "native_windows": {
+    "before": {
+      "since_inclusive_utc": "2026-10-27T10:14:00Z",
+      "till_exclusive_utc": "2026-10-27T10:24:00Z",
+      "results": [
+        {
+          "event_type": "QueryFinish",
+          "exception_code": 0,
+          "category": "none",
+          "events": 5938,
+          "queries": 5938,
+          "max_ms": 11453,
+          "max_memory_bytes": 1079186567,
+          "read_rows": 90925366882
+        },
+        {
+          "event_type": "ExceptionWhileProcessing",
+          "exception_code": 241,
+          "category": "shared_user_memory",
+          "events": 96,
+          "queries": 96,
+          "max_ms": 9487,
+          "max_memory_bytes": 583555698,
+          "read_rows": 3207315574
+        },
+        {
+          "event_type": "ExceptionWhileProcessing",
+          "exception_code": 241,
+          "category": "query_memory",
+          "events": 8,
+          "queries": 8,
+          "max_ms": 5561,
+          "max_memory_bytes": 2362121298,
+          "read_rows": 595427348
+        }
+      ]
+    },
+    "after": {
+      "since_inclusive_utc": "2026-10-27T10:25:00Z",
+      "till_exclusive_utc": "2026-10-27T10:34:00Z",
+      "results": [
+        {
+          "event_type": "QueryFinish",
+          "exception_code": 0,
+          "category": "none",
+          "events": 6838,
+          "queries": 6838,
+          "max_ms": 8995,
+          "max_memory_bytes": 1948959192,
+          "read_rows": 69081061483
+        },
+        {
+          "event_type": "ExceptionWhileProcessing",
+          "exception_code": 241,
+          "category": "query_memory",
+          "events": 6,
+          "queries": 6,
+          "max_ms": 2571,
+          "max_memory_bytes": 2362228173,
+          "read_rows": 303858902
+        }
+      ]
+    },
+    "recurrence": {
+      "since_inclusive_utc": "2026-10-27T10:54:00Z",
+      "till_exclusive_utc": "2026-10-27T10:57:00Z",
+      "results": [
+        {
+          "event_type": "QueryFinish",
+          "exception_code": 0,
+          "category": "none",
+          "events": 2179,
+          "queries": 2179,
+          "first_event": "2026-10-27 10:54:00",
+          "last_event": "2026-10-27 10:56:59",
+          "max_ms": 11793,
+          "max_memory_bytes": 1434218108,
+          "read_rows": 30354528108
+        },
+        {
+          "event_type": "ExceptionWhileProcessing",
+          "exception_code": 241,
+          "category": "shared_user_memory",
+          "events": 24,
+          "queries": 24,
+          "first_event": "2026-10-27 10:55:13",
+          "last_event": "2026-10-27 10:56:49",
+          "max_ms": 9194,
+          "max_memory_bytes": 1409533467,
+          "read_rows": 556375324
+        }
+      ]
+    }
+  },
+  "post_network_native_failure": {
+    "family": "final_network_group_activity_aggregation",
+    "failed_queries": 6,
+    "first_error_utc": "2026-10-27T10:25:35Z",
+    "last_error_utc": "2026-10-27T10:33:09Z",
+    "max_memory_bytes": 2362228173,
+    "max_read_rows": 56347163,
+    "max_ms": 2571,
+    "joins": 6,
+    "sql_chars": 3692,
+    "error_class": "Query memory limit exceeded",
+    "exception_reading": "sigint_inbox_item.freq",
+    "has_message_id_range": true,
+    "separate_from_current_chunked_period_bounds_query": true,
+    "source_timeouts_in_first_after_window": 6,
+    "http_503_in_first_after_window": 6,
+    "source_wrapper_coverage_gap": true,
+    "http_read_deadline_coverage_gap": true
+  },
+  "source_timeout_log_scan": {
+    "log_bytes": 71828656,
+    "scanned_tail_bytes": 33554432,
+    "events": [
+      {
+        "time_utc": "10:26:05.403",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:26:38.977",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:31:07.297",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:31:37.315",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:31:38.614",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:33:39.700",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:36:48.898",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:36:49.209",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:36:49.216",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:46:16.296",
+        "network_activity": false,
+        "attachments": true,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:47:00.827",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:48:43.116",
+        "network_activity": false,
+        "attachments": true,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:50:27.079",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:50:28.471",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:51:11.482",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:51:11.952",
+        "network_activity": true,
+        "attachments": false,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:52:14.217",
+        "network_activity": false,
+        "attachments": true,
+        "has_count": true
+      },
+      {
+        "time_utc": "10:53:59.502",
+        "network_activity": false,
+        "attachments": true,
+        "has_count": true
+      }
+    ]
+  },
+  "recurrence_source_fallback": {
+    "first_rejection_utc": "2026-10-27T10:55:41.696171+00:00",
+    "rejections": 12,
+    "by_operation": {
+      "rer duty inbox messages count": 7,
+      "group activity enrichment": 2,
+      "inbox message candidates": 3
+    },
+    "overlapping_completions": [
+      {
+        "operation": "analysis stats groups count",
+        "reason": "attachment_history_incomplete",
+        "outcome": "success",
+        "elapsed_ms": 8069,
+        "completed_at_utc": "2026-10-27T10:55:48.961606+00:00"
+      },
+      {
+        "operation": "analysis stats groups",
+        "reason": "attachment_history_incomplete",
+        "outcome": "success",
+        "elapsed_ms": 8380,
+        "completed_at_utc": "2026-10-27T10:55:48.966430+00:00"
+      },
+      {
+        "operation": "analysis stats tags",
+        "reason": "attachment_history_incomplete",
+        "outcome": "success",
+        "elapsed_ms": 8380,
+        "completed_at_utc": "2026-10-27T10:55:48.967059+00:00"
+      },
+      {
+        "operation": "analysis stats senders",
+        "reason": "attachment_history_incomplete",
+        "outcome": "success",
+        "elapsed_ms": 8382,
+        "completed_at_utc": "2026-10-27T10:55:48.968629+00:00"
+      },
+      {
+        "operation": "analysis stats freqs",
+        "reason": "attachment_history_incomplete",
+        "outcome": "success",
+        "elapsed_ms": 8130,
+        "completed_at_utc": "2026-10-27T10:55:49.028060+00:00"
+      },
+      {
+        "operation": "rer duty inbox messages count",
+        "reason": "attachment_history_incomplete",
+        "outcome": "success",
+        "elapsed_ms": 7895,
+        "completed_at_utc": "2026-10-27T10:55:49.172856+00:00"
+      },
+      {
+        "operation": "group activity enrichment",
+        "reason": "analytics_resource_limit",
+        "outcome": "success",
+        "elapsed_ms": 13696,
+        "completed_at_utc": "2026-10-27T10:55:55.152406+00:00"
+      }
+    ],
+    "confirmed_overlapping_source_intervals": 7
+  },
+  "conclusions": [
+    "Deployment did not eliminate the failure modes; initial broad recovery preceded deployment and source saturation recurred on the new package",
+    "Initial eight-slot saturation preceded shared-user native memory errors",
+    "Recurrence shared-user memory failures preceded additional fallback saturation",
+    "Historical completeness does not waive recent-change request guards",
+    "Final network aggregation and source fallback need bounded plan evidence",
+    "Calendar windows alone have not resolved source count cost",
+    "Outage fix and any real-environment changes remain separate work"
+  ]
+}

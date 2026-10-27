@@ -27,7 +27,48 @@ PostgreSQL fresh-tail pages and counts correlate text predicates to the outer
 message IDs, including filename and attachment branches. Their creation-time
 lower bound limits candidate messages before text checks; they do not construct
 a search-match union across the entire history. Full-period PostgreSQL reads
-retain their existing text strategy.
+use indexed match sets except for the bounded complex-search path below.
+
+## Source search and cancellation
+
+Pure positive Fuzzy OR alternatives share one tsquery and one match union
+across body, filenames, current attachment revisions and audio filenames.
+Alternatives containing AND or negative tokens retain their original grouping.
+For a fully bounded period of at most seven days, Fuzzy OR searches with
+excluded quoted phrases materialize date/access-eligible IDs first, select
+positive matches, then check exclusions only on those matches. Other filters
+remain in the outer query; this candidate scope never replaces authorization
+or removes a facet's own-filter rules. Longer and unbounded periods retain
+indexed match-set planning. Only this bounded strategy disables JIT locally
+inside a read-only transaction; the setting cannot leak to a pooled connection.
+
+Date-bounded interception-time inbox candidates and maps start from the inbox
+date range before looking up messages. Map peleng and source access predicates
+remain correlated to each candidate. The network facet uses inbox IDs for
+literal attachment membership when its inbox join is obligatory, enabling the
+existing body/index bitmap OR. Six-month common-word Exact searches can still
+be slow; index selection alone does not establish their latency.
+
+Wrapped analysis/inbox/frequency source reads share eight SQL slots per API
+process, with two per authenticated login and a ten-second admission/pool
+wait. The existing eight fallback-operation slots also cover query-policy source routes. Each login
+holds at most two fallback-operation slots; other users can use the remaining
+capacity. Count coordination is per operation as well as pool/login/request,
+with a ten-second wait, so unrelated count facets no longer serialize behind
+one identical filter request. Limits are process-local, not installation-wide.
+
+Each wrapped source query pins its connection and backend PID/start time.
+Dropping a read sends a cancellation through an independent connection with
+a three-second budget, retaining the query slot and checked-out connection
+until cleanup. That connection is discarded rather than reused. Paged source
+reads retain their single repeatable-read, read-only snapshot. Analytics,
+workers and writes keep their existing drivers. Cancellation failure is logged
+as `cancel_sent=false`; it is not proof that SQL stopped.
+
+The activity recorder surrounds the read deadline and records the actual error
+status once. Request IDs link count waits, source admission/pool/SQL spans,
+fallback outcomes and deadline errors. Use successful completions and queue
+latency together when assessing the limits; faster 503s alone are not recovery.
 
 Unbounded, limited `load_latest` analytics pages first probe the last two days
 by message creation time, rounding the lower boundary down to a minute so
@@ -39,6 +80,48 @@ the existing complete-history selection so older matches are retained.
 Explicit time/cursor scopes and unlimited reads keep their existing behavior.
 Source freshness, authorization, revalidation and fresh-tail merging still
 apply; the probe does not assume message IDs follow interception time.
+
+## Long-period windowing decision
+
+Decision agreed on 27 October 2026, pending implementation and measured window
+selection. Run historical count windows sequentially with independent read
+transactions. Historical messages are considered sufficiently stable for this
+use: small differences caused by imports or edits between windows are accepted.
+Do not hold one database snapshot across the complete historical count.
+Authorization, attachment revision checks and replication/freshness guards
+remain required.
+
+Sum message counts over non-overlapping time windows. Distinct facet counts
+must merge entity identities before counting, so a sender/group/frequency seen
+in several windows is counted once. A failed or cancelled window must not be
+reported as a complete total. For inbox pages, visit windows in the requested
+sort-time order and stop when the page is full; retain the timestamp/ID cursor
+and the original period boundaries. Do not fetch every window to return one
+page or assume interception and creation order are interchangeable.
+
+Two-month windows and a three-month activation threshold were arbitrary
+suggestions, not selected defaults. Compare weekly controls and one-, two-,
+three- and four-month spans, including complete traversal of the same parent
+period for counts and early termination for pages. Keep filters, search mode,
+access scope and ordering fixed. Check both common short and more selective
+terms, different historical densities, execution time, shared-buffer reads,
+temporary I/O and result equivalence. Date predicates must constrain expensive
+body/attachment work; repeating a global match scan per window can increase
+total cost. See the [measurement round](../../archive/2026-10-12-perf/iteration13/decision.md).
+
+Window size, activation threshold and overall timeout budgets remain open
+until those measurements are reviewed. A per-statement timeout is separate
+from the HTTP/client deadline for all windows together. Preserve concurrency
+limits and cancellation; chunking must not create an unbounded operation.
+
+The [initial Skhid measurements](../../archive/2026-10-12-perf/iteration13/findings.md)
+do not support a universal two-month default or a three-month activation
+threshold. Three-/four-month count windows completed for one Exact term, while
+another exceeded the diagnostic budget even over a week. Smaller windows
+increased repeated text/index work. Ordered date-index pages stopped early for
+dense matches, but were much worse than text-index planning for a no-match
+control. Window width must be assessed together with selectivity, access plan,
+total operation cost and the requested sort order.
 
 ## Attachment coverage
 

@@ -70,6 +70,7 @@ sha2 = "0.10.9"
 openssl = "0.10.80"
 md-5 = "0.10.6"
 sea-orm = { workspace = true }
+sea-query-sqlx = { version = "0.9.1", features = ["sqlx-postgres"] }
 sea-orm-migration = { workspace = true }
 base64 = "^0.22"
 notify = "8.2.0"

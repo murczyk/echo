@@ -9,7 +9,7 @@ use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     middleware::Next,
-    Error,
+    Error, HttpMessage,
 };
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
@@ -222,6 +222,8 @@ where
 
     let start_time = Instant::now();
     let request_id = Uuid::new_v4().to_string();
+    req.extensions_mut()
+        .insert(crate::read_query::RequestId(request_id.clone()));
     let timestamp = chrono::Utc::now().timestamp();
 
     // Extract request details
@@ -381,7 +383,7 @@ where
                     error.as_response_error().status_code().as_u16(),
                 ),
                 response_time_ms: Some(response_time_ms),
-                event_type: "error".to_string(),
+                event_type: "response".to_string(),
                 client_ip,
                 user_agent,
             };

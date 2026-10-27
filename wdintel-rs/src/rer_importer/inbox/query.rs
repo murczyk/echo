@@ -259,11 +259,26 @@ fn inbox_query_needs_post_join(req: &InboxMessagesReq) -> bool {
             .is_some_and(|posts| !posts.is_empty())
 }
 
+fn uses_inbox_candidate_range(
+    req: &InboxMessagesReq,
+    purpose: InboxQueryPurpose,
+) -> bool {
+    matches!(
+        purpose,
+        InboxQueryPurpose::Candidates | InboxQueryPurpose::Map
+    ) && req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
+        == InboxMessagesSortBy::IMSDatetime
+        && (req.since_date_inclusive_ms.is_some()
+            || req.till_date_inclusive_ms.is_some())
+}
+
 fn build_inbox_query_base(
     req: &InboxMessagesReq,
     purpose: InboxQueryPurpose,
 ) -> Select<signal_message::Entity> {
-    if purpose == InboxQueryPurpose::IndexedDigest {
+    if purpose == InboxQueryPurpose::IndexedDigest
+        || uses_inbox_candidate_range(req, purpose)
+    {
         let signal_message_query = SignalMessage::find()
             .select_only()
             .columns([
@@ -605,7 +620,8 @@ where
         q = q.filter(message_in_groups_exists_with_correlation(
             sigint_groups.clone(),
             scope,
-            purpose == InboxQueryPurpose::IndexedDigest,
+            purpose == InboxQueryPurpose::IndexedDigest
+                || uses_inbox_candidate_range(req, purpose),
         ));
     }
     if let Some(scope) = scope {
@@ -666,22 +682,6 @@ where
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_posts(q, &req.denied_posts)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_search_with_scope(
-        q,
-        &req.search,
-        req.search_mode,
-        matches!(
-            purpose,
-            InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
-        ) || search_uses_candidate_ids(&req.selected_freqs, scope),
-        scope,
-        req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
-            == InboxMessagesSortBy::IMSDatetime
-            && (req.since_date_inclusive_ms.is_some()
-                || req.till_date_inclusive_ms.is_some()
-                || internal_lower_bound.is_some()),
-    )
-    .c(h!())?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let q = filter_denied_device_names(q, &req.denied_device_names).c(h!())?;
     let q = match unit_lookup_strategy {
@@ -775,7 +775,42 @@ where
     )
     .await
     .c(h!())?;
-    Ok(q)
+    use crate::attachments::analytics::{SearchCoverageScope, SearchTimeBasis};
+    let time_basis =
+        match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => SearchTimeBasis::Interception,
+            InboxMessagesSortBy::IMSTimestamp => SearchTimeBasis::Timestamp,
+            InboxMessagesSortBy::IMSCreatedAt => SearchTimeBasis::Creation,
+        };
+    filter_search_with_source_scope(
+        q,
+        &req.search,
+        req.search_mode,
+        matches!(
+            purpose,
+            InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
+        ) || search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        matches!(time_basis, SearchTimeBasis::Interception)
+            && (req.since_date_inclusive_ms.is_some()
+                || req.till_date_inclusive_ms.is_some()
+                || internal_lower_bound.is_some()),
+        Some(SearchCoverageScope {
+            since: req
+                .since_date_inclusive_ms
+                .map(dt_from_millis)
+                .transpose()
+                .c(h!())?,
+            till: req
+                .till_date_inclusive_ms
+                .map(dt_from_millis)
+                .transpose()
+                .c(h!())?,
+            till_inclusive: true,
+            time_basis,
+            groups: &sigint_groups,
+        }),
+    )
 }
 
 fn build_period_unit_filtered_inbox_digest(
@@ -2282,7 +2317,11 @@ pub(crate) async fn build_inbox_map_query(
     let query = build_inbox_map_base_query(login, env, req)
         .await
         .c(h!())?
-        .filter(crate::location::peleng::inbox_item_has_active_peleng_exists())
+        .filter(if uses_inbox_candidate_range(req, InboxQueryPurpose::Map) {
+            crate::location::peleng::inbox_item_has_active_peleng_correlated_exists()
+        } else {
+            crate::location::peleng::inbox_item_has_active_peleng_exists()
+        })
         .select_only()
         .column_as(
             Expr::col((signal_message::Entity, signal_message::Column::Id)),

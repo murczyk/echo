@@ -6,6 +6,7 @@ struct CountRequestKey {
     pool_identity: usize,
     login: uuid::Uuid,
     request: String,
+    operation: String,
 }
 
 static COUNT_FALLBACK_QUEUES: once_cell::sync::Lazy<
@@ -45,6 +46,7 @@ where
         pool_identity: postgres_pool_identity(&env.dbx),
         login,
         request: serde_json::to_string(req).c(h!())?,
+        operation: operation.to_string(),
     });
     Ok(with_analytics_read_fallback_inner(
         env,
