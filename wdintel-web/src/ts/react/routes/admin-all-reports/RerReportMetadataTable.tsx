@@ -286,7 +286,7 @@ function RerReportMetadataTableBody({
   return (
     <div className="flex h-full min-h-0 flex-col gap-echo-lg">
       <TablePageToolbar
-        title="Метадані підрозділів для звіту РЕР"
+        title="Метадані підрозділів Для звіту РЕР"
         withGlobalTextFilter
         internalActionsDisabled={loading || disabled}
         actions={

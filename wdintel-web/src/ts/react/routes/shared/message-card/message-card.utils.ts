@@ -23,6 +23,7 @@ export type MessageCardNavigationMenuItem = {
 
 export type MessageCardEtalonDisplayModel = {
   primaryKind: 'network' | 'location' | 'unit' | 'empty';
+  headerUnit?: string | null;
   displayValue: string;
   copyEtalonValue: string | null;
   copyLocationValue: string | null;
@@ -388,11 +389,13 @@ export function resolveMessageCardEtalonDisplayModel(
   const renderedNetworks = resolveMessageCardRenderedNetworks(msg.networkIds, options);
   const locationDisplayValue = normalizeLocationDisplayValue(msg.location);
   const etalonBindingValue = resolveEtalonBindingDisplayValue(msg, options);
+  const headerUnit = normalizeLabel(msg.unit) || null;
 
   if (renderedNetworks.length > 0) {
     const displayValue = renderedNetworks.map((network) => network.label).join('\n');
     return {
       primaryKind: 'network',
+      headerUnit,
       displayValue,
       copyEtalonValue: displayValue,
       copyLocationValue: null,
@@ -407,6 +410,7 @@ export function resolveMessageCardEtalonDisplayModel(
   if (etalonBindingValue.copyValue != null) {
     return {
       primaryKind: 'unit',
+      headerUnit,
       displayValue: etalonBindingValue.displayValue,
       copyEtalonValue: etalonBindingValue.copyValue,
       copyLocationValue: locationDisplayValue,
@@ -419,6 +423,7 @@ export function resolveMessageCardEtalonDisplayModel(
   if (locationDisplayValue != null) {
     return {
       primaryKind: 'location',
+      headerUnit,
       displayValue: locationDisplayValue,
       copyEtalonValue: null,
       copyLocationValue: locationDisplayValue,
@@ -430,6 +435,7 @@ export function resolveMessageCardEtalonDisplayModel(
 
   return {
     primaryKind: 'empty',
+    headerUnit,
     displayValue: NO_DATA_LABEL,
     copyEtalonValue: null,
     copyLocationValue: null,
@@ -450,6 +456,7 @@ export function hideMessageCardNetworks(
     return {
       ...displayModel,
       primaryKind: 'unit',
+      headerUnit: unit,
       displayValue: unit,
       copyEtalonValue: unit,
       copyLocationValue: locationDisplayValue,
@@ -462,6 +469,7 @@ export function hideMessageCardNetworks(
     return {
       ...displayModel,
       primaryKind: 'location',
+      headerUnit: unit || null,
       displayValue: locationDisplayValue,
       copyEtalonValue: null,
       copyLocationValue: locationDisplayValue,
@@ -473,6 +481,7 @@ export function hideMessageCardNetworks(
   return {
     ...displayModel,
     primaryKind: 'empty',
+    headerUnit: unit || null,
     displayValue: NO_DATA_LABEL,
     copyEtalonValue: null,
     copyLocationValue: null,

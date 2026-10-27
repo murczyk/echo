@@ -460,9 +460,7 @@ test('#3615 uses real upward wheel input to page an underfilled OFF feed @regres
     .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
     .toBe(true);
 
-  const bounds = await scroller.boundingBox();
-  if (!bounds) throw new Error('Duty feed scroller is not visible');
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await scroller.getByText('Card 198', { exact: true }).hover();
   await page.mouse.wheel(0, -240);
 
   await expect.poll(() => olderCursors).toEqual([196]);
@@ -582,9 +580,7 @@ test('#3615 uses real downward wheel input to page an underfilled historical win
     .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
     .toBe(true);
 
-  const bounds = await scroller.boundingBox();
-  if (!bounds) throw new Error('Duty feed scroller is not visible');
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await scroller.getByText('Card 178', { exact: true }).hover();
   await page.mouse.wheel(0, 240);
 
   await expect.poll(() => newerCursors).toEqual([180]);
@@ -677,9 +673,14 @@ test('uses creation time for Duty ordering and display with an event-time Analys
       elements.map((element) => Number(element.getAttribute('data-duty-message-id'))),
     ),
   ).toEqual([2, 7, 9]);
-  await expect(rows.first().locator('[title="Дата і час створення повідомлення"]')).toContainText(
-    '19.09, 10:58',
+  const firstHeaderTimestamp = rows.first().locator('[data-message-card-timestamp-item="true"]');
+  await expect(firstHeaderTimestamp).toHaveAttribute('title', 'Дата і час створення повідомлення');
+  await expect(firstHeaderTimestamp).toContainText('19.09.2026, 10:58');
+  await expect(rows.first().locator('[data-message-card-timestamp-footer="true"]')).toHaveAttribute(
+    'data-message-card-timestamp-footer',
+    'true',
   );
+  await expect(rows.first().locator('[title="Час отримання повідомлення"]')).toBeVisible();
   expect(fixture.getLastInboxRequest()).toMatchObject({ sort_by: 'IMSCreatedAt' });
 });
 test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({

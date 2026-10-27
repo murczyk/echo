@@ -4,7 +4,7 @@
 and unit metadata table. All six `/api/admin/rer-report/*` endpoints require an
 administrator. The existing system switch endpoint remains unchanged.
 
-The access list controls only the Analysis Neo `для звіту РЕР` checkbox. Both the
+The access list controls only the Analysis Neo `Для звіту РЕР` checkbox. Both the
 global `rer_report_enabled` setting and explicit current-login membership are
 required, including for administrators. Report templates and generation retain
 the existing system-switch gate. When access is denied, Analysis clears the

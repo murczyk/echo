@@ -138,18 +138,6 @@ export function MessageReplyChain({
     >
       <div className="flex flex-wrap items-center justify-between gap-x-echo-sm">
         <div className="text-echo-text opacity-50">Ланцюжок</div>
-        {entries.length <= 2 ? (
-          <a
-            href={threadAnalysisHref(id, snapshot.messages)}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Відкрити в Аналізі"
-            title="Відкрити в Аналізі"
-            className="rounded-echo-sm p-echo-xs text-(--color-action) hover:bg-(--color-action)/10 focus-visible:outline-2 focus-visible:outline-echo-focus"
-          >
-            <OpenInNewOutlinedIcon fontSize="small" />
-          </a>
-        ) : null}
         {entries.length > 2 ? (
           <button
             type="button"
@@ -180,7 +168,13 @@ export function MessageReplyChain({
             paper: {
               role: 'dialog',
               'aria-label': 'Ланцюжок повідомлень',
-              sx: { width: 420, maxWidth: 'calc(100vw - 32px)', overflow: 'hidden' },
+              className: 'message-reply-chain-popover border border-echo-border',
+              sx: {
+                width: 420,
+                maxWidth: 'calc(100vw - 32px)',
+                overflow: 'hidden',
+                backgroundImage: 'none',
+              },
             },
           }}
         >

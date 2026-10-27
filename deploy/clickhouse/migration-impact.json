@@ -1,5 +1,23 @@
 {
   "migrations": {
+    "echo:m20261026_190000_message_card_text_size": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
+    "echo:m20261026_110911_large_media_previews": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20261026_101819_messenger_alert_delivery_created_at_index": { "changes": [] },
     "echo:m20261023_084855_message_reply_threads": {
       "changes": [{ "table": "public.message_reply", "strategy": "cdc_additive" }]

@@ -7,6 +7,8 @@ mod m20261023_084855_message_reply_threads;
 mod m20261024_143636_ai_transcript_analysis;
 mod m20261025_180900_inbox_body_literal_index;
 mod m20261026_101819_messenger_alert_delivery_created_at_index;
+mod m20261026_110911_large_media_previews;
+mod m20261026_190000_message_card_text_size;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1197,6 +1199,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261024_143636_ai_transcript_analysis::Migration),
             Box::new(m20261025_180900_inbox_body_literal_index::Migration),
             Box::new(m20261026_101819_messenger_alert_delivery_created_at_index::Migration),
+            Box::new(m20261026_110911_large_media_previews::Migration),
+            Box::new(m20261026_190000_message_card_text_size::Migration),
         ]
     }
 }

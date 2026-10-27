@@ -113,6 +113,7 @@ async function installVisualFixture(
 
 async function installTaggedVisualFixture(page: Page): Promise<void> {
   const message = buildInboxMessage(41);
+  message.unit = 'Підрозділ з дуже довгою назвою для перевірки перенесення тексту';
   message.tags = [1, 2, 3, 4, 5];
   message.inboxTags = [
     { id: 1, tagId: 1, confidence: 1, login: 'operator', model: null, organismId: null },
@@ -130,6 +131,24 @@ async function installTaggedVisualFixture(page: Page): Promise<void> {
       [4, { id: 4, label: 'Артилерія', is_palitra: false }],
       [5, { id: 5, label: 'Розвідка', is_palitra: false }],
     ],
+  });
+}
+
+async function installReceiptAgeFixture(page: Page, createdAt: number): Promise<void> {
+  const message = minimalInboxMessage({
+    messageUid: 'receipt-age-message',
+    text: 'Довге повідомлення, яке займає ліві колонки картки та залишає вільний простір унизу праворуч. '.repeat(
+      12,
+    ),
+    createdAt,
+    createdAtOrder: createdAt,
+  });
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
+    inboxResponseForRequest: () => ({
+      ...buildInboxResponse([]),
+      inbox_items: [[41, message as never]],
+    }),
   });
 }
 
@@ -161,6 +180,53 @@ async function installMixedTagVisualFixture(
 }
 
 test.describe('message card Duty header @regression', () => {
+  // Regression: https://github.com/echoua/echo/issues/3324
+  test('ECHO-3324 keeps text and attachments together in two card columns and adapts to its workspace @regression', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openMessageCardPreviewHost(page, 'duty');
+    await expect(page.locator('[data-duty-feed-column]')).toHaveCount(1);
+    await expect(page.locator('[data-duty-feed-column]')).toHaveCSS('max-width', '960px');
+    const card = page.locator('.message-card-root').first();
+    const layout = card.locator('.message-card-content-layout');
+    const columnCount = () =>
+      layout.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+
+    await expect.poll(columnCount).toBe(2);
+    const text = card.locator('.message-card-message-text');
+    const attachments = card.locator('.message-card-attachments-region');
+    const textBounds = await text.boundingBox();
+    const attachmentsBounds = await attachments.boundingBox();
+    expect(attachmentsBounds!.x).toBe(textBounds!.x);
+    expect(attachmentsBounds!.y).toBeGreaterThanOrEqual(textBounds!.y + textBounds!.height);
+    const tops = await layout.evaluate((element) =>
+      Array.from(element.children, (child) => Math.round(child.getBoundingClientRect().top)),
+    );
+    expect(new Set(tops).size).toBe(1);
+
+    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+    const editor = page.locator('[data-manage-message-presentation="embedded"]');
+    await expect(editor).toBeVisible();
+    await expect.poll(columnCount).toBe(1);
+    await editor.getByRole('button', { name: 'Закрити', exact: true }).click();
+    await expect(editor).toBeHidden();
+    await expect.poll(columnCount).toBe(2);
+
+    for (const [width, columns] of [
+      [1000, 2],
+      [720, 1],
+      [448, 1],
+      [1512, 2],
+      [1920, 2],
+      [2560, 2],
+      [3440, 2],
+    ]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect.poll(columnCount).toBe(columns);
+    }
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3570
   test('#3570 keeps the narrow Duty header compact and right-aligned @regression', async ({
     page,
@@ -176,23 +242,36 @@ test.describe('message card Duty header @regression', () => {
     });
     const actions = card.locator('[aria-label="Дії повідомлення"]');
     const timestampItems = card.locator('[data-message-card-timestamp-item="true"]');
-    const creationTimestamp = timestampItems.first().locator('.message-card-text');
+    const creationTimestamp = card.locator('[data-message-card-timestamp-footer="true"]');
     const expandLabel = card.locator('.message-card-tag-expand__label');
+    const expandTags = card.getByRole('button', { name: 'Показати додаткові теги', exact: true });
+    await expect(expandTags).toBeVisible();
+    await expect(expandTags).toHaveCSS('font-size', '12px');
+    await expect(expandTags).toHaveCSS('padding', '0px 4px');
+    await expect(expandTags).toHaveCSS('border-radius', '6px');
 
     await expect(actions).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Створити розвіддонесення' })).toBeVisible();
+    await expect(actions.getByRole('button', { name: 'Більше дій' })).toBeVisible();
     const alignment = await card.evaluate((element) => {
       const cardRect = element.getBoundingClientRect();
       const cardStyle = getComputedStyle(element);
       const actionElement = element.querySelector<HTMLElement>('[aria-label="Дії повідомлення"]');
       const actionRect = actionElement?.getBoundingClientRect();
+      const leftHeaderRect = element
+        .querySelector<HTMLElement>('[data-message-card-header-left="true"]')
+        ?.getBoundingClientRect();
       return {
         rightGap:
           cardRect.right - Number.parseFloat(cardStyle.paddingRight) - (actionRect?.right ?? 0),
-        topGap: (actionRect?.top ?? 0) - cardRect.top - Number.parseFloat(cardStyle.paddingTop),
+        verticalCenterGap:
+          (actionRect?.top ?? 0) +
+          (actionRect?.height ?? 0) / 2 -
+          ((leftHeaderRect?.top ?? 0) + (leftHeaderRect?.height ?? 0) / 2),
       };
     });
     expect(Math.abs(alignment.rightGap)).toBeLessThanOrEqual(2);
-    expect(Math.abs(alignment.topGap)).toBeLessThanOrEqual(2);
+    expect(Math.abs(alignment.verticalCenterGap)).toBeLessThanOrEqual(2);
     expect(
       await actions
         .locator('.message-card-action-btn')
@@ -202,50 +281,86 @@ test.describe('message card Duty header @regression', () => {
         ),
     ).toBe(1);
     await expect(creationTimestamp).toHaveCSS('font-size', '12px');
-    expect(
-      await timestampItems.evaluateAll((items) => {
-        const [creation, interception] = items.map((item) => item.getBoundingClientRect());
-        return (interception?.top ?? 0) - (creation?.bottom ?? 0);
-      }),
-    ).toBeLessThanOrEqual(1);
-    const metadataSpacing = await card.evaluate((element) => {
-      const timestamps = element.querySelectorAll<HTMLElement>(
-        '[data-message-card-timestamp-item="true"]',
-      );
-      const interception = timestamps.item(timestamps.length - 1).getBoundingClientRect();
-      const metadataRows = new Map<number, { top: number; bottom: number }>();
-      element
-        .querySelectorAll<HTMLElement>(
-          '.message-card-content [data-message-card-metadata-item="true"]',
-        )
-        .forEach((item) => {
-          const rect = item.getBoundingClientRect();
-          const rowKey = Math.round(rect.top);
-          const row = metadataRows.get(rowKey);
-          metadataRows.set(rowKey, {
-            top: Math.min(row?.top ?? rect.top, rect.top),
-            bottom: Math.max(row?.bottom ?? rect.bottom, rect.bottom),
-          });
-        });
-      const [firstRow, secondRow] = [...metadataRows.values()].toSorted(
-        (left, right) => left.top - right.top,
-      );
-      return {
-        headerToMetadata: (firstRow?.top ?? 0) - interception.bottom,
-        betweenMetadataRows: (secondRow?.top ?? 0) - (firstRow?.bottom ?? 0),
-      };
-    });
-    expect(
-      Math.abs(metadataSpacing.headerToMetadata - metadataSpacing.betweenMetadataRows),
-    ).toBeLessThanOrEqual(1);
-    expect(
-      await creationTimestamp.evaluate((element) => {
-        const textRange = document.createRange();
-        textRange.selectNodeContents(element);
-        return textRange.getClientRects().length;
-      }),
-    ).toBe(1);
+    await expect(timestampItems).toHaveCount(1);
+    await expect(creationTimestamp).toBeVisible();
     await expect(expandLabel).toHaveCount(1);
     await expect(expandLabel).toBeHidden();
+
+    const unitRow = card.locator('[data-message-card-header-unit-row="true"]');
+    const unitAlignment = await unitRow.evaluate((element) => {
+      const icon = element.querySelector<HTMLElement>('.message-card-header-meta__icon');
+      const text = element.querySelector<HTMLElement>('.message-card-text');
+      const iconRect = icon?.getBoundingClientRect();
+      const textRect = text?.getBoundingClientRect();
+      return {
+        iconTop: iconRect?.top ?? 0,
+        textTop: textRect?.top ?? 0,
+        cardRight:
+          element.closest<HTMLElement>('.message-card-root')?.getBoundingClientRect().right ?? 0,
+        textRight: textRect?.right ?? 0,
+      };
+    });
+    expect(Math.abs(unitAlignment.iconTop - unitAlignment.textTop)).toBeLessThanOrEqual(2);
+    expect(unitAlignment.textRight).toBeLessThanOrEqual(unitAlignment.cardRight);
   });
+
+  for (const boundary of [
+    {
+      name: 'day',
+      now: '2026-10-24T20:50:00Z',
+      createdAt: '2026-10-24T20:49:00Z',
+      before: '23:49',
+      after: '24.10, 23:49',
+    },
+    {
+      name: 'year',
+      now: '2026-12-31T21:50:00Z',
+      createdAt: '2026-12-20T14:47:00Z',
+      before: '20.12, 16:47',
+      after: '20.12.2026, 16:47',
+    },
+  ]) {
+    test(`ECHO-3324 keeps absolute Duty receipt time in its footer across the Kyiv ${boundary.name} boundary @regression`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.clock.install({ time: new Date(boundary.now) });
+      await installReceiptAgeFixture(page, Date.parse(boundary.createdAt));
+      await page.goto('/rer-duty-neo?state-short=short-1');
+
+      const card = page.locator('.message-card-root').first();
+      const footer = card.locator('[data-message-card-timestamp-footer="true"]');
+      await expect(footer).toHaveText(boundary.before);
+      await card.screenshot({ path: testInfo.outputPath('before-boundary.png') });
+      await page.clock.fastForward(10 * 60_000 + 1_000);
+      await expect(footer).toHaveText(boundary.after);
+      for (const width of [1440, 448, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(footer).toHaveCSS('position', 'static');
+        await expect
+          .poll(() =>
+            card.evaluate((element) => {
+              const contentBounds = element
+                .querySelector('.message-card-content-layout')
+                ?.getBoundingClientRect();
+              const detailsBounds = element
+                .querySelector('.message-card-details-region')
+                ?.getBoundingClientRect();
+              const footerBounds = element
+                .querySelector('[data-message-card-timestamp-footer="true"]')
+                ?.getBoundingClientRect();
+              return (
+                contentBounds != null &&
+                detailsBounds != null &&
+                footerBounds != null &&
+                footerBounds.top >= detailsBounds.bottom &&
+                footerBounds.bottom >= contentBounds.bottom - 1
+              );
+            }),
+          )
+          .toBe(true);
+        await page.screenshot({ path: testInfo.outputPath(`after-boundary-${width}.png`) });
+      }
+    });
+  }
 });

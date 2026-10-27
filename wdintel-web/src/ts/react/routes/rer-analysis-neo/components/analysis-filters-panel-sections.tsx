@@ -717,7 +717,7 @@ export function AnalysisFiltersPanelSections({
                   }
                 />
               }
-              label="для звіту РЕР"
+              label="Для звіту РЕР"
               sx={compactCheckboxLabelSx}
             />
           ) : null}

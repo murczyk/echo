@@ -15,6 +15,50 @@ async function setupAnalysisNeoPage(
 
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
+  for (const messageSortBy of ['interception', 'creation'] as const) {
+    test(`shows the selected Analysis timestamp and receipt time at wide and narrow card widths (${messageSortBy})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      const response = createLoadedInboxResponse();
+      const [messageId, message] = response.inbox_items[0];
+      Object.assign(message, {
+        createdAt: Date.UTC(2026, 6, 17, 0, 30),
+        timestamp: Date.UTC(2026, 6, 14, 5, 45),
+        date: '14.07.2026',
+        time: '08:45:00',
+      });
+      await setupAnalysisNeoPage(page, { inboxResponse: response, messageSortBy });
+      await page.goto('/rer-analysis-neo');
+
+      const card = page.locator(`[data-message-id="${messageId}"]`);
+      const timestamp = card.locator('[data-message-card-timestamp-item="true"]');
+      const expected =
+        messageSortBy === 'creation'
+          ? ['Дата і час створення повідомлення', '17.07.2026, 03:30']
+          : ['Дата і час перехоплення', '14.07.2026, 08:45'];
+      await expect(timestamp).toHaveAttribute('title', expected[0]);
+      await expect(timestamp).toContainText(expected[1]);
+      await expect(card.locator('[title="Час отримання повідомлення"]')).toBeVisible();
+      await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
+        'position',
+        'static',
+      );
+
+      await page.setViewportSize({ width: 375, height: 900 });
+      await card.evaluate((element) => {
+        const item = element.closest<HTMLElement>('.message-card-item');
+        if (item) item.style.width = '330px';
+      });
+      await expect(timestamp).toContainText(expected[1]);
+      await expect(card.locator('[title="Час отримання повідомлення"]')).toBeVisible();
+      await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
+        'position',
+        'static',
+      );
+    });
+  }
+
   test('copies an Analysis link and highlights its target when opened', async ({
     page,
     context,
