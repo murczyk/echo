@@ -12,9 +12,9 @@ pub struct Model {
     pub id: i64,
     pub login_id: Option<Uuid>,
     pub signal_message_id: i64,
-    pub signal_message_uuid: Option<Uuid>,
     pub created_at: DateTime,
     pub deleted: bool,
+    pub signal_message_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -29,6 +29,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Login,
+    #[sea_orm(has_one = "super::notification_event::Entity")]
+    NotificationEvent,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
@@ -48,6 +50,12 @@ impl Related<super::ai_transcript_analysis_job::Entity> for Entity {
 impl Related<super::login::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Login.def()
+    }
+}
+
+impl Related<super::notification_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationEvent.def()
     }
 }
 

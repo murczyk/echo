@@ -694,6 +694,7 @@ fn message_full_text_nocomments(
     if datasource_kind == "signal"
         || datasource_kind == "whatsapp"
         || datasource_kind == "echo_operator"
+        || datasource_kind == crate::config::MESSENGER_INGEST_DATASOURCE_KIND
         || datasource_kind == crate::config::DATASOURCE_ECHO_NATIVE_KIND
     {
         Ok(body.unwrap_or_default())

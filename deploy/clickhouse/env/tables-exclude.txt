@@ -151,6 +151,15 @@ public.attachment_job
 
 public.device_document_settings
 
+# messengers ingest
+public.messenger_account
+public.messenger_avatar
+public.messenger_chat
+public.messenger_chat_member
+public.messenger_contact
+public.messenger_media_meta
+public.sigint_chat_message
+
 # Admin CSV import recovery state.
 public.rer_csv_import_message
 

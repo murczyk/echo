@@ -649,6 +649,40 @@ pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
 pub const ROLE_NO2FA: &str = "No2FA";
+pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
+pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
+pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
+pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
+/// Every ingest request, including each TUS chunk, resolves the ingest
+/// datasource; its `last_sync_at` is refreshed at most this often.
+pub const MESSENGER_INGEST_LAST_SYNC_REFRESH_SECS: i64 = 300;
+pub const MESSENGER_INGEST_SUBMIT_MAX_MESSAGES: usize = 100;
+pub const MESSENGER_INGEST_MESSAGE_STATUS_CREATED: &str = "created";
+pub const MESSENGER_INGEST_MESSAGE_STATUS_EXISTING: &str = "existing";
+/// `409` code of a message batch that lost a race with a concurrent
+/// submission of the same messages; the collector retries the batch.
+pub const MESSENGER_INGEST_CONCURRENT_SUBMIT_CODE: &str =
+    "messenger_ingest_concurrent_submit";
+/// `409` code of an attachment batch that lost a race with a concurrent
+/// attach of the same attachments; the collector retries the batch.
+pub const MESSENGER_INGEST_CONCURRENT_ATTACH_CODE: &str =
+    "messenger_ingest_concurrent_attach";
+pub const MESSENGER_INGEST_SUBMIT_MAX_ATTACHMENTS: usize =
+    SIGINT_MESSAGE_MAX_ATTACHMENTS;
+pub const MESSENGER_INGEST_AVATAR_MAX_SIZE_BYTES: i64 = 20 * 1024 * 1024;
+/// `409` code of an avatar batch that lost a race with a concurrent
+/// submission of the same avatars; the collector retries the batch.
+pub const MESSENGER_INGEST_CONCURRENT_AVATAR_CODE: &str =
+    "messenger_ingest_concurrent_avatar";
+pub const MESSENGER_INGEST_UPLOAD_PATH_BASE: &str =
+    "/api/messenger-ingest/v1/uploads";
+/// Subdirectory of `storage_dir` holding the ingest TUS uploads, apart from
+/// the operator uploads.
+pub const MESSENGER_INGEST_UPLOAD_STORAGE_DIR: &str = "messenger_ingest";
+pub const MESSENGER_TYPE_TELEGRAM: &str = "Telegram";
+pub const MESSENGER_TYPE_MAX: &str = "Max";
+pub const MESSENGER_INGEST_MESSENGER_TYPES: &[&str] =
+    &[MESSENGER_TYPE_TELEGRAM, MESSENGER_TYPE_MAX];
 pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this upload limit synchronized with
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES`, frontend
@@ -1428,6 +1462,17 @@ DELETE FROM notification_event;
 DELETE FROM importance_operation;
 DELETE FROM sigint_important;
 DELETE FROM ai_intel_report_attempt;
+DELETE FROM messenger_media_meta;
+DELETE FROM sigint_chat_message;
+UPDATE messenger_account SET avatar_id = NULL;
+UPDATE messenger_chat SET avatar_id = NULL;
+UPDATE messenger_chat_member SET avatar_id = NULL;
+UPDATE messenger_contact SET avatar_id = NULL;
+DELETE FROM messenger_avatar;
+DELETE FROM messenger_chat_member;
+DELETE FROM messenger_contact;
+DELETE FROM messenger_chat;
+DELETE FROM messenger_account;
 DELETE FROM signal_message_media;
 DELETE FROM signal_message_queue_attachment;
 DELETE FROM signal_message_queue;
@@ -1461,6 +1506,7 @@ DELETE FROM ai_agent_conversation;
 DELETE FROM ai_agent_user_link;
 DELETE FROM rer_report_access_login;
 DELETE FROM login WHERE login <> 'system';
+UPDATE login SET sigint_zone_id = NULL, organism_id = NULL WHERE login = 'system';
 DELETE FROM delta_login;
 DELETE FROM sigint_zone;
 DELETE FROM organism_aor;

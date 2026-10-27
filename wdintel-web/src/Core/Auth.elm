@@ -81,6 +81,9 @@ hasRole role user =
         "No2FA" ->
             List.member "No2FA" user.roles
 
+        "MessengerIngest" ->
+            List.member "MessengerIngest" user.roles
+
         _ ->
             -- impossible! unknown role
             False

@@ -469,6 +469,11 @@ mod m20261006_150248_network_freq_exact_count_index;
 mod m20261006_160533_rer_report_enabled;
 mod m20261006_164921_sigint_inbox_item_freq_datetime_index;
 mod m20261008_080110_rer_report_admin;
+mod m20261008_134725_messenger_ingest_accounts;
+mod m20261014_000000_messenger_ingest_chats;
+mod m20261014_000001_messenger_ingest_messages;
+mod m20261015_000000_messenger_ingest_attachments;
+mod m20261016_000000_messenger_ingest_contacts;
 
 mod m20261009_201221_ai_agent_reasoning_policy;
 
@@ -492,6 +497,7 @@ mod m20261016_165725_transcription_source;
 mod m20261016_172232_transcription_source_integration;
 mod m20261017_135230_migrate_transcription_sources;
 mod m20261021_091705_remove_iggy_settlement_trigger;
+mod m20261022_000000_messenger_ingest_avatars;
 mod m20261022_080838_sigint_network_settlement;
 mod m20261022_090303_attachment_job_claim_index;
 
@@ -1144,6 +1150,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261008_051638_ai_position_highlight_flags::Migration),
             Box::new(m20261008_080110_rer_report_admin::Migration),
             Box::new(m20261008_113430_sigint_unit_orbit_combat_type::Migration),
+            Box::new(m20261008_134725_messenger_ingest_accounts::Migration),
             Box::new(m20261009_074414_system_settings_hide_networks::Migration),
             Box::new(m20261009_201221_ai_agent_reasoning_policy::Migration),
             Box::new(m20261009_100730_rer_csv_body_index::Migration),
@@ -1160,6 +1167,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20261012_155351_api_rate_limit::Migration),
             Box::new(m20261013_090000_notification_read_boundary_completed_repair::Migration),
             Box::new(m20261013_094137_inbox_unit_selection::Migration),
+            Box::new(m20261014_000000_messenger_ingest_chats::Migration),
+            Box::new(m20261014_000001_messenger_ingest_messages::Migration),
+            Box::new(m20261015_000000_messenger_ingest_attachments::Migration),
+            Box::new(m20261016_000000_messenger_ingest_contacts::Migration),
             Box::new(m20261014_124732_attachment_document_updated_at_index::Migration),
             Box::new(m20261014_140818_attachment_chunk_summary_index::Migration),
             Box::new(m20261014_144721_attachment_search_change::Migration),
@@ -1173,6 +1184,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261016_172232_transcription_source_integration::Migration),
             Box::new(m20261017_135230_migrate_transcription_sources::Migration),
             Box::new(m20261021_091705_remove_iggy_settlement_trigger::Migration),
+            Box::new(m20261022_000000_messenger_ingest_avatars::Migration),
             Box::new(m20261022_090303_attachment_job_claim_index::Migration),
             Box::new(m20261022_080838_sigint_network_settlement::Migration),
             Box::new(m20261022_151553_iggy_unit_refresh_queue::Migration),

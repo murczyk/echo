@@ -15,7 +15,8 @@ export type UserRole =
   | 'CyberViewerRestricted'
   | 'AdvancedReports'
   | 'NoAutoLogout'
-  | 'No2FA';
+  | 'No2FA'
+  | 'MessengerIngest';
 
 export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
   const has = (target: UserRole) => Boolean(roles?.includes(target));
@@ -64,6 +65,8 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('NoAutoLogout');
     case 'No2FA':
       return has('No2FA');
+    case 'MessengerIngest':
+      return has('MessengerIngest');
   }
 }
 

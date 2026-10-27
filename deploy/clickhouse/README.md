@@ -1190,6 +1190,95 @@ networks with no cached activity from their newest network link.
 }
 ```
 
+### Adding a column to a replicated table
+
+PostgreSQL logical decoding does not replicate DDL. PeerDB learns about a new
+column only from the next replicated row event of that table: the event carries
+the new column, PeerDB adds it as a `Nullable` column to the raw ClickHouse
+table, and the reconciler then refreshes the current-state view and the gateway.
+Two consequences follow:
+
+- **Rows already in ClickHouse read the new column as `NULL`.** This matches
+  PostgreSQL only when the column is nullable and has no default. With a
+  default (including `not null default ...`), PostgreSQL returns the default
+  for every historical row without writing them, while ClickHouse returns
+  `NULL`: a silent divergence that only a backfill touching every row, a
+  targeted resnapshot, or a mirror resync can fix.
+- **A table without row events never shows the column.** Deployment waits for
+  the column in raw ClickHouse, the current-state view and the gateway (up to
+  `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS`), then stops. Queries using the
+  column fall back to PostgreSQL until it appears.
+
+Pick the strategy per table:
+
+| Strategy | Use for | Deployment does | Checker requires |
+|---|---|---|---|
+| `cdc_additive` | Nullable column without default on a large, non-empty table whose rows can safely be touched | Waits for CDC to publish the column; an empty table takes the targeted-resnapshot fallback | `ADD COLUMN`-only DDL on the table; reviewed DML on the table in the migration (or a `backfill` file); catalog: every added column nullable and without default, nothing removed or changed |
+| `replicated_snapshot` + `"targeted_resnapshot": true` | Nullable column on an existing table that is small, has unsafe triggers, or needs a default | Pauses the mirror, removes and re-adds only this table mapping, snapshots it, refreshes its views | `ADD COLUMN`-only DDL on the table; catalog: added columns nullable, nothing removed or changed |
+| `replicated_snapshot` | New table | Initial snapshot through table-selection reconciliation | `CREATE TABLE` in the migration |
+| `empty_table_resnapshot` | Additive columns on a table expected to stay empty | Re-checks emptiness, then rebuilds the mapping | `ADD COLUMN`-only DDL |
+| `cdc_backfill` | Columns with defaults on the `system_settings` singleton | Relies on the post-DDL DML of the guaranteed row | Listed guaranteed-nonempty table; reviewed DML |
+| `mirror_resync` | Drops, renames, type changes, other incompatible DDL | Nothing implicitly; operator runs a full resync | — |
+| `excluded` | Tables listed in [env/tables-exclude.txt](env/tables-exclude.txt) | Nothing | Table present in the exclusion file |
+
+#### Why `cdc_additive` fails without a row touch
+
+The checker accepts nullable columns for `cdc_additive`; it requires them. A
+`cdc_additive` declaration is rejected when the migration has no DML on the
+table (`uses cdc_additive without reviewed backfill DML`), because without a row
+event nothing publishes the column. The DML check is textual, so it is the
+author's job to make the statement change at least one existing row. A
+statement that matches no row satisfies the check but publishes nothing; for
+example `update t set c = null where c = null` never matches, because
+`c = null` is never true. Follow the #3515 pattern instead:
+
+```sql
+alter table sigint_inbox_item add column is_time_null boolean;
+
+-- This table has no user UPDATE triggers. One indexed row change publishes
+-- the nullable column through CDC without backfilling historical messages.
+update sigint_inbox_item
+set is_time_null = false
+where id = (select id from sigint_inbox_item order by id limit 1);
+```
+
+Before touching a row, review every trigger on the table. An update of a
+trigger-watched column can rewrite data or publish integration events. The
+#3515 comment was true when written, but
+`m20260922_092044_api_integration_iggy_events` later added
+`sigint_inbox_item_capture_iggy_edit` (`after insert or update`). The same
+touch today would queue an Iggy inbox edit event for that row. Iggy capture
+triggers also fire on any update of `signal_message_media`. Prefer a targeted
+`replicated_snapshot` when a safe touch is not possible. Choose `cdc_additive`
+for tables too large to resnapshot cheaply.
+
+#### Messenger ingest migrations (#3699)
+
+| Migration | Table | Change | Strategy |
+|---|---|---|---|
+| `m20261008_134725_messenger_ingest_accounts` | `public.datasource_group` | `messenger_type text`, nullable, no default | `cdc_additive`: the table is small and always populated, and its only trigger watches `group_master_key`, so a one-row `messenger_type` touch emits no Iggy event. A targeted `replicated_snapshot` is an equally valid choice for this small table |
+| `m20261008_134725_messenger_ingest_accounts` | `public.messenger_account` | new table | `excluded` |
+| `m20261014_000000_messenger_ingest_chats` | `public.messenger_chat` | new table | `excluded` |
+| `m20261014_000001_messenger_ingest_messages` | `public.messenger_chat_member`, `public.sigint_chat_message` | new tables | `excluded` |
+| `m20261015_000000_messenger_ingest_attachments` | `public.messenger_media_meta` | new table | `excluded` |
+| `m20261016_000000_messenger_ingest_contacts` | `public.messenger_contact` | new table | `excluded` |
+| `m20261022_000000_messenger_ingest_avatars` | `public.messenger_avatar` | new table; `avatar_id` added to the excluded `messenger_account`, `messenger_chat`, `messenger_chat_member` and `messenger_contact` | `excluded` |
+
+Ingest messages themselves are ordinary `signal_message` and
+`sigint_inbox_item` rows, so they replicate without any declaration. The
+excluded tables carry only messenger metadata (accounts, chats, chat
+members, contacts, the chat link of each message, and Telegram media
+metadata). Ingested attachments are ordinary `signal_message_media` rows. Making them available to analytics later is a
+table-selection change, not a migration. Remove them from
+`env/tables-exclude.txt` and run the coordinated reconciliation; each newly
+included table gets its own initial snapshot.
+
+Messenger media metadata lives in the excluded `messenger_media_meta`
+table rather than in columns on `public.signal_message_media`. Adding columns
+there would need a targeted `replicated_snapshot`: the table's Iggy capture
+trigger rules out a `cdc_additive` row touch, and its size makes that
+resnapshot a deliberate operational step.
+
 ### Replacing a development source database
 
 `just copy-db --server <source>` downloads a dump and always prints the

@@ -311,6 +311,38 @@ pub mod tests {
         .await
         .context(h!())?;
 
+        // Cleanup keeps the system login, but a fresh database or a
+        // restored dump may not have it.
+        match login::Entity::find()
+            .filter(login::Column::Login.eq(crate::config::SYSTEM_LOGIN_NAME))
+            .one(dbx)
+            .await
+            .context(h!())?
+        {
+            Some(system) => {
+                let mut system = system.into_active_model();
+                system.sigint_zone_id = Set(Some(sigint_zone.id));
+                system.organism_id = Set(Some(organism.id));
+                system.update(dbx).await.context(h!())?;
+            }
+            None => {
+                mk_login(
+                    dbx,
+                    login::ActiveModel {
+                        id: NotSet,
+                        login: Set(crate::config::SYSTEM_LOGIN_NAME.to_string()),
+                        roles: Set(json!(["Admin", "NoAutoLogout"])),
+                        sigint_zone_id: Set(Some(sigint_zone.id)),
+                        organism_id: Set(Some(organism.id)),
+                        created_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .context(h!())?;
+            }
+        }
+
         mk_datasource_group(
             dbx,
             datasource_group::ActiveModel {

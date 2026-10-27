@@ -122,6 +122,42 @@
     "echo:m20261009_100730_rer_csv_processing": {
       "changes": [{ "table": "public.rer_csv_import_message", "strategy": "excluded" }]
     },
+    "echo:m20261008_134725_messenger_ingest_accounts": {
+      "changes": [
+        { "table": "public.datasource_group", "strategy": "cdc_additive" },
+        { "table": "public.messenger_account", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261014_000000_messenger_ingest_chats": {
+      "changes": [
+        { "table": "public.messenger_chat", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261014_000001_messenger_ingest_messages": {
+      "changes": [
+        { "table": "public.messenger_chat_member", "strategy": "excluded" },
+        { "table": "public.sigint_chat_message", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261015_000000_messenger_ingest_attachments": {
+      "changes": [
+        { "table": "public.messenger_media_meta", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261016_000000_messenger_ingest_contacts": {
+      "changes": [
+        { "table": "public.messenger_contact", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20261022_000000_messenger_ingest_avatars": {
+      "changes": [
+        { "table": "public.messenger_avatar", "strategy": "excluded" },
+        { "table": "public.messenger_chat", "strategy": "excluded" },
+        { "table": "public.messenger_contact", "strategy": "excluded" },
+        { "table": "public.messenger_account", "strategy": "excluded" },
+        { "table": "public.messenger_chat_member", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },
@@ -809,11 +845,6 @@
       "changes": [
         { "table": "public.media_summary_settings", "strategy": "excluded" },
         { "table": "public.media_summary", "strategy": "replicated_snapshot" }
-      ]
-    },
-    "echo:m20260817_124312_sigint_unit_inconsistent": {
-      "changes": [
-        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
       ]
     },
     "echo:m20260818_052317_shared_ai_engine_capabilities": {

@@ -12,12 +12,12 @@ pub struct Model {
     pub id: i64,
     pub login_id: Uuid,
     pub signal_message_id: i64,
-    pub signal_message_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text")]
     pub comment: String,
     pub created_at: DateTime,
     pub sigint_post_id: Option<i64>,
     pub migrated_signal_message_id: Option<i64>,
+    pub signal_message_uuid: Option<Uuid>,
     pub migrated_signal_message_uuid: Option<Uuid>,
 }
 
@@ -41,12 +41,20 @@ pub enum Relation {
     SigintPost,
     #[sea_orm(
         belongs_to = "super::signal_message::Entity",
+        from = "Column::MigratedSignalMessageId",
+        to = "super::signal_message::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SignalMessage2,
+    #[sea_orm(
+        belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
         to = "super::signal_message::Column::Id",
         on_update = "NoAction",
         on_delete = "NoAction"
     )]
-    SignalMessage,
+    SignalMessage1,
 }
 
 impl Related<super::login::Entity> for Entity {
@@ -58,12 +66,6 @@ impl Related<super::login::Entity> for Entity {
 impl Related<super::sigint_post::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintPost.def()
-    }
-}
-
-impl Related<super::signal_message::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::SignalMessage.def()
     }
 }
 
