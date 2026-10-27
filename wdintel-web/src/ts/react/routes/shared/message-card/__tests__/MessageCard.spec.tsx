@@ -80,7 +80,6 @@ async function renderCard(
   const props = {
     id: 42,
     msg: buildMessage(),
-    feedCount: 1,
     referenceTimeMs: 1_710_000_000_000,
     authUserName: 'tester',
     groupName: 'Group',
@@ -139,7 +138,6 @@ async function renderHeader(allowed: boolean | undefined) {
     networks: undefined,
   });
   const props = {
-    compact: true,
     displayMode: 'duty',
     excludeMenuOptions: [],
     id: 42,
@@ -150,8 +148,6 @@ async function renderHeader(allowed: boolean | undefined) {
     etalonDisplayModel,
     mapHref: undefined,
     analysisHref: undefined,
-    rightInsetPx: 0,
-    topRight: <div />,
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
     onCreateReport: vi.fn(),

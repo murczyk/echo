@@ -112,9 +112,6 @@ export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
   readOnly?: boolean;
-  /** Number of feeds (columns). When >= 3, header columns use differential shrink (left 3, center 2, right 0). When 1 or 2, all columns shrink equally. */
-  feedCount?: number;
-  /** Duty vs analysis: controls stacked action icon grid width (4 vs 3 columns). */
   displayMode?: MessageCardDisplayMode;
   analysisDestination?: 'classic' | 'neo';
   /** Tag chips section visual density mode. */
@@ -168,7 +165,6 @@ export type MessageCardProps = {
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
-  rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
   showCallsignAddForm?: boolean;
   /**
@@ -187,7 +183,6 @@ function MessageCardComponent({
   id,
   msg,
   readOnly = false,
-  feedCount = 1,
   displayMode = 'duty',
   analysisDestination = 'classic',
   tagsLayout = 'full',
@@ -233,7 +228,6 @@ function MessageCardComponent({
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,
-  rightHeaderInsetPx = 0,
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,

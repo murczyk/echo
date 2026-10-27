@@ -92,9 +92,6 @@ type ActionIconsRowProps = {
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   attachmentArchiveDownload?: MessageCardAttachmentArchiveDownloadAction;
   headerRowRef: RefObject<HTMLDivElement | null>;
-  leftHeaderContentRef: RefObject<HTMLDivElement | null>;
-  rightHeaderContentRef: RefObject<HTMLDivElement | null>;
-  headerColumnGap: number;
   onCompactChange: (compact: boolean) => void;
 };
 
@@ -416,9 +413,6 @@ function ActionIconsRow({
   onExcludeMessageEntity,
   attachmentArchiveDownload,
   headerRowRef,
-  leftHeaderContentRef,
-  rightHeaderContentRef,
-  headerColumnGap,
   onCompactChange,
 }: ActionIconsRowProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -753,13 +747,7 @@ function ActionIconsRow({
     const headerRow =
       headerRowRef.current ??
       rootRef.current?.closest<HTMLDivElement>('[data-message-card-header-row]');
-    const leftHeaderContent =
-      leftHeaderContentRef.current ??
-      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-left]');
-    const rightHeaderContent =
-      rightHeaderContentRef.current ??
-      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-right]');
-    if (!headerRow || !leftHeaderContent || !rightHeaderContent) {
+    if (!headerRow) {
       return;
     }
 
@@ -798,15 +786,13 @@ function ActionIconsRow({
       scheduleUpdateLayout();
     });
     observer.observe(headerRow);
-    observer.observe(leftHeaderContent);
-    observer.observe(rightHeaderContent);
     return () => {
       observer.disconnect();
       if (rafId != null && typeof cancelAnimationFrame !== 'undefined') {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [headerColumnGap, headerRowRef, leftHeaderContentRef, onCompactChange, rightHeaderContentRef]);
+  }, [headerRowRef, onCompactChange]);
 
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
@@ -1404,9 +1390,6 @@ function MessageCardHeaderComponent({
   attachmentArchiveDownload,
 }: MessageCardHeaderProps) {
   const headerRowRef = useRef<HTMLDivElement | null>(null);
-  const leftHeaderContentRef = useRef<HTMLDivElement | null>(null);
-  const rightHeaderContentRef = useRef<HTMLDivElement | null>(null);
-  const headerColumnGap = 16;
   const [compactActions, setCompactActions] = useState(false);
   const explicitUnit = etalonDisplayModel.headerUnit ?? '—';
   const displaysCreationTime = messageTimeBasis === 'creation';
@@ -1447,7 +1430,7 @@ function MessageCardHeaderComponent({
       className="message-card-header-row w-full"
     >
       <div className="message-card-header-identity">
-        <div ref={leftHeaderContentRef} data-message-card-header-left="true" className="min-w-0">
+        <div data-message-card-header-left="true" className="min-w-0">
           <div className="message-card-header-unit" data-message-card-header-unit-row="true">
             <span className="message-card-header-meta__icon">
               <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
@@ -1495,15 +1478,11 @@ function MessageCardHeaderComponent({
               onExcludeMessageEntity={onExcludeMessageEntity}
               attachmentArchiveDownload={attachmentArchiveDownload}
               headerRowRef={headerRowRef}
-              leftHeaderContentRef={leftHeaderContentRef}
-              rightHeaderContentRef={rightHeaderContentRef}
-              headerColumnGap={headerColumnGap}
               onCompactChange={setCompactActions}
             />
           ) : null}
         </div>
       ) : null}
-      <div ref={rightHeaderContentRef} data-message-card-header-right="true" aria-hidden="true" />
     </div>
   );
 
