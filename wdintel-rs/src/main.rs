@@ -973,6 +973,28 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffBackfillImageThumbnailsPs {
+    /// Number of media rows read per database query (1..=500).
+    #[arg(long, default_value_t = 50)]
+    pub batch_size: u64,
+    /// Delay after each image to limit object-store and CPU load.
+    #[arg(long, default_value_t = 250)]
+    pub pause_ms: u64,
+    /// Include only images created on or after this UTC date (YYYY-MM-DD).
+    #[arg(long)]
+    pub since_date: Option<String>,
+    /// Override the stored checkpoint and resume after this media UUID.
+    #[arg(long)]
+    pub after_media_id: Option<Uuid>,
+    /// Clear the stored checkpoint and scan from the beginning.
+    #[arg(long, action, conflicts_with = "after_media_id")]
+    pub reset_checkpoint: bool,
+    /// Maximum media rows to scan in this invocation.
+    #[arg(long)]
+    pub limit: Option<u64>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffAuditMediaStoragePs {
     /// Inclusive RFC3339 creation timestamp.
     #[arg(long)]
@@ -1271,6 +1293,7 @@ enum Cmd {
     OneoffDiscardCopiedAiAgentRuntime(OneoffDiscardCopiedAiAgentRuntimePs),
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
+    OneoffBackfillImageThumbnails(OneoffBackfillImageThumbnailsPs),
     OneoffAuditMediaStorage(OneoffAuditMediaStoragePs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
     OneoffRecoverDeviceAudioTranscription(
@@ -2206,6 +2229,9 @@ async fn async_main(
                 mode, ps.dry_run,
             )
             .await
+        },
+        Cmd::OneoffBackfillImageThumbnails(ps) => {
+            messenger::oneoff::oneoff_backfill_image_thumbnails(mode, &ps).await
         },
         Cmd::OneoffAuditMediaStorage(ps) => {
             messenger::oneoff::oneoff_audit_media_storage(mode, &ps).await

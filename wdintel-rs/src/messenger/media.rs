@@ -915,6 +915,7 @@ async fn stage_media_attachment(
         file_ext.as_deref(),
         file_name.as_deref(),
     );
+    let is_image = is_image_content_type(&content_type);
     let size_bytes = prepared.size_bytes;
     let is_encrypted = prepared.is_encrypted;
     if let Err(err) = upload_prepared_attachment(
@@ -941,7 +942,7 @@ async fn stage_media_attachment(
         source_lease.is_some(),
     )
     .await;
-    if is_video {
+    if is_video || is_image {
         thumbnail_source_lease = Some(
             crate::messenger::media_thumbnail::ThumbnailSourceLease::new(id),
         );
@@ -1485,6 +1486,20 @@ pub fn is_video_media(media: &signal_message_media::Model) -> bool {
         media.file_ext.as_deref(),
         media.file_name.as_deref(),
     )
+}
+
+pub fn is_image_media(media: &signal_message_media::Model) -> bool {
+    is_image_content_type(&media.content_type)
+}
+
+pub fn is_image_content_type(content_type: &str) -> bool {
+    content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("image/")
 }
 
 fn is_encryption_excluded_metadata(

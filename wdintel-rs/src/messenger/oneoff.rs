@@ -5,8 +5,8 @@ use crate::h;
 use crate::messenger::worker;
 use crate::storage;
 use crate::types::info;
-use crate::types::{warn, Mode, ShortContext};
-use chrono::{DateTime, Utc};
+use crate::types::{warn, Env, Mode, ShortContext};
+use chrono::{DateTime, NaiveDate, Utc};
 use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
 use opendal::{ErrorKind, Operator};
 use sea_orm::sea_query::Expr;
@@ -15,6 +15,153 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+use uuid::Uuid;
+
+fn image_thumbnail_checkpoint_key(
+    server_id: u32,
+    since_date: Option<NaiveDate>,
+) -> String {
+    let prefix =
+        crate::config::MESSENGER_MEDIA_IMAGE_THUMBNAIL_BACKFILL_CHECKPOINT_KEY;
+    match since_date {
+        Some(date) => format!("{prefix}_{server_id}_{date}"),
+        None => format!("{prefix}_{server_id}"),
+    }
+}
+
+fn parse_image_thumbnail_since_date(
+    since_date: Option<&str>,
+) -> Result<Option<NaiveDate>, AppError> {
+    since_date
+        .map(|value| {
+            NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(|_| {
+                AppError::BL {
+                    msg: "--since-date must use YYYY-MM-DD".to_string(),
+                }
+            })
+        })
+        .transpose()
+}
+
+pub async fn oneoff_backfill_image_thumbnails(
+    mode: Mode,
+    ps: &crate::OneoffBackfillImageThumbnailsPs,
+) -> Result<(), AppError> {
+    if !(1..=500).contains(&ps.batch_size) || ps.limit == Some(0) {
+        return Err(AppError::BL {
+            msg: "--batch-size must be 1..=500 and --limit must be positive"
+                .to_string(),
+        });
+    }
+    let since_date =
+        parse_image_thumbnail_since_date(ps.since_date.as_deref())?;
+    let since_timestamp = since_date
+        .map(|date| date.and_hms_opt(0, 0, 0).c(h!()))
+        .transpose()?;
+    let env = crate::server::new_readonly_env(mode).await.c(h!())?;
+    let server_id = env.config.server_id.ok_or_else(|| AppError::BL {
+        msg:
+            "server_id is required for the image thumbnail backfill checkpoint"
+                .to_string(),
+    })?;
+    let checkpoint_key = image_thumbnail_checkpoint_key(server_id, since_date);
+    if ps.reset_checkpoint {
+        crate::kv::put_kv(&env.dbx, &checkpoint_key, Option::<Uuid>::None)
+            .await
+            .c(h!())?;
+    }
+    let mut cursor = match ps.after_media_id {
+        Some(cursor) => Some(cursor),
+        None if ps.reset_checkpoint => None,
+        None => crate::kv::get_kv::<Option<Uuid>>(&env.dbx, &checkpoint_key)
+            .await
+            .c(h!())?
+            .flatten(),
+    };
+    let mut scanned = 0_u64;
+    let mut generated = 0_u64;
+    let mut failed = 0_u64;
+    loop {
+        let remaining = ps.limit.map(|limit| limit.saturating_sub(scanned));
+        if remaining == Some(0) {
+            break;
+        }
+        let batch_size = remaining
+            .map_or(ps.batch_size, |remaining| remaining.min(ps.batch_size));
+        let mut query = signal_message_media::Entity::find()
+            .order_by_asc(signal_message_media::Column::Id)
+            .limit(batch_size);
+        if let Some(after_media_id) = cursor {
+            query = query
+                .filter(signal_message_media::Column::Id.gt(after_media_id));
+        }
+        if let Some(since_timestamp) = since_timestamp {
+            query = query.filter(
+                signal_message_media::Column::CreatedAt.gte(since_timestamp),
+            );
+        }
+        let batch = query.all(&env.dbx).await.c(h!())?;
+        if batch.is_empty() {
+            break;
+        }
+        let (batch_ready, batch_failed) =
+            backfill_image_thumbnail_batch(&env, &batch, ps.pause_ms).await;
+        generated += batch_ready;
+        failed += batch_failed;
+        scanned += batch.len() as u64;
+        cursor = batch.last().map(|media| media.id);
+        if let Some(cursor) = cursor {
+            crate::kv::put_kv(&env.dbx, &checkpoint_key, Some(cursor))
+                .await
+                .c(h!())?;
+            println!("scanned={scanned} ready={generated} failed={failed} after_media_id={cursor}");
+        }
+    }
+    println!(
+        "image thumbnail backfill: scanned={scanned} ready={generated} failed={failed} next --after-media-id={}",
+        cursor.map_or_else(|| "none".to_string(), |id| id.to_string())
+    );
+    if failed > 0 {
+        return Err(AppError::BL {
+            msg: format!("{failed} image thumbnails failed; review the log"),
+        });
+    }
+    Ok(())
+}
+
+async fn backfill_image_thumbnail_batch(
+    env: &Env,
+    batch: &[signal_message_media::Model],
+    pause_ms: u64,
+) -> (u64, u64) {
+    let mut ready = 0;
+    let mut failed = 0;
+    for media in batch {
+        if !crate::messenger::media::is_image_media(media) {
+            continue;
+        }
+        match crate::messenger::media_thumbnail::ensure_image_thumbnail(
+            env, media,
+        )
+        .await
+        {
+            Ok(true) => ready += 1,
+            Ok(false) => {}
+            Err(error) => {
+                failed += 1;
+                warn!(
+                    "image thumbnail backfill failed media_id={}: {error:#?}",
+                    media.id
+                );
+            }
+        }
+        if pause_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(pause_ms)).await;
+        }
+    }
+    (ready, failed)
+}
 
 struct LargeMediaMigration<'a> {
     config: &'a crate::config::Config,
@@ -1385,6 +1532,26 @@ pub async fn oneoff_fix_whatsapp_senders(mode: Mode) -> Result<(), AppError> {
 mod tests {
     use super::*;
     use opendal::services::Memory;
+
+    #[test]
+    fn image_thumbnail_backfill_dates_have_separate_checkpoints() {
+        let date = parse_image_thumbnail_since_date(Some("2026-10-01"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            image_thumbnail_checkpoint_key(7, Some(date)),
+            "oneoff_image_thumbnail_backfill_7_2026-10-01"
+        );
+        assert_ne!(
+            image_thumbnail_checkpoint_key(7, Some(date)),
+            image_thumbnail_checkpoint_key(7, None)
+        );
+        assert_ne!(
+            image_thumbnail_checkpoint_key(7, Some(date)),
+            image_thumbnail_checkpoint_key(8, Some(date))
+        );
+        assert!(parse_image_thumbnail_since_date(Some("2026-13-01")).is_err());
+    }
 
     fn memory_config() -> storage::S3Config {
         storage::S3Config {
