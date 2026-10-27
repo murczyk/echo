@@ -19,7 +19,9 @@ use crate::error::AppError;
 use crate::location::utils::to_location_list;
 use crate::types::{info, warn, Env, Mode, ShortContext};
 use crate::utils::parse_local_datetime;
-use crate::{h, OneoffLinkInboxSettlementsPs};
+use crate::{
+    h, OneoffLinkInboxSettlementsPs, OneoffRecalculateHistoricSettlementsPs,
+};
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::sea_query::{Expr, LockType, OnConflict};
 use sea_orm::*;
@@ -899,6 +901,156 @@ fn oneoff_items_query(
     query
 }
 
+pub async fn oneoff_recalculate_historic_settlements(
+    mode: Mode,
+    ps: &OneoffRecalculateHistoricSettlementsPs,
+) -> Result<(), AppError> {
+    info!("Starting historic settlement recalculation");
+    let env = crate::server::new_env(mode).await.c(h!())?;
+    let mut after_id = ps.after_id;
+    let mut scanned_total = 0u64;
+    let mut written_total = 0usize;
+    let mut skipped_total = 0usize;
+    loop {
+        let remaining = ps
+            .limit
+            .map(|limit| limit.saturating_sub(scanned_total));
+        if remaining == Some(0) {
+            break;
+        }
+        let page_size = std::cmp::min(
+            remaining.unwrap_or(INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE),
+            INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
+        );
+        let txn = env.dbx.begin().await.c(h!())?;
+        let page = recalculate_historic_settlement_page(
+            &txn, after_id, page_size, None,
+        )
+        .await
+        .c(h!())?;
+        txn.commit().await.c(h!())?;
+        let Some(last_id) = page.last_id else {
+            break;
+        };
+        after_id = last_id;
+        scanned_total += page.scanned as u64;
+        written_total += page.written;
+        skipped_total += page.skipped;
+        println!(
+            "Historic settlements: scanned={scanned_total}, written={written_total}, skipped={skipped_total}, after-id={after_id}"
+        );
+        if (page.scanned as u64) < page_size {
+            break;
+        }
+    }
+    info!(
+        "Historic settlement recalculation done: scanned={scanned_total}, written={written_total}, skipped={skipped_total}, after-id={after_id}"
+    );
+    Ok(())
+}
+
+struct HistoricSettlementRecalcPage {
+    last_id: Option<i64>,
+    scanned: usize,
+    written: usize,
+    skipped: usize,
+}
+
+async fn recalculate_historic_settlement_page<C>(
+    db: &C,
+    after_id: i64,
+    limit: u64,
+    only_item_ids: Option<&[i64]>,
+) -> anyhow::Result<HistoricSettlementRecalcPage>
+where
+    C: ConnectionTrait,
+{
+    let items =
+        missing_settlement_items(db, after_id, limit, only_item_ids)
+            .await
+            .c(h!())?;
+    let last_id = items.last().map(|(item_id, _, _)| *item_id);
+    let mut written = 0;
+    let mut skipped = 0;
+    for (item_id, item_uuid, location_v2) in &items {
+        if location_texts(location_v2.as_deref()).is_empty() {
+            skipped += 1;
+            continue;
+        }
+        reconcile_item_location_rows(
+            db,
+            *item_id,
+            *item_uuid,
+            location_v2.as_deref(),
+        )
+        .await
+        .c(h!())?;
+        written += 1;
+    }
+    Ok(HistoricSettlementRecalcPage {
+        last_id,
+        scanned: items.len(),
+        written,
+        skipped,
+    })
+}
+
+async fn missing_settlement_items<C>(
+    db: &C,
+    after_id: i64,
+    limit: u64,
+    only_item_ids: Option<&[i64]>,
+) -> anyhow::Result<Vec<(i64, Option<uuid::Uuid>, Option<String>)>>
+where
+    C: ConnectionTrait,
+{
+    let mut query = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::LocationV2.is_not_null())
+        .filter(sigint_inbox_item::Column::LocationV2.ne(""))
+        .filter(sigint_inbox_item::Column::Id.gt(after_id))
+        .filter(Expr::exists(settlement_row_exists_query()).not())
+        .lock(LockType::Update)
+        .order_by_asc(sigint_inbox_item::Column::Id)
+        .select_only()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::IdUuid,
+            sigint_inbox_item::Column::LocationV2,
+        ]);
+    if let Some(item_ids) = only_item_ids {
+        query = query
+            .filter(sigint_inbox_item::Column::Id.is_in(item_ids.to_vec()));
+    }
+    query
+        .limit(limit)
+        .into_tuple::<(i64, Option<uuid::Uuid>, Option<String>)>()
+        .all(db)
+        .await
+        .c(h!())
+}
+
+fn settlement_row_exists_query() -> sea_orm::sea_query::SelectStatement {
+    sea_orm::sea_query::Query::select()
+        .expr(Expr::value(1))
+        .from(sigint_inbox_item_settlement::Entity)
+        .and_where(
+            Expr::col((
+                sigint_inbox_item_settlement::Entity,
+                sigint_inbox_item_settlement::Column::ItemId,
+            ))
+            .equals((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Id,
+            )),
+        )
+        .to_owned()
+}
+
 fn oneoff_bounds(
     ps: &OneoffLinkInboxSettlementsPs,
 ) -> Result<(Option<NaiveDateTime>, Option<NaiveDateTime>), AppError> {
@@ -1253,6 +1405,96 @@ returning id
             0
         );
         txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn recalculate_historic_settlements_writes_missing_rows_only() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let missing_id = insert_historic_location_item(
+            &txn,
+            Some("|КРАСНОЄ|ОХРІМІВКА|"),
+        )
+        .await
+        .unwrap();
+        let already_id =
+            insert_historic_location_item(&txn, Some("|ALREADY|"))
+                .await
+                .unwrap();
+        reconcile_item_locations(
+            &txn,
+            already_id,
+            None,
+            Some("|ALREADY|"),
+        )
+        .await
+        .unwrap();
+        let empty_id =
+            insert_historic_location_item(&txn, Some("||")).await.unwrap();
+        let null_id =
+            insert_historic_location_item(&txn, None).await.unwrap();
+        let only_ids = [missing_id, already_id, empty_id, null_id];
+
+        let page = recalculate_historic_settlement_page(
+            &txn, 0, 10, Some(&only_ids),
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.scanned, 2);
+        assert_eq!(page.written, 1);
+        assert_eq!(page.skipped, 1);
+        let texts = sigint_inbox_item_settlement::Entity::find()
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId.eq(missing_id),
+            )
+            .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_eq!(
+            texts
+                .iter()
+                .map(|row| row.settlement_text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["КРАСНОЄ", "ОХРІМІВКА"]
+        );
+
+        let again = recalculate_historic_settlement_page(
+            &txn, 0, 10, Some(&only_ids),
+        )
+        .await
+        .unwrap();
+        assert_eq!(again.scanned, 1);
+        assert_eq!(again.written, 0);
+        assert_eq!(again.skipped, 1);
+        txn.rollback().await.unwrap();
+    }
+
+    async fn insert_historic_location_item(
+        txn: &DatabaseTransaction,
+        location_v2: Option<&str>,
+    ) -> anyhow::Result<i64> {
+        let message = signal_message::ActiveModel {
+            body: Set(Some("#3308 historic settlement".to_string())),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        let item = sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            parsed_unit_v2: Set(false),
+            location_v2: Set(location_v2.map(str::to_string)),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        Ok(item.id)
     }
 
     #[tokio::test]

@@ -446,7 +446,7 @@ async fn mk_analysis_message_with_location(
     )
     .await
     .context(h!())?;
-    mk_sigint_inbox_item(
+    let inbox_item = mk_sigint_inbox_item(
         db,
         sigint_inbox_item::ActiveModel {
             id: Set(signal_message.id),
@@ -459,6 +459,14 @@ async fn mk_analysis_message_with_location(
             )),
             ..Default::default()
         },
+    )
+    .await
+    .context(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        db,
+        inbox_item.id,
+        inbox_item.id_uuid,
+        location_v2,
     )
     .await
     .context(h!())?;

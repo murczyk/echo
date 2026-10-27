@@ -14,11 +14,6 @@ export function buildDutyLocationsStatsReq(nowMs: number): AnalysisStatsReq {
   };
 }
 
-export function sortDutyLocations(locations: readonly AnalysisStatsLocation[]): string[] {
-  const options = locations.map(({ location }) => ({ value: location, label: location }));
-  return sortLocationFilterOptions(options).map((option) => option.value);
-}
-
 const EMPTY_LOCATION_TOKENS = new Set(
   [EMPTY_FILTER_LABEL, '--Не визначено--'].map((token) => token.toLocaleUpperCase('uk-UA')),
 );
@@ -27,6 +22,15 @@ const EMPTY_LOCATION_TOKENS = new Set(
 export function normalizeDutyLocationValue(value: string): string {
   const upper = value.trim().toLocaleUpperCase('uk-UA');
   return EMPTY_LOCATION_TOKENS.has(upper) ? '' : upper;
+}
+
+export function sortDutyLocations(locations: readonly AnalysisStatsLocation[]): string[] {
+  const options = new Map<string, { value: string; label: string }>();
+  for (const { location } of locations) {
+    const value = normalizeDutyLocationValue(location);
+    options.set(value, { value, label: value });
+  }
+  return sortLocationFilterOptions([...options.values()]).map((option) => option.value);
 }
 
 export function dutyLocationLabel(value: string): string {

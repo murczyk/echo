@@ -134,6 +134,17 @@ describe('Duty location options', () => {
     ).toEqual(['', 'КИЇВ', 'ЛЬВІВ']);
   });
 
+  it('canonicalizes the backend empty-location sentinel before sorting', () => {
+    expect(
+      sortDutyLocations([
+        { location: 'львів', count: 1 },
+        { location: '--Не визначено--', count: 4 },
+        { location: '', count: 2 },
+        { location: 'ЛЬВІВ', count: 3 },
+      ]),
+    ).toEqual(['', 'ЛЬВІВ']);
+  });
+
   it('normalizes free-entry locations', () => {
     expect(normalizeDutyLocationValue('  київ ')).toBe('КИЇВ');
     expect(normalizeDutyLocationValue('<не вказано>')).toBe('');
