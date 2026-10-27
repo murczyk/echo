@@ -386,17 +386,16 @@ async fn complete_job(
         return Ok(false);
     }
     let settlements = normalize_settlements(ai_settlements);
+    let location = (!settlements.is_empty()).then(|| settlements.join(", "));
     let location_v2 = (!settlements.is_empty())
         .then(|| crate::location::utils::format_locations_list(settlements));
-    let clear_location = location_v2.is_none() && inbox_item.location.is_some();
-    let changed = location_v2 != inbox_item.location_v2 || clear_location;
+    let changed = location_v2 != inbox_item.location_v2
+        || location != inbox_item.location;
     let inbox_item_uuid = inbox_item.id_uuid;
     if changed {
         let mut inbox_item = inbox_item.into_active_model();
         inbox_item.location_v2 = Set(location_v2.clone());
-        if clear_location {
-            inbox_item.location = Set(None);
-        }
+        inbox_item.location = Set(location);
         inbox_item.update(&transaction).await.c(h!())?;
     }
     crate::battle_line::settlement_queue::reconcile_item_locations(
@@ -799,6 +798,7 @@ mod tests {
         .unwrap();
         let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
+            location: Set(Some("existing mixed, second, third".to_string())),
             location_v2: Set(Some("|EXISTING MIXED|SECOND|THIRD|".to_string())),
             parsed_unit_v2: Set(false),
             ..Default::default()
@@ -858,6 +858,10 @@ mod tests {
         assert_eq!(
             inbox_item.location_v2.as_deref(),
             Some("|EXISTING MIXED|THIRD|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|")
+        );
+        assert_eq!(
+            inbox_item.location.as_deref(),
+            Some("EXISTING MIXED, THIRD, ВЕРХНЄ ГОРІХОВЕ, ЗАЛИВНИЙ")
         );
         let links = sigint_inbox_item_settlement::Entity::find()
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(message.id))
@@ -1007,6 +1011,7 @@ mod tests {
         let location_v2 = "|ІВАЩИНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|";
         let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
+            location: Set(Some("OBSOLETE".to_string())),
             location_v2: Set(Some(location_v2.to_string())),
             parsed_unit_v2: Set(false),
             ..Default::default()
@@ -1038,17 +1043,20 @@ mod tests {
                 retained.push(row);
             }
         }
-        for _ in 0..2 {
+        for changed in [true, false] {
             enqueue_if_enabled(&env.dbx, message.id).await.unwrap();
-            assert!(!complete_job(
-                &env.dbx,
-                message.id,
-                "#3383 unchanged result",
-                &config,
-                crate::location::utils::to_location_list(location_v2),
-            )
-            .await
-            .unwrap());
+            assert_eq!(
+                complete_job(
+                    &env.dbx,
+                    message.id,
+                    "#3383 unchanged result",
+                    &config,
+                    crate::location::utils::to_location_list(location_v2),
+                )
+                .await
+                .unwrap(),
+                changed,
+            );
             let rows = sigint_inbox_item_settlement::Entity::find()
                 .filter(
                     sigint_inbox_item_settlement::Column::ItemId.eq(message.id),
@@ -1080,6 +1088,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(inbox_item.location_v2.as_deref(), Some(location_v2));
+        assert_eq!(
+            inbox_item.location.as_deref(),
+            Some("ІВАЩИНЕ, ВЕРХНЄ ГОРІХОВЕ, ЗАЛИВНИЙ")
+        );
         assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await
