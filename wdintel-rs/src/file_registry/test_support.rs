@@ -8,8 +8,11 @@ use super::entities::{
 };
 use chrono::{Duration, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, TransactionTrait,
+    ActiveModelTrait,
+    ActiveValue::{NotSet, Set},
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    IntoActiveModel, QueryFilter, TransactionTrait,
+    sea_query::Expr,
 };
 use uuid::Uuid;
 
@@ -197,7 +200,9 @@ where
     let expires_at = now + Duration::hours(1);
     let hard_expires_at = now + Duration::days(1);
 
-    let upload = file_content_upload::ActiveModel {
+    // Explicit inserts/updates without RETURNING: callers may run this on a
+    // schema migrated only partway, before later columns such as stats_epoch.
+    file_content_upload::Entity::insert(file_content_upload::ActiveModel {
         id: Set(upload_id),
         device_id: Set(file.device_id),
         file_id: Set(file.id),
@@ -213,15 +218,24 @@ where
         hard_expires_at: Set(hard_expires_at),
         spool_removed_at: Set(None),
         next_cleanup_at: Set(Some(expires_at)),
-        stats_epoch: Set(0),
-    }
-    .insert(db)
+        stats_epoch: NotSet,
+    })
+    .exec_without_returning(db)
     .await
     .unwrap();
-    let mut upload = upload.into_active_model();
-    upload.status = Set(FileContentUploadStatus::Completed);
-    upload.next_cleanup_at = Set(Some(now));
-    upload.update(db).await.unwrap();
+    file_content_upload::Entity::update_many()
+        .col_expr(
+            file_content_upload::Column::Status,
+            Expr::value(FileContentUploadStatus::Completed),
+        )
+        .col_expr(
+            file_content_upload::Column::NextCleanupAt,
+            Expr::value(Some(now)),
+        )
+        .filter(file_content_upload::Column::Id.eq(upload_id))
+        .exec(db)
+        .await
+        .unwrap();
     file_content::Entity::insert(file_content::ActiveModel {
         origin_archive_id: sea_orm::ActiveValue::NotSet,
         file_id: Set(file.id),
