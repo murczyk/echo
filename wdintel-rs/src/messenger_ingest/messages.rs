@@ -176,9 +176,6 @@ async fn submit_message(
                 created_at: None,
                 skip_dedupe: true,
                 login_id: Some(target.scope.login_id),
-                // Times in the text refer to the send date, which may be
-                // long ago for backfilled history.
-                inbox_reference_time: Some(timestamp),
             },
         )
         .await
@@ -625,6 +622,25 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(group_messages, 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn submit_dates_inbox_item_by_send_time_not_body() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let fixture = fixture(&txn, MESSENGER_TYPE_TELEGRAM).await;
+        let item = message_input("m-1", "21.05.2024 14:30 колона", None);
+
+        let created = submit(&txn, &env, &fixture, &item).await.unwrap();
+
+        let message = stored_message(&txn, &created).await;
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.datetime, message.timestamp);
     }
 
     #[tokio::test]

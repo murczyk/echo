@@ -125,12 +125,16 @@ where
     };
 
     let body = message.body.clone().unwrap_or("".to_string());
-    if crate::rer_importer::multimessage::should_try_split_message(&body)
-        && !crate::messenger_ingest::datasource::is_messenger_ingest_message(
+    // Messenger ingest messages are chat history: never split, and dated by
+    // their send timestamp rather than by dates mentioned in the text.
+    let is_messenger_ingest =
+        crate::messenger_ingest::datasource::is_messenger_ingest_message(
             txn, &message,
         )
         .await
-        .c(h!())?
+        .c(h!())?;
+    if crate::rer_importer::multimessage::should_try_split_message(&body)
+        && !is_messenger_ingest
     {
         let spawned = match datetime_override.as_ref() {
             Some(InboxDatetimeOverride::Historical {
@@ -163,10 +167,13 @@ where
         }
         _ => Local::now().with_timezone(&tz),
     };
-    let allow_kraken_audio =
-        message_has_other_interseption_group(txn, &message).await?;
-    let (mut m_dt, meow_format) =
-        extract_message_datetime(lnow, &body, allow_kraken_audio)?;
+    let (mut m_dt, meow_format) = if is_messenger_ingest {
+        (None, None)
+    } else {
+        let allow_kraken_audio =
+            message_has_other_interseption_group(txn, &message).await?;
+        extract_message_datetime(lnow, &body, allow_kraken_audio)?
+    };
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
