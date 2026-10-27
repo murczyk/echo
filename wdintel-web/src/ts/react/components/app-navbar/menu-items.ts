@@ -266,12 +266,6 @@ export const aiAgentAdminSubs: Menu[] = [
 export const adminDatabaseSubs: Menu[] = [
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/kpi' },
-    activeName: 'kpi',
-    label: 'KPI',
-  },
-  {
-    type: 'item',
     link: { type: 'internal', path: '/admin/transcription-forwarding' },
     activeName: 'transcription-forwarding',
     label: 'Пересилання транскрибації',
@@ -405,5 +399,11 @@ export const adminSubs: Menu[] = [
         label: 'Імпорт Delta',
       },
     ],
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/kpi' },
+    activeName: 'kpi',
+    label: 'KPI',
   },
 ];

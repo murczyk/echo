@@ -345,6 +345,66 @@ export type ReportHistoryRow = {
   downloadAttempts: Array<ReportDownloadHistoryEntry>;
 };
 
+export type KpiPeriod = {
+  since: number;
+  until: number;
+};
+
+export type KpiCount = {
+  id: string;
+  label: string;
+  count: number;
+};
+
+export type KpiDuration = {
+  samples: number;
+  excluded: number;
+  medianSeconds: number | null;
+  p90Seconds: number | null;
+};
+
+export type KpiReportsRsp = {
+  period: KpiPeriod;
+  total: number;
+  done: number;
+  failed: number;
+  byKind: Array<KpiCount>;
+  byAuthor: Array<KpiCount>;
+  byDay: Array<KpiCount>;
+  generation: KpiDuration;
+};
+
+export type KpiNotificationsRsp = {
+  period: KpiPeriod;
+  total: number;
+  byStatus: Array<KpiCount>;
+  transport: KpiDuration;
+};
+
+export type KpiActivityRsp = {
+  period: KpiPeriod;
+  available: boolean;
+  reason: string | null;
+  observedFrom: string | null;
+  observedUntil: string | null;
+  accounts: number | null;
+  byDay: Array<KpiCount>;
+  byPage: Array<KpiCount>;
+  queueEnqueued: number;
+  queueDropped: number;
+  unmappedAccountGroups: number;
+};
+
+export type KpiRequestsRsp = {
+  period: KpiPeriod;
+  available: boolean;
+  reason: string | null;
+  total: number | null;
+  serverErrors: number | null;
+  clientErrors: number | null;
+  byStatus: Array<KpiCount>;
+};
+
 export type ReportHistoryLogEntry = {
   login: string;
   timestamp: string;

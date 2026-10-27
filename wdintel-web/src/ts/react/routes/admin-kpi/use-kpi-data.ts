@@ -27,7 +27,7 @@ async function loadReportCount() {
   return response.total;
 }
 
-function useSnapshot<T>(load: () => Promise<T>, failureMessage: string) {
+export function useSnapshot<T>(load: () => Promise<T>, failureMessage: string) {
   const { notify } = usePowerSnackbar();
   const generation = useRef(0);
   const [snapshot, setSnapshot] = useState<Snapshot<T>>({

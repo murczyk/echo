@@ -80,6 +80,47 @@ function fixtureAccounts() {
 async function setup(page: Page, users = fixtureAccounts()) {
   await page.clock.setFixedTime(NOW);
   await installAnalysisNeoApiMocks(page, { userRoles: ['Admin'] });
+  await page.route('**/api/kpi/*', async (route) => {
+    const period = route.request().postDataJSON();
+    const duration = { samples: 0, excluded: 0, medianSeconds: null, p90Seconds: null };
+    const endpoint = new URL(route.request().url()).pathname.split('/').at(-1);
+    const responses = {
+      reports: {
+        period,
+        total: 0,
+        done: 0,
+        failed: 0,
+        byKind: [],
+        byAuthor: [],
+        byDay: [],
+        generation: duration,
+      },
+      activity: {
+        period,
+        available: false,
+        reason: 'Greptime не налаштовано.',
+        observedFrom: null,
+        observedUntil: null,
+        accounts: null,
+        byDay: [],
+        byPage: [],
+        queueEnqueued: 0,
+        queueDropped: 0,
+        unmappedAccountGroups: 0,
+      },
+      requests: {
+        period,
+        available: false,
+        reason: 'Greptime не налаштовано.',
+        total: null,
+        serverErrors: null,
+        clientErrors: null,
+        byStatus: [],
+      },
+      notifications: { period, total: 0, byStatus: [], transport: duration },
+    };
+    await route.fulfill({ json: responses[endpoint as keyof typeof responses] });
+  });
   await page.route('**/api/logins', (route) => route.fulfill({ json: { users } }));
   await page.route('**/api/admin/report-history/list', (route) =>
     route.fulfill({
@@ -108,7 +149,7 @@ for (const width of [390, 1280]) {
     if (width === 1280) {
       await page.goto('/');
       await page.getByRole('button', { name: 'Адмін', exact: true }).click();
-      await page.getByRole('menuitem', { name: 'База знань', exact: true }).hover();
+      await expect(page.getByRole('menuitem').last()).toHaveText('KPI');
       await page.getByRole('menuitem', { name: 'KPI', exact: true }).click();
     } else {
       await page.goto('/admin/kpi');
@@ -117,7 +158,9 @@ for (const width of [390, 1280]) {
     await expect(metric(page, 'Активні облікові записи')).toHaveText('3');
     await expect(metric(page, 'Деактивовані / заблоковані')).toHaveText('6');
     await expect(metric(page, 'Потребують перевірки: понад 90 днів')).toHaveText('2');
+    await page.getByRole('tab', { name: 'Активність', exact: true }).click();
     await expect(metric(page, 'Успішні звіти в доступній історії')).toHaveText('731');
+    await page.getByRole('tab', { name: 'База користувачів', exact: true }).click();
     expect((await reportRequest).postDataJSON()).toEqual({
       offset: 0,
       limit: 1,
@@ -168,13 +211,14 @@ for (const width of [390, 1280]) {
     await expect(metric(page, 'Облікові записи')).toHaveText('3');
     await expect(metric(page, 'Активні облікові записи')).toHaveText('2');
     await expect(review.getByRole('link', { name: 'admin-old', exact: true })).toHaveCount(0);
-    await expect(metric(page, 'Успішні звіти в доступній історії')).toHaveText('731');
     const chart = page
       .getByRole('region', { name: 'Статуси облікових записів', exact: true })
       .locator('div[aria-hidden="true"] svg');
     await expect(chart).toBeVisible();
     await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
     await expect(chart).toBeVisible();
+    await page.getByRole('tab', { name: 'Активність', exact: true }).click();
+    await expect(metric(page, 'Успішні звіти в доступній історії')).toHaveText('731');
     await page.getByRole('link', { name: 'Переглянути всі звіти' }).scrollIntoViewIfNeeded();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -204,22 +248,27 @@ test('#3826 KPI isolates failures, retains stale snapshots, and retries @regress
   await page.goto('/admin/kpi');
   await expect(page.getByRole('button', { name: 'Повторити: облікові записи' })).toBeVisible();
   await expect(metric(page, 'Облікові записи')).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Активність', exact: true }).click();
   await expect(metric(page, 'Успішні звіти в доступній історії')).toHaveText('23');
   await expect(page.locator('.MuiSnackbar-root')).toContainText(
     'Не вдалося завантажити облікові записи',
   );
   accountsFail = false;
+  await page.getByRole('tab', { name: 'База користувачів', exact: true }).click();
   await page.getByRole('button', { name: 'Повторити: облікові записи' }).click();
   await expect(metric(page, 'Облікові записи')).toHaveText('1');
   reportsFail = true;
   users = [account('active'), account('new-account')];
   await page.getByRole('button', { name: 'Оновити KPI' }).click();
+  await page.getByRole('tab', { name: 'Активність', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Повторити: звіти' })).toBeVisible();
   await expect(metric(page, 'Успішні звіти в доступній історії')).toHaveText('23');
   await expect(page.getByRole('region', { name: 'Звіти: вся система', exact: true })).toContainText(
     'Показано попередні дані.',
   );
+  await page.getByRole('tab', { name: 'База користувачів', exact: true }).click();
   await expect(metric(page, 'Облікові записи')).toHaveText('2');
+  await page.getByRole('tab', { name: 'Активність', exact: true }).click();
   reportsFail = false;
   await page.getByRole('button', { name: 'Повторити: звіти' }).click();
   await expect(page.getByRole('button', { name: 'Повторити: звіти' })).toHaveCount(0);
@@ -244,7 +293,7 @@ for (const roles of [['Rer'], ['Full'], ['Cyber'], []]) {
     await setup(page);
     await installAnalysisNeoApiMocks(page, { userRoles: roles });
     let protectedRequests = 0;
-    await page.route(/\/api\/(logins|admin\/report-history\/list)$/, (route) => {
+    await page.route(/\/api\/(logins|admin\/report-history\/list|kpi\/[^/]+)$/, (route) => {
       protectedRequests += 1;
       return route.fulfill({ json: {} });
     });
@@ -286,4 +335,116 @@ test('#3826 preserves login redirect on authentication failure @regression', asy
   await page.goto('/admin/kpi');
   await expect(page).toHaveURL(/\/login\?redirect=%2Fadmin%2Fkpi/);
   await expect(page.locator('admin-kpi')).toHaveCount(0);
+});
+
+test('#3826 historical tabs use bounded periods and isolate unavailable sources @regression', async ({
+  page,
+}) => {
+  await setup(page);
+  const requests: { endpoint: string; since: number; until: number }[] = [];
+  let failRequests = true;
+  await page.route('**/api/kpi/requests', async (route) => {
+    const period = route.request().postDataJSON();
+    requests.push({ endpoint: 'requests', ...period });
+    if (failRequests) return route.fulfill({ status: 500, body: 'History unavailable' });
+    return route.fulfill({
+      json: {
+        period,
+        available: true,
+        reason: null,
+        total: 40,
+        serverErrors: 2,
+        clientErrors: 3,
+        byStatus: [
+          { id: '200', label: '200', count: 35 },
+          { id: '404', label: '404', count: 3 },
+          { id: '500', label: '500', count: 2 },
+        ],
+      },
+    });
+  });
+  await page.goto('/admin/kpi?tab=quality');
+  await expect(page.getByRole('tab')).toHaveCount(10);
+  await expect(page.getByRole('tab', { name: 'Технічна якість', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(
+    page.getByRole('button', { name: 'Повторити: якість API', exact: true }),
+  ).toBeVisible();
+  await expect(metric(page, 'Сповіщення для відправлення')).toHaveText('0');
+  await expect(metric(page, 'Час до відправлення в транспорт: медіана')).toHaveText('Недоступно');
+  failRequests = false;
+  await page.getByRole('button', { name: 'Повторити: якість API', exact: true }).click();
+  await expect(metric(page, 'Частка відповідей з помилкою')).toHaveText('12.50%');
+  expect(requests.at(-1)).toEqual({ endpoint: 'requests', since: NOW - 30 * DAY, until: NOW });
+  await page.getByRole('combobox', { name: /^Період історії/ }).click();
+  await page.getByRole('option', { name: 'Останні 7 днів', exact: true }).click();
+  await expect.poll(() => requests.at(-1)?.since).toBe(NOW - 7 * DAY);
+  await page.getByRole('tab', { name: 'Активність', exact: true }).click();
+  await expect(
+    page.getByRole('region', { name: 'Спостереження сторінок', exact: true }),
+  ).toContainText('Недоступно: Greptime не налаштовано.');
+  await expect(metric(page, 'Облікові записи зі спостереженнями')).toHaveCount(0);
+  await expect(page).toHaveURL(/tab=activity/);
+  await page.goBack();
+  await expect(page.getByRole('tab', { name: 'Технічна якість', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('tab', { name: 'Радять', exact: true }).click();
+  await expect(page.getByRole('tabpanel')).toContainText('збереженої ідентичності автора');
+});
+
+test('#3826 changed periods discard delayed history responses and retain failed snapshots @regression', async ({
+  page,
+}) => {
+  await setup(page);
+  let releaseOld!: () => void;
+  const oldReady = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  let failReports = false;
+  let calls = 0;
+  await page.route('**/api/kpi/reports', async (route) => {
+    const period = route.request().postDataJSON();
+    calls += 1;
+    const first = calls === 1;
+    if (first) await oldReady;
+    if (failReports) return route.fulfill({ status: 500, body: 'Reports failed' });
+    return route.fulfill({
+      json: {
+        period,
+        total: first ? 999 : 7,
+        done: first ? 999 : 5,
+        failed: 2,
+        byKind: [],
+        byAuthor: [],
+        byDay: [],
+        generation: { samples: 1, excluded: 4, medianSeconds: 12, p90Seconds: 12 },
+      },
+    });
+  });
+  await page.goto('/admin/kpi?tab=speed');
+  await expect.poll(() => calls).toBe(1);
+  await page.getByRole('combobox', { name: /^Період історії/ }).click();
+  await page.getByRole('option', { name: 'Останні 7 днів', exact: true }).click();
+  await expect(metric(page, 'Запити генерації')).toHaveText('7');
+  releaseOld();
+  await expect(metric(page, 'Запити генерації')).toHaveText('7');
+  failReports = true;
+  await page.clock.setFixedTime(NOW + DAY);
+  await page.getByRole('button', { name: 'Оновити KPI', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Повторити: історія звітів', exact: true }),
+  ).toBeVisible();
+  await expect(metric(page, 'Запити генерації')).toHaveText('7');
+  await expect(
+    page.getByRole('region', { name: 'Генерація звітів за період', exact: true }),
+  ).toContainText('Показано попередні дані.');
+  failReports = false;
+  await page.getByRole('button', { name: 'Повторити: історія звітів', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Повторити: історія звітів', exact: true }),
+  ).toHaveCount(0);
 });
