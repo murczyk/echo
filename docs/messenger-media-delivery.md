@@ -4,6 +4,41 @@ Backblaze/S3 remains the durable store for original attachments. Optional local
 retention removes origin latency from the first view of recently published media.
 Original URLs keep their original bytes; video playback copies have their own URL.
 
+## Image thumbnails
+
+Image and video previews are private JPEG files in
+`<storage_dir>/messenger_media_cache/thumbnails/<media-id>.jpg`. Newly uploaded
+images are queued for thumbnail creation alongside videos. Image previews have a
+300 px short side; opening or downloading an image still uses its original S3
+object. Missing thumbnails are recovered from the original on request, and an
+unsupported or damaged image falls back to its original in the message card.
+The worker keeps separate 2 GiB budgets for image and video JPEGs. Temporary
+thumbnail sources share a 20 GiB budget and expire after 24 hours.
+
+Historical images can be precomputed on each application host with the bounded
+oneoff below. It scans media rows by UUID, creates only missing image thumbnails,
+and pauses after each image. The last completed batch's UUID is saved in
+`delta_kv` under a key scoped to `server_id`; rerunning the command on the same
+server resumes automatically. Each server needs its own checkpoint because
+thumbnails are local files. Use `--after-media-id` to override it or
+`--reset-checkpoint` to restart. Already completed thumbnails are skipped.
+Use `--since-date YYYY-MM-DD` to include only media created on or after that UTC
+date. Date-scoped runs keep separate `delta_kv` keys; pass the same date when
+resuming. The command requires the server's unique `server_id` configuration.
+If the command reports failed images, inspect its log and use
+`--reset-checkpoint` to retry them after correcting the cause.
+`--limit` bounds a run by scanned media rows. Inspect available disk space and the
+`thumbnails` and `thumbnail_sources` directories before running it.
+
+```bash
+sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-image-thumbnails --batch-size=50 --pause-ms=250 --limit=1000
+sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-image-thumbnails --batch-size=50 --pause-ms=250
+sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-image-thumbnails --since-date=2026-10-01 --batch-size=50 --pause-ms=250 --limit=1000
+```
+
+Run this separately on each host that serves media; thumbnail files are local,
+and the command does not change attachment records or original objects.
+
 ## Enable local retention
 
 Open **Адмін → Системні налаштування Neo → Кеш**, enable
