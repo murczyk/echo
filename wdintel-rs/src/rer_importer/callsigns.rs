@@ -1312,45 +1312,59 @@ fn extract_avia_callsigns_for_group(
     input: &str,
     is_aviation_group: bool,
 ) -> Result<Vec<CNCallsign>, AppError> {
+    let body = input.trim_start();
     let lines: Vec<String> =
-        input.trim().lines().map(|x| x.to_string()).collect();
+        body.split('\n').map(|line| line.to_string()).collect();
 
-    let skip_lines = avia_format_lines(&lines).unwrap_or(0);
+    let skip_lines = avia_format_lines(&lines, is_aviation_group).unwrap_or(0);
     if skip_lines == 0 {
         return Ok(vec![]);
     }
 
-    let mut msg_pos: usize = lines
-        .iter()
-        .take(skip_lines)
-        .map(|line| cline_len(line))
-        .sum::<usize>()
-        + 1;
+    let mut msg_pos = cline_len(input) - cline_len(body)
+        + lines
+            .iter()
+            .take(skip_lines)
+            .map(|line| cline_len(line) + 1)
+            .sum::<usize>();
 
-    let mut lines = lines
-        .iter()
-        .skip(skip_lines)
-        .cloned()
-        .collect::<Vec<String>>();
-    lines.truncate(crate::config::CALLSIGNS_MAX_LINES);
-
-    const LITERAL_CALLSIGN_STR: &str =
-        r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?";
-    const DIGITAL_CALLSIGN_STR: &str = r"(\d{1,3}[\s-]?[Йй])|(\d{2,})";
-    const AIRCRAFT_REGISTRATION_CALLSIGN_STR: &str = r"[A-Za-z]{1,4}-\d{2,6}";
+    const CALLSIGN_REGEX_STR: &str = concat!(
+        r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?",
+        r"|(\d{1,3}[\s-]?[Йй])|(\d{2,})",
+        r"|[A-Za-z]{1,4}-\d{2,6}"
+    );
 
     lazy_static! {
-        // Regex for matching a single callsign
         static ref CALLSIGN_REGEX: Regex = Regex::new(&format!(
-            r"^\s*(?P<callsign>(({LITERAL_CALLSIGN_STR})|({DIGITAL_CALLSIGN_STR})|({AIRCRAFT_REGISTRATION_CALLSIGN_STR})))\s*$"
+            r"(?P<callsign>{CALLSIGN_REGEX_STR})"
+        )).unwrap();
+        static ref CALLSIGN_LINE_REGEX: Regex = Regex::new(&format!(
+            r"^\s*(?:{CALLSIGN_REGEX_STR})(?:\s*,\s*(?:{CALLSIGN_REGEX_STR}))*\s*$"
         )).unwrap();
     }
 
     let mut res: Vec<CNCallsign> = vec![];
 
-    for line in lines.iter() {
-        for capture in CALLSIGN_REGEX.captures_iter(line) {
-            if capture.name("callsign").is_some() {
+    let header_lines = lines
+        .iter()
+        .skip(skip_lines)
+        .take(crate::config::CALLSIGNS_MAX_LINES);
+    let mut in_callsign_header = true;
+    let mut seen_header_line = false;
+    for line in header_lines {
+        let is_callsign_line = CALLSIGN_LINE_REGEX.is_match(line);
+        if line.trim().is_empty() {
+            if seen_header_line {
+                in_callsign_header = false;
+            }
+        } else {
+            seen_header_line = true;
+            if !is_callsign_line {
+                in_callsign_header = false;
+            }
+        }
+        if is_callsign_line && (in_callsign_header || !line.contains(',')) {
+            for capture in CALLSIGN_REGEX.captures_iter(line) {
                 add_callsign_with_numeric_min_len(
                     &capture,
                     "callsign",
@@ -1368,7 +1382,10 @@ fn extract_avia_callsigns_for_group(
     Ok(res)
 }
 
-fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
+fn avia_format_lines(
+    lines: &[String],
+    is_aviation_group: bool,
+) -> Result<usize, AppError> {
     //     Отримано з поста 35
     // --------------------------------------
     // 24.08.2025, 10:05:15
@@ -1385,40 +1402,38 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
             Regex::new(r"^\s*\d{2}\.\d{2}\.\d{4},?\s+\d{2}:\d{2}:\d{2}\s*$")
                 .unwrap();
         static ref RE_FREQ: Regex =
-            Regex::new(r"^\s*\d{3}.\d{3,4}\s*$").unwrap();
+            Regex::new(r"^\s*\d{3}[.,]\d{3,4}\s*$").unwrap();
         static ref RE_NETWORK: Regex =
             Regex::new(r"^(🟠|🔴|🔷|🟡|⚫)|(\s*УКХ р/м).*$").unwrap();
         static ref RE_EMPTY: Regex = Regex::new(r"^\s*$").unwrap();
     }
 
-    // Determine the minimum required lines
-    // Minimum 5 lines (Post, Date, Freq, Network + one line after) if no separator
-    // Minimum 6 lines (Post, Separator, Date, Freq, Network + one line after) if separator is present
-    if lines.len() < 5 {
+    if lines.len() < 4 {
         return Err(AppError::BL {
             msg: "Not enough lines for avia format".to_string(),
         });
     }
 
-    // 0. Check POST line
     let line0 = &lines[0];
-    if !RE_POST.is_match(line0) {
+    let mut line_index = if RE_POST.is_match(line0) {
+        1
+    } else if is_aviation_group && RE_DATE.is_match(line0) {
+        0
+    } else {
         log::trace!("RE_POST failed on line 0");
         return Err(AppError::BL {
             msg: "First line does not match RE_POST".to_string(),
         });
-    }
-
-    let mut line_index = 1;
+    };
 
     // 1. Optional separator
     if RE_SEPARATOR.is_match(&lines[line_index]) {
         line_index += 1;
-        if lines.len() < 6 {
-            return Err(AppError::BL {
-                msg: "Not enough lines for avia format".to_string(),
-            });
-        }
+    }
+    if lines.len() < line_index + 4 {
+        return Err(AppError::BL {
+            msg: "Not enough lines for avia format".to_string(),
+        });
     }
 
     // 2. DATE line
@@ -4027,6 +4042,79 @@ fn aviation_group_accepts_two_digit_callsigns() {
     assert!(aviation.iter().any(|callsign| callsign.text == "67"));
     assert!(aviation.iter().any(|callsign| callsign.text == "69"));
     assert!(aviation.iter().any(|callsign| callsign.text == "12347"));
+}
+
+#[tokio::test]
+async fn aviation_group_parses_compact_callsign_headers() {
+    let rq = reqwest::Client::new();
+    for (callsign, header, newline, frequency) in [
+        ("42", "42\nНВ", "\n", "134.3750"),
+        ("44", "НВ\n44", "\n", "134.3750"),
+        ("44", "\nНВ\n44", "\n", "134.3750"),
+        ("42", "42\nНВ", "\r\n", "134.3750"),
+        ("44", "НВ\n44", "\n", "134,3750"),
+    ] {
+        let body = format!(
+            "19.10.2026, 10:05:32\n{frequency}\n🟠\n{header}\n\n— {callsign} по заданию разрешил.\n— {callsign}. Контроль на взлет разрешил 50 4 5."
+        )
+        .replace('\n', newline);
+        assert!(parse_primary_callsigns(&rq, &body, false)
+            .await
+            .unwrap()
+            .is_empty());
+
+        assert!(extract_avia_callsigns_for_group(
+            &body.replace(frequency, "134x3750"),
+            true,
+        )
+        .unwrap()
+        .is_empty());
+        let callsigns =
+            parse_primary_callsigns(&rq, &body, true).await.unwrap();
+        assert_eq!(callsigns, vec![callsign.to_string()]);
+        let highlights =
+            highlight_callsigns(&rq, &body, &callsigns).await.unwrap();
+        assert_eq!(highlights.len(), 3);
+        for highlight in highlights {
+            assert_eq!(highlight.etalon, callsign);
+            assert_eq!(
+                body.chars()
+                    .skip(highlight.begin)
+                    .take(highlight.end - highlight.begin)
+                    .collect::<String>(),
+                callsign
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn aviation_group_parses_comma_separated_callsigns() {
+    let body = "Отримано з поста \"34\"\n--------------------------------------\n22.10.2026, 10:39:11\n134.3750\n🟠\nБАЙКАЛ\n43, 41\n\n— Байкал 43, 41, прием.\n50, 75\n— 50, 75 высота.";
+    let rq = reqwest::Client::new();
+    let standard = parse_primary_callsigns(&rq, body, false).await.unwrap();
+    assert_eq!(standard, vec!["байкал"]);
+
+    let callsigns = parse_primary_callsigns(&rq, body, true).await.unwrap();
+    assert_eq!(callsigns, vec!["байкал", "43", "41"]);
+    let highlights = highlight_callsigns(&rq, body, &callsigns).await.unwrap();
+    for callsign in ["41", "43", "байкал"] {
+        let highlights = highlights
+            .iter()
+            .filter(|highlight| highlight.etalon == callsign)
+            .collect::<Vec<_>>();
+        assert_eq!(highlights.len(), 2);
+        for highlight in highlights {
+            assert_eq!(
+                body.chars()
+                    .skip(highlight.begin)
+                    .take(highlight.end - highlight.begin)
+                    .collect::<String>()
+                    .to_lowercase(),
+                callsign
+            );
+        }
+    }
 }
 
 #[tokio::test]
