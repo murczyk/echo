@@ -81,7 +81,7 @@ pub async fn oneoff_backfill_image_thumbnails(
     };
     let mut scanned = 0_u64;
     let mut generated = 0_u64;
-    let mut failed = 0_u64;
+    let mut unready = None;
     loop {
         let remaining = ps.limit.map(|limit| limit.saturating_sub(scanned));
         if remaining == Some(0) {
@@ -108,59 +108,87 @@ pub async fn oneoff_backfill_image_thumbnails(
         if batch.is_empty() {
             break;
         }
-        let (batch_ready, batch_failed) =
+        let progress =
             backfill_image_thumbnail_batch(&env, &batch, ps.pause_ms).await;
-        generated += batch_ready;
-        failed += batch_failed;
-        scanned += batch.len() as u64;
-        cursor = batch.last().map(|media| media.id);
-        if let Some(cursor) = cursor {
-            crate::kv::put_kv(&env.dbx, &checkpoint_key, Some(cursor))
+        generated += progress.ready;
+        scanned += progress.scanned;
+        if let Some(completed_id) = progress.last_ready_id {
+            cursor = Some(completed_id);
+            crate::kv::put_kv(&env.dbx, &checkpoint_key, Some(completed_id))
                 .await
                 .c(h!())?;
-            println!("scanned={scanned} ready={generated} failed={failed} after_media_id={cursor}");
+            println!("scanned={scanned} ready={generated} after_media_id={completed_id}");
+        }
+        if let Some(media_id) = progress.unready_id {
+            unready = Some(media_id);
+            break;
         }
     }
     println!(
-        "image thumbnail backfill: scanned={scanned} ready={generated} failed={failed} next --after-media-id={}",
+        "image thumbnail backfill: scanned={scanned} ready={generated} next --after-media-id={}",
         cursor.map_or_else(|| "none".to_string(), |id| id.to_string())
     );
-    if failed > 0 {
+    if let Some(media_id) = unready {
         return Err(AppError::BL {
-            msg: format!("{failed} image thumbnails failed; review the log"),
+            msg: format!("image thumbnail for media {media_id} is not ready; rerun after its source is processed or inspect the log"),
         });
     }
     Ok(())
+}
+
+struct ImageThumbnailBatchProgress {
+    scanned: u64,
+    ready: u64,
+    last_ready_id: Option<Uuid>,
+    unready_id: Option<Uuid>,
 }
 
 async fn backfill_image_thumbnail_batch(
     env: &Env,
     batch: &[signal_message_media::Model],
     pause_ms: u64,
-) -> (u64, u64) {
-    let mut ready = 0;
-    let mut failed = 0;
+) -> ImageThumbnailBatchProgress {
+    let mut progress = ImageThumbnailBatchProgress {
+        scanned: 0,
+        ready: 0,
+        last_ready_id: None,
+        unready_id: None,
+    };
     for media in batch {
-        match crate::messenger::media_thumbnail::ensure_image_thumbnail(
-            env, media,
-        )
-        .await
-        {
-            Ok(true) => ready += 1,
-            Ok(false) => {}
-            Err(error) => {
-                failed += 1;
-                warn!(
+        let ready =
+            match crate::messenger::media_thumbnail::ensure_image_thumbnail(
+                env, media,
+            )
+            .await
+            {
+                Ok(true) => true,
+                Ok(false) => {
+                    warn!(
+                        "image thumbnail backfill pending media_id={}",
+                        media.id
+                    );
+                    false
+                }
+                Err(error) => {
+                    warn!(
                     "image thumbnail backfill failed media_id={}: {error:#?}",
                     media.id
                 );
-            }
-        }
+                    false
+                }
+            };
+        progress.scanned += 1;
         if pause_ms > 0 {
             tokio::time::sleep(Duration::from_millis(pause_ms)).await;
         }
+        if !ready {
+            progress.unready_id = Some(media.id);
+            break;
+        }
+        progress.ready += 1;
+        progress.last_ready_id = Some(media.id);
     }
-    (ready, failed)
+    progress
 }
 
 struct LargeMediaMigration<'a> {

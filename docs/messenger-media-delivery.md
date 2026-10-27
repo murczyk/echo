@@ -17,7 +17,7 @@ thumbnail sources share a 20 GiB budget and expire after 24 hours.
 
 Historical images can be precomputed on each application host with the bounded
 oneoff below. It scans image rows by UUID, creates only missing thumbnails,
-and pauses after each image. The last completed batch's UUID is saved in
+and pauses after each image. The last ready image's UUID is saved in
 `delta_kv` under a key scoped to `server_id`; rerunning the command on the same
 server resumes automatically. Each server needs its own checkpoint because
 thumbnails are local files. Use `--after-media-id` to override it or
@@ -25,8 +25,9 @@ thumbnails are local files. Use `--after-media-id` to override it or
 Use `--since-date YYYY-MM-DD` to include only media created on or after that UTC
 date. Date-scoped runs keep separate `delta_kv` keys; pass the same date when
 resuming. The command requires the server's unique `server_id` configuration.
-If the command reports failed images, inspect its log and use
-`--reset-checkpoint` to retry them after correcting the cause.
+If a thumbnail is still queued or generation fails, the command stops before
+checkpointing that image. Inspect its log, then rerun with the same options
+after the thumbnail source has been processed or the cause corrected.
 `--limit` bounds a run by scanned image rows. Inspect available disk space and the
 `thumbnails` and `thumbnail_sources` directories before running it.
 
