@@ -1125,7 +1125,7 @@ async fn recalculate_historic_settlement_page<C>(
     only_item_ids: Option<&[i64]>,
 ) -> anyhow::Result<HistoricSettlementRecalcPage>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionSession,
 {
     let items =
         missing_settlement_items(db, after_id, limit, only_item_ids)
@@ -1144,6 +1144,7 @@ where
             *item_id,
             *item_uuid,
             location_v2.as_deref(),
+            true,
         )
         .await
         .c(h!())?;
