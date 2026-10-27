@@ -571,8 +571,12 @@ pub async fn ensure_image_thumbnail(
     }
     let operation = ThumbnailOperation::new(media.id);
     let _operation_guard = operation.lock().await;
-    recover_missing_thumbnail_locked(env, media).await?;
-    jpeg_file_is_ready(&media_thumbnail_path(&env.config, media.id)).await
+    recover_missing_thumbnail_locked(env, media).await.c(h!())?;
+    Ok(
+        jpeg_file_is_ready(&media_thumbnail_path(&env.config, media.id))
+            .await
+            .c(h!())?,
+    )
 }
 
 pub fn media_thumbnail_path(config: &Config, media_id: Uuid) -> PathBuf {

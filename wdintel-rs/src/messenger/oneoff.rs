@@ -70,16 +70,23 @@ pub async fn oneoff_backfill_image_thumbnails(
         });
     }
     let since_date =
-        parse_image_thumbnail_since_date(ps.since_date.as_deref())?;
+        parse_image_thumbnail_since_date(ps.since_date.as_deref()).c(h!())?;
     let since_timestamp = since_date
         .map(|date| date.and_hms_opt(0, 0, 0).c(h!()))
-        .transpose()?;
+        .transpose()
+        .c(h!())?;
     let env = crate::server::new_readonly_env(mode).await.c(h!())?;
-    let server_id = env.config.server_id.ok_or_else(|| AppError::BL {
+    let server_id = env
+        .config
+        .server_id
+        .ok_or_else(|| {
+            AppError::BL {
         msg:
             "server_id is required for the image thumbnail backfill checkpoint"
                 .to_string(),
-    })?;
+    }
+        })
+        .c(h!())?;
     let checkpoint_key = image_thumbnail_checkpoint_key(server_id, since_date);
     if ps.reset_checkpoint {
         crate::kv::put_kv(
