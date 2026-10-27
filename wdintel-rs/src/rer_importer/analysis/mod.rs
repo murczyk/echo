@@ -9442,16 +9442,23 @@ where
             .map(AnalyticsConfig::freshness_max_age_ms)
             .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
         let analytics_conn = analytics.conn.clone();
-        let query = async move {
-            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms)
-                .await?;
-            analytics_query(analytics_conn).await
-        };
-
-        let response = if use_configured_timeout {
-            tokio::time::timeout(timeout, query).await.ok()
-        } else {
-            Some(query.await)
+        let deadline = tokio::time::Instant::now() + timeout;
+        let response = match tokio::time::timeout_at(
+            deadline,
+            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms),
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                let query = analytics_query(analytics_conn);
+                if use_configured_timeout {
+                    tokio::time::timeout_at(deadline, query).await.ok()
+                } else {
+                    Some(query.await)
+                }
+            }
+            Ok(Err(err)) => Some(Err(err)),
+            Err(_) => None,
         };
         let open_circuit = match response {
             Some(Ok(response)) => {

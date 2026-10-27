@@ -310,6 +310,69 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
 
 #[tokio::test]
 #[serial]
+async fn issue_3889_summary_falls_back_when_analytics_pool_is_exhausted(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let db = &env.dbx;
+    let login = find_test_login(db).await.c(h!())?;
+    let group = find_test_datasource_group(db).await.c(h!())?;
+    let since = NaiveDate::from_ymd_opt(2026, 10, 1)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    seed_message(db, &group, since, "123.400", &[])
+        .await
+        .c(h!())?;
+    let analytics = crate::new_pg_pool_from_conn_string_with_max_connections(
+        crate::mk_conn_string(&env.config),
+        1,
+    )
+    .await
+    .c(h!())?;
+    let connection = analytics
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .c(h!())?;
+    let mut env = env.as_ref().clone();
+    env.config.analytics = Some(crate::config::AnalyticsConfig {
+        pg_host: "unused".to_string(),
+        pg_port: None,
+        pg_user: "unused".to_string(),
+        pg_password: "unused".to_string(),
+        pg_dbname: "unused".to_string(),
+        connect_timeout_ms: None,
+        max_connections: Some(1),
+        query_timeout_ms: Some(25),
+        freshness_max_age_ms: None,
+        retry_cooldown_ms: None,
+    });
+    env.analytics = Some(crate::types::AnalyticsPool {
+        conn: analytics.clone(),
+        retry_after_unix_ms_by_operation: Default::default(),
+    });
+    let req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        till_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        selected_groups: Some(vec![group.group_master_key.clone()]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let summary = tokio::time::timeout(
+        core::time::Duration::from_secs(2),
+        load_summary_messages(&login.id, &env, &req, true, false),
+    )
+    .await;
+    drop(connection);
+    let summary = summary.c(h!())?.c(h!())?;
+    assert_eq!(summary.len(), 1);
+    assert_eq!(summary[0].1.freq.as_deref(), Some("123.400"));
+    assert_eq!(summary[0].1.activity.as_ref().unwrap().seances_qty, 1);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
 async fn issue_3889_summary_restarts_after_a_later_analytics_chunk_fails(
 ) -> anyhow::Result<()> {
     let (env, _guard) = cleanup_locked().await.c(h!())?;
