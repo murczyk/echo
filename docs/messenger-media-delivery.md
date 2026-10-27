@@ -16,15 +16,18 @@ The worker keeps separate 2 GiB budgets for image and video JPEGs. Temporary
 thumbnail sources share a 20 GiB budget and expire after 24 hours.
 
 Historical images can be precomputed on each application host with the bounded
-oneoff below. It scans image rows by UUID, creates only missing thumbnails,
-and pauses after each image. The last ready image's UUID is saved in
+oneoff below. It creates only missing thumbnails and pauses after each image.
+Full-history runs scan image rows by UUID. The last ready image is saved in
 `delta_kv` under a key scoped to `server_id`; rerunning the command on the same
 server resumes automatically. Each server needs its own checkpoint because
 thumbnails are local files. Use `--after-media-id` to override it or
 `--reset-checkpoint` to restart. Already completed thumbnails are skipped.
 Use `--since-date YYYY-MM-DD` to include only media created on or after that UTC
-date. Date-scoped runs keep separate `delta_kv` keys; pass the same date when
-resuming. The command requires the server's unique `server_id` configuration.
+date. Date-scoped runs scan by `(created_at, id)` using the matching database
+index and keep separate `delta_kv` keys; pass the same date when resuming. The
+command requires the server's unique `server_id` configuration. A date-scoped
+checkpoint from the previous UUID ordering restarts from the chosen date so no
+images are skipped; already ready thumbnails are reused.
 If a thumbnail is still queued or generation fails, the command stops before
 checkpointing that image. Inspect its log, then rerun with the same options
 after the thumbnail source has been processed or the cause corrected.

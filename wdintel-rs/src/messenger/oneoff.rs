@@ -6,10 +6,10 @@ use crate::messenger::worker;
 use crate::storage;
 use crate::types::info;
 use crate::types::{warn, Env, Mode, ShortContext};
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
 use opendal::{ErrorKind, Operator};
-use sea_orm::sea_query::Expr;
+use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -17,6 +17,21 @@ use std::io::{BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
+
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(untagged)]
+enum ImageThumbnailCursor {
+    Id(Uuid),
+    CreatedAt { created_at: NaiveDateTime, id: Uuid },
+}
+
+impl ImageThumbnailCursor {
+    fn id(self) -> Uuid {
+        match self {
+            Self::Id(id) | Self::CreatedAt { id, .. } => id,
+        }
+    }
+}
 
 fn image_thumbnail_checkpoint_key(
     server_id: u32,
@@ -67,17 +82,58 @@ pub async fn oneoff_backfill_image_thumbnails(
     })?;
     let checkpoint_key = image_thumbnail_checkpoint_key(server_id, since_date);
     if ps.reset_checkpoint {
-        crate::kv::put_kv(&env.dbx, &checkpoint_key, Option::<Uuid>::None)
-            .await
-            .c(h!())?;
+        crate::kv::put_kv(
+            &env.dbx,
+            &checkpoint_key,
+            Option::<ImageThumbnailCursor>::None,
+        )
+        .await
+        .c(h!())?;
     }
-    let mut cursor = match ps.after_media_id {
-        Some(cursor) => Some(cursor),
+    let checkpoint = match ps.after_media_id {
+        Some(id) => Some(ImageThumbnailCursor::Id(id)),
         None if ps.reset_checkpoint => None,
-        None => crate::kv::get_kv::<Option<Uuid>>(&env.dbx, &checkpoint_key)
-            .await
-            .c(h!())?
-            .flatten(),
+        None => crate::kv::get_kv::<Option<ImageThumbnailCursor>>(
+            &env.dbx,
+            &checkpoint_key,
+        )
+        .await
+        .c(h!())?
+        .flatten(),
+    };
+    let checkpoint = if since_timestamp.is_some()
+        && ps.after_media_id.is_none()
+        && matches!(checkpoint, Some(ImageThumbnailCursor::Id(_)))
+    {
+        warn!("restarting date-scoped image thumbnail backfill after UUID-ordered checkpoint");
+        crate::kv::put_kv(
+            &env.dbx,
+            &checkpoint_key,
+            Option::<ImageThumbnailCursor>::None,
+        )
+        .await
+        .c(h!())?;
+        None
+    } else {
+        checkpoint
+    };
+    let mut cursor = checkpoint.map(ImageThumbnailCursor::id);
+    let mut dated_cursor = match (since_timestamp, checkpoint) {
+        (Some(_), Some(ImageThumbnailCursor::CreatedAt { created_at, id })) => {
+            Some((created_at, id))
+        }
+        (Some(_), Some(ImageThumbnailCursor::Id(id))) => {
+            let media = signal_message_media::Entity::find_by_id(id)
+                .one(&env.dbx)
+                .await
+                .c(h!())?
+                .ok_or_else(|| AppError::BL {
+                    msg: format!("checkpoint media {id} no longer exists; use --reset-checkpoint"),
+                })
+                .c(h!())?;
+            Some((media.created_at, id))
+        }
+        _ => None,
     };
     let mut scanned = 0_u64;
     let mut generated = 0_u64;
@@ -93,16 +149,32 @@ pub async fn oneoff_backfill_image_thumbnails(
             .filter(Expr::cust(
                 "lower(btrim(split_part(content_type, ';', 1))) LIKE 'image/%'",
             ))
-            .order_by_asc(signal_message_media::Column::Id)
             .limit(batch_size);
-        if let Some(after_media_id) = cursor {
-            query = query
-                .filter(signal_message_media::Column::Id.gt(after_media_id));
-        }
         if let Some(since_timestamp) = since_timestamp {
-            query = query.filter(
-                signal_message_media::Column::CreatedAt.gte(since_timestamp),
-            );
+            query = query
+                .filter(
+                    signal_message_media::Column::CreatedAt
+                        .gte(since_timestamp),
+                )
+                .order_by_asc(signal_message_media::Column::CreatedAt)
+                .order_by_asc(signal_message_media::Column::Id);
+            if let Some((created_at, id)) = dated_cursor {
+                query = query.filter(
+                    Expr::tuple([
+                        signal_message_media::Column::CreatedAt
+                            .into_simple_expr(),
+                        signal_message_media::Column::Id.into_simple_expr(),
+                    ])
+                    .gt(SimpleExpr::Tuple(vec![created_at.into(), id.into()])),
+                );
+            }
+        } else {
+            query = query.order_by_asc(signal_message_media::Column::Id);
+            if let Some(after_media_id) = cursor {
+                query = query.filter(
+                    signal_message_media::Column::Id.gt(after_media_id),
+                );
+            }
         }
         let batch = query.all(&env.dbx).await.c(h!())?;
         if batch.is_empty() {
@@ -112,9 +184,18 @@ pub async fn oneoff_backfill_image_thumbnails(
             backfill_image_thumbnail_batch(&env, &batch, ps.pause_ms).await;
         generated += progress.ready;
         scanned += progress.scanned;
-        if let Some(completed_id) = progress.last_ready_id {
+        if let Some((created_at, completed_id)) = progress.last_ready {
             cursor = Some(completed_id);
-            crate::kv::put_kv(&env.dbx, &checkpoint_key, Some(completed_id))
+            let checkpoint = if since_timestamp.is_some() {
+                dated_cursor = Some((created_at, completed_id));
+                ImageThumbnailCursor::CreatedAt {
+                    created_at,
+                    id: completed_id,
+                }
+            } else {
+                ImageThumbnailCursor::Id(completed_id)
+            };
+            crate::kv::put_kv(&env.dbx, &checkpoint_key, Some(checkpoint))
                 .await
                 .c(h!())?;
             println!("scanned={scanned} ready={generated} after_media_id={completed_id}");
@@ -139,7 +220,7 @@ pub async fn oneoff_backfill_image_thumbnails(
 struct ImageThumbnailBatchProgress {
     scanned: u64,
     ready: u64,
-    last_ready_id: Option<Uuid>,
+    last_ready: Option<(NaiveDateTime, Uuid)>,
     unready_id: Option<Uuid>,
 }
 
@@ -151,7 +232,7 @@ async fn backfill_image_thumbnail_batch(
     let mut progress = ImageThumbnailBatchProgress {
         scanned: 0,
         ready: 0,
-        last_ready_id: None,
+        last_ready: None,
         unready_id: None,
     };
     for media in batch {
@@ -186,7 +267,7 @@ async fn backfill_image_thumbnail_batch(
             break;
         }
         progress.ready += 1;
-        progress.last_ready_id = Some(media.id);
+        progress.last_ready = Some((media.created_at, media.id));
     }
     progress
 }
