@@ -335,9 +335,12 @@ fn marked_replay_comments(
     system_login_id: uuid::Uuid,
 ) -> Select<sigint_comment::Entity> {
     sigint_comment::Entity::find()
-        .join(
+        .join_rev(
             JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage.def(),
+            signal_message::Entity::belongs_to(sigint_comment::Entity)
+                .from(signal_message::Column::Id)
+                .to(sigint_comment::Column::SignalMessageId)
+                .into(),
         )
         .filter(sigint_comment::Column::LoginId.eq(system_login_id))
         .filter(

@@ -297,6 +297,8 @@ export type AnalysisPageState = {
   networkVisibilityReady: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;

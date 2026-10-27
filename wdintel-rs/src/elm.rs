@@ -74,6 +74,13 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::delta::BgtaskStatusAndLogsRsp,
             crate::delta::BgtaskStatusAndLogsQuery,
             crate::report_history::ReportHistoryRow,
+            crate::kpi::types::KpiPeriod,
+            crate::kpi::types::KpiCount,
+            crate::kpi::types::KpiDuration,
+            crate::kpi::types::KpiReportsRsp,
+            crate::kpi::types::KpiNotificationsRsp,
+            crate::kpi::types::KpiActivityRsp,
+            crate::kpi::types::KpiRequestsRsp,
             crate::report_history::ReportHistoryLogEntry,
             crate::report_history::ReportDownloadHistoryEntry,
             crate::report_history::ReportHistoryIdReq,
@@ -2220,6 +2227,14 @@ fn patch_backward_compatible_decoders(
 ) -> Result<String, AppError> {
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
+        .replace(
+            r#"Json.Decode.field "largeMessageCardText" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
         .replace(
             r#"Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder))"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "search_mode" (Json.Decode.nullable (analysisSearchModeDecoder)), Json.Decode.succeed Nothing ]"#,

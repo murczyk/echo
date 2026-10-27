@@ -1,5 +1,6 @@
 use super::*;
 use crate::functest::tests::*;
+use crate::rer_importer::types::InboxMessagesSortBy;
 use sea_orm::ActiveValue::Set;
 use serial_test::serial;
 use std::io::Read;
@@ -14,6 +15,7 @@ async fn seed_message(
     let message = mk_signal_message(
         db,
         signal_message::ActiveModel {
+            created_at: Set(timestamp),
             timestamp: Set(Some(timestamp)),
             datasource_group_id: Set(Some(group.id)),
             ..Default::default()
@@ -134,7 +136,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     seed_message(
         db,
         &group,
-        since + chrono::Duration::hours(1),
+        since + chrono::Duration::weeks(1),
         "123.400",
         &[network.id, other_network.id],
     )
@@ -143,7 +145,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     seed_message(
         db,
         &group,
-        since + chrono::Duration::hours(2),
+        since + chrono::Duration::weeks(2),
         "456.700",
         &[],
     )
@@ -161,7 +163,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let peleng = seed_message(
         db,
         &group,
-        since + chrono::Duration::minutes(30),
+        since + chrono::Duration::weeks(1) - chrono::Duration::milliseconds(1),
         "123.400",
         &[network.id],
     )
@@ -170,7 +172,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let linked_peleng = seed_message(
         db,
         &group,
-        since + chrono::Duration::minutes(40),
+        since + chrono::Duration::weeks(1) + chrono::Duration::milliseconds(1),
         "123.400",
         &[network.id],
     )
@@ -179,7 +181,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let comment = seed_message(
         db,
         &group,
-        since + chrono::Duration::minutes(45),
+        since + chrono::Duration::weeks(1) + chrono::Duration::milliseconds(2),
         "123.400",
         &[network.id],
     )
@@ -226,7 +228,7 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
     let req = InboxMessagesReq {
         since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
         till_date_inclusive_ms: Some(
-            (since + chrono::Duration::hours(2))
+            (since + chrono::Duration::weeks(2))
                 .and_utc()
                 .timestamp_millis(),
         ),
@@ -234,11 +236,22 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
         nolimit: Some(true),
         ..Default::default()
     };
-    let chunks = inbox_report_period_chunks(&req, 1).c(h!())?;
     let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
         .await
         .c(h!())?;
-    for no_comments in [false, true] {
+    for (sort_by, no_comments) in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ]
+    .into_iter()
+    .flat_map(|sort_by| [false, true].map(|no_comments| (sort_by, no_comments)))
+    {
+        let req = InboxMessagesReq {
+            sort_by: Some(sort_by),
+            ..req.clone()
+        };
+        let chunks = inbox_report_period_chunks(&req, 24).c(h!())?;
         let messages =
             load_reo_inbox_messages_chunks(db, &login.id, &env, &req, &chunks)
                 .await
@@ -255,17 +268,10 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
         )
         .await
         .c(h!())?;
-        let messages = load_summary_messages(
-            db,
-            &login.id,
-            &env,
-            &req,
-            &chunks,
-            no_comments,
-            true,
-        )
-        .await
-        .c(h!())?;
+        let messages =
+            load_summary_messages(&login.id, &env, &req, no_comments, true)
+                .await
+                .c(h!())?;
         assert_eq!(messages.len(), 3);
         assert!(messages
             .iter()
@@ -298,6 +304,276 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
             network.activity.seances_qty,
             if no_comments { 2 } else { 4 }
         );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3889_summary_falls_back_when_analytics_pool_is_exhausted(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let db = &env.dbx;
+    let login = find_test_login(db).await.c(h!())?;
+    let group = find_test_datasource_group(db).await.c(h!())?;
+    let since = NaiveDate::from_ymd_opt(2026, 10, 1)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    seed_message(db, &group, since, "123.400", &[])
+        .await
+        .c(h!())?;
+    let analytics = crate::new_pg_pool_from_conn_string_with_max_connections(
+        crate::mk_conn_string(&env.config),
+        1,
+    )
+    .await
+    .c(h!())?;
+    let connection = analytics
+        .get_postgres_connection_pool()
+        .acquire()
+        .await
+        .c(h!())?;
+    let mut env = env.as_ref().clone();
+    env.config.analytics = Some(crate::config::AnalyticsConfig {
+        pg_host: "unused".to_string(),
+        pg_port: None,
+        pg_user: "unused".to_string(),
+        pg_password: "unused".to_string(),
+        pg_dbname: "unused".to_string(),
+        connect_timeout_ms: None,
+        max_connections: Some(1),
+        query_timeout_ms: Some(25),
+        freshness_max_age_ms: None,
+        retry_cooldown_ms: None,
+    });
+    env.analytics = Some(crate::types::AnalyticsPool {
+        conn: analytics.clone(),
+        retry_after_unix_ms_by_operation: Default::default(),
+    });
+    let req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        till_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        selected_groups: Some(vec![group.group_master_key.clone()]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let summary = tokio::time::timeout(
+        core::time::Duration::from_secs(2),
+        load_summary_messages(&login.id, &env, &req, true, false),
+    )
+    .await;
+    drop(connection);
+    let summary = summary.c(h!())?.c(h!())?;
+    assert_eq!(summary.len(), 1);
+    assert_eq!(summary[0].1.freq.as_deref(), Some("123.400"));
+    assert_eq!(summary[0].1.activity.as_ref().unwrap().seances_qty, 1);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3889_summary_restarts_after_a_later_analytics_chunk_fails(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let db = &env.dbx;
+    let login = find_test_login(db).await.c(h!())?;
+    let group = find_test_datasource_group(db).await.c(h!())?;
+    let since = NaiveDate::from_ymd_opt(2026, 10, 1)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    for timestamp in [since, since + chrono::Duration::weeks(1)] {
+        seed_message(db, &group, timestamp, "123.400", &[])
+            .await
+            .c(h!())?;
+    }
+    let analytics = crate::new_pg_pool_from_conn_string_with_max_connections(
+        crate::mk_conn_string(&env.config),
+        1,
+    )
+    .await
+    .c(h!())?;
+    analytics
+        .execute_unprepared(
+            r#"
+BEGIN;
+CREATE VIEW public.echo_analytics_health AS
+    SELECT true AS singleton, true AS healthy,
+           CURRENT_TIMESTAMP AS checked_at;
+CREATE TEMP TABLE sigint_inbox_item AS TABLE public.sigint_inbox_item;
+UPDATE sigint_inbox_item SET freq = '999.999';
+DO $$
+DECLARE columns text;
+BEGIN
+    SELECT string_agg(
+        CASE WHEN attname = 'timestamp' THEN
+            'CASE WHEN timestamp = (SELECT MAX(timestamp) FROM public.signal_message)
+             THEN (1 / (id - id))::text::timestamp ELSE timestamp END AS timestamp'
+        ELSE quote_ident(attname) END,
+        ', ' ORDER BY attnum
+    ) INTO columns
+    FROM pg_attribute
+    WHERE attrelid = 'public.signal_message'::regclass
+      AND attnum > 0 AND NOT attisdropped;
+    EXECUTE 'CREATE TEMP VIEW signal_message AS SELECT ' || columns ||
+            ' FROM public.signal_message';
+END $$;
+"#,
+        )
+        .await
+        .c(h!())?;
+    let mut env = env.as_ref().clone();
+    env.analytics = Some(crate::types::AnalyticsPool {
+        conn: analytics.clone(),
+        retry_after_unix_ms_by_operation: Default::default(),
+    });
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        till_date_inclusive_ms: Some(
+            (since + chrono::Duration::weeks(1))
+                .and_utc()
+                .timestamp_millis()
+                - 1,
+        ),
+        selected_groups: Some(vec![group.group_master_key.clone()]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let first = load_summary_messages(&login.id, &env, &req, true, false).await;
+    req.till_date_inclusive_ms = Some(
+        (since + chrono::Duration::weeks(2))
+            .and_utc()
+            .timestamp_millis(),
+    );
+    let complete =
+        load_summary_messages(&login.id, &env, &req, true, false).await;
+    analytics.execute_unprepared("ROLLBACK").await.c(h!())?;
+    let first = first.c(h!())?;
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].1.freq.as_deref(), Some("999.999"));
+    let complete = complete.c(h!())?;
+    assert_eq!(complete.len(), 1);
+    assert_eq!(complete[0].1.freq.as_deref(), Some("123.400"));
+    assert_eq!(complete[0].1.activity.as_ref().unwrap().seances_qty, 2);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3889_long_summary_merges_weekly_activity_into_report_files(
+) -> anyhow::Result<()> {
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let db = &env.dbx;
+    let login = find_test_login(db).await.c(h!())?;
+    let group = find_test_datasource_group(db).await.c(h!())?;
+    let network = mk_sigint_network(
+        db,
+        sigint_network::ActiveModel {
+            name: Set("Мережа 3889".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .c(h!())?;
+    system_settings::ActiveModel {
+        report_chunking_hours: Set(1),
+        limit_big_reports: Set(true),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .c(h!())?;
+    let since = NaiveDate::from_ymd_opt(2025, 8, 30)
+        .unwrap()
+        .and_hms_opt(8, 0, 0)
+        .unwrap();
+    let till = since + chrono::Duration::weeks(60) + chrono::Duration::hours(1);
+    for timestamp in [
+        since,
+        since + chrono::Duration::weeks(1),
+        since + chrono::Duration::weeks(2),
+        till,
+        since - chrono::Duration::milliseconds(1),
+        till + chrono::Duration::milliseconds(1),
+    ] {
+        seed_message(db, &group, timestamp, "123.400", &[network.id])
+            .await
+            .c(h!())?;
+    }
+    for timestamp in [since + chrono::Duration::weeks(1), till] {
+        seed_message(db, &group, timestamp, "456.700", &[])
+            .await
+            .c(h!())?;
+    }
+    let req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(since.and_utc().timestamp_millis()),
+        till_date_inclusive_ms: Some(till.and_utc().timestamp_millis()),
+        selected_groups: Some(vec![group.group_master_key.clone()]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let error =
+        load_reo_report_messages(&login.id, &env, &req, false, true, false)
+            .await
+            .unwrap_err();
+    assert!(
+        format!("{error:?}").contains("Період звіту утворює забагато частин")
+    );
+    let messages =
+        load_reo_report_messages(&login.id, &env, &req, true, true, false)
+            .await
+            .c(h!())?;
+    assert_eq!(messages.len(), 2);
+    for (_, message) in &messages {
+        let activity = message.activity.as_ref().unwrap();
+        let expected_since = if message.network_ids.is_some() {
+            assert_eq!(activity.seances_qty, 4);
+            since
+        } else {
+            assert_eq!(activity.seances_qty, 2);
+            since + chrono::Duration::weeks(1)
+        };
+        let local_time = |timestamp: NaiveDateTime| {
+            timestamp
+                .and_utc()
+                .with_timezone(&crate::config::get_tz())
+                .naive_local()
+        };
+        assert_eq!(activity.since, local_time(expected_since));
+        assert_eq!(activity.till, local_time(till));
+    }
+    for file_type in [ReoReportFileType::Docx, ReoReportFileType::Xlsx] {
+        let is_docx = file_type == ReoReportFileType::Docx;
+        let req: ReportPreviewReq = serde_json::from_value(serde_json::json!({
+            "kind": "reo",
+            "req": req,
+            "report_type": ReportType::Reo(ReoReportSettings {
+                adjacent_freqs_distance: 0.0,
+                no_comments: true,
+                summary_only: true,
+            }, file_type),
+        }))
+        .c(h!())?;
+        let output = tempfile::NamedTempFile::new().c(h!())?;
+        report_docx_kind_reo(&login.id, &env, &req, output.path())
+            .await
+            .c(h!())?;
+        let xml = archive_xml(
+            output.path(),
+            if is_docx {
+                "word/document.xml"
+            } else {
+                "xl/sharedStrings.xml"
+            },
+        );
+        assert!(xml.contains("Мережа 3889"));
+        assert!(xml.contains("123.400"));
+        assert!(xml.contains("456.700"));
+        if is_docx {
+            assert!(xml.contains("Сеанси: 4"));
+            assert!(xml.contains("Сеанси: 2"));
+        }
     }
     Ok(())
 }

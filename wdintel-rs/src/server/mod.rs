@@ -1008,6 +1008,15 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let ingest_upload_cleanup_storage_dir = config.storage_dir.clone();
+    let ingest_upload_cleanup_cancellation = cancel_token.clone();
+    spawn_named_worker("messenger_ingest_upload_cleanup", bg_set, async move {
+        crate::messenger_ingest::uploads::run_cleanup_nofail(
+            ingest_upload_cleanup_storage_dir,
+            ingest_upload_cleanup_cancellation,
+        )
+        .await;
+    });
     if env.file_registry_db.is_some() {
         let forwarding_env = env.clone();
         let forwarding_cancel = cancel_token.clone();
@@ -1266,6 +1275,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::reports::report_docx_task_launch)
             .service(crate::report_history::report_history_list)
             .service(crate::report_history::report_history_admin_list)
+            .configure(crate::kpi::configure)
             .service(crate::report_history::report_history_admin_rerun)
             .service(crate::report_history::report_history_status)
             .service(crate::report_history::report_history_download)
@@ -1759,6 +1769,18 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
+            .service(crate::messenger_ingest::accounts_sync)
+            .service(crate::messenger_ingest::chats_sync)
+            .service(crate::messenger_ingest::chat_members_sync)
+            .service(crate::messenger_ingest::contacts_sync)
+            .service(crate::messenger_ingest::messages_submit)
+            .service(crate::messenger_ingest::attachments_submit)
+            .service(crate::messenger_ingest::account_avatar_submit)
+            .service(crate::messenger_ingest::chat_avatar_submit)
+            .service(crate::messenger_ingest::chat_member_avatar_submit)
+            .service(crate::messenger_ingest::contact_avatar_submit)
+            .service(crate::messenger_ingest::uploads_base)
+            .service(crate::messenger_ingest::uploads_file)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::highlight_blacklist::resolve_palitra_names)
             .service(crate::palitra::list_all_palitras_v2)

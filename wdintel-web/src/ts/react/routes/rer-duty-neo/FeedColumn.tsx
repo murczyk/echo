@@ -386,7 +386,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
           position: 'absolute',
           top: 40,
           left: '50%',
-          zIndex: 3,
+          zIndex: 1,
           maxWidth: 'calc(100% - 24px)',
           transform: 'translateX(-50%)',
         }}

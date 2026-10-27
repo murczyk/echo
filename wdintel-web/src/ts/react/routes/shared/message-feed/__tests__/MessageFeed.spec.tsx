@@ -490,8 +490,10 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     );
     expect(container.querySelectorAll('[data-message-feed-skeleton-card]')).toHaveLength(3);
     expect(
-      container.querySelectorAll('[data-message-feed-skeleton-card]:first-child .MuiSkeleton-root'),
-    ).toHaveLength(7);
+      container.querySelector(
+        '[data-message-feed-skeleton-card] button, [data-message-feed-skeleton-card] a',
+      ),
+    ).toBeNull();
     expect(
       container.querySelector('[data-message-feed-skeleton="initial"]')?.getAttribute('role'),
     ).toBe('status');

@@ -91,6 +91,7 @@ const ROLE_OPTIONS = [
   'DeleteMsg',
   'NoAutoLogout',
   'No2FA',
+  'MessengerIngest',
 ];
 
 const STATUS_FILTER_OPTIONS = [

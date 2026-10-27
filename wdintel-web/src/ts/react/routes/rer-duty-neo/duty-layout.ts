@@ -1,0 +1,1 @@
+export const DUTY_SINGLE_FEED_MAX_WIDTH_PX = 960;

@@ -602,7 +602,7 @@ async fn sync_datasource_group(
     }
 }
 
-async fn sync_signal_group(
+pub(crate) async fn sync_signal_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     signal_group: &signal_group::Model,
@@ -630,7 +630,7 @@ async fn sync_signal_group(
     }
 }
 
-async fn insert_or_sync_signal_group(
+pub(crate) async fn insert_or_sync_signal_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     master_key: String,

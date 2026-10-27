@@ -278,6 +278,7 @@ pub async fn sync_groups(
                     created_at: NotSet,
                     name: Set(g.name),
                     deleted: NotSet,
+                    messenger_type: NotSet,
                 }
                 .insert(txn)
                 .await

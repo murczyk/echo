@@ -1692,6 +1692,8 @@ export function useRerAnalysisNeoPage(
     networkVisibilityReady: systemSettingsStatus === 'success',
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
+    largeMediaPreviews: dutySettings.largeMediaPreviews,
+    largeMessageCardText: dutySettings.largeMessageCardText,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,

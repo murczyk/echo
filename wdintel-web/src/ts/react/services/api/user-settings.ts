@@ -10,6 +10,12 @@ import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
 export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
 
+export enum MessageAttachmentPreviewMode {
+  Collapsed = 'collapsed',
+  Compact = 'compact',
+  Large = 'large',
+}
+
 export type { UserDutySettingsDto };
 export type UserDutySettings = {
   /** Analysis time basis. Duty always uses creation time. */
@@ -24,6 +30,8 @@ export type UserDutySettings = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   mediaSummaryEnabled: boolean;
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: UserDutySettingsDto['aiPositionHighlightsEnabled'];
@@ -44,6 +52,8 @@ type UserDutySettingsWire = Omit<
   | 'showClassicDuty'
   | 'showClassicAnalysis'
   | 'dutyCollapseMediaPreviews'
+  | 'largeMediaPreviews'
+  | 'largeMessageCardText'
   | 'mediaSummaryEnabled'
   | 'messageSortBy'
   | 'messageAutoParseEnabled'
@@ -58,6 +68,8 @@ type UserDutySettingsWire = Omit<
   showClassicDuty?: boolean | null;
   showClassicAnalysis?: boolean | null;
   dutyCollapseMediaPreviews?: boolean | null;
+  largeMediaPreviews?: boolean | null;
+  largeMessageCardText?: boolean | null;
   mediaSummaryEnabled?: boolean | null;
   messageSortBy?: MessageTimeBasis | null;
   messageAutoParseEnabled?: boolean | null;
@@ -130,6 +142,8 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+    largeMediaPreviews: raw.largeMediaPreviews ?? false,
+    largeMessageCardText: raw.largeMessageCardText ?? false,
     mediaSummaryEnabled: raw.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
     aiPositionHighlightsEnabled: raw.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled: raw.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
@@ -159,6 +173,8 @@ export async function saveUserSettings(
       showClassicDuty: body.showClassicDuty,
       showClassicAnalysis: body.showClassicAnalysis,
       dutyCollapseMediaPreviews: body.dutyCollapseMediaPreviews,
+      largeMediaPreviews: body.largeMediaPreviews,
+      largeMessageCardText: body.largeMessageCardText,
       mediaSummaryEnabled: body.mediaSummaryEnabled,
       aiPositionHighlightsEnabled: body.aiPositionHighlightsEnabled,
       messageAutoParseEnabled: body.messageAutoParseEnabled,

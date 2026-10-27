@@ -93,6 +93,7 @@ pub async fn datasource_group_list(
     if datasource.kind == "signal"
         || datasource.kind == "whatsapp"
         || datasource.kind == "echo_operator"
+        || datasource.kind == crate::config::MESSENGER_INGEST_DATASOURCE_KIND
     {
         let now = Utc::now();
         let mut select = signal_message::Entity::find()

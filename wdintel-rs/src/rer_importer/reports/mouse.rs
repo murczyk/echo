@@ -1751,6 +1751,7 @@ fn message_full_text(
     if datasource.kind == "signal"
         || datasource.kind == "whatsapp"
         || datasource.kind == "echo_operator"
+        || datasource.kind == crate::config::MESSENGER_INGEST_DATASOURCE_KIND
         || datasource.kind == crate::config::DATASOURCE_ECHO_NATIVE_KIND
     {
         let extended_form = m_comment.map(|x| x.comment.as_str());

@@ -1334,8 +1334,9 @@ deploy-from-local _server_pos="" server silent="false":
       export DEBIAN_FRONTEND=noninteractive
       cd /var/tmp
       timeout --foreground 1200s sudo env DEBIAN_FRONTEND=noninteractive \
-        apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew --no-download -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
-      rm -f './${REMOTE_DEB_NAME}'
+        flock --timeout 120 /var/lib/dpkg/lock-frontend \
+        dpkg --force-confnew --force-downgrade -i '${REMOTE_DEB_PATH}'
+      rm -f '${REMOTE_DEB_PATH}'
     "
     REMOTE_DEB_PATH=""
 

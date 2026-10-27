@@ -25,6 +25,7 @@ import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message
 import {
   MessageCardHeader,
   MessageCardMetadata,
+  MessageCardTimestampFooter,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
@@ -80,6 +81,7 @@ const ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE = {
 
 const MessageCardRoot = styled('div')(({ theme }) => ({
   ...theme.typography.body2,
+  '--message-card-metadata-text-color': theme.palette.text.secondary,
 }));
 
 export function formatMessageCardTooltipTime(
@@ -110,9 +112,6 @@ export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
   readOnly?: boolean;
-  /** Number of feeds (columns). When >= 3, header columns use differential shrink (left 3, center 2, right 0). When 1 or 2, all columns shrink equally. */
-  feedCount?: number;
-  /** Duty vs analysis: controls stacked action icon grid width (4 vs 3 columns). */
   displayMode?: MessageCardDisplayMode;
   analysisDestination?: 'classic' | 'neo';
   /** Tag chips section visual density mode. */
@@ -120,7 +119,7 @@ export type MessageCardProps = {
   hideBotTags?: boolean;
   hideNetworks?: boolean;
   tagsLoading?: boolean;
-  /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
+  /** Baseline "now" when the card is off-screen; visible dates update at Kyiv midnight. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
@@ -166,7 +165,6 @@ export type MessageCardProps = {
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
-  rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
   showCallsignAddForm?: boolean;
   /**
@@ -185,7 +183,6 @@ function MessageCardComponent({
   id,
   msg,
   readOnly = false,
-  feedCount = 1,
   displayMode = 'duty',
   analysisDestination = 'classic',
   tagsLayout = 'full',
@@ -231,7 +228,6 @@ function MessageCardComponent({
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,
-  rightHeaderInsetPx = 0,
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,
@@ -253,9 +249,7 @@ function MessageCardComponent({
     analysisCallsignActions = undefined;
     showCallsignAddForm = false;
   }
-  const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const downloadGuard = useMessageCardDownloadGuard();
-  const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
     if (!networks) return {};
@@ -362,17 +356,14 @@ function MessageCardComponent({
     : undefined;
 
   const headerProps: MessageCardHeaderProps = {
-    compact: compactLayout,
     displayMode,
     id,
     msg,
-    displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
     messageTimeBasis,
     copiedFeedbackId,
     etalonDisplayModel: visibleEtalonDisplayModel,
     mapHref,
     analysisHref,
-    rightInsetPx: rightHeaderInsetPx,
     onReply:
       replies.open == null ? undefined : (focus) => replies.open?.({ id, message: msg, focus }),
     onBookmark,
@@ -396,6 +387,9 @@ function MessageCardComponent({
     readOnly,
   };
   const visibleMessageComments = messageComments;
+  const timestampFooter = (
+    <MessageCardTimestampFooter msg={msg} referenceTimeMs={referenceTimeMs} />
+  );
 
   return (
     <li
@@ -408,7 +402,7 @@ function MessageCardComponent({
         data-message-card-root="true"
         data-message-card-display-mode={displayMode}
         data-important={msg.important ? 'true' : undefined}
-        className="message-card-root relative flex w-full flex-col overflow-hidden"
+        className="message-card-root relative flex w-full min-w-0 flex-col overflow-hidden"
       >
         {watermarkUserName !== '' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -416,7 +410,9 @@ function MessageCardComponent({
           </div>
         )}
         <MessageCardHeader {...headerProps} />
+        <div className="message-card-divider" aria-hidden="true" />
         <MessageCardContentWithDownloadGuard
+          timestampFooter={visibleMessageComments.length === 0 ? timestampFooter : undefined}
           metadata={
             <MessageCardMetadata
               msg={msg}
@@ -424,6 +420,7 @@ function MessageCardComponent({
               senderName={senderName}
               etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}
+              hideExplicitUnit
             />
           }
           replyContent={
@@ -469,6 +466,7 @@ function MessageCardComponent({
           isDownloadStarting={downloadGuard.isDownloadStarting}
           onDownloadStart={downloadGuard.onDownloadStart}
         />
+        {visibleMessageComments.length > 0 ? timestampFooter : null}
       </MessageCardRoot>
     </li>
   );

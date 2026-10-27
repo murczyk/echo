@@ -62,6 +62,9 @@ for (const screen of ['duty', 'analysis'] as const) {
         await visit(actor);
         const card = row(actor, source.id);
         await expect(card.getByRole('link').filter({ hasText: reply.text })).toBeVisible();
+        await expect(
+          card.getByRole('link', { name: 'Відкрити в Аналізі', exact: true }),
+        ).toHaveCount(0);
         await expect(card.getByRole('button', { name: 'Відповісти', exact: true })).toHaveCount(0);
         await expect(
           page!.getByRole('button', { name: 'Додати повідомлення', exact: true }),
@@ -697,6 +700,29 @@ for (const screen of ['duty', 'analysis'] as const) {
       await expect(deletedRow).toHaveCount(1);
       await expect(deletedRow.getByRole('link')).toHaveCount(0);
       await expect(panel).not.toContainText('Deleted private text');
+      const cardBackground = await row(actor, current.id)
+        .locator('.message-card-root')
+        .evaluate((element) => getComputedStyle(element).backgroundColor);
+      const [cardBrightness, popupBrightness, entryBrightness] = await panel.evaluate(
+        (element, cardBackground) => {
+          const context = document.createElement('canvas').getContext('2d')!;
+          return [
+            cardBackground,
+            getComputedStyle(element).backgroundColor,
+            getComputedStyle(element.querySelector('[data-reply-list] a')!).backgroundColor,
+          ].map((color) => {
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            return context
+              .getImageData(0, 0, 1, 1)
+              .data.slice(0, 3)
+              .reduce((sum, value) => sum + value, 0);
+          });
+        },
+        cardBackground,
+      );
+      expect(popupBrightness).toBeGreaterThan(cardBrightness!);
+      expect(entryBrightness).toBeGreaterThan(popupBrightness!);
       const bounds = await panel.boundingBox();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
@@ -707,6 +733,14 @@ for (const screen of ['duty', 'analysis'] as const) {
       await page!.keyboard.press('Escape');
       await expect(panel).toHaveCount(0);
       await expect(trigger).toBeFocused();
+      await page!.setViewportSize({ width: 1920, height: 1000 });
+      await trigger.click();
+      await expect(panel).toBeVisible();
+      await page!.screenshot({
+        path: test.info().outputPath(`${screen}-reply-desktop-dark.png`),
+        animations: 'disabled',
+      });
+      await page!.keyboard.press('Escape');
     });
   });
 }

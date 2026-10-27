@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
+import dayjs from 'dayjs';
+import { APP_TIME_ZONE } from '../../../utils/misc';
 
 // Global manager to prevent creating 16,000+ IntersectionObservers and timers
 let globalObserver: IntersectionObserver | null = null;
@@ -9,43 +11,16 @@ const elementEntries = new Map<
   { callback: () => void; messageTimestamp: number; nextUpdateMs: number }
 >();
 let globalTickTimeout: number | null = null;
-const SECOND_MS = 1_000;
-const MINUTE_MS = 60 * SECOND_MS;
-const HOUR_MS = 60 * MINUTE_MS;
-const DAY_MS = 24 * HOUR_MS;
 const MAX_TIMER_DELAY_MS = 2_147_000_000;
 
-function isSameLocalDay(firstMs: number, secondMs: number): boolean {
-  const first = new Date(firstMs);
-  const second = new Date(secondMs);
-  return (
-    first.getFullYear() === second.getFullYear() &&
-    first.getMonth() === second.getMonth() &&
-    first.getDate() === second.getDate()
-  );
-}
-
-function nextLocalMidnightMs(nowMs: number): number {
-  const nextMidnight = new Date(nowMs);
-  nextMidnight.setHours(24, 0, 0, 0);
-  return nextMidnight.getTime();
-}
-
 function nextDisplayBoundaryMs(messageTimestamp: number, nowMs: number): number {
-  const elapsedMs = nowMs - messageTimestamp;
-  if (elapsedMs < 5 * SECOND_MS) return messageTimestamp + 5 * SECOND_MS;
-  if (elapsedMs < MINUTE_MS) {
-    return messageTimestamp + (Math.floor(elapsedMs / SECOND_MS) + 1) * SECOND_MS;
+  const today = dayjs(nowMs).tz(APP_TIME_ZONE).startOf('day');
+  if (messageTimestamp >= today.valueOf()) {
+    return today.add(1, 'day').startOf('day').valueOf();
   }
-  if (elapsedMs < HOUR_MS) {
-    return messageTimestamp + (Math.floor(elapsedMs / MINUTE_MS) + 1) * MINUTE_MS;
-  }
-  const nextHourMs = messageTimestamp + (Math.floor(elapsedMs / HOUR_MS) + 1) * HOUR_MS;
-  if (elapsedMs < DAY_MS) return nextHourMs;
-  if (isSameLocalDay(messageTimestamp, nowMs)) {
-    return Math.min(nextHourMs, nextLocalMidnightMs(nowMs));
-  }
-  return messageTimestamp + (Math.floor(elapsedMs / DAY_MS) + 1) * DAY_MS;
+  return dayjs(messageTimestamp).tz(APP_TIME_ZONE).year() === today.year()
+    ? today.add(1, 'year').startOf('year').valueOf()
+    : Number.POSITIVE_INFINITY;
 }
 
 function stopGlobalTick() {
@@ -112,9 +87,9 @@ function getObserver() {
 
 /**
  * Returns a dynamically updating displayMs that only ticks when the message is visible.
- * A single global timer updates relative times for visible cards.
+ * A single global timer updates visible cards at Kyiv midnight.
  */
-export function useRelativeTimeDisplayMs(
+export function useMessageCardDateDisplayMs(
   referenceTimeMs: number | null,
   messageTimestamp: number | null | undefined,
 ): [RefObject<HTMLElement | null>, number | null] {
@@ -152,5 +127,5 @@ export function useRelativeTimeDisplayMs(
 
   // Use Date.now() when ticked, otherwise stick to the stable referenceTimeMs
   const displayMs = tick > 0 ? Date.now() : referenceTimeMs;
-  return [rootRef as any, displayMs];
+  return [rootRef, displayMs];
 }

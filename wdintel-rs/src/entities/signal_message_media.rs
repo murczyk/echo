@@ -35,6 +35,8 @@ pub enum Relation {
     AttachmentDocument,
     #[sea_orm(has_one = "super::media_summary::Entity")]
     MediaSummary,
+    #[sea_orm(has_one = "super::messenger_media_meta::Entity")]
+    MessengerMediaMeta,
     #[sea_orm(has_one = "super::ocr_job::Entity")]
     OcrJob,
     #[sea_orm(
@@ -70,6 +72,12 @@ impl Related<super::attachment_document::Entity> for Entity {
 impl Related<super::media_summary::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MediaSummary.def()
+    }
+}
+
+impl Related<super::messenger_media_meta::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerMediaMeta.def()
     }
 }
 

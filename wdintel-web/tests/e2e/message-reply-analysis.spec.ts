@@ -242,7 +242,7 @@ test('@regression #3612 thread Analysis keeps scope on access failure and exits 
     await expect(row(actor, root.id)).toBeAttached();
     await expect(
       row(actor, root.id).getByRole('link', { name: 'Відкрити в Аналізі', exact: true }),
-    ).toHaveAttribute('target', '_blank');
+    ).toHaveCount(0);
     await page!.getByRole('combobox', { name: 'Пошук', exact: true }).fill('Outside');
     await expect(row(actor, root.id)).toHaveCount(0);
     const gate = holdNext(actor, 'reply-metadata');

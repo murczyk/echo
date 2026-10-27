@@ -94,6 +94,10 @@ pub struct UserDutySettingsDto {
     pub show_classic_analysis: bool,
     #[serde(default = "default_duty_collapse_media_previews")]
     pub duty_collapse_media_previews: bool,
+    #[serde(default)]
+    pub large_media_previews: bool,
+    #[serde(default)]
+    pub large_message_card_text: bool,
     #[serde(default = "default_media_summary_enabled")]
     pub media_summary_enabled: bool,
     #[serde(default)]
@@ -129,6 +133,8 @@ impl Default for UserDutySettingsDto {
             show_classic_duty: false,
             show_classic_analysis: false,
             duty_collapse_media_previews: false,
+            large_media_previews: false,
+            large_message_card_text: false,
             media_summary_enabled: false,
             ai_position_highlights_enabled: false,
             message_sort_by: MessageTimeBasis::MessageInterception,

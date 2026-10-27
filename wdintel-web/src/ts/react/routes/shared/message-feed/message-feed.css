@@ -56,7 +56,7 @@
 
 .message-feed-skeletons {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   background: transparent;
 }
@@ -71,25 +71,63 @@
 }
 
 .message-feed-skeleton-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.message-feed-skeleton-card-identity {
   display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.message-feed-skeleton-card .message-feed-skeleton-card-identity-row {
+  min-height: calc(var(--message-card-primary-font-size) * 1.5);
+  align-items: center;
+}
+
+.message-feed-skeleton-card-identity-row > :first-child {
+  flex-shrink: 0;
+}
+
+.message-feed-skeleton-card-identity-row > :last-child {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.message-feed-skeleton-card-unit-icon {
+  margin: 2px;
+  transform: rotate(45deg);
+}
+
+.message-feed-skeleton-card-text-line {
+  display: flex;
+  height: calc(var(--message-card-primary-font-size) * 1.5);
+  align-items: center;
+}
+
+.message-feed-skeleton-card-meta {
+  display: flex;
+  min-height: calc(1rem * 20 / 14);
+  align-items: center;
   gap: 8px;
-  padding: 12px;
-  border: 1px solid;
-  border-radius: 4px;
-  background: transparent;
 }
 
-.message-feed-skeleton-card-header,
-.message-feed-skeleton-card-body {
-  display: grid;
-  gap: 6px;
-}
-
-.message-feed-skeleton-card-meta,
-.message-feed-skeleton-card-footer {
+.message-feed-skeleton-card-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px;
+}
+
+.message-feed-skeleton-card .message-feed-skeleton-card-tag {
+  max-width: 100%;
+  border-radius: 20px;
+}
+
+.message-feed-skeleton-card .message-card-timestamp-footer {
+  min-height: calc(1rem * 16 / 14);
+  align-items: center;
 }
 
 @media (prefers-reduced-motion: reduce) {

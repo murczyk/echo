@@ -9,6 +9,7 @@ import {
 } from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
+  messageSortBy?: 'creation' | 'interception';
   userRoles?: string[];
   enableAudioTranscription?: boolean;
   analysisAorFilterEnabled?: boolean;
@@ -211,10 +212,11 @@ function emptySavedFiltersResponse() {
   return [];
 }
 
-function emptyUserSettingsResponse() {
+function emptyUserSettingsResponse(messageSortBy?: 'creation' | 'interception') {
   return {
     tagsLayout: 'compact',
     disableAutoScroll: false,
+    messageSortBy,
   };
 }
 
@@ -284,7 +286,7 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/user/settings') {
-      await fulfillJson(route, emptyUserSettingsResponse());
+      await fulfillJson(route, emptyUserSettingsResponse(options.messageSortBy));
       return;
     }
 
