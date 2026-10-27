@@ -61,6 +61,7 @@ function defaultSettings(creatorId: string): NativeGroupSettings {
     interseptionKind: 'rer',
     disableNetworkAssignment: false,
     isAviationGroup: false,
+    aiTranscriptAnalysisEnabled: false,
   };
 }
 
@@ -204,6 +205,18 @@ function NativeGroupFields({
             disabled={disabled}
             onChange={(_, disableNetworkAssignment) =>
               onChange({ ...settings, disableNetworkAssignment })
+            }
+          />
+        }
+      />
+      <FormControlLabel
+        label="Автоматично аналізувати транскрипції аудіо"
+        control={
+          <Switch
+            checked={settings.aiTranscriptAnalysisEnabled ?? false}
+            disabled={disabled}
+            onChange={(_, aiTranscriptAnalysisEnabled) =>
+              onChange({ ...settings, aiTranscriptAnalysisEnabled })
             }
           />
         }

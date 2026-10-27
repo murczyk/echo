@@ -16,6 +16,7 @@ fn settings(admin: &login::Model) -> NativeGroupSettings {
         interseption_kind: InterseptionKind::InterseptionRer,
         disable_network_assignment: false,
         is_aviation_group: false,
+        ai_transcript_analysis_enabled: None,
     }
 }
 

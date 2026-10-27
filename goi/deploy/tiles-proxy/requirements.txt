@@ -1,0 +1,2 @@
+titiler.core==2.4.0
+uvicorn==0.54.0

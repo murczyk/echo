@@ -173,6 +173,8 @@ pub async fn sync_groups(
                     interseption_kind: NotSet,
                     disable_network_assignment: NotSet,
                     is_aviation_group: NotSet,
+                    ai_transcript_analysis_enabled: NotSet,
+                    ai_transcript_analysis_enabled_at: NotSet,
                     color_key: NotSet,
                     fetch_new_messages: NotSet,
                     created_by_login_id: NotSet,

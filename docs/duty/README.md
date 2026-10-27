@@ -81,6 +81,9 @@ Explicit initial loads, filter changes, and navigation remain immediate.
 Inbox events hydrate changed displayed and buffered messages without starting
 extra count polls. Buffer updates preserve the displayed window; identical
 payloads preserve message references to avoid unnecessary card reconciliation.
+Reply metadata follows the [message reply refresh contract](../message-replies.md#rendering-and-refresh):
+events invalidate citations, and admitted polling cycles reconcile them without
+starting extra counts. Citation timestamps always use creation time on Duty.
 Reuse an unread count for the loaded-tail boundary only when filters,
 cursor, and request generation match; different boundaries retain separate
 answers. For six loaded unread messages and three unloaded newer messages,

@@ -83,6 +83,7 @@ async fn test_bl_group_update_add_second_aor() {
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: Some(true),
+        ai_transcript_analysis_enabled: None,
         fetch_new_messages: Some(false),
     };
 
@@ -142,6 +143,7 @@ async fn test_bl_group_update_add_second_aor() {
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: None,
+        ai_transcript_analysis_enabled: None,
         fetch_new_messages: None,
     };
 
@@ -286,6 +288,7 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
         interseption_kind: None,
         disable_network_assignment: Some(true),
         is_aviation_group: None,
+        ai_transcript_analysis_enabled: None,
         fetch_new_messages: None,
     };
     let res = bl_group_update(&req, &txn).await.unwrap();

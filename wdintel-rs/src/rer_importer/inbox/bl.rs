@@ -807,6 +807,15 @@ pub async fn aggregate_to_inbox_messages(
         .into_iter()
         .map(|imp| imp.signal_message_id)
         .collect::<HashSet<_>>();
+    #[derive(sea_orm::FromQueryResult)]
+    struct AiImportant {
+        message_id: i64,
+    }
+    let ai_important_ids = AiImportant::find_by_statement(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "select job.message_id from ai_transcript_analysis_job job join sigint_important importance on importance.id=job.important_id where job.message_id=any($1) and not importance.deleted",
+        [message_ids.clone().into()],
+    )).all(&env.dbx).await.c(h!())?.into_iter().map(|row| row.message_id).collect::<HashSet<_>>();
     let bookmarked_ids = sigint_bookmark::Entity::find()
         .filter(
             sigint_bookmark::Column::SignalMessageId
@@ -1184,6 +1193,7 @@ pub async fn aggregate_to_inbox_messages(
                 callsigns,
                 checked: message.checked.unwrap_or(false),
                 important: important_ids.contains(&message.id),
+                ai_important: ai_important_ids.contains(&message.id),
                 bookmarked: bookmarked_ids.contains(&message.id),
                 timestamp: message
                     .timestamp
@@ -2396,6 +2406,9 @@ async fn clear_body_derived_fields(
     inbox_id: i64,
     inbox_item_uuid: Option<uuid::Uuid>,
 ) -> Result<(), AppError> {
+    crate::palitra::worker::enqueue_highlight(txn, inbox_id)
+        .await
+        .c(h!())?;
     sigint_inbox_item::Entity::update_many()
         .col_expr(
             sigint_inbox_item::Column::SignalTokens,
@@ -2421,15 +2434,6 @@ async fn clear_body_derived_fields(
         .c(h!())?;
     tag_suggestion_worker_queue::Entity::insert(
         tag_suggestion_worker_queue::ActiveModel {
-            sigint_inbox_item_id: Set(inbox_id),
-        },
-    )
-    .on_conflict_do_nothing()
-    .exec(txn)
-    .await
-    .c(h!())?;
-    palitra_highlight_worker_job::Entity::insert(
-        palitra_highlight_worker_job::ActiveModel {
             sigint_inbox_item_id: Set(inbox_id),
         },
     )
@@ -2557,6 +2561,113 @@ fn split_manual_locations(location: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reprocessing_waits_for_highlight_job_before_tokens_3780() {
+        use crate::functest::tests::*;
+
+        let env = cleanup().await.unwrap();
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let palitra = palitra::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let tokens = sigint_inbox_item_point_token::ActiveModel {
+            sigint_inbox_item_id: Set(item.id),
+            sigint_inbox_item_uuid: Set(item.id_uuid),
+            palitra_id: Set(palitra.id),
+            point_tokens: Set(serde_json::json!([])),
+            ..Default::default()
+        };
+        tokens.clone().insert(&env.dbx).await.unwrap();
+        crate::palitra::worker::enqueue_highlight(&env.dbx, item.id)
+            .await
+            .unwrap();
+        let worker = env.dbx.begin().await.unwrap();
+        palitra_highlight_worker_job::Entity::delete_by_id(item.id)
+            .exec(&worker)
+            .await
+            .unwrap();
+        let worker_pid: i32 = worker
+            .query_one_raw(Statement::from_string(
+                DbBackend::Postgres,
+                "SELECT pg_backend_pid() AS pid",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "pid")
+            .unwrap();
+        let db = env.dbx.clone();
+        let reprocessing = tokio::spawn(async move {
+            let transaction = db.begin().await.unwrap();
+            clear_body_derived_fields(&transaction, item.id, item.id_uuid)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = env.dbx.query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid))) AS waiting",
+                    [worker_pid.into()],
+                )).await.unwrap().unwrap().try_get("", "waiting").unwrap();
+                if waiting {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        worker
+            .execute_unprepared("SET LOCAL lock_timeout='500ms'")
+            .await
+            .unwrap();
+        sigint_inbox_item_point_token::Entity::insert(tokens)
+            .on_conflict(
+                sea_query::OnConflict::columns([
+                    sigint_inbox_item_point_token::Column::SigintInboxItemId,
+                    sigint_inbox_item_point_token::Column::PalitraId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(&worker)
+            .await
+            .unwrap();
+        worker.commit().await.unwrap();
+        reprocessing.await.unwrap();
+        assert!(palitra_highlight_worker_job::Entity::find_by_id(item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            sigint_inbox_item_point_token::Entity::find()
+                .filter(
+                    sigint_inbox_item_point_token::Column::SigintInboxItemId
+                        .eq(item.id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
     #[test]
     fn redacted_intelligence_summary_exposes_only_safe_metadata() {
         let summary = reference_inbox_message_summary(

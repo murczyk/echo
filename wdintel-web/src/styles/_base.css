@@ -1141,7 +1141,8 @@ html[data-bs-theme='dark'] .message-card-root {
   outline-offset: 2px;
 }
 
-.message-card-tag-expand {
+.message-card-tag-expand,
+.message-card-chain-expand {
   box-sizing: border-box;
   display: inline-flex;
   flex-shrink: 0;
@@ -1168,11 +1169,13 @@ html[data-bs-theme='dark'] .message-card-root {
   align-items: center;
 }
 
-.message-card-tag-expand:hover {
+.message-card-tag-expand:hover,
+.message-card-chain-expand:hover {
   background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
 }
 
-.message-card-tag-expand:focus-visible {
+.message-card-tag-expand:focus-visible,
+.message-card-chain-expand:focus-visible {
   outline: 2px solid var(--color-action);
   outline-offset: 2px;
 }

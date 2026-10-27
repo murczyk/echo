@@ -77,6 +77,7 @@ async fn fixture(env: &Env) -> (login::Model, Uuid, Vec<String>) {
                     interseption_kind: category,
                     disable_network_assignment: false,
                     is_aviation_group: false,
+                    ai_transcript_analysis_enabled: None,
                 },
             },
         )

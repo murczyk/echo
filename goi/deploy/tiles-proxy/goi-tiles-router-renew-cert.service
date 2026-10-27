@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew GOI tile proxy Tailscale certificate
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/goi-tiles-router/renew-cert.sh

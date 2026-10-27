@@ -113,6 +113,7 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
           <ListItemText>Оновити</ListItemText>
         </MenuItem>
         <MenuItem
+          disabled={page.threadMode != null}
           onClick={() => {
             closeMenu();
             if (onOpenReport) {
@@ -263,6 +264,7 @@ export function AnalysisPageHeader({
               <Button
                 variant="outlined"
                 color="inherit"
+                disabled={page.threadMode != null}
                 onClick={(event) => openReport(event.currentTarget)}
                 title="Відкрити звіти"
                 sx={{

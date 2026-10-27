@@ -39,6 +39,21 @@
   outline-offset: -2px;
 }
 
+.message-feed-list [data-message-feed-highlight-kind='linked'] [data-message-card-root],
+.message-feed-list [data-message-feed-highlight-kind='linked'][data-message-card-root] {
+  animation: message-feed-linked-highlight 2s ease-out forwards;
+}
+
+@keyframes message-feed-linked-highlight {
+  0%,
+  50% {
+    outline-color: var(--color-primary, #3b82f6);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+
 .message-feed-skeletons {
   display: grid;
   gap: 10px;
@@ -78,6 +93,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .message-feed-list [data-message-feed-highlight-kind='linked'] [data-message-card-root],
+  .message-feed-list [data-message-feed-highlight-kind='linked'][data-message-card-root] {
+    animation-timing-function: steps(1, end);
+  }
+
   .message-feed-skeletons .MuiSkeleton-pulse {
     animation: none;
   }

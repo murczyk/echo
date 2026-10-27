@@ -75,6 +75,8 @@ export type ManageMessageIntentChange = {
 };
 
 export type UseManageMessageDrawerProps = {
+  engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -113,6 +115,8 @@ export function useManageMessageDrawer({
   onEditSuccess,
   editTarget = null,
   reportSource = null,
+  engagedMessageId,
+  replySourceUnavailable,
   editAsReport = false,
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
@@ -124,6 +128,7 @@ export function useManageMessageDrawer({
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
+  const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
   const reportParents = isPresent(reportSource)
@@ -384,8 +389,9 @@ export function useManageMessageDrawer({
   ]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
-    [isEditMode, isReportMode, radioFeaturesAllowed],
+    () =>
+      zodResolver(makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed)),
+    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed],
   );
 
   const methods = useForm<MessageFormData>({
@@ -699,7 +705,7 @@ export function useManageMessageDrawer({
           formValues.unitNetworkSelection,
         ),
       isEditMode,
-      allowMissingGroup: isReportMode,
+      allowMissingGroup: isReportMode || isReplyMode,
       reportTextRequired: isReportMode,
       groupsLoading,
       selectedGroupKey,
@@ -729,6 +735,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportCreateMode,
     isReportMode,
+    isReplyMode,
     parseStatus,
     parsing,
     reportCopyLoaded,
@@ -757,7 +764,7 @@ export function useManageMessageDrawer({
             resetField('signalGroupMasterKey', { defaultValue: initialGroupMasterKey });
           } else {
             resetField('signalGroupMasterKey', { defaultValue: '' });
-            setReferenceDataError('Обрана група більше недоступна.');
+            if (!isReplyMode) setReferenceDataError('Обрана група більше недоступна.');
           }
           return;
         }
@@ -803,6 +810,7 @@ export function useManageMessageDrawer({
     formReady,
     handleReferenceDataError,
     initialGroupMasterKey,
+    isReplyMode,
     intentKey,
     isEditMode,
     isReportMode,
@@ -1206,6 +1214,9 @@ export function useManageMessageDrawer({
     isReportCreateMode,
     editTarget,
     reportSource,
+    engagedMessageId,
+    replySourceUnavailable,
+    replyGroupMasterKey: initialGroupMasterKey,
     existingMedia,
     onSubmitEdit,
     tagsLoaded,

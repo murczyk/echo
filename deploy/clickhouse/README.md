@@ -1371,6 +1371,41 @@ so accepting a merge-join plan can fail at runtime with `mergejoin input data
 is out of order`. `bin/reconcile-if-needed.sh` repairs and verifies this role
 setting automatically.
 
+### Gateway resource limits
+
+Control-bundle activation and ordinary reconciliation apply resource limits
+only to `CLICKHOUSE_GATEWAY_USER`; PeerDB, administration and monitoring retain
+their existing settings. `bin/reconcile-gateway-limits.sh --check` reads and
+verifies the limits without changing them. The normal command reconciles them
+without restarting ClickHouse or rebuilding data.
+
+Defaults reserve half of the configured ClickHouse server memory budget for
+all gateway queries together, and one quarter of that gateway budget for one
+query. They also cap a query at four threads and the gateway user at thirty-two
+concurrent queries. Each value has a matching `MAX` and a `MIN 1` constraint,
+so a client cannot raise it or disable it with zero. On Skhid's 17.6-GiB
+server budget these memory limits are
+8.8 GiB per gateway user and 2.2 GiB per query. Instance overrides are
+`ANALYTICS_GATEWAY_MEMORY_LIMIT_PERCENT` (1–75),
+`ANALYTICS_GATEWAY_QUERY_MEMORY_LIMIT_PERCENT` (1–100),
+`ANALYTICS_GATEWAY_MAX_THREADS` and
+`ANALYTICS_GATEWAY_MAX_CONCURRENT_QUERIES` (both 1–99).
+
+Gateway memory/concurrency rejections use the application's bounded PostgreSQL
+fallback with `reason=analytics_resource_limit`. They do not open the circuit
+for other reads. Total-server memory failures, connectivity failures and
+analytics timeouts retain the existing circuit behavior. Resource limits bound
+the analytical workload; they do not guarantee that an expensive fallback will
+complete. Check useful completions, source 503s and source block work as well
+as native memory before accepting a canary. See the
+[Skhid investigation and diagnostic limits](../../archive/2026-10-12-perf/iteration7/findings.md).
+
+An application rollback may retain these limits. If an operator also needs to
+remove them, first restore the previous control bundle so reconciliation will
+not reapply them, then restore the gateway user's four prior setting values
+and constraints from the pre-deployment settings snapshot. This is a separate
+approved environment change; do not reset unrelated users or settings.
+
 `status.sh` exits nonzero when the freshness record is unhealthy or older than
 the configured threshold. When analytics is configured,
 `wdintel-rs-bgworker` also checks this record immediately at startup and once

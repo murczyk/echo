@@ -1,3 +1,4 @@
+import { notifyMessageReplyPoll } from '../shared/message-replies/events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -287,7 +288,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
   const markFeedReloadRequested = useCallback(
     (feedId: string, preserveUnread = false) => {
-      if (!preserveUnread) editReloadFeedIdsRef.current.delete(feedId);
+      if (preserveUnread) editReloadFeedIdsRef.current.add(feedId);
+      else editReloadFeedIdsRef.current.delete(feedId);
       loadGenerationByFeedIdRef.current = {
         ...loadGenerationByFeedIdRef.current,
         [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
@@ -769,6 +771,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     clearFeedUnreadBaselines,
     completeFeedReload,
     setFeedUnreadCursor,
+    getFeedUnreadCursor: (feedId) => unreadCursorByFeedIdRef.current[feedId] ?? null,
     feedInitialTargetByFeedIdRef,
     installFeedUnreadCursorAndBaseline,
     recoverFeedUnreadBaselineAfterFailedLoad,
@@ -901,6 +904,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         automatic,
       );
       if (!eligibleFeeds.length) return;
+      notifyMessageReplyPoll('Duty');
       const cycle = beginDutyNotificationPollCycle();
       pollNotificationCyclesRef.current.add(cycle);
       const countTasks = eligibleFeeds.map(async (feed) => {

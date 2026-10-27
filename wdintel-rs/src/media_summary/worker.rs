@@ -22,8 +22,8 @@ use crate::utils::worker_watch;
 use chrono::{Duration as ChronoDuration, Utc};
 use milgeo_rs::coordinates::{Coords, CoordsResult};
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseBackend, DatabaseConnection,
-    EntityTrait, FromQueryResult, QueryFilter, Statement,
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, Statement,
 };
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, HashSet};
@@ -108,9 +108,13 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
     match response {
         Ok((summary, response)) => {
             record_coordinate_drops(env, &job, &summary.coordinate_drops);
-            complete(&env.dbx, &job, summary, response.model_name)
+            if !complete(&env.dbx, &job, summary, response.model_name)
                 .await
-                .c(h!())?;
+                .c(h!())?
+            {
+                record_superseded_attempt(env, &job, started_at.elapsed());
+                return Ok(true);
+            }
             super::publish_inbox_change(env, job.media_id)
                 .await
                 .c(h!())?;
@@ -118,6 +122,14 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
         }
         Err(err) => {
             let diagnostic = format!("{err:#}");
+            let Some(terminal) =
+                retry_or_fail(&env.dbx, &job, diagnostic.clone())
+                    .await
+                    .c(h!())?
+            else {
+                record_superseded_attempt(env, &job, started_at.elapsed());
+                return Ok(true);
+            };
             error!(
                 "media summary attempt failed: media_id={} attempt={} terminal={}: {}",
                 job.media_id,
@@ -125,8 +137,6 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
                 job.attempts >= MEDIA_SUMMARY_MAX_ATTEMPTS,
                 diagnostic
             );
-            let terminal =
-                retry_or_fail(&env.dbx, &job, diagnostic).await.c(h!())?;
             if terminal {
                 super::publish_inbox_change(env, job.media_id)
                     .await
@@ -146,6 +156,18 @@ fn record_attempt(env: &Env, outcome: &'static str, duration: Duration) {
     if let Some(metrics) = &env.metrics {
         metrics.record_media_summary_attempt(outcome, duration);
     }
+}
+
+fn record_superseded_attempt(
+    env: &Env,
+    job: &media_summary_entity::Model,
+    duration: Duration,
+) {
+    info!(
+        "media summary job superseded: media_id={} attempt={}",
+        job.media_id, job.attempts
+    );
+    record_attempt(env, "superseded", duration);
 }
 
 fn record_coordinate_drops(
@@ -180,6 +202,37 @@ fn record_coordinate_drops(
 async fn claim_next(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Option<media_summary_entity::Model>> {
+    loop {
+        let Some(job) = claim_candidate(dbx).await.c(h!())? else {
+            return Ok(None);
+        };
+        let deleted = dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+delete from media_summary job
+where job.media_id = $1
+  and job.state = 'running'
+  and job.lease_expires_at = $2
+  and exists (
+    select 1 from attachment_document document
+    where document.media_id = job.media_id
+      and document.revision is not null
+  )
+                "#,
+                [job.media_id.into(), job.lease_expires_at.into()],
+            ))
+            .await
+            .c(h!())?;
+        if deleted.rows_affected() == 0 {
+            return Ok(Some(job));
+        }
+    }
+}
+
+async fn claim_candidate(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Option<media_summary_entity::Model>> {
     let now = Utc::now().naive_utc();
     let lease_expires_at =
         now + ChronoDuration::seconds(MEDIA_SUMMARY_LEASE_SECS);
@@ -189,13 +242,13 @@ async fn claim_next(
 with candidate as (
   select media_id
   from media_summary
-  where (
+  where ((
       state in ('queued', 'retry_wait')
       and next_attempt_at <= $1
     ) or (
       state = 'running'
       and lease_expires_at <= $1
-    )
+    ))
   order by next_attempt_at, created_at, media_id
   for update skip locked
   limit 1
@@ -257,7 +310,7 @@ async fn complete(
     job: &media_summary_entity::Model,
     summary: StructuredSummary,
     response_model_name: Option<String>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let now = Utc::now().naive_utc();
     let update = media_summary_entity::ActiveModel {
         state: Set("completed".to_string()),
@@ -285,19 +338,19 @@ async fn complete(
         .await
         .c(h!())?;
     if updated.rows_affected != 1 {
-        anyhow::bail!("media summary lease was lost before completion");
+        return Ok(false);
     }
     crate::ai_position::worker::enqueue_media_if_enabled(dbx, job.media_id)
         .await
         .c(h!())?;
-    Ok(())
+    Ok(true)
 }
 
 async fn retry_or_fail(
     dbx: &DatabaseConnection,
     job: &media_summary_entity::Model,
     error: String,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<Option<bool>> {
     let now = Utc::now().naive_utc();
     let terminal = job.attempts >= MEDIA_SUMMARY_MAX_ATTEMPTS;
     let mut update = media_summary_entity::ActiveModel {
@@ -328,9 +381,9 @@ async fn retry_or_fail(
         .await
         .c(h!())?;
     if updated.rows_affected != 1 {
-        anyhow::bail!("media summary lease was lost before retry update");
+        return Ok(None);
     }
-    Ok(terminal)
+    Ok(Some(terminal))
 }
 
 fn summary_messages(source_text: &str) -> Vec<AiEngineMessage> {
@@ -770,6 +823,337 @@ mod tests {
     use crate::config::MEDIA_SUMMARY_SYSTEM_PROMPT;
     use serde_json::json;
 
+    async fn lease_fixture_3780() -> (
+        std::sync::Arc<crate::types::Env>,
+        uuid::Uuid,
+        crate::entities::media_summary_settings::Model,
+    ) {
+        use crate::entities::{
+            ai_engine, media_summary_settings, signal_message_media,
+        };
+        use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let db = &env.dbx;
+        let now = chrono::Utc::now().naive_utc();
+        let message =
+            crate::functest::tests::mk_signal_message(db, Default::default())
+                .await
+                .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(uuid::Uuid::new_v4()),
+            signal_message_id: Set(message.id),
+            content_type: Set("application/pdf".into()),
+            size_bytes: Set(1),
+            is_encrypted: Set(true),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let engine = ai_engine::ActiveModel {
+            id: Set(uuid::Uuid::new_v4()),
+            name: Set(format!("3780 summary lease {}", uuid::Uuid::new_v4())),
+            url: Set("https://example.invalid".into()),
+            model_name: Set("test".into()),
+            enabled: Set(true),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        let settings = media_summary_settings::Entity::find_by_id(
+            crate::config::MEDIA_SUMMARY_SETTINGS_ID,
+        )
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+        media_summary_settings::Entity::update_many()
+            .set(media_summary_settings::ActiveModel {
+                enabled: Set(true),
+                ai_engine_id: Set(Some(engine.id)),
+                ..Default::default()
+            })
+            .exec(db)
+            .await
+            .unwrap();
+        assert!(super::super::enqueue(db, media.id, "ocr_text", "original")
+            .await
+            .unwrap());
+        (env, media.id, settings)
+    }
+
+    fn lease_result_3780() -> super::StructuredSummary {
+        super::StructuredSummary {
+            summary: "current summary".into(),
+            coordinates: vec![],
+            coordinate_drops: vec![],
+        }
+    }
+
+    async fn assert_requeued_lease_3780(
+        db: &sea_orm::DatabaseConnection,
+        media: uuid::Uuid,
+    ) {
+        use crate::entities::media_summary;
+        use sea_orm::EntityTrait;
+
+        let first = super::claim_next(db).await.unwrap().unwrap();
+        assert!(super::super::enqueue_for_reprocessing(
+            db, media, "ocr_text", "updated"
+        )
+        .await
+        .unwrap());
+        assert!(!super::complete(db, &first, lease_result_3780(), None)
+            .await
+            .unwrap());
+        assert_eq!(
+            super::retry_or_fail(db, &first, "obsolete error".into())
+                .await
+                .unwrap(),
+            None
+        );
+        let current = super::claim_next(db).await.unwrap().unwrap();
+        assert!(super::complete(
+            db,
+            &current,
+            lease_result_3780(),
+            Some("actual-engine".into())
+        )
+        .await
+        .unwrap());
+        let saved = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.state, "completed");
+        assert_eq!(saved.summary.as_deref(), Some("current summary"));
+        assert_eq!(saved.model_name, "actual-engine");
+        assert!(saved.source_text.is_none());
+        assert_eq!(
+            super::retry_or_fail(db, &first, "obsolete error".into())
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    async fn assert_document_supersedes_lease_3780(
+        db: &sea_orm::DatabaseConnection,
+        media: uuid::Uuid,
+    ) {
+        use crate::entities::media_summary;
+        use sea_orm::{ConnectionTrait, EntityTrait};
+
+        assert!(super::super::enqueue_for_reprocessing(
+            db,
+            media,
+            "ocr_text",
+            "document text"
+        )
+        .await
+        .unwrap());
+        let legacy = super::claim_next(db).await.unwrap().unwrap();
+        db.execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            r#"UPDATE attachment_document SET revision=gen_random_uuid() WHERE media_id=$1"#,
+            [media.into()],
+        )).await.unwrap();
+        db.execute_raw(sea_orm::Statement::from_sql_and_values(
+            sea_orm::DbBackend::Postgres,
+            r#"UPDATE media_summary SET lease_expires_at=now()-interval '1 second' WHERE media_id=$1"#,
+            [media.into()],
+        )).await.unwrap();
+        assert!(super::claim_next(db).await.unwrap().is_none());
+        assert!(!super::complete(db, &legacy, lease_result_3780(), None)
+            .await
+            .unwrap());
+        assert_eq!(
+            super::retry_or_fail(db, &legacy, "obsolete error".into())
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .is_none());
+        assert_late_summaries_are_removed_3780(db, &legacy).await;
+    }
+
+    async fn assert_late_summaries_are_removed_3780(
+        db: &sea_orm::DatabaseConnection,
+        legacy: &crate::entities::media_summary::Model,
+    ) {
+        use crate::entities::media_summary;
+        use sea_orm::{
+            ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        };
+
+        for state in ["queued", "retry_wait"] {
+            let mut late = legacy.clone().into_active_model();
+            late.state = Set(state.into());
+            late.lease_expires_at = Set(None);
+            late.next_attempt_at = Set(chrono::Utc::now().naive_utc());
+            late.insert(db).await.unwrap();
+            assert!(super::claim_next(db).await.unwrap().is_none());
+            assert!(media_summary::Entity::find_by_id(legacy.media_id)
+                .one(db)
+                .await
+                .unwrap()
+                .is_none());
+        }
+        let mut completed = legacy.clone().into_active_model();
+        completed.state = Set("completed".into());
+        completed.source_text = Set(None);
+        completed.lease_expires_at = Set(None);
+        completed.summary = Set(Some("published document summary".into()));
+        let completed = completed.insert(db).await.unwrap();
+        assert!(super::claim_next(db).await.unwrap().is_none());
+        assert_eq!(
+            media_summary::Entity::find_by_id(legacy.media_id)
+                .one(db)
+                .await
+                .unwrap(),
+            Some(completed)
+        );
+    }
+
+    async fn assert_reclaimed_lease_3780(
+        db: &sea_orm::DatabaseConnection,
+        media: uuid::Uuid,
+    ) {
+        use crate::attachments::store::execute;
+        use crate::entities::media_summary;
+        use sea_orm::EntityTrait;
+
+        assert!(super::super::enqueue_for_reprocessing(
+            db,
+            media,
+            "ocr_text",
+            "reclaimed text"
+        )
+        .await
+        .unwrap());
+        super::claim_next(db).await.unwrap().unwrap();
+        execute(
+            db,
+            r#"
+update media_summary set lease_expires_at=now()-interval '1 second'
+where media_id=$1
+            "#,
+            vec![media.into()],
+        )
+        .await
+        .unwrap();
+        let expired = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let current = super::claim_next(db).await.unwrap().unwrap();
+        assert_eq!(current.attempts, expired.attempts + 1);
+        assert!(!super::complete(db, &expired, lease_result_3780(), None)
+            .await
+            .unwrap());
+        assert_eq!(
+            super::retry_or_fail(db, &expired, "expired error".into())
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            media_summary::Entity::find_by_id(media)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap(),
+            current
+        );
+        assert_current_retry_and_failure_3780(db, &current).await;
+    }
+
+    async fn assert_current_retry_and_failure_3780(
+        db: &sea_orm::DatabaseConnection,
+        current: &crate::entities::media_summary::Model,
+    ) {
+        use crate::attachments::store::execute;
+        use crate::entities::media_summary;
+        use sea_orm::EntityTrait;
+
+        let media = current.media_id;
+        assert_eq!(
+            super::retry_or_fail(db, current, "current error".into())
+                .await
+                .unwrap(),
+            Some(false)
+        );
+        let retry = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retry.state, "retry_wait");
+        assert_eq!(retry.last_error.as_deref(), Some("current error"));
+        assert_eq!(retry.source_text.as_deref(), Some("reclaimed text"));
+        execute(
+            db,
+            r#"
+update media_summary
+set next_attempt_at=now()-interval '1 second', attempts=$2
+where media_id=$1
+            "#,
+            vec![
+                media.into(),
+                (crate::config::MEDIA_SUMMARY_MAX_ATTEMPTS - 1).into(),
+            ],
+        )
+        .await
+        .unwrap();
+        let current = super::claim_next(db).await.unwrap().unwrap();
+        assert_eq!(
+            super::retry_or_fail(db, &current, "terminal error".into())
+                .await
+                .unwrap(),
+            Some(true)
+        );
+        let failed = media_summary::Entity::find_by_id(media)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(failed.state, "failed");
+        assert_eq!(failed.last_error.as_deref(), Some("terminal error"));
+        assert!(failed.source_text.is_none());
+        assert!(super::claim_next(db).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn superseded_media_summaries_preserve_current_jobs_and_documents_3780(
+    ) {
+        use crate::entities::media_summary_settings;
+        use sea_orm::{ActiveValue::Set, EntityTrait};
+
+        let (env, media, settings) = lease_fixture_3780().await;
+        assert_requeued_lease_3780(&env.dbx, media).await;
+        assert_reclaimed_lease_3780(&env.dbx, media).await;
+        assert_document_supersedes_lease_3780(&env.dbx, media).await;
+        media_summary_settings::Entity::update_many()
+            .set(media_summary_settings::ActiveModel {
+                enabled: Set(settings.enabled),
+                ai_engine_id: Set(settings.ai_engine_id),
+                ..Default::default()
+            })
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
     #[tokio::test]
     async fn strict_response_accepts_only_bounded_expected_plain_text() {
         let parsed = parse_response(

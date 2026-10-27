@@ -338,7 +338,7 @@ describe('useRerDutyMessageActions', () => {
     expect(document.body.textContent).toContain('Посилання на повідомлення скопійовано.');
   });
 
-  it('uses the authoritative aggregate importance returned by the server', async () => {
+  it('#3646 removes AI origin without clearing another user importance', async () => {
     hoisted.importantRemove.mockResolvedValueOnce(true);
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
@@ -347,7 +347,7 @@ describe('useRerDutyMessageActions', () => {
           apiRef={apiRef}
           initialFeeds={[
             buildFeed({
-              items: [[1, buildMessage({ important: true })]],
+              items: [[1, buildMessage({ important: true, aiImportant: true })]],
             }),
           ]}
         />,
@@ -360,6 +360,7 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].important).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].aiImportant).toBe(false);
   });
 
   it('#3610 opens the shared notification dialog for a new Duty importance mark', async () => {

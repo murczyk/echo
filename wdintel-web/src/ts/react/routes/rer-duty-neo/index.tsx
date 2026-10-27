@@ -1,4 +1,10 @@
 import {
+  MessageRepliesProvider,
+  ReplyMessageEditor,
+  type ReplyTarget,
+  type ReplyNavigation,
+} from '../shared/message-replies/MessageRepliesProvider';
+import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
 } from '../shared/message-card/MessageWriteAccess';
@@ -23,14 +29,11 @@ import {
 } from './utils';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { useRerDutyPageSettings } from './useRerDutyPageSettings';
-import { useDutyFeedColumnModel } from './useDutyFeedColumnModel';
+import { useDutyFeedColumnModel, type DutyFeedColumnModelDeps } from './useDutyFeedColumnModel';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { InboxMessage } from '../../../../Bindings';
-import {
-  ManageMessageDrawer,
-  type ManageMessageEditorHandle,
-} from '../shared/manage-message/ManageMessageDrawer';
+import type { ManageMessageEditorHandle } from '../shared/manage-message/ManageMessageDrawer';
 import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
@@ -40,6 +43,7 @@ import {
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { fetchMessagesByIdsMatchingFilters } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
@@ -53,7 +57,7 @@ import {
 } from '../shared/message-navigation';
 import { groupFilterScope, type GroupScope } from '../shared/group-navigation';
 
-type DutyLinkedMessageLanding = { feedId: string; targetIds: number[] };
+type DutyLinkedMessageLanding = { feedId: string; targetIds: number[]; behavior?: ScrollBehavior };
 
 type PendingDutyLinkedMessage = DutyLinkedMessageLanding & {
   filterSignature: string;
@@ -82,6 +86,7 @@ export function RerDutyNeoPage({
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [editorSourceFeedId, setEditorSourceFeedId] = useState<string | null>(null);
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
     null,
@@ -139,6 +144,7 @@ export function RerDutyNeoPage({
         if (sourceFeedId) setActiveFeedId(sourceFeedId);
         setEditorSourceFeedId(sourceFeedId);
         setEditorSourceMessageId(sourceMessageId ?? null);
+        setReplyTarget(null);
         commit();
       };
       if (editorRef.current) {
@@ -290,9 +296,18 @@ export function RerDutyNeoPage({
     notify({ message: error, severity: 'error' });
   }, [error, errorNotificationVersion, notify]);
 
-  const [targetMessageUid] = useState(parseDutyMessageUidFromWindow);
+  const [linkedMessageFocus, setLinkedMessageFocus] =
+    useState<DutyFeedColumnModelDeps['linkedMessageFocus']>(null);
+  const [initialTargetMessageUid] = useState(parseDutyMessageUidFromWindow);
+  const [replyNavigation, setReplyNavigation] = useState<{
+    feedId: string;
+    reference: string;
+  } | null>(null);
+  const targetMessageUid = replyNavigation?.reference ?? initialTargetMessageUid;
   const messageFeedsRef = useRef(messageFeeds);
   const applyFilterRef = useRef(applyFilter);
+  const buildReqForFeedRef = useRef(feeds.buildReqForFeed);
+  buildReqForFeedRef.current = feeds.buildReqForFeed;
   const setFeedInitialTargetRef = useRef(setFeedInitialTarget);
   const errorNotificationVersionRef = useRef(errorNotificationVersion);
   const notifyRef = useRef(notify);
@@ -301,7 +316,9 @@ export function RerDutyNeoPage({
   setFeedInitialTargetRef.current = setFeedInitialTarget;
   errorNotificationVersionRef.current = errorNotificationVersion;
   notifyRef.current = notify;
-  const targetFeedId = messageFeeds[0]?.id ?? null;
+  const targetFeedId = replyNavigation?.feedId ?? messageFeeds[0]?.id ?? null;
+  const replyNavigationRef = useRef(replyNavigation);
+  replyNavigationRef.current = replyNavigation;
   const targetFeedIdRef = useRef(targetFeedId);
   targetFeedIdRef.current = targetFeedId;
   const targetMessageUidRef = useRef(targetMessageUid);
@@ -310,7 +327,7 @@ export function RerDutyNeoPage({
   const linkedMessageHostRef = useRef<MessageNavigationHost<DutyLinkedMessageLanding> | null>(null);
   if (linkedMessageHostRef.current === null) {
     linkedMessageHostRef.current = {
-      materialize: (context) => {
+      materialize: async (context, signal) => {
         const feedId = targetFeedIdRef.current;
         const feed = messageFeedsRef.current.find((entry) => entry.id === feedId);
         const filterSignature = targetFilterSignatureRef.current;
@@ -331,6 +348,17 @@ export function RerDutyNeoPage({
               : [context.message[0]],
         );
         if (targetIds.length === 0) return Promise.resolve(null);
+        if (feed.items.some(([id]) => targetIds.includes(id))) {
+          return { feedId, targetIds, behavior: replyNavigationRef.current ? 'smooth' : 'auto' };
+        }
+        if (replyNavigationRef.current) {
+          const matching = await fetchMessagesByIdsMatchingFilters(
+            targetIds,
+            buildReqForFeedRef.current(feed, {}),
+            { signal },
+          );
+          if (signal.aborted || matching.length === 0) return null;
+        }
         return new Promise<DutyLinkedMessageLanding | null>((resolve, reject) => {
           pendingLinkedMessageRef.current = {
             feedId,
@@ -345,14 +373,46 @@ export function RerDutyNeoPage({
             beforeIdNoninclusive: targetIds[0],
             messageIds: targetIds,
           });
-          applyFilterRef.current(feedId, feed.filter, true);
+          applyFilterRef.current(feedId, feed.filter, true, {
+            preserveUnread: replyNavigationRef.current != null,
+          });
         });
       },
-      land: async ({ feedId, targetIds }, signal) => {
+      land: async ({ feedId, targetIds, behavior = 'auto' }, signal) => {
         if (signal.aborted) return false;
+        if (replyNavigationRef.current) {
+          setLinkedMessageFocus({
+            feedId,
+            filterSignature: targetFilterSignatureRef.current!,
+            focus: {
+              messageId: targetIds[0],
+              active: true,
+              constrainToContent: true,
+              behavior: 'smooth',
+              onRelease: () => setLinkedMessageFocus(null),
+            },
+          });
+        }
         for (const id of targetIds) {
-          const element = columnRefsRef.current[feedId]?.scrollToMessage?.(id, 'auto');
+          const element = columnRefsRef.current[feedId]?.scrollToMessage?.(
+            id,
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches
+              ? 'auto'
+              : replyNavigationRef.current
+                ? 'smooth'
+                : behavior,
+          );
           if (!element) continue;
+          if (replyNavigationRef.current) {
+            element.getAnimations?.({ subtree: true }).forEach((animation) => {
+              if (
+                animation instanceof CSSAnimation &&
+                animation.animationName === 'message-feed-linked-highlight'
+              ) {
+                animation.currentTime = 0;
+              }
+            });
+          }
           if (columnRefsRef.current[feedId]?.highlightLinkedMessage?.(id)) return true;
         }
         return false;
@@ -373,7 +433,10 @@ export function RerDutyNeoPage({
       () => linkedMessageHostRef.current!,
       (outcome) => {
         linkedNavigationPendingRef.current = false;
-        const message = messageNavigationErrorText(outcome);
+        const message =
+          replyNavigationRef.current && outcome.status === 'landing-error'
+            ? 'Повідомлення поза поточними фільтрами. Змініть фільтри, щоб побачити його.'
+            : messageNavigationErrorText(outcome);
         if (message) notifyRef.current({ message, severity: 'error' });
       },
     );
@@ -390,7 +453,7 @@ export function RerDutyNeoPage({
     cancelFollowTail(targetFeedId);
     void linkedMessageControllerRef.current?.navigate(targetMessageUid);
     return () => linkedMessageControllerRef.current?.cancel();
-  }, [targetMessageUid, targetFeedId, setWatchModeByFeedId, cancelFollowTail]);
+  }, [targetMessageUid, targetFeedId, replyNavigation, setWatchModeByFeedId, cancelFollowTail]);
 
   useEffect(() => {
     if (!linkedNavigationPendingRef.current) return;
@@ -415,6 +478,35 @@ export function RerDutyNeoPage({
     pending.resolve({ feedId: pending.feedId, targetIds: pending.targetIds });
   }, [messageFeeds, targetFeedId, error, errorNotificationVersion]);
 
+  const navigateReply = useCallback<ReplyNavigation>((message, source) => {
+    setLinkedMessageFocus(null);
+    const feedId = source.closest<HTMLElement>('[data-duty-feed-id]')?.dataset.dutyFeedId;
+    if (!feedId) return;
+    const reference = new URL(message.href, window.location.origin).searchParams.get('m');
+    if (reference) setReplyNavigation({ feedId, reference });
+  }, []);
+  const openReplyComposer = useCallback(
+    (target: ReplyTarget) => {
+      const feedId =
+        target.focus?.closest<HTMLElement>('[data-duty-feed-id]')?.dataset.dutyFeedId ?? null;
+      requestEditorIntent(
+        `reply:${target.id}`,
+        feedId,
+        () => {
+          cancelReportEditLoad();
+          setCreateMessageOpen(false);
+          setEditTarget(null);
+          setEditAsReport(false);
+          setReportSource(null);
+          setReplyTarget(target);
+        },
+        target.focus ?? undefined,
+        target.id,
+      );
+    },
+    [requestEditorIntent, cancelReportEditLoad],
+  );
+
   const editorHighlightedMessageId = createMessageOpen ? null : editorSourceMessageId;
   const selectGroupScope = useCallback(
     (feedId: string, scope: GroupScope) => {
@@ -426,6 +518,7 @@ export function RerDutyNeoPage({
     feeds,
     editorSourceFeedId,
     editorHighlightedMessageId,
+    linkedMessageFocus,
     narrowScreen,
     authUserName,
     currentUser,
@@ -478,21 +571,24 @@ export function RerDutyNeoPage({
   );
   const closeMessageEditor = useCallback(() => {
     cancelReportEditLoad();
+    setReplyTarget(null);
     setCreateMessageOpen(false);
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
     setEditorSourceMessageId(null);
   }, [cancelReportEditLoad]);
-  const editorIntentKey = createMessageOpen
-    ? `create-message:${editorSourceFeedId ?? 'unknown'}:${createMessageGroupMasterKey ?? 'all'}`
-    : reportSource
-      ? `create-report:${reportSource.id}`
-      : editTarget
-        ? `${editAsReport ? 'edit-report' : 'edit-message'}:${editTarget.id}`
-        : editTargetLoadState.status !== 'idle'
-          ? `edit-report:${editTargetLoadState.reportId}`
-          : null;
+  const editorIntentKey = replyTarget
+    ? `reply:${replyTarget.id}`
+    : createMessageOpen
+      ? `create-message:${editorSourceFeedId ?? 'unknown'}:${createMessageGroupMasterKey ?? 'all'}`
+      : reportSource
+        ? `create-report:${reportSource.id}`
+        : editTarget
+          ? `${editAsReport ? 'edit-report' : 'edit-message'}:${editTarget.id}`
+          : editTargetLoadState.status !== 'idle'
+            ? `edit-report:${editTargetLoadState.reportId}`
+            : null;
   const editorOpen = editorIntentKey !== null;
   const editorPresentation = useManageMessageEditorPresentation();
   const reduceEditorMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -700,12 +796,17 @@ export function RerDutyNeoPage({
               : undefined,
           }}
         >
-          <ManageMessageDrawer
+          <ReplyMessageEditor
+            replyTarget={replyTarget}
+            timeBasis="creation"
             ref={editorRef}
             hideNetworks={hideNetworks || !networkVisibilityReady}
             open={editorOpen}
             intentKey={editorIntentKey ?? 'closed'}
-            initialGroupMasterKey={createMessageOpen ? createMessageGroupMasterKey : null}
+            initialGroupMasterKey={
+              replyTarget?.message.groupMasterKey ??
+              (createMessageOpen ? createMessageGroupMasterKey : null)
+            }
             presentation={editorPresentation}
             adaptiveEmbeddedForm
             fillEmbeddedSurface
@@ -750,7 +851,17 @@ export function RerDutyNeoPage({
   return (
     <MessageWriteAccessContext.Provider value={canWriteMessages(currentUser?.roles)}>
       <MessageDeleteAccessContext.Provider value={hasRole(currentUser?.roles, 'DeleteMsg')}>
-        {content}
+        <MessageRepliesProvider
+          screen="Duty"
+          onReply={openReplyComposer}
+          onNavigate={navigateReply}
+          filterRequests={Object.fromEntries(
+            messageFeeds.map((feed) => [feed.id, feeds.buildReqForFeed(feed, {})]),
+          )}
+          currentUser={currentUser}
+        >
+          {content}
+        </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>
   );

@@ -351,6 +351,9 @@ where
     };
 
     if existing_inbox_item {
+        crate::palitra::worker::enqueue_highlight(txn, message_id)
+            .await
+            .c(h!())?;
         crate::rer_importer::inbox::prepare_message_network_activity_change(
             txn,
             message_id,
@@ -547,15 +550,11 @@ where
         .c(h!())?;
     }
 
-    palitra_highlight_worker_job::Entity::insert(
-        palitra_highlight_worker_job::ActiveModel {
-            sigint_inbox_item_id: Set(message.id),
-        },
-    )
-    .on_conflict_do_nothing()
-    .exec(txn)
-    .await
-    .c(h!())?;
+    if !existing_inbox_item {
+        crate::palitra::worker::enqueue_highlight(txn, message.id)
+            .await
+            .c(h!())?;
+    }
 
     Ok(ConstructInboxItemResult::changed(message.id))
 }

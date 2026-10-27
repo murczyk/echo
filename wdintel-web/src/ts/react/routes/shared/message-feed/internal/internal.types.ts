@@ -138,6 +138,7 @@ export type FeedLayoutOptions = FeedScrollHelpers &
     bottomSpacerPx: number;
     setBottomSpacerPx: (value: number) => void;
     centerTrackedItem: (reason: string) => HTMLElement | null;
+    startTrackedItemMotion: (behavior?: ScrollBehavior) => void;
     stopDirectItemTracking: () => void;
     stopPendingAnchorRestore: () => void;
     schedulePendingAnchorRestore: () => void;

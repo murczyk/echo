@@ -35,7 +35,7 @@ Network candidates still use the configured JSON catalog scope and fallback.
 
 Without an anchor, each distinct normalized location name has one vote,
 including names with no eligible candidates. The election first maximizes the
-number of names whose candidates are all less than 50 km apart, then minimizes
+number of names whose candidates are all less than 30 km apart, then minimizes
 their total pairwise distance and total distance to the Battle Line. A result
 requires strictly more than half of all names. Unfitting names remain
 unresolved; tied best results leave the whole set unresolved. Distances within 1
@@ -66,10 +66,10 @@ existing network decisions; removing a selection requeues against the defaults.
 
 Resolved locations of linked, non-deleted networks anchor inbox names. Anchored
 sets maximize matched names, minimize total distance to the nearest anchor, then
-minimize pairwise distances. Trusted anchors replace the majority and 50 km
+minimize pairwise distances. Trusted anchors replace the majority and 30 km
 requirements; ties leave the entire set unresolved. Previously resolved inbox
 locations remain fixed votes in the same majority election for pending names
-when there are no network anchors. They retain the 50 km pairwise limit; retrying
+when there are no network anchors. They retain the 30 km pairwise limit; retrying
 an unresolved name cannot promote a distant outlier. If a fixed settlement is no
 longer eligible, pending names remain unresolved. Explicit inbox recalculation
 uses network anchors too. Historical resolved inbox links remain intact until

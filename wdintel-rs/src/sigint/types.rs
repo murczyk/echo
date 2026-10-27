@@ -70,6 +70,7 @@ pub struct ZoneDatasourceGroup {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
@@ -99,6 +100,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub is_aviation_group: Option<bool>,
+    pub ai_transcript_analysis_enabled: Option<bool>,
     pub fetch_new_messages: Option<bool>,
     pub user_logins: Vec<String>,
     #[serde(default)]
@@ -115,6 +117,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ZoneDatasourceGroupAddReq {
+    pub ai_transcript_analysis_enabled: Option<bool>,
     pub zone_id: i64,
     pub datasource_id: i64,
     pub is_secret: bool,

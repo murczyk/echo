@@ -561,6 +561,43 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages.mock.calls[0][0].reportTagsOnlyThisUnit).toBeNull();
   });
 
+  it('#3612 keeps off-window unread identities when navigating to a historical reply', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(62, 78));
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: rangeRsp(62, 81).inboxItems,
+          readIds: new Set(Array.from({ length: 17 }, (_, index) => index + 62)),
+          pendingNewerItems: rangeRsp(82, 82).inboxItems,
+          windowedUnreadItems: new Map([
+            [79, 7900],
+            [80, 8000],
+            [81, 8100],
+          ]),
+          unreadCount: 4,
+        })),
+      );
+    });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(22, 41));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(63, 82));
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(rangeRsp(21, 21));
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', { beforeIdNoninclusive: 21, messageIds: [21] });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      await flushMicrotasks();
+    });
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.some(([id]) => id === 21)).toBe(true);
+    expect(feed.unreadCount).toBe(4);
+    expect(feed.unresolvedUnreadIds).toEqual(new Set([79, 80, 81, 82]));
+    expect(feed.readIds.has(21)).toBe(true);
+  });
+
   it('loads a direct-link target with an exact pagination cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockClear();

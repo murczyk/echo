@@ -112,6 +112,9 @@ pub async fn reconcile_deleted_message(
     snapshot: &MessageF1,
 ) -> anyhow::Result<ReconcileResult> {
     let echo_inbox_message_id = snapshot.internal_id as i64;
+    crate::message_reply::stage_source(txn, datasource_id, snapshot)
+        .await
+        .c(h!())?;
     let linked_messages = load_deleted_linked_messages(
         txn,
         datasource_id,
@@ -256,6 +259,10 @@ async fn promote_duplicate_trace_for_deleted_original(
     promoted_message_act.deleted = Set(false);
     let promoted_message = promoted_message_act.update(txn).await.c(h!())?;
 
+    let duplicate_source_ids = duplicate_traces
+        .iter()
+        .map(|(_, trace)| trace.id)
+        .collect_vec();
     for (group_link, _) in duplicate_traces {
         let mut group_link = group_link.into_active_model();
         group_link.signal_message_id = Set(promoted_message.id);
@@ -303,6 +310,14 @@ async fn promote_duplicate_trace_for_deleted_original(
     copy_manual_annotations_to_promoted_messages(
         txn,
         original_message.id,
+        &changed_inbox_item_ids,
+    )
+    .await
+    .c(h!())?;
+    crate::message_reply::record_promoted_sources(
+        txn,
+        &duplicate_source_ids,
+        promoted_message.id,
         &changed_inbox_item_ids,
     )
     .await
@@ -1072,8 +1087,8 @@ pub async fn reconcile_active_message_with_staged_media(
         )
         .await
         .c(h!())?;
-
         if unstage_result.is_duplicate {
+            crate::message_reply::record_source(txn, datasource_id, snapshot.internal_id as i64, unstage_result.message.id).await.c(h!())?;
             copy_manual_annotations_to_promoted_message(
                 txn,
                 source_message_id,
@@ -1188,6 +1203,8 @@ pub async fn reconcile_active_message_with_staged_media(
             std::iter::once(source_message_id)
                 .chain(retired_inbox_item_ids.iter().copied())
                 .collect_vec();
+        crate::message_reply::record_processed_source(txn, datasource_id, snapshot.internal_id as i64, signal_message.id, &changed_inbox_item_ids)
+            .await.c(h!())?;
         copy_manual_annotations_from_messages_to_promoted_messages(
             txn,
             &annotation_source_ids,
@@ -3330,6 +3347,55 @@ mod tests {
             deleted: true,
         };
 
+        // https://github.com/echoua/echo/issues/3612
+        let mut source = snapshot.clone();
+        source.deleted = false;
+        for receipt in [4848, 4849, 4850] {
+            source.internal_id = receipt;
+            crate::message_reply::stage_source(&txn, datasource.id, &source)
+                .await
+                .unwrap();
+            crate::message_reply::record_source(
+                &txn,
+                datasource.id,
+                receipt as i64,
+                original.id,
+            )
+            .await
+            .unwrap();
+        }
+        let mut reply_ids = vec![];
+        for (receipt, target) in [(4851, 4850), (4852, 4848)] {
+            let reply = mk_signal_message(
+                &txn,
+                signal_message::ActiveModel {
+                    body: Set(Some(format!("Reply to {target}"))),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            source.internal_id = receipt;
+            source.reply_to = Some(echo_im::types::ReplyF1 {
+                receipt: format!("inbox-id:{target}"),
+                is_outbox_message: false,
+                timestamp: None,
+                text: String::new(),
+            });
+            crate::message_reply::stage_source(&txn, datasource.id, &source)
+                .await
+                .unwrap();
+            crate::message_reply::record_source(
+                &txn,
+                datasource.id,
+                receipt as i64,
+                reply.id,
+            )
+            .await
+            .unwrap();
+            reply_ids.push(reply.id);
+        }
+
         let result = reconcile_deleted_message(
             &txn,
             env.settlements.clone(),
@@ -3341,6 +3407,26 @@ mod tests {
         .await
         .unwrap();
 
+        let surviving = message_reply::Entity::find()
+            .filter(
+                message_reply::Column::ReplySignalMessageId.eq(reply_ids[0]),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(surviving.original_signal_message_id, Some(duplicate_a.id));
+        assert!(!surviving.deleted);
+        let deleted = message_reply::Entity::find()
+            .filter(
+                message_reply::Column::ReplySignalMessageId.eq(reply_ids[1]),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(deleted.original_signal_message_id, Some(original.id));
+        assert!(deleted.deleted);
         assert_eq!(
             result.changed_inbox_item_ids,
             vec![original.id, duplicate_a.id]

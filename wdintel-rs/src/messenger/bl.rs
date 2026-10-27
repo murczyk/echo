@@ -1108,6 +1108,13 @@ pub async fn bl_group_update(
     )
     .await
     .c(h!())?;
+    crate::ai_transcript_analysis::settings::set_group(
+        txn,
+        &group.master_key,
+        req.ai_transcript_analysis_enabled,
+    )
+    .await
+    .c(h!())?;
     crate::sigint::zone::bl::update_group_aviation_if_present(
         req.is_aviation_group,
         &group.master_key,

@@ -105,6 +105,7 @@ else
       "$install_root/bin/$(basename "$command_path")"
   done
   "$install_root/current/bin/reconcile-clickhouse-memory-limit.sh"
+  "$install_root/current/bin/reconcile-gateway-limits.sh"
   systemctl enable \
     echo-analytics-memory-limit.timer \
     echo-analytics-health.timer \

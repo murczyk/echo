@@ -593,12 +593,13 @@ pub async fn highlight_callsigns(
 ) -> Result<Vec<CNCallsign>, AppError> {
     let mut res = vec![];
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
+    let lexemes = crate::nlp::token_lexemes_batch(rq, callsigns.clone())
+        .await
+        .c(h!())?;
     let mut callsign_forms = BTreeMap::new();
-    for callsign in callsigns.iter() {
+    for (callsign, lexemes) in callsigns.iter().zip(lexemes) {
         callsign_forms.insert(callsign_match_key(callsign), callsign.clone());
-        for callsign_form in
-            crate::nlp::token_lexemes(rq, callsign).await.c(h!())?
-        {
+        for callsign_form in lexemes {
             callsign_forms
                 .insert(callsign_match_key(&callsign_form), callsign.clone());
         }
@@ -2308,6 +2309,7 @@ mod tests {
             callsigns_alg2: vec![],
             checked: false,
             important: false,
+            ai_important: false,
             bookmarked: false,
             timestamp: None,
             created_at: None,

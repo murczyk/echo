@@ -19,6 +19,8 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::ai_transcript_analysis_job::Entity")]
+    AiTranscriptAnalysisJob,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::LoginId",
@@ -37,6 +39,12 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     SignalMessage,
+}
+
+impl Related<super::ai_transcript_analysis_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiTranscriptAnalysisJob.def()
+    }
 }
 
 impl Related<super::login::Entity> for Entity {

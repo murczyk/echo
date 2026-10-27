@@ -28,6 +28,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
@@ -49,7 +50,7 @@ pub mod stats;
 mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AnalyticsMessageIdScope {
+pub(crate) enum AnalyticsMessageIdScope {
     Empty,
     From(i64),
     Inclusive { min_id: i64, max_id: i64 },
@@ -60,7 +61,7 @@ impl AnalyticsMessageIdScope {
         matches!(self, Self::Empty)
     }
 
-    pub(super) fn condition<C>(self, column: C) -> SimpleExpr
+    pub(crate) fn condition<C>(self, column: C) -> SimpleExpr
     where
         C: IntoColumnRef,
     {
@@ -72,6 +73,86 @@ impl AnalyticsMessageIdScope {
             }
         }
     }
+
+    fn chunks(self, chunk_size: i64) -> Vec<Self> {
+        assert!(chunk_size > 0);
+        if self.is_empty() {
+            return Vec::new();
+        }
+        let Self::Inclusive { min_id, max_id } = self else {
+            return vec![self];
+        };
+        let mut chunks = Vec::new();
+        let mut min_id = min_id;
+        while min_id <= max_id {
+            let end =
+                std::cmp::min(min_id.saturating_add(chunk_size - 1), max_id);
+            chunks.push(Self::Inclusive {
+                min_id,
+                max_id: end,
+            });
+            if end == max_id {
+                break;
+            }
+            min_id = end + 1;
+        }
+        chunks
+    }
+}
+
+pub(super) async fn analytics_message_id_chunks(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    chunk_size: i64,
+) -> anyhow::Result<Vec<AnalyticsMessageIdScope>> {
+    if let AnalyticsMessageIdScope::From(min_id) = scope {
+        let max_id = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "max_id")
+            .into_tuple::<Option<i64>>()
+            .one(source_db)
+            .await
+            .context(h!())?
+            .flatten();
+        let mut chunks = AnalyticsMessageIdScope::Inclusive {
+            min_id,
+            max_id: std::cmp::max(max_id.unwrap_or(min_id), min_id),
+        }
+        .chunks(chunk_size);
+        if let Some(last) = chunks.last_mut() {
+            let AnalyticsMessageIdScope::Inclusive { min_id, .. } = *last
+            else {
+                unreachable!();
+            };
+            *last = AnalyticsMessageIdScope::From(min_id);
+        }
+        return Ok(chunks);
+    }
+    Ok(scope.chunks(chunk_size))
+}
+
+pub(crate) async fn load_analytics_message_id_chunks<T, F, Fut>(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    load: F,
+) -> anyhow::Result<Vec<T>>
+where
+    F: Fn(AnalyticsMessageIdScope) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let scopes = analytics_message_id_chunks(
+        source_db,
+        scope,
+        ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .context(h!())?;
+    stream::iter(scopes)
+        .map(load)
+        .buffered(ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect()
+        .await
+        .context(h!())
 }
 
 pub(super) async fn ensure_analytics_search_coverage(
@@ -257,7 +338,7 @@ pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
     message_in_groups_exists_with_scope(keys, None)
 }
 
-pub(super) fn message_in_groups_exists_with_scope(
+pub(crate) fn message_in_groups_exists_with_scope(
     keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
@@ -980,6 +1061,32 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
     force_correlation: bool,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        force_correlation,
+        scope,
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    )
+}
+
+pub(in crate::rer_importer) fn analytics_message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    scope: &AnalyticsMessageIdScope,
+) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        false,
+        Some(scope),
+        Expr::col((signal_message::Entity, signal_message::Column::Id)),
+    )
+}
+
+fn linked_unit_ids_condition(
+    unit_ids: &[i64],
+    force_correlation: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    message_id: sea_query::Expr,
+) -> SimpleExpr {
     let link_alias = Alias::new("selected_unit_link");
     let unit_alias = Alias::new("selected_unit_by_id");
     let mut query = Query::select();
@@ -1000,7 +1107,7 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::ItemId,
             ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+            .eq(message_id),
         )
         .and_where(
             Expr::col((
@@ -2430,6 +2537,15 @@ where
             )
             .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::LoginId,
+                )),
+                None,
+            ))
+            // Keep EXISTS correlated so each parent probes the comment index.
+            .offset(0)
             .into_query();
         let linked_message = Alias::new("linked_message");
         let linked_comment_exists = intel_product::Entity::find()
@@ -2440,7 +2556,7 @@ where
             ))
             .join_as(
                 JoinType::InnerJoin,
-                intel_product::Relation::SignalMessage1.def(),
+                intel_product::Relation::SignalMessage2.def(),
                 linked_message.clone(),
             )
             .filter(
@@ -2458,9 +2574,24 @@ where
                 .eq(false),
             )
             .filter(
-                Expr::col((linked_message, signal_message::Column::Body))
+                Expr::col((linked_message.clone(), signal_message::Column::Body))
                     .ne(""),
             )
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::LoginId,
+                )),
+                Some(
+                    Func::lower(Expr::col((
+                        linked_message,
+                        signal_message::Column::Sender,
+                    )))
+                    .into(),
+                ),
+            ))
+            // Avoid hashing the full linked-message relation for a narrow page.
+            .offset(0)
             .into_query();
 
         q = q.filter(
@@ -2519,6 +2650,48 @@ where
     //     q.build(DbBackend::Postgres).to_string()
     // );
     Ok(q)
+}
+
+fn note_comment_author_filter(
+    author: SimpleExpr,
+    sender: Option<SimpleExpr>,
+) -> SimpleExpr {
+    let parsing_enabled = system_settings::Entity::find()
+        .select_only()
+        .column(system_settings::Column::SigintCommentParsingEnabled)
+        .filter(system_settings::Column::Deleted.eq(false))
+        .order_by_desc(system_settings::Column::UpdatedAt)
+        .limit(1)
+        .into_query();
+    let system_logins = login::Entity::find()
+        .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
+        .filter(Expr::value(true).in_subquery(parsing_enabled));
+    let unknown_author = author.clone().is_null();
+    let unknown_author = if let Some(sender) = sender {
+        let system_senders = system_logins
+            .clone()
+            .select_only()
+            .expr(Expr::cust_with_expr(
+                "unnest(ARRAY(VALUES ($1::text), (replace($1::text, '-', '')), \
+                 ('{' || $1::text || '}'), ('urn:uuid:' || $1::text)))",
+                Expr::col(login::Column::Id),
+            ))
+            .into_query();
+        unknown_author.and(
+            sender
+                .clone()
+                .is_null()
+                .or(sender.not_in_subquery(system_senders)),
+        )
+    } else {
+        unknown_author
+    };
+    unknown_author.or(author.not_in_subquery(
+        system_logins
+            .select_only()
+            .column(login::Column::Id)
+            .into_query(),
+    ))
 }
 
 fn selected_tags_accessible_expr(
@@ -3598,16 +3771,23 @@ pub(crate) fn filter_search_with_correlated_terms<Q>(
 where
     Q: QueryFilter + QuerySelect,
 {
-    Ok(
-        filter_search_with_scope(
-            q,
-            search,
-            search_mode,
-            correlated_terms,
-            None,
-        )
-        .c(h!())?,
+    Ok(filter_search_with_scope(
+        q,
+        search,
+        search_mode,
+        correlated_terms,
+        None,
+        false,
     )
+    .c(h!())?)
+}
+
+pub(in crate::rer_importer) fn search_uses_candidate_ids(
+    selected_freqs: &Option<Vec<String>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> bool {
+    scope.is_some()
+        || matches!(selected_freqs.as_deref(), Some([frequency]) if !frequency.is_empty())
 }
 
 pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
@@ -3616,6 +3796,7 @@ pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
     search_mode: Option<AnalysisSearchMode>,
     correlated_terms: bool,
     scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
@@ -3628,6 +3809,7 @@ where
             search_mode,
             correlated_terms,
             scope.is_some(),
+            inbox_required,
         )
         .c(h!())?;
         q2 = q2.filter(predicate);
@@ -4506,8 +4688,9 @@ fn build_summary_table_filtered_messages_query_with_access(
         q,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
@@ -6885,8 +7068,9 @@ fn build_new_callsign_filtered_items_query(
         query,
         &req.search,
         req.search_mode,
-        scope.is_some(),
+        search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
+        true,
     )
     .c(h!())?;
     let query = filter_selected_device_names(query, &req.selected_device_names)
@@ -7498,6 +7682,7 @@ pub async fn activity_daily(
                 &analytics_req.0,
                 analytics_user,
                 &db,
+                postgres_db,
                 analytics_groups,
                 Some(&scope),
             )
@@ -7507,6 +7692,7 @@ pub async fn activity_daily(
             stats::fetch_daily_group_activity_with_db(
                 &postgres_req.0,
                 postgres_user,
+                postgres_db,
                 postgres_db,
                 postgres_groups,
                 None,
@@ -8697,6 +8883,7 @@ async fn network_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &postgres_env.dbx,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 &message_id_scope,
@@ -8884,6 +9071,7 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // through PostgreSQL so every panel describes the same message set.
     req.message_time_basis
         != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
 }
 
@@ -8933,7 +9121,8 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_text_search_supported(&req.search, req.search_mode)
+    req.or_with_extended_form != Some(true)
+        && analytics_text_search_supported(&req.search, req.search_mode)
         && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
             || (req.load_latest == Some(true) && req.nolimit != Some(true)))
 }
@@ -9339,6 +9528,7 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
         "analytics_error"
             | "analytics_timeout"
             | "analytics_saturated"
+            | "analytics_resource_limit"
             | "analytics_unhealthy"
             | "analytics_unavailable"
             | "attachment_history_incomplete"
@@ -9436,6 +9626,23 @@ fn analytics_failure_reason(
     let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
+        let message = error.to_string();
+        let normalized = message.to_ascii_lowercase();
+        let native_exception =
+            message.contains("pg_clickhouse: DB::Exception:");
+        let memory_limit = message.contains("MEMORY_LIMIT_EXCEEDED")
+            || (native_exception
+                && normalized.contains("memory limit")
+                && normalized.contains("exceeded"));
+        let concurrency_limit = message
+            .contains("TOO_MANY_SIMULTANEOUS_QUERIES")
+            || (native_exception
+                && normalized.contains("too many simultaneous queries"));
+        if (memory_limit && !normalized.contains("(total)"))
+            || concurrency_limit
+        {
+            return "analytics_resource_limit";
+        }
         if error
             .downcast_ref::<crate::attachments::analytics::AttachmentSearchCoverageError>()
             .is_some()
@@ -11317,6 +11524,7 @@ async fn collect_group_names(
             signal_group::Column::InterseptionKind,
             signal_group::Column::DisableNetworkAssignment,
             signal_group::Column::IsAviationGroup,
+            signal_group::Column::AiTranscriptAnalysisEnabled,
             signal_group::Column::ColorKey,
             signal_group::Column::FetchNewMessages,
         ])
@@ -11328,6 +11536,7 @@ async fn collect_group_names(
             sea_orm_active_enums::InterseptionKind,
             bool,
             Option<bool>,
+            Option<bool>,
             Option<String>,
             Option<bool>,
         )>()
@@ -11337,7 +11546,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11363,6 +11572,7 @@ async fn collect_group_names(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        ai_transcript_analysis_enabled,
         color_key,
         fetch_new_messages,
     ) in signal_groups
@@ -11380,6 +11590,8 @@ async fn collect_group_names(
                 interseption_kind: interseption_kind.into(),
                 disable_network_assignment,
                 is_aviation_group: is_aviation_group.unwrap_or(false),
+                ai_transcript_analysis_enabled: ai_transcript_analysis_enabled
+                    .unwrap_or(false),
                 fetch_new_messages: fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
@@ -11419,6 +11631,7 @@ async fn collect_group_names(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
             group_stats: stats,
             admin_data: group_admin_data,
