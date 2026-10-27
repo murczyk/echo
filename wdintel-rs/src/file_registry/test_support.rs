@@ -213,6 +213,7 @@ where
         hard_expires_at: Set(hard_expires_at),
         spool_removed_at: Set(None),
         next_cleanup_at: Set(Some(expires_at)),
+        stats_epoch: Set(0),
     }
     .insert(db)
     .await
