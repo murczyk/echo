@@ -27,10 +27,23 @@ const Y_LABEL_WIDTH = 40;
 const Y_LABEL_FONT_SIZE = 11;
 const DAY_LABEL_FONT_SIZE = 12;
 
+type Geometry = (typeof GEOMETRY)[keyof typeof GEOMETRY];
+
 type HoveredDay = {
   day: DeviceActivityDay;
   left: number;
   top: number;
+};
+
+type YTick = { y: number; label: string };
+
+type ChartScale = {
+  geometry: Geometry;
+  maxCount: bigint;
+  plotWidth: number;
+  /** Also the y of the baseline: the plot ends at the bottom of the SVG. */
+  svgHeight: number;
+  yTicks: YTick[];
 };
 
 type Props = {
@@ -62,203 +75,261 @@ export function DeviceActivityChart({ days, variant = 'compact', faded = false }
     );
   }
 
-  const geometry = GEOMETRY[variant];
   const detailed = variant === 'detailed';
+  const scale = chartScale(days, GEOMETRY[variant], detailed);
+
+  return (
+    <>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', maxWidth: '100%' }}>
+        {detailed ? <YAxisLabels ticks={scale.yTicks} height={scale.svgHeight} /> : null}
+        <Box
+          ref={scrollRef}
+          onScroll={() => setHovered(null)}
+          sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', pb: '2px' }}
+        >
+          <ActivityPlot
+            days={days}
+            scale={scale}
+            faded={faded}
+            hovered={hovered}
+            onHover={setHovered}
+          />
+          {detailed ? (
+            <DayLabels days={days} width={scale.plotWidth} bandWidth={scale.geometry.bandWidth} />
+          ) : null}
+        </Box>
+      </Box>
+      {detailed ? <CategoryLegend days={days} /> : null}
+      {hovered ? <HoverOverlay hovered={hovered} /> : null}
+    </>
+  );
+}
+
+function chartScale(days: DeviceActivityDay[], geometry: Geometry, withYAxis: boolean): ChartScale {
   const svgHeight = geometry.plotTop + geometry.plotHeight;
   const maxCount = days.reduce((max, day) => (day.contentCount > max ? day.contentCount : max), 1n);
   // The top stop equals the tallest bar; the middle stop is a whole count placed at its own height.
   const midCount = maxCount / 2n;
   const yFor = (count: bigint) =>
     geometry.plotTop + geometry.plotHeight * (1 - Number(count) / Number(maxCount));
-  const plotWidth = days.length * geometry.bandWidth;
-  const plotBottom = svgHeight;
-  const yTicks = detailed
+  const yTicks = withYAxis
     ? [
         { y: yFor(maxCount), label: formatDeviceCount(maxCount) },
         ...(midCount > 0n ? [{ y: yFor(midCount), label: formatDeviceCount(midCount) }] : []),
-        { y: plotBottom, label: '0' },
+        { y: svgHeight, label: '0' },
       ]
     : [];
+  return { geometry, maxCount, plotWidth: days.length * geometry.bandWidth, svgHeight, yTicks };
+}
+
+function YAxisLabels({ ticks, height }: { ticks: YTick[]; height: number }) {
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        position: 'relative',
+        flex: 'none',
+        width: Y_LABEL_WIDTH,
+        height,
+        color: 'text.secondary',
+        fontSize: Y_LABEL_FONT_SIZE,
+        lineHeight: 1,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {ticks.map((tick) => (
+        <Box
+          key={tick.y}
+          component="span"
+          sx={{
+            position: 'absolute',
+            right: 6,
+            top: tick.y,
+            transform: 'translateY(-50%)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {tick.label}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+function ActivityPlot({
+  days,
+  scale,
+  faded,
+  hovered,
+  onHover,
+}: {
+  days: DeviceActivityDay[];
+  scale: ChartScale;
+  faded: boolean;
+  hovered: HoveredDay | null;
+  onHover: (hovered: HoveredDay | null) => void;
+}) {
+  const { plotWidth, svgHeight, yTicks } = scale;
 
   const onMouseMove = (event: ReactMouseEvent<SVGSVGElement>) => {
     const group = (event.target as Element).closest('g[data-day-index]');
     const day = group ? days[Number(group.getAttribute('data-day-index'))] : undefined;
     if (!group || !day) {
-      if (hovered !== null) setHovered(null);
+      if (hovered !== null) onHover(null);
       return;
     }
     if (hovered?.day === day) return;
     const rect = group.getBoundingClientRect();
-    setHovered({ day, left: rect.left + rect.width / 2, top: rect.top - 6 });
+    onHover({ day, left: rect.left + rect.width / 2, top: rect.top - 6 });
   };
 
   return (
-    <>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', maxWidth: '100%' }}>
-        {detailed ? (
-          <Box
-            aria-hidden
-            sx={{
-              position: 'relative',
-              flex: 'none',
-              width: Y_LABEL_WIDTH,
-              height: svgHeight,
-              color: 'text.secondary',
-              fontSize: Y_LABEL_FONT_SIZE,
-              lineHeight: 1,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {yTicks.map((tick) => (
-              <Box
-                key={tick.y}
-                component="span"
-                sx={{
-                  position: 'absolute',
-                  right: 6,
-                  top: tick.y,
-                  transform: 'translateY(-50%)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {tick.label}
-              </Box>
-            ))}
-          </Box>
-        ) : null}
+    <Box
+      component="svg"
+      role="img"
+      aria-label="Завантаження файлів за днями"
+      width={plotWidth}
+      height={svgHeight}
+      onMouseMove={onMouseMove}
+      onMouseLeave={() => onHover(null)}
+      sx={{ display: 'block', color: 'text.secondary' }}
+    >
+      {yTicks.slice(0, -1).map((tick) => (
+        <line
+          key={tick.y}
+          x1={0}
+          x2={plotWidth}
+          y1={tick.y}
+          y2={tick.y}
+          stroke="currentColor"
+          strokeOpacity={0.14}
+          strokeDasharray="4 4"
+        />
+      ))}
+      <line
+        x1={0}
+        x2={plotWidth}
+        y1={svgHeight}
+        y2={svgHeight}
+        stroke="currentColor"
+        strokeOpacity={0.3}
+      />
+      {days.map((day, index) => (
+        <DayBar
+          key={day.day}
+          day={day}
+          index={index}
+          scale={scale}
+          faded={faded}
+          highlighted={hovered?.day === day}
+        />
+      ))}
+    </Box>
+  );
+}
+
+/** One day's band: a hover highlight behind a bar stacked by category, rounded on top. */
+function DayBar({
+  day,
+  index,
+  scale,
+  faded,
+  highlighted,
+}: {
+  day: DeviceActivityDay;
+  index: number;
+  scale: ChartScale;
+  faded: boolean;
+  highlighted: boolean;
+}) {
+  const { geometry, maxCount, svgHeight } = scale;
+  const bandX = index * geometry.bandWidth;
+  const x = bandX + (geometry.bandWidth - geometry.barWidth) / 2;
+  let segmentTop = svgHeight;
+  return (
+    <g data-day-index={index} opacity={faded ? FADED_BAR_OPACITY : undefined}>
+      <rect
+        x={bandX}
+        y={0}
+        width={geometry.bandWidth}
+        height={svgHeight}
+        fill="currentColor"
+        fillOpacity={highlighted ? 0.08 : 0}
+      />
+      {day.categories.map((category, categoryIndex) => {
+        const height = (Number(category.contentCount) / Number(maxCount)) * geometry.plotHeight;
+        segmentTop -= height;
+        const fill = FILE_TYPE_CATEGORIES[category.category]?.color;
+        return categoryIndex === day.categories.length - 1 ? (
+          <path
+            key={category.category}
+            d={roundedTopRectPath(x, segmentTop, geometry.barWidth, height, geometry.barRadius)}
+            fill={fill}
+          />
+        ) : (
+          <rect
+            key={category.category}
+            x={x}
+            y={segmentTop}
+            width={geometry.barWidth}
+            height={height}
+            fill={fill}
+          />
+        );
+      })}
+    </g>
+  );
+}
+
+function DayLabels({
+  days,
+  width,
+  bandWidth,
+}: {
+  days: DeviceActivityDay[];
+  width: number;
+  bandWidth: number;
+}) {
+  return (
+    <Box
+      aria-hidden
+      sx={{
+        display: 'flex',
+        width,
+        pt: '3px',
+        color: 'text.secondary',
+        fontSize: DAY_LABEL_FONT_SIZE,
+        lineHeight: 1,
+        fontVariantNumeric: 'tabular-nums',
+      }}
+    >
+      {days.map((day) => (
         <Box
-          ref={scrollRef}
-          onScroll={() => setHovered(null)}
-          sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', pb: '2px' }}
+          key={day.day}
+          sx={{ width: bandWidth, flex: 'none', display: 'flex', justifyContent: 'center' }}
         >
           <Box
-            component="svg"
-            role="img"
-            aria-label="Завантаження файлів за днями"
-            width={plotWidth}
-            height={svgHeight}
-            onMouseMove={onMouseMove}
-            onMouseLeave={() => setHovered(null)}
-            sx={{ display: 'block', color: 'text.secondary' }}
+            component="span"
+            sx={{
+              whiteSpace: 'nowrap',
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              opacity: day.contentCount > 0n ? 1 : 0.5,
+            }}
           >
-            {yTicks.slice(0, -1).map((tick) => (
-              <line
-                key={tick.y}
-                x1={0}
-                x2={plotWidth}
-                y1={tick.y}
-                y2={tick.y}
-                stroke="currentColor"
-                strokeOpacity={0.14}
-                strokeDasharray="4 4"
-              />
-            ))}
-            <line
-              x1={0}
-              x2={plotWidth}
-              y1={plotBottom}
-              y2={plotBottom}
-              stroke="currentColor"
-              strokeOpacity={0.3}
-            />
-            {days.map((day, index) => {
-              const bandX = index * geometry.bandWidth;
-              const x = bandX + (geometry.bandWidth - geometry.barWidth) / 2;
-              let segmentTop = plotBottom;
-              return (
-                <g
-                  key={day.day}
-                  data-day-index={index}
-                  opacity={faded ? FADED_BAR_OPACITY : undefined}
-                >
-                  <rect
-                    x={bandX}
-                    y={0}
-                    width={geometry.bandWidth}
-                    height={svgHeight}
-                    fill="currentColor"
-                    fillOpacity={hovered?.day === day ? 0.08 : 0}
-                  />
-                  {day.categories.map((category, categoryIndex) => {
-                    const height =
-                      (Number(category.contentCount) / Number(maxCount)) * geometry.plotHeight;
-                    segmentTop -= height;
-                    const fill = FILE_TYPE_CATEGORIES[category.category]?.color;
-                    return categoryIndex === day.categories.length - 1 ? (
-                      <path
-                        key={category.category}
-                        d={roundedTopRectPath(
-                          x,
-                          segmentTop,
-                          geometry.barWidth,
-                          height,
-                          geometry.barRadius,
-                        )}
-                        fill={fill}
-                      />
-                    ) : (
-                      <rect
-                        key={category.category}
-                        x={x}
-                        y={segmentTop}
-                        width={geometry.barWidth}
-                        height={height}
-                        fill={fill}
-                      />
-                    );
-                  })}
-                </g>
-              );
-            })}
+            {day.label}
           </Box>
-          {detailed ? (
-            <Box
-              aria-hidden
-              sx={{
-                display: 'flex',
-                width: plotWidth,
-                pt: '3px',
-                color: 'text.secondary',
-                fontSize: DAY_LABEL_FONT_SIZE,
-                lineHeight: 1,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {days.map((day) => (
-                <Box
-                  key={day.day}
-                  sx={{
-                    width: geometry.bandWidth,
-                    flex: 'none',
-                    display: 'flex',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Box
-                    component="span"
-                    sx={{
-                      whiteSpace: 'nowrap',
-                      writingMode: 'vertical-rl',
-                      transform: 'rotate(180deg)',
-                      opacity: day.contentCount > 0n ? 1 : 0.5,
-                    }}
-                  >
-                    {day.label}
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-          ) : null}
         </Box>
-      </Box>
-      {detailed ? <CategoryLegend days={days} /> : null}
-      {hovered
-        ? createPortal(
-            <ActivityTooltip day={hovered.day} left={hovered.left} top={hovered.top} />,
-            document.body,
-          )
-        : null}
-    </>
+      ))}
+    </Box>
+  );
+}
+
+/** Portaled to `body` so the tooltip escapes the scroller's overflow clipping. */
+function HoverOverlay({ hovered }: { hovered: HoveredDay }) {
+  return createPortal(
+    <ActivityTooltip day={hovered.day} left={hovered.left} top={hovered.top} />,
+    document.body,
   );
 }
 

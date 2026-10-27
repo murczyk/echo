@@ -488,7 +488,8 @@ async fn backfill_batch(
         .context(h!())?
         .iter()
         .map(|row| row.try_get("", "id").context(h!()))
-        .collect::<Result<_>>()?;
+        .collect::<Result<_>>()
+        .context(h!())?;
     // Stats row lock is held from here until commit.
     let locked_epoch =
         read_epoch(&transaction, LOCK_CONTENT_EPOCH_SQL, device_id)
@@ -714,16 +715,20 @@ pub(in crate::devices) async fn read_many(
         stats.insert(
             row.try_get::<Uuid>("", "device_id").context(h!())?,
             DeviceStats {
-                directory_count: get_u64(&row, "directory_count")?,
-                file_count: get_u64(&row, "file_count")?,
-                content_count: get_u64(&row, "content_count")?,
-                content_bytes: get_u64(&row, "content_bytes")?,
-                first_content_at: get_datetime(&row, "first_content_at")?,
-                last_content_at: get_datetime(&row, "last_content_at")?,
+                directory_count: get_u64(&row, "directory_count")
+                    .context(h!())?,
+                file_count: get_u64(&row, "file_count").context(h!())?,
+                content_count: get_u64(&row, "content_count").context(h!())?,
+                content_bytes: get_u64(&row, "content_bytes").context(h!())?,
+                first_content_at: get_datetime(&row, "first_content_at")
+                    .context(h!())?,
+                last_content_at: get_datetime(&row, "last_content_at")
+                    .context(h!())?,
                 content_pending: row
                     .try_get("", "content_pending")
                     .context(h!())?,
-                backfilled_at: get_datetime(&row, "backfilled_at")?,
+                backfilled_at: get_datetime(&row, "backfilled_at")
+                    .context(h!())?,
                 extensions: Vec::new(),
                 days: Vec::new(),
             },
@@ -738,9 +743,10 @@ pub(in crate::devices) async fn read_many(
         stats.get_mut(&device_id).context(h!())?.extensions.push(
             DeviceExtensionStat {
                 extension: row.try_get("", "extension").context(h!())?,
-                content_count: get_u64(&row, "content_count")?,
-                content_bytes: get_u64(&row, "content_bytes")?,
-                last_content_at: get_datetime(&row, "last_content_at")?
+                content_count: get_u64(&row, "content_count").context(h!())?,
+                content_bytes: get_u64(&row, "content_bytes").context(h!())?,
+                last_content_at: get_datetime(&row, "last_content_at")
+                    .context(h!())?
                     .context(h!())?,
             },
         );
@@ -769,8 +775,8 @@ pub(in crate::devices) async fn read_many(
                     .context(h!())?
                     .to_string(),
                 extension: row.try_get("", "extension").context(h!())?,
-                content_count: get_u64(&row, "content_count")?,
-                content_bytes: get_u64(&row, "content_bytes")?,
+                content_count: get_u64(&row, "content_count").context(h!())?,
+                content_bytes: get_u64(&row, "content_bytes").context(h!())?,
             });
     }
     transaction.commit().await.context(h!())?;
