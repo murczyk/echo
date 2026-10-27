@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { DeviceDayStat, DeviceStats } from '../../../../../Bindings';
 import {
+  buildDeviceActivity,
   buildDeviceRecentActivity,
   DEVICE_LIST_ACTIVITY_DAYS,
   isDeviceStatsIncomplete,
@@ -27,7 +28,7 @@ function upload(day: string, extension = 'pdf', contentCount = 1): DeviceDayStat
 }
 
 describe('buildDeviceRecentActivity', () => {
-  it('shows the full week ending today when the device uploaded today', () => {
+  it('shows every window day ending today when the device uploaded today', () => {
     const activity = buildDeviceRecentActivity(
       buildStats([upload('2026-10-20'), upload('2026-10-26', 'jpg', 3)]),
       '2026-10-26',
@@ -36,17 +37,8 @@ describe('buildDeviceRecentActivity', () => {
     expect(activity.kind).toBe('recent');
     if (activity.kind !== 'recent') return;
     expect(activity.days).toHaveLength(DEVICE_LIST_ACTIVITY_DAYS);
-    expect(activity.days.map(({ day }) => day)).toEqual([
-      '2026-10-20',
-      '2026-10-21',
-      '2026-10-22',
-      '2026-10-23',
-      '2026-10-24',
-      '2026-10-25',
-      '2026-10-26',
-    ]);
-    expect(activity.days[0].contentCount).toBe(1n);
-    expect(activity.days[6].contentCount).toBe(3n);
+    expect(activity.days[0]).toMatchObject({ day: '2026-10-20', contentCount: 1n });
+    expect(activity.days[6]).toMatchObject({ day: '2026-10-26', contentCount: 3n });
     expect(activity.days.slice(1, 6).every(({ contentCount }) => contentCount === 0n)).toBe(true);
   });
 
@@ -88,6 +80,23 @@ describe('buildDeviceRecentActivity', () => {
     if (recent.kind !== 'recent') return;
     expect(recent.days[0].day).toBe('2026-12-27');
     expect(recent.days[6].day).toBe('2027-01-02');
+  });
+});
+
+describe('buildDeviceActivity', () => {
+  it('lists only days with uploads, oldest first', () => {
+    const days = buildDeviceActivity(
+      buildStats([upload('2026-10-20', 'jpg'), upload('2025-03-01'), upload('2026-10-20', 'pdf')]),
+      2026,
+    );
+
+    expect(days.map(({ day }) => day)).toEqual(['2025-03-01', '2026-10-20']);
+    expect(days[1]).toMatchObject({ contentCount: 2n });
+  });
+
+  it('is empty without stats or uploads', () => {
+    expect(buildDeviceActivity(null)).toEqual([]);
+    expect(buildDeviceActivity(buildStats([]))).toEqual([]);
   });
 });
 

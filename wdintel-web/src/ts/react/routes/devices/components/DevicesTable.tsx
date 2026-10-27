@@ -135,7 +135,7 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
         id: 'activity',
         accessorFn: (row) => row.activity,
         header: 'Активність',
-        size: 250,
+        size: 120,
         enableSorting: false,
         meta: { overflowMode: 'none' },
         Cell: ({ row }) => <DeviceRecentActivityCell activity={row.original.activity} />,

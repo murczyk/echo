@@ -33,21 +33,14 @@ export type DeviceActivityDay = {
   categories: DeviceActivityCategory[];
 };
 
-/** Every day from the first to the last upload day; days without uploads stay empty. */
+/** Only days with uploads, oldest first: full history can span years of idle days. */
 export function buildDeviceActivity(
   stats: DeviceStats | null,
   currentYear: number = currentKyivYear(),
 ): DeviceActivityDay[] {
-  if (!stats || stats.days.length === 0) return [];
-  let firstDay = stats.days[0].day;
-  let lastDay = firstDay;
-  for (const { day } of stats.days) {
-    if (day < firstDay) firstDay = day;
-    if (day > lastDay) lastDay = day;
-  }
-
-  const dayCount = Math.round((dayTime(lastDay) - dayTime(firstDay)) / DAY_MS) + 1;
-  return buildActivityDays(stats.days, dayRange(firstDay, dayCount), currentYear);
+  if (!stats) return [];
+  const days = [...new Set(stats.days.map(({ day }) => day))].sort();
+  return buildActivityDays(stats.days, days, currentYear);
 }
 
 export type DeviceRecentActivity =
