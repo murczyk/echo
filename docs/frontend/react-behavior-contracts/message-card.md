@@ -91,7 +91,7 @@
 - **User role or permission:** users able to view an image attachment
 - **Preconditions:** an image has a messenger media ID
 - **User action or external event:** the card approaches the viewport or thumbnail generation fails
-- **Expected observable result:** the card requests the authenticated JPEG thumbnail; opening and downloading still use the original image. Missing or failed thumbnails fall back to the original image.
+- **Expected observable result:** the card requests the authenticated JPEG thumbnail; opening and downloading still use the original image. Missing, failed, or still-loading thumbnails after 30 seconds fall back to the original image.
 - **Loading/empty/error/success behavior:** the loading skeleton remains until the thumbnail or fallback original loads; a broken image shows an error tile.
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** uses `/api/messenger/media/{id}/thumbnail`; images without a messenger media ID keep their original-image behavior.

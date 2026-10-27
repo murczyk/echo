@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
 import { ButtonBase, Skeleton, Typography } from '@mui/material';
@@ -19,6 +19,7 @@ import {
 import { useMediaThumbnail, useThumbnailRequestActivation } from './MessageCardVideoThumb';
 
 type PreviewVariant = 'single' | 'multi';
+const IMAGE_THUMBNAIL_MAX_WAIT_MS = 30_000;
 
 export function MessageCardImageThumb({
   image,
@@ -42,8 +43,22 @@ export function MessageCardImageThumb({
   const mediaId = resolveMediaAttachmentId(image);
   const thumbnailUrl = mediaId === '' ? '' : mediaAttachmentThumbnailUrl(mediaId);
   const thumbnailRequest = useThumbnailRequestActivation();
-  const thumbnail = useMediaThumbnail(thumbnailUrl, thumbnailRequest.isActive);
-  const useOriginal = thumbnail.state === 'failed';
+  const [timedOutThumbnailUrl, setTimedOutThumbnailUrl] = useState<string | null>(null);
+  const thumbnailTimedOut = timedOutThumbnailUrl === thumbnailUrl;
+  const thumbnail = useMediaThumbnail(
+    thumbnailUrl,
+    thumbnailRequest.isActive && !thumbnailTimedOut,
+  );
+  useEffect(() => {
+    if (!thumbnailRequest.isActive || thumbnail.state !== 'loading' || thumbnailTimedOut) {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      setTimedOutThumbnailUrl(thumbnailUrl);
+    }, IMAGE_THUMBNAIL_MAX_WAIT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [thumbnail.state, thumbnailRequest.isActive, thumbnailTimedOut, thumbnailUrl]);
+  const useOriginal = thumbnailTimedOut || thumbnail.state === 'failed';
   const imageSrc = useOriginal ? image.href : thumbnail.imageSrc;
   const canOpen = image.href.trim() !== '';
   const displayName = derivePreviewFileName(image, index);

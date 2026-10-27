@@ -90,6 +90,9 @@ pub async fn oneoff_backfill_image_thumbnails(
         let batch_size = remaining
             .map_or(ps.batch_size, |remaining| remaining.min(ps.batch_size));
         let mut query = signal_message_media::Entity::find()
+            .filter(Expr::cust(
+                "lower(btrim(split_part(content_type, ';', 1))) LIKE 'image/%'",
+            ))
             .order_by_asc(signal_message_media::Column::Id)
             .limit(batch_size);
         if let Some(after_media_id) = cursor {
@@ -138,9 +141,6 @@ async fn backfill_image_thumbnail_batch(
     let mut ready = 0;
     let mut failed = 0;
     for media in batch {
-        if !crate::messenger::media::is_image_media(media) {
-            continue;
-        }
         match crate::messenger::media_thumbnail::ensure_image_thumbnail(
             env, media,
         )
