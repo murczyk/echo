@@ -44,6 +44,7 @@ function Harness({
 const audio = (id: string): DeviceAudio => ({
   id,
   deviceId: 'first',
+  name: 'recording.wav',
   recordingStartedAt: '2026-10-03T00:00:00.000001Z',
   recordingEndedAt: '2026-10-03T00:00:01.000001Z',
   durationSeconds: 1,
@@ -192,6 +193,21 @@ function detail(processed: boolean, version: string): DeviceAudioDetails {
   return {
     audio: { ...audio('one'), processed, processingVersion: version },
     transcription: { text: 'saved text', textVersion: 'text-version' },
+    automaticTranscription: {
+      version: 'auto-empty',
+      text: null,
+      state: 'not_requested',
+      retryAt: null,
+      message: null,
+    },
+    transcriptionAvailability: {
+      deviceEnabled: true,
+      globalEnabled: true,
+      canEditManual: true,
+      canManageSetting: true,
+      canRetry: false,
+      blockedReason: null,
+    },
     canEdit: true,
   };
 }

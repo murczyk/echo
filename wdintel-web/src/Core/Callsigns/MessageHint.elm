@@ -1,4 +1,4 @@
-module Core.Callsigns.MessageHint exposing (MessageHintResult, MessageHintState(..), TooltipSection, callsignsFromMessage, iconClass, mergeResponses, resolve, tooltipSections)
+module Core.Callsigns.MessageHint exposing (MessageHintResult, MessageHintState(..), TooltipSection, callsignsFromMessage, iconClass, mergeResponses, resolve, resolveWithVisibility, tooltipSections)
 
 import Bindings as B
 import Dict exposing (Dict)
@@ -63,6 +63,11 @@ callsignsFromMessage message =
 
 resolve : Maybe (List Int) -> Dict Int B.Network -> Dict String B.CallsignInfoRes -> String -> MessageHintResult
 resolve maybeNetworkIds networks responses callsign =
+    resolveWithVisibility False maybeNetworkIds networks responses callsign
+
+
+resolveWithVisibility : Bool -> Maybe (List Int) -> Dict Int B.Network -> Dict String B.CallsignInfoRes -> String -> MessageHintResult
+resolveWithVisibility hideNetworks maybeNetworkIds networks responses callsign =
     let
         networkIds =
             Maybe.withDefault [] maybeNetworkIds
@@ -74,7 +79,11 @@ resolve maybeNetworkIds networks responses callsign =
             response |> Maybe.map .res |> Maybe.withDefault []
 
         allHints =
-            response |> Maybe.map .networkHints |> Maybe.withDefault []
+            if hideNetworks then
+                []
+
+            else
+                response |> Maybe.map .networkHints |> Maybe.withDefault []
 
         exactHints =
             allHints |> List.filter (\hint -> List.member hint.networkId networkIds)
@@ -96,7 +105,12 @@ resolve maybeNetworkIds networks responses callsign =
     , catalogRows = catalogRows
     , exactNetworkHints = exactHints
     , otherNetworkHints = otherHints
-    , networkNames = networks |> Dict.map (\_ network -> network.name)
+    , networkNames =
+        if hideNetworks then
+            Dict.empty
+
+        else
+            networks |> Dict.map (\_ network -> network.name)
     }
 
 

@@ -7,8 +7,11 @@ import type {
   DeviceNameResolveRsp,
   DeviceNameSearchResult,
   InboxMessage,
+  Unit,
+  DirectSubmitPayload,
 } from '../../../../Bindings';
 import { normalizeInboxMessageFromWire } from './inbox-messages';
+import { transformSnakeToCamel } from '../../../snake-to-camel';
 
 export type DeviceNameSearchRequest = {
   search: string;
@@ -93,10 +96,7 @@ export async function searchPostNames(
   return result?.posts || [];
 }
 
-export type UnitResponse = {
-  id: number;
-  name: string;
-};
+export type UnitResponse = Pick<Unit, 'id' | 'name'> & Partial<Unit>;
 
 export async function searchUnitNames(
   search: string,
@@ -104,10 +104,23 @@ export async function searchUnitNames(
 ): Promise<UnitResponse[]> {
   const result = await postJson<{ units: UnitResponse[] }>(
     '/api/sigint/unit/search',
-    { search },
+    { search, include_inactive: true },
     options,
   );
-  return result?.units || [];
+  return transformSnakeToCamel<UnitResponse[]>(result?.units || []);
+}
+
+export async function resolveUnitNames(
+  names: string[],
+  options?: RequestOptions,
+): Promise<UnitResponse[]> {
+  if (names.length === 0) return [];
+  const result = await postJson<{ units: UnitResponse[] }>(
+    '/api/sigint/unit/search',
+    { search: '', include_inactive: true, names },
+    options,
+  );
+  return transformSnakeToCamel<UnitResponse[]>(result?.units || []);
 }
 
 import type { NetworkFreq } from '../../../../Bindings';
@@ -206,6 +219,7 @@ export type SubmitDmrMetadata = {
 };
 
 export type DirectSubmitRequest = {
+  engaged_message_id?: DirectSubmitPayload['engagedMessageId'];
   full_body?: string;
   text?: string;
   comment?: string;
@@ -218,6 +232,8 @@ export type DirectSubmitRequest = {
   is_time_null?: InboxMessage['isTimeNull'];
   post?: string;
   unit?: string;
+  unit_id?: DirectSubmitPayload['unitId'];
+  create_unit?: DirectSubmitPayload['createUnit'];
   locations?: string[];
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];

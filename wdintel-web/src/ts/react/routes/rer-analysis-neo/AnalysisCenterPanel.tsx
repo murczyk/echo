@@ -1,18 +1,41 @@
-import { Box, FormControlLabel, Stack, Switch, Tab, Tabs } from '@mui/material';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
+import {
+  Badge,
+  Box,
+  Button,
+  Collapse,
+  FormControlLabel,
+  Paper,
+  Stack,
+  Switch,
+  Tab,
+  Tabs,
+  useMediaQuery,
+} from '@mui/material';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { PowerChip } from '../../components/PowerChip';
 import { NO_DATA_LABEL } from '../../utils/misc';
 import { AnalysisMapPane } from './components/AnalysisMapPane';
 import { AnalysisMessagesPane } from './components/AnalysisMessagesPane';
 import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
+import { AnalysisFiltersPanel } from './components/AnalysisFiltersPanel';
 import { AnalysisSummaryTableCard } from './components/AnalysisSummaryTableCard';
 import { ANALYSIS_CENTER_TAB_META } from './analysis-center-tabs';
 import { analysisCompactTabsSx, analysisNewestFirstLabelSx } from './analysis-tab-styles';
+import { getAnalysisActiveFilterCount } from './analysis-active-filter-count';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
 import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
+import { GroupIdentity, groupFilterIdentity } from '../shared/group-navigation';
+import {
+  MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
+  MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
+} from '../shared/manage-message/ManageMessageEditorSurface';
+import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 
 type Props = {
   page: AnalysisPageViewModel;
+  editorHighlightedMessageId: number | null;
   centerTab: AnalysisCenterTab;
   centerTabs: AnalysisCenterTab[];
   isCompactLayout?: boolean;
@@ -24,10 +47,15 @@ type Props = {
   summaryTabId: string;
   mapPanelId: string;
   mapTabId: string;
+  filtersPanelId: string;
+  filterPanelOpen: boolean;
+  onToggleFilterPanel: () => void;
+  onCloseFilterPanel: () => void;
 };
 
 export function AnalysisCenterPanel({
   page,
+  editorHighlightedMessageId,
   centerTab,
   centerTabs,
   isCompactLayout = false,
@@ -39,6 +67,10 @@ export function AnalysisCenterPanel({
   summaryTabId,
   mapPanelId,
   mapTabId,
+  filtersPanelId,
+  filterPanelOpen,
+  onToggleFilterPanel,
+  onCloseFilterPanel,
 }: Props) {
   // Flush, full-height divider on the column edge for every tab — mirrors the
   // left panel's `border-r` so both sides read identically. (Previously the
@@ -47,6 +79,45 @@ export function AnalysisCenterPanel({
   // Columns stack below MUI's `lg` (1200px), so the divider is gated to
   // `min-[1200px]`.
   const showRightDivider = rightPanelVisible;
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const messageTransitionLoading = page.groupScopeTransitionPending || page.messagesLoading;
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
+  const closeFilterPanel = useCallback(() => {
+    onCloseFilterPanel();
+    window.requestAnimationFrame(() => filterButtonRef.current?.focus());
+  }, [onCloseFilterPanel]);
+  useEffect(() => {
+    if (!filterPanelOpen || isNarrowLayout) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeFilterPanel();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [closeFilterPanel, filterPanelOpen, isNarrowLayout]);
+  const group = groupFilterIdentity(page.queryState.groupsSelected, page.groupInfos);
+  const scopeLabel = `Для: ${group.name}`;
+  const activeFilterCount = getAnalysisActiveFilterCount(page.queryState, {
+    hideGroupSelection: false,
+    radioFeaturesAllowed: page.radioFeaturesAllowed,
+  });
+  const filterButtonLabel = activeFilterCount > 0 ? 'Фільтри (активні)' : 'Фільтри';
+  const filterIcon = (
+    <Badge
+      color="error"
+      variant="dot"
+      invisible={activeFilterCount === 0}
+      data-analysis-active-filter-indicator={activeFilterCount > 0 ? '' : undefined}
+    >
+      <FilterAltOutlinedIcon fontSize="small" />
+    </Badge>
+  );
+  const filterPanelBody = (
+    <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <AnalysisFiltersPanel page={page} fullHeight hideGroupSelection={false} />
+    </Box>
+  );
 
   return (
     <section
@@ -60,6 +131,28 @@ export function AnalysisCenterPanel({
           : '')
       }
     >
+      {page.threadMode ? (
+        <section
+          aria-label="Перегляд ланцюжка"
+          className="mx-echo-sm mb-echo-sm flex flex-wrap items-center justify-between gap-echo-sm rounded-echo-sm border border-echo-divider bg-echo-text/5 p-echo-sm"
+        >
+          <div className="min-w-0">
+            <div className="text-echo-text">Ланцюжок</div>
+            <div className="text-echo-xs text-echo-text-muted">
+              Фільтри діють лише в цьому ланцюжку. Мапа, зведена таблиця, звіти й аналітика поки
+              недоступні.
+            </div>
+            {page.threadMode.deletedCount > 0 ? (
+              <div className="text-echo-xs text-echo-text-muted">
+                Видалено повідомлень: {page.threadMode.deletedCount}
+              </div>
+            ) : null}
+          </div>
+          <Button size="small" onClick={page.threadMode.exit}>
+            Вийти з ланцюжка
+          </Button>
+        </section>
+      ) : null}
       <Stack
         direction={isNarrowLayout ? 'row' : { xs: 'column', lg: 'row' }}
         alignItems={isNarrowLayout ? 'center' : { xs: 'stretch', lg: 'center' }}
@@ -67,7 +160,57 @@ export function AnalysisCenterPanel({
         spacing={isCompactLayout ? 0.5 : 1}
         sx={{ px: { xs: 1, lg: 2 }, pt: 0, mb: 0, flexShrink: 0 }}
       >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            flex: 1,
+            minWidth: 0,
+            gap: { xs: 1, sm: 1.5 },
+          }}
+        >
+          <Box
+            data-analysis-current-group
+            sx={{
+              display: 'flex',
+              minWidth: 0,
+              width: { xs: '128px', sm: '180px' },
+              flexShrink: 0,
+              '& .group-navigation-name': {
+                fontSize: '16px',
+                lineHeight: 1.5,
+                fontWeight: 500,
+              },
+            }}
+          >
+            <GroupIdentity group={group} avatarSize="context" />
+          </Box>
+          <Button
+            ref={filterButtonRef}
+            data-analysis-filter-toggle
+            size="small"
+            aria-label={filterButtonLabel}
+            aria-expanded={filterPanelOpen}
+            aria-controls={filtersPanelId}
+            startIcon={isCompactLayout ? undefined : filterIcon}
+            onClick={onToggleFilterPanel}
+            sx={{
+              width: isCompactLayout ? 40 : 116,
+              minWidth: isCompactLayout ? 40 : 116,
+              height: 36,
+              px: isCompactLayout ? 0.5 : 1,
+              flexShrink: 0,
+              textTransform: 'none',
+              color: filterPanelOpen || activeFilterCount > 0 ? 'primary.main' : 'text.secondary',
+            }}
+          >
+            {isCompactLayout ? filterIcon : 'Фільтри'}
+          </Button>
+          <Box
+            data-analysis-group-divider
+            aria-hidden="true"
+            sx={{ width: '1px', height: '24px', flex: '0 0 auto', bgcolor: 'divider' }}
+          />
           <Tabs
             value={centerTab}
             onChange={(_event, value) => page.setCenterTab(value)}
@@ -117,6 +260,7 @@ export function AnalysisCenterPanel({
                   <Tab
                     key={tab}
                     id={summaryTabId}
+                    disabled={page.threadMode != null}
                     aria-controls={summaryPanelId}
                     value="summary"
                     icon={<Icon />}
@@ -131,6 +275,7 @@ export function AnalysisCenterPanel({
                 <Tab
                   key={tab}
                   id={mapTabId}
+                  disabled={page.threadMode != null}
                   aria-controls={mapPanelId}
                   value="map"
                   icon={<Icon />}
@@ -152,9 +297,11 @@ export function AnalysisCenterPanel({
             messagesCount={page.messages.length}
             totalCount={page.messagesTotalCount}
             totalLoading={page.messagesTotalLoading}
-            loading={page.messagesLoading}
+            loading={messageTransitionLoading}
+            preserveRangeWhileLoading
             noMoreToLoad={page.noMoreToLoad}
-            busy={page.messagesPaging || page.messagesLoading}
+            hasMoreAfterWindow={page.hasMoreAfterWindow}
+            busy={page.messagesPaging || messageTransitionLoading}
             jumpDisabled={page.directMessageNavigation != null}
             onFirstPage={page.loadFirstPage}
             onLastPage={page.loadLastPage}
@@ -193,6 +340,24 @@ export function AnalysisCenterPanel({
         ) : null}
       </Stack>
 
+      <AnalysisFullscreenPanelDrawer
+        anchor="left"
+        title="Фільтри"
+        subtitle={scopeLabel}
+        closeLabel="Закрити фільтри"
+        open={isNarrowLayout && filterPanelOpen}
+        onClose={closeFilterPanel}
+        maxPanelWidth={400}
+      >
+        <Box
+          id={isNarrowLayout ? filtersPanelId : undefined}
+          data-analysis-filter-panel
+          sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        >
+          {filterPanelBody}
+        </Box>
+      </AnalysisFullscreenPanelDrawer>
+
       <Box
         sx={{
           flex: 1,
@@ -201,12 +366,51 @@ export function AnalysisCenterPanel({
           minWidth: 0,
           minHeight: 0,
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: 'row',
           overflow: 'hidden',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: { xs: 'contain', lg: 'auto' },
         }}
       >
+        <Collapse
+          data-analysis-filter-transition
+          orientation="horizontal"
+          in={filterPanelOpen && !isNarrowLayout}
+          timeout={reduceMotion ? 0 : MANAGE_MESSAGE_EDITOR_TRANSITION_MS}
+          easing={MANAGE_MESSAGE_EDITOR_TRANSITION_EASING}
+          unmountOnExit
+          sx={{
+            height: '100%',
+            flexShrink: 0,
+            '& .MuiCollapse-wrapper': { height: '100%' },
+            '& .MuiCollapse-wrapperInner': { height: '100%' },
+          }}
+        >
+          <Paper
+            component="aside"
+            id={filtersPanelId}
+            data-analysis-filter-panel
+            aria-label="Фільтри"
+            square
+            elevation={0}
+            sx={{
+              width: 336,
+              flex: '0 0 336px',
+              height: '100%',
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              borderRight: '1px solid',
+              borderColor: 'divider',
+              bgcolor: 'var(--echo-color-background)',
+              backgroundImage: 'none',
+              boxShadow: 'none',
+            }}
+          >
+            {filterPanelBody}
+          </Paper>
+        </Collapse>
         <Box
           id={messagesPanelId}
           role="tabpanel"
@@ -224,25 +428,44 @@ export function AnalysisCenterPanel({
             pt: { xs: 0.5, lg: 1 },
             display: centerTab === 'messages' ? 'flex' : 'none',
             overflow: 'hidden',
+            position: 'relative',
           }}
         >
           <AnalysisMessagesPane
+            editorHighlightedMessageId={editorHighlightedMessageId}
             authUserName={page.authUserName}
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
+            hideGroupName={page.groupNavigation.scope.kind === 'group'}
             paginationLoading={page.messagesPaging}
+            showLoadingSkeleton={page.groupScopeTransitionPending || page.showMessagesLoading}
+            isLoading={
+              page.groupScopeTransitionPending ||
+              (page.hasLoadedInitialMessages && page.messagesLoading)
+            }
+            newestFirst={page.newestFirst}
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}
             messages={page.messages}
+            firstLoadedMessageIndex={page.firstLoadedMessageIndex}
+            hasMoreBeforeWindow={page.hasMoreBeforeWindow}
+            hasMoreAfterWindow={page.hasMoreAfterWindow}
+            loadingBeforeWindow={page.loadingBeforeWindow}
+            loadingAfterWindow={page.loadingAfterWindow}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
             pageNavigationTarget={page.messagePageNavigationTarget}
             viewportPreservationKey={page.messageViewportPreservationKey}
+            edgeLoadRetryKey={page.messageEdgeLoadRetryKey}
             onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
-            scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}`}
+            scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}|${
+              page.groupNavigation.scope.kind === 'group'
+                ? page.groupNavigation.scope.masterKey
+                : 'all'
+            }`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
@@ -251,6 +474,7 @@ export function AnalysisCenterPanel({
             onCreateReport={page.openReportCreator}
             onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}
+            onLoadPreviousMessages={page.loadPreviousMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
             onAddPointHighlightBlacklist={page.onAddPointHighlightBlacklist}
             onSaveMessageUpdate={page.saveMessageUpdate}
@@ -263,6 +487,7 @@ export function AnalysisCenterPanel({
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
             hideBotTags={page.hideBotTags}
+            hideNetworks={page.hideNetworks}
             messageTimeBasis={page.queryState.messageTimeBasis}
             collapseMediaPreviews={page.collapseMediaPreviews}
             mediaSummaryEnabled={page.mediaSummaryEnabled}
@@ -273,6 +498,8 @@ export function AnalysisCenterPanel({
             networks={page.networks}
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
+            onLinkedMessageMounted={page.onLinkedMessageMounted}
+            loadedReplyTarget={page.loadedReplyTarget}
           />
         </Box>
 
@@ -327,6 +554,7 @@ export function AnalysisCenterPanel({
             minHeight: 0,
             px: 0,
             pb: 0,
+            pt: { xs: 0.5, lg: 1 },
             display: centerTab === 'map' ? 'flex' : 'none',
             overflow: 'hidden',
           }}

@@ -18,11 +18,14 @@ import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization
 import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { readPersistedDutyFilterState } from './duty-filter-persistence';
+import { mergeMessageWindow } from '../shared/message-feed/windowing';
+import { readLinkedMessageReferenceFromWindow as parseDutyMessageUidFromWindow } from '../shared/message-navigation/message-navigation-url';
 
 export type DutyFeedFilterOptions = {
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
+  groupScopeMasterKey?: string | null;
 };
 
 export type RerDutyState = {
@@ -264,6 +267,10 @@ function normalizePersistedFeedOptions(value: unknown): DutyFeedFilterOptions | 
     adjacentFreqsRange,
     highlightSignalsEnabled: raw.highlightSignalsEnabled === true,
     onlyMyUnitTagsEnabled: raw.onlyMyUnitTagsEnabled === true,
+    groupScopeMasterKey:
+      typeof raw.groupScopeMasterKey === 'string' && raw.groupScopeMasterKey.trim() !== ''
+        ? raw.groupScopeMasterKey
+        : null,
   };
 }
 
@@ -418,6 +425,7 @@ export function buildInboxReq(opts: {
     orWithoutCoords: null,
     newestFirst: null,
     search: null,
+    searchMode: null,
     highlightCallsigns: true,
     highlightKeywords: f.highlightKeywordSetId != null,
     highlightKeywordSetId: f.highlightKeywordSetId ?? null,
@@ -519,12 +527,25 @@ export function stableStringify(state: unknown): string {
 export function toShortQueryState(messageFeeds: MessageFeedState[]): RerDutyQueryState {
   return {
     waterfalls: messageFeeds.map((f) => [f.id, f.filter]),
+    groupScopes: messageFeeds.flatMap((feed) =>
+      feed.groupScopeMasterKey ? [[feed.id, feed.groupScopeMasterKey] as [string, string]] : [],
+    ),
   };
 }
 
 export function toRerDutyStateFromShort(state: RerDutyQueryState): RerDutyState {
+  const groupScopes = new Map(state.groupScopes ?? []);
   return {
-    messageFeeds: normalizeFeedEntries(state.waterfalls ?? []),
+    messageFeeds: normalizeFeedEntries(state.waterfalls ?? []).map(([id, filter]) => [
+      id,
+      filter,
+      {
+        adjacentFreqsRange: 0,
+        highlightSignalsEnabled: false,
+        onlyMyUnitTagsEnabled: false,
+        groupScopeMasterKey: groupScopes.get(id) ?? null,
+      },
+    ]),
   };
 }
 
@@ -809,41 +830,19 @@ export type WindowedMessageItemsResult = {
   removedItems: MessageItem[];
 };
 
-function normalizeWindowLimit(limit: number): number {
-  if (!Number.isFinite(limit)) return DUTY_FEED_MESSAGE_WINDOW_LIMIT;
-  return Math.max(1, Math.floor(limit));
-}
-
 function itemIds(items: MessageItem[]): Set<number> {
   return new Set(items.map(([id]) => id));
-}
-
-function trimMessageWindow(
-  items: MessageItem[],
-  limit: number,
-  trimFrom: 'start' | 'end',
-): { items: MessageItem[]; removedItems: MessageItem[] } {
-  const normalizedLimit = normalizeWindowLimit(limit);
-  if (items.length <= normalizedLimit) return { items, removedItems: [] };
-  const removeCount = items.length - normalizedLimit;
-  if (trimFrom === 'start') {
-    return {
-      items: items.slice(removeCount),
-      removedItems: items.slice(0, removeCount),
-    };
-  }
-  return {
-    items: items.slice(0, normalizedLimit),
-    removedItems: items.slice(normalizedLimit),
-  };
 }
 
 export function windowInitialMessageItems(
   items: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
 ): MessageItem[] {
-  const sorted = sortMessageItemsByTime(dedupeMessageItems(items));
-  return trimMessageWindow(sorted, limit, 'start').items;
+  return mergeMessageWindow([], items, 'below', {
+    limit: Number.isFinite(limit) ? limit : DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+    order: sortMessageItemsByTime,
+  }).items;
 }
 
 export function prependWindowedMessageItems(
@@ -851,11 +850,11 @@ export function prependWindowedMessageItems(
   incomingOlder: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
 ): WindowedMessageItemsResult {
-  const existingIds = itemIds(existing);
-  const addedItems = dedupeMessageItems(incomingOlder).filter(([id]) => !existingIds.has(id));
-  const combined = sortMessageItemsByTime(dedupeMessageItems([...addedItems, ...existing]));
-  const trimmed = trimMessageWindow(combined, limit, 'end');
-  return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
+  return mergeMessageWindow(existing, incomingOlder, 'above', {
+    limit: Number.isFinite(limit) ? limit : DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+    order: sortMessageItemsByTime,
+  });
 }
 
 export function appendWindowedMessageItems(
@@ -863,11 +862,11 @@ export function appendWindowedMessageItems(
   incomingNewer: MessageItem[],
   limit: number = DUTY_FEED_MESSAGE_WINDOW_LIMIT,
 ): WindowedMessageItemsResult {
-  const existingIds = itemIds(existing);
-  const addedItems = dedupeMessageItems(incomingNewer).filter(([id]) => !existingIds.has(id));
-  const combined = sortMessageItemsByTime(dedupeMessageItems([...existing, ...addedItems]));
-  const trimmed = trimMessageWindow(combined, limit, 'start');
-  return { items: trimmed.items, addedItems, removedItems: trimmed.removedItems };
+  return mergeMessageWindow(existing, incomingNewer, 'below', {
+    limit: Number.isFinite(limit) ? limit : DUTY_FEED_MESSAGE_WINDOW_LIMIT,
+    getId: ([id]) => id,
+    order: sortMessageItemsByTime,
+  });
 }
 
 /**
@@ -971,6 +970,7 @@ export function dedupeMessageItems(items: MessageItem[]): MessageItem[] {
 export type MessageFeedState = {
   id: string;
   filter: RerDutyFeedFilterState;
+  groupScopeMasterKey?: string | null;
   items: MessageItem[];
   loading: boolean;
   loadingOlder: boolean;
@@ -988,6 +988,8 @@ export type MessageFeedState = {
   /** Count of retained unread messages without an individual identity. */
   unresolvedUnreadCount?: number;
   unreadCount: number;
+  /** Newest message already present when a direct link opened an older window. */
+  historicalReadThrough?: MessageCursor | null;
   /**
    * Newer pages held off the DOM while not following (Elm `notRenderedMessagesYet`).
    * Flushed into `items` on follow / arrow / reach-bottom.
@@ -1052,6 +1054,24 @@ export function feedHasUnloadedEvictedNewerTail(feed: MessageFeedState): boolean
   const evictedNewerTailId = feed.evictedNewerTailId ?? null;
   if (evictedNewerTailId === null) return false;
   return ![...feed.items, ...feedPendingNewerItems(feed)].some(([id]) => id === evictedNewerTailId);
+}
+
+export function feedHasUnloadedHistoricalNewer(feed: MessageFeedState): boolean {
+  const tail = feed.pendingNewerItems?.at(-1) ?? feed.items.at(-1);
+  return (
+    feed.historicalReadThrough != null &&
+    tail != null &&
+    compareMessageTuple(messageOrderCursor(tail[0], tail[1]), feed.historicalReadThrough) < 0
+  );
+}
+
+export function feedHasUnrenderedHistoricalNewer(feed: MessageFeedState): boolean {
+  const tail = feed.items.at(-1);
+  return (
+    feed.historicalReadThrough != null &&
+    tail != null &&
+    compareMessageTuple(messageOrderCursor(tail[0], tail[1]), feed.historicalReadThrough) < 0
+  );
 }
 
 /**
@@ -1124,12 +1144,14 @@ export function appendNewerItemsToFeed(
   const trimmedPreviousUnreadIds = windowed.removedItems
     .filter(([id]) => previousIds.has(id) && !feed.readIds.has(id))
     .map(([id]) => id);
+  const historicalReadIds = historicalReadMessageIds(feed, windowed.addedItems);
   const readIds =
-    markAllRead || trimmedPreviousUnreadIds.length > 0
+    markAllRead || trimmedPreviousUnreadIds.length > 0 || historicalReadIds.length > 0
       ? new Set<number>([
           ...feed.readIds,
           ...(markAllRead ? windowed.items.map(([id]) => id) : []),
           ...trimmedPreviousUnreadIds,
+          ...historicalReadIds,
         ])
       : feed.readIds;
   const unreadAddedCount = windowed.addedItems.filter(([id]) => !readIds.has(id)).length;
@@ -1148,6 +1170,16 @@ export function appendNewerItemsToFeed(
     hasReachedStart: windowed.removedItems.length > 0 ? false : feed.hasReachedStart,
     pendingNewerItems: [],
   };
+}
+
+export function historicalReadMessageIds(feed: MessageFeedState, items: MessageItem[]): number[] {
+  const readThrough = feed.historicalReadThrough;
+  if (readThrough == null) return [];
+  return items
+    .filter(
+      ([id, message]) => compareMessageTuple(messageOrderCursor(id, message), readThrough) <= 0,
+    )
+    .map(([id]) => id);
 }
 
 /** Flush off-DOM pending newer rows into the visible window. */
@@ -1182,6 +1214,7 @@ export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFe
   return (
     prev === next ||
     (prev.id === next.id &&
+      prev.groupScopeMasterKey === next.groupScopeMasterKey &&
       prev.items === next.items &&
       prev.loading === next.loading &&
       prev.loadingOlder === next.loadingOlder &&
@@ -1213,6 +1246,21 @@ export function feedIndicatorUnreadCount(
     ([id]) => !loadedIds.has(id) && !pendingIds.has(id),
   );
   const currentTailId = feed.items.at(-1)?.[0];
+  const historicalReadThrough = feed.historicalReadThrough;
+  const currentTail = feed.items.at(-1);
+  if (
+    historicalReadThrough != null &&
+    currentTail != null &&
+    compareMessageTuple(
+      messageOrderCursor(currentTail[0], currentTail[1]),
+      historicalReadThrough,
+    ) <= 0
+  ) {
+    return Math.max(
+      feed.unreadCount,
+      loadedUnread + pendingUnread + comparableWindowedUnread.length,
+    );
+  }
   const hasMatchingPreview = currentTailId != null && preview?.tailId === currentTailId;
   if (hasMatchingPreview) {
     const tail = feed.items.at(-1);
@@ -1257,19 +1305,13 @@ export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
         adjacentFreqsRange: f.adjacentFreqsRange,
         highlightSignalsEnabled: f.highlightSignalsEnabled,
         onlyMyUnitTagsEnabled: f.onlyMyUnitTagsEnabled,
+        groupScopeMasterKey: f.groupScopeMasterKey,
       },
     ]),
   };
 }
 
-export function parseDutyMessageUidFromWindow(): string | null {
-  if (typeof window === 'undefined') return null;
-  const url = new URL(window.location.href);
-  const param =
-    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
-  const trimmed = param?.trim();
-  return trimmed && trimmed !== '' ? trimmed : null;
-}
+export { parseDutyMessageUidFromWindow };
 
 export function resolveDutyTargetMessageIds(
   identifier: string,

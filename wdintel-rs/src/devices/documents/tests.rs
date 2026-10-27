@@ -61,6 +61,7 @@ async fn file(
     let id = Uuid::now_v7();
     let now = chrono::Utc::now().naive_utc();
     file_entry::ActiveModel {
+        archive_file_id: sea_orm::ActiveValue::NotSet,
         id: Set(root),
         device_id: Set(device),
         kind: Set(FileEntryKind::Directory),
@@ -77,6 +78,7 @@ async fn file(
     let file = test_support::insert_entry(
         db,
         file_entry::ActiveModel {
+            archive_file_id: sea_orm::ActiveValue::NotSet,
             id: Set(id),
             device_id: Set(device),
             parent_id: Set(Some(root)),
@@ -121,6 +123,8 @@ fn request(file: &file_entry::Model) -> DeviceDocumentReadReq {
 }
 
 mod authorization;
+mod file_links;
 mod lifecycle;
 mod maps;
 mod positions;
+mod storage_pressure;

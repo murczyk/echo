@@ -32,6 +32,7 @@ emptyQueryState =
     , orWithCoords = False
     , orWithoutCoords = False
     , search = ""
+    , searchMode = Nothing
     , metadataCc = []
     , metadataSender = []
     , metadataReceiver = []
@@ -172,6 +173,12 @@ normalizeAnalysisStatsReqMetadata req =
 
 modelQueryState : Model -> B.RerAnalysisQueryState
 modelQueryState model =
+    (if model.hideNetworks then
+        \queryState -> { queryState | networksSelected = [], withoutNetwork = False }
+
+     else
+        identity
+    ) <|
     normalizeQueryStateNetworks <|
         normalizeQueryStateMetadata
             { dateFromStr = model.from.dateStr
@@ -195,6 +202,7 @@ modelQueryState model =
             , orWithCoords = model.orWithCoords
             , orWithoutCoords = model.orWithoutCoords
             , search = model.searchInput
+            , searchMode = model.searchMode
             , metadataCc = model.metadataCc
             , metadataSender = model.metadataSender
             , metadataReceiver = model.metadataReceiver
@@ -245,6 +253,7 @@ updModelFromQueryState model ms =
                 , orWithCoords = queryState.orWithCoords
                 , orWithoutCoords = queryState.orWithoutCoords
                 , searchInput = queryState.search
+                , searchMode = queryState.searchMode
                 , metadataCc = queryState.metadataCc
                 , metadataSender = queryState.metadataSender
                 , metadataReceiver = queryState.metadataReceiver
@@ -288,7 +297,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
             partitionUnitSelections (normalizeUnitSelections model.unitsSelected)
 
         selectedNetworks =
-            if model.withoutNetwork then
+            if model.hideNetworks || model.withoutNetwork then
                 Nothing
 
             else
@@ -320,6 +329,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , orWithCoords = Just model.orWithCoords
         , orWithoutCoords = Just model.orWithoutCoords
         , search = Just model.searchInput
+        , searchMode = model.searchMode
         , metadataCc = emptyToNothing model.metadataCc
         , metadataSender = emptyToNothing model.metadataSender
         , metadataReceiver = emptyToNothing model.metadataReceiver
@@ -330,7 +340,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , deniedTags = Nothing
         , tagPresence = Nothing
         , selectedNetworks = selectedNetworks
-        , withoutNetwork = Just model.withoutNetwork
+        , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
         , onlyWithNetwork = Nothing
         , filterTagsOption = Nothing
         , unitsExactMatchOnly =
@@ -366,6 +376,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , orWithCoords = Nothing
     , orWithoutCoords = Nothing
     , search = Nothing
+    , searchMode = Nothing
     , metadataCc = Nothing
     , metadataSender = Nothing
     , metadataReceiver = Nothing
@@ -414,6 +425,7 @@ updModelFromRerAnalysisStatsReq model req =
         , withoutModelTags = normalizedReq.withoutModelTags |> def False
         , includePelengLocations = normalizedReq.includePelengLocations |> def True
         , searchInput = normalizedReq.search |> def ""
+        , searchMode = normalizedReq.searchMode
         , metadataCc = normalizedReq.metadataCc |> def []
         , metadataSender = normalizedReq.metadataSender |> def []
         , metadataReceiver = normalizedReq.metadataReceiver |> def []

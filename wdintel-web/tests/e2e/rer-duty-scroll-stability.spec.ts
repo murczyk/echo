@@ -35,6 +35,143 @@ function buildShortInboxResponse(ids: number[]): InboxMessagesRspRaw {
   return response;
 }
 
+test('a direct-linked Duty window loads newer history without unread badges @regression', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+  const target = [41, { ...buildInboxMessage(41), messageUuid }] as const;
+  const countSinceIds: Array<number | null> = [];
+  const newerSinceIds: number[] = [];
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: (requestBody) => {
+      const sinceId = readSinceId(requestBody);
+      countSinceIds.push(sinceId);
+      return { quantity: Math.max(0, 141 - (sinceId ?? 0)), first_element_ts: null };
+    },
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      const sinceId = readSinceId(requestBody);
+      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 1));
+      if (sinceId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 42));
+      if (sinceId === 60 || sinceId === 80) {
+        newerSinceIds.push(sinceId);
+        return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + sinceId + 1));
+      }
+      if (beforeId != null || sinceId != null) return buildInboxResponse([]);
+      return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 122));
+    },
+  });
+  await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: target,
+        group_master_keys: ['group-1'],
+        sigint_inbox_item_ids: [41],
+        since_ts: null,
+        till_ts: null,
+      }),
+    }),
+  );
+  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ ...buildInboxResponse([]), inbox_items: [target] }),
+    }),
+  );
+
+  await page.goto(`/rer-duty-neo?m=${messageUuid}`);
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  const targetCard = page.locator('[data-duty-message-id="41"] [data-message-card-root]');
+  await expect(targetCard).toBeAttached();
+  const targetRow = page.locator('[data-duty-message-id="41"]');
+  await expect(targetRow).toHaveAttribute('data-message-feed-highlighted', 'true');
+  await expect(targetCard).toHaveCSS('outline-width', '2px');
+  await page.waitForTimeout(1900);
+  await expect(targetRow).toHaveAttribute('data-message-feed-highlighted', 'true');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => countSinceIds).toContain(141);
+  await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+
+  await scroller.focus();
+  await scroller.press('End');
+  await expect.poll(() => newerSinceIds).toContain(60);
+  await expect(page.locator('[data-duty-message-id="80"]')).toBeAttached();
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+  await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
+
+  await page.waitForTimeout(5_300);
+  expect(newerSinceIds).toEqual([60]);
+
+  await scroller.press('End');
+  await expect.poll(() => newerSinceIds).toContain(80);
+  await expect(page.locator('[data-duty-message-id="100"]')).toBeAttached();
+  await expect(page.locator('[data-duty-scroll-unread-badge]')).toHaveCount(0);
+});
+
+test('a direct-linked Duty arrow loads historical newer messages with zero unread @regression', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const messageUuid = '019a4aa8-0000-7000-8000-000000000065';
+  const target = [41, { ...buildInboxMessage(41), messageUuid }] as const;
+  const newerRequests: Array<{ sinceId: number; nolimit: boolean }> = [];
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
+    inboxResponseForRequest: (requestBody) => {
+      const beforeId = readBeforeId(requestBody);
+      const sinceId = readSinceId(requestBody);
+      if (beforeId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 1));
+      if (sinceId === 41) return buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 42));
+      if (sinceId != null) {
+        const nolimit = readNoLimit(requestBody);
+        newerRequests.push({ sinceId, nolimit });
+        return buildInboxResponse(
+          Array.from({ length: nolimit ? 81 : 20 }, (_, i) => i + sinceId + 1),
+        );
+      }
+      if (beforeId != null) return buildInboxResponse([]);
+      return buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 122));
+    },
+  });
+  await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        message: target,
+        group_master_keys: ['group-1'],
+        sigint_inbox_item_ids: [41],
+        since_ts: null,
+        till_ts: null,
+      }),
+    }),
+  );
+  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ ...buildInboxResponse([]), inbox_items: [target] }),
+    }),
+  );
+
+  await page.goto(`/rer-duty-neo?m=${messageUuid}`);
+  await expect(page.locator('[data-duty-message-id="41"]')).toBeAttached();
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toBeAttached();
+  await page.locator('[data-duty-feed-scroll-button] button').click();
+
+  await expect
+    .poll(() => newerRequests.some(({ sinceId, nolimit }) => sinceId === 60 && nolimit), {
+      timeout: 5_000,
+    })
+    .toBe(true);
+  await expect(page.locator('[data-duty-message-id="141"]')).toBeAttached();
+  await expect
+    .poll(() => readBottomDistance(page.locator('[data-duty-feed-scroller="true"]')))
+    .toBeLessThanOrEqual(1);
+});
+
 const compactTagIds = Array.from({ length: 18 }, (_, index) => index + 1);
 const compactTagsResponse = compactTagIds.map((id) => [
   id,
@@ -177,16 +314,46 @@ test('keeps every feed position and the last scroll action inset while the edito
   await expect(page.locator('[data-duty-feed-column]')).toHaveCount(2);
   const firstScroller = feeds.nth(0).locator('[data-duty-feed-scroller="true"]');
   const lastScroller = feeds.nth(1).locator('[data-duty-feed-scroller="true"]');
+  await expect(firstScroller.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect(lastScroller.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(firstScroller)).toBeLessThanOrEqual(1);
+  await expect.poll(() => readBottomDistance(lastScroller)).toBeLessThanOrEqual(1);
   await setBottomDistance(firstScroller, 320);
   await setBottomDistance(lastScroller, 200);
   const firstAnchor = await readVisibleAnchor(firstScroller);
   const lastAnchor = await readVisibleAnchor(lastScroller);
-  await expect(feeds.last().locator('[data-duty-feed-scroll-button]')).toHaveAttribute(
-    'data-duty-right-offset',
-    '59px',
-  );
+  const lastScrollControl = feeds.last().locator('[data-duty-feed-scroll-button]');
+  const lastScrollButton = lastScrollControl.getByRole('button');
+  const lastCreateButton = feeds.last().getByRole('button', { name: 'Додати повідомлення' });
+  await expect(lastScrollControl).toHaveAttribute('data-duty-right-offset', '12px');
+  await page.mouse.move(0, 0);
+  await expect(lastCreateButton).toBeVisible();
+  const readFloatingControlLayout = async () => {
+    const [scrollBox, createBox] = await Promise.all([
+      lastScrollButton.boundingBox(),
+      lastCreateButton.boundingBox(),
+    ]);
+    return scrollBox == null || createBox == null
+      ? null
+      : {
+          scrollX: Math.round(scrollBox.x),
+          scrollY: Math.round(scrollBox.y),
+          createX: Math.round(createBox.x),
+          createY: Math.round(createBox.y),
+          rightAligned:
+            Math.abs(createBox.x + createBox.width - (scrollBox.x + scrollBox.width)) <= 1,
+          verticalGap: Math.round(createBox.y - (scrollBox.y + scrollBox.height)),
+        };
+  };
+  const controlsBeforeHover = await readFloatingControlLayout();
+  expect(controlsBeforeHover).toMatchObject({ rightAligned: true, verticalGap: 13 });
 
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await feeds.last().hover();
+  await expect.poll(readFloatingControlLayout).toEqual(controlsBeforeHover);
+  await expect(lastScrollControl).toHaveCSS('transition-property', 'transform');
+
+  await feeds.nth(0).hover();
+  await feeds.nth(0).getByRole('button', { name: 'Додати повідомлення' }).click();
 
   await expect(page.locator('[data-manage-message-presentation="embedded"]')).toBeVisible();
   await expect(page.locator('[data-duty-feed-column]')).toHaveCount(2);
@@ -194,7 +361,7 @@ test('keeps every feed position and the last scroll action inset while the edito
   await expectVisibleAnchor(lastScroller, lastAnchor);
   await expect(feeds.last().locator('[data-duty-feed-scroll-button]')).toHaveAttribute(
     'data-duty-right-offset',
-    '20px',
+    '12px',
   );
 });
 
@@ -239,12 +406,17 @@ test('restores every feed position through editor tabs and close @regression', a
   await expect(feeds).toHaveCount(2);
   const firstScroller = feeds.nth(0).locator('[data-duty-feed-scroller="true"]');
   const secondScroller = feeds.nth(1).locator('[data-duty-feed-scroller="true"]');
+  await expect(firstScroller.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect(secondScroller.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(firstScroller)).toBeLessThanOrEqual(1);
+  await expect.poll(() => readBottomDistance(secondScroller)).toBeLessThanOrEqual(1);
   await setBottomDistance(firstScroller, 360);
   await setBottomDistance(secondScroller, 180);
   const firstAnchor = await readVisibleAnchor(firstScroller);
   const secondAnchor = await readVisibleAnchor(secondScroller);
 
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await feeds.nth(0).hover();
+  await feeds.nth(0).getByRole('button', { name: 'Додати повідомлення' }).click();
 
   await expect(page.getByRole('tab', { name: 'Стрічка 1' })).toBeVisible();
   await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), firstAnchor);
@@ -252,7 +424,10 @@ test('restores every feed position through editor tabs and close @regression', a
   await page.getByRole('tab', { name: 'Стрічка 2' }).click();
   await expectVisibleAnchor(page.locator('[data-duty-feed-scroller="true"]'), secondAnchor);
 
-  await page.getByRole('button', { name: 'Скасувати', exact: true }).click();
+  await page
+    .getByRole('complementary', { name: 'Створити повідомлення' })
+    .getByRole('button', { name: 'Закрити', exact: true })
+    .click();
 
   await expect(feeds).toHaveCount(2);
   await expectVisibleAnchor(feeds.nth(0).locator('[data-duty-feed-scroller="true"]'), firstAnchor);
@@ -285,9 +460,7 @@ test('#3615 uses real upward wheel input to page an underfilled OFF feed @regres
     .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
     .toBe(true);
 
-  const bounds = await scroller.boundingBox();
-  if (!bounds) throw new Error('Duty feed scroller is not visible');
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await scroller.getByText('Card 198', { exact: true }).hover();
   await page.mouse.wheel(0, -240);
 
   await expect.poll(() => olderCursors).toEqual([196]);
@@ -301,6 +474,78 @@ test('#3615 uses real upward wheel input to page an underfilled OFF feed @regres
   });
   await page.mouse.wheel(0, 480);
   await expect.poll(() => scroller.evaluate((element) => element.scrollTop > 0)).toBe(true);
+});
+
+test('separates an older-page skeleton from the first message card @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    inboxResponse: buildInboxResponse(Array.from({ length: 40 }, (_, index) => index + 1)),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(scroller.locator('[data-duty-message-id="1"]')).toBeAttached();
+  await expect(scroller.locator('[data-message-feed-skeleton="above"]')).toBeAttached();
+  const gap = await scroller.evaluate((element) => {
+    const skeleton = element.querySelector('[data-message-feed-skeleton="above"]');
+    const firstMessage = element.querySelector('[data-duty-message-id="1"]');
+    return firstMessage!.getBoundingClientRect().top - skeleton!.getBoundingClientRect().bottom;
+  });
+  expect(gap).toBeGreaterThanOrEqual(11);
+  expect(gap).toBeLessThanOrEqual(13);
+});
+
+test('defers an older-page commit until upward wheel input settles @regression', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const olderRequestStarted = createDeferred<void>();
+  const olderResponse = createDeferred<InboxMessagesRspRaw>();
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: { disableAutoScroll: true },
+    inboxResponseForRequest: (request) => {
+      if (readBeforeId(request) === 21) {
+        olderRequestStarted.resolve();
+        return olderResponse.promise;
+      }
+      if (readBeforeId(request) != null || readSinceId(request) != null) {
+        return buildInboxResponse([]);
+      }
+      return buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 21));
+    },
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(scroller.locator('[data-duty-message-id]')).toHaveCount(20);
+  await setBottomDistance(scroller, 1_000_000);
+  await olderRequestStarted.promise;
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="above"]');
+  await expect(edgeLoader).toHaveAttribute('role', 'status');
+  await edgeLoader.scrollIntoViewIfNeeded();
+  await expect(edgeLoader).toBeInViewport();
+  const anchor = await readVisibleAnchor(scroller);
+  const wheelTimer = await scroller.evaluate((element) => {
+    const wheel = () =>
+      element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }));
+    wheel();
+    return window.setInterval(wheel, 30);
+  });
+  try {
+    olderResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 1)));
+    await page.waitForTimeout(80);
+    await expect(scroller.locator('[data-duty-message-id]')).toHaveCount(20);
+    await expect(edgeLoader).toBeAttached();
+  } finally {
+    olderResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, index) => index + 1)));
+    await scroller.evaluate((_, timer) => window.clearInterval(timer), wheelTimer);
+  }
+  await expect(scroller.locator('[data-duty-message-id]')).toHaveCount(40);
+  const anchoredCard = scroller.locator(`[data-duty-message-id="${anchor.id}"]`);
+  await expect(anchoredCard).toBeAttached();
+  await expect.poll(() => readAnchorOffset(anchoredCard)).toBeCloseTo(anchor.offsetTop, 0);
 });
 
 // Regression: https://github.com/echoua/echo/issues/3615
@@ -335,9 +580,7 @@ test('#3615 uses real downward wheel input to page an underfilled historical win
     .poll(() => scroller.evaluate((element) => element.scrollHeight <= element.clientHeight + 1))
     .toBe(true);
 
-  const bounds = await scroller.boundingBox();
-  if (!bounds) throw new Error('Duty feed scroller is not visible');
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await scroller.getByText('Card 178', { exact: true }).hover();
   await page.mouse.wheel(0, 240);
 
   await expect.poll(() => newerCursors).toEqual([180]);
@@ -430,9 +673,14 @@ test('uses creation time for Duty ordering and display with an event-time Analys
       elements.map((element) => Number(element.getAttribute('data-duty-message-id'))),
     ),
   ).toEqual([2, 7, 9]);
-  await expect(rows.first().locator('[title="Дата і час створення повідомлення"]')).toContainText(
-    '19.09, 10:58',
+  const firstHeaderTimestamp = rows.first().locator('[data-message-card-timestamp-item="true"]');
+  await expect(firstHeaderTimestamp).toHaveAttribute('title', 'Дата і час створення повідомлення');
+  await expect(firstHeaderTimestamp).toContainText('19.09.2026, 10:58');
+  await expect(rows.first().locator('[data-message-card-timestamp-footer="true"]')).toHaveAttribute(
+    'data-message-card-timestamp-footer',
+    'true',
   );
+  await expect(rows.first().locator('[title="Час отримання повідомлення"]')).toBeVisible();
   expect(fixture.getLastInboxRequest()).toMatchObject({ sort_by: 'IMSCreatedAt' });
 });
 test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({
@@ -460,6 +708,8 @@ test('keeps a compact-tag reading anchor stable while prepending an older chunk'
   const list = page.locator('[data-duty-feed-list="true"]');
   await expect(list.locator('[data-duty-message-id="40"]')).toBeAttached();
   await expect(page.getByRole('button', { name: 'Показати додаткові теги' })).toHaveCount(20);
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="above"]');
+  await expect(edgeLoader).toBeAttached();
 
   await scroller.evaluate((element) => {
     element.scrollTop = 0;
@@ -468,6 +718,25 @@ test('keeps a compact-tag reading anchor stable while prepending an older chunk'
   await olderRequestStarted.promise;
   const anchorBefore = await readVisibleAnchor(scroller);
   expect(anchorBefore.id).toBe(21);
+  await expect(edgeLoader).toBeInViewport();
+  await expect(edgeLoader.locator('[data-message-feed-skeleton-card]')).toHaveCount(1);
+  await expect
+    .poll(() =>
+      scroller.evaluate((element) => {
+        const cards = Array.from(element.querySelectorAll<HTMLElement>('[data-duty-message-id]'));
+        const skeletons = Array.from(
+          element.querySelectorAll<HTMLElement>('[data-message-feed-skeleton-card]'),
+        );
+        return skeletons.some((skeleton) => {
+          const loadingRect = skeleton.getBoundingClientRect();
+          return cards.some((card) => {
+            const cardRect = card.getBoundingClientRect();
+            return loadingRect.top < cardRect.bottom && loadingRect.bottom > cardRect.top;
+          });
+        });
+      }),
+    )
+    .toBe(false);
 
   await page.evaluate((anchorId) => {
     const state = window as unknown as {
@@ -551,16 +820,28 @@ test('#3496 reloads the newest chunk after it was evicted by history paging @smo
   });
   await expect(list.locator('[data-duty-message-id="1"]')).toBeAttached();
   await expect(list.locator('[data-duty-message-id="60"]')).toHaveCount(0);
+  await expect(list.locator('[data-duty-message-id]')).toHaveCount(40);
 
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect.poll(() => countSinceIds).toContain(60);
 
+  const edgeLoader = scroller.locator('[data-message-feed-skeleton="below"]');
+  await expect(edgeLoader).toBeAttached();
   await setBottomDistance(scroller, 0);
   await expect.poll(() => newerSinceIds).toContain(40);
+  await expect(edgeLoader).toBeInViewport();
+  await expect(edgeLoader.locator('[data-message-feed-skeleton-card]')).toHaveCount(1);
   const anchorBefore = await readVisibleAnchor(scroller);
   newerResponse.resolve(buildInboxResponse(Array.from({ length: 20 }, (_, i) => i + 41)));
   await expect(list.locator('[data-duty-message-id="60"]')).toBeAttached();
   await page.waitForTimeout(1000);
+  const mountedIds = await list
+    .locator('[data-duty-message-id]')
+    .evaluateAll((elements) =>
+      elements.map((element) => Number(element.getAttribute('data-duty-message-id'))),
+    );
+  expect(mountedIds).toHaveLength(40);
+  expect(new Set(mountedIds).size).toBe(40);
   const anchorAfter = await readVisibleAnchor(scroller);
   expect(anchorAfter.id).toBe(anchorBefore.id);
   expect(Math.abs(anchorAfter.offsetTop - anchorBefore.offsetTop)).toBeLessThanOrEqual(1);
@@ -613,6 +894,7 @@ test('#3496 lets the arrow land on a newest chunk evicted by history paging @reg
   newerRequests.length = 0;
   await page.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
   await arrowRequestStarted.promise;
+  await expect(page.getByLabel('Завантаження нових повідомлень')).toBeVisible();
   arrowResponse.resolve(buildInboxResponse(Array.from({ length: 40 }, (_, i) => i + 41)));
 
   await expect(list.locator('[data-duty-message-id="80"]')).toBeAttached();
@@ -742,7 +1024,7 @@ test('#3360 blocks initial landing when settings fail to load @regression', asyn
 });
 
 // Regression: https://github.com/echoua/echo/pull/3268
-test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke @regression', async ({
+test('keeps the newest button during pending paging and preserves bottom follow and the reading anchor @smoke @regression', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -813,7 +1095,9 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
 
   await setBottomDistance(scroller, 0);
   await secondNewerRequestStarted.promise;
-  await expect(bottomButton).toHaveCount(0);
+  await expect(bottomButton).toBeVisible();
+  await expect(bottomButton.locator('button')).toBeDisabled();
+  await expect(bottomButton.getByLabel('Завантаження нових повідомлень')).toHaveCount(0);
 
   secondNewerResponse.resolve(buildInboxResponse([42]));
   await expect(list.locator('[data-duty-message-id="42"]')).toBeAttached();
@@ -910,6 +1194,7 @@ test('#3360 makes OFF arrivals at the physical bottom reachable by scrolling dow
   const anchor = list.locator(`[data-duty-message-id="${anchorBefore.id}"]`);
   const anchorOffset = await readAnchorOffset(anchor);
   await firstNewerRequestStarted.promise;
+  await expect(scroller.locator('[data-message-feed-skeleton="below"]')).toHaveCount(0);
 
   firstNewerResponse.resolve(buildInboxResponse([41]));
   await expect(list.locator('[data-duty-message-id="41"]')).toBeAttached();
@@ -1012,6 +1297,7 @@ test('#3360 lets an OFF arrow land an explicitly requested tail page @regression
   arrowResponse.resolve(buildInboxResponse([41]));
   await expect(list.locator('[data-duty-message-id="41"]')).toBeAttached();
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+  await expect(page.getByLabel('Завантаження нових повідомлень')).toHaveCount(0);
   await setBottomDistance(scroller, 200);
   await expect(page.getByText('Завантажено нові повідомлення')).toBeVisible();
 });
@@ -1068,7 +1354,16 @@ test('#3400 releases arrow loading when its scroll owner is replaced @regression
   await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(320);
   await expect(arrow).toBeEnabled();
   await arrow.click();
-  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+  await expect
+    .poll(() =>
+      scroller.evaluate((element) =>
+        Math.abs(
+          element.querySelector('[data-duty-feed-list]')!.getBoundingClientRect().bottom -
+            element.getBoundingClientRect().bottom,
+        ),
+      ),
+    )
+    .toBeLessThanOrEqual(1);
   await expect(page.getByLabel('Завантаження нових повідомлень')).toHaveCount(0);
 });
 
@@ -1148,6 +1443,11 @@ test('#3360 uses an instant verified landing for reduced-motion arrow navigation
   arrowResponse.resolve(buildInboxResponse([41]));
   await expect(page.locator('[data-duty-message-id="41"]')).toBeAttached();
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+  await page.evaluate(async () => {
+    for (let frame = 0; frame < 4; frame++)
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
 // Regression: https://github.com/echoua/echo/issues/3360
@@ -1219,7 +1519,7 @@ test('#3360 keeps an OFF reading anchor stable while a long snackbar error is sh
   expect(snackbarBox!.width).toBeLessThanOrEqual(520);
   expect(snackbarBox!.x).toBeGreaterThanOrEqual(24);
   expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(1280);
-  const closeButton = page.getByRole('button', { name: 'Закрити сповіщення' });
+  const closeButton = snackbar.getByRole('button', { name: 'Закрити сповіщення' });
   await expect(closeButton).toBeVisible();
   const closeButtonBox = await closeButton.boundingBox();
   expect(closeButtonBox).not.toBeNull();
@@ -1271,7 +1571,7 @@ test('#3400 keeps an unbroken snackbar error within the narrow viewport @regress
   expect(snackbarBox!.width).toBeLessThanOrEqual(374);
   expect(snackbarBox!.x).toBeGreaterThanOrEqual(8);
   expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(390);
-  const closeButton = page.getByRole('button', { name: 'Закрити сповіщення' });
+  const closeButton = snackbar.getByRole('button', { name: 'Закрити сповіщення' });
   await expect(closeButton).toBeVisible();
   const closeButtonBox = await closeButton.boundingBox();
   expect(closeButtonBox).not.toBeNull();

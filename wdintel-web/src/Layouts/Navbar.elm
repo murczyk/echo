@@ -38,6 +38,7 @@ layout props shared route =
         , view = view props.user props.activeName shared route
         , subscriptions = subscriptions
         }
+        |> Layout.withOnUrlChanged (\_ -> PollFlavorChanged)
 
 
 
@@ -63,6 +64,7 @@ init _ =
       }
     , E.batch
         [ E.sendCmd <| Task.perform (\_ -> Slept) (Process.sleep keepAliveInterval)
+        , E.sendSharedMsg Shared.Msg.EventServiceStartPolling
         ]
     )
 
@@ -91,11 +93,15 @@ type Msg
     | OpenChangelog String
     | CloseDropdownOnly
     | ToastMsg Toast.Msg
+    | PollFlavorChanged
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
 update route msg model =
     case msg of
+        PollFlavorChanged ->
+            ( model, E.sendSharedMsg Shared.Msg.EventServiceStartPolling )
+
         ToggleDarkTheme ->
             ( model
             , E.toggleDarkMode
@@ -268,7 +274,11 @@ view user activeName shared route { toContentMsg, model, content } =
                         Encode.object
                             [ ( "serverInfo"
                               , case shared.serverInfo of
-                                    Just info -> Encode.object [ ( "mode", Encode.string info.mode ) ]
+                                    Just info ->
+                                        Encode.object
+                                            [ ( "mode", Encode.string info.mode )
+                                            , ( "version", Encode.string info.version )
+                                            ]
                                     Nothing -> Encode.null
                               )
                             , ( "themeMode", Encode.string (Shared.Model.themeModeToString shared.themeMode) )

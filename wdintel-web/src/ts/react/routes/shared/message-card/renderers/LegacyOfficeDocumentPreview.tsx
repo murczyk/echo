@@ -66,12 +66,18 @@ export function LegacyOfficeDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  maxBytes = LEGACY_OFFICE_MAX_FILE_BYTES,
   kind,
+  signal,
+  onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  maxBytes?: number;
   kind: LegacyKind;
+  signal?: AbortSignal;
+  onError?: (error: unknown) => void;
 }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [result, setResult] = useState<DocPreviewResult | XlsPreviewResult | null>(null);
@@ -79,6 +85,9 @@ export function LegacyOfficeDocumentPreview({
   const [sheetIndex, setSheetIndex] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
     let downloadTimedOut = false;
     const downloadTimer = window.setTimeout(() => {
@@ -87,17 +96,18 @@ export function LegacyOfficeDocumentPreview({
     }, LEGACY_OFFICE_DOWNLOAD_TIMEOUT_MS);
     const load = async () => {
       try {
-        if (sizeBytes != null && sizeBytes > LEGACY_OFFICE_MAX_FILE_BYTES)
+        if (controller.signal.aborted) return;
+        if (sizeBytes != null && sizeBytes > maxBytes)
           throw new Error('LEGACY_OFFICE_FILE_TOO_LARGE');
         const { buffer } = await fetchCachedDocumentResponse(
           href,
-          LEGACY_OFFICE_MAX_FILE_BYTES,
+          maxBytes,
           'LEGACY_OFFICE_FILE_TOO_LARGE',
           controller.signal,
         );
         window.clearTimeout(downloadTimer);
         const value = await runWorkerTask<
-          { buffer: ArrayBuffer },
+          { buffer: ArrayBuffer; maxBytes: number },
           DocPreviewResult | XlsPreviewResult
         >(
           () =>
@@ -108,20 +118,21 @@ export function LegacyOfficeDocumentPreview({
               : new Worker(new URL('../legacy-office/xls-preview.worker.ts', import.meta.url), {
                   type: 'module',
                 }),
-          { buffer },
+          { buffer, maxBytes },
           controller.signal,
           [buffer],
           LEGACY_OFFICE_WORKER_TIMEOUT_MS,
         );
         const validated =
           kind === 'doc' ? validateDocPreviewResult(value) : validateXlsPreviewResult(value);
-        if (disposed) return;
+        if (disposed || controller.signal.aborted) return;
         if (validated == null)
           throw new LegacyOfficePreviewError(LegacyOfficePreviewErrorCode.MalformedWorkerResponse);
         setResult(validated);
         setStatus('ready');
       } catch (caught) {
         if (disposed || (controller.signal.aborted && !downloadTimedOut)) return;
+        onError?.(downloadTimedOut ? new Error('LEGACY_OFFICE_DOWNLOAD_TIMEOUT') : caught);
         setError(
           downloadTimedOut
             ? 'LEGACY_OFFICE_DOWNLOAD_TIMEOUT'
@@ -132,6 +143,8 @@ export function LegacyOfficeDocumentPreview({
                 : null,
         );
         setStatus('error');
+      } finally {
+        window.clearTimeout(downloadTimer);
       }
     };
     setStatus('loading');
@@ -141,10 +154,11 @@ export function LegacyOfficeDocumentPreview({
     void load();
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       window.clearTimeout(downloadTimer);
       controller.abort();
     };
-  }, [href, kind, sizeBytes]);
+  }, [href, kind, sizeBytes, maxBytes, signal, onError]);
   const extension = kind.toUpperCase() as 'DOC' | 'XLS';
   if (status === 'loading')
     return (

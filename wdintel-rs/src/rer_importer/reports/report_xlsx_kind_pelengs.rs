@@ -339,9 +339,9 @@ async fn get_inbox_messages_report_chunk_postgres(
                             signal_message::Column::Id,
                         )),
                     )
-                    .filter(intel_product::relation_kind_is_in([
-                        intel_product::RELATION_KIND_REPORT,
-                        intel_product::RELATION_KIND_COMMENT,
+                    .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+                        crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+                        crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
                     ]))
                     .select_only()
                     .column(intel_product::Column::IntelMessageId)
@@ -458,7 +458,7 @@ async fn get_inbox_messages_report_chunk_postgres(
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_search(q, &req.search)?;
+    let q = filter_search_with_mode(q, &req.search, req.search_mode).c(h!())?;
     let q = filter_selected_units_or_ids(
         q,
         &req.selected_units,
@@ -599,14 +599,17 @@ async fn get_inbox_messages_report_chunk_postgres(
                     callsigns: callsigns.clone(),
                     checked: m.checked.unwrap_or(false),
                     important: false,
+                    ai_important: false,
                     bookmarked: false,
                     timestamp: m
                         .timestamp
                         .map(|x| x.and_utc().timestamp_millis()),
                     created_at: None,
                     created_at_order: None,
+                    is_own: None,
                     has_date_in_header: false,
                     group_master_key: None,
+                    group_master_keys: None,
                     sender: m.sender.clone(),
                     extended_form: None,
                     message_comments: vec![],

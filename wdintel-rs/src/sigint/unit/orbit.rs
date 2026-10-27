@@ -1328,13 +1328,14 @@ pub async fn create_unit_duplicate_candidates(
     req: Json<CreateUnitReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
-    if !can_view_orbit_data(&env.dbx, &login).await? {
+    if !can_view_orbit_data(&env.dbx, &login).await.c(h!())? {
         return Ok(Json(ListUnitsByIdRsp { units: Vec::new() }));
     }
-    let units =
-        create_unit_duplicate_candidates_for_req(&env.dbx, &req).await?;
+    let units = create_unit_duplicate_candidates_for_req(&env.dbx, &req)
+        .await
+        .c(h!())?;
     Ok(Json(ListUnitsByIdRsp { units }))
 }
 
@@ -1421,6 +1422,7 @@ where
 
 fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
     sigint_unit::Model {
+        combat_type_id: None,
         id: i64::MAX,
         other: req.other.clone(),
         team_or_crew: req.team_or_crew.clone(),
@@ -2370,6 +2372,7 @@ where
     let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
         hierarchy;
     let mut unit_req = CreateUnitReq {
+        combat_type_id: None,
         name: None,
         other,
         team_or_crew,
@@ -3161,6 +3164,7 @@ mod tests {
             .unwrap();
         }
         let unit_req = CreateUnitReq {
+            combat_type_id: None,
             name: None,
             other: String::new(),
             team_or_crew: String::new(),

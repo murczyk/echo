@@ -1,0 +1,2394 @@
+[
+  {
+    "id": "document-txt",
+    "scenario": "format",
+    "fileName": "echo-document-txt.txt",
+    "extension": "txt",
+    "mimeType": "text/plain",
+    "category": "document",
+    "assetPath": "document.txt",
+    "sizeBytes": 158,
+    "sha256": "dd81dbb436af2c6f598f7f6a1f770c33a063ea4d8226e8e3716bc8dd0f3685e2",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "txt",
+    "expectedActions": ["read", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-md",
+    "scenario": "format",
+    "fileName": "echo-document-md.md",
+    "extension": "md",
+    "mimeType": "text/markdown",
+    "category": "document",
+    "assetPath": "document.md",
+    "sizeBytes": 226,
+    "sha256": "f0ff5326031d5cb0fb85fb6303cbe51ba8d704e1ca2fc8c3069e290a04fca6c0",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "md",
+    "expectedActions": ["read", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-markdown",
+    "scenario": "format",
+    "fileName": "echo-document-markdown.markdown",
+    "extension": "markdown",
+    "mimeType": "text/markdown",
+    "category": "document",
+    "assetPath": "document.md",
+    "sizeBytes": 226,
+    "sha256": "f0ff5326031d5cb0fb85fb6303cbe51ba8d704e1ca2fc8c3069e290a04fca6c0",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "md",
+    "expectedActions": ["read", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-pdf",
+    "scenario": "format",
+    "fileName": "echo-document-pdf.pdf",
+    "extension": "pdf",
+    "mimeType": "application/pdf",
+    "category": "document",
+    "assetPath": "document.pdf",
+    "sizeBytes": 593,
+    "sha256": "d7bcb44d56e59fe603cc2545e7e4192bd6f746a6dcde28ac8db241b37e38c86f",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "pdf",
+    "expectedActions": ["read", "download-original", "zoom", "pages"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-doc",
+    "scenario": "format",
+    "fileName": "echo-document-doc.doc",
+    "extension": "doc",
+    "mimeType": "application/msword",
+    "category": "document",
+    "assetPath": "document.doc",
+    "sizeBytes": 13312,
+    "sha256": "cf78351d20cd5dbf1d27902303682bbcb9e8d237fd974dffe58b68f608507b41",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "doc",
+    "expectedActions": ["read", "download-original", "zoom"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-docx",
+    "scenario": "format",
+    "fileName": "echo-document-docx.docx",
+    "extension": "docx",
+    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "category": "document",
+    "assetPath": "document.docx",
+    "sizeBytes": 879,
+    "sha256": "8cb2b49a331514c6a5e71b9a5ebb28b5a221d0bb0e3271c03a0eae9383fe9cff",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "docx",
+    "expectedActions": ["read", "download-original", "zoom"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-xls",
+    "scenario": "format",
+    "fileName": "echo-document-xls.xls",
+    "extension": "xls",
+    "mimeType": "application/vnd.ms-excel",
+    "category": "document",
+    "assetPath": "document.xls",
+    "sizeBytes": 6656,
+    "sha256": "8cf33e40ef8523ad0b16d59407dac3b7f98d655aacde9288364de952ea630e98",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "xls",
+    "expectedActions": ["read", "download-original", "select-sheet"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-xlsx",
+    "scenario": "format",
+    "fileName": "echo-document-xlsx.xlsx",
+    "extension": "xlsx",
+    "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "category": "document",
+    "assetPath": "document.xlsx",
+    "sizeBytes": 1768,
+    "sha256": "168875cc922735865c5789abc5d3f6799c46094732c63dbef36a95f6f13eaa3d",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "xlsx",
+    "expectedActions": ["read", "download-original", "select-sheet"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "document-csv",
+    "scenario": "format",
+    "fileName": "echo-document-csv.csv",
+    "extension": "csv",
+    "mimeType": "text/csv",
+    "category": "document",
+    "assetPath": "document.csv",
+    "sizeBytes": 127,
+    "sha256": "a80025ffcb87d2051c79b79eb7966d3e247211c06e5d4a2e4e0355937765945e",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "csv",
+    "expectedActions": ["read", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-jpg",
+    "scenario": "format",
+    "fileName": "echo-image-jpg.jpg",
+    "extension": "jpg",
+    "mimeType": "image/jpeg",
+    "category": "image",
+    "assetPath": "image.jpg",
+    "sizeBytes": 2194,
+    "sha256": "2fe0da84b611284ef1c2b3d520c0fa235e5ffefe5525e20475a6dfa37ff60e03",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-jpeg",
+    "scenario": "format",
+    "fileName": "echo-image-jpeg.jpeg",
+    "extension": "jpeg",
+    "mimeType": "image/jpeg",
+    "category": "image",
+    "assetPath": "image.jpg",
+    "sizeBytes": 2194,
+    "sha256": "2fe0da84b611284ef1c2b3d520c0fa235e5ffefe5525e20475a6dfa37ff60e03",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-png",
+    "scenario": "format",
+    "fileName": "echo-image-png.png",
+    "extension": "png",
+    "mimeType": "image/png",
+    "category": "image",
+    "assetPath": "image.png",
+    "sizeBytes": 1677,
+    "sha256": "4ec780c2c0d29269acd88e9e9322447da019e98467ce074cd9e9ba02922b02c4",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-gif",
+    "scenario": "format",
+    "fileName": "echo-image-gif.gif",
+    "extension": "gif",
+    "mimeType": "image/gif",
+    "category": "image",
+    "assetPath": "image.gif",
+    "sizeBytes": 831,
+    "sha256": "628e70d18197ae5df843f250497b9f23fef241a31c43a6bced591baf93060219",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-webp",
+    "scenario": "format",
+    "fileName": "echo-image-webp.webp",
+    "extension": "webp",
+    "mimeType": "image/webp",
+    "category": "image",
+    "assetPath": "image.webp",
+    "sizeBytes": 1188,
+    "sha256": "adee1582e8d26db1e6c2d955d1fc7390d9d4a3477762e5ffde7d113edf7f30fa",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-bmp",
+    "scenario": "format",
+    "fileName": "echo-image-bmp.bmp",
+    "extension": "bmp",
+    "mimeType": "image/bmp",
+    "category": "image",
+    "assetPath": "image.bmp",
+    "sizeBytes": 15498,
+    "sha256": "22c5eb644a681e817a1354f776a56d618df97ec792780cdd006903428dd77440",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-svg",
+    "scenario": "format",
+    "fileName": "echo-image-svg.svg",
+    "extension": "svg",
+    "mimeType": "image/svg+xml",
+    "category": "image",
+    "assetPath": "image.svg",
+    "sizeBytes": 193,
+    "sha256": "418800181668eeff795e73c5b47412df507653573c79fac4faa6ec61b10c42ce",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-mp3",
+    "scenario": "format",
+    "fileName": "echo-audio-mp3.mp3",
+    "extension": "mp3",
+    "mimeType": "audio/mpeg",
+    "category": "audio",
+    "assetPath": "audio.mp3",
+    "sizeBytes": 24468,
+    "sha256": "eeb8dc2c60ab566eb9aff2081045a3d9237072ee7a5634d0362b966cdbedf176",
+    "codec": "mp3",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mp3",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mp3",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-mpeg",
+    "scenario": "format",
+    "fileName": "echo-audio-mpeg.mpeg",
+    "extension": "mpeg",
+    "mimeType": null,
+    "category": "audio",
+    "assetPath": "audio.mp3",
+    "sizeBytes": 24468,
+    "sha256": "eeb8dc2c60ab566eb9aff2081045a3d9237072ee7a5634d0362b966cdbedf176",
+    "codec": "mp3",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mp3",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mp3",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-mpga",
+    "scenario": "format",
+    "fileName": "echo-audio-mpga.mpga",
+    "extension": "mpga",
+    "mimeType": null,
+    "category": "audio",
+    "assetPath": "audio.mp3",
+    "sizeBytes": 24468,
+    "sha256": "eeb8dc2c60ab566eb9aff2081045a3d9237072ee7a5634d0362b966cdbedf176",
+    "codec": "mp3",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mp3",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mp3",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-wav",
+    "scenario": "format",
+    "fileName": "echo-audio-wav.wav",
+    "extension": "wav",
+    "mimeType": "audio/wav",
+    "category": "audio",
+    "assetPath": "audio.wav",
+    "sizeBytes": 264678,
+    "sha256": "9bc64e027b88f4fbbbe74c7a4ee51a60c6cd71a0dc168dd95e00d2b8da742b48",
+    "codec": "pcm_s16le",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "wav",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-ogg",
+    "scenario": "format",
+    "fileName": "echo-audio-ogg.ogg",
+    "extension": "ogg",
+    "mimeType": "audio/ogg",
+    "category": "audio",
+    "assetPath": "audio.ogg",
+    "sizeBytes": 27752,
+    "sha256": "d863275e3602ec72bb23a42e493336e0a36516478c57a0be328c72178ecb6220",
+    "codec": "opus",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "opus",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "ogg",
+        "duration": "3.006500"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-oga",
+    "scenario": "format",
+    "fileName": "echo-audio-oga.oga",
+    "extension": "oga",
+    "mimeType": null,
+    "category": "audio",
+    "assetPath": "audio.ogg",
+    "sizeBytes": 27752,
+    "sha256": "d863275e3602ec72bb23a42e493336e0a36516478c57a0be328c72178ecb6220",
+    "codec": "opus",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "opus",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "ogg",
+        "duration": "3.006500"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-opus",
+    "scenario": "format",
+    "fileName": "echo-audio-opus.opus",
+    "extension": "opus",
+    "mimeType": null,
+    "category": "audio",
+    "assetPath": "audio.ogg",
+    "sizeBytes": 27752,
+    "sha256": "d863275e3602ec72bb23a42e493336e0a36516478c57a0be328c72178ecb6220",
+    "codec": "opus",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "opus",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "ogg",
+        "duration": "3.006500"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-m4a",
+    "scenario": "format",
+    "fileName": "echo-audio-m4a.m4a",
+    "extension": "m4a",
+    "mimeType": "audio/mp4",
+    "category": "audio",
+    "assetPath": "audio.m4a",
+    "sizeBytes": 27627,
+    "sha256": "4ea7fda7aa5f50c4732c677020026e87406aa797fdef677417a59db6cc394f77",
+    "codec": "aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-aac",
+    "scenario": "format",
+    "fileName": "echo-audio-aac.aac",
+    "extension": "aac",
+    "mimeType": "audio/aac",
+    "category": "audio",
+    "assetPath": "audio.aac",
+    "sizeBytes": 27213,
+    "sha256": "a058a5de4d5ed847a92a78d38b636cb1d61a3ca339a41b6a9f440986f71be8d1",
+    "codec": "aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "aac",
+        "duration": "3.008166"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-flac",
+    "scenario": "format",
+    "fileName": "echo-audio-flac.flac",
+    "extension": "flac",
+    "mimeType": "audio/flac",
+    "category": "audio",
+    "assetPath": "audio.flac",
+    "sizeBytes": 44323,
+    "sha256": "c9bfe29bf2a9e1570f06aa030dfafe0bf4a0043167f0b783b4dff77f707e4913",
+    "codec": "flac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "flac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "flac",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "audio-webm",
+    "scenario": "format",
+    "fileName": "echo-audio-webm.webm",
+    "extension": "webm",
+    "mimeType": "audio/webm",
+    "category": "audio",
+    "assetPath": "audio.webm",
+    "sizeBytes": 28956,
+    "sha256": "d8d26dd3c74a6fdef6be0e78608e215b85d8219c8168425ab7577e34c3908a00",
+    "codec": "opus",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "opus",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "matroska,webm",
+        "duration": "3.008000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-mp4",
+    "scenario": "format",
+    "fileName": "echo-video-mp4.mp4",
+    "extension": "mp4",
+    "mimeType": "video/mp4",
+    "category": "video",
+    "assetPath": "video.mp4",
+    "sizeBytes": 43887,
+    "sha256": "d27fdbf87b9fde21a945f1e52b7feecff19bfb3ef270f1fa264e5a5475b09c62",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-m4v",
+    "scenario": "format",
+    "fileName": "echo-video-m4v.m4v",
+    "extension": "m4v",
+    "mimeType": "video/mp4",
+    "category": "video",
+    "assetPath": "video.m4v",
+    "sizeBytes": 43875,
+    "sha256": "4af581284a5c4aa72955bc56f11328b590c0593fa2ff591dc0592af7fcb4e137",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-mov",
+    "scenario": "format",
+    "fileName": "echo-video-mov.mov",
+    "extension": "mov",
+    "mimeType": "video/quicktime",
+    "category": "video",
+    "assetPath": "video.mov",
+    "sizeBytes": 43938,
+    "sha256": "f246438235864ab570c75a87526ecf1d024e79eb3f5218740ecc36463d334412",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-webm",
+    "scenario": "format",
+    "fileName": "echo-video-webm.webm",
+    "extension": "webm",
+    "mimeType": "video/webm",
+    "category": "video",
+    "assetPath": "video.webm",
+    "sizeBytes": 48092,
+    "sha256": "476423b1a323b0f43b79a99d47460f1a779a8628e61a6fb87d2c582ccaec4e90",
+    "codec": "vp8,opus",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "vp8",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "opus",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "matroska,webm",
+        "duration": "3.008000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-mkv",
+    "scenario": "format",
+    "fileName": "echo-video-mkv.mkv",
+    "extension": "mkv",
+    "mimeType": "video/x-matroska",
+    "category": "video",
+    "assetPath": "video.mkv",
+    "sizeBytes": 43035,
+    "sha256": "456ec1813939919bb56c1cceed158ccb0371d255372af987d840fde113e50aba",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "matroska,webm",
+        "duration": "3.023000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-avi",
+    "scenario": "format",
+    "fileName": "echo-video-avi.avi",
+    "extension": "avi",
+    "mimeType": "video/x-msvideo",
+    "category": "video",
+    "assetPath": "video.avi",
+    "sizeBytes": 344008,
+    "sha256": "87485e06e38ad3ed516994ee5b6f76cdc04f6e045099df890312f207dd08bd48",
+    "codec": "mpeg4,pcm_s16le",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mpeg4",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "pcm_s16le",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "avi",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-mpeg",
+    "scenario": "format",
+    "fileName": "echo-video-mpeg.mpeg",
+    "extension": "mpeg",
+    "mimeType": "video/mpeg",
+    "category": "video",
+    "assetPath": "video.mpeg",
+    "sizeBytes": 223232,
+    "sha256": "068229495f00053ecacd7f31639d7ab48f3f3ae1c350be34d84af3949445ca7d",
+    "codec": "mpeg2video,mp2",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mpeg2video",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64,
+          "side_data_list": [{}]
+        },
+        {
+          "codec_name": "mp2",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mpeg",
+        "duration": "3.010911"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-mpg",
+    "scenario": "format",
+    "fileName": "echo-video-mpg.mpg",
+    "extension": "mpg",
+    "mimeType": null,
+    "category": "video",
+    "assetPath": "video.mpeg",
+    "sizeBytes": 223232,
+    "sha256": "068229495f00053ecacd7f31639d7ab48f3f3ae1c350be34d84af3949445ca7d",
+    "codec": "mpeg2video,mp2",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mpeg2video",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64,
+          "side_data_list": [{}]
+        },
+        {
+          "codec_name": "mp2",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mpeg",
+        "duration": "3.010911"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-wmv",
+    "scenario": "format",
+    "fileName": "echo-video-wmv.wmv",
+    "extension": "wmv",
+    "mimeType": "video/x-ms-wmv",
+    "category": "video",
+    "assetPath": "video.wmv",
+    "sizeBytes": 132113,
+    "sha256": "7f57da7c7632b066d593cc18027889c93093e68352451255263243fd1252f68e",
+    "codec": "wmv2,wmav2",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "wmv2",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "wmav2",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "asf",
+        "duration": "3.092000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-flv",
+    "scenario": "format",
+    "fileName": "echo-video-flv.flv",
+    "extension": "flv",
+    "mimeType": "video/x-flv",
+    "category": "video",
+    "assetPath": "video.flv",
+    "sizeBytes": 96490,
+    "sha256": "092c894f34588792620ce15629dce3b3c7071133172000f025f03765011431aa",
+    "codec": "mp3,flv1",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mp3",
+          "codec_type": "audio"
+        },
+        {
+          "codec_name": "flv1",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        }
+      ],
+      "format": {
+        "format_name": "flv",
+        "duration": "3.025000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-f4v",
+    "scenario": "format",
+    "fileName": "echo-video-f4v.f4v",
+    "extension": "f4v",
+    "mimeType": "video/mp4",
+    "category": "video",
+    "assetPath": "video.f4v",
+    "sizeBytes": 43871,
+    "sha256": "f351edef8359bf7d46607b5a9ce7d64b7c3b6656dde6b1bfbe985cd005e2203c",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.023991"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-3gp",
+    "scenario": "format",
+    "fileName": "echo-video-3gp.3gp",
+    "extension": "3gp",
+    "mimeType": "video/3gpp",
+    "category": "video",
+    "assetPath": "video.3gp",
+    "sizeBytes": 43749,
+    "sha256": "bfed164f55602e9dce8c5a0da4cc2d55aada4fa2e11a8d9c380920920d984c3a",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-3g2",
+    "scenario": "format",
+    "fileName": "echo-video-3g2.3g2",
+    "extension": "3g2",
+    "mimeType": "video/3gpp2",
+    "category": "video",
+    "assetPath": "video.3g2",
+    "sizeBytes": 43749,
+    "sha256": "eb43babf65a19769349f58d6e9d01d6ec380ad38362364af46b7cdb7b9ae8557",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-m2ts",
+    "scenario": "format",
+    "fileName": "echo-video-m2ts.m2ts",
+    "extension": "m2ts",
+    "mimeType": "video/mp2t",
+    "category": "video",
+    "assetPath": "video.m2ts",
+    "sizeBytes": 73728,
+    "sha256": "bfb2a2fbda717260e56754cdf3e7e6145b344dbdb2d1aaa1b7728f0369f69e98",
+    "codec": "h264,ac3",
+    "mediaProbe": {
+      "programs": [
+        {
+          "streams": [
+            {
+              "codec_name": "h264",
+              "codec_type": "video",
+              "width": 96,
+              "height": 64
+            },
+            {
+              "codec_name": "ac3",
+              "codec_type": "audio"
+            }
+          ]
+        }
+      ],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "ac3",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mpegts",
+        "duration": "3.005800"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-ogv",
+    "scenario": "format",
+    "fileName": "echo-video-ogv.ogv",
+    "extension": "ogv",
+    "mimeType": "video/ogg",
+    "category": "video",
+    "assetPath": "video.ogv",
+    "sizeBytes": 63698,
+    "sha256": "8ffde4339efd82812a87c27c96d48f7fa04c2ec4c8e7c92015a46a35a6d26779",
+    "codec": "theora,vorbis",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "theora",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "vorbis",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "ogg",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-vob",
+    "scenario": "format",
+    "fileName": "echo-video-vob.vob",
+    "extension": "vob",
+    "mimeType": "video/mpeg",
+    "category": "video",
+    "assetPath": "video.vob",
+    "sizeBytes": 114688,
+    "sha256": "96ba2320e13fed8682874b3f48755f8875435b38ec9e67cf6c0000665de69e23",
+    "codec": "mpeg2video,ac3",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "mpeg2video",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64,
+          "side_data_list": [{}]
+        },
+        {
+          "codec_name": "ac3",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mpeg",
+        "duration": "3.005800"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "video-asf",
+    "scenario": "format",
+    "fileName": "echo-video-asf.asf",
+    "extension": "asf",
+    "mimeType": "video/x-ms-asf",
+    "category": "video",
+    "assetPath": "video.asf",
+    "sizeBytes": 132113,
+    "sha256": "7f57da7c7632b066d593cc18027889c93093e68352451255263243fd1252f68e",
+    "codec": "wmv2,wmav2",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "wmv2",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "wmav2",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "asf",
+        "duration": "3.092000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "archive-zip",
+    "scenario": "format",
+    "fileName": "echo-archive-zip.zip",
+    "extension": "zip",
+    "mimeType": "application/zip",
+    "category": "archive",
+    "assetPath": "archive.zip",
+    "sizeBytes": 835,
+    "sha256": "a44ee7bb0b61cddc6b13db2dc4ae99c317a562bf2f328ab48da285e1b4bb7396",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "zip",
+    "expectedActions": ["list-members", "download-member", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "native-map-kml",
+    "scenario": "format",
+    "fileName": "echo-native-map-kml.kml",
+    "extension": "kml",
+    "mimeType": "application/vnd.google-earth.kml+xml",
+    "category": "native-map",
+    "assetPath": "map.kml",
+    "sizeBytes": 779,
+    "sha256": "efeabbed6623bee2b2972ddf416d55627c1a7002d606a1efb0db009cdd614bf1",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["view-map", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "native-map-kmz",
+    "scenario": "format",
+    "fileName": "echo-native-map-kmz.kmz",
+    "extension": "kmz",
+    "mimeType": "application/vnd.google-earth.kmz",
+    "category": "native-map",
+    "assetPath": "map.kmz",
+    "sizeBytes": 373,
+    "sha256": "8cb71285a0ce46400eb4afc417938f8618625992549142d485e4f0c380351e60",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["view-map", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "converted-map-gpx",
+    "scenario": "format",
+    "fileName": "echo-converted-map-gpx.gpx",
+    "extension": "gpx",
+    "mimeType": "application/gpx+xml",
+    "category": "converted-map",
+    "assetPath": "map.gpx",
+    "sizeBytes": 322,
+    "sha256": "639d1317c50a0982713f75cdaa082822edd19e120f56f254e2ad92e2ab2290c4",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run."
+    }
+  },
+  {
+    "id": "converted-map-geojson",
+    "scenario": "format",
+    "fileName": "echo-converted-map-geojson.geojson",
+    "extension": "geojson",
+    "mimeType": "application/geo+json",
+    "category": "converted-map",
+    "assetPath": "map.geojson",
+    "sizeBytes": 526,
+    "sha256": "5ce9602492e09c22a82f6cbfd01e16110924152b8b3d32b19e20a7584c2306cc",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run."
+    }
+  },
+  {
+    "id": "converted-map-ldk",
+    "scenario": "format",
+    "fileName": "echo-converted-map-ldk.ldk",
+    "extension": "ldk",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "converted-map-trk",
+    "scenario": "format",
+    "fileName": "echo-converted-map-trk.trk",
+    "extension": "trk",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "converted-map-are",
+    "scenario": "format",
+    "fileName": "echo-converted-map-are.are",
+    "extension": "are",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "converted-map-rte",
+    "scenario": "format",
+    "fileName": "echo-converted-map-rte.rte",
+    "extension": "rte",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "converted-map-wpt",
+    "scenario": "format",
+    "fileName": "echo-converted-map-wpt.wpt",
+    "extension": "wpt",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "converted-map-set",
+    "scenario": "format",
+    "fileName": "echo-converted-map-set.set",
+    "extension": "set",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "converted-map-fit",
+    "scenario": "format",
+    "fileName": "echo-converted-map-fit.fit",
+    "extension": "fit",
+    "mimeType": "application/octet-stream",
+    "category": "converted-map",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["prepare", "view-map", "zoom", "pan", "download-original"],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. Real Alpine conversion has not run. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "uppercase-pdf",
+    "scenario": "metadata",
+    "fileName": "ПЕРЕВІРКА.PDF",
+    "extension": "PDF",
+    "mimeType": "application/octet-stream",
+    "category": "document",
+    "assetPath": "document.pdf",
+    "sizeBytes": 593,
+    "sha256": "d7bcb44d56e59fe603cc2545e7e4192bd6f746a6dcde28ac8db241b37e38c86f",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "pdf",
+    "expectedActions": ["read", "zoom", "pages", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "extension-only-docx",
+    "scenario": "metadata",
+    "fileName": "Документ без суфікса",
+    "extension": "docx",
+    "mimeType": null,
+    "category": "document",
+    "assetPath": "document.docx",
+    "sizeBytes": 879,
+    "sha256": "8cb2b49a331514c6a5e71b9a5ebb28b5a221d0bb0e3271c03a0eae9383fe9cff",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "docx",
+    "expectedActions": ["read", "download-original", "zoom"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "mime-only-image",
+    "scenario": "metadata",
+    "fileName": "Зображення без суфікса",
+    "extension": "",
+    "mimeType": "image/png",
+    "category": "image",
+    "assetPath": "image.png",
+    "sizeBytes": 1677,
+    "sha256": "4ec780c2c0d29269acd88e9e9322447da019e98467ce074cd9e9ba02922b02c4",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "mime-only-audio",
+    "scenario": "metadata",
+    "fileName": "Аудіо без суфікса",
+    "extension": "",
+    "mimeType": "audio/wav",
+    "category": "audio",
+    "assetPath": "audio.wav",
+    "sizeBytes": 264678,
+    "sha256": "9bc64e027b88f4fbbbe74c7a4ee51a60c6cd71a0dc168dd95e00d2b8da742b48",
+    "codec": "pcm_s16le",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "pcm_s16le",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "wav",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "audio",
+    "expectedActions": ["play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "mime-only-video",
+    "scenario": "metadata",
+    "fileName": "Відео без суфікса",
+    "extension": "",
+    "mimeType": "video/mp4",
+    "category": "video",
+    "assetPath": "video.mp4",
+    "sizeBytes": 43887,
+    "sha256": "d27fdbf87b9fde21a945f1e52b7feecff19bfb3ef270f1fa264e5a5475b09c62",
+    "codec": "h264,aac",
+    "mediaProbe": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 96,
+          "height": 64
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio"
+        }
+      ],
+      "format": {
+        "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+        "duration": "3.000000"
+      }
+    },
+    "expectedViewer": "video",
+    "expectedActions": ["view", "play", "pause", "seek", "volume", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "mime-only-pdf",
+    "scenario": "metadata",
+    "fileName": "Документ без суфікса",
+    "extension": "",
+    "mimeType": "application/pdf",
+    "category": "document",
+    "assetPath": "document.pdf",
+    "sizeBytes": 593,
+    "sha256": "d7bcb44d56e59fe603cc2545e7e4192bd6f746a6dcde28ac8db241b37e38c86f",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "pdf",
+    "expectedActions": ["read", "zoom", "pages", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "docx-zip-mime",
+    "scenario": "metadata",
+    "fileName": "echo-docx-zip-mime.docx",
+    "extension": "docx",
+    "mimeType": "application/zip",
+    "category": "document",
+    "assetPath": "document.docx",
+    "sizeBytes": 879,
+    "sha256": "8cb2b49a331514c6a5e71b9a5ebb28b5a221d0bb0e3271c03a0eae9383fe9cff",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "docx",
+    "expectedActions": ["read", "download-original", "zoom"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "xlsx-zip-mime",
+    "scenario": "metadata",
+    "fileName": "echo-xlsx-zip-mime.xlsx",
+    "extension": "xlsx",
+    "mimeType": "application/zip",
+    "category": "document",
+    "assetPath": "document.xlsx",
+    "sizeBytes": 1768,
+    "sha256": "168875cc922735865c5789abc5d3f6799c46094732c63dbef36a95f6f13eaa3d",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "xlsx",
+    "expectedActions": ["read", "download-original", "select-sheet"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "kmz-zip-mime",
+    "scenario": "metadata",
+    "fileName": "echo-kmz-zip-mime.kmz",
+    "extension": "kmz",
+    "mimeType": "application/zip",
+    "category": "native-map",
+    "assetPath": "map.kmz",
+    "sizeBytes": 373,
+    "sha256": "8cb71285a0ce46400eb4afc417938f8618625992549142d485e4f0c380351e60",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "map",
+    "expectedActions": ["view-map", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "misleading-pdf-zip",
+    "scenario": "metadata",
+    "fileName": "echo-misleading-pdf-zip.pdf",
+    "extension": "pdf",
+    "mimeType": "application/zip",
+    "category": "archive",
+    "assetPath": "archive.zip",
+    "sizeBytes": 835,
+    "sha256": "a44ee7bb0b61cddc6b13db2dc4ae99c317a562bf2f328ab48da285e1b4bb7396",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "zip",
+    "expectedActions": ["list-members", "download-member", "download-original", "zoom", "pages"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "conflicting-image-name",
+    "scenario": "metadata",
+    "fileName": "Насправді зображення.txt",
+    "extension": "txt",
+    "mimeType": "image/png",
+    "category": "image",
+    "assetPath": "image.png",
+    "sizeBytes": 1677,
+    "sha256": "4ec780c2c0d29269acd88e9e9322447da019e98467ce074cd9e9ba02922b02c4",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-audio-suffix",
+    "scenario": "metadata",
+    "fileName": "Насправді зображення.mp3",
+    "extension": "mp3",
+    "mimeType": "image/png",
+    "category": "image",
+    "assetPath": "image.png",
+    "sizeBytes": 1677,
+    "sha256": "4ec780c2c0d29269acd88e9e9322447da019e98467ce074cd9e9ba02922b02c4",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "image-video-suffix",
+    "scenario": "metadata",
+    "fileName": "Насправді зображення.mp4",
+    "extension": "mp4",
+    "mimeType": "image/png",
+    "category": "image",
+    "assetPath": "image.png",
+    "sizeBytes": 1677,
+    "sha256": "4ec780c2c0d29269acd88e9e9322447da019e98467ce074cd9e9ba02922b02c4",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "historical-text",
+    "scenario": "revision",
+    "fileName": "echo-history.txt",
+    "extension": "txt",
+    "mimeType": "text/plain",
+    "category": "document",
+    "assetPath": "historical.txt",
+    "sizeBytes": 162,
+    "sha256": "96f01ed855d3c3357a4666681547fecd48eba4dc9c0efe4b4022a4fb017844de",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "txt",
+    "expectedActions": ["read", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    },
+    "revisionPair": "text-history",
+    "expectedText": "Версія: історична."
+  },
+  {
+    "id": "current-text",
+    "scenario": "revision",
+    "fileName": "echo-history.txt",
+    "extension": "txt",
+    "mimeType": "text/plain",
+    "category": "document",
+    "assetPath": "document.txt",
+    "sizeBytes": 158,
+    "sha256": "dd81dbb436af2c6f598f7f6a1f770c33a063ea4d8226e8e3716bc8dd0f3685e2",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "txt",
+    "expectedActions": ["read", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    },
+    "revisionPair": "text-history",
+    "expectedText": "Версія: поточна."
+  },
+  {
+    "id": "empty-text",
+    "scenario": "negative",
+    "fileName": "echo-empty-text.txt",
+    "extension": "txt",
+    "mimeType": "text/plain",
+    "category": "document",
+    "assetPath": "empty.txt",
+    "sizeBytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "empty",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "unsupported-binary",
+    "scenario": "negative",
+    "fileName": "echo-unsupported-binary.bin",
+    "extension": "bin",
+    "mimeType": "application/octet-stream",
+    "category": "document",
+    "assetPath": "unsupported.bin",
+    "sizeBytes": 32,
+    "sha256": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "unsupported",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "corrupt-pdf",
+    "scenario": "negative",
+    "fileName": "echo-corrupt-pdf.pdf",
+    "extension": "pdf",
+    "mimeType": "application/pdf",
+    "category": "document",
+    "assetPath": "corrupt.pdf",
+    "sizeBytes": 27,
+    "sha256": "20a389d5b2438b652f7ea992b21c9397e3062e03d6ac2b7a427b2396bbbb0078",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "error",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "password-zip",
+    "scenario": "negative",
+    "fileName": "echo-password-zip.zip",
+    "extension": "zip",
+    "mimeType": "application/zip",
+    "category": "archive",
+    "assetPath": "password.zip",
+    "sizeBytes": 333,
+    "sha256": "ce82cd543675bc9ab2b1e5fa371c116cf1b885c03850e0f2d3ab61e183093393",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "protected",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "unsafe-zip-names",
+    "scenario": "negative",
+    "fileName": "echo-unsafe-zip-names.zip",
+    "extension": "zip",
+    "mimeType": "application/zip",
+    "category": "archive",
+    "assetPath": "unsafe-members.zip",
+    "sizeBytes": 360,
+    "sha256": "dd923dcbf5bf8617b95a9acf7ff15903d8cfaa22ec67159d560b40b38f0f0054",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "zip",
+    "expectedActions": ["list-members", "download-safe-member", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  },
+  {
+    "id": "svg-script-inert",
+    "scenario": "negative",
+    "fileName": "echo-svg-script-inert.svg",
+    "extension": "svg",
+    "mimeType": "image/svg+xml",
+    "category": "image",
+    "assetPath": "unsafe.svg",
+    "sizeBytes": 232,
+    "sha256": "f4f632f9a9af592e24c6e7081106e3b4a79cc4eaf0e74553131008c57ee681f6",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "image",
+    "expectedActions": ["view", "zoom", "pan", "download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    },
+    "expectedScriptExecution": false
+  },
+  {
+    "id": "missing-content",
+    "scenario": "negative",
+    "fileName": "echo-missing-content.txt",
+    "extension": "txt",
+    "mimeType": "text/plain",
+    "category": "document",
+    "assetPath": null,
+    "sizeBytes": null,
+    "sha256": null,
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "missing",
+    "expectedActions": [],
+    "availability": "absent",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity. No authentic local fixture is available; this format is absent, not a passing fallback."
+    }
+  },
+  {
+    "id": "oversized-text",
+    "scenario": "negative",
+    "fileName": "echo-oversized-text.txt",
+    "extension": "txt",
+    "mimeType": "text/plain",
+    "category": "document",
+    "assetPath": null,
+    "sizeBytes": 1048577,
+    "sha256": "9ef018e955cacc77ab7f2bc97ef79ed1415f0a028b89d026f7bc3551479b1b5c",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "limit",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": {
+      "kind": "repeat",
+      "byte": 65,
+      "sizeBytes": 1048577
+    },
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Bounded bytes for the device pre-parser limit test, which reports 1000000001 bytes via HEAD; not a valid document. Duty/Analysis reference has not run."
+    }
+  },
+  {
+    "id": "oversized-document",
+    "scenario": "negative",
+    "fileName": "echo-oversized-document.docx",
+    "extension": "docx",
+    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "category": "document",
+    "assetPath": null,
+    "sizeBytes": 10485761,
+    "sha256": "4b5d4e4afa64835d7a9cc3a10ffeaa4160e49503e451f26173b659116c31a0ea",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "limit",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": {
+      "kind": "repeat",
+      "byte": 65,
+      "sizeBytes": 10485761
+    },
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Bounded bytes for the device pre-parser limit test, which reports 1000000001 bytes via HEAD; not a valid document. Duty/Analysis reference has not run."
+    }
+  },
+  {
+    "id": "oversized-zip",
+    "scenario": "negative",
+    "fileName": "echo-oversized-zip.zip",
+    "extension": "zip",
+    "mimeType": "application/zip",
+    "category": "archive",
+    "assetPath": "archive-limit.zip",
+    "sizeBytes": 2169,
+    "sha256": "61d747531c29c130975d646275d7dad34d9db0db989951f2ec1b496cb422bd40",
+    "codec": null,
+    "mediaProbe": null,
+    "expectedViewer": "limit",
+    "expectedActions": ["download-original"],
+    "availability": "present",
+    "byteRecipe": null,
+    "reference": {
+      "status": "not-run",
+      "hosts": ["duty", "analysis"],
+      "sameBytes": true,
+      "note": "Duty/Analysis browser reference has not run; byte/container checks are not preview parity."
+    }
+  }
+]

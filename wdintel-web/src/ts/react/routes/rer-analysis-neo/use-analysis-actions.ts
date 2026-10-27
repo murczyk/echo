@@ -29,6 +29,7 @@ type Params = {
   reconcileTagMutation: (messageId: number) => Promise<void>;
   registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
+  refreshMessageCounts: () => void;
   reload: () => Promise<void>;
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
   setMessages: Setter<Array<[number, InboxMessage]>>;
@@ -38,7 +39,7 @@ type Params = {
   invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   setAorEntries: Setter<import('./types').AnalysisAorEntry[]>;
-  setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
+  setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
   setCorrelatedFreqs: Setter<import('../../../../Bindings').CorrelatedFreq[]>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
   setGroupsActivity: Setter<import('../../../../Bindings').FreqDailyActivityCount | null>;
@@ -52,7 +53,6 @@ type Params = {
   setNetworks: Setter<import('../../../../Bindings').Network[]>;
   setNewCallsigns: Setter<NewCallsignsRes>;
   setNoMoreToLoad: Setter<boolean>;
-  setNolimitShown: Setter<boolean>;
   setOptions: Setter<import('./types').AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, CallsignInfoRes>>;
@@ -98,7 +98,6 @@ export function useAnalysisActions(params: Params) {
     setNetworks: params.setNetworks,
     setNewCallsigns: params.setNewCallsigns,
     setNoMoreToLoad: params.setNoMoreToLoad,
-    setNolimitShown: params.setNolimitShown,
     setOptions: params.setOptions,
     setProfiles: params.setProfiles,
     setSummaryCallsignsInfo: params.setSummaryCallsignsInfo,
@@ -136,6 +135,7 @@ export function useAnalysisActions(params: Params) {
     reconcileTagMutation: params.reconcileTagMutation,
     registerLocalInboxChangeOrigin: params.registerLocalInboxChangeOrigin,
     refreshTagFacet: params.refreshTagFacet,
+    refreshMessageCounts: params.refreshMessageCounts,
     reload: params.reload,
     setMapOpenMessages: params.setMapOpenMessages,
     setMessages: params.setMessages,

@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SetStateAction } from 'react';
 
-import type { Network, Unit } from '../../../../../Bindings';
+import type { CountStatsRsp, Network, Unit } from '../../../../../Bindings';
+import { HttpRequestError, isUnauthorizedError } from '../../../services/api/client';
 import { buildAnalysisReq, emptyQueryState } from '../helpers';
 import {
   loadFilterSectionData,
   mergeSignalProfiles,
   reloadAnalysisData,
+  startAnalysisCountsLoad,
   transformMessagePageResponse,
 } from '../use-analysis-data.reload';
 import { buildSummaryCallsignsInfo } from '../use-analysis-data.callsigns';
@@ -15,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   fetchAnalysisAors: vi.fn(),
   fetchAnalysisCallsigns: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
-  fetchAnalysisCount: vi.fn(),
   fetchAnalysisFreqs: vi.fn(),
   fetchAnalysisGroups: vi.fn(),
   fetchAnalysisLocations: vi.fn(),
@@ -25,9 +27,11 @@ const mocks = vi.hoisted(() => ({
   fetchAnalysisNewCallsigns: vi.fn(),
   fetchAnalysisPosts: vi.fn(),
   fetchAnalysisSenders: vi.fn(),
+  fetchAnalysisStatsCount: vi.fn(),
   fetchAnalysisSummaryTable: vi.fn(),
   fetchAnalysisTags: vi.fn(),
   fetchAnalysisUnits: vi.fn(),
+  fetchAnalysisUnitMatchStatsCount: vi.fn(),
   fetchInboxCount: vi.fn(),
   fetchInboxMessages: vi.fn(),
   fetchNetworksByIds: vi.fn(),
@@ -42,7 +46,6 @@ vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisAors: mocks.fetchAnalysisAors,
   fetchAnalysisCallsigns: mocks.fetchAnalysisCallsigns,
   fetchAnalysisCallsignInfos: mocks.fetchAnalysisCallsignInfos,
-  fetchAnalysisCount: mocks.fetchAnalysisCount,
   fetchAnalysisFreqs: mocks.fetchAnalysisFreqs,
   fetchAnalysisGroups: mocks.fetchAnalysisGroups,
   fetchAnalysisLocations: mocks.fetchAnalysisLocations,
@@ -52,9 +55,11 @@ vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisNewCallsigns: mocks.fetchAnalysisNewCallsigns,
   fetchAnalysisPosts: mocks.fetchAnalysisPosts,
   fetchAnalysisSenders: mocks.fetchAnalysisSenders,
+  fetchAnalysisStatsCount: mocks.fetchAnalysisStatsCount,
   fetchAnalysisSummaryTable: mocks.fetchAnalysisSummaryTable,
   fetchAnalysisTags: mocks.fetchAnalysisTags,
   fetchAnalysisUnits: mocks.fetchAnalysisUnits,
+  fetchAnalysisUnitMatchStatsCount: mocks.fetchAnalysisUnitMatchStatsCount,
   fetchInboxCount: mocks.fetchInboxCount,
   fetchInboxMessages: mocks.fetchInboxMessages,
   fetchNetworksByIds: mocks.fetchNetworksByIds,
@@ -106,6 +111,11 @@ afterEach(() => {
 
 beforeEach(() => {
   mocks.fetchInboxCount.mockResolvedValue({ quantity: 42 });
+  mocks.fetchAnalysisStatsCount.mockResolvedValue(0);
+  mocks.fetchAnalysisUnitMatchStatsCount.mockResolvedValue({
+    exactMatchesCount: 0,
+    nonExactMatchesCount: 0,
+  });
   mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
   mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
@@ -248,7 +258,7 @@ describe('loadFilterSectionData', () => {
 });
 
 describe('reloadAnalysisData', () => {
-  it('clears messages loading immediately after inbox resolves, without waiting for freqs', async () => {
+  async function runHiddenNetworkReload(preserveMessageTailExhaustion: boolean) {
     const inboxDeferred = deferred<ReloadInboxRsp>();
     const freqsDeferred = deferred<{
       freqs: Array<{ freq: string; count: number; isNew: boolean }>;
@@ -256,7 +266,6 @@ describe('reloadAnalysisData', () => {
 
     mocks.fetchInboxMessages.mockImplementationOnce(() => inboxDeferred.promise);
     mocks.fetchAnalysisFreqs.mockImplementationOnce(() => freqsDeferred.promise);
-    mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
     mocks.fetchNetworksByIds.mockResolvedValue([]);
@@ -283,6 +292,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      hideNetworks: true,
       invalidateCorrelatedFreqsCache,
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -293,6 +303,7 @@ describe('reloadAnalysisData', () => {
         reverseResults: true,
         resultLimit: 2,
       },
+      preserveMessageTailExhaustion,
       newestFirst: true,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
@@ -360,18 +371,249 @@ describe('reloadAnalysisData', () => {
       [1, { networkIds: [] }],
     ]);
     expect(messagesLoadingTransitions).toContain(false);
-    expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9));
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).not.toContain(
+      'networks',
+    );
     expect(setSummaryCallsignsInfo).toHaveBeenCalledWith(
       buildSummaryCallsignsInfo([{ callsign: 'alpha', res: [] }], null),
     );
-    expect(setNoMoreToLoad).toHaveBeenCalledWith(true);
+    if (preserveMessageTailExhaustion) {
+      expect(setNoMoreToLoad).not.toHaveBeenCalled();
+    } else {
+      expect(setNoMoreToLoad).toHaveBeenCalledWith(true);
+    }
 
     freqsDeferred.resolve({ freqs: [] });
     await reloadPromise;
     await flushPromises();
 
-    expect(mocks.fetchAnalysisCount).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(9);
     expect(invalidateCorrelatedFreqsCache).toHaveBeenCalledTimes(1);
+  }
+
+  it('#3598 skips network statistics while hidden and clears messages loading without waiting for freqs', async () => {
+    await runHiddenNetworkReload(false);
+  });
+
+  it('preserves tail exhaustion when refreshing a retained page', async () => {
+    await runHiddenNetworkReload(true);
+  });
+  it('#3001 applies fast counters independently and drops a late counter after cancellation', async () => {
+    const groupsCount = deferred<number>();
+    mocks.fetchAnalysisStatsCount.mockImplementation((dimension) => {
+      if (dimension === 'groups') return groupsCount.promise;
+      return Promise.resolve(dimension === 'senders' ? 7 : 0);
+    });
+    mocks.fetchInboxMessages.mockResolvedValue({
+      inboxItems: [],
+      callsigns: [],
+      pageLimit: 20,
+    });
+    mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+    mocks.fetchNetworksByIds.mockResolvedValue([]);
+    mocks.getUnitsList.mockResolvedValue([]);
+
+    let counts: Partial<CountStatsRsp> | null = null;
+    const setCounts = vi.fn((next: SetStateAction<Partial<CountStatsRsp> | null>) => {
+      counts = typeof next === 'function' ? next(counts) : next;
+    });
+    const abortController = new AbortController();
+
+    await reloadAnalysisData({
+      clearAnalysisResults: vi.fn(),
+      invalidateCorrelatedFreqsCache: vi.fn(),
+      invalidateCallsignGraph: vi.fn(),
+      invalidateMessagePaging: vi.fn(),
+      newestFirst: true,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      optionsFreqsRef: { current: [] },
+      queryState: {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-04-01T00:00',
+        toDateTimeStr: '2026-04-02T00:00',
+        unitsSelected: ['unit-id:17'],
+      },
+      reloadRequestRef: { current: 0 },
+      setAorEntries: vi.fn(),
+      setCounts,
+      setCountsLoading: vi.fn(),
+      setFiltersLoading: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setMapLoading: vi.fn(),
+      setMapDateRange: vi.fn(),
+      setMapNetworkUnits: vi.fn(),
+      applyMapSettlements: vi.fn(),
+      setMapOpenMessages: vi.fn(),
+      setMapPoints: vi.fn(),
+      showSettlements: false,
+      setMessages: vi.fn(),
+      setMessagesLoading: vi.fn(),
+      setNetworks: vi.fn(),
+      setUnitsMap: vi.fn(),
+      setNewCallsigns: vi.fn(),
+      setHasLoadedInitialMessages: vi.fn(),
+      setNewCallsignsLoading: vi.fn(),
+      setNewCallsignsLoadedKey: vi.fn(),
+      shouldLoadNewCallsigns: false,
+      setNoMoreToLoad: vi.fn(),
+      setNolimitShown: vi.fn(),
+      setOptions: vi.fn(),
+      setProfiles: vi.fn(),
+      setSummaryCallsignsInfo: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      setTopCallsigns: vi.fn(),
+      setTopFreqs: vi.fn(),
+      setTopLocations: vi.fn(),
+      setTopUnits: vi.fn(),
+      loadInitialFilterSections: vi.fn().mockResolvedValue(undefined),
+      invalidateFilterSectionLoads: vi.fn(),
+      signal: abortController.signal,
+    });
+    await flushPromises();
+
+    expect(mocks.fetchAnalysisUnitMatchStatsCount).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedUnits: null, selectedUnitIds: [17] }),
+      expect.anything(),
+    );
+    expect(counts?.sendersCount).toBe(7);
+    expect(counts?.groupsCount).toBeUndefined();
+
+    abortController.abort();
+    groupsCount.resolve(99);
+    await flushPromises();
+
+    expect(counts?.groupsCount).toBeUndefined();
+  });
+  it('#3001 clears stale counters and leaves pending or failed dimensions absent', async () => {
+    const groupsCount = deferred<number>();
+    const unitMatches = deferred<{ exactMatchesCount: number; nonExactMatchesCount: number }>();
+    mocks.fetchAnalysisStatsCount.mockImplementation((dimension) =>
+      dimension === 'groups' ? groupsCount.promise : Promise.resolve(0),
+    );
+    mocks.fetchAnalysisUnitMatchStatsCount.mockReturnValueOnce(unitMatches.promise);
+    let counts: Partial<CountStatsRsp> | null = {
+      groupsCount: 91,
+      sendersCount: 83,
+      unitsExactMatchesCount: 19,
+      unitsNonExactMatchesCount: 17,
+    };
+    const setCountsLoading = vi.fn();
+    const onError = vi.fn();
+
+    startAnalysisCountsLoad(
+      buildAnalysisReq({ ...buildQueryState(), unitsSelected: ['unit-id:17'] })!,
+      {
+        isStale: () => false,
+        onError,
+        onUnauthorized: vi.fn().mockReturnValue(false),
+        setCounts: (next) => {
+          counts = typeof next === 'function' ? next(counts) : next;
+        },
+        setCountsLoading,
+      },
+    );
+
+    expect(counts).toEqual({});
+    await vi.waitFor(() => expect(counts?.sendersCount).toBe(0));
+    expect(counts?.groupsCount).toBeUndefined();
+    expect(counts?.unitsExactMatchesCount).toBeUndefined();
+    expect(setCountsLoading).not.toHaveBeenCalledWith(false);
+
+    groupsCount.resolve(8);
+    unitMatches.reject(new Error('Unit counters unavailable'));
+    await vi.waitFor(() => expect(setCountsLoading).toHaveBeenCalledWith(false));
+
+    expect(counts?.groupsCount).toBe(8);
+    expect(counts?.sendersCount).toBe(0);
+    expect(counts?.unitsExactMatchesCount).toBeUndefined();
+    expect(counts?.unitsNonExactMatchesCount).toBeUndefined();
+    expect(onError).toHaveBeenCalledExactlyOnceWith('Unit counters unavailable');
+  });
+  it('#3001 handles unauthorized counters after earlier failures and deduplicates ordinary errors', async () => {
+    const laterError = deferred<number>();
+    const unauthorized = new HttpRequestError(401, 'Session expired');
+    mocks.fetchAnalysisStatsCount.mockImplementation((dimension) => {
+      if (dimension === 'groups' || dimension === 'senders') {
+        return Promise.reject(new Error('Counter unavailable'));
+      }
+      return dimension === 'freqs' ? laterError.promise : Promise.resolve(0);
+    });
+    const onError = vi.fn();
+    const onUnauthorized = vi.fn(isUnauthorizedError);
+    const setCountsLoading = vi.fn();
+
+    startAnalysisCountsLoad(buildAnalysisReq(buildQueryState())!, {
+      isStale: () => false,
+      onError,
+      onUnauthorized,
+      setCounts: vi.fn(),
+      setCountsLoading,
+    });
+
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    laterError.reject(unauthorized);
+    await vi.waitFor(() => expect(setCountsLoading).toHaveBeenCalledWith(false));
+
+    expect(onUnauthorized).toHaveBeenCalledWith(unauthorized);
+    expect(onError).toHaveBeenCalledExactlyOnceWith('Counter unavailable');
+  });
+  it('#3001 limits concurrent counter requests while preserving progressive updates', async () => {
+    const req = buildAnalysisReq({
+      ...buildQueryState(),
+      unitsSelected: ['unit-id:17'],
+    })!;
+    const releases: Array<() => void> = [];
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    const pendingResult = <T>(value: T) => {
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      return new Promise<T>((resolve) => {
+        releases.push(() => {
+          activeRequests -= 1;
+          resolve(value);
+        });
+      });
+    };
+    mocks.fetchAnalysisStatsCount.mockImplementation(() => pendingResult(1));
+    mocks.fetchAnalysisUnitMatchStatsCount.mockImplementation(() =>
+      pendingResult({ exactMatchesCount: 2, nonExactMatchesCount: 3 }),
+    );
+    let counts: Partial<CountStatsRsp> | null = null;
+    let countsLoading = false;
+
+    startAnalysisCountsLoad(req, {
+      isStale: () => false,
+      onError: vi.fn(),
+      onUnauthorized: vi.fn().mockReturnValue(false),
+      setCounts: (next) => {
+        counts = typeof next === 'function' ? next(counts) : next;
+      },
+      setCountsLoading: (next) => {
+        countsLoading = typeof next === 'function' ? next(countsLoading) : next;
+      },
+    });
+
+    expect(releases).toHaveLength(4);
+    expect(maxActiveRequests).toBe(4);
+    for (let index = 0; index < 11; index += 1) {
+      releases[index]?.();
+      await flushPromises();
+    }
+
+    expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(10);
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).toContain(
+      'networks',
+    );
+    expect(mocks.fetchAnalysisUnitMatchStatsCount).toHaveBeenCalledTimes(1);
+    expect(maxActiveRequests).toBe(4);
+    expect(counts?.groupsCount).toBe(1);
+    expect(counts?.unitsExactMatchesCount).toBe(2);
+    await vi.waitFor(() => expect(countsLoading).toBe(false));
   });
   it('refreshes summary callsign info after rebuilt inbox data arrives', async () => {
     const inboxDeferred = deferred<ReloadInboxRsp>();
@@ -389,7 +631,6 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisFreqs
       .mockImplementationOnce(() => freqsDeferred.promise)
       .mockImplementationOnce(() => rebuiltFreqsDeferred.promise);
-    mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
     mocks.fetchNetworksByIds.mockResolvedValue([]);
@@ -409,6 +650,7 @@ describe('reloadAnalysisData', () => {
 
     const reloadPromise = reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
+      hideNetworks: true,
       invalidateCorrelatedFreqsCache: vi.fn(),
       invalidateCallsignGraph: vi.fn(),
       invalidateMessagePaging: vi.fn(),
@@ -516,6 +758,10 @@ describe('reloadAnalysisData', () => {
     expect(mocks.fetchAnalysisCallsigns).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisCallsignInfos).not.toHaveBeenCalled();
     expect(mocks.fetchAnalysisFreqs).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(mocks.fetchAnalysisStatsCount).toHaveBeenCalledTimes(18));
+    expect(mocks.fetchAnalysisStatsCount.mock.calls.map(([dimension]) => dimension)).not.toContain(
+      'networks',
+    );
     expect(setMessages).toHaveBeenLastCalledWith([
       [22, { networkIds: [] }],
       [21, { networkIds: [] }],
@@ -534,7 +780,6 @@ describe('reloadAnalysisData', () => {
       .mockImplementationOnce(() => inboxDeferred.promise)
       .mockImplementationOnce(() => rebuiltInboxDeferred.promise);
     mocks.fetchAnalysisFreqs.mockImplementationOnce(() => freqsDeferred.promise);
-    mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
     mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
@@ -631,7 +876,6 @@ describe('reloadAnalysisData', () => {
       callsigns: [{ callsign: 'alpha', res: [] }],
       pageLimit: 20,
     });
-    mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
 
@@ -706,7 +950,6 @@ describe('reloadAnalysisData', () => {
 
     mocks.fetchInboxMessages.mockImplementationOnce(() => inboxDeferred.promise);
     mocks.fetchAnalysisFreqs.mockImplementationOnce(() => freqsDeferred.promise);
-    mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
     mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
 
@@ -784,7 +1027,6 @@ describe('reloadAnalysisData', () => {
   it('keeps deferred panel data intact when the critical inbox request fails early', async () => {
     mocks.fetchInboxMessages.mockRejectedValue(new Error('inbox failed'));
     mocks.fetchAnalysisFreqs.mockResolvedValue({ freqs: [] });
-    mocks.fetchAnalysisCount.mockResolvedValue({});
 
     const invalidateSummaryLoads = vi.fn();
     const invalidateTopSidebarLoads = vi.fn();

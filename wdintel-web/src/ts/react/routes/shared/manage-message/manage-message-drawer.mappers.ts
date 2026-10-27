@@ -103,6 +103,8 @@ export function mapDirectSubmitCopyToForm(payload: DirectSubmitRequest): Message
     comment: payload.comment ?? '',
     post: payload.post ?? '',
     unit: payload.unit ?? '',
+    unitSelection:
+      payload.unit_id != null ? { id: payload.unit_id, name: payload.unit ?? '' } : undefined,
     locations: payload.locations ?? [],
     network_signal_name: payload.network?.signal_name ?? '',
     network_name: payload.network?.name ?? '',

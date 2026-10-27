@@ -83,6 +83,7 @@ type FeedFilterSavedFiltersConfig = {
 export type FeedFilterPanelViewProps = {
   isDarkMode: boolean;
   hasActiveFilter: boolean;
+  hideGroupSelection?: boolean;
   onDiscardCurrentFilter: () => void;
   groups: FeedFilterSelectionConfig<string>;
   senders: FeedFilterSelectionConfig<{ id: string; label: string }>;
@@ -117,6 +118,7 @@ export type FeedFilterPanelViewProps = {
 
 export function FeedFilterPanelView({
   hasActiveFilter,
+  hideGroupSelection = false,
   onDiscardCurrentFilter,
   groups,
   senders,
@@ -169,38 +171,40 @@ export function FeedFilterPanelView({
           borderRadius: 0,
         }}
       >
-        <FeedFilterSelectionSection
-          title="Групи"
-          mode={groups.mode}
-          onModeChange={groups.onModeChange}
-          value={groups.value}
-          onValueChange={groups.onValueChange}
-          options={groups.options}
-          getOptionLabel={groups.getOptionLabel}
-          getOptionKey={groups.getOptionKey}
-          placeholder={groups.placeholder}
-          autocompleteClassName={groups.autocompleteClassName}
-          loading={groups.loading}
-          loadingText={groups.loadingText}
-          noOptionsText={groups.noOptionsText}
-          clearText={groups.clearText}
-          openText={groups.openText}
-          closeText={groups.closeText}
-          keepOpenOnSelect={groups.keepOpenOnSelect}
-          preserveInputOnSelect={groups.preserveInputOnSelect}
-          bulkPaste
-          bulkPasteSeparators={[',', '\n']}
-          bulkPasteMenuLabel="Додати кілька груп"
-          bulkPasteDialogTitle="Додати кілька груп"
-          bulkPasteInputLabel="Групи"
-          bulkCopy={groups.bulkCopy}
-          bulkCopyMenuLabel={groups.bulkCopyMenuLabel}
-          onBulkCopy={groups.onBulkCopy}
-          getBulkPasteToken={groups.getBulkPasteToken}
-          getBulkPasteAliases={groups.getBulkPasteAliases}
-          getBulkCopyText={groups.getBulkCopyText}
-        />
-        {groups.groupCatalogError ? (
+        {!hideGroupSelection ? (
+          <FeedFilterSelectionSection
+            title="Групи"
+            mode={groups.mode}
+            onModeChange={groups.onModeChange}
+            value={groups.value}
+            onValueChange={groups.onValueChange}
+            options={groups.options}
+            getOptionLabel={groups.getOptionLabel}
+            getOptionKey={groups.getOptionKey}
+            placeholder={groups.placeholder}
+            autocompleteClassName={groups.autocompleteClassName}
+            loading={groups.loading}
+            loadingText={groups.loadingText}
+            noOptionsText={groups.noOptionsText}
+            clearText={groups.clearText}
+            openText={groups.openText}
+            closeText={groups.closeText}
+            keepOpenOnSelect={groups.keepOpenOnSelect}
+            preserveInputOnSelect={groups.preserveInputOnSelect}
+            bulkPaste
+            bulkPasteSeparators={[',', '\n']}
+            bulkPasteMenuLabel="Додати кілька груп"
+            bulkPasteDialogTitle="Додати кілька груп"
+            bulkPasteInputLabel="Групи"
+            bulkCopy={groups.bulkCopy}
+            bulkCopyMenuLabel={groups.bulkCopyMenuLabel}
+            onBulkCopy={groups.onBulkCopy}
+            getBulkPasteToken={groups.getBulkPasteToken}
+            getBulkPasteAliases={groups.getBulkPasteAliases}
+            getBulkCopyText={groups.getBulkCopyText}
+          />
+        ) : null}
+        {!hideGroupSelection && groups.groupCatalogError ? (
           <PowerAlert
             autoHideDuration={null}
             dismissible={false}

@@ -17,7 +17,9 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::*;
 use std::collections::{BTreeMap, HashMap, HashSet};
+pub mod alerts;
 pub mod attachments;
+pub(crate) mod audio_ref;
 pub mod bl;
 pub mod dedupe;
 pub mod group;
@@ -25,6 +27,7 @@ pub mod id;
 pub mod media;
 pub mod media_cache;
 pub(crate) mod media_local_cache;
+pub(crate) mod media_preview;
 pub mod media_thumbnail;
 pub mod media_wave;
 pub mod missing_message;
@@ -212,6 +215,8 @@ pub async fn edit(
         id,
         req.aor_id,
         req.is_active,
+        req.can_read_messages,
+        req.can_send_messages,
         req.display_name.to_string(),
         req.description.clone(),
         req.api_login.clone(),
@@ -235,6 +240,9 @@ pub async fn group_update(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
+    group::native::require_external_group(&txn, &req.master_key)
+        .await
+        .c(h!())?;
     let res = bl::bl_group_update(&req, &txn).await.c(h!())?;
 
     txn.commit().await.c(h!())?;
@@ -263,6 +271,10 @@ pub async fn group_update(
         } else {
             Some(res.aors.into_iter().map(render_aor).collect())
         },
+        color_key: crate::messenger::group::types::SignalGroupColor::from_optional_db_value(
+            res.group.color_key.as_deref(),
+        )
+        .c(h!())?,
     }))
 }
 
@@ -370,6 +382,8 @@ pub async fn link_operator(
         updated_by_login_id: Set(Some(login)),
         deleted: NotSet,
         last_sync_at: NotSet,
+        can_read_messages: NotSet,
+        can_send_messages: NotSet,
     }
     .insert(&txn)
     .await

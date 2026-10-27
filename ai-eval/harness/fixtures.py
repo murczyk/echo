@@ -1,6 +1,7 @@
 """Frozen inbox fixtures evaluated with Echo's SQL and PostgreSQL search semantics."""
 import json
 import os
+import re
 import subprocess
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -24,6 +25,34 @@ def literal(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def unit_filtered(records, body):
+    """Unit attribution is header metadata (`unit`) or reference links (`unitIds`), never body text."""
+    ids, names = body.get("selected_unit_ids") or [], body.get("selected_units") or []
+    if not ids and not names:
+        return records
+    return [item for item in records
+            if item.get("unit") in names or set(item.get("unitIds", [])) & set(ids)]
+
+
+def words(value):
+    """Lowercase words, splitting at digit/letter boundaries so «104дшп» equals «104 дшп»."""
+    return set(re.findall(r"\d+|[^\W\d_]+", str(value).lower()))
+
+
+def unit_lookup(case, body):
+    """Approximates the relaxed catalog search: units sharing enough words with the query, best first."""
+    query = words(body.get("filter_text", ""))
+    if not query:
+        raise ValueError("Unit lookup needs filter_text")
+    scored = sorted(((len(query & words(unit["name"])) / len(query), unit["id"], unit)
+                     for unit in case.get("units", [])
+                     if body.get("include_inactive") or unit.get("active", True)), key=lambda row: (-row[0], row[1]))
+    units = [unit for score, _, unit in scored if score >= 0.5
+             and unit["id"] > (body.get("after_unit_id") or 0)]
+    return {"units": units[:body.get("limit", 20)], "total_count": len(units),
+            "show_load_more": len(units) > body.get("limit", 20)}
+
+
 def inbox_ids(case, body, settings):
     since, till = body.get("since_date_inclusive_ms"), body.get("till_date_inclusive_ms")
     if not isinstance(since, int) or not isinstance(till, int) or since > till:
@@ -39,6 +68,7 @@ def inbox_ids(case, body, settings):
                and since <= item["timestamp"] <= till
                and (not body.get("before_id_noninclusive") or
                     item["id"] < body["before_id_noninclusive"])]
+    records = unit_filtered(records, body)
     plan = query_plan(settings["binary"], body)
     data = literal(json.dumps(records, ensure_ascii=False))
     sql = f"""BEGIN READ ONLY;
@@ -68,6 +98,8 @@ def response(case, path, body, settings):
     if path == "/api/ai-agent/maps/prepare":
         return json.loads(checked([settings["binary"], "--mode", "debug", "ai-eval-maps"],
                                   json.dumps({"operation": "prepare", "records": body.get("records", [])}), timeout=30))
+    if path == "/api/sigint/units":
+        return unit_lookup(case, body)
     visible = [item for item in case["messages"] if item["groupKey"] in case["groups"]]
     if path == "/api/user":
         return {"id": "019fc7f7-9770-7f83-9c1a-211af29b02e6", "name": "Evaluation", "roles": ["ApiAgent", "Rer"]}
@@ -85,7 +117,7 @@ def response(case, path, body, settings):
     tuples = [[item["id"], {
         "text": item["text"], "message_uid": item["uid"], "timestamp": item["timestamp"],
         "group_master_key": item["groupKey"], "callsigns": item["callsigns"],
-        "freq": item.get("frequency"),
+        "freq": item.get("frequency"), "unit": item.get("unit"),
     }] for item in selected]
     groups = [{"master_key": key, "name": key} for key in case["groups"]]
     if path.endswith("get-inbox"):

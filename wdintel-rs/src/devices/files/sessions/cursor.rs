@@ -1,4 +1,4 @@
-use crate::{config, error::AppError, h, types::ShortContext};
+use crate::{devices::config, error::AppError, h, types::ShortContext};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -9,7 +9,7 @@ struct Cursor<T> {
     boundary: T,
 }
 
-pub(super) fn encode<T: Serialize>(
+pub(in crate::devices::files) fn encode<T: Serialize>(
     scope: &str,
     boundary: T,
 ) -> anyhow::Result<String> {
@@ -23,7 +23,7 @@ pub(super) fn encode<T: Serialize>(
     ))
 }
 
-pub(super) fn decode<T: DeserializeOwned>(
+pub(in crate::devices::files) fn decode<T: DeserializeOwned>(
     value: &str,
     scope: &str,
 ) -> Result<T, AppError> {

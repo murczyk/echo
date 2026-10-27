@@ -1,34 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type {
-  SavedFilterDuty,
-  SignalGroupEntry,
-  SignalProfileEntry,
-  Tag,
-} from '../../../../Bindings';
+import type { SavedFilterDuty, SignalProfileEntry, Tag } from '../../../../Bindings';
 import {
-  getGroupInfosBatch,
   getLatestFrequencies,
   getLatestSenders,
   getPostsList,
   getTagsForDisplay,
-  getUserSigintGroups,
   savedFiltersList,
 } from '../../services/api/inbox';
 import { fetchServerInfo } from '../../services/api/server-info';
 import { fetchAnalysisLocations } from '../../services/api/analysis';
+import { useSigintGroupCatalog } from '../../hooks/use-sigint-group-catalog';
 import { buildDutyLocationsStatsReq, sortDutyLocations } from './duty-location-filter';
 
-export type GroupCatalogError =
-  { kind: 'catalog'; message: string } | { kind: 'details'; message: string };
+export type { GroupCatalogError } from '../../hooks/use-sigint-group-catalog';
 
 export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
   const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
   const [freqs, setFreqs] = useState<string[]>([]);
   const [freqsReady, setFreqsReady] = useState(false);
   const [postsList, setPostsList] = useState<string[]>([]);
-  const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
-  const [groupsList, setGroupsList] = useState<string[]>([]);
+  const groupCatalog = useSigintGroupCatalog();
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
   const [tagsOrder, setTagsOrder] = useState<number[]>([]);
   const [savedFilters, setSavedFilters] = useState<SavedFilterDuty[]>([]);
@@ -37,19 +29,11 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
   >({});
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
-  const [groupCatalogLoading, setGroupCatalogLoading] = useState(false);
-  const [groupCatalogError, setGroupCatalogError] = useState<GroupCatalogError | null>(null);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
   const [locationsList, setLocationsList] = useState<string[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const mountedRef = useRef(true);
-  const groupRequestGenerationRef = useRef(0);
   const locationsRequestGenerationRef = useRef(0);
-  const groupsListRef = useRef<string[]>([]);
-
-  useEffect(() => {
-    groupsListRef.current = groupsList;
-  }, [groupsList]);
 
   useEffect(() => {
     return () => {
@@ -110,48 +94,6 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     }
   }, [radioFeaturesAllowed]);
 
-  const reloadGroupCatalog = useCallback(() => {
-    const generation = ++groupRequestGenerationRef.current;
-    setGroupCatalogLoading(true);
-    setGroupCatalogError(null);
-    const sinceDateInclusiveMs = Date.now() - 2 * 24 * 60 * 60 * 1000;
-    getUserSigintGroups(sinceDateInclusiveMs)
-      .then(async (groupKeys) => {
-        if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
-        const normalizedKeys = groupKeys.filter((key) => key.trim() !== '');
-        setGroupsList((previous) => [...new Set([...previous, ...normalizedKeys])]);
-        if (normalizedKeys.length === 0) return;
-        try {
-          const infos = await getGroupInfosBatch(normalizedKeys);
-          if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
-          setGroupInfos((previous) => ({
-            ...previous,
-            ...Object.fromEntries(infos.map((info) => [info.masterKey, info])),
-          }));
-        } catch {
-          if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
-          setGroupCatalogError({
-            kind: 'details',
-            message: 'Не вдалося завантажити назви деяких груп.',
-          });
-        }
-      })
-      .catch(() => {
-        if (!mountedRef.current || generation !== groupRequestGenerationRef.current) return;
-        setGroupCatalogError({
-          kind: 'catalog',
-          message:
-            groupsListRef.current.length > 0
-              ? 'Не вдалося завантажити повний список груп. Показано раніше доступні групи.'
-              : 'Не вдалося завантажити список груп.',
-        });
-      })
-      .finally(() => {
-        if (mountedRef.current && generation === groupRequestGenerationRef.current)
-          setGroupCatalogLoading(false);
-      });
-  }, []);
-
   /** Rejects only for the latest request while mounted; stale results resolve silently. */
   const reloadLocations = useCallback(async () => {
     const generation = ++locationsRequestGenerationRef.current;
@@ -187,22 +129,13 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     loadFilterOptions();
   }, [loadFilterOptions]);
 
-  useEffect(() => {
-    reloadGroupCatalog();
-    return () => {
-      groupRequestGenerationRef.current += 1;
-    };
-  }, [reloadGroupCatalog]);
-
   return {
     profiles,
     setProfiles,
     freqs,
     freqsReady,
     postsList,
-    groupInfos,
-    setGroupInfos,
-    groupsList,
+    ...groupCatalog,
     tagsMap,
     tagsOrder,
     savedFilters,
@@ -214,9 +147,6 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     pruneSavedFilterUiState,
     reloadFreqsLoading,
     reloadLatestFrequencies,
-    groupCatalogLoading,
-    groupCatalogError,
-    reloadGroupCatalog,
     locationsList,
     locationsLoading,
     reloadLocations,

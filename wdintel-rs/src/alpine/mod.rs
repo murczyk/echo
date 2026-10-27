@@ -313,7 +313,7 @@ async fn convert_file_with_deadline(
     );
     tokio::time::timeout(
         Duration::from_secs(timeout_seconds),
-        convert_file_inner(client, converter_url, upload, poll_interval),
+        convert_file_inner(client, converter_url, upload, poll_interval, false),
     )
     .await
     .c("Alpine conversion exceeded its overall deadline")
@@ -326,6 +326,7 @@ async fn convert_file_inner(
     converter_url: &str,
     upload: &UploadData,
     poll_interval: Duration,
+    bounded_device_result: bool,
 ) -> anyhow::Result<ConversionResult> {
     let mut part = Part::bytes(upload.file_bytes.clone());
     if let Some(fname) = upload.file_name.clone() {
@@ -371,10 +372,18 @@ async fn convert_file_inner(
     wait_for_completion(client, &receipt, host, poll_interval)
         .await
         .c(h!())?;
-    let mut result =
+    let mut result = if bounded_device_result {
+        ConversionResult {
+            body: download_device_kmz(client, &receipt, host).await.c(h!())?,
+            content_type: Some(crate::config::KMZ_CONTENT_TYPE.to_owned()),
+            name: None,
+            receipt: String::new(),
+        }
+    } else {
         download_file(client, &receipt, host, &upload.output_format)
             .await
-            .c(h!())?;
+            .c(h!())?
+    };
     result.receipt = receipt.clone();
     info!("✅ Conversion successful, receipt: {receipt}");
     Ok(result)
@@ -489,7 +498,7 @@ async fn check_completion_status(
         return Ok(ConversionStatus::Pending);
     }
     if !rsp.is_ok.unwrap_or_default() {
-        anyhow::bail!("failed to convert to KMZ");
+        return Err(DeviceConversionFailure("source_invalid").into());
     }
     Ok(ConversionStatus::Completed)
 }
@@ -626,4 +635,206 @@ mod upload_regression_tests {
         assert_eq!(data.output_format, "kml");
         assert!(data.hide_titles);
     }
+}
+
+async fn download_device_kmz(
+    client: &reqwest::Client,
+    receipt: &str,
+    host: &str,
+) -> anyhow::Result<Bytes> {
+    download_device_kmz_limited(
+        client,
+        receipt,
+        host,
+        crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_RESULT_MAX_BYTES,
+    )
+    .await
+    .c(h!())
+}
+
+async fn download_device_kmz_limited(
+    client: &reqwest::Client,
+    receipt: &str,
+    host: &str,
+    max_bytes: u64,
+) -> anyhow::Result<Bytes> {
+    let mut response = client
+        .get(format!("{host}/api/download-task/{receipt}"))
+        .timeout(Duration::from_secs(
+            crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_STORAGE_SECONDS,
+        ))
+        .send()
+        .await
+        .c(h!())?
+        .error_for_status()
+        .c(h!())?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.c(h!())? {
+        if bytes.len().saturating_add(chunk.len()) as u64 > max_bytes {
+            return Err(DeviceConversionFailure("result_too_large").into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    validate_device_kmz(&bytes).c(h!())?;
+    Ok(Bytes::from(bytes))
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct DeviceConversionFailure(pub(crate) &'static str);
+
+pub(crate) async fn convert_device_bytes_to_kmz(
+    env: &Env,
+    file_bytes: Vec<u8>,
+    file_name: String,
+) -> anyhow::Result<Bytes> {
+    let host = env.config.alpine_converter_url.as_deref().c(h!())?;
+    let upload = UploadData {
+        hide_titles: false,
+        file_bytes,
+        field_name: None,
+        file_name: Some(file_name),
+        content_type: None,
+        output_format: "kmz".to_owned(),
+    };
+    let result = tokio::time::timeout(
+        Duration::from_secs(
+            crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_CONVERSION_SECONDS,
+        ),
+        convert_file_inner(
+            &env.rq,
+            host,
+            &upload,
+            Duration::from_secs(
+                crate::config::ALPINE_CONVERSION_POLL_INTERVAL_SECONDS,
+            ),
+            true,
+        ),
+    )
+    .await
+    .map_err(|_| DeviceConversionFailure("conversion_timeout"))
+    .c(h!())?
+    .c(h!())?;
+    Ok(result.body)
+}
+
+fn validate_device_kml_attributes(
+    event: &quick_xml::events::BytesStart<'_>,
+    decoder: quick_xml::encoding::Decoder,
+) -> anyhow::Result<()> {
+    for attribute in event.attributes().with_checks(true) {
+        let attribute = attribute.c(h!())?;
+        anyhow::ensure!(
+            !attribute.value.contains(&b'<'),
+            "unescaped character in KML attribute"
+        );
+        attribute.decode_and_unescape_value(decoder).c(h!())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_device_kmz(bytes: &[u8]) -> anyhow::Result<()> {
+    use std::io::Read;
+    let validate = || -> anyhow::Result<()> {
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(bytes)).c(h!())?;
+        anyhow::ensure!(
+            archive.len()
+                <= crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_KMZ_MAX_ENTRIES
+                && !archive.is_empty(),
+            "invalid KMZ members"
+        );
+        let mut expanded = 0_u64;
+        let mut kml_found = false;
+        for index in 0..archive.len() {
+            let mut member = archive.by_index(index).c(h!())?;
+            expanded = expanded.checked_add(member.size()).c(h!())?;
+            anyhow::ensure!(expanded <= crate::devices::config::DEVICE_FILE_PREVIEW_GEODATA_KMZ_MAX_EXPANDED_BYTES, "KMZ expansion exceeds limit");
+            let is_kml = member.name().to_ascii_lowercase().ends_with(".kml");
+            let expected_size = member.size();
+            let mut data = Vec::new();
+            member
+                .by_ref()
+                .take(expected_size + 1)
+                .read_to_end(&mut data)
+                .c(h!())?;
+            anyhow::ensure!(
+                data.len() as u64 == expected_size,
+                "invalid KMZ member size"
+            );
+            if is_kml {
+                let mut reader =
+                    quick_xml::Reader::from_reader(data.as_slice());
+                let mut depth = 0_u64;
+                let mut root = false;
+                loop {
+                    match reader.read_event().c(h!())? {
+                        quick_xml::events::Event::Start(event) => {
+                            validate_device_kml_attributes(
+                                &event,
+                                reader.decoder(),
+                            )
+                            .c(h!())?;
+                            if depth == 0 {
+                                anyhow::ensure!(
+                                    !root
+                                        && event.local_name().as_ref()
+                                            == b"kml",
+                                    "invalid KML root"
+                                );
+                                root = true;
+                            }
+                            depth += 1;
+                        }
+                        quick_xml::events::Event::Empty(event) => {
+                            validate_device_kml_attributes(
+                                &event,
+                                reader.decoder(),
+                            )
+                            .c(h!())?;
+                            if depth == 0 {
+                                anyhow::ensure!(
+                                    !root
+                                        && event.local_name().as_ref()
+                                            == b"kml",
+                                    "invalid KML root"
+                                );
+                                root = true;
+                            }
+                        }
+                        quick_xml::events::Event::End(_) => {
+                            depth = depth.checked_sub(1).c(h!())?;
+                        }
+                        quick_xml::events::Event::DocType(_) => {
+                            anyhow::bail!("KML document types are unsupported")
+                        }
+                        quick_xml::events::Event::Text(event) if depth == 0 => {
+                            anyhow::ensure!(
+                                event.into_inner().iter().all(|byte| matches!(
+                                    byte,
+                                    b' ' | b'\t' | b'\r' | b'\n'
+                                )),
+                                "text outside KML root"
+                            );
+                        }
+                        quick_xml::events::Event::CData(_)
+                        | quick_xml::events::Event::GeneralRef(_)
+                            if depth == 0 =>
+                        {
+                            anyhow::bail!("data outside KML root")
+                        }
+                        quick_xml::events::Event::Eof => break,
+                        _ => {}
+                    }
+                }
+                anyhow::ensure!(root && depth == 0, "incomplete KML");
+                kml_found = true;
+            }
+        }
+        anyhow::ensure!(kml_found, "KMZ has no KML");
+        Ok(())
+    };
+    validate()
+        .map_err(|_| DeviceConversionFailure("result_invalid"))
+        .c(h!())
 }

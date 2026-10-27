@@ -44,6 +44,9 @@ pub async fn oneoff_import_datasource(
         let db = crate::new_pg_pool_from_config(&config)
             .await
             .context(h!())?;
+        validate_external_import(&db, &data.datasource)
+            .await
+            .c(h!())?;
         let settlements = Arc::new(RwLock::new(
             crate::location::load_settlements_data_config(
                 config.settlement_paths().context(h!())?,
@@ -231,6 +234,9 @@ async fn import_data(
     redis: ConnectionManager,
     rq: Client,
 ) -> anyhow::Result<()> {
+    validate_external_import(&db, &imported_data)
+        .await
+        .c(h!())?;
     let datasource_id_mapping =
         bl::upsert_datasource(&db, imported_data.datasource)
             .await
@@ -276,4 +282,143 @@ async fn import_data(
     .await
     .context(h!())?;
     Ok(())
+}
+
+async fn validate_external_import<C: ConnectionTrait>(
+    db: &C,
+    data: &DatasourceDetails,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        data.datasource.kind != crate::config::DATASOURCE_ECHO_NATIVE_KIND,
+        "Імпорт службового джерела Echo не підтримується"
+    );
+    let mut keys = std::collections::BTreeSet::new();
+    keys.extend(data.datasource.group_master_key.iter().cloned());
+    keys.extend(
+        data.signal_groups
+            .iter()
+            .map(|group| group.master_key.clone()),
+    );
+    keys.extend(data.whatsapp_groups.iter().map(|group| group.jid.clone()));
+    keys.extend(
+        data.datasource_groups
+            .iter()
+            .map(|group| group.group_master_key.clone()),
+    );
+    keys.extend(
+        data.messages
+            .iter()
+            .flat_map(|message| &message.message_groups)
+            .filter_map(|group| group.group_master_key.clone()),
+    );
+    crate::datasource::native::require_external_group_keys(
+        db,
+        &keys.into_iter().collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_datasource, mk_datasource_group, mk_sigint_inbox_item,
+        mk_signal_message, mk_signal_message_group,
+    };
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn native_import_rejection_precedes_all_import_writes() {
+        let env = cleanup().await.unwrap();
+        let native = crate::datasource::native::load(&env.dbx).await.unwrap();
+        let external =
+            mk_datasource(&env.dbx, Default::default()).await.unwrap();
+        let mapping = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                datasource_id: Set(external.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(mapping.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message_group = mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                datasource_group_id: Set(Some(mapping.id)),
+                group_master_key: Set(Some(mapping.group_master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inbox = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut external = external;
+        external.kind = "external-import-attempt".into();
+        let empty_import = DatasourceDetails {
+            datasource: external,
+            profiles: vec![],
+            signal_groups: vec![],
+            whatsapp_groups: vec![],
+            datasource_groups: vec![],
+            messages: vec![],
+        };
+        let native_key = format!(
+            "{}{}",
+            crate::config::DATASOURCE_ECHO_NATIVE_GROUP_PREFIX,
+            uuid::Uuid::new_v4()
+        );
+        let mut source_import = empty_import.clone();
+        source_import.datasource = native;
+        let mut mapping_import = empty_import.clone();
+        let mut mapping = mapping;
+        mapping.group_master_key = native_key.clone();
+        mapping_import.datasource_groups.push(mapping);
+        let mut message_import = empty_import;
+        let mut message_group = message_group;
+        message_group.group_master_key = Some(native_key);
+        message_import.messages.push(Message {
+            message,
+            inbox_item: inbox,
+            message_groups: vec![message_group],
+        });
+        let before = datasource::Entity::find().count(&env.dbx).await.unwrap();
+        for data in [source_import, mapping_import, message_import] {
+            assert!(import_data(
+                data,
+                env.dbx.clone(),
+                env.settlements.clone(),
+                env.config.clone(),
+                env.redis.clone(),
+                env.rq.clone()
+            )
+            .await
+            .is_err());
+            assert_eq!(
+                datasource::Entity::find().count(&env.dbx).await.unwrap(),
+                before
+            );
+        }
+    }
 }

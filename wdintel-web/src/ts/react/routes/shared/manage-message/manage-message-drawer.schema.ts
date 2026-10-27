@@ -1,6 +1,10 @@
 import * as z from 'zod';
 import dayjs from 'dayjs';
 import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
+import {
+  isMessageUnitSelectionValid,
+  MESSAGE_UNIT_SELECTION_ERROR,
+} from './message-unit-selection';
 
 export {
   attachmentIcon,
@@ -101,6 +105,16 @@ export function makeMessageSchema(
       comment: z.string().optional(),
       post: z.string().optional(),
       unit: z.string().optional(),
+      unitSelection: z
+        .object({ name: z.string(), id: z.number().optional(), create: z.boolean().optional() })
+        .optional(),
+      unitNetworkSelection: z
+        .object({
+          networkId: z.number(),
+          unitIds: z.array(z.number()),
+          units: z.array(z.object({ id: z.number(), name: z.string() })),
+        })
+        .optional(),
       locations: z.array(z.string()).optional(),
       network_signal_name: z.string().optional(),
       network_name: z.string().optional(),
@@ -113,6 +127,16 @@ export function makeMessageSchema(
       attachment_file_names: z.record(z.string()).optional(),
     })
     .superRefine((data, ctx) => {
+      if (
+        !isEditMode &&
+        !isMessageUnitSelectionValid(data.unit, data.unitSelection, data.unitNetworkSelection)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['unit'],
+          message: MESSAGE_UNIT_SELECTION_ERROR,
+        });
+      }
       if (data.coords?.trim() && !parseCoordLine(data.coords)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

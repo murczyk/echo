@@ -11,30 +11,44 @@ pub struct Model {
     #[sea_orm(
         primary_key,
         auto_increment = false,
-        unique_key = "file_content_current_pointer_key"
+        unique_key = "file_content_archive_source_key"
     )]
     pub file_id: Uuid,
     #[sea_orm(
         primary_key,
         auto_increment = false,
-        unique_key = "file_content_current_pointer_key"
+        unique_key = "file_content_archive_source_key"
     )]
     pub revision: i64,
-    pub upload_id: Uuid,
+    pub upload_id: Option<Uuid>,
     #[sea_orm(
         column_type = "Text",
-        unique_key = "file_content_current_pointer_key"
+        unique_key = "file_content_archive_source_key"
     )]
     pub object_key: String,
+    #[sea_orm(unique_key = "file_content_archive_source_key")]
     pub source_size_bytes: i64,
-    #[sea_orm(column_type = "VarBinary(StringLen::None)")]
+    #[sea_orm(
+        column_type = "VarBinary(StringLen::None)",
+        unique_key = "file_content_archive_source_key"
+    )]
     pub source_sha256: Vec<u8>,
+    #[sea_orm(unique_key = "file_content_archive_source_key")]
     pub is_encrypted: bool,
     pub created_at: DateTimeWithTimeZone,
+    pub origin_archive_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::file_archive::Entity",
+        from = "Column::OriginArchiveId",
+        to = "super::file_archive::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    FileArchive,
     #[sea_orm(
         belongs_to = "super::file_content_upload::Entity",
         from = "(Column::UploadId, Column::FileId, Column::ObjectKey, Column::SourceSizeBytes, Column::SourceSha256)",
@@ -47,6 +61,8 @@ pub enum Relation {
     FileDocument,
     #[sea_orm(has_many = "super::file_entry::Entity")]
     FileEntry,
+    #[sea_orm(has_many = "super::file_preview::Entity")]
+    FilePreview,
     #[sea_orm(
         belongs_to = "super::file_revision::Entity",
         from = "(Column::FileId, Column::Revision)",
@@ -55,6 +71,12 @@ pub enum Relation {
         on_delete = "Restrict"
     )]
     FileRevision,
+}
+
+impl Related<super::file_archive::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileArchive.def()
+    }
 }
 
 impl Related<super::file_content_upload::Entity> for Entity {
@@ -72,6 +94,12 @@ impl Related<super::file_document::Entity> for Entity {
 impl Related<super::file_entry::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::FileEntry.def()
+    }
+}
+
+impl Related<super::file_preview::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FilePreview.def()
     }
 }
 

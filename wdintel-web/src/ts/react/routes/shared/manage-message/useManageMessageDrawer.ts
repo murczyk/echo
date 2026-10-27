@@ -14,7 +14,6 @@ import {
 import {
   searchDeviceNames,
   searchPostNames,
-  searchUnitNames,
   searchNetworkNames,
   searchSignalNames,
   searchCallsignNames,
@@ -34,6 +33,13 @@ import type {
 } from '../../../../../Bindings';
 import { mapDirectSubmitCopyToForm, mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
+import { useMessageUnitOptions } from './useMessageUnitOptions';
+import { useMessageUnitSelection } from './useMessageUnitSelection';
+import { useMessageNetworkUnits } from './useMessageNetworkUnits';
+import {
+  compatibleMessageUnitSelection,
+  isMessageUnitSelectionValid,
+} from './message-unit-selection';
 import { isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 import {
@@ -69,7 +75,10 @@ export type ManageMessageIntentChange = {
 };
 
 export type UseManageMessageDrawerProps = {
+  engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
   open: boolean;
+  hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
@@ -93,10 +102,12 @@ export type UseManageMessageDrawerProps = {
   interactionActive?: boolean;
   keepOpenAfterCreate?: boolean;
   intentKey?: string;
+  initialGroupMasterKey?: string | null;
 };
 
 export function useManageMessageDrawer({
   open,
+  hideNetworks = false,
   cyberEchoEnabled,
   currentUser,
   onClose,
@@ -104,6 +115,8 @@ export function useManageMessageDrawer({
   onEditSuccess,
   editTarget = null,
   reportSource = null,
+  engagedMessageId,
+  replySourceUnavailable,
   editAsReport = false,
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
@@ -111,9 +124,11 @@ export function useManageMessageDrawer({
   interactionActive = true,
   keepOpenAfterCreate = false,
   intentKey,
+  initialGroupMasterKey = null,
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
+  const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
   const reportParents = isPresent(reportSource)
@@ -149,7 +164,9 @@ export function useManageMessageDrawer({
   const reportCopyLoaded =
     isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
-  const { recentValues, addValues } = useRecentValues();
+  const { recentValues, addValues, replaceUnitValues } = useRecentValues();
+  const recentValuesRef = useRef(recentValues);
+  recentValuesRef.current = recentValues;
 
   const saving = submitting || (isEditMode && Boolean(editSaveInFlight));
   const formLoading = copyLoading;
@@ -167,15 +184,17 @@ export function useManageMessageDrawer({
   const [postLoading, setPostLoading] = useState(false);
   const [postInput, setPostInput] = useState('');
 
-  const [unitOptions, setUnitOptions] = useState<string[]>([]);
-  const [unitLoading, setUnitLoading] = useState(false);
-  const [unitInput, setUnitInput] = useState('');
-
   const [networkNameOptions, setNetworkNameOptions] = useState<NetworkSearchResult[]>([]);
   const [networkNameLoading, setNetworkNameLoading] = useState(false);
   const [networkNameInput, setNetworkNameInput] = useState('');
   const [networkUnitNamesById, setNetworkUnitNamesById] = useState<Record<number, string>>({});
-  const [selectedNetwork, setSelectedNetwork] = useState<NetworkSearchResult | null>(null);
+  const [selectedNetwork, setSelectedNetworkState] = useState<NetworkSearchResult | null>(null);
+  const networkSelectionRevisionRef = useRef(0);
+  const selectedNetworkRef = useRef(selectedNetwork);
+  const updateSelectedNetwork = useCallback((network: NetworkSearchResult | null) => {
+    selectedNetworkRef.current = network;
+    setSelectedNetworkState(network);
+  }, []);
   const [unitLocked, setUnitLocked] = useState(false);
 
   const signalNameOptions = ['DMR'];
@@ -264,28 +283,7 @@ export function useManageMessageDrawer({
   ]);
 
   useEffect(() => {
-    if (!formReady) return;
-    let active = true;
-
-    setUnitLoading(true);
-    searchUnitNames(unitInput)
-      .then((results) => {
-        if (active) {
-          setUnitOptions(results.map((u) => u.name));
-        }
-      })
-      .catch((error) => handleReferenceDataError('Failed to load unit names', error))
-      .finally(() => {
-        if (active) setUnitLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [formReady, handleReferenceDataError, referenceDataRetryAttempt, unitInput]);
-
-  useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || hideNetworks) return;
     let active = true;
 
     setNetworkNameLoading(true);
@@ -303,10 +301,16 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [formReady, handleReferenceDataError, networkNameInput, referenceDataRetryAttempt]);
+  }, [
+    formReady,
+    hideNetworks,
+    handleReferenceDataError,
+    networkNameInput,
+    referenceDataRetryAttempt,
+  ]);
 
   useEffect(() => {
-    if (!formReady) return;
+    if (!formReady || hideNetworks) return;
     const unitIds = Array.from(
       new Set(networkNameOptions.flatMap((network) => network.unit_ids ?? [])),
     ).filter((unitId) => networkUnitNamesById[unitId] == null);
@@ -316,10 +320,11 @@ export function useManageMessageDrawer({
     getUnitsByIds(unitIds)
       .then((units) => {
         if (!active) return;
-        setNetworkUnitNamesById((current) => ({
-          ...current,
-          ...Object.fromEntries(units.map((unit) => [unit.id, unit.name])),
-        }));
+        setNetworkUnitNamesById((current) =>
+          units.some((unit) => current[unit.id] !== unit.name)
+            ? { ...current, ...Object.fromEntries(units.map((unit) => [unit.id, unit.name])) }
+            : current,
+        );
       })
       .catch((error) => handleReferenceDataError('Failed to load network units', error));
 
@@ -328,6 +333,7 @@ export function useManageMessageDrawer({
     };
   }, [
     formReady,
+    hideNetworks,
     handleReferenceDataError,
     networkNameOptions,
     networkUnitNamesById,
@@ -383,8 +389,9 @@ export function useManageMessageDrawer({
   ]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
-    [isEditMode, isReportMode, radioFeaturesAllowed],
+    () =>
+      zodResolver(makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed)),
+    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed],
   );
 
   const methods = useForm<MessageFormData>({
@@ -394,18 +401,90 @@ export function useManageMessageDrawer({
     defaultValues: EMPTY_FORM_VALUES,
   });
 
-  const { control, formState, getValues, setValue, reset } = methods;
+  const { control, formState, getValues, setValue, reset, resetField, watch } = methods;
+  const explicitUnitSelectionRef = useRef(false);
+  useEffect(() => {
+    const subscription = watch((_values, { name, type }) => {
+      if (name === 'unit' && type === 'change') explicitUnitSelectionRef.current = true;
+    });
+    return () => subscription.unsubscribe();
+  }, [watch]);
   const formValues = useWatch({ control });
+  const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
+    useMessageUnitOptions({
+      active: formReady,
+      search: formValues.unit ?? '',
+      recentNames: recentValues.unit,
+      replaceRecentNames: replaceUnitValues,
+      onError: handleReferenceDataError,
+      retryAttempt: referenceDataRetryAttempt,
+    });
+  useMessageUnitSelection({
+    active: formReady,
+    isEditMode,
+    methods,
+    values: formValues,
+    results: unitSearchResults,
+  });
+  const setSelectedNetwork = useMessageNetworkUnits({
+    active: formReady,
+    isEditMode,
+    methods,
+    selectedNetwork,
+    networkSelectionRevisionRef,
+    setSelectedNetwork: updateSelectedNetwork,
+    setUnitLocked,
+    setNetworkUnitNamesById,
+    onError: handleReferenceDataError,
+    retryAttempt: referenceDataRetryAttempt,
+  });
+  const defaultRecentUnitRef = useRef(defaultRecentUnit);
+  const unitInteractedRef = useRef(false);
+  const onUnitFocus = useCallback(() => {
+    unitInteractedRef.current = true;
+  }, []);
+  defaultRecentUnitRef.current = defaultRecentUnit;
+  const dirtyFields = formState.dirtyFields;
+  const defaultValues = formState.defaultValues;
+  useEffect(() => {
+    if (!formReady || isEditMode || isReportMode || getValues('unit')) return;
+    if (unitInteractedRef.current || methods.getFieldState('unit').isDirty) return;
+    const unit = defaultRecentUnit;
+    if (unit) {
+      const originalDirtyDefaults = Object.fromEntries(
+        Object.keys(dirtyFields).map((name) => [name, defaultValues?.[name]]),
+      );
+      const unitValues = { unit: unit.name, unitSelection: { id: unit.id, name: unit.name } };
+      const currentValues = { ...getValues(), ...unitValues };
+      // Update defaults before restoring values without emitting manual field changes.
+      reset(
+        { ...currentValues, ...originalDirtyDefaults, ...unitValues },
+        { keepTouched: true, keepErrors: true },
+      );
+      reset(currentValues, { keepDefaultValues: true, keepTouched: true, keepErrors: true });
+    }
+  }, [
+    formReady,
+    getValues,
+    isEditMode,
+    isReportMode,
+    methods,
+    defaultRecentUnit,
+    dirtyFields,
+    defaultValues,
+    reset,
+  ]);
   const getInitialCreateFormValues = useCallback(
     (): MessageFormData => ({
       ...EMPTY_FORM_VALUES,
       date: dayjs(),
       time: null,
-      signalGroupMasterKey: recentValues.group[0] ?? '',
-      deviceName: cyberEchoEnabled ? (recentValues.deviceName[0] ?? '') : '',
-      unit: recentValues.unit[0] ?? '',
+      signalGroupMasterKey: initialGroupMasterKey ? '' : (recentValuesRef.current.group[0] ?? ''),
+      deviceName: cyberEchoEnabled ? (recentValuesRef.current.deviceName[0] ?? '') : '',
+      unit: defaultRecentUnitRef.current?.name ?? '',
+      unitSelection: defaultRecentUnitRef.current,
     }),
-    [cyberEchoEnabled, recentValues],
+    [cyberEchoEnabled, initialGroupMasterKey],
   );
 
   const existingMedia: MessageMediaInfo[] = useMemo(() => {
@@ -417,6 +496,7 @@ export function useManageMessageDrawer({
         file_name?: string | null;
         content_type?: string | null;
         size_bytes?: number | null;
+        coordinate_status?: MessageMediaInfo['coordinateStatus'];
       };
       const id = String(m.id ?? (raw as any).id ?? '');
       const fileName = m.fileName ?? raw.file_name ?? null;
@@ -433,6 +513,7 @@ export function useManageMessageDrawer({
         transcription: m.transcription ?? (raw as any).transcription ?? null,
         ocr: m.ocr ?? (raw as any).ocr ?? null,
         summary: m.summary ?? (raw as any).summary ?? null,
+        coordinateStatus: m.coordinateStatus ?? raw.coordinate_status ?? null,
         kmzConversionStatus: m.kmzConversionStatus ?? (raw as any).kmz_conversion_status ?? null,
       };
     });
@@ -571,7 +652,6 @@ export function useManageMessageDrawer({
     });
     setDeviceNameInput('');
     setPostInput('');
-    setUnitInput('');
     setNetworkNameInput('');
     setCallsignInput('');
     setFreqInput('');
@@ -597,14 +677,14 @@ export function useManageMessageDrawer({
   });
   const handleAcceptParsedField = useCallback(
     (field: Parameters<typeof acceptParsedField>[0]) => {
-      if (field === 'network_name') {
+      if (field === 'network_name' || (field === 'unit' && getValues('unitNetworkSelection'))) {
         setSelectedNetwork(null);
-        setNetworkNameInput('');
         setUnitLocked(false);
       }
+      if (field === 'network_name') setNetworkNameInput('');
       acceptParsedField(field);
     },
-    [acceptParsedField],
+    [acceptParsedField, getValues, setSelectedNetwork],
   );
 
   const canSubmit = useMemo(() => {
@@ -617,8 +697,15 @@ export function useManageMessageDrawer({
       busy: busy || (isReportCreateMode && !reportCopyLoaded),
       parsing: parserBlocksSubmit,
       schemaValid: formState.isValid || reportDestinationMissing,
+      unitSelectionValid:
+        isEditMode ||
+        isMessageUnitSelectionValid(
+          formValues.unit,
+          formValues.unitSelection,
+          formValues.unitNetworkSelection,
+        ),
       isEditMode,
-      allowMissingGroup: isReportMode,
+      allowMissingGroup: isReportMode || isReplyMode,
       reportTextRequired: isReportMode,
       groupsLoading,
       selectedGroupKey,
@@ -648,6 +735,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportCreateMode,
     isReportMode,
+    isReplyMode,
     parseStatus,
     parsing,
     reportCopyLoaded,
@@ -671,6 +759,15 @@ export function useManageMessageDrawer({
           return !adminData?.deleted;
         });
         setSignalGroups(available);
+        if (!isEditMode && !isReportMode && initialGroupMasterKey) {
+          if (available.some((group) => group.masterKey === initialGroupMasterKey)) {
+            resetField('signalGroupMasterKey', { defaultValue: initialGroupMasterKey });
+          } else {
+            resetField('signalGroupMasterKey', { defaultValue: '' });
+            if (!isReplyMode) setReferenceDataError('Обрана група більше недоступна.');
+          }
+          return;
+        }
         // The MRU-seeded group is set synchronously on open, before this async list
         // arrives. If that remembered key is no longer available (account switch,
         // revoked access, deleted group), SystemSection renders it as an empty
@@ -680,7 +777,7 @@ export function useManageMessageDrawer({
         if (!isEditMode && !isReportMode && getValues('signalGroupMasterKey')) {
           const seededKey = getValues('signalGroupMasterKey');
           if (!available.some((g) => g.masterKey === seededKey)) {
-            setValue('signalGroupMasterKey', '', { shouldValidate: true });
+            resetField('signalGroupMasterKey', { defaultValue: '' });
           }
         }
       } catch (e) {
@@ -709,13 +806,24 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [formReady, handleReferenceDataError, referenceDataRetryAttempt]);
+  }, [
+    formReady,
+    handleReferenceDataError,
+    initialGroupMasterKey,
+    isReplyMode,
+    intentKey,
+    isEditMode,
+    isReportMode,
+    referenceDataRetryAttempt,
+    resetField,
+  ]);
 
   useEffect(() => {
     if (!formReady) return;
+    unitInteractedRef.current = false;
+    explicitUnitSelectionRef.current = false;
     setDeviceNameInput('');
     setPostInput('');
-    setUnitInput('');
     setNetworkNameInput('');
     setCallsignInput('');
     setFreqInput('');
@@ -770,9 +878,9 @@ export function useManageMessageDrawer({
     editAsReport,
     editTarget?.id,
     reportSource?.id,
-    recentValues,
     cyberEchoEnabled,
     getInitialCreateFormValues,
+    intentKey,
   ]);
 
   useEffect(() => {
@@ -799,8 +907,12 @@ export function useManageMessageDrawer({
         );
         const payload = payloads[0];
         if (isReportCreateMode && payload) {
+          const copiedValues = mapDirectSubmitCopyToForm(payload);
+          explicitUnitSelectionRef.current = Boolean(
+            compatibleMessageUnitSelection(copiedValues.unit, copiedValues.unitSelection),
+          );
           reset({
-            ...mapDirectSubmitCopyToForm(payload),
+            ...copiedValues,
             full_body: '',
             text: '',
             comment: '',
@@ -905,13 +1017,29 @@ export function useManageMessageDrawer({
   }, [formReady, isEditMode, editTarget?.id, tagsMap]);
 
   useEffect(() => {
-    if (!formReady || !isEditMode || !editTarget) return;
+    if (!formReady || hideNetworks) return;
+    const source = isEditMode
+      ? editTarget
+      : isReportCreateMode && reportCopyLoaded
+        ? reportSource
+        : null;
+    if (!source) return;
+    if (selectedNetworkRef.current) return;
+    if (!isEditMode && explicitUnitSelectionRef.current) return;
     let active = true;
+    const initialNetworkSelectionRevision = networkSelectionRevisionRef.current;
+    const initialNetworkName = getValues('network_name');
+    const initialUnitName = getValues('unit');
+    const canHydrate = () =>
+      active &&
+      networkSelectionRevisionRef.current === initialNetworkSelectionRevision &&
+      getValues('network_name') === initialNetworkName &&
+      getValues('unit') === initialUnitName &&
+      !getValues('unitNetworkSelection') &&
+      (isEditMode || !explicitUnitSelectionRef.current);
     const hydrateNetwork = async () => {
-      const linkedNetworkIds = editTarget.message.networkIds ?? [];
-      const freeformName = editTarget.message.networkName?.trim();
-      let networkName = freeformName;
-      let unitIds: number[] = [];
+      const linkedNetworkIds = source.message.networkIds ?? [];
+      const freeformName = source.message.networkName?.trim();
 
       if (linkedNetworkIds.length > 0) {
         const networks = await getNetworksByIds(linkedNetworkIds);
@@ -919,9 +1047,7 @@ export function useManageMessageDrawer({
           linkedNetworkIds
             .map((networkId) => networks.find(({ id }) => id === networkId))
             .find(isPresent) ?? networks[0];
-        if (!network || !active) return;
-        networkName = network.name;
-        unitIds = network.unitIds ?? [];
+        if (!network || !canHydrate()) return;
         setSelectedNetwork({
           id: network.id,
           name: network.name,
@@ -934,33 +1060,32 @@ export function useManageMessageDrawer({
         });
       } else if (freeformName) {
         const results = await searchNetworkNames(freeformName);
+        if (!canHydrate()) return;
         const match = results.find((network) => network.name === freeformName);
-        unitIds = match?.unit_ids ?? [];
         if (match) setSelectedNetwork(match);
-      }
-
-      if (!active || !networkName) return;
-      if (unitIds.length === 0) return;
-      const units = await getUnitsByIds(unitIds);
-      if (!active) return;
-      if (units.length > 0) {
-        setNetworkUnitNamesById((current) => ({
-          ...current,
-          ...Object.fromEntries(units.map((unit) => [unit.id, unit.name])),
-        }));
-        setValue('unit', units.map((unit) => unit.name).join(', '), {
-          shouldDirty: false,
-          shouldValidate: true,
-        });
-        setUnitLocked(true);
       }
     };
 
-    hydrateNetwork().catch(console.error);
+    hydrateNetwork().catch((error) => {
+      if (canHydrate()) handleReferenceDataError('Failed to load message network', error);
+    });
     return () => {
       active = false;
     };
-  }, [formReady, isEditMode, editTarget?.id]);
+  }, [
+    formReady,
+    hideNetworks,
+    isEditMode,
+    editTarget?.id,
+    isReportCreateMode,
+    reportCopyLoaded,
+    reportSource?.id,
+    getValues,
+    setSelectedNetwork,
+    setValue,
+    handleReferenceDataError,
+    referenceDataRetryAttempt,
+  ]);
 
   const finalizeDrawerClose = () => {
     blurActiveElement();
@@ -1007,15 +1132,22 @@ export function useManageMessageDrawer({
         signalGroupMasterKey: submittedValues.signalGroupMasterKey ?? '',
         deviceName: cyberEchoEnabled ? (submittedValues.deviceName ?? '') : '',
         unit: submittedValues.unit ?? '',
+        unitSelection: submittedValues.unitSelection,
+        unitNetworkSelection: submittedValues.unitNetworkSelection,
+        network_name: submittedValues.unitNetworkSelection ? submittedValues.network_name : '',
+        network_signal_name: submittedValues.unitNetworkSelection
+          ? submittedValues.network_signal_name
+          : '',
       });
       setDeviceNameInput('');
       setPostInput('');
-      setUnitInput('');
       setNetworkNameInput('');
       setCallsignInput('');
       setFreqInput('');
-      setSelectedNetwork(null);
-      setUnitLocked(false);
+      if (!submittedValues.unitNetworkSelection) {
+        setSelectedNetwork(null);
+        setUnitLocked(false);
+      }
       setShowAdvanced(false);
       setErrorMsg(null);
       setCreateSucceeded(true);
@@ -1082,6 +1214,9 @@ export function useManageMessageDrawer({
     isReportCreateMode,
     editTarget,
     reportSource,
+    engagedMessageId,
+    replySourceUnavailable,
+    replyGroupMasterKey: initialGroupMasterKey,
     existingMedia,
     onSubmitEdit,
     tagsLoaded,
@@ -1136,7 +1271,8 @@ export function useManageMessageDrawer({
     setPostInput,
     unitOptions,
     unitLoading,
-    setUnitInput,
+    unitAllowCreate,
+    onUnitFocus,
     networkNameOptions,
     networkNameLoading,
     setNetworkNameInput,

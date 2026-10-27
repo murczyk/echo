@@ -1,6 +1,7 @@
 use crate::types::*;
 
 use crate::entities::sea_orm_active_enums as db_enums;
+use crate::messenger::group::types::SignalGroupColor;
 use crate::organism::types::MyOrganism;
 use crate::sigint::aor::types::AreaOfResponsibility;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
@@ -69,6 +70,8 @@ pub struct ZoneDatasourceGroup {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub ai_transcript_analysis_enabled: bool,
+    pub fetch_new_messages: bool,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
     pub allowed_organism_ids: Vec<i64>,
@@ -77,6 +80,7 @@ pub struct ZoneDatasourceGroup {
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(
@@ -91,10 +95,13 @@ pub struct ZoneDatasourceGroupListRsp {
 )]
 pub struct ZoneDatasourceGroupUpdateReq {
     pub id: i64,
+    pub color_key: Option<SignalGroupColor>,
     pub is_secret: bool,
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub is_aviation_group: Option<bool>,
+    pub ai_transcript_analysis_enabled: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
     pub user_logins: Vec<String>,
     #[serde(default)]
     pub organism_ids: Vec<i64>,
@@ -110,6 +117,7 @@ pub struct ZoneDatasourceGroupUpdateReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct ZoneDatasourceGroupAddReq {
+    pub ai_transcript_analysis_enabled: Option<bool>,
     pub zone_id: i64,
     pub datasource_id: i64,
     pub is_secret: bool,

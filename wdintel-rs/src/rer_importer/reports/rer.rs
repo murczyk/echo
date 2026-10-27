@@ -741,9 +741,7 @@ fn non_empty_comment_exists() -> SimpleExpr {
     let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_COMMENT,
-        ))
+        .filter(crate::sigint::comments::rer_report_comment_filter())
         .join_as(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),
@@ -791,7 +789,7 @@ async fn load_non_empty_comments(
     blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
     let comments =
-        crate::sigint::comments::find_linked_message_comments(dbx, &[item_id])
+        crate::sigint::comments::find_rer_report_comments(dbx, &[item_id])
             .await
             .c(h!())?
             .into_iter()
@@ -846,9 +844,11 @@ fn message_body_without_headers(
     ) {
         return Ok(meow_format.body_noheader.body);
     }
-    Ok(crate::rer_importer::body_noheader::extract_text(&body)
-        .c(h!())?
-        .body)
+    Ok(
+        crate::sigint::parser::extract_text_without_top_comment(&body)
+            .c(h!())?
+            .body,
+    )
 }
 
 fn message_body_without_duplicate_comments(
@@ -1585,6 +1585,83 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_3758_rer_includes_neo_reports_until_sent_to_a_group() {
+        let env = cleanup().await.unwrap();
+        let source = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("source interception".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let report = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("unsent Neo annotation".to_string())),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(report.id),
+            source_message_id: Set(source.id),
+            relation_kind: Set(
+                crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            ),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for sent in [false, true] {
+            if sent {
+                mk_signal_message_group(
+                    &env.dbx,
+                    signal_message_group::ActiveModel {
+                        signal_message_id: Set(report.id),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            let candidate_ids = apply_candidate_item_filters(
+                signal_message::Entity::find()
+                    .filter(signal_message::Column::Id.eq(source.id)),
+                None,
+                None,
+                ReportPeriodEnd::Inclusive,
+                Some(InboxMessagesSortBy::IMSCreatedAt),
+                false,
+                true,
+            )
+            .unwrap()
+            .select_only()
+            .column(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+            let comments = load_non_empty_comments(&env.dbx, source.id, &[])
+                .await
+                .unwrap();
+            if sent {
+                assert!(candidate_ids.is_empty());
+                assert!(comments.is_empty());
+            } else {
+                assert_eq!(candidate_ids, vec![source.id]);
+                assert_eq!(comments, vec!["unsent Neo annotation"]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn issue_3598_rer_uses_comments_not_reports_sent_to_groups() {
         let env = cleanup().await.unwrap();
         let source_with_comment = mk_signal_message(
@@ -1635,7 +1712,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(comment.id),
             source_message_id: Set(source_with_comment.id),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -1646,7 +1723,7 @@ mod tests {
             intel_product::ActiveModel {
                 intel_message_id: Set(report.id),
                 source_message_id: Set(source_message_id),
-                relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+                relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT),
                 ..Default::default()
             }
             .insert(&env.dbx)
@@ -1758,6 +1835,7 @@ mod tests {
         name: &str,
     ) -> sigint_unit::Model {
         sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             other: String::new(),
             team_or_crew: String::new(),
@@ -1810,6 +1888,7 @@ mod tests {
             report_tags_only_this_unit: None,
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: None,
             babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
@@ -1834,6 +1913,7 @@ mod tests {
             report_tags_only_this_unit: None,
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: None,
             babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,
@@ -2448,6 +2528,26 @@ mod tests {
         assert_eq!(
             message_body_without_headers(&message).unwrap(),
             "Перехоплення"
+        );
+    }
+
+    #[test]
+    fn issue_3821_report_body_strips_unit_header_before_datetime() {
+        let dialogue =
+            "- До вечера одно перемещение ...\n- 51 пдп 3 пдб, прием.";
+        let message = signal_message(
+            3028130,
+            &format!("51 пдп 3 пдб\n20.10.2026, 09:49\n{dialogue}"),
+        );
+
+        assert_eq!(
+            message_body_without_duplicate_comments(
+                &message,
+                &["Планування переміщення ШТг.".to_string()],
+                &[],
+            )
+            .unwrap(),
+            dialogue
         );
     }
 

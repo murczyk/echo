@@ -209,6 +209,15 @@ intentionally excluded from analytics. Before applying
 `m20260818_130237_battle_line_and_inbox_settlement`, deploy and reconcile the
 updated exclusion file so these tables never enter the PeerDB mirror.
 
+`sigint_network_settlement` is PostgreSQL-only resolution and queue state.
+Before applying `m20261022_080838_sigint_network_settlement`, deploy the packaged
+analytics control bundle and exclusion file, then run
+`/opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes`. Standard Echo
+deployment does this before migrations. Afterward, run
+`/opt/echo-peerdb/bin/source-verify-deploy.sh` and verify the table is absent
+from raw/current/gateway. No backfill or resnapshot is required; see the
+[settlement deployment procedure](../../wdintel-rs/src/battle_line/README.md#deployment-and-recovery).
+
 Failed unit labels and their inbox-item links are PostgreSQL-only operational
 state and are intentionally excluded from analytics. Before applying
 `m20260827_154846_normalize_failed_unit_labels`, deploy and reconcile the
@@ -511,7 +520,15 @@ bin/table-status.sh
 
 Bootstrap creates the dedicated MinIO bucket and a 14-day safety lifecycle,
 enables WAL heartbeat and nullable-column preservation, keeps source JSON/JSONB
-string-backed in ClickHouse, and submits an all-selected-tables initial snapshot.
+string-backed in ClickHouse, and submits an initial snapshot excluding CDC-only
+tables. Once the mirror is running, register those tables before refreshing
+the gateway:
+
+```bash
+bin/reconcile-table-selection.sh --pause
+bin/reconcile-table-selection.sh --yes
+```
+
 The dedicated `echo_analytics.heartbeat` table is always selected and is exposed
 through the gateway as `public.echo_analytics__heartbeat`.
 Native ClickHouse JSON
@@ -556,7 +573,10 @@ transaction. It reads the source publication metadata and casts string-backed
 JSON/JSONB and `tsvector` columns back to their PostgreSQL types, and imports
 raw ClickHouse strings as `bytea` for source binary columns. A
 source/view table or column mismatch aborts the transaction and preserves the
-previous working gateway definitions.
+previous working gateway definitions. Column-mismatch errors include a `DETAIL`
+listing source-only and imported-only columns. Run `bin/reconcile-schema.sh --check`
+on the analytics host to locate the drift between the source publication, raw
+ClickHouse tables, current views, and gateway before choosing a scoped repair.
 
 The health timer compares the source publication, raw ClickHouse tables,
 current-state views, and gateway compatibility views after each successful
@@ -682,6 +702,15 @@ The analysis result, facet, and dedicated facet-count endpoints use this path:
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
+- `/api/rer/analysis/stats/messages/count` and `/api/rer/analysis/stats/units/matches/count`
+
+Split counters share the analytics retry circuit. During analytics incidents,
+PostgreSQL fallback runs one counter at a time per authenticated user and filter
+request, releasing global capacity after each query. Normal PostgreSQL reads
+remain independent. Unit-label resolution is shared for up to five
+seconds in a bounded cache; reconciliation changes become visible after that
+cache expires. No schema migration or mirror resync is required for these
+endpoints.
 
 The expensive replicated-data reads for the interception, sender, posts, REO,
 digest, RER, Sposob, active-network, network-frequency, 1.2.5, and 1.2.13
@@ -693,6 +722,12 @@ cache operations, PostGIS reports, and reports requiring a repeatable
 PostgreSQL snapshot remain on PostgreSQL. An analytical operation is retried
 from the beginning on PostgreSQL, so a failed attempt cannot mix partial
 analytical and PostgreSQL result sets.
+
+REO reports with “Лише підсумкова активність” aggregate one-week windows,
+independently of the configured full-report chunk size. Each analytics window
+has its own query timeout. If any window fails or times out, all partial totals
+are discarded and the complete summary restarts on PostgreSQL. The final
+DOCX/XLSX file combines activity across every window.
 
 Unit labels and explicit unit IDs retain their selected/denied, undefined,
 deleted-unit, and legacy saved-filter semantics. Unit and media filters use
@@ -712,6 +747,16 @@ prepared search parameters become constants that `pg_clickhouse` can safely
 translate. Serialized `tsvector` matching, String-backed JSON/JSONB body
 extraction, and Cyrillic `ILIKE` execute in ClickHouse; unsupported request
 shapes retain their existing PostgreSQL routing or whole-operation fallback.
+
+Attachment documents and chunks use CDC-only additions, declared in
+[env/tables-cdc-only.txt](env/tables-cdc-only.txt). Normal reconciliation uses
+PeerDB's `skipInitialSnapshotForTableAdditions` for those tables. Searches with
+possible unreplicated historical or recent attachment matches fall back to
+PostgreSQL. A source-only mutation marker also covers filename changes, media
+moves and deletions during replication lag.
+The explicit `oneoff-replicate-historical-attachments` command copies
+their history and verifies coverage; rollout and recovery are documented in
+[#3780 search performance](../../docs/performance/3780-search.md).
 
 `/api/rer-importer/get-inbox` merges analytics candidates with a source
 PostgreSQL tail covering `max(2 * freshness_max_age_ms, 5 minutes)`, including
@@ -967,8 +1012,10 @@ versioned file as
 `/etc/echo-peerdb/tables-exclude.txt`, pauses the existing mirror, reconciles
 the restricted source role and custom PostgreSQL publication, and asks PeerDB
 to edit its table mappings.
-Newly included tables receive their own initial snapshot; existing selected
-tables are not resnapshotted. Newly excluded tables stop receiving CDC, their
+Newly included tables receive their own initial snapshot, except tables listed
+in [env/tables-cdc-only.txt](env/tables-cdc-only.txt), which receive only CDC.
+Existing selected tables are not resnapshotted. Newly excluded tables stop
+receiving CDC, their
 raw and current ClickHouse objects are dropped, and the gateway compatibility
 views are rebuilt. Source PostgreSQL tables and their data are never dropped.
 After PeerDB confirms the change, excluded tables no longer needed by this
@@ -1017,6 +1064,10 @@ IDs before making changes; a partial activation therefore fails closed instead
 of mixing script versions. Legacy `/opt/.../bin` commands forward to the active
 release.
 
+Before changing the selected table set, the workflows first run manifest-authorized
+targeted repairs for already-published tables. This resolves schema drift from
+earlier migrations before the exclusion reconciliation checks the gateway;
+tables that are not yet published remain for post-migration reconciliation.
 The workflows then install the packaged exclusion file when its selected table
 set differs from `/etc/echo-peerdb/tables-exclude.txt`, run migrations once
 while workers are stopped, explicitly start the serialized analytics
@@ -1075,10 +1126,20 @@ and ClickHouse catalogs, reconciles schema drift, and verifies analytics once
 all raw tables are ready. Gateway views
 without drift are left in place; changed views are refreshed individually with
 short PostgreSQL lock timeouts. Transient PostgreSQL deadlocks retry only the
-failed verification step before the mirror is left paused. Retry an
-interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
+failed verification step before the mirror is left paused. Heartbeat-only lag
+retries within `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` (default 300), with
+each probe capped by the remaining deadline. Desired-state reconciliation is
+refreshed before each probe so it stays current while the repair lock is held.
+If catch-up exceeds that deadline, deployment fails but leaves the mirror
+running and retains repair state; schema, service, and other health failures
+still leave an interrupted repair paused. The heartbeat probe exits with status
+75 for this delay and accepts `--timeout SECONDS` to cap its normal probe budget.
+Retry an interrupted deployment with `/opt/echo-peerdb/current/bin/source-verify-deploy.sh`
 on the source host after activating the same corrected control bundle on both
-hosts. Completed raw snapshots are reused, and retry state is retained until
+hosts. If exclusion synchronization stops on schema drift from an already-applied
+migration, run `/opt/echo-peerdb/current/bin/source-resnapshot-table.sh --manifest --published-only`
+on the source host with the corrected control bundle, then retry deployment.
+Completed raw snapshots are reused, and retry state is retained until
 global verification succeeds. Monitor retained WAL while the mirror is paused;
 do not request a full mirror resync. Use `just analytics-resnapshot-table` only
 for a standalone table repair when other tables already match. Drops, renames,
@@ -1134,6 +1195,95 @@ networks with no cached activity from their newest network link.
   }
 }
 ```
+
+### Adding a column to a replicated table
+
+PostgreSQL logical decoding does not replicate DDL. PeerDB learns about a new
+column only from the next replicated row event of that table: the event carries
+the new column, PeerDB adds it as a `Nullable` column to the raw ClickHouse
+table, and the reconciler then refreshes the current-state view and the gateway.
+Two consequences follow:
+
+- **Rows already in ClickHouse read the new column as `NULL`.** This matches
+  PostgreSQL only when the column is nullable and has no default. With a
+  default (including `not null default ...`), PostgreSQL returns the default
+  for every historical row without writing them, while ClickHouse returns
+  `NULL`: a silent divergence that only a backfill touching every row, a
+  targeted resnapshot, or a mirror resync can fix.
+- **A table without row events never shows the column.** Deployment waits for
+  the column in raw ClickHouse, the current-state view and the gateway (up to
+  `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS`), then stops. Queries using the
+  column fall back to PostgreSQL until it appears.
+
+Pick the strategy per table:
+
+| Strategy | Use for | Deployment does | Checker requires |
+|---|---|---|---|
+| `cdc_additive` | Nullable column without default on a large, non-empty table whose rows can safely be touched | Waits for CDC to publish the column; an empty table takes the targeted-resnapshot fallback | `ADD COLUMN`-only DDL on the table; reviewed DML on the table in the migration (or a `backfill` file); catalog: every added column nullable and without default, nothing removed or changed |
+| `replicated_snapshot` + `"targeted_resnapshot": true` | Nullable column on an existing table that is small, has unsafe triggers, or needs a default | Pauses the mirror, removes and re-adds only this table mapping, snapshots it, refreshes its views | `ADD COLUMN`-only DDL on the table; catalog: added columns nullable, nothing removed or changed |
+| `replicated_snapshot` | New table | Initial snapshot through table-selection reconciliation | `CREATE TABLE` in the migration |
+| `empty_table_resnapshot` | Additive columns on a table expected to stay empty | Re-checks emptiness, then rebuilds the mapping | `ADD COLUMN`-only DDL |
+| `cdc_backfill` | Columns with defaults on the `system_settings` singleton | Relies on the post-DDL DML of the guaranteed row | Listed guaranteed-nonempty table; reviewed DML |
+| `mirror_resync` | Drops, renames, type changes, other incompatible DDL | Nothing implicitly; operator runs a full resync | — |
+| `excluded` | Tables listed in [env/tables-exclude.txt](env/tables-exclude.txt) | Nothing | Table present in the exclusion file |
+
+#### Why `cdc_additive` fails without a row touch
+
+The checker accepts nullable columns for `cdc_additive`; it requires them. A
+`cdc_additive` declaration is rejected when the migration has no DML on the
+table (`uses cdc_additive without reviewed backfill DML`), because without a row
+event nothing publishes the column. The DML check is textual, so it is the
+author's job to make the statement change at least one existing row. A
+statement that matches no row satisfies the check but publishes nothing; for
+example `update t set c = null where c = null` never matches, because
+`c = null` is never true. Follow the #3515 pattern instead:
+
+```sql
+alter table sigint_inbox_item add column is_time_null boolean;
+
+-- This table has no user UPDATE triggers. One indexed row change publishes
+-- the nullable column through CDC without backfilling historical messages.
+update sigint_inbox_item
+set is_time_null = false
+where id = (select id from sigint_inbox_item order by id limit 1);
+```
+
+Before touching a row, review every trigger on the table. An update of a
+trigger-watched column can rewrite data or publish integration events. The
+#3515 comment was true when written, but
+`m20260922_092044_api_integration_iggy_events` later added
+`sigint_inbox_item_capture_iggy_edit` (`after insert or update`). The same
+touch today would queue an Iggy inbox edit event for that row. Iggy capture
+triggers also fire on any update of `signal_message_media`. Prefer a targeted
+`replicated_snapshot` when a safe touch is not possible. Choose `cdc_additive`
+for tables too large to resnapshot cheaply.
+
+#### Messenger ingest migrations (#3699)
+
+| Migration | Table | Change | Strategy |
+|---|---|---|---|
+| `m20261008_134725_messenger_ingest_accounts` | `public.datasource_group` | `messenger_type text`, nullable, no default | `cdc_additive`: the table is small and always populated, and its only trigger watches `group_master_key`, so a one-row `messenger_type` touch emits no Iggy event. A targeted `replicated_snapshot` is an equally valid choice for this small table |
+| `m20261008_134725_messenger_ingest_accounts` | `public.messenger_account` | new table | `excluded` |
+| `m20261014_000000_messenger_ingest_chats` | `public.messenger_chat` | new table | `excluded` |
+| `m20261014_000001_messenger_ingest_messages` | `public.messenger_chat_member`, `public.sigint_chat_message` | new tables | `excluded` |
+| `m20261015_000000_messenger_ingest_attachments` | `public.messenger_media_meta` | new table | `excluded` |
+| `m20261016_000000_messenger_ingest_contacts` | `public.messenger_contact` | new table | `excluded` |
+| `m20261022_000000_messenger_ingest_avatars` | `public.messenger_avatar` | new table; `avatar_id` added to the excluded `messenger_account`, `messenger_chat`, `messenger_chat_member` and `messenger_contact` | `excluded` |
+
+Ingest messages themselves are ordinary `signal_message` and
+`sigint_inbox_item` rows, so they replicate without any declaration. The
+excluded tables carry only messenger metadata (accounts, chats, chat
+members, contacts, the chat link of each message, and Telegram media
+metadata). Ingested attachments are ordinary `signal_message_media` rows. Making them available to analytics later is a
+table-selection change, not a migration. Remove them from
+`env/tables-exclude.txt` and run the coordinated reconciliation; each newly
+included table gets its own initial snapshot.
+
+Messenger media metadata lives in the excluded `messenger_media_meta`
+table rather than in columns on `public.signal_message_media`. Adding columns
+there would need a targeted `replicated_snapshot`: the table's Iggy capture
+trigger rules out a `cdc_additive` row touch, and its size makes that
+resnapshot a deliberate operational step.
 
 ### Replacing a development source database
 
@@ -1226,6 +1376,41 @@ role. ClickHouse text ordering does not guarantee PostgreSQL collation order,
 so accepting a merge-join plan can fail at runtime with `mergejoin input data
 is out of order`. `bin/reconcile-if-needed.sh` repairs and verifies this role
 setting automatically.
+
+### Gateway resource limits
+
+Control-bundle activation and ordinary reconciliation apply resource limits
+only to `CLICKHOUSE_GATEWAY_USER`; PeerDB, administration and monitoring retain
+their existing settings. `bin/reconcile-gateway-limits.sh --check` reads and
+verifies the limits without changing them. The normal command reconciles them
+without restarting ClickHouse or rebuilding data.
+
+Defaults reserve half of the configured ClickHouse server memory budget for
+all gateway queries together, and one quarter of that gateway budget for one
+query. They also cap a query at four threads and the gateway user at thirty-two
+concurrent queries. Each value has a matching `MAX` and a `MIN 1` constraint,
+so a client cannot raise it or disable it with zero. On Skhid's 17.6-GiB
+server budget these memory limits are
+8.8 GiB per gateway user and 2.2 GiB per query. Instance overrides are
+`ANALYTICS_GATEWAY_MEMORY_LIMIT_PERCENT` (1–75),
+`ANALYTICS_GATEWAY_QUERY_MEMORY_LIMIT_PERCENT` (1–100),
+`ANALYTICS_GATEWAY_MAX_THREADS` and
+`ANALYTICS_GATEWAY_MAX_CONCURRENT_QUERIES` (both 1–99).
+
+Gateway memory/concurrency rejections use the application's bounded PostgreSQL
+fallback with `reason=analytics_resource_limit`. They do not open the circuit
+for other reads. Total-server memory failures, connectivity failures and
+analytics timeouts retain the existing circuit behavior. Resource limits bound
+the analytical workload; they do not guarantee that an expensive fallback will
+complete. Check useful completions, source 503s and source block work as well
+as native memory before accepting a canary. See the
+[Skhid investigation and diagnostic limits](../../archive/2026-10-12-perf/iteration7/findings.md).
+
+An application rollback may retain these limits. If an operator also needs to
+remove them, first restore the previous control bundle so reconciliation will
+not reapply them, then restore the gateway user's four prior setting values
+and constraints from the pre-deployment settings snapshot. This is a separate
+approved environment change; do not reset unrelated users or settings.
 
 `status.sh` exits nonzero when the freshness record is unhealthy or older than
 the configured threshold. When analytics is configured,

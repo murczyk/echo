@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, useEffect } from 'react';
+import { act, useEffect, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +42,7 @@ function Harness({
   active = true,
   isEditMode = false,
   isReportMode = false,
+  pendingSource,
 }: {
   onValue: (value: HarnessValue) => void;
   setErrorMsg: (message: string | null) => void;
@@ -49,6 +50,7 @@ function Harness({
   active?: boolean;
   isEditMode?: boolean;
   isReportMode?: boolean;
+  pendingSource?: string;
 }) {
   const methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
   const parser = useMessageParser(methods, false, setErrorMsg, {
@@ -56,7 +58,14 @@ function Harness({
     autoParseEnabled,
     isEditMode,
     isReportMode,
+    onPristineSourceCleared:
+      pendingSource == null ? undefined : () => methods.reset(EMPTY_FORM_VALUES),
   });
+  useLayoutEffect(() => {
+    if (pendingSource == null) return;
+    methods.setValue('full_body', pendingSource);
+    parser.handleBodyChange(pendingSource);
+  }, [pendingSource]);
 
   useEffect(() => onValue({ methods, parser }), [methods, onValue, parser]);
   return null;
@@ -67,6 +76,22 @@ describe('useMessageParser ownership', () => {
   let root: Root;
   let latest: HarnessValue;
   let setErrorMsg: ReturnType<typeof vi.fn>;
+
+  it('#3612 preserves input committed before a previous render parser effect runs', async () => {
+    await mount();
+    await act(async () => {
+      root.render(
+        <Harness
+          pendingSource="Keep the reply draft"
+          setErrorMsg={setErrorMsg}
+          onValue={(value) => {
+            latest = value;
+          }}
+        />,
+      );
+    });
+    expect(latest.methods.getValues('full_body')).toBe('Keep the reply draft');
+  });
 
   const mount = async (autoParseEnabled = false) => {
     await act(async () => {

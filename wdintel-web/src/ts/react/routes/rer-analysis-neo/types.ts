@@ -27,6 +27,10 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import type { MessageTimeBasis } from '../../services/api/user-settings';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type {
+  GroupFilterNavigationModel,
+  GroupScope,
+} from '../shared/group-navigation/group-navigation.types';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -63,6 +67,9 @@ export type AnalysisDirectMessageNavigation = {
   targetMessageIndex: number;
   totalCount: number;
   focusActive: boolean;
+  highlightTarget?: boolean;
+  scrollBehavior?: ScrollBehavior;
+  constrainToContent?: boolean;
   contextLoading?: boolean;
   newestFirst: boolean;
   canLoadEarlier: boolean;
@@ -105,6 +112,7 @@ export type AnalysisFilterOptions = {
   aors: AnalysisFilterOption[];
   groups: AnalysisFilterOption[];
   senders: AnalysisFilterOption[];
+  devices: AnalysisFilterOption[];
   freqs: AnalysisFilterOption[];
   newFreqs: AnalysisFilterOption[];
   callsigns: AnalysisFilterOption[];
@@ -123,6 +131,7 @@ export type AnalysisFilterSectionId =
   | 'aors'
   | 'groups'
   | 'senders'
+  | 'devices'
   | 'callsigns'
   | 'units'
   | 'locations'
@@ -162,6 +171,8 @@ export type AnalysisMessagePageCursor = {
 
 export type AnalysisReloadOptions = {
   preserveMessagePage?: boolean;
+  showMessagesLoading?: boolean;
+  messagePageIndex?: number;
   refreshMessageCounts?: boolean;
 };
 export type AnalysisSidebarTab =
@@ -182,12 +193,13 @@ export function getAnalysisSidebarTabs(
   radioFeaturesAllowed = true,
 ): AnalysisSidebarTab[] {
   const tabs: AnalysisSidebarTab[] = analysisMapInSidebar
-    ? ['map', 'stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns']
-    : ['stats', 'frequencies', 'callsigns', 'graph', 'newCallsigns'];
+    ? ['callsigns', 'map', 'stats', 'frequencies', 'graph', 'newCallsigns']
+    : ['callsigns', 'stats', 'frequencies', 'graph', 'newCallsigns'];
   return tabs.filter((tab) => radioFeaturesAllowed || tab !== 'frequencies');
 }
 
 export type AnalysisPageState = {
+  threadMode?: { deletedCount: number; exit: () => void } | null;
   radioFeaturesAllowed: boolean;
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
@@ -196,7 +208,7 @@ export type AnalysisPageState = {
   showAnalysisCallsignAddForm: boolean;
   centerTab: AnalysisCenterTab;
   centerTabPending: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   copiedFeedbackId: string | null;
   directMessageError: string | null;
   error: string | null;
@@ -217,6 +229,7 @@ export type AnalysisPageState = {
   isFilterSectionEmptyLoading: (section: AnalysisFilterSectionId, optionCount: number) => boolean;
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
+  groupNavigation: GroupFilterNavigationModel;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;
@@ -236,33 +249,43 @@ export type AnalysisPageState = {
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
+  groupScopeTransitionPending: boolean;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   botTagAction: MessageCardBotTagAction | null;
   messageComments: Record<number, MessageComment[]>;
   messagesLoading: boolean;
+  showMessagesLoading: boolean;
   messagesOverallCount: number | null;
   messagesPaging: boolean;
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
   messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   directMessageLoading: boolean;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  loadedReplyTarget?: { messageId: number } | null;
+  onLinkedMessageMounted: (messageId: number) => void;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
   pageIndex: number;
   messagePageNavigationTarget: number | null;
   messageViewportPreservationKey: number;
+  messageEdgeLoadRetryKey: number;
   messageViewportPreserving: boolean;
   visibleMessagesPageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   analysisAorFilterEnabled: boolean;
   rerReportEnabled: boolean;
+  rerReportFilterEnabled: boolean;
   supportNonRerInterceptions: boolean;
   cyberEchoEnabled: boolean;
   options: AnalysisFilterOptions;
@@ -270,8 +293,12 @@ export type AnalysisPageState = {
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
+  networkVisibilityReady: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -288,6 +315,7 @@ export type AnalysisPageState = {
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;
@@ -301,22 +329,24 @@ export type AnalysisPageState = {
 };
 
 export type AnalysisPageActions = {
+  navigateReply: import('../shared/message-replies/MessageRepliesProvider').ReplyNavigation;
   applySavedFilter: (savedFilter: SavedFilter | null) => void;
   deleteLoadedSavedFilter: () => void;
   renameExistingSavedFilter: (name: string) => Promise<boolean>;
   findCallsignFrequencyMatches: (
     callsigns: string[],
     minMatches: number,
+    signal?: AbortSignal,
   ) => Promise<AnalysisCallsignFrequencyMatchesRsp | null>;
   loadCallsignGraph: () => void;
   loadCorrelatedFreqs: () => void;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => void;
-  loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   loadFirstPage: () => Promise<void>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadMoreMessages: () => Promise<boolean>;
+  loadPreviousMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
@@ -367,6 +397,8 @@ export type AnalysisPageActions = {
   setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
+  openLeftPanel: () => void;
+  selectGroupScope: (scope: GroupScope) => void;
   toggleRightPanel: () => void;
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;

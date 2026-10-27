@@ -3,6 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { minimalInboxMessage } from '../../rer-duty-neo/inbox-message-mocks';
+
 import type { AiAgentEvent } from '../../../services/api/ai-agent';
 
 type StreamConnection = {
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   stream: vi.fn(),
   notify: vi.fn(),
   map: vi.fn(),
+  fetchSources: vi.fn(),
 }));
 
 vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
@@ -42,6 +45,9 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
       revisions: [],
     };
   },
+}));
+vi.mock('../../../services/api/inbox-messages', () => ({
+  fetchMessagesByIdsWithMetadata: mocks.fetchSources,
 }));
 vi.mock('../stream', () => ({
   streamAiAgentEventsWithReconnect: mocks.stream,
@@ -200,6 +206,62 @@ afterEach(async () => {
   resetSharedMapDocuments();
 });
 describe('AiAgentChat request queue', () => {
+  it('#3724 requires explicit Deep selection and preserves it on retry', async () => {
+    mocks.configuration.mockResolvedValue({
+      enabled: true,
+      reasoningPresetsEnabled: true,
+      defaultProviderId: PROVIDER.id,
+      providers: [
+        {
+          ...PROVIDER,
+          reasoningAvailable: true,
+          reasoningPresets: [
+            { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
+            { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
+            { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+          ],
+        },
+      ],
+    });
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AiAgentChat />));
+    await flush();
+    const selector = () =>
+      container.querySelector('[role="combobox"][aria-label="Глибина аналізу"]') as HTMLElement;
+    expect(selector().textContent).toContain('Збалансований');
+    await act(async () => selector().dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    await flush();
+    const deep = Array.from(document.body.querySelectorAll('[role="option"]')).find((item) =>
+      item.textContent?.includes('Глибокий'),
+    )!;
+    await act(async () => deep.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-deep',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Досліди докладно');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningPreset: 'deep' }),
+    );
+    expect(selector().textContent).toContain('Збалансований');
+    await act(async () => streamEvent('request-deep', 1, 'error', 'provider failure'));
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-retry',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    await act(async () => clickButton('Спробувати ще раз'));
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningPreset: 'deep' }),
+    );
+    expect(container.textContent).toContain('Ви · Глибокий');
+  });
+
   // The map workspace is lazy and pulls in milsymbol; load it once up front so
   // its first transform does not count against an individual test.
   beforeAll(async () => {
@@ -680,6 +742,40 @@ describe('AiAgentChat request queue', () => {
     expect(mocks.stream).toHaveBeenCalledTimes(2);
     expect(connections.get('request-1')?.signal.aborted).toBe(false);
     expect(request.textContent).not.toContain('Потік перервано');
+  });
+
+  it('#3724 restored a context-limited answer and its coverage warning after reload', async () => {
+    mocks.fetchSources.mockResolvedValue({
+      inboxItems: [
+        [1, minimalInboxMessage({ text: 'Synthetic document', groupMasterKey: 'fixture' })],
+      ],
+      signalGroups: [{ masterKey: 'fixture', name: 'Документи' }],
+    });
+    mocks.conversation.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [
+        {
+          id: 'request-partial-assistant',
+          requestId: 'request-partial',
+          requestState: 'completed',
+          role: 'assistant',
+          content: 'Часткова відповідь [джерело](/rer-analysis-neo?m=fixture-1)',
+          createdAt: Date.now(),
+          startedAt: Date.now() - 317_000,
+          citations: [{ messageId: 1, messageIdentifier: 'fixture-1' }],
+          completionMetadata: { coverageLimited: true, reason: 'context_limit' },
+        },
+      ],
+    });
+    window.history.replaceState({}, '', `?conversation=${CONVERSATION.id}`);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () => root.render(<AiAgentChat />));
+    await flush();
+    expect(container.textContent).toContain('Часткова відповідь');
+    expect(container.textContent).toContain('Охоплення джерел неповне');
+    expect(container.querySelector('a[href="/rer-analysis-neo?m=fixture-1"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('Не вдалося виконати запит');
   });
 
   it('reconciles a terminal backend state before showing a connection failure', async () => {

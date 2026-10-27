@@ -14,12 +14,18 @@ export function CsvDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  maxBytes = MAX_CSV_FILE_BYTES,
   contentType,
+  signal,
+  onError,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  maxBytes?: number;
   contentType?: string | null;
+  signal?: AbortSignal;
+  onError?: (error: unknown) => void;
 }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [preview, setPreview] = useState<CsvPreviewResult | null>(null);
@@ -27,50 +33,54 @@ export function CsvDocumentPreview({
 
   useEffect(() => {
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
 
     const load = async () => {
       setStatus('loading');
       setPreview(null);
       setError(null);
+      if (controller.signal.aborted) return;
       try {
-        if (sizeBytes != null && sizeBytes > MAX_CSV_FILE_BYTES)
-          throw new Error('CSV_FILE_TOO_LARGE');
+        if (sizeBytes != null && sizeBytes > maxBytes) throw new Error('CSV_FILE_TOO_LARGE');
         const {
           buffer,
           contentType: responseContentType,
           contentLength,
         } = await fetchCachedDocumentResponse(
           href,
-          MAX_CSV_FILE_BYTES,
+          maxBytes,
           'CSV_FILE_TOO_LARGE',
           controller.signal,
         );
-        if (contentLength != null && contentLength > MAX_CSV_FILE_BYTES) {
+        if (contentLength != null && contentLength > maxBytes) {
           throw new Error('CSV_FILE_TOO_LARGE');
         }
-        if (buffer.byteLength > MAX_CSV_FILE_BYTES) throw new Error('CSV_FILE_TOO_LARGE');
+        if (buffer.byteLength > maxBytes) throw new Error('CSV_FILE_TOO_LARGE');
         const effectiveContentType =
           responseContentType?.match(/charset\s*=/i) != null
             ? responseContentType
             : (contentType ?? responseContentType);
         const result = await runWorkerTask<
-          { buffer: ArrayBuffer; contentType: string | null },
+          { buffer: ArrayBuffer; contentType: string | null; maxBytes: number },
           CsvPreviewResult
         >(
           () =>
             new Worker(new URL('../csv/csv-preview.worker.ts', import.meta.url), {
               type: 'module',
             }),
-          { buffer, contentType: effectiveContentType },
+          { buffer, contentType: effectiveContentType, maxBytes },
           controller.signal,
           [buffer],
         );
-        if (disposed) return;
+        if (disposed || controller.signal.aborted) return;
         setPreview(result);
         setStatus('ready');
       } catch (loadError) {
         if (disposed || controller.signal.aborted) return;
+        onError?.(loadError);
         setError(loadError instanceof Error ? loadError.message : null);
         setStatus('error');
       }
@@ -78,9 +88,10 @@ export function CsvDocumentPreview({
     void load();
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       controller.abort();
     };
-  }, [contentType, href, sizeBytes]);
+  }, [contentType, href, sizeBytes, maxBytes, signal, onError]);
 
   if (status === 'error') {
     return (

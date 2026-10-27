@@ -31,9 +31,9 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Params = {
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
+  hideNetworks: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
-  leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -67,11 +67,12 @@ type Params = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
-  getCurrentMessagePageCursor: () => import('./types').AnalysisMessagePageCursor;
-  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>) => void;
+  currentMessagePageIndex: number;
+  getCurrentMessagePageCursor: (pageIndex?: number) => import('./types').AnalysisMessagePageCursor;
+  replaceCurrentMessagePage: (messages: Array<[number, InboxMessage]>, pageIndex?: number) => void;
   refreshMessageCounts: () => void;
   setAorEntries: Setter<AnalysisAorEntry[]>;
-  setCounts: Setter<import('../../../../Bindings').CountStatsRsp | null>;
+  setCounts: Setter<Partial<import('../../../../Bindings').CountStatsRsp> | null>;
   setCountsLoading: Setter<boolean>;
   setFiltersLoading: Setter<boolean>;
   setGroupInfos: Setter<Record<string, SignalGroupEntry>>;
@@ -95,7 +96,6 @@ type Params = {
   newCallsignsLoadedKeyRef: React.MutableRefObject<string | null>;
   newCallsignsPendingKeyRef: React.MutableRefObject<string | null>;
   setNoMoreToLoad: Setter<boolean>;
-  setNolimitShown: Setter<boolean>;
   setOptions: Setter<AnalysisFilterOptions>;
   setProfiles: Setter<Record<string, SignalProfileEntry | null>>;
   setSummaryCallsignsInfo: Setter<Record<string, import('../../../../Bindings').CallsignInfoRes>>;
@@ -111,6 +111,7 @@ type Params = {
 
 export type UseAnalysisReloadOrchestratorResult = {
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
+  messagesLoadedForCurrentQuery: boolean;
   summaryReloadBarrier: number;
 };
 
@@ -119,8 +120,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
+    hideNetworks,
     focusedWindow = null,
     focusedMessageActive = false,
+    currentMessagePageIndex,
     getLoadedFilterSections,
     getCurrentMessagePageCursor,
     getReloadFilterSections,
@@ -132,7 +135,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     invalidateMessagePageRequests,
     invalidateRightSidebarData,
     invalidateSummaryData,
-    leftPanelOpen = true,
     loadInitialFilterSections,
     loadMapPalitras,
     loadMessageComments,
@@ -171,7 +173,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setNewCallsignsLoading,
     setNewCallsignsLoadedKey,
     setNoMoreToLoad,
-    setNolimitShown,
     setOptions,
     setProfiles,
     setSummaryCallsignsInfo,
@@ -192,6 +193,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const summaryDebouncePendingKeyRef = useRef<string | null>(null);
   const reloadAbortControllerRef = useRef<AbortController | null>(null);
   const reloadDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loadedMessagesTriggerKey, setLoadedMessagesTriggerKey] = useState<string | null>(null);
   const [summaryReloadBarrier, setSummaryReloadBarrier] = useState(0);
 
   const reload = useCallback(
@@ -201,17 +203,28 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       reloadAbortControllerRef.current = abortController;
       const shouldRefreshMessageCounts = options.refreshMessageCounts !== false;
       const preserveMessagePage = options.preserveMessagePage === true;
-      const messagePageCursor = preserveMessagePage ? getCurrentMessagePageCursor() : undefined;
-      const setReloadedMessages =
+      const messagePageIndex = options.messagePageIndex;
+      const messagePageCursor = preserveMessagePage
+        ? getCurrentMessagePageCursor(messagePageIndex)
+        : undefined;
+      const applyReloadedMessages =
         preserveMessagePage && !focusedMessageActive
-          ? replaceCurrentMessagePage
+          ? messagePageIndex === undefined
+            ? replaceCurrentMessagePage
+            : (messages: Array<[number, InboxMessage]>) =>
+                replaceCurrentMessagePage(messages, messagePageIndex)
           : (messages: Array<[number, InboxMessage]>) => setMessages(messages);
+      const setReloadedMessages = (messages: Array<[number, InboxMessage]>) => {
+        applyReloadedMessages(messages);
+        setLoadedMessagesTriggerKey(reloadTriggerKey);
+      };
 
       if (shouldRefreshMessageCounts) refreshMessageCounts();
 
       try {
         await reloadAnalysisData({
           clearAnalysisResults,
+          hideNetworks,
           focusedWindow,
           focusedMessageActive,
           invalidateCallsignGraph,
@@ -219,8 +232,14 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           invalidateMessagePaging: preserveMessagePage
             ? invalidateMessagePageRequests
             : invalidateMessagePaging,
-          includeDefaultFilterSections: leftPanelOpen,
+          includeDefaultFilterSections: false,
+          showMessagesLoading: options.showMessagesLoading,
           messagePageCursor,
+          preserveMessageTailExhaustion:
+            preserveMessagePage &&
+            !focusedMessageActive &&
+            messagePageIndex !== undefined &&
+            messagePageIndex !== currentMessagePageIndex,
           newestFirst,
           onError,
           onUnauthorized,
@@ -251,7 +270,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setNewCallsignsLoadedKey,
           shouldLoadNewCallsigns,
           setNoMoreToLoad,
-          setNolimitShown,
           setOptions,
           setProfiles,
           setSummaryCallsignsInfo,
@@ -276,7 +294,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           signal: abortController.signal,
         });
       } finally {
-        if (reloadAbortControllerRef.current === abortController) {
+        if (
+          reloadAbortControllerRef.current === abortController &&
+          abortController.signal.aborted
+        ) {
           reloadAbortControllerRef.current = null;
         }
       }
@@ -297,9 +318,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       invalidateMessagePageRequests,
       invalidateRightSidebarData,
       invalidateSummaryData,
-      leftPanelOpen,
       loadInitialFilterSections,
       loadMessageComments,
+      currentMessagePageIndex,
       newestFirst,
       newCallsignsLoadedKeyRef,
       newCallsignsPendingKeyRef,
@@ -331,7 +352,6 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       setNewCallsignsLoading,
       setNewCallsignsLoadedKey,
       setNoMoreToLoad,
-      setNolimitShown,
       setOptions,
       setProfiles,
       setSummaryCallsignsInfo,
@@ -351,7 +371,21 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
   const mapVisible = centerTab === 'map' || (rightSidebarVisible && rightSidebarTab === 'map');
 
   useEffect(() => {
-    if (deferInitialLoad) return;
+    if (deferInitialLoad) {
+      reloadAbortControllerRef.current?.abort();
+      reloadAbortControllerRef.current = null;
+      reloadRequestRef.current += 1;
+      lastReloadTriggerKeyRef.current = null;
+      lastReloadFocusedWindowRef.current = null;
+      summaryReloadPendingKeyRef.current = null;
+      summaryDebouncePendingKeyRef.current = null;
+      setLoadedMessagesTriggerKey(null);
+      if (reloadDebounceTimerRef.current != null) {
+        clearTimeout(reloadDebounceTimerRef.current);
+        reloadDebounceTimerRef.current = null;
+      }
+      return;
+    }
     const focusedWindowChanged =
       focusedMessageActive && lastReloadFocusedWindowRef.current !== focusedWindow;
     if (
@@ -465,5 +499,9 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     };
   }, []);
 
-  return { reload, summaryReloadBarrier };
+  return {
+    reload,
+    messagesLoadedForCurrentQuery: loadedMessagesTriggerKey === reloadTriggerKey,
+    summaryReloadBarrier,
+  };
 }

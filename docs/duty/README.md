@@ -20,8 +20,11 @@ preference. Analysis alone retains the event/creation-time choice; its saved
   Local sorting, pagination/unread cursors, pending buffers, and notification
   selection use `createdAtOrder` (microseconds), falling back only to
   `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
-- Cards use creation time for the primary/relative time display. Event dates remain
-  message metadata; editing an event date cannot move a card in the feed.
+- Cards use creation time for the primary absolute header timestamp. Their independent
+  receipt-time footer also uses `createdAt`: `HH:mm` today, `DD.MM, HH:mm` on other
+  dates this year, and `DD.MM.YYYY, HH:mm` in other years (Kyiv calendar).
+  The header date always includes the year. Event dates remain message metadata, and editing an
+  event date cannot move a card in the feed.
 - The sorting chooser exists only under Settings → Analysis. Existing Analysis
   preferences and its shared API/storage field are preserved.
 
@@ -51,15 +54,16 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 
 - Each column keeps a **40-message window**. Older prepends / newer appends trim the other end.
 - **Near bottom** ≈ within **640px** of the end. If unread prefetch is still needed, the load zone expands up to about **two viewports** (capped at `2×640`), not “last 10 tall messages” (that fired loads thousands of px early and froze scroll on window trim).
-- **Scroll-idle newer loads:** when not physically at the bottom, `onLoadNewer` waits ~140ms after the last scroll event so a mid-fling fetch does not commit a 40-card window trim under the user’s finger.
+- **Scroll-idle newer loads:** background unread prefetch waits ~140ms after the last scroll event when not physically at the bottom, so a mid-fling fetch does not commit a 40-card window trim under the user’s finger. An available newer-page skeleton loads immediately when it enters the viewport.
+- **Edge-load visual commit:** when a new window arrives during wheel input, the feed keeps the current cards and edge skeleton until wheel and inertial scroll events are idle for ~140ms. Wheel input remains available throughout. This is shared with Analysis.
 - **Badge** = loaded unread + trimmed unread + (beyond-tail preview when known). Near bottom **ignores** residual poll stock from a lagging read cursor; it **keeps** a real matching tail preview.
 - Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
-- Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.
+- Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). A physical bottom in a linked historical window is only a chunk boundary, not the live tail: it must not enable watch or drain later chunks automatically. Watch + physical bottom at the true newest edge still mark-all-read and drain the live tail.
 - **Pending newer buffer** (Elm `notRenderedMessagesYet`): background results that could evict visible rows remain pending. Native scrolling commits the longest safe ordered prefix while preserving the visible anchor; the down-arrow may then navigate and land on the current tail. Pending tails detached by an older-window trim are discarded and re-fetched from the retained boundary.
-- **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab.
+- **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab. Editor resizing and tab remounts preserve each feed’s reading anchor; delayed scroll and idle callbacks wait for pending layout restoration. Regression coverage: `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx` and `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`.
 - **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
 - **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
-- Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. FAB shows a spinner while newer `get-inbox` is in flight.
+- Arrow down: explicit load (if needed) → one landing → hard unread catch-up. It does not authorize later background following. The button stays visible at a chunk boundary until the newest message is confirmed and rendered. Only an explicit jump shows a spinner in the button; ordinary chunk paging uses the feed skeleton.
 - **Underfilled window fallback ([#3615](https://github.com/echoua/echo/issues/3615)):** when the mounted window does not overflow, a deliberate upward wheel or focused Up/PageUp requests older history; a downward wheel or focused Down/PageDown flushes buffered newer items or requests a newer page. It never runs on mount, never drains history automatically, ignores nested controls and modified/zoom input, and coalesces input until the directional attempt settles. Native scrolling remains the owner once the window overflows. Regression: `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts` and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useWindowedFeedScroll.spec.tsx`.
 
 ## Do not
@@ -67,17 +71,64 @@ Implementation plan (active-only desktop → pending soak → cheap cards → op
 - Derive unread from `loadedTailId - cursorId` (IDs are not dense under the filter).
 - Write inbox `quantity` straight into the badge while near bottom.
 
+## Polling and live updates
+
+Automatic counts use `rer_duty_poll_interval_sec` (minimum/default five seconds),
+including focus/online/visibility recovery. Per feed, a new automatic count
+waits for the configured interval since its previous count start and for active
+unread/tail count requests to settle. Polls blocked by an active tail count retry
+when it settles, while preserving the configured interval. Slow feeds do not
+block healthy feeds.
+Explicit initial loads, filter changes, and navigation remain immediate.
+
+Inbox events hydrate changed displayed and buffered messages without starting
+extra count polls. Buffer updates preserve the displayed window; identical
+payloads preserve message references to avoid unnecessary card reconciliation.
+Reply metadata follows the [message reply refresh contract](../message-replies.md#rendering-and-refresh):
+events invalidate citations, and admitted polling cycles reconcile them without
+starting extra counts. Citation timestamps always use creation time on Duty.
+Reuse an unread count for the loaded-tail boundary only when filters,
+cursor, and request generation match; different boundaries retain separate
+answers. For six loaded unread messages and three unloaded newer messages,
+the unread count is nine and the tail count is three.
+
+The default-suite regressions are
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.polling.spec.tsx`
+and `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts`.
+Classic Duty also uses the existing interval setting and filters event IDs
+against displayed and buffered messages before fetching updates. Its buffer
+refresh regression is `wdintel-web/tests/RerDutyRefreshRegressionTests.elm`.
+Each Classic waterfall has one polling subscription, removed with the waterfall
+or page. Automatic requests respect the interval between starts and wait for
+active count/message requests. Blocked polls retry after those requests settle,
+including failures, while preserving the interval between starts;
+scroll-to-latest reloads do not start another
+polling loop. Classic Duty receives inbox changes through Shared's event
+transport, including updates to buffered messages. Browser regressions are in
+`wdintel-web/tests/e2e/rer-duty-polling.spec.ts`.
+
 ## Code map
 
 | Concern                                          | File                                                                                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| Zones, load arming, anchor restore               | [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useWindowedFeedScroll.ts)                       |
+| Zones, load arming, anchor restore               | [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/shared/message-feed/useWindowedFeedScroll.ts)                       |
 | Duty buffers (640 / 160 / 25)                    | [`FeedColumnContent.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx)                             |
 | Near-bottom badge options, reach-bottom / follow | [`index.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx)                                                     |
 | Poll catch-up, cursor, `catchUpFeedUnreadToTail` | [`useRerDutyFeedState.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts)                           |
 | Newer/older loads, trim read rules               | [`useRerDutyDirectionalLoads.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyDirectionalLoads.ts)             |
 | Window limit, badge formula, prefetch min        | [`utils.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/utils.ts)                                                       |
 | Arrow catch-up                                   | [`useRerDutyFeedInteractionActions.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedInteractionActions.ts) |
+
+## Count-request diagnostics
+
+React inbox and Analysis requests carry a loaded asset identifier, an ephemeral
+ID for the current browser document and its visibility state. Duty Neo's unread
+count requests also identify automatic, manual and validation triggers. These
+headers are retained in request activity; diagnostic values over 128 bytes are
+ignored. They contain no filter contents or credentials, are not authentication
+inputs, and do not persist across document reloads. Use them to attribute repeat
+counts before changing the configured polling interval; preserve unread discovery
+and notifications for hidden tabs.
 
 ## Full doc
 

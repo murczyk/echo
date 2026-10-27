@@ -2,6 +2,7 @@ use super::*;
 use crate::entities::*;
 use crate::functest::tests::*;
 use crate::messenger::bl::bl_group_update;
+use crate::messenger::group::types::SignalGroupColor;
 use crate::messenger::types::GroupUpdateReq;
 use serial_test::serial;
 
@@ -74,6 +75,7 @@ async fn test_bl_group_update_add_second_aor() {
 
     let req1 = GroupUpdateReq {
         master_key: group.master_key.clone(),
+        color_key: Some(SignalGroupColor::Blue),
         short_note: Some("Test group".to_string()),
         long_note: None,
         area_of_responsibility_id: None,
@@ -81,11 +83,15 @@ async fn test_bl_group_update_add_second_aor() {
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: Some(true),
+        ai_transcript_analysis_enabled: None,
+        fetch_new_messages: Some(false),
     };
 
     let res1 = bl_group_update(&req1, &txn).await.unwrap();
 
     assert_eq!(res1.group.is_aviation_group, Some(true));
+    assert_eq!(res1.group.color_key.as_deref(), Some("blue"));
+    assert_eq!(res1.group.fetch_new_messages, Some(false));
     assert_eq!(res1.aors.len(), 1);
     assert_eq!(res1.aors[0].id, aor1.id);
 
@@ -129,6 +135,7 @@ async fn test_bl_group_update_add_second_aor() {
 
     let req2 = GroupUpdateReq {
         master_key: group.master_key.clone(),
+        color_key: Some(SignalGroupColor::DeepPurple),
         short_note: Some("Test group updated".to_string()),
         long_note: Some("Added second AOR".to_string()),
         area_of_responsibility_id: None,
@@ -136,18 +143,22 @@ async fn test_bl_group_update_add_second_aor() {
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: None,
+        ai_transcript_analysis_enabled: None,
+        fetch_new_messages: None,
     };
 
     let res2 = bl_group_update(&req2, &txn).await.unwrap();
+    assert_eq!(res2.group.color_key.as_deref(), Some("deep_purple"));
 
     assert_eq!(res2.aors.len(), 2);
+    assert_eq!(res2.group.fetch_new_messages, Some(false));
     let settlement_link = sigint_inbox_item_settlement::Entity::find()
         .filter(sigint_inbox_item_settlement::Column::ItemId.eq(msg.id))
         .one(&txn)
         .await
         .unwrap()
         .expect("settlement link");
-    assert_eq!(settlement_link.settlement_id, None);
+    assert_eq!(settlement_link.settlement_id, Some(settlement_id));
     assert_eq!(settlement_link.is_undefined, None);
     let aor_ids: Vec<i64> = res2.aors.iter().map(|aor| aor.id).collect();
     assert!(aor_ids.contains(&aor1.id));
@@ -184,6 +195,24 @@ async fn test_bl_group_update_add_second_aor() {
         res2.group_data.long_note,
         Some("Added second AOR".to_string())
     );
+
+    for omit_color in [true, false] {
+        let mut payload = serde_json::to_value(&req2).unwrap();
+        if omit_color {
+            payload.as_object_mut().unwrap().remove("color_key");
+        } else {
+            payload["color_key"] = serde_json::Value::Null;
+        }
+        payload["short_note"] = serde_json::json!("Legacy client edit");
+        let req: GroupUpdateReq = serde_json::from_value(payload)
+            .expect("legacy group edits must not require color_key");
+        let updated = bl_group_update(&req, &txn).await.unwrap();
+        assert_eq!(updated.group.color_key.as_deref(), Some("deep_purple"));
+        assert_eq!(
+            updated.group_data.short_note.as_deref(),
+            Some("Legacy client edit")
+        );
+    }
 
     txn.rollback().await.unwrap();
 }
@@ -251,6 +280,7 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
 
     let req = GroupUpdateReq {
         master_key: group.master_key.clone(),
+        color_key: Some(SignalGroupColor::Teal),
         short_note: None,
         long_note: None,
         area_of_responsibility_id: None,
@@ -258,6 +288,8 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
         interseption_kind: None,
         disable_network_assignment: Some(true),
         is_aviation_group: None,
+        ai_transcript_analysis_enabled: None,
+        fetch_new_messages: None,
     };
     let res = bl_group_update(&req, &txn).await.unwrap();
 

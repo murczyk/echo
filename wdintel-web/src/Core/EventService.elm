@@ -1,8 +1,10 @@
 module Core.EventService exposing
     ( EventState
     , init
+    , stop
     )
 
+import Bindings as B
 import Core.EventTypes
 
 
@@ -20,13 +22,27 @@ type alias EventState =
 init : EventState
 init =
     { isPolling = False
+    , flavor = B.LpfGeneric
+    , requestInFlight = False
+    , generation = 0
     , lastEventId = Nothing
+    , lastPollStartedAt = Nothing
+    , lastGenericFullAt = Nothing
     , error = Nothing
     , connectionInterrupted = False
     , persistentErrorReported = False
     , retryCount = 0
     , retryDelay = 1000 -- Start with 1 second
     }
+
+
+stop : EventState -> EventState
+stop eventService =
+    if eventService.isPolling || eventService.requestInFlight then
+        { init | generation = eventService.generation + 1 }
+
+    else
+        eventService
 
 
 

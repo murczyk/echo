@@ -35,11 +35,26 @@ Jobs use leases, bounded retries and generation checks. Source replacements
 invalidate old chunks; explicit reprocessing preserves the last readable
 revision until its replacement is ready. Read requests can pin a revision.
 
+Job pickup uses `attachment_job_claim_idx(kind, created_at DESC, id)` for queued,
+retrying and running jobs, then checks due time, lease expiry, current document
+generation and message deletion before claiming one row with `SKIP LOCKED`.
+Migration `m20261022_090303_attachment_job_claim_index` builds the source-only
+index concurrently. Check free space and long-running transactions before
+deployment; inspect `pg_stat_progress_create_index` and index validity afterward.
+No analytics resnapshot is required. An application rollback can retain the
+index; remove it only through the migration rollback after reverting the app.
+See [index verification and interrupted-build recovery](#claim-index-recovery).
+
 Every source chunk gets its own summary; large documents are reduced through
 successive summary batches rather than a first-N-character cutoff. Coordinates
 come from original text. Position matching also reads original chunks, including
 OCR, and uses the existing grounding, access scopes and known-position linking.
-The legacy media summary remains a projection for message cards.
+Message cards receive nullable `coordinateStatus` containing the published
+attachment revision and whether it has coordinates. Maps read current chunks
+through `GET /api/messenger/media/{media_id}/summary/coordinates`, independently
+of summaries. An empty published revision suppresses stale legacy points; only
+attachments without a published revision fall back to legacy media summaries.
+WGS84 values retain their precision and coordinate system.
 
 Retry from the document admin page re-extracts a source under a new generation.
 If its OCR or map conversion failed, retry that underlying job in its existing
@@ -72,6 +87,43 @@ proof that a subject is absent. Document contents remain untrusted evidence.
 
 ## Rollout and recovery
 
+### Claim index recovery
+
+Run these read-only checks on the intended source database after the concurrent
+build, or after a failed/interrupted migration:
+
+```sql
+SELECT indexrelid::regclass AS index_name, indisready, indisvalid,
+       pg_get_indexdef(indexrelid) AS definition
+FROM pg_index
+WHERE indexrelid = to_regclass('public.attachment_job_claim_idx');
+
+SELECT pid, phase FROM pg_stat_progress_create_index
+WHERE index_relid = to_regclass('public.attachment_job_claim_idx');
+
+SELECT version FROM seaql_migrations
+WHERE version = 'm20261022_090303_attachment_job_claim_index';
+```
+
+The valid definition must index `(kind, created_at DESC, id)` on
+`public.attachment_job` with the queued/retry_wait/running predicate. This is
+index-only DDL with an empty analytics-impact declaration: it changes no
+replicated columns, requires no entity regeneration, and must not trigger a
+table or mirror resnapshot.
+
+A failed concurrent build can leave an invalid index with the same name. Once
+the build has stopped, and after explicit approval naming the host and index
+repair, drop only that invalid index with a standalone
+`DROP INDEX CONCURRENTLY public.attachment_job_claim_idx;`, then retry the normal
+migration runner within the approved scope. Do not wrap either concurrent index
+operation in a transaction or drop an active/valid index as automatic recovery.
+If the index is valid but its migration record is absent, stop and reconcile the
+definition and migration state with the operator; a duplicate-name error is not
+proof of a completed migration. Obtain separate approval for recovery outside
+the original operation's scope.
+
+### Attachment pipeline rollout
+
 1. Deploy the updated `echo-document-extractor` application to the intended
    extraction host. Its package adds LibreOffice, libarchive, libseccomp and
    bubblewrap. Verify its native attachment job and existing OCR job paths.
@@ -99,3 +151,25 @@ leave coverage incomplete; use a focused original inspection or split the source
 Extractor fixtures: `echo-document-extractor/tests/test_documents.py` and
 `echo-document-extractor/tests/test_service.py`. Database authorization,
 revision and matching regression: `wdintel-rs/src/attachments/tests.rs`.
+
+### Reindex completed stored OCR
+
+Use the deployed binary and production mode on the intended host:
+
+```bash
+/usr/bin/wdintel-rs --mode=live oneoff-reindex-stored-ocr --media-id <UUID>
+/usr/bin/wdintel-rs --mode=live oneoff-reindex-stored-ocr --media-id <UUID> --yes
+```
+
+The first command is a dry-run: it checks that the image/PDF has an attachment
+document and usable completed OCR artifacts, then prints the extracted coordinate
+count. `--dry-run` overrides `--yes`. Apply queues only that attachment through
+the regular retry logic; extraction reuses stored OCR without calling the OCR
+provider. Indexing must be enabled. The previous readable revision remains until
+publication; each publication changes `coordinateStatus.revision`, invalidating
+map previews. No summary must finish for the coordinates to become available.
+
+Run individually for each reported attachment, checking queue progress, current
+revision and map points after each. Stop if service, ingestion or analytics health
+fails. Keep the previous application package for rollback; follow the deployment
+health and rollback procedure before attempting further recovery.

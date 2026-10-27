@@ -5,9 +5,15 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../../Bindings';
+import type {
+  InboxMessage,
+  InboxWindowRsp,
+  SavedFilter,
+  SignalGroupEntry,
+  User,
+} from '../../../../../Bindings';
 import type { AnalysisPageViewModel } from '../types';
-import { createResetQueryState } from '../helpers';
+import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
 
 const userSettingsMock = vi.hoisted(() => ({
@@ -17,8 +23,10 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
+const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
+  fetchInboxItemContext: vi.fn(),
 }));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
@@ -69,6 +77,12 @@ vi.mock('../../../services/api/system-settings', () => ({
 
 vi.mock('../../../services/api/inbox-messages', () => ({
   fetchInboxWindow: inboxMessagesMock.fetchInboxWindow,
+  fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
+}));
+
+vi.mock('../../../services/api/inbox', () => ({
+  getUserSigintGroups: groupCatalogMock.groups,
+  getGroupInfosBatch: groupCatalogMock.details,
 }));
 
 vi.mock('../use-analysis-data', () => ({
@@ -108,15 +122,18 @@ const baseAnalysisData = {
   groupsActivityLoadedPeriod: null,
   groupsActivityLoading: false,
   hasLoadedInitialMessages: true,
+  messagesLoadedForCurrentQuery: true,
   inboxReq: null,
   botTagAction: null,
   loadCallsignGraph: vi.fn(),
   loadAllMessages: vi.fn(),
   loadFilterSection: vi.fn(),
+  loadFirstPage: vi.fn(),
   invalidateFilterSectionLoads: vi.fn(),
   invalidateFilterSectionLoadsForPatch: vi.fn(),
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
+  loadLastPage: vi.fn(),
   loadNewCallsigns: vi.fn(),
   loadNextPage: vi.fn(),
   loadMoreMessages: vi.fn(),
@@ -147,6 +164,7 @@ const baseAnalysisData = {
   noMoreToLoad: false,
   nolimitShown: false,
   pageIndex: 0,
+  firstLoadedMessageIndex: 0,
   onUpdateLocalMessage: vi.fn(),
   onDeleteMessage: vi.fn(),
   onCancelBotTagAction: vi.fn(),
@@ -159,6 +177,7 @@ const baseAnalysisData = {
     aors: [],
     groups: [],
     senders: [],
+    devices: [],
     freqs: [],
     newFreqs: [],
     callsigns: [],
@@ -185,7 +204,7 @@ const baseAnalysisData = {
   tagsOrder: [],
   topCallsigns: [],
   topFreqs: [],
-  groupInfos: {},
+  groupInfos: {} as Record<string, SignalGroupEntry>,
   topLocations: [],
   topUnits: [],
   renameSummaryUnit: vi.fn(),
@@ -197,10 +216,12 @@ function buildAnalysisData() {
     loadCallsignGraph: vi.fn(),
     loadAllMessages: vi.fn(),
     loadFilterSection: vi.fn(),
+    loadFirstPage: vi.fn(),
     invalidateFilterSectionLoads: vi.fn(),
     invalidateFilterSectionLoadsForPatch: vi.fn(),
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
+    loadLastPage: vi.fn(),
     loadNewCallsigns: vi.fn(),
     loadNextPage: vi.fn(),
     loadMoreMessages: vi.fn(),
@@ -289,18 +310,25 @@ function buildEditor() {
   };
 }
 
-function renderHook(authUserRoles: string[] = []) {
+function renderHook(authUserRoles: string[] = [], onRender?: () => void) {
   if (container == null) throw new Error('container not initialized');
 
   root = createRoot(container);
   const Harness = () => {
     latest = useRerAnalysisNeoPage(null, authUserRoles);
+    onRender?.();
     return null;
   };
 
   act(() => {
     root?.render(createElement(Harness));
   });
+
+  return () => {
+    act(() => {
+      root?.render(createElement(Harness));
+    });
+  };
 }
 
 async function flushEffects() {
@@ -316,7 +344,18 @@ let latest: AnalysisPageViewModel | null = null;
 
 describe('useRerAnalysisNeoPage', () => {
   beforeEach(() => {
+    const storage = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        clear: () => storage.clear(),
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+    });
     window.history.replaceState({}, '', window.location.pathname);
+    window.localStorage.clear();
     container = document.createElement('div');
     document.body.appendChild(container);
     latest = null;
@@ -345,8 +384,14 @@ describe('useRerAnalysisNeoPage', () => {
     });
     currentUserMock.fetchCurrentUser.mockReset();
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
+    inboxMessagesMock.fetchInboxItemContext.mockReset();
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
+      message: [50, { ...buildDirectLinkWindow().inbox.inboxItems[0][1], date: '2026-08-20' }],
+    });
     inboxMessagesMock.fetchInboxWindow.mockReset();
     inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
+    groupCatalogMock.groups.mockReset().mockResolvedValue([]);
+    groupCatalogMock.details.mockReset().mockResolvedValue([]);
 
     useAnalysisDataMock.mockReset();
     analysisFreqValues = ['111.1'];
@@ -393,6 +438,194 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.radioFeaturesAllowed).toBe(true);
   });
 
+  it.each(['catalog', 'details'])('#3727 clears local %s errors after retry', async (failure) => {
+    const alpha = { masterKey: 'a', name: 'Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([alpha]);
+    const request = failure === 'catalog' ? groupCatalogMock.groups : groupCatalogMock.details;
+    request.mockRejectedValue(new Error('unavailable'));
+
+    renderHook(['Rer']);
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeTruthy();
+    expect(latest?.error).toBeNull();
+
+    request.mockResolvedValue(failure === 'catalog' ? ['a'] : [alpha]);
+    act(() => latest?.groupNavigation.retry());
+    await flushEffects();
+
+    expect(latest?.groupNavigation.error).toBeNull();
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...alpha });
+    expect(latest?.error).toBeNull();
+  });
+
+  it('#3727 reconciles catalog refreshes with only changed message metadata', async () => {
+    const alpha = { masterKey: 'a', name: 'Old Alpha', colorKey: 'cyan' } as SignalGroupEntry;
+    const beta = { masterKey: 'b', name: 'Beta', colorKey: 'orange' } as SignalGroupEntry;
+    currentAnalysisData!.groupInfos = { a: alpha };
+    groupCatalogMock.groups.mockResolvedValue(['a']);
+    groupCatalogMock.details.mockResolvedValue([
+      { ...alpha, name: 'Renamed Alpha', colorKey: 'red' },
+    ]);
+    const rerender = renderHook(['Rer']);
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+
+    currentAnalysisData!.groupInfos = { a: alpha, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a).toMatchObject({ name: 'Renamed Alpha', colorKey: 'red' });
+    expect(latest?.groupInfos.b).toBe(beta);
+    expect(latest?.groupNavigation.groups).toContainEqual({ kind: 'group', ...beta });
+
+    currentAnalysisData!.groupInfos = { a: { ...alpha, name: 'Latest Alpha' }, b: beta };
+    rerender();
+    await flushEffects();
+    expect(latest?.groupInfos.a?.name).toBe('Latest Alpha');
+  });
+
+  it('#3727 shares the legacy group filter and preserves frequency and AOR filters', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.updateQueryState({
+        groupsSelected: ['group-a', 'group-c'],
+        freqsSelected: ['111.1'],
+        aorsSelected: ['7'],
+      });
+    });
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+    expect(latest?.queryState.aorsSelected).toEqual(['7']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([
+      'group-b',
+    ]);
+    expect(new URL(window.location.href).searchParams.get('groups')).toBe('group-b');
+
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'all' });
+    });
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+    expect(latest?.queryState.aorsSelected).toEqual(['7']);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.groupsSelected).toEqual([]);
+    expect(new URL(window.location.href).searchParams.has('group')).toBe(false);
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+  });
+
+  it('restores a selected group filter from browser storage', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    act(() => root?.unmount());
+    root = null;
+    latest = null;
+    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
+    expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
+  });
+
+  it('ignores malformed stored group filters', () => {
+    window.localStorage.setItem(
+      'rer-analysis-neo-scope-filters-v1',
+      JSON.stringify({
+        version: 1,
+        scopes: { 'group:group-b': { callsignsSelected: 'not-an-array' } },
+      }),
+    );
+    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.callsignsSelected).toEqual([]);
+  });
+
+  it('restores the group scope filter from browser history', async () => {
+    renderHook(['Rer']);
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['111.1'] });
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    window.history.replaceState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+
+    expect(latest?.groupNavigation.scope).toEqual({ kind: 'all' });
+    expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+  });
+
+  it('keeps a group scope transition pending until that scope commits its messages', async () => {
+    renderHook(['Rer']);
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    expect(latest?.groupScopeTransitionPending).toBe(true);
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = true;
+    await act(async () => {
+      latest?.toggleRightPanel();
+    });
+
+    expect(latest?.groupScopeTransitionPending).toBe(false);
+  });
+
+  it('does not render again after a group scope commits its messages', async () => {
+    let renderCount = 0;
+    const rerender = renderHook(['Rer'], () => {
+      renderCount += 1;
+    });
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+    const renderCountBeforeCommit = renderCount;
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = true;
+    rerender();
+
+    expect(renderCount).toBe(renderCountBeforeCommit + 1);
+  });
+
+  it('does not treat a later filter reload as a group transition when the scope query was unchanged', async () => {
+    const rerender = renderHook(['Rer']);
+    if (currentAnalysisData == null) throw new Error('analysis data not initialized');
+
+    await act(async () => {
+      latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
+    });
+
+    currentAnalysisData.messagesLoadedForCurrentQuery = false;
+    rerender();
+
+    expect(latest?.groupScopeTransitionPending).toBe(false);
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3568
   it('reconciles a bare date range when the user lookup adds Rer access', async () => {
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester', roles: ['Rer'] } as User);
@@ -403,6 +636,117 @@ describe('useRerAnalysisNeoPage', () => {
       createResetQueryState(new Date(), true).fromDateTimeStr,
     );
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { request: 'user', directLink: false },
+    { request: 'settings', directLink: false },
+    { request: 'user', directLink: true },
+    { request: 'settings', directLink: true },
+  ])(
+    'preserves report filters while $request access is pending or fails (direct link: $directLink)',
+    async ({ request, directLink }) => {
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: true,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValue({ rerReportEnabled: true });
+      const accessRequest = deferred<never>();
+      const lookup =
+        request === 'user'
+          ? currentUserMock.fetchCurrentUser
+          : systemSettingsMock.currentSystemSettings;
+      lookup.mockReturnValueOnce(accessRequest.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true${directLink ? '&m=target-uid' : ''}`,
+      );
+      renderHook(['Rer']);
+      await flushEffects();
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => accessRequest.reject(new Error('access unavailable')));
+      await flushEffects();
+      expect(latest?.queryState.onlyWithNetwork).toBe(true);
+      expect(new URLSearchParams(window.location.search).get('onlyWithNetwork')).toBe('true');
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+        queryState: { onlyWithNetwork: true },
+        deferInitialLoad: true,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.error).not.toBeNull();
+    },
+  );
+
+  it('advances the visible page and URL after a bounded next page loads', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 20 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      messagesTotalCount: 60,
+      loadNextPage: vi.fn().mockResolvedValue(true),
+    };
+
+    renderHook();
+    await flushEffects();
+    await act(async () => latest?.loadNextPage());
+
+    expect(latest?.visibleMessagesPageIndex).toBe(1);
+    expect(latest?.messagePageNavigationTarget).toBe(1);
+    expect(new URLSearchParams(window.location.search).get('messagesPage')).toBe('2');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it.each([
+    { eligible: true, globallyEnabled: true, expected: true },
+    { eligible: false, globallyEnabled: true, expected: false },
+    { eligible: true, globallyEnabled: false, expected: false },
+  ])(
+    'gates the RER report filter for $eligible eligibility and $globallyEnabled global setting',
+    async ({ eligible, globallyEnabled, expected }) => {
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?onlyWithNetwork=true&m=target-uid`,
+      );
+      currentUserMock.fetchCurrentUser.mockResolvedValue({
+        name: 'tester',
+        roles: ['Rer'],
+        rerReportEligible: eligible,
+      } as User);
+      systemSettingsMock.currentSystemSettings.mockResolvedValueOnce({
+        id: 7,
+        rerAnalysisUnitsExactMatchOnlyDefault: false,
+        rerDutyTestEnabled: false,
+        rerDutyInsertHistoricalInterceptions: false,
+        rerDutyTestSinceMs: 0,
+        rerDutyTestLimit: 1,
+        rerDutyPollIntervalSec: 1,
+        rerShortUrlEnabled: false,
+        enableAudioTranscription: true,
+        rerReportEnabled: globallyEnabled,
+        hideNetworks: true,
+      });
+
+      renderHook(['Rer']);
+      await flushEffects();
+
+      expect(latest?.rerReportFilterEnabled).toBe(expected);
+      expect(latest?.queryState.onlyWithNetwork).toBe(expected);
+      expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
+      expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+        expected,
+      );
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([['Cyber'], ['Cyber', 'UnitsEditor', 'NetworkEditor', 'CallsignsEditor']])(
@@ -439,7 +783,7 @@ describe('useRerAnalysisNeoPage', () => {
         onlyWithMetadata: false,
       });
       expect(latest?.centerTab).toBe('messages');
-      expect(latest?.rightSidebarTab).toBe('stats');
+      expect(latest?.rightSidebarTab).toBe('callsigns');
     },
   );
   it('opens the first available sidebar tab when the right panel is toggled while map stays in the center', async () => {
@@ -460,7 +804,7 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -519,6 +863,15 @@ describe('useRerAnalysisNeoPage', () => {
     });
     expect(latest?.error).not.toBeNull();
     expect(window.location.search).toContain('device-1');
+  });
+
+  it('keeps network visibility unavailable when system settings fail', async () => {
+    systemSettingsMock.currentSystemSettings.mockRejectedValueOnce(new Error('settings failed'));
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.networkVisibilityReady).toBe(false);
+    expect(latest?.error).not.toBeNull();
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -598,12 +951,12 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('groups');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
 
     await act(async () => latest?.setRightSidebarTab('callsigns'));
     await flushEffects();
-    expect(currentAnalysisData?.loadFilterSection).toHaveBeenCalledWith('callsigns');
+    expect(currentAnalysisData?.loadFilterSection).not.toHaveBeenCalledWith('callsigns');
     await act(async () => latest?.toggleRightPanel());
     await flushEffects();
 
@@ -653,7 +1006,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.leftPanelOpen).toBe(false);
     expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     window.history.replaceState({}, '', originalUrl);
   });
   it('writes panel visibility to query parameters', async () => {
@@ -663,7 +1016,7 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
 
-    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('false');
 
     await act(async () => {
@@ -672,7 +1025,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('false');
+    expect(new URL(window.location.href).searchParams.get('leftPanelOpen')).toBe('true');
     expect(new URL(window.location.href).searchParams.get('rightPanelOpen')).toBe('true');
     window.history.replaceState({}, '', originalUrl);
   });
@@ -908,6 +1261,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.hideBotTags).toBe(true);
   });
   it('keeps the direct-link error when the regular message list clears its error', async () => {
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({ message: null });
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
 
     renderHook();
@@ -918,6 +1272,7 @@ describe('useRerAnalysisNeoPage', () => {
     );
     expect(latest?.directMessageLoading).toBe(false);
 
+    expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
     const clearRegularListError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
     await act(async () => {
       clearRegularListError('');
@@ -933,6 +1288,33 @@ describe('useRerAnalysisNeoPage', () => {
       'Повідомлення за посиланням не знайдено або воно недоступне.',
     );
     expect(new URL(window.location.href).searchParams.get('m')).toBe('missing-uid');
+  });
+  it('does not disclose API error details while opening a linked message', async () => {
+    inboxMessagesMock.fetchInboxItemContext.mockRejectedValueOnce(
+      new Error('private group internal id 123'),
+    );
+    window.history.replaceState({}, '', `${window.location.pathname}?m=hidden-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.directMessageError).toBe(
+      'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+    );
+    expect(latest?.directMessageError).not.toContain('private group');
+  });
+  it('reports a missing feed target after the context lookup succeeds', async () => {
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      ...buildDirectLinkWindow(),
+      inbox: { ...buildDirectLinkWindow().inbox, inboxItems: [] },
+    });
+    window.history.replaceState({}, '', `${window.location.pathname}?m=disappeared-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.directMessageError).toBe('Повідомлення за посиланням відсутнє у стрічці.');
+    expect(latest?.directMessageNavigation).toBeNull();
   });
   // Regression: https://github.com/echoua/echo/issues/2726
   it.each([
@@ -964,6 +1346,11 @@ describe('useRerAnalysisNeoPage', () => {
           'IMSCreatedAt',
         );
         expect(latest?.queryState).toMatchObject({ fromDateTimeStr: from, toDateTimeStr: to });
+        const period = buildInboxReq(latest!.queryState, [], true);
+        expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0][0].inboxReq).toMatchObject({
+          sinceDateInclusiveMs: period.sinceDateInclusiveMs,
+          tillDateInclusiveMs: period.tillDateInclusiveMs,
+        });
         expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
         expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
         expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(from);
@@ -994,14 +1381,81 @@ describe('useRerAnalysisNeoPage', () => {
       });
       await flushEffects();
       expect(latest?.queryState).toMatchObject({
-        fromDateTimeStr: '2026-08-28T00:00',
-        toDateTimeStr: '2026-08-29T00:00',
+        fromDateTimeStr: '2026-08-20T00:00',
+        toDateTimeStr: '2026-08-21T00:00',
         ...patch,
       });
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].focusedWindow).toBeNull();
       expect(latest?.directMessageNavigation).toBeNull();
       expect(latest?.messagesLoading).toBe(false);
       expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/2726
+  it.each([{ fromDateTimeStr: '2026-08-27T00:00' }, { search: 'user search' }])(
+    'ignores a late UUID lookup after a user edit: %j',
+    async (patch) => {
+      const request = deferred<{ message: [number, InboxMessage] }>();
+      inboxMessagesMock.fetchInboxItemContext.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxItemContext).toHaveBeenCalledWith(
+        { messageUid: 'target-uid' },
+        { signal: expect.any(AbortSignal) },
+      );
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => {
+        latest?.updateQueryState(patch);
+        request.resolve({ message: buildDirectLinkWindow().inbox.inboxItems[0] });
+      });
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+        ...patch,
+      });
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      expect(latest?.directMessageLoading).toBe(false);
+      expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/pull/3754
+  it.each(['missing', 'error'])(
+    'restores the original period when the bounded window is %s',
+    async (outcome) => {
+      const request = deferred<InboxWindowRsp | null>();
+      inboxMessagesMock.fetchInboxWindow.mockReturnValueOnce(request.promise);
+      window.history.replaceState(
+        {},
+        '',
+        `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2026-08-29T00%3A00`,
+      );
+      renderHook();
+      await flushEffects();
+      expect(latest?.queryState.fromDateTimeStr).toBe('2026-08-20T00:00');
+      await act(async () => {
+        if (outcome === 'missing') request.resolve(null);
+        else request.reject(new Error('window failed'));
+      });
+      await flushEffects();
+      expect(latest?.queryState).toMatchObject({
+        fromDateTimeStr: '2026-08-28T00:00',
+        toDateTimeStr: '2026-08-29T00:00',
+      });
+      expect(new URL(window.location.href).searchParams.get('fromDateTime')).toBe(
+        '2026-08-28T00:00',
+      );
+      expect(new URL(window.location.href).searchParams.get('toDateTime')).toBe('2026-08-29T00:00');
+      expect(latest?.directMessageError).toBeTruthy();
+      expect(latest?.directMessageNavigation).toBeNull();
+      expect(latest?.directMessageLoading).toBe(false);
     },
   );
 
@@ -1053,6 +1507,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
     expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(
       expect.objectContaining({ messageRef: 'target-uid' }),
+      { signal: expect.any(AbortSignal) },
     );
     expect(latest?.queryState).toMatchObject({
       fromDateTimeStr: '2026-08-20T00:00',
@@ -1081,6 +1536,56 @@ describe('useRerAnalysisNeoPage', () => {
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('finishes a linked-context refresh when the 41-message response is displayed in a 40-message window', async () => {
+    const baseWindow = buildDirectLinkWindow();
+    const targetMessage = baseWindow.inbox.inboxItems[0][1];
+    const inboxItems = Array.from(
+      { length: 41 },
+      (_, index) =>
+        [index + 30, { ...targetMessage, text: `message-${index + 30}` }] as [number, InboxMessage],
+    );
+    const focusedWindow: InboxWindowRsp = {
+      ...baseWindow,
+      messagesBefore: 20,
+      messagesAfter: 20,
+      inbox: { ...baseWindow.inbox, inboxItems },
+    };
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+
+    renderHook();
+    await flushEffects();
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: inboxItems.slice(1),
+    };
+    act(() => latest?.setNewestFirst(false));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(false);
+
+    const refreshedItems = inboxItems.map(
+      ([id, message]) => [id, { ...message, text: `refreshed-${id}` }] as [number, InboxMessage],
+    );
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      ...focusedWindow,
+      inbox: { ...focusedWindow.inbox, inboxItems: refreshedItems },
+    });
+    act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(true);
+
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: refreshedItems.slice(1),
+    };
+    act(() => latest?.setNewestFirst(true));
+    await flushEffects();
+
+    expect(latest?.directMessageLoading).toBe(false);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
   });
 
   // https://github.com/echoua/echo/issues/3455
@@ -1175,6 +1680,116 @@ describe('useRerAnalysisNeoPage', () => {
       focusedMessageActive: true,
     });
   });
+  it('writes a bounded scroll-selected page to the URL without creating a button target', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      firstLoadedMessageIndex: 20,
+      pageIndex: 2,
+      messagesTotalCount: 60,
+    };
+
+    renderHook();
+    await flushEffects();
+    act(() => latest?.clearMessagePageNavigationTarget());
+    act(() => latest?.setVisibleMessagesPageIndex(2));
+
+    expect(latest?.visibleMessagesPageIndex).toBe(2);
+    expect(latest?.messagePageNavigationTarget).toBeNull();
+    expect(new URL(window.location.href).searchParams.get('messagesPage')).toBe('3');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('refreshes the page made visible by scrolling rather than the last loaded edge', async () => {
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [40 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      pageIndex: 1,
+      messagesTotalCount: 40,
+    };
+    renderHook();
+    await flushEffects();
+    act(() => latest?.setVisibleMessagesPageIndex(1));
+    act(() => latest?.setVisibleMessagesPageIndex(0));
+    expect(latest?.visibleMessagesPageIndex).toBe(0);
+
+    await act(async () => {
+      latest?.reload({ preserveMessagePage: true });
+      await Promise.resolve();
+    });
+
+    expect(currentAnalysisData.reload).toHaveBeenCalledWith({
+      preserveMessagePage: true,
+      messagePageIndex: 0,
+    });
+  });
+
+  it('requests an evicted previous bounded page when its button is clicked', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
+    const loadPrevPage = vi.fn().mockResolvedValue(undefined);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: Array.from(
+        { length: 40 },
+        (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+      ),
+      firstLoadedMessageIndex: 20,
+      pageIndex: 2,
+      messagesTotalCount: 60,
+      loadPrevPage,
+    };
+
+    renderHook();
+    await flushEffects();
+    await act(async () => latest?.loadPrevPage());
+
+    expect(loadPrevPage).toHaveBeenCalledWith(0);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it.each([
+    { action: 'loadFirstPage', initialPageIndex: 1 },
+    { action: 'loadLastPage', initialPageIndex: 0 },
+    { action: 'loadNextPage', initialPageIndex: 0 },
+    { action: 'loadPrevPage', initialPageIndex: 1 },
+  ] as const)(
+    'keeps the current page and URL when $action cannot load the requested chunk',
+    async ({ action, initialPageIndex }) => {
+      const initialUrl =
+        `${window.location.pathname}` + (initialPageIndex === 1 ? '?messagesPage=2' : '');
+      window.history.replaceState({}, '', initialUrl);
+      currentAnalysisData = {
+        ...buildAnalysisData(),
+        messages: Array.from(
+          { length: 20 },
+          (_, index) => [60 - index, { text: '' } as InboxMessage] as [number, InboxMessage],
+        ),
+        firstLoadedMessageIndex: initialPageIndex * 20,
+        pageIndex: initialPageIndex,
+        messagesTotalCount: 60,
+        [action]: vi.fn().mockResolvedValue(false),
+      };
+
+      renderHook();
+      await flushEffects();
+      const initialNavigationTarget = latest?.messagePageNavigationTarget;
+      const initialVisibleUrl = window.location.pathname + window.location.search;
+      await act(async () => latest?.[action]());
+
+      expect(currentAnalysisData[action]).toHaveBeenCalledTimes(1);
+      expect(latest?.visibleMessagesPageIndex).toBe(initialPageIndex);
+      expect(latest?.messagePageNavigationTarget).toBe(initialNavigationTarget);
+      expect(window.location.pathname + window.location.search).toBe(initialVisibleUrl);
+    },
+  );
+
   it('updates the visible chunk across previous and next direct-link navigation', async () => {
     const targetMessage = {
       text: 'target',
@@ -1343,6 +1958,25 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageLoading).toBe(false);
     expect(latest?.error).toBeNull();
   });
+  it('reports a focused-window refresh failure without exposing API details or losing focus', async () => {
+    const focusedWindow = buildDirectLinkWindow();
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    renderHook();
+    await flushEffects();
+
+    inboxMessagesMock.fetchInboxWindow.mockRejectedValueOnce(
+      new Error('private group internal id 123'),
+    );
+    act(() => latest?.updateQueryState({ groupsSelected: ['other-group'] }));
+    await flushEffects();
+
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageError).toBe(
+      'Не вдалося відкрити повідомлення за посиланням. Спробуйте ще раз.',
+    );
+    expect(latest?.directMessageError).not.toContain('private group');
+  });
   it('leaves direct-link context when the date range changes', async () => {
     const targetMessage = {
       text: 'target',
@@ -1407,7 +2041,7 @@ describe('useRerAnalysisNeoPage', () => {
     });
     await flushEffects();
 
-    expect(latest?.rightSidebarTab).toBe('stats');
+    expect(latest?.rightSidebarTab).toBe('callsigns');
     expect(latest?.rightPanelOpen).toBe(true);
   });
 });

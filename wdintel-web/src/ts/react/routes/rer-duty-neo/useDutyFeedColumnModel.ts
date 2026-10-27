@@ -2,6 +2,10 @@ import type { InboxMessage, User } from '../../../../Bindings';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { FeedColumnModel } from './types';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type { GroupScope } from '../shared/group-navigation';
+import type { MessageFeedFocus } from '../shared/message-feed';
+import { groupFilterScope } from '../shared/group-navigation';
+import { useDutyUnreadBoundaries } from './useDutyUnreadBoundaries';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
 import {
   clearActiveFeedFilter,
@@ -9,21 +13,27 @@ import {
   feedNeedsUnreadPrefetch,
   hasActiveFeedFilter,
   type MessageFeedState,
+  stableStringify,
   type TagsLayoutVariant,
 } from './utils';
+import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 
 export type DutyFeedColumnModelDeps = {
   feeds: RerDutyFeedsBundle;
+  editorSourceFeedId: string | null;
+  editorHighlightedMessageId: number | null;
+  linkedMessageFocus?: { feedId: string; filterSignature: string; focus: MessageFeedFocus } | null;
   narrowScreen: boolean;
   authUserName: string | null;
   currentUser: User | null;
   canUseMessageDevices: boolean;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
-  openReportEditor: (feedId: string, reportId: number) => void;
+  openReportEditor: (feedId: string, reportId: number, sourceMessageId: number) => void;
   openMessageEditor: (
     feedId: string,
     target: { id: number; message: InboxMessage },
@@ -39,13 +49,8 @@ export type DutyFeedColumnModelDeps = {
     },
     focusTarget: HTMLElement,
   ) => void;
+  selectGroupScope: (feedId: string, scope: GroupScope) => void;
 };
-
-function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
-  if (narrow) return '100%';
-  if (feedCount <= 1) return '960px';
-  return '100%';
-}
 
 function buildFeedColumnView(
   feed: MessageFeedState,
@@ -57,6 +62,7 @@ function buildFeedColumnView(
     initialPositioningReady,
     watchModeByFeedId,
     loadingNewerFeedIds,
+    isExplicitNavigationLoading,
     arrowResultByFeedId,
     confirmedTailPreviewByFeedId,
     nearBottomByFeedIdRef,
@@ -65,13 +71,21 @@ function buildFeedColumnView(
   } = deps.feeds;
   return {
     narrowScreen: deps.narrowScreen,
+    linkedMessageFocus:
+      deps.linkedMessageFocus?.feedId === feed.id &&
+      deps.linkedMessageFocus.filterSignature === stableStringify(feed.filter)
+        ? deps.linkedMessageFocus.focus
+        : null,
+    editorHighlightedMessageId:
+      deps.editorSourceFeedId === feed.id ? deps.editorHighlightedMessageId : null,
     feedCount: messageFeeds.length,
     canRemove: messageFeeds.length > 1,
-    maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, deps.narrowScreen),
+    maxWidth: messageFeeds.length === 1 ? DUTY_SINGLE_FEED_MAX_WIDTH_PX : '100%',
     isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
     autoScrollAllowed: !dutyDisableAutoScroll,
     initialPositioningReady,
     loadingNewer: loadingNewerFeedIds.has(feed.id),
+    explicitNavigationLoading: isExplicitNavigationLoading(feed.id),
     arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
     bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
       // Near-bottom: keep matching tail preview (real beyond-tail pending); only drop residual stock.
@@ -152,8 +166,13 @@ function buildFeedFilterPanel(
 
   return {
     feedId: feed.id,
+    hideGroupSelection: Boolean(feed.groupScopeMasterKey),
     hasActiveFilter:
-      hasActiveFeedFilter(feed.filter) ||
+      hasActiveFeedFilter(
+        feed.groupScopeMasterKey
+          ? { ...feed.filter, groupsSelected: null, groupsDenied: null }
+          : feed.filter,
+      ) ||
       feed.adjacentFreqsRange !== 0 ||
       feed.highlightSignalsEnabled ||
       feed.onlyMyUnitTagsEnabled,
@@ -305,7 +324,15 @@ function buildFeedFilterPanel(
       onDiscardCurrentFilter: () => {
         setSelectedSavedIdByFeedId((prev) => ({ ...prev, [feed.id]: null }));
         setSaveFilterNameByFeedId((prev) => ({ ...prev, [feed.id]: '' }));
-        const clearedFilter = clearActiveFeedFilter(feed.filter);
+        const clearedFilter = {
+          ...clearActiveFeedFilter(feed.filter),
+          ...(feed.groupScopeMasterKey
+            ? {
+                groupsSelected: feed.filter.groupsSelected,
+                groupsDenied: feed.filter.groupsDenied,
+              }
+            : {}),
+        };
         if (feed.highlightSignalsEnabled) {
           applyFilter(feed.id, clearedFilter, true);
         } else {
@@ -364,6 +391,7 @@ function buildFeedMessageCard(
     featureStrictNetworks,
     tagsLayout: deps.tagsLayout,
     hideBotTags: deps.hideBotTags,
+    hideNetworks: deps.hideNetworks,
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
@@ -378,9 +406,10 @@ function buildFeedMessageCard(
 }
 
 /** Assembles the per-column view model consumed by the Duty workspace. */
-export function useDutyFeedColumnModel(
-  deps: DutyFeedColumnModelDeps,
-): (feed: MessageFeedState) => FeedColumnModel {
+export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
+  const { boundaries: unreadBoundaries, dismissUnreadBoundary } = useDutyUnreadBoundaries(
+    deps.feeds.messageFeeds,
+  );
   const getStableFeedActions = useDutyFeedColumnActions({
     feeds: deps.feeds,
     openReportEditor: deps.openReportEditor,
@@ -388,10 +417,22 @@ export function useDutyFeedColumnModel(
     openReportComposer: deps.openReportComposer,
   });
 
-  return (feed: MessageFeedState) => ({
+  const buildFeedColumnModel = (feed: MessageFeedState): FeedColumnModel => ({
     feed,
-    view: buildFeedColumnView(feed, deps),
+    view: {
+      ...buildFeedColumnView(feed, deps),
+      unreadBoundaryMessageId: unreadBoundaries.get(feed.id)?.messageId ?? null,
+    },
     filterPanel: buildFeedFilterPanel(feed, deps),
+    groupNavigation: {
+      scope: groupFilterScope(feed.filter.groupsSelected ?? []),
+      groupName: feed.groupScopeMasterKey
+        ? (deps.feeds.groupInfos[feed.groupScopeMasterKey]?.name ?? feed.groupScopeMasterKey)
+        : 'Всі групи',
+      onSelect: (scope) => deps.selectGroupScope(feed.id, scope),
+      onError: (error) =>
+        deps.feeds.setError(error instanceof Error ? error.message : String(error)),
+    },
     keywordsPanel: {
       keywordSets: deps.feeds.keywordSets,
       onFilterChange: deps.feeds.applyFilter,
@@ -400,4 +441,5 @@ export function useDutyFeedColumnModel(
     messageCard: buildFeedMessageCard(feed, deps),
     actions: getStableFeedActions(feed),
   });
+  return { buildFeedColumnModel, dismissUnreadBoundary };
 }

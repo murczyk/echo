@@ -27,11 +27,11 @@ struct CacheEntries {
 
 struct CacheEntry {
     directory: tempfile::TempDir,
-    generation: Mutex<()>,
+    generation: Arc<Mutex<()>>,
     last_used: std::sync::Mutex<Instant>,
 }
 
-struct CacheLease {
+pub(super) struct CacheLease {
     entry: Arc<CacheEntry>,
     file: std::fs::File,
 }
@@ -89,7 +89,7 @@ struct ContentSource {
     source_sha256: Vec<u8>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct ContentHooks {
     #[cfg(test)]
     pub before_publication: Option<
@@ -285,34 +285,42 @@ pub(super) async fn open_with_hooks(
     command: OpenDeviceAudioCommand,
     hooks: ContentHooks,
 ) -> anyhow::Result<DeviceAudioContent> {
-    authorize_read(&runtime, actor, command.device_id)
+    open_cached(runtime, Some(actor), command, hooks)
         .await
-        .c(h!())?;
-    let source = find_source(&runtime, &command).await.c(h!())?;
-    let entry = cache_entry(&runtime, command.audio_id).await.c(h!())?;
-    let owned_entry = entry.clone();
-    let owned_runtime = runtime.clone();
-    let owned_command = command.clone();
-    let path = tokio::spawn(async move {
-        let _generation = owned_entry.entry.generation.lock().await;
-        generate(
-            &owned_runtime,
-            actor,
-            &owned_command,
-            &source,
-            &owned_entry.entry,
-            &hooks,
-        )
-        .await
-    })
+        .c(h!())
+}
+
+async fn open_cached(
+    runtime: Arc<DeviceAudioRuntime>,
+    actor: Option<Uuid>,
+    command: OpenDeviceAudioCommand,
+    hooks: ContentHooks,
+) -> anyhow::Result<DeviceAudioContent> {
+    if let Some(actor) = actor {
+        authorize_read(&runtime, actor, command.device_id)
+            .await
+            .c(h!())?;
+    }
+    let entry = tokio::time::timeout(
+        Duration::from_secs(DEVICE_AUDIO_PREPARATION_WAIT_SECS),
+        prepare_representation(runtime.clone(), actor, &command, hooks, None),
+    )
     .await
+    .map_err(|_| unavailable("audio preparation timed out"))
     .c(h!())?
     .c(h!())?;
+    let path = entry
+        .entry
+        .directory
+        .path()
+        .join(target_name(command.representation));
     let mut file = tokio::fs::File::open(&path).await.c(h!())?;
     let total = file.metadata().await.c(h!())?.len();
-    authorize_read(&runtime, actor, command.device_id)
-        .await
-        .c(h!())?;
+    if let Some(actor) = actor {
+        authorize_read(&runtime, actor, command.device_id)
+            .await
+            .c(h!())?;
+    }
     touch(&entry.entry).await.c(h!())?;
     let range =
         if matches!(command.representation, DeviceAudioRepresentation::Content)
@@ -364,6 +372,147 @@ pub(super) async fn open_with_hooks(
     })
 }
 
+pub(super) async fn validate_source(
+    runtime: &DeviceAudioRuntime,
+    device_id: Uuid,
+    audio_id: Uuid,
+) -> anyhow::Result<()> {
+    find_source(
+        runtime,
+        &OpenDeviceAudioCommand {
+            device_id,
+            audio_id,
+            representation: DeviceAudioRepresentation::Content,
+            method: DeviceAudioMethod::Head,
+            range: None,
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+pub(super) async fn prepare_representation(
+    runtime: Arc<DeviceAudioRuntime>,
+    actor: Option<Uuid>,
+    command: &OpenDeviceAudioCommand,
+    hooks: ContentHooks,
+    job: Option<Arc<preparation::Job>>,
+) -> anyhow::Result<Arc<CacheLease>> {
+    let source = find_source(&runtime, command).await.c(h!())?;
+    let entry = cache_entry(&runtime, command.audio_id).await.c(h!())?;
+    let target = entry
+        .entry
+        .directory
+        .path()
+        .join(target_name(command.representation));
+    if tokio::fs::try_exists(&target).await.c(h!())? {
+        return Ok(entry);
+    }
+    let waiting = if job.is_none() {
+        Some(
+            runtime
+                .preparation
+                .waiting
+                .clone()
+                .acquire_owned()
+                .await
+                .c(h!())?,
+        )
+    } else {
+        None
+    };
+    let generation = tokio::select! {
+        _ = runtime.preparation.cancellation.cancelled() => return Err(unavailable("audio preparation is stopping")).c(h!()),
+        generation = entry.entry.generation.clone().lock_owned() => generation,
+    };
+    if tokio::fs::try_exists(&target).await.c(h!())? {
+        return Ok(entry);
+    }
+    let permit = runtime.preparation.admit(job.as_deref()).await.c(h!())?;
+    if let Some(job) = job {
+        job.started(command.representation);
+    }
+    let owned_entry = entry.clone();
+    let owned_runtime = runtime.clone();
+    let command = command.clone();
+    runtime
+        .preparation
+        .tasks
+        .spawn(async move {
+            let (_waiting, _generation, _permit) =
+                (waiting, generation, permit);
+            generate(
+                &owned_runtime,
+                actor,
+                &command,
+                &source,
+                &owned_entry.entry,
+                &hooks,
+            )
+            .await
+        })
+        .await
+        .c(h!())?
+        .c(h!())?;
+    Ok(entry)
+}
+
+pub(super) async fn readiness(
+    runtime: &DeviceAudioRuntime,
+    audio: Uuid,
+) -> anyhow::Result<[bool; 3]> {
+    let entry = runtime
+        .playback_cache
+        .entries
+        .lock()
+        .await
+        .by_id
+        .get(&audio)
+        .cloned();
+    let Some(entry) = entry else {
+        return Ok([false; 3]);
+    };
+    let mut ready = [false; 3];
+    for (index, representation) in
+        preparation::REPRESENTATIONS.into_iter().enumerate()
+    {
+        ready[index] = tokio::fs::try_exists(
+            entry.directory.path().join(target_name(representation)),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(ready)
+}
+
+pub(super) async fn stage_original(
+    runtime: &DeviceAudioRuntime,
+    audio: Uuid,
+    source: &Path,
+) -> anyhow::Result<()> {
+    let entry = cache_entry(runtime, audio).await.c(h!())?;
+    let Ok(_generation) = entry.entry.generation.try_lock() else {
+        return Ok(());
+    };
+    let target = entry.entry.directory.path().join("original");
+    if tokio::fs::try_exists(&target).await.c(h!())? {
+        return Ok(());
+    }
+    preparation::ensure_space(runtime).await.c(h!())?;
+    let temporary =
+        tempfile::NamedTempFile::new_in(entry.entry.directory.path())
+            .c(h!())?;
+    tokio::fs::remove_file(temporary.path()).await.c(h!())?;
+    if tokio::fs::hard_link(source, temporary.path())
+        .await
+        .is_err()
+    {
+        tokio::fs::copy(source, temporary.path()).await.c(h!())?;
+    }
+    tokio::fs::rename(temporary.path(), target).await.c(h!())
+}
+
 fn cache_root(runtime: &DeviceAudioRuntime) -> PathBuf {
     runtime.storage_dir.join("device-audio-cache")
 }
@@ -390,7 +539,7 @@ async fn cache_entry(
         .c(h!())?;
     let entry = Arc::new(CacheEntry {
         directory,
-        generation: Mutex::new(()),
+        generation: Arc::new(Mutex::new(())),
         last_used: std::sync::Mutex::new(Instant::now()),
     });
     let lease = acquire_entry(entry.clone())
@@ -425,7 +574,7 @@ fn target_name(representation: DeviceAudioRepresentation) -> &'static str {
 
 async fn generate(
     runtime: &DeviceAudioRuntime,
-    actor: Uuid,
+    actor: Option<Uuid>,
     command: &OpenDeviceAudioCommand,
     source: &ContentSource,
     entry: &CacheEntry,
@@ -438,12 +587,7 @@ async fn generate(
     if tokio::fs::try_exists(&target).await.c(h!())? {
         return Ok(target);
     }
-    let _permit = runtime
-        .probe_permits
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| unavailable("audio rendition is busy"))
-        .c(h!())?;
+    preparation::ensure_space(runtime).await.c(h!())?;
     let original = entry.directory.path().join("original");
     if !tokio::fs::try_exists(&original).await.c(h!())? {
         let plaintext = storage::verified_content(
@@ -466,9 +610,11 @@ async fn generate(
         tokio::fs::write(temporary.path(), plaintext)
             .await
             .c(h!())?;
-        authorize_read(runtime, actor, command.device_id)
-            .await
-            .c(h!())?;
+        if let Some(actor) = actor {
+            authorize_read(runtime, actor, command.device_id)
+                .await
+                .c(h!())?;
+        }
         tokio::fs::rename(temporary.path(), &original)
             .await
             .c(h!())?;
@@ -495,7 +641,13 @@ async fn generate(
             media_command(&original, temporary.path(), command.representation)
                 .await
                 .c(h!())?;
-        probe::run_decoder(ffmpeg).await.c(h!())?;
+        tokio::select! {
+            biased;
+            _ = runtime.preparation.cancellation.cancelled() => {
+                return Err(unavailable("audio preparation is stopping")).c(h!());
+            }
+            result = probe::run_decoder(ffmpeg) => result.c(h!())?,
+        }
     }
     validate_output(temporary.path(), command.representation)
         .await
@@ -504,9 +656,11 @@ async fn generate(
     if let Some(hook) = &_hooks.before_publication {
         hook().await.c(h!())?;
     }
-    authorize_read(runtime, actor, command.device_id)
-        .await
-        .c(h!())?;
+    if let Some(actor) = actor {
+        authorize_read(runtime, actor, command.device_id)
+            .await
+            .c(h!())?;
+    }
     tokio::fs::rename(temporary.path(), &target).await.c(h!())?;
     Ok(target)
 }
@@ -523,6 +677,12 @@ async fn media_command(
             "-v",
             "error",
             "-nostdin",
+            "-threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
+            "-filter_threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
+            "-filter_complex_threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
             "-xerror",
             "-err_detect",
             "explode",
@@ -577,18 +737,23 @@ async fn media_command(
             ]);
         }
     }
-    command.arg(output).args([
-        "-map",
-        "0:a:0",
-        "-vn",
-        "-c:a",
-        "pcm_s16le",
-        "-ar",
-        DEVICE_AUDIO_RENDITION_RATE,
-        "-f",
-        "framecrc",
-        "pipe:1",
-    ]);
+    command
+        .args(["-threads", DEVICE_AUDIO_FFMPEG_THREADS])
+        .arg(output)
+        .args([
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-c:a",
+            "pcm_s16le",
+            "-threads",
+            DEVICE_AUDIO_FFMPEG_THREADS,
+            "-ar",
+            DEVICE_AUDIO_RENDITION_RATE,
+            "-f",
+            "framecrc",
+            "pipe:1",
+        ]);
     Ok(command)
 }
 
@@ -711,4 +876,83 @@ pub(super) async fn cleanup_cache(
         }
     }
     Ok(())
+}
+
+pub(crate) async fn message_representation(
+    env: &crate::types::Env,
+    actor: Uuid,
+    reference_id: Uuid,
+    representation: DeviceAudioRepresentation,
+    request: Option<&HttpRequest>,
+) -> Result<HttpResponse, AppError> {
+    let reference =
+        crate::messenger::audio_ref::reference(&env.dbx, reference_id)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &actor,
+        reference.signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    let audio = crate::messenger::audio_ref::audio(env, &reference)
+        .await
+        .c(h!())?;
+    let command = OpenDeviceAudioCommand {
+        device_id: audio.device_id,
+        audio_id: audio.id,
+        representation,
+        method: if request.is_some_and(|request| {
+            request.method() == actix_web::http::Method::HEAD
+        }) {
+            DeviceAudioMethod::Head
+        } else {
+            DeviceAudioMethod::Get
+        },
+        range: request
+            .and_then(|request| request.headers().get(header::RANGE))
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_range),
+    };
+    let result = open_cached(
+        env.device_audio.clone(),
+        None,
+        command,
+        ContentHooks::default(),
+    )
+    .await;
+    crate::messenger::media::ensure_media_access(
+        &env.dbx,
+        &actor,
+        reference.signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    if crate::messenger::audio_ref::reference(&env.dbx, reference_id)
+        .await
+        .c(h!())?
+        .is_none()
+    {
+        return Err(AppError::NotFound);
+    }
+    match result {
+        Ok(content) => Ok(http_response(content)),
+        Err(error) => {
+            if let Some(range) = error
+                .chain()
+                .find_map(|error| error.downcast_ref::<UnsatisfiableRange>())
+            {
+                return Ok(HttpResponse::RangeNotSatisfiable()
+                    .insert_header((
+                        header::CONTENT_RANGE,
+                        format!("bytes */{}", range.0),
+                    ))
+                    .finish());
+            }
+            Err(error).c(h!())?
+        }
+    }
 }

@@ -22,6 +22,7 @@ pub mod ai_engine;
 pub mod ai_intel_report;
 pub mod ai_position;
 pub mod ai_settlement;
+pub mod ai_transcript_analysis;
 pub(crate) mod alpine;
 pub mod api_integrations;
 pub mod atak;
@@ -46,6 +47,7 @@ pub mod importer;
 pub mod inbox;
 mod install;
 pub mod kml;
+pub mod kpi;
 pub mod kv;
 mod location;
 pub mod log_api;
@@ -53,10 +55,13 @@ pub mod logging;
 pub mod mattermost;
 pub mod media_summary;
 pub mod message_queue;
+pub mod message_reply;
 pub mod messenger;
+pub mod messenger_ingest;
 pub mod migration;
 pub mod ml;
 pub mod nlp;
+pub mod notifications;
 pub mod ocr;
 pub mod oneoff;
 pub mod operator;
@@ -65,9 +70,11 @@ pub mod organism;
 pub mod palitra;
 pub mod report_history;
 pub mod rer_importer;
+pub mod rer_report_admin;
 pub mod secret;
 pub mod server;
 pub mod session;
+pub mod settlement;
 pub mod sigint;
 mod stats;
 pub mod storage;
@@ -77,6 +84,7 @@ pub mod telemetry;
 pub mod terminal;
 pub mod tests;
 pub mod transcriber;
+pub mod transcription;
 pub mod ts;
 pub(crate) mod tus;
 pub mod types;
@@ -1021,6 +1029,18 @@ pub struct OneoffBackfillAudioTranscriberPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffRecoverDeviceAudioTranscriptionPs {
+    #[arg(long)]
+    pub audio_id: Uuid,
+    #[arg(long)]
+    pub expected_attempt_id: Uuid,
+    #[arg(long)]
+    pub verification_note: String,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessAudioTranscriberPs {
     #[arg(long)]
     pub source_id: Uuid,
@@ -1028,6 +1048,16 @@ pub struct OneoffReprocessAudioTranscriberPs {
     pub requester: String,
     #[arg(long)]
     pub reason: String,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffReindexStoredOcrPs {
+    #[arg(long)]
+    pub media_id: Uuid,
+    #[arg(long, action)]
+    pub dry_run: bool,
     #[arg(long, action)]
     pub yes: bool,
 }
@@ -1045,6 +1075,13 @@ pub struct OneoffReprocessMediaSummariesPs {
     pub dry_run: bool,
     #[arg(long, action)]
     pub yes: bool,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct OneoffEnsureApiIntegrationIggyTopicsPs {
+    /// Reconcile topics without changing Iggy user permissions.
+    #[arg(long)]
+    pub topics_only: bool,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -1092,6 +1129,8 @@ enum Cmd {
     #[command(visible_alias = "migration")]
     Migrate,
     OneoffCreateFileRegistryDatabase,
+    /// Copy historical attachment documents and chunks into analytics.
+    OneoffReplicateHistoricalAttachments,
     NetworkInvalidationTui,
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
@@ -1203,11 +1242,14 @@ enum Cmd {
     OneoffBackfillSignalMessageUuid(OneoffBackfillSignalMessageUuidPs),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
+    /// Recalculates settlement links, including existing links, in the selected time range (today by default).
+    #[command(visible_alias = "oneoff-recalculate-inbox-settlements")]
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
     /// Create settlement rows from `location_v2` for messages that have none.
     OneoffRecalculateHistoricSettlements(
         OneoffRecalculateHistoricSettlementsPs,
     ),
+    OneoffAddMissingSettlements,
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillPelengBattleLineDistance(
         OneoffBackfillPelengBattleLineDistancePs,
@@ -1229,12 +1271,18 @@ enum Cmd {
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
     OneoffAuditMediaStorage(OneoffAuditMediaStoragePs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
+    OneoffRecoverDeviceAudioTranscription(
+        OneoffRecoverDeviceAudioTranscriptionPs,
+    ),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
+    OneoffReindexStoredOcr(OneoffReindexStoredOcrPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
-    OneoffEnsureApiIntegrationIggyTopics,
+    OneoffEnsureApiIntegrationIggyTopics(
+        OneoffEnsureApiIntegrationIggyTopicsPs,
+    ),
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1333,7 +1381,8 @@ async fn new_pg_pool_from_conn_string_with_runtime_config(
         None,
         false,
         pg_runtime_pool_options(postgres_runtime, role),
-        false,
+        matches!(role, Some(PgRuntimePoolRole::Web))
+            .then_some(POSTGRES_RUNTIME_WEB_PLAN_CACHE_MODE),
     )
     .await
     .c(h!())?)
@@ -1351,7 +1400,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
         connect_timeout,
         connect_lazy,
         None,
-        true,
+        Some(ANALYTICS_PLAN_CACHE_MODE),
     )
     .await
     .c(h!())?)
@@ -1367,7 +1416,7 @@ pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
         None,
         false,
         None,
-        false,
+        None,
     )
     .await
 }
@@ -1386,7 +1435,7 @@ pub(crate) async fn new_pg_runtime_pool_from_conn_string_with_max_connections(
             config.postgres_runtime.as_ref(),
             pg_runtime_pool_role(),
         ),
-        false,
+        None,
     )
     .await
 }
@@ -1397,7 +1446,7 @@ async fn new_pg_pool_from_conn_string_with_options(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
     runtime: Option<PgRuntimePoolOptions>,
-    force_custom_plan: bool,
+    plan_cache_mode: Option<&'static str>,
 ) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(max_connections)
@@ -1417,22 +1466,23 @@ async fn new_pg_pool_from_conn_string_with_options(
 
     if let Some(runtime) = runtime {
         opt.set_application_name(runtime.application_name);
-        opt.map_sqlx_postgres_opts(move |options| {
-            options.options([
+    }
+    opt.map_sqlx_postgres_opts(move |mut options| {
+        if let Some(runtime) = runtime {
+            options = options.options([
                 ("statement_timeout", runtime.statement_timeout_ms),
                 ("lock_timeout", runtime.lock_timeout_ms),
                 (
                     "idle_in_transaction_session_timeout",
                     runtime.idle_in_transaction_session_timeout_ms,
                 ),
-            ])
-        });
-    }
-    if force_custom_plan {
-        opt.map_sqlx_postgres_opts(|options| {
-            options.options([("plan_cache_mode", ANALYTICS_PLAN_CACHE_MODE)])
-        });
-    }
+            ]);
+        }
+        if let Some(plan_cache_mode) = plan_cache_mode {
+            options = options.options([("plan_cache_mode", plan_cache_mode)]);
+        }
+        options
+    });
 
     sea_orm::Database::connect(opt).await
 }
@@ -1669,6 +1719,9 @@ pub async fn new_redisb(config: &Config) -> anyhow::Result<redis::Client> {
 }
 
 fn main() -> Result<(), AppError> {
+    if let Some(result) = devices::files::archive::helper::main_if_requested() {
+        return result.map_err(Into::into);
+    }
     ring::default_provider()
         .install_default()
         .expect("failed to install default rustls ring provider");
@@ -1721,6 +1774,11 @@ async fn async_main(
     if matches!(action, Cmd::AiEvalMaps) {
         return ai_agent::evaluation::maps().map_err(Into::into);
     }
+    if matches!(action, Cmd::OneoffReplicateHistoricalAttachments) {
+        return Ok(attachments::analytics::replicate_history(mode)
+            .await
+            .c(h!())?);
+    }
 
     if let Cmd::AiControlPanel(options) = action {
         return ai_control_panel::run(mode, options)
@@ -1731,7 +1789,8 @@ async fn async_main(
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
-        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps => unreachable!(),
+        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps
+        | Cmd::OneoffReplicateHistoricalAttachments => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await
         }
@@ -2041,6 +2100,9 @@ async fn async_main(
             )
             .await
         }
+        Cmd::OneoffAddMissingSettlements => {
+            settlement::oneoff::oneoff_add_missing_settlements(mode).await
+        }
         Cmd::OneoffImportBattleLineFromDeltaKml(ps) => {
             battle_line::oneoff::oneoff_import_battle_line_from_delta_kml(
                 mode, &ps,
@@ -2149,12 +2211,16 @@ async fn async_main(
         Cmd::OneoffBackfillAudioTranscriber(ps) => {
             transcriber::backfill::run(mode, ps).await
         }
+        Cmd::OneoffRecoverDeviceAudioTranscription(ps) => {
+            devices::audio::transcription::recover_oneoff(mode, ps).await
+        }
         Cmd::OneoffRequeueAudioTranscriber(ps) => {
             transcriber::backfill::requeue_terminal(mode, ps).await
         }
         Cmd::OneoffRetranscribeAudioTranscriber(ps) => {
             transcriber::backfill::retranscribe_completed(mode, ps).await
         }
+        Cmd::OneoffReindexStoredOcr(ps) => attachments::recovery::run(mode, ps).await,
         Cmd::OneoffReprocessMediaSummaries(ps) => {
             media_summary::reprocess::run(mode, ps).await
         }
@@ -2164,8 +2230,8 @@ async fn async_main(
         Cmd::OneoffCompactDatasourceGroup => {
             operator::oneoff::oneoff_compact_datasource_group(mode).await
         }
-        Cmd::OneoffEnsureApiIntegrationIggyTopics => {
-            api_integrations::oneoff_ensure_iggy_topics(mode).await
+        Cmd::OneoffEnsureApiIntegrationIggyTopics(ps) => {
+            api_integrations::oneoff_ensure_iggy_topics(mode, ps.topics_only).await
         }
     }
 }

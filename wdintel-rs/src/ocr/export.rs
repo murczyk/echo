@@ -107,7 +107,11 @@ pub fn generate(html: &str, format: ExportFormat) -> anyhow::Result<Vec<u8>> {
 }
 
 fn parse_export_document(html: &str) -> anyhow::Result<ExportDocument> {
-    parse_document(&sanitize_html_without_images(html)).c(h!())
+    parse_document(&format!(
+        "<article>{}</article>",
+        sanitize_html_without_images(html)
+    ))
+    .c(h!())
 }
 
 fn parse_document(html: &str) -> anyhow::Result<ExportDocument> {
@@ -160,28 +164,43 @@ fn collect_blocks(
             document.blocks.push(Block::Table(index));
         }
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
-            push_text_block(
-                document,
-                normalize_text(&tag.inner_text(parser)),
-                |text| Block::Heading(name[1..].parse().unwrap_or(1), text),
-            )?;
+            push_text_block(document, tag_text(tag, parser), |text| {
+                Block::Heading(name[1..].parse().unwrap_or(1), text)
+            })
+            .c(h!())?;
         }
-        "p" | "figcaption" => push_text_block(
-            document,
-            normalize_text(&tag.inner_text(parser)),
-            Block::Paragraph,
-        )?,
-        "li" => push_text_block(
-            document,
-            normalize_text(&tag.inner_text(parser)),
-            Block::ListItem,
-        )?,
+        "p" | "figcaption" => {
+            push_text_block(document, tag_text(tag, parser), Block::Paragraph)
+                .c(h!())?
+        }
+        "li" => {
+            push_text_block(document, tag_text(tag, parser), Block::ListItem)
+                .c(h!())?
+        }
         _ => {
+            let mut inline = String::new();
             for handle in tag.children().top().iter() {
                 if let Some(child) = handle.get(parser) {
-                    collect_blocks(child, parser, document).c(h!())?;
+                    if is_block(child) {
+                        push_text_block(
+                            document,
+                            normalize_text(&inline),
+                            Block::Paragraph,
+                        )
+                        .c(h!())?;
+                        inline.clear();
+                        collect_blocks(child, parser, document).c(h!())?;
+                    } else {
+                        append_node_text(child, parser, &mut inline);
+                    }
                 }
             }
+            push_text_block(
+                document,
+                normalize_text(&inline),
+                Block::Paragraph,
+            )
+            .c(h!())?;
         }
     }
     if document.text_chars > OCR_EXPORT_MAX_TEXT_CHARS {
@@ -214,7 +233,7 @@ fn parse_table(
         .into_iter()
         .next()
         .and_then(|handle| handle.get(parser))
-        .map(|node| normalize_text(&node.inner_text(parser)))
+        .map(|node| node_text(node, parser))
         .filter(|text| !text.is_empty());
     let mut result = ExportTable {
         caption,
@@ -260,7 +279,7 @@ fn parse_table(
                 rowspan,
                 colspan,
                 header: cell_name.as_ref() == "th",
-                text: normalize_text(&cell_tag.inner_text(parser)),
+                text: tag_text(cell_tag, parser),
             });
             if result.cells.len() > OCR_EXPORT_MAX_CELLS {
                 anyhow::bail!("OCR export contains too many table cells");
@@ -312,8 +331,59 @@ fn span(tag: &tl::HTMLTag<'_>, name: &str) -> usize {
         .unwrap_or(1)
 }
 
+fn is_block(node: &tl::Node<'_>) -> bool {
+    matches!(node, tl::Node::Tag(tag) if matches!(tag.name().as_utf8_str().as_ref(),
+        "p" | "div" | "section" | "article" | "table" | "ul" | "ol" | "li" |
+        "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "figure" | "figcaption"))
+}
+
+fn append_node_text(
+    node: &tl::Node<'_>,
+    parser: &tl::Parser<'_>,
+    text: &mut String,
+) {
+    match node {
+        tl::Node::Tag(tag) => {
+            if tag.name().as_utf8_str() == "br" || is_block(node) {
+                text.push('\n');
+            }
+            for handle in tag.children().top().iter() {
+                if let Some(child) = handle.get(parser) {
+                    append_node_text(child, parser, text);
+                }
+            }
+            if is_block(node) {
+                text.push('\n');
+            }
+        }
+        tl::Node::Raw(_) => text.push_str(&node.inner_text(parser)),
+        _ => {}
+    }
+}
+
+fn node_text(node: &tl::Node<'_>, parser: &tl::Parser<'_>) -> String {
+    let mut text = String::new();
+    append_node_text(node, parser, &mut text);
+    normalize_text(&text)
+}
+
+fn tag_text(tag: &tl::HTMLTag<'_>, parser: &tl::Parser<'_>) -> String {
+    let mut text = String::new();
+    for handle in tag.children().top().iter() {
+        if let Some(child) = handle.get(parser) {
+            append_node_text(child, parser, &mut text);
+        }
+    }
+    normalize_text(&text)
+}
+
 fn normalize_text(value: &str) -> String {
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
+    value
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn markdown(document: &ExportDocument) -> String {
@@ -347,7 +417,7 @@ fn markdown_text(value: &str) -> String {
     value
         .replace('\\', "\\\\")
         .replace('|', "\\|")
-        .replace(['\r', '\n'], " ")
+        .replace('\r', "")
 }
 
 fn write_markdown_table(output: &mut String, table: &ExportTable) {
@@ -375,7 +445,7 @@ fn write_markdown_row(output: &mut String, row: &[String]) {
     output.push('|');
     for cell in row {
         output.push(' ');
-        output.push_str(&markdown_text(cell));
+        output.push_str(&markdown_text(cell).replace('\n', " <br> "));
         output.push_str(" |");
     }
     output.push('\n');

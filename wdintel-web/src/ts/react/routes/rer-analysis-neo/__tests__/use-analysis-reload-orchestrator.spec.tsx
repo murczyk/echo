@@ -102,13 +102,14 @@ function buildParams(overrides: Partial<Parameters<typeof useAnalysisReloadOrche
       beforeIdNoninclusive: 120,
       sinceIdNoninclusive: null,
     })),
+    currentMessagePageIndex: 1,
     replaceCurrentMessagePage: vi.fn(),
     invalidateMessagePageRequests: vi.fn(),
     invalidateMessagePaging: vi.fn(),
     refreshMessageCounts: vi.fn(),
     setAorEntries: noopSetter as Dispatch<SetStateAction<AnalysisAorEntry[]>>,
     setCounts: noopSetter as Dispatch<
-      SetStateAction<import('../../../../../Bindings').CountStatsRsp | null>
+      SetStateAction<Partial<import('../../../../../Bindings').CountStatsRsp> | null>
     >,
     setCountsLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
     setFiltersLoading: noopSetter as Dispatch<SetStateAction<boolean>>,
@@ -199,7 +200,53 @@ describe('useAnalysisReloadOrchestrator', () => {
     await renderHook(params);
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledWith(
+      expect.objectContaining({ includeDefaultFilterSections: false }),
+    );
     expect(params.refreshMessageCounts).not.toHaveBeenCalled();
+  });
+
+  it('marks the rendered messages stale until the current reload scope commits them', async () => {
+    vi.useFakeTimers();
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementation(async (params) => {
+      params.setMessages([]);
+    });
+    const params = buildParams();
+
+    await renderHook(params);
+
+    expect(latestResult?.messagesLoadedForCurrentQuery).toBe(true);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, groupsSelected: ['group-b'] },
+    });
+
+    expect(latestResult?.messagesLoadedForCurrentQuery).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+
+    expect(latestResult?.messagesLoadedForCurrentQuery).toBe(true);
+  });
+
+  it('#3001 aborts the previous reload scope when filters change after its foreground work finishes', async () => {
+    vi.useFakeTimers();
+    const params = buildParams();
+
+    await renderHook(params);
+    const firstSignal = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0].signal;
+    expect(firstSignal?.aborted).toBe(false);
+
+    await rerenderHook({
+      ...params,
+      reloadTriggerKey: 'reload-key-2',
+      queryState: { ...params.queryState, search: 'next-filter' },
+    });
+
+    expect(firstSignal?.aborted).toBe(true);
   });
 
   it('reloads immediately when a filtered focused window arrives', async () => {
@@ -261,6 +308,26 @@ describe('useAnalysisReloadOrchestrator', () => {
     reloadParams?.setMessages([[119, { text: 'refreshed' } as InboxMessage]]);
     expect(params.replaceCurrentMessagePage).toHaveBeenCalledWith([[119, { text: 'refreshed' }]]);
     expect(params.refreshMessageCounts).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3689
+  it('uses the captured visible page for both the refresh cursor and replacement', async () => {
+    const params = buildParams();
+    await renderHook(params);
+    reloadAnalysisDataMock.reloadAnalysisData.mockClear();
+
+    await act(async () => {
+      await latestResult?.reload({ preserveMessagePage: true, messagePageIndex: 0 });
+    });
+
+    expect(params.getCurrentMessagePageCursor).toHaveBeenCalledWith(0);
+    const reloadParams = reloadAnalysisDataMock.reloadAnalysisData.mock.calls[0]?.[0];
+    reloadParams?.setMessages([[140, { text: 'visible-page' } as InboxMessage]]);
+    expect(params.replaceCurrentMessagePage).toHaveBeenCalledWith(
+      [[140, { text: 'visible-page' }]],
+      0,
+    );
+    expect(reloadParams?.preserveMessageTailExhaustion).toBe(true);
   });
 
   it('loads map palitras on initial eligible load', async () => {

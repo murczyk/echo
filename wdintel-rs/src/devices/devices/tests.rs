@@ -4,8 +4,9 @@ use super::query::{
     DeviceReadScope,
 };
 use super::types::*;
-use crate::config::{DEVICE_CUSTOM_FIELDS_MAX_COUNT, ROLE_ADMIN};
+use crate::config::ROLE_ADMIN;
 use crate::devices::access;
+use crate::devices::config::DEVICE_CUSTOM_FIELDS_MAX_COUNT;
 use crate::devices::tests::schema::device_active_model;
 use crate::devices::ROLE_CYBER;
 use crate::entities::{
@@ -31,6 +32,7 @@ fn update_command(device_id: Uuid) -> UpdateDeviceCommand {
         name: DevicePatchField::Missing,
         aor_ids: DevicePatchField::Missing,
         unit_id: DevicePatchField::Missing,
+        audio_forwarding: None,
     }
 }
 
@@ -1265,7 +1267,7 @@ mod custom_fields_tests {
 
 mod validation_tests {
     use super::super::bl::validation::*;
-    use crate::config::DEVICE_EXTERNAL_URL_MAX_CHARS;
+    use crate::devices::config::DEVICE_EXTERNAL_URL_MAX_CHARS;
     use crate::types::{AppError, BTreeMap};
 
     fn assert_form_field(err: AppError, field: &str) {
@@ -1422,7 +1424,8 @@ mod mapping_tests {
     #[test]
     fn detail_and_list_have_distinct_exact_wire_shapes() {
         assert_eq!(
-            serde_json::to_value(map_device_details(device_state())).unwrap(),
+            serde_json::to_value(map_device_details(device_state(), false))
+                .unwrap(),
             json!({
                 "id": "018f0000-0000-7000-8000-000000000001",
                 "name": "Mapped device",
@@ -1434,7 +1437,8 @@ mod mapping_tests {
                 "archived": true,
                 "created_at": "2026-07-23T09:10:11Z",
                 "updated_at": "2026-07-23T09:10:11Z",
-                "archived_at": "2026-07-23T09:10:11Z"
+                "archived_at": "2026-07-23T09:10:11Z",
+                "audio_forwarding_configured": false
             }),
         );
 

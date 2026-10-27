@@ -109,9 +109,10 @@ pub async fn run_process_coords_locations_worker(
                     }
                 }
                 let location_v2 = Some(format_locations_list(new_locations));
-                let mut model = inbox_item.clone().into_active_model();
-                model.location_v2 = Set(location_v2.clone());
-                model.update(&txn).await.c(h!())?;
+                let locations_changed = inbox_item.location_v2 != location_v2;
+                let mut inbox_item = inbox_item.into_active_model();
+                inbox_item.location_v2 = Set(location_v2.clone());
+                let inbox_item = inbox_item.update(&txn).await.c(h!())?;
                 crate::battle_line::settlement_queue::reconcile_item_locations(
                     &txn,
                     inbox_item.id,
@@ -120,6 +121,16 @@ pub async fn run_process_coords_locations_worker(
                 )
                 .await
                 .c(h!())?;
+                if locations_changed {
+                    crate::stats::enqueue_group_stats_recalculation_for_message(
+                        &txn,
+                        inbox_item.id,
+                        format!("coordinate locations updated for inbox message {}", inbox_item.id),
+                    ).await.c(h!())?;
+                    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+                        vec![inbox_item], &txn,
+                    ).await.c(h!())?;
+                }
                 for (peleng, localities) in peleng_locations.clone() {
                     let mut model = peleng.into_active_model();
                     set_peleng_locality(&mut model, localities.first());

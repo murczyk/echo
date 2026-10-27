@@ -1,7 +1,7 @@
 use super::types::*;
 use crate::{
     attachments::store::rows,
-    config::*,
+    devices::config::*,
     h,
     types::{Env, ShortContext},
 };
@@ -18,7 +18,7 @@ pub(super) const COLUMNS: &str = "src.device_id::text as device_id,src.id::text 
  coalesce(gen.summary_state,'pending') as summary_state,
  coalesce(gen.position_state,'pending') as position_state,null::text as snippet,''::text as citation";
 
-pub(super) const JOINS: &str = "join file_entry entry on entry.id=src.id
+pub(super) const JOINS: &str = "join file_entry entry on entry.id=src.id and entry.archive_file_id is null
  left join file_content content on content.file_id=src.id and content.revision=src.revision
  left join file_document doc on doc.file_id=src.id and doc.revision=src.revision
  left join file_document_generation gen on gen.id=doc.published_generation";
@@ -75,10 +75,19 @@ pub(crate) async fn search(
         });
     }
     let mut values = vec![Value::from(allowed)];
-    let mut filters = vec!["src.device_id=any($1)".to_string()];
     let history = req.history.unwrap_or(false);
+    let mut filters = vec![
+        "src.device_id=any($1)".to_string(),
+        if history {
+            "src.origin_archive_id is null"
+        } else {
+            "src.archive_file_id is null"
+        }
+        .to_string(),
+    ];
     if !history {
         filters.push("src.kind='file'".into());
+        filters.push("src.parent_id is not null".into());
     }
     let table = if history {
         "file_revision"
@@ -102,7 +111,14 @@ pub(crate) async fn search(
     if matches.is_empty() {
         matches.push(("", "true".into()));
     }
-    let candidates=matches.into_iter().map(|(joins,predicate)|format!("(select src.id,src.revision from {table} src {joins} where {} and ({predicate}) order by src.id desc,src.revision desc limit {bound})",filters.join(" and "))).collect::<Vec<_>>().join(" union ");
+    let candidates = matches.into_iter().map(|(joins, predicate)| {
+        let select = format!("select src.id,src.revision from {table} src {joins} where {} and ({predicate})", filters.join(" and "));
+        if predicate == "true" {
+            format!("({select} order by src.id desc,src.revision desc limit {bound})")
+        } else {
+            filtered_candidates(&select, &bound)
+        }
+    }).collect::<Vec<_>>().join(" union ");
     let sql=format!("with candidates as ({candidates}) select {COLUMNS} from candidates matched join {table} src on src.id=matched.id and src.revision=matched.revision {JOINS} order by src.id desc,src.revision desc limit {bound}");
     let mut documents = rows::<DeviceDocumentItem, _>(&tx, &sql, values)
         .await
@@ -131,6 +147,16 @@ pub(crate) async fn search(
         documents,
         next_cursor,
     })
+}
+
+fn filtered_candidates(select: &str, bound: &str) -> String {
+    let cap = DEVICE_DOCUMENT_SEARCH_CANDIDATE_LIMIT;
+    format!("(with matched as materialized ({select} limit {cap}), selected as (
+      select id,revision from matched where (select count(*) from matched)<{cap}
+      union all
+      ({select} and (select count(*) from matched)>={cap}
+       order by src.id desc,src.revision desc limit {bound})
+    ) select id,revision from selected order by id desc,revision desc limit {bound})")
 }
 
 fn search_matches(

@@ -50,6 +50,11 @@ flowchart LR
 
     api -.-> integrations["Optional integrations\nVault · GOI · AI · Iggy"]
     bg -.-> integrations
+    bg -.->|SSH dispatcher| agents["Optional agent VMs\nPer-user Incus containers"]
+    agents -.->|tools + provider gateway| api
+    bg -.->|Kharkiv canary| relay["Private extractor relay\nUA agent VM"]
+    relay -.-> extractor["Shared document extractor"]
+    bg -.->|direct access| extractor
     api -->|finalized Device content| object_storage[("Private S3-compatible storage · optional")]
     bg -->|safe cleanup| object_storage
     postgres ==>|logical CDC| analytics["Optional analytics LXC\nPeerDB · ClickHouse · PostgreSQL gateway"]
@@ -71,6 +76,11 @@ container and stores only derived data. PostgreSQL remains authoritative, and
 supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 and content publication pointers independently from the main `wd` database.
+
+Optional agent VMs isolate per-user containers by installation namespace;
+application workers and provider credentials remain on Echo. Kharkiv uses a
+separate UA agent VM and its private relay to the existing shared extractor.
+See the [Kharkiv canary runbook](ai/kharkiv-canary.md) for topology and rollout.
 
 Web duplicate-unit merges run as detached tasks in the API process. Reference
 categories are moved in bounded, committed batches; the final transaction
@@ -235,9 +245,9 @@ backoff so they cannot block newer messages.
 reconcile its PostgreSQL queue in the same transaction as `location_v2`;
 workers claim rows with `FOR UPDATE SKIP LOCKED` and rank settlement candidates
 against the active Battle Line or the item's AOR segments. Battle Line uploads
-apply only to newly queued data, while AOR changes retain their existing
-behavior of requeueing affected links. Attempted misses remain available for
-administrator review.
+and AOR changes preserve historical links; explicit recalculation uses the
+[settlement recalculation command](../wdintel-rs/src/battle_line/README.md).
+Attempted misses remain available for administrator review.
 
 `wdintel-rs-bgworker` also owns `ai_settlement_worker`. When enabled by an
 administrator, new or reparsed inbox messages are queued for header-based AI

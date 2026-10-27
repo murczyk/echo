@@ -1,8 +1,12 @@
+import fcntl
 import importlib.util
 import io
 import json
 import pathlib
+import tempfile
+import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 
@@ -497,6 +501,127 @@ class DispatcherValidationTests(unittest.TestCase):
             "user.echo.ai.container_uid": str(DISPATCHER.AGENT_UID),
             "user.echo.ai.container_gid": str(DISPATCHER.AGENT_GID),
         }
+
+
+class DispatcherConcurrencyTests(unittest.TestCase):
+    def test_lock_timeout_releases_leases_without_a_delayed_mutation(self):
+        agent_id = "019fc7f7-9770-7f83-9c1a-211af29b02e6"
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "deploy.lock").touch()
+            (root / "echo-first.lock").touch()
+            with (
+                mock.patch.object(DISPATCHER, "DEPLOY_LOCK_PATH", root / "deploy.lock"),
+                mock.patch.object(DISPATCHER, "ROLLOUT_LOCK_ROOT", root),
+                mock.patch.object(DISPATCHER, "NAMESPACE_RELEASES", root),
+                mock.patch.object(DISPATCHER.Path, "home", return_value=root),
+                mock.patch.object(DISPATCHER, "LOCK_WAIT_SECONDS", 0.02),
+                mock.patch.object(DISPATCHER, "dispatch") as dispatch,
+            ):
+                for blocked in ("global.lock", f"echo-ai-agent-{agent_id}.lock"):
+                    with self.subTest(blocked=blocked), (root / blocked).open("a") as holder:
+                        fcntl.flock(holder, fcntl.LOCK_EX)
+                        request = DISPATCHER.Request("start", "start", {"agent_id": agent_id})
+                        with (root / "global.lock").open("a") as lease:
+                            with self.assertRaisesRegex(DISPATCHER.DispatchError, "busy"):
+                                DISPATCHER.dispatch_with_rollout_lock(request, "echo-first", lease)
+                    with (root / "echo-first.lock").open("r") as lease:
+                        fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    dispatch.assert_not_called()
+
+    def test_running_chat_allows_other_agents_but_protects_its_instance_and_namespace(self):
+        first_id = "019fc7f7-9770-7f83-9c1a-211af29b02e6"
+        second_id = "019fc7f7-9770-7f83-9c1a-211af29b02e7"
+        entered = threading.Event()
+        release = threading.Event()
+        mutation_entered = threading.Event()
+
+        def dispatch(request, namespace):
+            if request.operation == "run_request":
+                entered.set()
+                self.assertTrue(release.wait(5))
+            elif request.body["agent_id"] == first_id:
+                mutation_entered.set()
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "deploy.lock").touch()
+            for namespace in ("echo-first", "echo-second"):
+                (root / f"{namespace}.lock").touch()
+
+            def invoke(operation, agent_id, namespace):
+                request = DISPATCHER.Request(operation, operation, {"agent_id": agent_id})
+                with (root / "global.lock").open("a") as lease:
+                    return DISPATCHER.dispatch_with_rollout_lock(request, namespace, lease)
+
+            with (
+                mock.patch.object(DISPATCHER, "DEPLOY_LOCK_PATH", root / "deploy.lock"),
+                mock.patch.object(DISPATCHER, "ROLLOUT_LOCK_ROOT", root),
+                mock.patch.object(DISPATCHER, "NAMESPACE_RELEASES", root),
+                mock.patch.object(DISPATCHER.Path, "home", return_value=root),
+                mock.patch.object(DISPATCHER, "dispatch", side_effect=dispatch),
+                ThreadPoolExecutor(max_workers=3) as pool,
+            ):
+                chat = pool.submit(invoke, "run_request", first_id, "echo-first")
+                try:
+                    self.assertTrue(entered.wait(2))
+                    other = pool.submit(invoke, "start", second_id, "echo-second")
+                    self.assertEqual(other.result(timeout=2), {"ok": True})
+                    mutation = pool.submit(invoke, "configure_proxies", first_id, "echo-first")
+                    self.assertFalse(mutation_entered.wait(0.1))
+                    with (root / "deploy.lock").open("r") as lease:
+                        with self.assertRaises(BlockingIOError):
+                            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    with (root / "echo-first.lock").open("r") as lease:
+                        with self.assertRaises(BlockingIOError):
+                            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                finally:
+                    release.set()
+                self.assertEqual(chat.result(timeout=2), {"ok": True})
+                self.assertEqual(mutation.result(timeout=2), {"ok": True})
+
+    def test_lifecycle_mutations_still_share_the_global_capacity_lock(self):
+        entered = threading.Event()
+        release = threading.Event()
+        second_entered = threading.Event()
+
+        def dispatch(request, namespace):
+            if namespace == "echo-first":
+                entered.set()
+                self.assertTrue(release.wait(5))
+            else:
+                second_entered.set()
+            return {}
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / "deploy.lock").touch()
+            for namespace in ("echo-first", "echo-second"):
+                (root / f"{namespace}.lock").touch()
+
+            def invoke(namespace, agent_id):
+                request = DISPATCHER.Request("start", "start", {"agent_id": agent_id})
+                with (root / "global.lock").open("a") as lease:
+                    return DISPATCHER.dispatch_with_rollout_lock(request, namespace, lease)
+
+            with (
+                mock.patch.object(DISPATCHER, "DEPLOY_LOCK_PATH", root / "deploy.lock"),
+                mock.patch.object(DISPATCHER, "ROLLOUT_LOCK_ROOT", root),
+                mock.patch.object(DISPATCHER, "NAMESPACE_RELEASES", root),
+                mock.patch.object(DISPATCHER.Path, "home", return_value=root),
+                mock.patch.object(DISPATCHER, "dispatch", side_effect=dispatch),
+                ThreadPoolExecutor(max_workers=2) as pool,
+            ):
+                first = pool.submit(invoke, "echo-first", "019fc7f7-9770-7f83-9c1a-211af29b02e6")
+                try:
+                    self.assertTrue(entered.wait(2))
+                    second = pool.submit(invoke, "echo-second", "019fc7f7-9770-7f83-9c1a-211af29b02e7")
+                    self.assertFalse(second_entered.wait(0.1))
+                finally:
+                    release.set()
+                first.result(timeout=2)
+                second.result(timeout=2)
 
 
 if __name__ == "__main__":

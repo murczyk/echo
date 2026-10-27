@@ -7,6 +7,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { buildInboxOverallCountReq, buildInboxReq } from './helpers';
 import type { AnalysisQueryState } from './types';
 import { toErrorMessage } from './use-analysis-data.shared';
+import { ANALYSIS_SYSTEM_COUNT_INTERVAL_MS } from './config';
 
 type Params = {
   deferInitialLoad: boolean;
@@ -18,7 +19,29 @@ type Params = {
 };
 
 const MESSAGE_COUNTS_DEBOUNCE_MS = 200;
-const OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS = 5_000;
+// Covers sequential analytics/PostgreSQL timeouts plus transport allowance, as in Duty.
+const ANALYSIS_COUNT_REQUEST_DEADLINE_MS = 65_000;
+type MessageCountRefreshMode = 'immediate' | 'deferred';
+
+async function requestMessageCounts(
+  selectedReq: InboxMessagesReq,
+  overallReq: InboxMessagesReq,
+  shared: boolean,
+  signal: AbortSignal,
+  onFailure: (error: unknown) => void,
+) {
+  const reportFailure = (error: unknown): never => {
+    onFailure(error);
+    throw error;
+  };
+  const selected = fetchInboxCount(selectedReq, { signal }).catch(reportFailure);
+  const overall = shared ? selected : fetchInboxCount(overallReq, { signal }).catch(reportFailure);
+  const results = await Promise.allSettled([selected, overall]);
+  const [selectedResult, overallResult] = results;
+  if (selectedResult.status === 'rejected') throw selectedResult.reason;
+  if (overallResult.status === 'rejected') throw overallResult.reason;
+  return [selectedResult.value, overallResult.value] as const;
+}
 
 export function useAnalysisMessageCounts({
   deferInitialLoad,
@@ -35,9 +58,13 @@ export function useAnalysisMessageCounts({
   const [activeRequestKey, setActiveRequestKey] = useState<string | null>(null);
   const onErrorRef = useRef(onError);
   const onUnauthorizedRef = useRef(onUnauthorized);
-  const overallRefreshTimeoutRef = useRef<number | null>(null);
-  const overallRefreshAbortControllerRef = useRef<AbortController | null>(null);
+  const systemRefreshTimeoutRef = useRef<number | null>(null);
+  const activeCountControllerRef = useRef<AbortController | null>(null);
+  const systemRefreshPendingRef = useRef(false);
+  const userRefreshScheduledRef = useRef(false);
+  const lastCountStartedAtRef = useRef(Number.NEGATIVE_INFINITY);
   const countRequestGenerationRef = useRef(0);
+  const drainSystemRefreshRef = useRef<() => void>(() => {});
   const messagesTotalRequestJson = JSON.stringify(
     buildInboxReq(queryState, optionsFreqValues, true),
   );
@@ -47,133 +74,144 @@ export function useAnalysisMessageCounts({
   onErrorRef.current = onError;
   onUnauthorizedRef.current = onUnauthorized;
 
-  const cancelScheduledOverallMessageCountRefresh = useCallback(() => {
-    if (overallRefreshTimeoutRef.current !== null) {
-      window.clearTimeout(overallRefreshTimeoutRef.current);
-      overallRefreshTimeoutRef.current = null;
+  const cancelCountWork = useCallback(() => {
+    systemRefreshPendingRef.current = false;
+    userRefreshScheduledRef.current = false;
+    if (systemRefreshTimeoutRef.current !== null) {
+      window.clearTimeout(systemRefreshTimeoutRef.current);
+      systemRefreshTimeoutRef.current = null;
     }
-    overallRefreshAbortControllerRef.current?.abort();
-    overallRefreshAbortControllerRef.current = null;
+    ++countRequestGenerationRef.current;
+    activeCountControllerRef.current?.abort();
+    activeCountControllerRef.current = null;
   }, []);
 
-  useEffect(
-    () => cancelScheduledOverallMessageCountRefresh,
-    [
-      cancelScheduledOverallMessageCountRefresh,
-      deferInitialLoad,
-      messagesOverallRequestJson,
-      messagesTotalRequestJson,
-      newestFirst,
-    ],
-  );
+  const startCountCycle = useCallback(() => {
+    const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
+    const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
+    if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) return;
+    const controller = new AbortController();
+    activeCountControllerRef.current = controller;
+    lastCountStartedAtRef.current = performance.now();
+    const generation = ++countRequestGenerationRef.current;
+    let timedOut = false;
+    let failureReported = false;
+    const reportFailure = (error: unknown) => {
+      if (countRequestGenerationRef.current !== generation) return;
+      if (!timedOut && (controller.signal.aborted || isAbortError(error))) return;
+      if (timedOut) error = controller.signal.reason;
+      const unauthorized = onUnauthorizedRef.current(error);
+      if (!unauthorized && !failureReported) onErrorRef.current(toErrorMessage(error));
+      failureReported = true;
+    };
+    let deadlineId: number;
+    const deadline = new Promise<never>((_, reject) => {
+      deadlineId = window.setTimeout(() => {
+        timedOut = true;
+        const error = new Error('Сервер не відповів вчасно. Спробуйте ще раз.');
+        controller.abort(error);
+        reject(error);
+      }, ANALYSIS_COUNT_REQUEST_DEADLINE_MS);
+      controller.signal.addEventListener(
+        'abort',
+        () => {
+          window.clearTimeout(deadlineId);
+          reject(controller.signal.reason);
+        },
+        { once: true },
+      );
+    });
+    const counts = requestMessageCounts(
+      { ...inboxReq, nolimit: true, newestFirst },
+      { ...overallInboxReq, nolimit: true, newestFirst },
+      messagesTotalRequestJson === messagesOverallRequestJson,
+      controller.signal,
+      reportFailure,
+    );
+    void Promise.race([counts, deadline])
+      .then(([selectedCount, overallCount]) => {
+        if (controller.signal.aborted || countRequestGenerationRef.current !== generation) return;
+        setMessagesTotalCount(selectedCount.quantity);
+        setMessagesOverallCount(overallCount.quantity);
+      })
+      .catch((error: unknown) => {
+        if (!failureReported) reportFailure(error);
+      })
+      .finally(() => {
+        window.clearTimeout(deadlineId);
+        if (activeCountControllerRef.current !== controller) return;
+        activeCountControllerRef.current = null;
+        setMessagesTotalLoading(false);
+        drainSystemRefreshRef.current();
+      });
+  }, [messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
+
+  const drainSystemRefresh = useCallback(() => {
+    if (
+      deferInitialLoad ||
+      !systemRefreshPendingRef.current ||
+      userRefreshScheduledRef.current ||
+      activeCountControllerRef.current
+    )
+      return;
+    const waitMs =
+      lastCountStartedAtRef.current + ANALYSIS_SYSTEM_COUNT_INTERVAL_MS - performance.now();
+    if (waitMs > 0) {
+      if (systemRefreshTimeoutRef.current === null) {
+        systemRefreshTimeoutRef.current = window.setTimeout(() => {
+          systemRefreshTimeoutRef.current = null;
+          drainSystemRefreshRef.current();
+        }, waitMs);
+      }
+      return;
+    }
+    systemRefreshPendingRef.current = false;
+    startCountCycle();
+  }, [deferInitialLoad, startCountCycle]);
+  drainSystemRefreshRef.current = drainSystemRefresh;
 
   useEffect(() => {
-    if (deferInitialLoad) return;
-
+    if (deferInitialLoad) return cancelCountWork;
     setActiveRequestKey(requestKey);
+    setMessagesTotalCount(null);
+    setMessagesOverallCount(null);
     const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
     const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
     if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) {
-      setMessagesTotalCount(null);
-      setMessagesOverallCount(null);
       setMessagesTotalLoading(false);
-      return;
+      return cancelCountWork;
     }
-
-    setMessagesTotalCount(null);
-    setMessagesOverallCount(null);
     setMessagesTotalLoading(true);
-    let abortController: AbortController | null = null;
-
+    userRefreshScheduledRef.current = true;
     const timeoutId = window.setTimeout(() => {
-      abortController = new AbortController();
-      const signal = abortController.signal;
-      const countRequestGeneration = ++countRequestGenerationRef.current;
-      const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
-      const selectedCountPromise = fetchInboxCount(
-        { ...inboxReq, nolimit: true, newestFirst },
-        { signal },
-      );
-      const overallCountPromise = countRequestsAreShared
-        ? selectedCountPromise
-        : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
-
-      void Promise.all([selectedCountPromise, overallCountPromise])
-        .then(([selectedCount, overallCount]) => {
-          if (signal.aborted) return;
-          if (countRequestGenerationRef.current !== countRequestGeneration) return;
-          setMessagesTotalCount(selectedCount.quantity);
-          setMessagesOverallCount(overallCount.quantity);
-        })
-        .catch((loadError: unknown) => {
-          if (signal.aborted || isAbortError(loadError)) return;
-          if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
-        })
-        .finally(() => {
-          if (!signal.aborted) setMessagesTotalLoading(false);
-        });
+      userRefreshScheduledRef.current = false;
+      startCountCycle();
     }, MESSAGE_COUNTS_DEBOUNCE_MS);
-
     return () => {
       window.clearTimeout(timeoutId);
-      abortController?.abort();
+      cancelCountWork();
     };
   }, [
+    cancelCountWork,
     deferInitialLoad,
-    loadVersion,
     messagesOverallRequestJson,
     messagesTotalRequestJson,
-    newestFirst,
     requestKey,
+    startCountCycle,
   ]);
 
   const refreshMessageCounts = useCallback(() => {
-    cancelScheduledOverallMessageCountRefresh();
+    cancelCountWork();
     setLoadVersion((current) => current + 1);
-  }, [cancelScheduledOverallMessageCountRefresh]);
-  const scheduleOverallMessageCountRefresh = useCallback(() => {
-    if (deferInitialLoad || overallRefreshTimeoutRef.current !== null) {
-      return;
-    }
-
-    overallRefreshTimeoutRef.current = window.setTimeout(() => {
-      overallRefreshTimeoutRef.current = null;
-      const inboxReq = JSON.parse(messagesTotalRequestJson) as InboxMessagesReq | null;
-      const overallInboxReq = JSON.parse(messagesOverallRequestJson) as InboxMessagesReq | null;
-      if (isNullOrUndefined(inboxReq) || isNullOrUndefined(overallInboxReq)) return;
-
-      overallRefreshAbortControllerRef.current?.abort();
-      const abortController = new AbortController();
-      overallRefreshAbortControllerRef.current = abortController;
-      const signal = abortController.signal;
-      const countRequestGeneration = ++countRequestGenerationRef.current;
-      const countRequestsAreShared = messagesTotalRequestJson === messagesOverallRequestJson;
-      const selectedCountPromise = fetchInboxCount(
-        { ...inboxReq, nolimit: true, newestFirst },
-        { signal },
-      );
-      const overallCountPromise = countRequestsAreShared
-        ? selectedCountPromise
-        : fetchInboxCount({ ...overallInboxReq, nolimit: true, newestFirst }, { signal });
-
-      void Promise.all([selectedCountPromise, overallCountPromise])
-        .then(([selectedCount, overallCount]) => {
-          if (signal.aborted || countRequestGenerationRef.current !== countRequestGeneration)
-            return;
-          setMessagesTotalCount(selectedCount.quantity);
-          setMessagesOverallCount(overallCount.quantity);
-        })
-        .catch((loadError: unknown) => {
-          if (signal.aborted || isAbortError(loadError)) return;
-          if (!onUnauthorizedRef.current(loadError)) onErrorRef.current(toErrorMessage(loadError));
-        })
-        .finally(() => {
-          if (overallRefreshAbortControllerRef.current === abortController) {
-            overallRefreshAbortControllerRef.current = null;
-          }
-        });
-    }, OVERALL_MESSAGE_COUNT_REFRESH_COALESCE_MS);
-  }, [deferInitialLoad, messagesOverallRequestJson, messagesTotalRequestJson, newestFirst]);
+  }, [cancelCountWork]);
+  const scheduleOverallMessageCountRefresh = useCallback(
+    (_mode: MessageCountRefreshMode = 'immediate') => {
+      if (deferInitialLoad) return;
+      systemRefreshPendingRef.current = true;
+      drainSystemRefresh();
+    },
+    [deferInitialLoad, drainSystemRefresh],
+  );
 
   return {
     messagesOverallCount,

@@ -91,6 +91,9 @@ const ROLE_OPTIONS = [
   'UnitsEditor',
   'NetworkEditor',
   'CallsignsEditor',
+  'Cyber',
+  'CyberViewer',
+  'CyberViewerRestricted',
   'AdvancedReports',
 ];
 

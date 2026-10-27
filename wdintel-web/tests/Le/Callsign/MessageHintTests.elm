@@ -90,12 +90,15 @@ message textMarked callsigns networkIds =
     , callsignsAlg2 = []
     , checked = False
     , important = False
+    , aiImportant = False
     , bookmarked = False
     , timestamp = Nothing
     , createdAt = Nothing
     , createdAtOrder = Nothing
+    , isOwn = Nothing
     , hasDateInHeader = False
     , groupMasterKey = Nothing
+    , groupMasterKeys = Nothing
     , sender = Nothing
     , extendedForm = Nothing
     , messageComments = []
@@ -241,6 +244,32 @@ suite =
                 Expect.all
                     [ \_ -> Expect.equal [ 20 ] (noIds.otherNetworkHints |> List.map .networkId)
                     , \_ -> Expect.equal [ 20 ] (emptyIds.otherNetworkHints |> List.map .networkId)
+                    ]
+                    ()
+        , test "#3598 hides network hints while retaining catalog rows" <|
+            \_ ->
+                let
+                    responses =
+                        Dict.fromList
+                            [ ( "wolf", response "wolf" [ info 9 "КАТАЛОГ" ] [ hint 1 10 "МЕРЕЖА" "ФОРМАЦІЯ", hint 2 20 "ІНША МЕРЕЖА" "" ] ) ]
+
+                    hidden =
+                        MessageHint.resolveWithVisibility True (Just [ 10 ]) (Dict.fromList [ ( 10, network ) ]) responses "wolf"
+
+                    visible =
+                        MessageHint.resolveWithVisibility False (Just [ 10 ]) (Dict.fromList [ ( 10, network ) ]) responses "wolf"
+
+                    networkOnly =
+                        MessageHint.resolveWithVisibility True (Just [ 10 ]) (Dict.fromList [ ( 10, network ) ]) (Dict.fromList [ ( "wolf", response "wolf" [] [ hint 1 10 "" "" ] ) ]) "wolf"
+                in
+                Expect.all
+                    [ \_ -> Expect.equal MessageHint.KnownElsewhere hidden.state
+                    , \_ -> Expect.equal [ "Позивні з каталогу:" ] (headers hidden)
+                    , \_ -> Expect.equal [ "🐷 КАТАЛОГ" ] (MessageHint.tooltipSections hidden |> List.concatMap .items)
+                    , \_ -> Expect.equal [] hidden.exactNetworkHints
+                    , \_ -> Expect.equal [] hidden.otherNetworkHints
+                    , \_ -> Expect.equal MessageHint.MessageNetwork visible.state
+                    , \_ -> Expect.equal MessageHint.Unresolved networkOnly.state
                     ]
                     ()
         , test "extraction falls back correctly and normalizes duplicates" <|

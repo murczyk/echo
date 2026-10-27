@@ -3,7 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { InboxMessage, InboxMessagesReq, InboxMessageTag } from '../../../../Bindings';
 import { fetchMessagesByIds, fetchMessagesByIdsMatchingFilters } from '../../services/api/analysis';
 import { combineDateTimeInputToMs, combineDateTimeToMs } from '../../utils/misc';
-import { buildInboxReq, getFirstLoadedMessagesPageIndex, queryStateReloadKey } from './helpers';
+import {
+  ANALYSIS_MESSAGES_PAGE_SIZE,
+  ANALYSIS_MESSAGE_WINDOW_LIMIT,
+  buildInboxReq,
+  queryStateReloadKey,
+} from './helpers';
 import { useAnalysisFilterSections } from './use-analysis-data-filter-sections';
 import { useLoadMissingNetworksForMessages } from './use-analysis-data.support';
 import { useAnalysisReferenceState } from './use-analysis-reference-state';
@@ -25,6 +30,12 @@ import {
 } from '../shared/useInboxChangedMessageIds';
 import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
+import { inboxMessagesEqual } from '../shared/message-card/message-card-message-updates';
+import { useAnalysisThreadData } from './use-analysis-thread-data';
+
+const noScopedPage = async () => false;
+const noScopedLoad = async () => undefined;
+const noScopedInvalidation = () => undefined;
 
 export { mergeNetworksById, shouldSkipNewCallsignsLoad } from './use-analysis-data.support';
 
@@ -280,6 +291,7 @@ function buildLiveRefreshInboxReq(
     highlightSignals: null,
     highlightPoints: true,
     search: hasSearchText(queryState.search) ? queryState.search.trim() : null,
+    searchMode: queryState.searchMode,
     withoutModelTags: queryState.withoutModelTags,
     onlyWithMedia: includeOnlyWithMedia && queryState.onlyWithMedia,
   };
@@ -358,18 +370,27 @@ function mergeRefreshedMessages(
   shouldKeepRefreshedMessage: (messageId: number, message: InboxMessage) => boolean,
 ): Array<[number, InboxMessage]> {
   const nextMessages: Array<[number, InboxMessage]> = [];
-  for (const [messageId, currentMessage] of currentMessages) {
+  let changed = false;
+  for (const currentItem of currentMessages) {
+    const [messageId, currentMessage] = currentItem;
     const refreshedMessage = refreshedMessages.get(messageId);
     if (refreshedMessage == null) {
-      if (!changedMessageIds.has(messageId)) nextMessages.push([messageId, currentMessage]);
+      if (!changedMessageIds.has(messageId)) nextMessages.push(currentItem);
+      else changed = true;
     } else {
       const nextMessage = mergeRefreshedMessage(refreshedMessage, withoutModelTags);
       if (shouldKeepRefreshedMessage(messageId, nextMessage)) {
-        nextMessages.push([messageId, nextMessage]);
+        if (inboxMessagesEqual(currentMessage, nextMessage)) nextMessages.push(currentItem);
+        else {
+          changed = true;
+          nextMessages.push([messageId, nextMessage]);
+        }
+      } else {
+        changed = true;
       }
     }
   }
-  return nextMessages;
+  return changed ? nextMessages : currentMessages;
 }
 
 function messageRealtimeOrderValue(
@@ -419,23 +440,18 @@ function hasRealtimeMessageOrderChanged(
 
 function canDiscoverUnseenMessages({
   focusedMessageActive,
-  messages,
+  firstLoadedMessageIndex,
   newestFirst,
   noMoreToLoad,
-  nolimitShown,
-  pageIndex,
 }: {
   focusedMessageActive: boolean;
-  messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
   newestFirst: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
-  pageIndex: number;
 }): boolean {
   if (focusedMessageActive) return false;
-  if (nolimitShown) return true;
   if (!newestFirst) return noMoreToLoad;
-  return getFirstLoadedMessagesPageIndex(pageIndex, messages.length) === 0;
+  return firstLoadedMessageIndex === 0;
 }
 
 function insertDiscoveredMessages(
@@ -443,16 +459,16 @@ function insertDiscoveredMessages(
   discoveredMessages: Array<[number, InboxMessage]>,
   {
     messageTimeBasis,
+    firstLoadedMessageIndex,
     newestFirst,
     noMoreToLoad,
-    nolimitShown,
     pageIndex,
     preserveMessageIds,
   }: {
     messageTimeBasis: AnalysisQueryState['messageTimeBasis'];
+    firstLoadedMessageIndex: number;
     newestFirst: boolean;
     noMoreToLoad: boolean;
-    nolimitShown: boolean;
     pageIndex: number;
     preserveMessageIds?: ReadonlySet<number>;
   },
@@ -460,7 +476,7 @@ function insertDiscoveredMessages(
   if (discoveredMessages.length === 0) return currentMessages;
 
   const nextMessages = [...currentMessages];
-  const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, nextMessages.length);
+  const firstLoadedPageIndex = Math.floor(firstLoadedMessageIndex / ANALYSIS_MESSAGES_PAGE_SIZE);
   const compareItems = (left: [number, InboxMessage], right: [number, InboxMessage]): number =>
     compareRealtimeMessageItems(left, right, messageTimeBasis, newestFirst);
 
@@ -477,19 +493,13 @@ function insertDiscoveredMessages(
     );
     const insertionIndex = orderedIndex < 0 ? nextMessages.length : orderedIndex;
     if (nextMessages.length === 0) {
-      if (preserveMessage || pageIndex === 0 || noMoreToLoad || nolimitShown) {
+      if (preserveMessage || pageIndex === 0 || noMoreToLoad) {
         nextMessages.push(messageItem);
       }
       return;
     }
     if (insertionIndex === 0 && firstLoadedPageIndex > 0 && !preserveMessage) return;
-    if (
-      insertionIndex === nextMessages.length &&
-      !noMoreToLoad &&
-      !nolimitShown &&
-      !preserveMessage
-    )
-      return;
+    if (insertionIndex === nextMessages.length && !noMoreToLoad && !preserveMessage) return;
     nextMessages.splice(insertionIndex, 0, messageItem);
   });
 
@@ -509,14 +519,25 @@ function sameMessageItems(
   );
 }
 
+function sameMessageMembership(
+  left: Array<[number, InboxMessage]>,
+  right: Array<[number, InboxMessage]>,
+): boolean {
+  if (left.length !== right.length) return false;
+  const rightMessageIds = new Set(right.map(([messageId]) => messageId));
+  return left.every(([messageId]) => rightMessageIds.has(messageId));
+}
+
 export function useAnalysisData({
   authUserName,
   currentUser,
   deferInitialLoad = false,
+  threadMessageId = null,
+  hideNetworks = false,
+  canUseDevices = false,
   focusedWindow = null,
   focusedMessageActive = false,
   centerTab,
-  leftPanelOpen = true,
   newestFirst,
   onBeforeRealtimeMessageListChange,
   onError,
@@ -526,6 +547,15 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
+  const thread = useAnalysisThreadData({
+    messageId: threadMessageId,
+    enabled: !deferInitialLoad && currentUser != null && authUserName != null,
+    queryState,
+    newestFirst,
+    onError,
+  });
+  const threadActive = threadMessageId != null;
+  deferInitialLoad ||= threadActive;
   const focusedMessage = useMemo(
     () =>
       focusedWindow?.inbox.inboxItems.find(
@@ -540,8 +570,15 @@ export function useAnalysisData({
   );
   const reloadTriggerKey = useMemo(
     () =>
-      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${focusedMessageActive ? 'focused' : newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}|focus=${focusedMessageActive ? (focusedMessage?.[0] ?? 'pending') : 'off'}`,
-    [focusedMessage, focusedMessageActive, newestFirst, optionsFreqValues, queryState],
+      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${focusedMessageActive ? 'focused' : newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}|focus=${focusedMessageActive ? (focusedMessage?.[0] ?? 'pending') : 'off'}|thread=${threadMessageId ?? 'off'}`,
+    [
+      focusedMessage,
+      focusedMessageActive,
+      newestFirst,
+      optionsFreqValues,
+      queryState,
+      threadMessageId,
+    ],
   );
   const realtimeScopeKeyRef = useRef(reloadTriggerKey);
   realtimeScopeKeyRef.current = reloadTriggerKey;
@@ -552,7 +589,7 @@ export function useAnalysisData({
   );
   const localInboxChangeOrigins = useLocalInboxChangeOrigins();
 
-  const loadMissingNetworksForMessages = useLoadMissingNetworksForMessages({
+  const hydrateNetworksForMessages = useLoadMissingNetworksForMessages({
     networksRef: referenceState.networksRef,
     onError,
     onUnauthorized,
@@ -560,11 +597,25 @@ export function useAnalysisData({
     setNetworks: referenceState.setNetworks,
     unitsMap: referenceState.unitsMap,
   });
+  const loadMissingNetworksForMessages = useCallback(
+    async (messageItems: Array<[number, InboxMessage]>) => {
+      if (hideNetworks) return;
+      await hydrateNetworksForMessages(messageItems);
+    },
+    [hideNetworks, hydrateNetworksForMessages],
+  );
 
   const messageList = useAnalysisMessageList({
     deferInitialLoad,
+    messageWindowLimit: threadActive ? Number.MAX_SAFE_INTEGER : ANALYSIS_MESSAGE_WINDOW_LIMIT,
     focusedMessageId: focusedMessage?.[0] ?? null,
     focusedMessageActive,
+    focusedTargetMessageIndex:
+      focusedWindow == null
+        ? null
+        : newestFirst
+          ? focusedWindow.messagesAfter
+          : focusedWindow.messagesBefore,
     focusedHasMoreEarlier: focusedWindow?.hasMoreBefore ?? false,
     focusedHasMoreLater: focusedWindow?.hasMoreAfter ?? false,
     loadMissingNetworksForMessages,
@@ -577,16 +628,60 @@ export function useAnalysisData({
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
+  useEffect(() => {
+    if (!threadActive) return;
+    messageList.setMessages(thread.messages);
+    messageList.setHasLoadedInitialMessages(!thread.loading);
+    messageList.setNoMoreToLoad(true);
+    messageList.setMessageComments(
+      Object.fromEntries(
+        thread.messages.map(([id, message]) => [id, message.messageComments ?? []]),
+      ),
+    );
+    messageList.setAorEntries(
+      Array.from(
+        new Map(
+          thread.inbox.signalGroups.flatMap((group) =>
+            (group.areasOfResponsibility ?? []).map(({ id, name }) => [id, { id, name }] as const),
+          ),
+        ).values(),
+      ),
+    );
+    referenceState.setOptions(thread.options);
+    referenceState.setProfiles(thread.inbox.signalProfiles);
+    referenceState.setGroupInfos(
+      Object.fromEntries(thread.inbox.signalGroups.map((group) => [group.masterKey, group])),
+    );
+    referenceState.setTagsMap(thread.tags.tagsMap);
+    referenceState.setTagsOrder(thread.tags.tagsOrder);
+    referenceState.setUnitsMap(thread.units);
+    referenceState.setSummaryCallsignsInfo(
+      Object.fromEntries(thread.inbox.callsigns.map((callsign) => [callsign.callsign, callsign])),
+    );
+    void loadMissingNetworksForMessages(thread.messages);
+  }, [
+    threadActive,
+    thread.messages,
+    thread.options,
+    thread.inbox,
+    thread.tags,
+    thread.units,
+    thread.loading,
+    messageList.setMessages,
+    messageList.setHasLoadedInitialMessages,
+    messageList.setNoMoreToLoad,
+    loadMissingNetworksForMessages,
+  ]);
   const realtimeMessageWindowRef = useRef({
     messages: messageList.messages,
+    firstLoadedMessageIndex: messageList.firstLoadedMessageIndex,
     noMoreToLoad: messageList.noMoreToLoad,
-    nolimitShown: messageList.nolimitShown,
     pageIndex: messageList.pageIndex,
   });
   realtimeMessageWindowRef.current = {
     messages: messageList.messages,
+    firstLoadedMessageIndex: messageList.firstLoadedMessageIndex,
     noMoreToLoad: messageList.noMoreToLoad,
-    nolimitShown: messageList.nolimitShown,
     pageIndex: messageList.pageIndex,
   };
   const refreshChangedMessagesTargetedRef = useRef<(messageIds: number[]) => Promise<void>>(
@@ -612,6 +707,8 @@ export function useAnalysisData({
     refreshTagFacet,
   } = useAnalysisFilterSections({
     queryState,
+    canUseDevices,
+    hideNetworks,
     optionsFreqValues,
     unitsMapRef: referenceState.unitsMapRef,
     onError,
@@ -624,6 +721,11 @@ export function useAnalysisData({
     setTagsMap: referenceState.setTagsMap,
     setTagsOrder: referenceState.setTagsOrder,
   });
+  useEffect(() => {
+    if (!threadActive) return;
+    messageList.invalidateMessagePaging();
+    invalidateFilterSectionLoads();
+  }, [threadActive, messageList.invalidateMessagePaging, invalidateFilterSectionLoads]);
 
   const mapData = useAnalysisMapData({
     canShowSettlements: currentUser?.roles.includes('Admin') ?? false,
@@ -675,8 +777,9 @@ export function useAnalysisData({
         const currentMessageWindow = realtimeMessageWindowRef.current;
         return (
           currentMessageWindow.messages !== requestMessageWindow.messages ||
+          currentMessageWindow.firstLoadedMessageIndex !==
+            requestMessageWindow.firstLoadedMessageIndex ||
           currentMessageWindow.noMoreToLoad !== requestMessageWindow.noMoreToLoad ||
-          currentMessageWindow.nolimitShown !== requestMessageWindow.nolimitShown ||
           currentMessageWindow.pageIndex !== requestMessageWindow.pageIndex
         );
       };
@@ -725,9 +828,7 @@ export function useAnalysisData({
           (needsServerFilter && visibleMessageIdSet.has(messageId)),
       );
       const exactMapFilterMessageIds = mapNeedsServerFilter ? visibleMapMessageIds : [];
-      let shouldRefreshMessageCounts =
-        visibleMessageIds.length > 0 || visibleMapMessageIds.length > 0;
-
+      let messageMembershipChanged = false;
       try {
         const inboxReq = buildLiveRefreshInboxReq(queryState, optionsFreqValues, true);
         const mapInboxReq = applyMapDateRangeToInboxReq(
@@ -746,17 +847,19 @@ export function useAnalysisData({
           const matchingItems =
             exactMessageIds.length === 0
               ? []
-              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq);
+              : await fetchMessagesByIdsMatchingFilters(exactMessageIds, inboxReq, { signal });
           matchingMessageItems = matchingItems;
           matchingMapMessageItems = matchingItems;
         } else {
           [matchingMessageItems, matchingMapMessageItems] = await Promise.all([
             exactFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactFilterMessageIds, inboxReq, { signal }),
             exactMapFilterMessageIds.length === 0
               ? []
-              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq),
+              : fetchMessagesByIdsMatchingFilters(exactMapFilterMessageIds, mapInboxReq, {
+                  signal,
+                }),
           ]);
         }
         if (isScopeStale() || retryForLatestMessageWindow()) return;
@@ -775,14 +878,11 @@ export function useAnalysisData({
               (messageId) => exactMapFilterMessageIds.includes(messageId) && shouldApply(messageId),
             ),
         );
-        shouldRefreshMessageCounts ||= matchingMessageIdSet.size > 0;
         const discoverUnseenMessages = canDiscoverUnseenMessages({
           focusedMessageActive,
-          messages: requestMessageWindow.messages,
+          firstLoadedMessageIndex: requestMessageWindow.firstLoadedMessageIndex,
           newestFirst,
           noMoreToLoad: requestMessageWindow.noMoreToLoad,
-          nolimitShown: requestMessageWindow.nolimitShown,
-          pageIndex: requestMessageWindow.pageIndex,
         });
         const messageIdsToHydrate = normalizeMessageIds([
           ...(needsServerFilter
@@ -925,9 +1025,9 @@ export function useAnalysisData({
             [...discoveredMessageItems, ...reorderedMessageItems],
             {
               messageTimeBasis: queryState.messageTimeBasis,
+              firstLoadedMessageIndex: requestMessageWindow.firstLoadedMessageIndex,
               newestFirst,
               noMoreToLoad: requestMessageWindow.noMoreToLoad,
-              nolimitShown: requestMessageWindow.nolimitShown,
               pageIndex: requestMessageWindow.pageIndex,
               preserveMessageIds: reorderedMessageIds,
             },
@@ -935,6 +1035,7 @@ export function useAnalysisData({
         };
         const currentMessageItems = requestMessageWindow.messages;
         const nextMessageItems = reconcileListMessages(currentMessageItems);
+        messageMembershipChanged = !sameMessageMembership(currentMessageItems, nextMessageItems);
         if (!sameMessageItems(currentMessageItems, nextMessageItems)) {
           onBeforeRealtimeMessageListChange?.();
           messageList.setMessages((currentMessages) =>
@@ -971,10 +1072,12 @@ export function useAnalysisData({
         if (signal.aborted) return;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
       } finally {
-        if (!isScopeStale() && shouldRefreshMessageCounts) {
-          messageList.refreshMessageCounts();
-        } else if (!isScopeStale()) {
-          messageList.scheduleOverallMessageCountRefresh();
+        if (!isScopeStale()) {
+          if (messageMembershipChanged) {
+            messageList.scheduleOverallMessageCountRefresh();
+          } else if (undisplayedMessageIds.length > 0) {
+            messageList.scheduleOverallMessageCountRefresh('deferred');
+          }
         }
       }
     },
@@ -994,6 +1097,7 @@ export function useAnalysisData({
   );
   const refreshChangedMessagesTargeted = useTargetedInboxReconciliation(
     reconcileChangedMessagesBatch,
+    reloadTriggerKey,
   );
   refreshChangedMessagesTargetedRef.current = refreshChangedMessagesTargeted;
 
@@ -1035,24 +1139,29 @@ export function useAnalysisData({
       queryState,
       completeLocalInboxChangeOrigin: localInboxChangeOrigins.completeOrigin,
       failLocalInboxChangeOrigin: localInboxChangeOrigins.failOrigin,
-      reconcileTagMutation: (messageId) => refreshChangedMessagesTargeted([messageId]),
+      reconcileTagMutation: (messageId) =>
+        threadActive
+          ? thread.refresh()
+          : refreshChangedMessagesTargeted([messageId], { immediate: true }),
       registerLocalInboxChangeOrigin: localInboxChangeOrigins.registerOrigin,
-      refreshTagFacet,
+      refreshTagFacet: threadActive ? noScopedLoad : refreshTagFacet,
       reloadRef,
       referenceState,
-      messageList,
+      messageList: threadActive
+        ? { ...messageList, refreshMessageCounts: noScopedInvalidation }
+        : messageList,
       mapData,
       sidebarData,
     }),
   );
 
-  const { reload } = useAnalysisReloadOrchestrator(
+  const { reload, messagesLoadedForCurrentQuery } = useAnalysisReloadOrchestrator(
     buildReloadOrchestratorParams({
       centerTab,
       deferInitialLoad,
+      hideNetworks,
       focusedWindow,
       focusedMessageActive,
-      leftPanelOpen,
       newestFirst,
       onError,
       onUnauthorized,
@@ -1078,6 +1187,7 @@ export function useAnalysisData({
       loadMessageComments: messageList.loadMessageComments,
       invalidateMessagePaging: messageList.invalidateMessagePaging,
       invalidateMessagePageRequests: messageList.invalidateMessagePageRequests,
+      currentMessagePageIndex: messageList.pageIndex,
       getCurrentMessagePageCursor: messageList.getCurrentMessagePageCursor,
       replaceCurrentMessagePage: messageList.replaceCurrentMessagePage,
       refreshMessageCounts: messageList.refreshMessageCounts,
@@ -1103,7 +1213,6 @@ export function useAnalysisData({
       newCallsignsLoadedKeyRef: sidebarData.newCallsignsLoadedKeyRef,
       newCallsignsPendingKeyRef: sidebarData.newCallsignsPendingKeyRef,
       setNoMoreToLoad: messageList.setNoMoreToLoad,
-      setNolimitShown: messageList.setNolimitShown,
       setOptions: referenceState.setOptions,
       setProfiles: referenceState.setProfiles,
       setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
@@ -1120,17 +1229,18 @@ export function useAnalysisData({
 
   useInboxChangedMessageIds({
     ignoreEvent: (event) => {
+      if (threadActive) return true;
       if (event.origin == null) return false;
       const disposition = localInboxChangeOrigins.classifyOrigin(event.origin);
       if (disposition === 'reconcile') {
-        void refreshChangedMessagesTargeted([event.messageId]);
+        void refreshChangedMessagesTargeted([event.messageId], { immediate: true });
       }
       return disposition !== 'unmatched';
     },
     onMessageIds: refreshChangedMessages,
   });
 
-  reloadRef.current = reload;
+  reloadRef.current = threadActive ? thread.refresh : reload;
 
   return {
     callsignGraph: sidebarData.callsignGraph,
@@ -1157,11 +1267,11 @@ export function useAnalysisData({
     groupsActivityLoadedPeriod: sidebarData.groupsActivityLoadedPeriod,
     groupsActivityLoading: sidebarData.groupsActivityLoading,
     hasLoadedInitialMessages: messageList.hasLoadedInitialMessages,
+    messagesLoadedForCurrentQuery,
     // Exposed for map/report flows; `onlyWithMedia` is message-list-only and is applied at message fetch call sites.
     inboxReq: buildInboxReq(queryState, optionsFreqValues),
     botTagAction: messageActionState.botTagAction,
     loadCallsignGraph: sidebarData.loadCallsignGraph,
-    loadAllMessages: messageList.loadAllMessages,
     loadFilterSection,
     invalidateFilterSectionLoads,
     invalidateFilterSectionLoadsForPatch,
@@ -1175,6 +1285,7 @@ export function useAnalysisData({
     loadLastPage: messageList.loadLastPage,
     loadNextPage: messageList.loadNextPage,
     loadMoreMessages: messageList.loadMoreMessages,
+    loadPreviousMessages: messageList.loadPreviousMessages,
     loadPrevPage: messageList.loadPrevPage,
     loadMessagesForMap: mapData.loadMessagesForMap,
     loadSettlementMessagesForMap: mapData.loadSettlementMessagesForMap,
@@ -1184,6 +1295,11 @@ export function useAnalysisData({
     messagesPaging: messageList.messagesPaging,
     messageComments: messageList.messageComments,
     messages: messageList.messages,
+    firstLoadedMessageIndex: messageList.firstLoadedMessageIndex,
+    hasMoreBeforeWindow: messageList.hasMoreBeforeWindow,
+    hasMoreAfterWindow: messageList.hasMoreAfterWindow,
+    loadingBeforeWindow: messageList.loadingBeforeWindow,
+    loadingAfterWindow: messageList.loadingAfterWindow,
     messagesOverallCount: messageList.messagesOverallCount,
     messagesTotalCount: messageList.messagesTotalCount,
     messagesTotalLoading: messageList.messagesTotalLoading,
@@ -1196,13 +1312,16 @@ export function useAnalysisData({
     newCallsigns: sidebarData.newCallsigns,
     newCallsignsLoading: sidebarData.newCallsignsLoading,
     noMoreToLoad: messageList.noMoreToLoad,
-    nolimitShown: messageList.nolimitShown,
     pageIndex: messageList.pageIndex,
     onPrependLocalMessage: useCallback(
       (messageId: number, message: InboxMessage) => {
+        if (threadActive) {
+          void thread.refresh();
+          return;
+        }
         messageList.setMessages((current) => [[messageId, message], ...current]);
       },
-      [messageList.setMessages],
+      [threadActive, thread.refresh, messageList.setMessages],
     ),
     onUpdateLocalMessage,
     onDeleteMessage: messageActionState.onDeleteMessage,
@@ -1221,6 +1340,7 @@ export function useAnalysisData({
     summaryLoaded: sidebarData.summaryLoaded,
     summaryHasLoadedOnce: sidebarData.summaryHasLoadedOnce,
     rightSidebarLoading: sidebarData.rightSidebarLoading,
+    rightSidebarOutdated: sidebarData.rightSidebarOutdated,
     summaryRows: sidebarData.summaryRows,
     summaryCallsignsInfo: referenceState.summaryCallsignsInfo,
     unitsMap: referenceState.unitsMap,
@@ -1232,5 +1352,43 @@ export function useAnalysisData({
     topLocations: sidebarData.topLocations,
     topUnits: sidebarData.topUnits,
     renameSummaryUnit: messageActionState.renameSummaryUnit,
+    ...(threadActive
+      ? {
+          threadDeletedCount: thread.deletedCount,
+          threadAnchorId: thread.anchorId,
+          counts: null,
+          countsLoading: false,
+          filtersLoading: false,
+          messagesLoading: thread.loading,
+          messagesLoadedForCurrentQuery: !thread.loading,
+          hasLoadedInitialMessages: !thread.loading,
+          messagesOverallCount: thread.inbox.inboxItems.length,
+          messagesTotalCount: thread.messages.length,
+          messagesTotalLoading: thread.loading,
+          messagesPaging: false,
+          firstLoadedMessageIndex: 0,
+          pageIndex: 0,
+          noMoreToLoad: true,
+          hasMoreBeforeWindow: false,
+          hasMoreAfterWindow: false,
+          focusedHasMoreEarlier: false,
+          focusedHasMoreLater: false,
+          reload: thread.refresh,
+          loadFilterSection: noScopedLoad,
+          invalidateFilterSectionLoads: noScopedInvalidation,
+          invalidateFilterSectionLoadsForPatch: noScopedInvalidation,
+          isFilterSectionLoading: () => false,
+          isFilterSectionEmptyLoading: () => false,
+          isFilterSectionStale: () => false,
+          loadFirstPage: noScopedPage,
+          loadLastPage: noScopedPage,
+          loadNextPage: noScopedPage,
+          loadPrevPage: noScopedPage,
+          loadMoreMessages: noScopedPage,
+          loadPreviousMessages: noScopedPage,
+          loadFocusedEarlier: noScopedPage,
+          loadFocusedLater: noScopedPage,
+        }
+      : {}),
   };
 }

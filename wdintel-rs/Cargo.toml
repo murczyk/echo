@@ -16,6 +16,7 @@ postcard = { workspace = true }
 zstd = { workspace = true }
 quick-xml = { version = "0.38.4", features = ["serialize", "overlapped-lists"] }
 actix-web = { workspace = true }
+governor = "0.10"
 goi-echo-worker = { path = "../goi-echo-worker" }
 actix-files = "0.6.10"
 actix-multipart = "0.7.2"
@@ -37,13 +38,16 @@ pulldown-cmark = "0.13.0"
 tempfile = "3.27.0"
 walkdir = "^2.5.0"
 zip = "4.6.1"
+crc32fast = "1.5.0"
+flate2 = "1.1.9"
+reqsign = { version = "0.16.5", default-features = false, features = ["services-aws", "reqwest_request"] }
 proj = { version = "0.31.0", optional = true }
 opendal = { version = "0.54", features = ["services-s3", "services-fs"] }
 arrow-array = "59.1.0"
 arrow-schema = "59.1.0"
 parquet = { version = "59.1.0", features = ["arrow"] }
 tokio = { workspace = true }
-tokio-util = { version = "0.7.18", features = ["codec", "io"] }
+tokio-util = { version = "0.7.18", features = ["codec", "io", "rt"] }
 nipper = "0.1"
 ammonia = "4.1.2"
 futures-util = "0.3.32"
@@ -63,6 +67,7 @@ rand = "0.9.2"
 sha256 = "1.6.0"
 hmac = "0.12.1"
 sha2 = "0.10.9"
+openssl = "0.10.80"
 md-5 = "0.10.6"
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
@@ -121,6 +126,7 @@ opentelemetry_sdk = { version = "0.30.0", default-features = false, features = [
 content_disposition = "0.4.0"
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 random_word = { version = "0.5.2", features = ["en"] }
 serial_test = "3.4.0"
 
@@ -130,7 +136,7 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "80589feab5a9afbe6e474f76b39cc563506c9262"
+rev = "17cbc64163d227cbc4c3da327e6c0890523293fb"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"
@@ -205,6 +211,7 @@ assets = [
 	[ "../echo-migration/src/settlements_data_rf_rb.sql", "usr/share/echo/migration/settlements_data_rf_rb.sql", "755", ],
 	[ "../deploy/clickhouse/bin/*", "usr/share/echo/analytics-control/bin/", "755", ],
 	[ "../deploy/clickhouse/env/tables-exclude.txt", "usr/share/echo/analytics-control/env/tables-exclude.txt", "644", ],
+	[ "../deploy/clickhouse/env/tables-cdc-only.txt", "usr/share/echo/analytics-control/env/tables-cdc-only.txt", "644", ],
 	[ "../deploy/clickhouse/source-systemd/*", "usr/share/echo/analytics-control/source-systemd/", "644", ],
 	[ "../deploy/clickhouse/systemd/*", "usr/share/echo/analytics-control/systemd/", "644", ],
 	[ "../deploy/clickhouse/shims/*", "usr/share/echo/analytics-control/shims/", "755", ],

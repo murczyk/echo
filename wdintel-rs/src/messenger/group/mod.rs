@@ -9,7 +9,9 @@ use echo_migration::{Expr, JoinType};
 use sea_orm::*;
 use std::collections::BTreeSet;
 
+pub mod creation;
 pub mod handlers;
+pub mod native;
 pub mod oneoff;
 #[cfg(test)]
 pub mod tests;
@@ -134,9 +136,17 @@ pub async fn collect_groups(
                 interseption_kind: g.interseption_kind.clone().into(),
                 disable_network_assignment: g.disable_network_assignment,
                 is_aviation_group: g.is_aviation_group.unwrap_or(false),
+                ai_transcript_analysis_enabled: g
+                    .ai_transcript_analysis_enabled
+                    .unwrap_or(false),
+                fetch_new_messages: g.fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
+                color_key: types::SignalGroupColor::from_optional_db_value(
+                    g.color_key.as_deref(),
+                )
+                .unwrap_or(types::SignalGroupColor::BlueGrey),
             })
         })
         .collect();
@@ -172,9 +182,12 @@ pub async fn collect_groups(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
+            fetch_new_messages: true,
             group_stats: stats,
             admin_data,
             areas_of_responsibility: aors,
+            color_key: types::SignalGroupColor::BlueGrey,
         }
     }));
     Ok(data)
@@ -249,6 +262,26 @@ where
         _ => bail!("master_key must be set when adding group"),
     };
 
+    native::require_external_group(dbx, &master_key)
+        .await
+        .c(h!())?;
+    if master_key
+        .starts_with(crate::config::DATASOURCE_ECHO_NATIVE_GROUP_PREFIX)
+    {
+        bail!("Для створення групи Echo використайте редактор груп.");
+    }
+    if let Set(Some(datasource_id)) | Unchanged(Some(datasource_id)) =
+        group.datasource_id.clone()
+    {
+        crate::datasource::native::ensure_group_datasource_compatible(
+            dbx,
+            &master_key,
+            datasource_id,
+        )
+        .await
+        .c(h!())?;
+    }
+
     // Upsert by primary key to avoid duplicate key violations when the group
     // already exists (e.g., from concurrent syncs or prior runs). Also revive
     // soft-deleted groups by setting deleted=false and refresh the name.
@@ -290,6 +323,12 @@ pub async fn fix_group_areas_of_responsibility(
         .await
         .c(h!())?;
     for g in groups {
+        if crate::datasource::native::is_native_group(db, &g.master_key)
+            .await
+            .c(h!())?
+        {
+            continue;
+        }
         if let Err(e) = insert_group_aor_transaction(db, &g).await {
             error!("failed to insert group's area of responsibility: {:?}", e);
         } else {
@@ -325,6 +364,12 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let master_key = group.master_key.clone();
+    if crate::datasource::native::is_native_group(dbx, &master_key)
+        .await
+        .c(h!())?
+    {
+        return Ok(None);
+    }
 
     // Check if group already has AOR assignments
     let existing_aors = signal_group_aor::Entity::find()
@@ -379,9 +424,6 @@ where
         id: NotSet,
     };
     model.insert(dbx).await.context(h!())?;
-    crate::battle_line::requeue_settlement_links_for_group(dbx, &master_key)
-        .await
-        .context(h!())?;
     let reason = format!("inserted aor {} for group {master_key}", aor.id);
     if let Err(e) =
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(
@@ -471,6 +513,13 @@ pub async fn ensure_datasource_group_id<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    crate::datasource::native::ensure_group_datasource_compatible(
+        db,
+        &master_key,
+        datasource_id,
+    )
+    .await
+    .c(h!())?;
     let datasource_group_id = datasource_group::Entity::find()
         .filter(datasource_group::Column::GroupMasterKey.eq(master_key.clone()))
         .filter(datasource_group::Column::DatasourceId.eq(datasource_id))
@@ -510,6 +559,7 @@ where
         id: NotSet,
         last_sync_at: NotSet,
         deleted: NotSet,
+        messenger_type: NotSet,
     }
     .insert(db)
     .await
@@ -526,6 +576,13 @@ pub async fn ensure_signal_group<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    crate::datasource::native::ensure_group_datasource_compatible(
+        db,
+        &master_key,
+        datasource_id,
+    )
+    .await
+    .c(h!())?;
     let signal_group = signal_group::Entity::find_by_id(master_key.clone())
         .one(db)
         .await
@@ -544,6 +601,11 @@ where
             interseption_kind: NotSet,
             disable_network_assignment: NotSet,
             is_aviation_group: NotSet,
+            ai_transcript_analysis_enabled: NotSet,
+            ai_transcript_analysis_enabled_at: NotSet,
+            color_key: NotSet,
+            fetch_new_messages: NotSet,
+            created_by_login_id: NotSet,
         }
         .insert(db)
         .await
@@ -554,14 +616,56 @@ where
     Ok(saved.master_key)
 }
 
+pub async fn set_signal_group_color<C>(
+    db: &C,
+    master_key: &str,
+    color: Option<types::SignalGroupColor>,
+) -> anyhow::Result<types::SignalGroupColor>
+where
+    C: ConnectionTrait,
+{
+    let Some(color) = color else {
+        let color = signal_group::Entity::find_by_id(master_key)
+            .select_only()
+            .column(signal_group::Column::ColorKey)
+            .into_tuple::<Option<String>>()
+            .one(db)
+            .await
+            .c(h!())?
+            .c(h!())?;
+        return types::SignalGroupColor::from_optional_db_value(
+            color.as_deref(),
+        )
+        .c(h!());
+    };
+    let result = signal_group::Entity::update_many()
+        .col_expr(
+            signal_group::Column::ColorKey,
+            Expr::value(color.as_db_value()),
+        )
+        .filter(signal_group::Column::MasterKey.eq(master_key))
+        .exec(db)
+        .await
+        .c(h!())?;
+    anyhow::ensure!(result.rows_affected == 1, "signal group not found");
+    Ok(color)
+}
+
 pub async fn set_signal_group_archived(
     txn: &DatabaseTransaction,
     master_key: &str,
     is_archived: bool,
 ) -> Result<signal_group::Model, AppError> {
+    let is_native = crate::datasource::native::is_native_group(txn, master_key)
+        .await
+        .c(h!())?;
+    if is_native {
+        crate::battle_line::lock_updates(txn).await.c(h!())?;
+    }
     let signal_group = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::MasterKey.eq(master_key))
+        .lock_exclusive()
         .one(txn)
         .await
         .c(h!())?

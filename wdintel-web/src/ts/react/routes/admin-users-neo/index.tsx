@@ -6,7 +6,6 @@ import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import {
   Autocomplete,
   Box,
-  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -17,11 +16,12 @@ import {
   InputAdornment,
   MenuItem,
   Stack,
+  Switch,
   TextField,
   Tooltip,
 } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   CreateLoginReq,
@@ -29,7 +29,6 @@ import {
   Login,
   Organism,
   SigintZone,
-  UpdateLoginReq,
 } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
@@ -58,12 +57,18 @@ import {
   TableStateProvider,
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
-import { createLogin, createLoginDelta, listLogins, updateLogin } from '../../services/api/logins';
+import {
+  createLogin,
+  listLogins,
+  type UpdateLoginPatch,
+  updateLogin,
+} from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { MessengerProfileSelect } from './MessengerProfileSelect';
 import { UserUuidValue } from './UserUuidValue';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -80,19 +85,28 @@ const ROLE_OPTIONS = [
   'NetworkEditor',
   'CallsignsEditor',
   'Cyber',
+  'CyberViewer',
+  'CyberViewerRestricted',
   'AdvancedReports',
   'DeleteMsg',
   'NoAutoLogout',
   'No2FA',
+  'MessengerIngest',
 ];
 
 const STATUS_FILTER_OPTIONS = [
   { text: 'Активний', value: 'Активний' },
-  { text: 'Видалено адміном', value: 'Видалено адміном' },
-  { text: 'Неактивний', value: 'Неактивний' },
+  { text: 'Деактивовано адміністратором', value: 'Деактивовано адміністратором' },
+  { text: 'Деактивовано через неактивність', value: 'Деактивовано через неактивність' },
   { text: 'Організм деактивовано', value: 'Організм деактивовано' },
-  { text: 'Невідомо', value: 'Невідомо' },
+  { text: 'Деактивовано', value: 'Деактивовано' },
 ];
+
+const LEGACY_STATUS_FILTER_VALUES: Record<string, string> = {
+  'Видалено адміном': 'Деактивовано адміністратором',
+  Неактивний: 'Деактивовано через неактивність',
+  Невідомо: 'Деактивовано',
+};
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   login: true,
@@ -125,7 +139,7 @@ const defaultMRTOptions = getDefaultMRTOptions<Login>();
 type StatusInfo = {
   label: string;
   colorClass: string;
-  detail?: string;
+  details?: string[];
 };
 
 type ZoneEntry = [number, SigintZone];
@@ -145,16 +159,19 @@ type UserLookups = {
 
 type AddUserForm = {
   login: string;
+  deltaLogin: string;
   password: string;
+  passwordAuthEnabled: boolean;
   roles: string[];
   sigintZoneId: number | null;
   organismId: number | null;
-  useDelta: boolean;
+  signalProfileId: string | null;
   description: string;
 };
 
 type AddUserErrors = {
   login?: string;
+  deltaLogin?: string;
   password?: string;
   roles?: string;
   zone?: string;
@@ -170,25 +187,41 @@ type EditUserForm = {
   organismId: number | null;
   deltaLogin: string;
   deleted: boolean;
+  signalProfileId: string | null;
   description: string;
   passwordAuthEnabled: boolean;
+  hasPassword: boolean;
 };
 
 type EditUserErrors = {
   login?: string;
+  password?: string;
+  deltaLogin?: string;
   roles?: string;
   zone?: string;
   organism?: string;
 };
 
+type UserField = keyof AddUserErrors;
+type UserFieldState = Partial<Record<UserField, true>>;
+type UserServerErrors = AddUserErrors & { passwordAuthEnabled?: string };
+type ParsedServerFieldErrors = {
+  fields: UserServerErrors;
+  fallbackMessages: string[];
+  hasDiscardedEntries: boolean;
+  isJson: boolean;
+};
+
 const EMPTY_ADD_FORM: AddUserForm = {
   login: '',
+  deltaLogin: '',
   password: '',
+  passwordAuthEnabled: false,
   roles: ['Rer'],
   sigintZoneId: null,
   organismId: null,
-  useDelta: true,
   description: '',
+  signalProfileId: null,
 };
 
 function renderLookupAutocompleteOption(
@@ -211,8 +244,10 @@ function buildUserLoadingRows(): Login[] {
     roles: [],
     deleted: false,
     deactivationReason: null,
+    signalProfileId: null,
     description: null,
     passwordAuthEnabled: true,
+    hasPassword: false,
     totpEnabled: false,
     organismEnabled: true,
     sigintZoneId: null,
@@ -320,8 +355,12 @@ function buildAddUserErrors(form: AddUserForm): AddUserErrors {
     errors.login = 'Логін не може бути пустим';
   }
 
-  if (!form.useDelta && !form.password.trim()) {
-    errors.password = 'Пароль не може бути пустим';
+  if (form.passwordAuthEnabled && !form.password.trim()) {
+    errors.password = 'Пароль не може бути пустим або складатися лише з пробілів';
+  }
+
+  if (!form.passwordAuthEnabled && !form.deltaLogin.trim()) {
+    errors.deltaLogin = 'Вкажіть Delta логін або увімкніть вхід за паролем';
   }
 
   if (form.roles.length === 0) {
@@ -339,8 +378,116 @@ function buildAddUserErrors(form: AddUserForm): AddUserErrors {
   return errors;
 }
 
-function hasFormErrors(errors: AddUserErrors): boolean {
+function hasFormErrors(errors: AddUserErrors | EditUserErrors): boolean {
   return Object.values(errors).some(Boolean);
+}
+
+function visibleFieldError(
+  field: UserField,
+  validationErrors: AddUserErrors | EditUserErrors,
+  serverErrors: AddUserErrors | EditUserErrors,
+  touched: UserFieldState,
+  submitAttempted: boolean,
+): string | undefined {
+  if (serverErrors[field]) return serverErrors[field];
+  return submitAttempted || touched[field] ? validationErrors[field] : undefined;
+}
+
+function parseServerFieldErrors(error: unknown): ParsedServerFieldErrors {
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : null;
+  if (!message)
+    return { fields: {}, fallbackMessages: [], hasDiscardedEntries: true, isJson: false };
+
+  try {
+    const value = JSON.parse(message) as Record<string, unknown>;
+    const wrappedFields =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value.fields ?? value.fieldErrors ?? value.field_errors ?? value.errors)
+        : undefined;
+    const entries: unknown[] = Array.isArray(value)
+      ? value
+      : wrappedFields && typeof wrappedFields === 'object' && !Array.isArray(wrappedFields)
+        ? Object.entries(wrappedFields)
+        : [];
+    if (entries.length === 0) {
+      return { fields: {}, fallbackMessages: [], hasDiscardedEntries: true, isJson: true };
+    }
+
+    const fields: UserServerErrors = {};
+    const fallbackMessages: string[] = [];
+    let hasDiscardedEntries = false;
+    const fieldByBackendKey: Record<string, keyof UserServerErrors> = {
+      login: 'login',
+      deltaLogin: 'deltaLogin',
+      delta_login: 'deltaLogin',
+      password: 'password',
+      roles: 'roles',
+      zone: 'zone',
+      sigintZoneId: 'zone',
+      sigint_zone_id: 'zone',
+      organism: 'organism',
+      organismId: 'organism',
+      organism_id: 'organism',
+      passwordAuthEnabled: 'passwordAuthEnabled',
+      password_auth_enabled: 'passwordAuthEnabled',
+    };
+    for (const entry of entries) {
+      if (!Array.isArray(entry) || entry.length !== 2) {
+        hasDiscardedEntries = true;
+        continue;
+      }
+      const [key, value] = entry;
+      if (typeof key !== 'string' || !key.trim() || typeof value !== 'string' || !value.trim()) {
+        hasDiscardedEntries = true;
+        continue;
+      }
+      const field = fieldByBackendKey[key];
+      if (field) {
+        fields[field] ??= value;
+      } else {
+        fallbackMessages.push(`${key}: ${value}`);
+      }
+    }
+    return { fields, fallbackMessages, hasDiscardedEntries, isJson: true };
+  } catch (_) {
+    return { fields: {}, fallbackMessages: [], hasDiscardedEntries: true, isJson: false };
+  }
+}
+
+function formatServerValidationFallback(
+  error: unknown,
+  parsedErrors: ParsedServerFieldErrors,
+): string {
+  if (!parsedErrors.isJson) {
+    const message = formatErrorMessage(error);
+    return /^[\[{]/.test(message.trim()) ? 'Не вдалося зберегти користувача' : message;
+  }
+  const messages = [...parsedErrors.fallbackMessages];
+  if (
+    parsedErrors.hasDiscardedEntries ||
+    (messages.length === 0 && Object.keys(parsedErrors.fields).length === 0)
+  ) {
+    messages.push('Не вдалося зберегти користувача');
+  }
+  return messages.join('\n');
+}
+
+function clearAuthenticationGroupServerError(
+  current: UserServerErrors,
+  field: 'deltaLogin' | 'password',
+): UserServerErrors {
+  if (!current[field] && !current.passwordAuthEnabled) return current;
+  return { ...current, [field]: undefined, passwordAuthEnabled: undefined };
+}
+
+function clearAuthenticationServerErrors(current: UserServerErrors): UserServerErrors {
+  if (!current.password && !current.deltaLogin && !current.passwordAuthEnabled) return current;
+  return {
+    ...current,
+    password: undefined,
+    deltaLogin: undefined,
+    passwordAuthEnabled: undefined,
+  };
 }
 
 function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
@@ -348,15 +495,18 @@ function toCreateLoginReq(form: AddUserForm): CreateLoginReq {
 
   return {
     login: form.login.trim(),
-    password: form.useDelta ? '' : form.password.trim(),
+    password: form.passwordAuthEnabled ? form.password : null,
     roles: form.roles,
     sigintZoneId: form.sigintZoneId,
     organismId: form.organismId,
+    signalProfileId: form.signalProfileId,
     description: form.description.trim() || null,
+    deltaLogin: form.deltaLogin.trim() || null,
+    passwordAuthEnabled: form.passwordAuthEnabled,
   };
 }
 
-function buildEditUserErrors(form: EditUserForm): EditUserErrors {
+function buildEditUserErrors(form: EditUserForm, original: Login): EditUserErrors {
   const errors: EditUserErrors = {};
 
   if (!form.login.trim()) {
@@ -375,34 +525,57 @@ function buildEditUserErrors(form: EditUserForm): EditUserErrors {
     errors.organism = 'Виберіть організм';
   }
 
+  const passwordWasSupplied = form.password.length > 0;
+  const hasValidReplacementPassword = passwordWasSupplied && Boolean(form.password.trim());
+  if (passwordWasSupplied && !hasValidReplacementPassword) {
+    errors.password = 'Пароль не може бути пустим або складатися лише з пробілів';
+  }
+
+  if (
+    !original.passwordAuthEnabled &&
+    form.passwordAuthEnabled &&
+    !form.hasPassword &&
+    !passwordWasSupplied &&
+    !hasValidReplacementPassword
+  ) {
+    errors.password = 'Для входу за паролем вкажіть пароль';
+  }
+
+  const deltaChanged = form.deltaLogin.trim() !== (original.deltaLogin ?? '').trim();
+  const authenticationChanged =
+    deltaChanged ||
+    form.passwordAuthEnabled !== original.passwordAuthEnabled ||
+    passwordWasSupplied;
+  const reactivating = original.deleted && !form.deleted;
+  if (
+    (authenticationChanged || reactivating) &&
+    !form.deleted &&
+    !(
+      form.deltaLogin.trim() ||
+      (form.passwordAuthEnabled && (form.hasPassword || hasValidReplacementPassword))
+    )
+  ) {
+    errors.deltaLogin = 'Для активного користувача налаштуйте вхід за паролем або Delta';
+  }
+
   return errors;
 }
 
-function toClearTotpReq(login: Login): UpdateLoginReq {
+function toClearTotpReq(login: Login): UpdateLoginPatch {
   if (!login.organismId) throw new Error('Виберіть організм');
 
   return {
     id: login.id,
     login: login.login,
-    roles: login.roles,
-    sigintZoneId: login.sigintZoneId,
     organismId: login.organismId,
-    deleted: login.deleted,
-    password: null,
-    deltaLogin: login.deltaLogin,
-    deactivationReason: login.deactivationReason,
-    description: login.description,
-    passwordAuthEnabled: login.passwordAuthEnabled,
     clearTotp: true,
   };
 }
 
-function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
+function toUpdateLoginReq(form: EditUserForm, original: Login): UpdateLoginPatch {
   if (!form.organismId) throw new Error('Виберіть організм');
 
-  const trimmedPassword = form.password.trim();
   const trimmedDelta = form.deltaLogin.trim();
-  const deactivationReason: DeactivationReasonType | null = form.deleted ? 'Admin' : null;
 
   return {
     id: form.id,
@@ -410,32 +583,45 @@ function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
     roles: form.roles,
     sigintZoneId: form.sigintZoneId,
     organismId: form.organismId,
-    deleted: form.deleted,
-    password: trimmedPassword ? trimmedPassword : null,
-    deltaLogin: trimmedDelta ? trimmedDelta : null,
-    deactivationReason,
+    ...(form.deleted === original.deleted ? {} : { deleted: form.deleted }),
+    password: form.password || null,
+    ...(trimmedDelta === (original.deltaLogin ?? '').trim()
+      ? {}
+      : { deltaLogin: trimmedDelta || null }),
+    ...(form.signalProfileId === original.signalProfileId
+      ? {}
+      : { signalProfileId: form.signalProfileId }),
     description: form.description.trim() || null,
-    passwordAuthEnabled: form.passwordAuthEnabled,
-    clearTotp: null,
+    ...(form.passwordAuthEnabled === original.passwordAuthEnabled
+      ? {}
+      : { passwordAuthEnabled: form.passwordAuthEnabled }),
   };
 }
 
 function getStatusInfo(login: Login): StatusInfo {
   if (login.deleted) {
     if (login.deactivationReason === 'Admin') {
-      return { label: 'Видалено адміном', colorClass: 'text-red-600' };
+      return {
+        label: 'Деактивовано адміністратором',
+        colorClass: 'text-red-600',
+        details: login.organismEnabled === false ? ['Організм деактивовано'] : undefined,
+      };
     }
     if (login.deactivationReason === 'Inactive') {
       return {
-        label: 'Неактивний',
+        label: 'Деактивовано через неактивність',
         colorClass: 'text-yellow-600',
-        detail: login.lastActiveAt ? `Останній: ${formatDateTime(login.lastActiveAt)}` : undefined,
+        details: [
+          ...(login.lastActiveAt ? [`Останній: ${formatDateTime(login.lastActiveAt)}`] : []),
+          ...(login.organismEnabled === false ? ['Організм деактивовано'] : []),
+        ],
       };
     }
-    if (login.organismEnabled === false) {
-      return { label: 'Організм деактивовано', colorClass: 'text-red-600' };
-    }
-    return { label: 'Невідомо', colorClass: 'text-gray-600' };
+    return {
+      label: 'Деактивовано',
+      colorClass: 'text-gray-600',
+      details: login.organismEnabled === false ? ['Організм деактивовано'] : undefined,
+    };
   }
 
   if (login.organismEnabled === false) {
@@ -443,6 +629,13 @@ function getStatusInfo(login: Login): StatusInfo {
   }
 
   return { label: 'Активний', colorClass: 'text-green-600' };
+}
+
+function matchesStatusFilter(login: Login, filterValue: unknown): boolean {
+  const selected = asStringArray(filterValue).map(
+    (value) => LEGACY_STATUS_FILTER_VALUES[value] ?? value,
+  );
+  return selected.length === 0 || selected.includes(getStatusInfo(login).label);
 }
 
 function useUsersColumns(): AppMrtColumnDef<Login>[] {
@@ -574,23 +767,32 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
         Cell: ({ row }) => {
           const status = getStatusInfo(row.original);
           return (
-            <div className="flex flex-col items-center text-center leading-tight">
-              <span className={status.colorClass}>{status.label}</span>
-              {status.detail ? (
-                <span className="text-xs text-muted-foreground">{status.detail}</span>
-              ) : null}
+            <div className="admin-user-status flex min-w-0 max-w-full flex-col items-center text-center leading-tight">
+              <span className={`${status.colorClass} max-w-full whitespace-normal break-words`}>
+                {status.label}
+              </span>
+              {status.details?.map((detail) => (
+                <span
+                  key={detail}
+                  className="max-w-full whitespace-normal break-words text-xs text-muted-foreground"
+                >
+                  {detail}
+                </span>
+              ))}
             </div>
           );
         },
         filterVariant: 'multi-select',
         filterSelectOptions: STATUS_FILTER_OPTIONS,
-        filterFn: 'arrIncludesSome',
+        filterFn: (row, _columnId, filterValue) => matchesStatusFilter(row.original, filterValue),
         enableSorting: false,
         size: 200,
         muiTableBodyCellProps: () => ({
           sx: {
-            justifyContent: 'center',
             ...CUSTOM_CELL_STYLES,
+            justifyContent: 'center',
+            minWidth: 0,
+            whiteSpace: 'normal',
           },
         }),
       },
@@ -610,7 +812,7 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
   );
 }
 
-function AddUserDialog(props: {
+export function AddUserDialog(props: {
   open: boolean;
   onClose: () => void;
   onUserCreated: (login: Login) => void;
@@ -619,15 +821,21 @@ function AddUserDialog(props: {
   const { open, onClose, onUserCreated, lookups } = props;
   const [form, setForm] = useState<AddUserForm>(EMPTY_ADD_FORM);
   const [showPassword, setShowPassword] = useState(false);
-  const [errors, setErrors] = useState<AddUserErrors>({});
+  const [touched, setTouched] = useState<UserFieldState>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState<UserServerErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
+  const focusInvalidField = useRef(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
-  const canSubmit = zonesReady && organismsReady && !isSubmitting;
+  const validationErrors = buildAddUserErrors(form);
+  const canSubmit =
+    zonesReady && organismsReady && !isSubmitting && !hasFormErrors(validationErrors);
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(
     ([zoneId, zone]) => ({
@@ -648,6 +856,12 @@ function AddUserDialog(props: {
     const [zoneId] = lookups.zones[0];
     setForm((prev) => (prev.sigintZoneId === null ? { ...prev, sigintZoneId: zoneId } : prev));
   }, [open, lookups.zones]);
+
+  useEffect(() => {
+    if (!open || lookups.organisms.length !== 1) return;
+    const [organism] = lookups.organisms;
+    setForm((prev) => (prev.organismId === null ? { ...prev, organismId: organism.id } : prev));
+  }, [open, lookups.organisms]);
 
   useEffect(() => {
     if (!open || !DEBUG_USERS_NEO) return;
@@ -675,10 +889,30 @@ function AddUserDialog(props: {
     if (open) return;
     setForm(EMPTY_ADD_FORM);
     setShowPassword(false);
-    setErrors({});
+    setTouched({});
+    setSubmitAttempted(false);
+    setServerErrors({});
     setSubmitError(null);
     setIsSubmitting(false);
   }, [open]);
+
+  useEffect(() => {
+    if (!focusInvalidField.current) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    focusInvalidField.current = false;
+  }, [submitAttempted, validationErrors]);
+
+  function touch(field: UserField) {
+    setTouched((current) => (current[field] ? current : { ...current, [field]: true }));
+  }
+
+  function changeServerField(field: UserField) {
+    setServerErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
+
+  function fieldError(field: UserField) {
+    return visibleFieldError(field, validationErrors, serverErrors, touched, submitAttempted);
+  }
 
   function handleClose() {
     if (isSubmitting) return;
@@ -686,46 +920,55 @@ function AddUserDialog(props: {
   }
 
   async function handleCreateUser() {
+    if (isSubmitting || !zonesReady || !organismsReady) return;
     const nextErrors = buildAddUserErrors(form);
-    setErrors(nextErrors);
-    if (hasFormErrors(nextErrors)) return;
+    setSubmitAttempted(true);
+    if (hasFormErrors(nextErrors)) {
+      focusInvalidField.current = true;
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
 
     try {
       const payload = toCreateLoginReq(form);
-      const created = form.useDelta ? await createLoginDelta(payload) : await createLogin(payload);
+      const created = await createLogin(payload);
       onUserCreated(created);
       setForm(EMPTY_ADD_FORM);
-      setErrors({});
+      setTouched({});
+      setSubmitAttempted(false);
+      setServerErrors({});
       onClose();
     } catch (err) {
-      setSubmitError(formatErrorMessage(err));
+      const parsedErrors = parseServerFieldErrors(err);
+      setServerErrors(parsedErrors.fields);
+      setSubmitError(formatServerValidationFallback(err, parsedErrors));
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth={false}
+      fullWidth
+      slotProps={{
+        paper: {
+          sx: { width: 'calc(100% - 32px)', maxWidth: '768px', m: 2 },
+          component: 'form',
+          ...{ noValidate: true },
+          onSubmit: (event) => {
+            event.preventDefault();
+            void handleCreateUser();
+          },
+        },
+      }}
+    >
       <DialogTitle>Додати користувача</DialogTitle>
-      <DialogContent className="space-y-5">
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={form.useDelta}
-              onChange={(event) => {
-                debugLog('add:delta toggle', event.target.checked);
-                setForm((prev) => ({ ...prev, useDelta: event.target.checked, password: '' }));
-                setShowPassword(false);
-                setErrors((prev) => ({ ...prev, password: undefined }));
-              }}
-            />
-          }
-          label="Delta логін"
-        />
-
+      <DialogContent className="space-y-3 py-3">
         {lookups.zonesError ? (
           <PowerAlert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</PowerAlert>
         ) : null}
@@ -734,49 +977,136 @@ function AddUserDialog(props: {
         ) : null}
         {submitError ? <PowerAlert severity="error">{submitError}</PowerAlert> : null}
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div ref={formRef} className="grid gap-3 md:grid-cols-2">
           <TextField
             label="Логін"
             value={form.login}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, login: event.target.value }));
-              setErrors((prev) => ({ ...prev, login: undefined }));
+              changeServerField('login');
             }}
-            error={Boolean(errors.login)}
-            helperText={errors.login || ' '}
+            onBlur={() => touch('login')}
+            required
+            error={Boolean(fieldError('login'))}
+            helperText={fieldError('login')}
+            fullWidth
+            disabled={isSubmitting}
+            autoFocus
+          />
+
+          <TextField
+            label="Delta логін"
+            value={form.deltaLogin}
+            onChange={(event) => {
+              setForm((prev) => ({ ...prev, deltaLogin: event.target.value }));
+              setServerErrors((current) =>
+                clearAuthenticationGroupServerError(current, 'deltaLogin'),
+              );
+            }}
+            onBlur={() => touch('deltaLogin')}
+            required={!form.passwordAuthEnabled}
+            error={Boolean(fieldError('deltaLogin'))}
+            helperText={fieldError('deltaLogin')}
             fullWidth
             disabled={isSubmitting}
           />
 
-          <TextField
-            label="Пароль"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete="new-password"
-            value={form.password}
-            onChange={(event) => {
-              setForm((prev) => ({ ...prev, password: event.target.value }));
-              setErrors((prev) => ({ ...prev, password: undefined }));
+          <div className="md:col-span-2">
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={form.passwordAuthEnabled}
+                  onChange={(event) => {
+                    setForm((prev) => ({
+                      ...prev,
+                      passwordAuthEnabled: event.target.checked,
+                      password: event.target.checked ? prev.password : '',
+                    }));
+                    setShowPassword(false);
+                    setServerErrors(clearAuthenticationServerErrors);
+                  }}
+                  disabled={isSubmitting}
+                  inputProps={
+                    serverErrors.passwordAuthEnabled
+                      ? { 'aria-describedby': 'add-password-authentication-error' }
+                      : undefined
+                  }
+                />
+              }
+              label="Вхід за паролем"
+            />
+            {serverErrors.passwordAuthEnabled ? (
+              <p id="add-password-authentication-error" className="text-xs text-error" role="alert">
+                {serverErrors.passwordAuthEnabled}
+              </p>
+            ) : null}
+          </div>
+
+          {form.passwordAuthEnabled ? (
+            <TextField
+              label="Пароль"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={form.password}
+              onChange={(event) => {
+                setForm((prev) => ({ ...prev, password: event.target.value }));
+                setServerErrors((current) =>
+                  clearAuthenticationGroupServerError(current, 'password'),
+                );
+              }}
+              onBlur={() => touch('password')}
+              required
+              error={Boolean(fieldError('password'))}
+              helperText={fieldError('password')}
+              fullWidth
+              disabled={isSubmitting}
+              className="md:col-span-2"
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      type="button"
+                      aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      edge="end"
+                      disabled={isSubmitting}
+                    >
+                      {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+          ) : null}
+
+          <Autocomplete
+            options={organismAutocompleteOptions}
+            value={organismAutocompleteOptions.find((opt) => opt.id === form.organismId) || null}
+            onChange={(_, newValue) => {
+              const value = newValue?.id ?? null;
+              debugLog('add:organism change', { newValue, parsed: value });
+              setForm((prev) => ({ ...prev, organismId: value }));
+              changeServerField('organism');
             }}
-            error={Boolean(errors.password)}
-            helperText={errors.password || ' '}
-            fullWidth
-            disabled={isSubmitting || form.useDelta}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    type="button"
-                    aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    onMouseDown={(event) => event.preventDefault()}
-                    edge="end"
-                    disabled={isSubmitting || form.useDelta}
-                  >
-                    {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                  </IconButton>
-                </InputAdornment>
-              ),
-            }}
+            loading={organismsLoading}
+            disabled={isSubmitting}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            getOptionLabel={(option) => option.label}
+            className="md:col-span-2"
+            renderOption={(props, option) =>
+              renderLookupAutocompleteOption(props, option, 'add-organism')
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Організм"
+                required
+                onBlur={() => touch('organism')}
+                error={Boolean(fieldError('organism'))}
+                helperText={fieldError('organism')}
+              />
+            )}
           />
 
           <TextField
@@ -785,15 +1115,17 @@ function AddUserDialog(props: {
             value={form.roles}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, roles: asStringArray(event.target.value) }));
-              setErrors((prev) => ({ ...prev, roles: undefined }));
+              changeServerField('roles');
             }}
+            onBlur={() => touch('roles')}
+            required
             fullWidth
             SelectProps={{
               multiple: true,
               renderValue: (selected) => (selected as string[]).join(', ') || '—',
             }}
-            error={Boolean(errors.roles)}
-            helperText={errors.roles || ' '}
+            error={Boolean(fieldError('roles'))}
+            helperText={fieldError('roles')}
             disabled={isSubmitting}
           >
             {ROLE_OPTIONS.map((role) => (
@@ -810,7 +1142,7 @@ function AddUserDialog(props: {
               const value = newValue?.id ?? null;
               debugLog('add:zone change', { newValue, parsed: value });
               setForm((prev) => ({ ...prev, sigintZoneId: value }));
-              setErrors((prev) => ({ ...prev, zone: undefined }));
+              changeServerField('zone');
             }}
             loading={zonesLoading}
             disabled={isSubmitting}
@@ -823,40 +1155,19 @@ function AddUserDialog(props: {
               <TextField
                 {...params}
                 label="Зона"
-                error={Boolean(errors.zone)}
-                helperText={errors.zone || ' '}
-              />
-            )}
-          />
-
-          <Autocomplete
-            options={organismAutocompleteOptions}
-            value={organismAutocompleteOptions.find((opt) => opt.id === form.organismId) || null}
-            onChange={(_, newValue) => {
-              const value = newValue?.id ?? null;
-              debugLog('add:organism change', { newValue, parsed: value });
-              setForm((prev) => ({ ...prev, organismId: value }));
-              setErrors((prev) => ({ ...prev, organism: undefined }));
-            }}
-            loading={organismsLoading}
-            disabled={isSubmitting}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-            getOptionLabel={(option) => option.label}
-            className="md:col-span-2"
-            renderOption={(props, option) =>
-              renderLookupAutocompleteOption(props, option, 'add-organism')
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Організм"
                 required
-                error={Boolean(errors.organism)}
-                helperText={errors.organism || ' '}
+                onBlur={() => touch('zone')}
+                error={Boolean(fieldError('zone'))}
+                helperText={fieldError('zone')}
               />
             )}
           />
 
+          <MessengerProfileSelect
+            value={form.signalProfileId}
+            onChange={(signalProfileId) => setForm((prev) => ({ ...prev, signalProfileId }))}
+            disabled={isSubmitting}
+          />
           <TextField
             label="Нотатка"
             value={form.description}
@@ -865,17 +1176,17 @@ function AddUserDialog(props: {
             }}
             fullWidth
             multiline
-            minRows={3}
+            minRows={2}
             disabled={isSubmitting}
             className="md:col-span-2"
           />
         </div>
       </DialogContent>
       <DialogActions>
-        <PowerButton onClick={handleClose} disabled={isSubmitting}>
+        <PowerButton type="button" onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>
-        <PowerButton variant="contained" onClick={handleCreateUser} disabled={!canSubmit}>
+        <PowerButton variant="contained" type="submit" disabled={!canSubmit}>
           Додати
         </PowerButton>
       </DialogActions>
@@ -883,7 +1194,7 @@ function AddUserDialog(props: {
   );
 }
 
-function EditUserDialog(props: {
+export function EditUserDialog(props: {
   open: boolean;
   login: Login | null;
   onClose: () => void;
@@ -893,19 +1204,39 @@ function EditUserDialog(props: {
 }) {
   const { open, login, onClose, onUserUpdated, lookups, disableRestoreFocus = false } = props;
   const [form, setForm] = useState<EditUserForm | null>(null);
-  const [errors, setErrors] = useState<EditUserErrors>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [touched, setTouched] = useState<UserFieldState>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState<UserServerErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const formRef = useRef<HTMLDivElement>(null);
+  const focusInvalidField = useRef(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
   const organismsReady = lookups.organismsStatus === 'success';
   const organismsLoading = lookups.organismsStatus === 'loading';
+  const validationErrors = form && login ? buildEditUserErrors(form, login) : {};
   const canSubmit =
     (zonesReady || Boolean(form?.sigintZoneId)) &&
     (organismsReady || Boolean(form?.organismId)) &&
     !isSubmitting &&
-    Boolean(form);
+    Boolean(form) &&
+    !hasFormErrors(validationErrors);
+  const deltaLoginRequired = Boolean(
+    form &&
+    login &&
+    !form.deleted &&
+    !form.passwordAuthEnabled &&
+    (form.deltaLogin.trim() !== (login.deltaLogin ?? '').trim() ||
+      form.passwordAuthEnabled !== login.passwordAuthEnabled ||
+      form.password.length > 0 ||
+      (login.deleted && !form.deleted)),
+  );
+  const passwordRequired = Boolean(
+    form && login && !login.passwordAuthEnabled && form.passwordAuthEnabled && !form.hasPassword,
+  );
 
   const zoneAutocompleteOptions: LookupAutocompleteOption[] = lookups.zones.map(
     ([zoneId, zone]) => ({
@@ -920,11 +1251,16 @@ function EditUserDialog(props: {
       label: organism.name || `ID ${organism.id}`,
     }),
   );
+  const selectedOrganismEnabled =
+    lookups.organisms.find((organism) => organism.id === form?.organismId)?.enabled ??
+    (form?.organismId === login?.organismId ? login?.organismEnabled : undefined);
 
   useEffect(() => {
     if (!open || !login) {
       setForm(null);
-      setErrors({});
+      setTouched({});
+      setSubmitAttempted(false);
+      setServerErrors({});
       setSubmitError(null);
       setIsSubmitting(false);
       return;
@@ -939,10 +1275,15 @@ function EditUserDialog(props: {
       organismId: login.organismId ?? null,
       deltaLogin: login.deltaLogin ?? '',
       deleted: login.deleted,
+      signalProfileId: login.signalProfileId,
       description: login.description ?? '',
       passwordAuthEnabled: login.passwordAuthEnabled,
+      hasPassword: login.hasPassword,
     });
-    setErrors({});
+    setTouched({});
+    setSubmitAttempted(false);
+    setServerErrors({});
+    setShowPassword(false);
     setSubmitError(null);
     setIsSubmitting(false);
   }, [open, login]);
@@ -970,26 +1311,56 @@ function EditUserDialog(props: {
     lookups.organisms,
   ]);
 
+  useEffect(() => {
+    if (!focusInvalidField.current) return;
+    formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    focusInvalidField.current = false;
+  }, [submitAttempted, validationErrors]);
+
+  function touch(field: UserField) {
+    setTouched((current) => (current[field] ? current : { ...current, [field]: true }));
+  }
+
+  function changeServerField(field: UserField) {
+    setServerErrors((current) => (current[field] ? { ...current, [field]: undefined } : current));
+  }
+
+  function fieldError(field: UserField) {
+    return visibleFieldError(field, validationErrors, serverErrors, touched, submitAttempted);
+  }
+
   function handleClose() {
     if (isSubmitting) return;
     onClose();
   }
 
   async function handleSave() {
-    if (!form) return;
-    const nextErrors = buildEditUserErrors(form);
-    setErrors(nextErrors);
-    if (Object.values(nextErrors).some(Boolean)) return;
+    if (
+      !form ||
+      isSubmitting ||
+      !(zonesReady || Boolean(form.sigintZoneId)) ||
+      !(organismsReady || Boolean(form.organismId))
+    ) {
+      return;
+    }
+    const nextErrors = buildEditUserErrors(form, login!);
+    setSubmitAttempted(true);
+    if (hasFormErrors(nextErrors)) {
+      focusInvalidField.current = true;
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
 
     try {
-      const updated = await updateLogin(toUpdateLoginReq(form));
+      const updated = await updateLogin(toUpdateLoginReq(form, login!));
       onUserUpdated(updated);
       onClose();
     } catch (err) {
-      setSubmitError(formatErrorMessage(err));
+      const parsedErrors = parseServerFieldErrors(err);
+      setServerErrors(parsedErrors.fields);
+      setSubmitError(formatServerValidationFallback(err, parsedErrors));
     } finally {
       setIsSubmitting(false);
     }
@@ -999,12 +1370,23 @@ function EditUserDialog(props: {
     <Dialog
       open={open}
       onClose={handleClose}
-      maxWidth="lg"
+      maxWidth={false}
       fullWidth
       disableRestoreFocus={disableRestoreFocus}
+      slotProps={{
+        paper: {
+          sx: { width: 'calc(100% - 32px)', maxWidth: '768px', m: 2 },
+          component: 'form',
+          ...{ noValidate: true },
+          onSubmit: (event) => {
+            event.preventDefault();
+            void handleSave();
+          },
+        },
+      }}
     >
       <DialogTitle>Редагувати користувача</DialogTitle>
-      <DialogContent className="space-y-4">
+      <DialogContent className="space-y-3 py-3">
         {lookups.zonesError ? (
           <PowerAlert severity="error">{`Не вдалося завантажити зони: ${lookups.zonesError}`}</PowerAlert>
         ) : null}
@@ -1014,49 +1396,151 @@ function EditUserDialog(props: {
         {submitError ? <PowerAlert severity="error">{submitError}</PowerAlert> : null}
 
         {form ? (
-          <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-            <TextField
-              label="UUID"
-              value={form.id}
-              helperText="Ідентифікатор користувача"
-              fullWidth
-              className="xl:col-span-3"
-              InputProps={{
-                readOnly: true,
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <CopyUuidButton uuid={form.id} />
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <div aria-hidden className="hidden md:block xl:col-span-3" />
+          <div ref={formRef} className="grid gap-3 md:grid-cols-2">
+            <div className="flex min-w-0 items-center gap-2 text-echo-sm text-muted-foreground md:col-span-2">
+              <span>UUID:</span>
+              <UserUuidValue uuid={form.id} shortValue={formatUuidShort(form.id)} />
+              <CopyUuidButton uuid={form.id} />
+            </div>
 
             <TextField
               label="Логін"
               value={form.login}
               onChange={(event) => {
                 setForm((prev) => (prev ? { ...prev, login: event.target.value } : prev));
-                setErrors((prev) => ({ ...prev, login: undefined }));
+                changeServerField('login');
               }}
+              onBlur={() => touch('login')}
+              required
               fullWidth
-              error={Boolean(errors.login)}
-              helperText={errors.login || ' '}
+              error={Boolean(fieldError('login'))}
+              helperText={fieldError('login')}
               disabled={isSubmitting}
-              className="xl:col-span-3"
+              autoFocus
             />
 
             <TextField
-              label="Пароль"
-              type="password"
-              value={form.password}
+              label="Delta логін"
+              value={form.deltaLogin}
               onChange={(event) => {
-                setForm((prev) => (prev ? { ...prev, password: event.target.value } : prev));
+                setForm((prev) => (prev ? { ...prev, deltaLogin: event.target.value } : prev));
+                setServerErrors((current) =>
+                  clearAuthenticationGroupServerError(current, 'deltaLogin'),
+                );
               }}
-              helperText="Залиште пустим, щоб не змінювати"
+              onBlur={() => touch('deltaLogin')}
+              required={deltaLoginRequired}
+              error={Boolean(fieldError('deltaLogin'))}
+              helperText={fieldError('deltaLogin')}
               fullWidth
               disabled={isSubmitting}
-              className="xl:col-span-3"
+            />
+
+            <div className="flex items-center md:col-span-2">
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.passwordAuthEnabled}
+                    onChange={(event) => {
+                      setForm((prev) => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          passwordAuthEnabled: event.target.checked,
+                          password: event.target.checked ? prev.password : '',
+                        };
+                      });
+                      setShowPassword(false);
+                      setServerErrors(clearAuthenticationServerErrors);
+                    }}
+                    disabled={isSubmitting}
+                    inputProps={
+                      serverErrors.passwordAuthEnabled
+                        ? {
+                            'aria-describedby': `edit-password-authentication-error-${form.id}`,
+                          }
+                        : undefined
+                    }
+                  />
+                }
+                label="Вхід за паролем"
+              />
+              {serverErrors.passwordAuthEnabled ? (
+                <p
+                  id={`edit-password-authentication-error-${form.id}`}
+                  className="text-xs text-error"
+                  role="alert"
+                >
+                  {serverErrors.passwordAuthEnabled}
+                </p>
+              ) : null}
+            </div>
+
+            {form.passwordAuthEnabled ? (
+              <TextField
+                label="Новий пароль"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                value={form.password}
+                onChange={(event) => {
+                  setForm((prev) => (prev ? { ...prev, password: event.target.value } : prev));
+                  setServerErrors((current) =>
+                    clearAuthenticationGroupServerError(current, 'password'),
+                  );
+                }}
+                onBlur={() => touch('password')}
+                required={passwordRequired}
+                helperText={fieldError('password') || 'Залиште порожнім, щоб не змінювати'}
+                error={Boolean(fieldError('password'))}
+                fullWidth
+                disabled={isSubmitting || !form.passwordAuthEnabled}
+                className="md:col-span-2"
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        type="button"
+                        aria-label={showPassword ? 'Приховати пароль' : 'Показати пароль'}
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        onMouseDown={(event) => event.preventDefault()}
+                        edge="end"
+                        disabled={isSubmitting || !form.passwordAuthEnabled}
+                      >
+                        {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            ) : null}
+
+            <Autocomplete
+              options={organismAutocompleteOptions}
+              value={organismAutocompleteOptions.find((opt) => opt.id === form.organismId) || null}
+              onChange={(_, newValue) => {
+                const value = newValue?.id ?? null;
+                debugLog('edit:organism change', { newValue, parsed: value });
+                setForm((prev) => (prev ? { ...prev, organismId: value } : prev));
+                changeServerField('organism');
+              }}
+              loading={organismsLoading}
+              disabled={isSubmitting}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              getOptionLabel={(option) => option.label}
+              className="md:col-span-2"
+              renderOption={(props, option) =>
+                renderLookupAutocompleteOption(props, option, 'edit-organism')
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Організм"
+                  required
+                  onBlur={() => touch('organism')}
+                  error={Boolean(fieldError('organism'))}
+                  helperText={fieldError('organism')}
+                />
+              )}
             />
 
             <TextField
@@ -1067,17 +1551,18 @@ function EditUserDialog(props: {
                 setForm((prev) =>
                   prev ? { ...prev, roles: asStringArray(event.target.value) } : prev,
                 );
-                setErrors((prev) => ({ ...prev, roles: undefined }));
+                changeServerField('roles');
               }}
+              onBlur={() => touch('roles')}
+              required
               fullWidth
               SelectProps={{
                 multiple: true,
                 renderValue: (selected) => (selected as string[]).join(', ') || '—',
               }}
-              error={Boolean(errors.roles)}
-              helperText={errors.roles || ' '}
+              error={Boolean(fieldError('roles'))}
+              helperText={fieldError('roles')}
               disabled={isSubmitting}
-              className="xl:col-span-3"
             >
               {ROLE_OPTIONS.map((role) => (
                 <MenuItem key={role} value={role}>
@@ -1093,13 +1578,12 @@ function EditUserDialog(props: {
                 const value = newValue?.id ?? null;
                 debugLog('edit:zone change', { newValue, parsed: value });
                 setForm((prev) => (prev ? { ...prev, sigintZoneId: value } : prev));
-                setErrors((prev) => ({ ...prev, zone: undefined }));
+                changeServerField('zone');
               }}
               loading={zonesLoading}
               disabled={isSubmitting}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               getOptionLabel={(option) => option.label}
-              className="xl:col-span-3"
               renderOption={(props, option) =>
                 renderLookupAutocompleteOption(props, option, 'edit-zone')
               }
@@ -1107,79 +1591,47 @@ function EditUserDialog(props: {
                 <TextField
                   {...params}
                   label="Зона"
-                  error={Boolean(errors.zone)}
-                  helperText={errors.zone || ' '}
-                />
-              )}
-            />
-
-            <Autocomplete
-              options={organismAutocompleteOptions}
-              value={organismAutocompleteOptions.find((opt) => opt.id === form.organismId) || null}
-              onChange={(_, newValue) => {
-                const value = newValue?.id ?? null;
-                debugLog('edit:organism change', { newValue, parsed: value });
-                setForm((prev) => (prev ? { ...prev, organismId: value } : prev));
-                setErrors((prev) => ({ ...prev, organism: undefined }));
-              }}
-              loading={organismsLoading}
-              disabled={isSubmitting}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              getOptionLabel={(option) => option.label}
-              className="xl:col-span-2"
-              renderOption={(props, option) =>
-                renderLookupAutocompleteOption(props, option, 'edit-organism')
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Організм"
                   required
-                  error={Boolean(errors.organism)}
-                  helperText={errors.organism || ' '}
+                  onBlur={() => touch('zone')}
+                  error={Boolean(fieldError('zone'))}
+                  helperText={fieldError('zone')}
                 />
               )}
             />
 
-            <TextField
-              label="Delta логін"
-              value={form.deltaLogin}
-              onChange={(event) => {
-                setForm((prev) => (prev ? { ...prev, deltaLogin: event.target.value } : prev));
-              }}
-              fullWidth
+            <MessengerProfileSelect
+              value={form.signalProfileId}
+              onChange={(signalProfileId) =>
+                setForm((prev) => (prev ? { ...prev, signalProfileId } : prev))
+              }
               disabled={isSubmitting}
-              className="xl:col-span-2"
             />
 
-            <div className="flex items-center xl:col-span-2">
+            <div className="md:col-span-2">
               <FormControlLabel
                 control={
-                  <Checkbox
-                    checked={form.passwordAuthEnabled}
+                  <Switch
+                    checked={!form.deleted}
                     onChange={(event) => {
                       setForm((prev) =>
-                        prev ? { ...prev, passwordAuthEnabled: event.target.checked } : prev,
+                        prev ? { ...prev, deleted: !event.target.checked } : prev,
                       );
                     }}
+                    disabled={isSubmitting}
+                    inputProps={{ 'aria-describedby': `active-helper-${form.id}` }}
                   />
                 }
-                label="Вхід по паролю"
+                label="Активний"
               />
-            </div>
-
-            <div className="flex items-center xl:col-span-2">
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={form.deleted}
-                    onChange={(event) => {
-                      setForm((prev) => (prev ? { ...prev, deleted: event.target.checked } : prev));
-                    }}
-                  />
-                }
-                label="Видалити користувача"
-              />
+              <p id={`active-helper-${form.id}`} className="text-xs text-muted-foreground">
+                Вимкнення блокує доступ після збереження.
+              </p>
+              {selectedOrganismEnabled === false ? (
+                <PowerAlert className="mt-2" severity="warning">
+                  Організм деактивовано, тому доступ користувача заблоковано незалежно від стану
+                  облікового запису.
+                </PowerAlert>
+              ) : null}
             </div>
 
             <TextField
@@ -1190,18 +1642,18 @@ function EditUserDialog(props: {
               }}
               fullWidth
               multiline
-              minRows={3}
+              minRows={2}
               disabled={isSubmitting}
-              className="xl:col-span-6"
+              className="md:col-span-2"
             />
           </div>
         ) : null}
       </DialogContent>
       <DialogActions>
-        <PowerButton onClick={handleClose} disabled={isSubmitting}>
+        <PowerButton type="button" onClick={handleClose} disabled={isSubmitting}>
           Скасувати
         </PowerButton>
-        <PowerButton variant="contained" onClick={handleSave} disabled={!canSubmit}>
+        <PowerButton variant="contained" type="submit" disabled={!canSubmit}>
           Зберегти
         </PowerButton>
       </DialogActions>
@@ -1467,23 +1919,8 @@ function AdminUsersNeoPageBody() {
   };
 
   return (
-    <Box
-      className="w-full"
-      sx={{
-        height: { xs: 'auto', lg: '100%' },
-        minHeight: 0,
-        overflow: { xs: 'visible', lg: 'hidden' },
-      }}
-    >
-      <Stack
-        spacing={3}
-        useFlexGap
-        sx={{
-          height: { xs: 'auto', lg: '100%' },
-          minHeight: 0,
-          overflow: { xs: 'visible', lg: 'hidden' },
-        }}
-      >
+    <div className="flex h-full min-h-0 w-full flex-col gap-echo-lg overflow-hidden">
+      <div className="shrink-0">
         <TablePageToolbar
           title="Користувачі"
           withGlobalTextFilter
@@ -1497,29 +1934,27 @@ function AdminUsersNeoPageBody() {
             </div>
           }
         />
+      </div>
 
-        <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
-          {renderTable()}
-        </Box>
+      <div className="flex min-h-0 min-w-0 flex-1">{renderTable()}</div>
 
-        <AddUserDialog
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          onUserCreated={(login) => setLogins((prev) => [login, ...prev])}
-          lookups={lookups}
-        />
-        <EditUserDialog
-          open={Boolean(editingLogin)}
-          login={editingLogin}
-          onClose={() => setEditingLogin(null)}
-          onUserUpdated={(login) =>
-            setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
-          }
-          lookups={lookups}
-          disableRestoreFocus
-        />
-      </Stack>
-    </Box>
+      <AddUserDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onUserCreated={(login) => setLogins((prev) => [login, ...prev])}
+        lookups={lookups}
+      />
+      <EditUserDialog
+        open={Boolean(editingLogin)}
+        login={editingLogin}
+        onClose={() => setEditingLogin(null)}
+        onUserUpdated={(login) =>
+          setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
+        }
+        lookups={lookups}
+        disableRestoreFocus
+      />
+    </div>
   );
 }
 

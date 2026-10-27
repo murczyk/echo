@@ -7,6 +7,7 @@ import type {
   SavedFilter,
 } from '../../../../Bindings';
 import {
+  hasRerAnalysisQueryStateParams,
   parseRerAnalysisQueryStateFromSearchParams,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
@@ -21,9 +22,11 @@ import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
 import type { AnalysisQueryState } from './types';
+import type { GroupScope } from '../shared/group-navigation';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
+export const ANALYSIS_MESSAGE_WINDOW_LIMIT = 40;
 
 export function getFirstLoadedMessagesPageIndex(
   lastLoadedPageIndex: number,
@@ -39,11 +42,14 @@ export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;
 const ONLY_WITH_MEDIA_PARAM = 'only_with_media';
 const LEFT_PANEL_OPEN_PARAM = 'leftPanelOpen';
 const RIGHT_PANEL_OPEN_PARAM = 'rightPanelOpen';
+const FILTER_PANEL_OPEN_PARAM = 'filterPanelOpen';
 const MESSAGES_PAGE_PARAM = 'messagesPage';
+const GROUP_SCOPE_PARAM = 'group';
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
   rightPanelOpen: boolean | null;
+  filterPanelOpen: boolean | null;
 };
 
 function partitionUnitSelections(values: readonly string[]): {
@@ -117,6 +123,7 @@ export function emptyQueryState(): AnalysisQueryState {
     orWithCoords: false,
     orWithoutCoords: false,
     search: '',
+    searchMode: 'Fuzzy',
     metadataCc: [],
     metadataSender: [],
     metadataReceiver: [],
@@ -169,6 +176,12 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
   };
 }
 
+export function hasQueryStateInWindow(): boolean {
+  if (typeof window === 'undefined') return false;
+  const searchParams = new URL(window.location.href).searchParams;
+  return hasRerAnalysisQueryStateParams(searchParams) || searchParams.has(ONLY_WITH_MEDIA_PARAM);
+}
+
 export function parseNewestFirstFromWindow(): boolean {
   if (typeof window === 'undefined') return true;
   const url = new URL(window.location.href);
@@ -201,37 +214,58 @@ export function writeMessagesPageIndexToWindowUrl(pageIndex: number): void {
 
 export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryState {
   if (typeof window === 'undefined') {
-    return { leftPanelOpen: null, rightPanelOpen: null };
+    return { leftPanelOpen: null, rightPanelOpen: null, filterPanelOpen: null };
   }
   const searchParams = new URL(window.location.href).searchParams;
   return {
     leftPanelOpen: parseOptionalBooleanParam(searchParams.get(LEFT_PANEL_OPEN_PARAM)),
     rightPanelOpen: parseOptionalBooleanParam(searchParams.get(RIGHT_PANEL_OPEN_PARAM)),
+    filterPanelOpen: parseOptionalBooleanParam(searchParams.get(FILTER_PANEL_OPEN_PARAM)),
   };
 }
 
-export function parseMessageUidFromWindow(): string | null {
-  if (typeof window === 'undefined') return null;
-  const url = new URL(window.location.href);
-  const param =
-    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
-  const trimmed = param?.trim();
-  return trimmed && trimmed !== '' ? trimmed : null;
+function writeAnalysisPanelQueryState(
+  searchParams: URLSearchParams,
+  state: Partial<AnalysisPanelQueryState>,
+) {
+  if (state.leftPanelOpen != null)
+    searchParams.set(LEFT_PANEL_OPEN_PARAM, String(state.leftPanelOpen));
+  if (state.rightPanelOpen != null)
+    searchParams.set(RIGHT_PANEL_OPEN_PARAM, String(state.rightPanelOpen));
+  if (state.filterPanelOpen != null)
+    searchParams.set(FILTER_PANEL_OPEN_PARAM, String(state.filterPanelOpen));
 }
 
-export function removeMessageUidFromWindowUrl(): void {
+export function replaceAnalysisPanelQueryStateInUrl(state: Partial<AnalysisPanelQueryState>) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
-  url.searchParams.delete('m');
-  url.searchParams.delete('mid');
-  url.searchParams.delete('messageUid');
-  const query = url.searchParams.toString();
-  window.history.replaceState(
-    {},
-    '',
-    `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
-  );
+  writeAnalysisPanelQueryState(url.searchParams, state);
+  window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
 }
+
+export function readAnalysisGroupScopeFromUrl(): GroupScope {
+  if (typeof window === 'undefined') return { kind: 'all' };
+  const masterKey = new URL(window.location.href).searchParams.get(GROUP_SCOPE_PARAM)?.trim();
+  return masterKey ? { kind: 'group', masterKey } : { kind: 'all' };
+}
+
+export function writeAnalysisGroupScopeToUrl(
+  scope: GroupScope,
+  options: { replace?: boolean } = {},
+): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (scope.kind === 'group') url.searchParams.set(GROUP_SCOPE_PARAM, scope.masterKey);
+  else url.searchParams.delete(GROUP_SCOPE_PARAM);
+  const href = `${url.pathname}${url.search}${url.hash}`;
+  if (options.replace) window.history.replaceState({}, '', href);
+  else window.history.pushState({}, '', href);
+}
+
+export {
+  readLinkedMessageReferenceFromWindow as parseMessageUidFromWindow,
+  removeLinkedMessageReferenceFromWindowUrl as removeMessageUidFromWindowUrl,
+} from '../shared/message-navigation/message-navigation-url';
 
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
@@ -351,10 +385,11 @@ export function hasMeaningfulUiFiltersBeyondDateRange(state: AnalysisQueryState)
 export function pushQueryStateToUrl(
   state: AnalysisQueryState,
   newestFirst: boolean = true,
-  panelState?: { leftPanelOpen: boolean; rightPanelOpen: boolean },
+  panelState?: Partial<AnalysisPanelQueryState>,
 ) {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
+  url.searchParams.delete(GROUP_SCOPE_PARAM);
   writeRerAnalysisQueryStateToSearchParams(url.searchParams, state);
   if (state.onlyWithMedia) {
     url.searchParams.set(ONLY_WITH_MEDIA_PARAM, 'true');
@@ -367,14 +402,21 @@ export function pushQueryStateToUrl(
     url.searchParams.delete('newestFirst');
   }
   if (panelState) {
-    url.searchParams.set(LEFT_PANEL_OPEN_PARAM, String(panelState.leftPanelOpen));
-    url.searchParams.set(RIGHT_PANEL_OPEN_PARAM, String(panelState.rightPanelOpen));
+    writeAnalysisPanelQueryState(url.searchParams, panelState);
   }
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
 }
 
 export function normalizeQueryState(state: AnalysisQueryState): AnalysisQueryState {
   let next = state;
+
+  if (
+    next.searchMode !== 'Exact' &&
+    next.searchMode !== 'Substring' &&
+    next.searchMode !== 'Fuzzy'
+  ) {
+    next = { ...next, searchMode: 'Fuzzy' };
+  }
 
   if (state.withoutMetadata) {
     next = {
@@ -456,6 +498,7 @@ export function buildAnalysisReq(
     orWithCoords: query.orWithCoords,
     orWithoutCoords: query.orWithoutCoords,
     search: query.search.trim() === '' ? null : query.search.trim(),
+    searchMode: query.searchMode ?? null,
     selectedTags: query.tags.length && !query.tagsExcludeMode ? query.tags : null,
     deniedTags: query.tags.length && query.tagsExcludeMode ? query.tags : null,
     tagPresence: null,
@@ -536,6 +579,7 @@ export function buildInboxReq(
     orWithoutCoords: req.orWithoutCoords,
     newestFirst: true,
     search: req.search,
+    searchMode: req.searchMode,
     highlightCallsigns: true,
     highlightKeywords: true,
     highlightKeywordSetId: null,
@@ -630,6 +674,7 @@ export function queryStateFromSavedFilter(
     orWithCoords: req.orWithCoords ?? false,
     orWithoutCoords: req.orWithoutCoords ?? false,
     search: req.search ?? '',
+    searchMode: req.searchMode ?? 'Fuzzy',
     metadataCc: req.metadataCc ?? [],
     metadataSender: req.metadataSender ?? [],
     metadataReceiver: req.metadataReceiver ?? [],
@@ -721,6 +766,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     orWithCoords: normalized.orWithCoords,
     orWithoutCoords: normalized.orWithoutCoords,
     search: normalized.search ?? '',
+    searchMode: normalized.searchMode ?? 'Fuzzy',
     metadataCc: normalized.metadataCc ?? [],
     metadataSender: normalized.metadataSender ?? [],
     metadataReceiver: normalized.metadataReceiver ?? [],

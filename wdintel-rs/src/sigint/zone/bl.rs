@@ -1,5 +1,8 @@
 use crate::entities::sea_orm_active_enums as db_enums;
 use crate::entities::*;
+use crate::messenger::group::{
+    set_signal_group_color, types::SignalGroupColor,
+};
 use crate::sigint::types::{InterseptionKind, SignalGroupLogin};
 use crate::sigint::zone::ZoneDatasourceGroup;
 use crate::types::*;
@@ -13,6 +16,8 @@ pub struct BlSzdGroupUpdateRes {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub ai_transcript_analysis_enabled: bool,
+    pub fetch_new_messages: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
@@ -21,6 +26,7 @@ pub struct BlSzdGroupUpdateRes {
     pub admin_login_details: Vec<SignalGroupLogin>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
+    pub color_key: SignalGroupColor,
 }
 
 pub async fn bl_szd_group_update(
@@ -28,6 +34,10 @@ pub async fn bl_szd_group_update(
     szd: &sigint_zone_datasource::Model,
     txn: &DatabaseTransaction,
 ) -> Result<BlSzdGroupUpdateRes, AppError> {
+    let color_key =
+        set_signal_group_color(txn, &szd.group_master_key, req.color_key)
+            .await
+            .c(h!())?;
     bl_zones_datasources_group_update_or_add(
         req.user_logins.clone(),
         req.organism_ids.clone(),
@@ -98,6 +108,21 @@ pub async fn bl_szd_group_update(
     )
     .await
     .c(h!())?;
+    let ai_transcript_analysis_enabled =
+        crate::ai_transcript_analysis::settings::set_group(
+            txn,
+            &szd.group_master_key,
+            req.ai_transcript_analysis_enabled,
+        )
+        .await
+        .c(h!())?;
+    let fetch_new_messages = update_group_fetch_new_messages_if_present(
+        req.fetch_new_messages,
+        &szd.group_master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(&szd.group_master_key),
@@ -148,6 +173,8 @@ pub async fn bl_szd_group_update(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        ai_transcript_analysis_enabled,
+        fetch_new_messages,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_user_details: render_group_logins(
             allowed_users.clone(),
@@ -162,8 +189,30 @@ pub async fn bl_szd_group_update(
         admin_logins,
         short_note,
         long_note,
+        color_key,
     };
     Ok(res)
+}
+
+pub async fn update_group_fetch_new_messages_if_present(
+    fetch_new_messages: Option<bool>,
+    master_key: &str,
+    txn: &DatabaseTransaction,
+) -> anyhow::Result<bool> {
+    let group = signal_group::Entity::find_by_id(master_key.to_string())
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let Some(fetch_new_messages) = fetch_new_messages else {
+        return Ok(group.fetch_new_messages.unwrap_or(true));
+    };
+    if group.fetch_new_messages != Some(fetch_new_messages) {
+        let mut group = group.into_active_model();
+        group.fetch_new_messages = Set(Some(fetch_new_messages));
+        group.update(txn).await.c(h!())?;
+    }
+    Ok(fetch_new_messages)
 }
 
 pub async fn update_group_aviation_if_present(
@@ -188,7 +237,7 @@ pub async fn update_group_aviation_if_present(
     Ok(is_aviation_group)
 }
 
-async fn update_group_disable_network_assignment_if_present(
+pub(crate) async fn update_group_disable_network_assignment_if_present(
     disable_network_assignment: Option<bool>,
     master_key: &str,
     txn: &DatabaseTransaction,
@@ -360,7 +409,7 @@ pub async fn bl_zones_datasources_group_add(
     Ok(is_secret)
 }
 
-async fn update_group_admin_data(
+pub(crate) async fn update_group_admin_data(
     txn: &DatabaseTransaction,
     master_key: &str,
     short_note: Option<String>,
@@ -610,6 +659,19 @@ pub async fn replace_group_admin_logins(
     .c(h!())?
     .into_iter()
     .collect::<HashSet<_>>();
+
+    if crate::datasource::native::is_native_group(txn, master_key)
+        .await
+        .c(h!())?
+    {
+        let logins = admin_logins
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        crate::messenger::group::native::ensure_active_admin(txn, &logins)
+            .await
+            .c(h!())?;
+    }
 
     signal_group_admin::Entity::update_many()
         .col_expr(signal_group_admin::Column::Deleted, Expr::value(true))
@@ -983,8 +1045,11 @@ pub async fn bl_szd_groups_list(
         interseption_kind: db_enums::InterseptionKind,
         disable_network_assignment: bool,
         is_aviation_group: Option<bool>,
+        ai_transcript_analysis_enabled: Option<bool>,
+        fetch_new_messages: Option<bool>,
         short_note: Option<String>,
         long_note: Option<String>,
+        color_key: Option<String>,
     }
 
     let rows = sigint_zone_datasource::Entity::find()
@@ -1012,6 +1077,12 @@ pub async fn bl_szd_groups_list(
             "disable_network_assignment",
         )
         .column_as(signal_group::Column::IsAviationGroup, "is_aviation_group")
+        .column_as(
+            signal_group::Column::AiTranscriptAnalysisEnabled,
+            "ai_transcript_analysis_enabled",
+        )
+        .column_as(signal_group::Column::ColorKey, "color_key")
+        .column_as(signal_group::Column::FetchNewMessages, "fetch_new_messages")
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
@@ -1031,7 +1102,10 @@ pub async fn bl_szd_groups_list(
             InterseptionKind,
             bool,
             Option<bool>,
+            Option<bool>,
+            Option<bool>,
             i64,
+            Option<String>,
             Option<String>,
             Option<String>,
         ),
@@ -1042,9 +1116,12 @@ pub async fn bl_szd_groups_list(
             row.interseption_kind.into(),
             row.disable_network_assignment,
             row.is_aviation_group,
+            row.ai_transcript_analysis_enabled,
+            row.fetch_new_messages,
             row.id,
             row.short_note,
             row.long_note,
+            row.color_key,
         ));
     }
 
@@ -1083,9 +1160,12 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     is_aviation_group,
+                    ai_transcript_analysis_enabled,
+                    fetch_new_messages,
                     szd_id,
                     short_note,
                     long_note,
+                    color_key,
                 ),
             )| {
                 let aors = group_aors.get(&master_key).cloned();
@@ -1096,6 +1176,9 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     is_aviation_group: is_aviation_group.unwrap_or(false),
+                    ai_transcript_analysis_enabled:
+                        ai_transcript_analysis_enabled.unwrap_or(false),
+                    fetch_new_messages: fetch_new_messages.unwrap_or(true),
                     allowed_users: group_users
                         .get(&master_key)
                         .cloned()
@@ -1125,6 +1208,10 @@ pub async fn bl_szd_groups_list(
                     group_master_key: master_key,
                     short_note,
                     long_note,
+                    color_key: SignalGroupColor::from_optional_db_value(
+                        color_key.as_deref(),
+                    )
+                    .unwrap_or(SignalGroupColor::BlueGrey),
                 }
             },
         )

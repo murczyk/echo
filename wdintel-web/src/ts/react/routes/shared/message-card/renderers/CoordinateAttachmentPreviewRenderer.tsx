@@ -23,6 +23,7 @@ import { CoordinateMapPreviewControls } from '../CoordinateMapPreviewControls';
 import { MessageCardMapPreview } from '../MessageCardMapPreview';
 import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/MessageCardAttachmentPreviewHeader';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
+import type { CnPositionCoordinateSource } from '../../../../../../Bindings';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import { MessageReferenceLink } from '../MessageReferenceLink';
@@ -107,6 +108,30 @@ function PalitraPointContext({ point }: { point: CoordinatePreviewPoint }) {
   );
 }
 
+const CERTAINTY_LABELS: Record<string, string> = {
+  high: 'висока',
+  medium: 'середня',
+  low: 'низька',
+};
+
+/** Why the position was placed here: the quote the model relied on. */
+function PositionSourceReasoning({ source }: { source: CnPositionCoordinateSource }) {
+  const evidence = (source.evidence ?? '').trim();
+  if (!evidence && !source.coordinateText) return null;
+  const certainty = CERTAINTY_LABELS[source.certainty] ?? source.certainty;
+  return (
+    <p
+      className="m-0 whitespace-pre-wrap text-echo-sm"
+      data-coordinate-position-reasoning="true"
+      style={{ overflowWrap: 'anywhere' }}
+    >
+      {evidence ? <q>{evidence}</q> : null}
+      {source.coordinateText ? ` → ${source.coordinateText}` : null}
+      {certainty ? ` (достовірність: ${certainty})` : null}
+    </p>
+  );
+}
+
 function PositionPointSources({ point }: { point: CoordinatePreviewPoint }) {
   if (point.source !== 'position' && !point.coordinateSources?.length) return null;
   return (
@@ -115,14 +140,20 @@ function PositionPointSources({ point }: { point: CoordinatePreviewPoint }) {
         <p className="m-0 w-full whitespace-pre-wrap text-echo-sm">{point.description}</p>
       ) : null}
       {point.coordinateSources?.map((source) => (
-        <MessageReferenceLink
-          key={source.messageUuid}
-          href={`/rer-analysis-neo?m=${encodeURIComponent(source.messageUuid)}`}
-          messageIdentifier={source.messageUuid}
-          groupInfos={{}}
-          sourceGroupName={source.groupName}
-          chipLabel={`${dayjs(source.messageAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm')} ${source.groupName}`.trim()}
-        />
+        <div
+          key={`${source.messageUuid}:${source.evidence}`}
+          className="flex w-full flex-col gap-1"
+          data-coordinate-position-source="true"
+        >
+          <MessageReferenceLink
+            href={`/rer-analysis-neo?m=${encodeURIComponent(source.messageUuid)}`}
+            messageIdentifier={source.messageUuid}
+            groupInfos={{}}
+            sourceGroupName={source.groupName}
+            chipLabel={`${dayjs(source.messageAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY HH:mm')} ${source.groupName}`.trim()}
+          />
+          <PositionSourceReasoning source={source} />
+        </div>
       ))}
     </div>
   );

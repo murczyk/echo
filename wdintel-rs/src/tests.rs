@@ -196,6 +196,10 @@ pub mod test {
         );
         assert_eq!(postgres_setting(&runtime, "lock_timeout").await, "15ms");
         assert_eq!(
+            postgres_setting(&runtime, "plan_cache_mode").await,
+            "force_custom_plan"
+        );
+        assert_eq!(
             postgres_setting(&runtime, "idle_in_transaction_session_timeout",)
                 .await,
             "50ms"
@@ -208,6 +212,10 @@ pub mod test {
         assert!(has_postgres_error_code(&error, "57014"));
 
         let operator = crate::new_pg_pool_from_config(&config).await.unwrap();
+        assert_eq!(
+            postgres_setting(&operator, "plan_cache_mode").await,
+            "auto"
+        );
         operator
             .execute_unprepared("select pg_sleep(0.1)")
             .await
@@ -260,6 +268,108 @@ pub mod test {
             postgres_setting(&runtime, "statement_timeout").await,
             "200ms"
         );
+    }
+
+    #[tokio::test]
+    async fn literal_body_index_recovery_validates_existing_definition_3780() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let db = crate::new_pg_pool_from_conn_string_with_max_connections(
+            mk_conn_string(&config),
+            1,
+        )
+        .await
+        .unwrap();
+        db.execute_unprepared(
+            r#"
+create temporary table sigint_inbox_item (id bigint, body_noheader jsonb);
+insert into sigint_inbox_item values (1, '{"body":"test"}'), (1, null);
+            "#,
+        )
+        .await
+        .unwrap();
+        let manager = SchemaManager::new(&db);
+        let migration = Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name() == "m20261025_180900_inbox_body_literal_index"
+            })
+            .unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.down(&manager).await.unwrap();
+        for definition in [
+            r#"(id)"#,
+            r#"using gin(body_noheader)"#,
+            r#"using gin((coalesce(body_noheader->>'other','')) gin_trgm_ops)"#,
+            r#"using gin((coalesce(body_noheader->>'body','')) gin_trgm_ops) where id > 0"#,
+            r#"using gin((coalesce(body_noheader->>'body','')) collate "C" gin_trgm_ops)"#,
+        ] {
+            db.execute_unprepared(&format!(
+                r#"create index sigint_inbox_item_body_literal_idx on sigint_inbox_item {definition}"#
+            ))
+            .await
+            .unwrap();
+            let error = migration.up(&manager).await.unwrap_err();
+            assert!(error.to_string().contains("requires recovery"));
+            db.execute_unprepared(
+                r#"drop index sigint_inbox_item_body_literal_idx"#,
+            )
+            .await
+            .unwrap();
+        }
+        migration.up(&manager).await.unwrap();
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn notification_index_recovery_validates_existing_definition_3826() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let db = crate::new_pg_pool_from_conn_string_with_max_connections(
+            mk_conn_string(&config),
+            1,
+        )
+        .await
+        .unwrap();
+        db.execute_unprepared(
+            r#"
+create temporary table messenger_alert_delivery (id bigint, created_at timestamp);
+insert into messenger_alert_delivery values (1, '2026-10-26'), (2, '2026-10-26');
+            "#,
+        )
+        .await
+        .unwrap();
+        let manager = SchemaManager::new(&db);
+        let migration = Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name()
+                    == "m20261026_101819_messenger_alert_delivery_created_at_index"
+            })
+            .unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.down(&manager).await.unwrap();
+        for definition in [
+            "(id)",
+            "using hash(created_at)",
+            "(created_at desc)",
+            "(created_at nulls first)",
+            "(created_at, id)",
+            "(created_at) include (id)",
+            "(created_at) where id > 0",
+            "((created_at + interval '1 second'))",
+        ] {
+            db.execute_unprepared(&format!(
+                "create index messenger_alert_delivery_created_at_idx on messenger_alert_delivery {definition}"
+            ))
+            .await
+            .unwrap();
+            let error = migration.up(&manager).await.unwrap_err();
+            assert!(error.to_string().contains("requires recovery"));
+            migration.down(&manager).await.unwrap();
+        }
+        migration.up(&manager).await.unwrap();
+        db.close().await.unwrap();
     }
 
     async fn postgres_setting(

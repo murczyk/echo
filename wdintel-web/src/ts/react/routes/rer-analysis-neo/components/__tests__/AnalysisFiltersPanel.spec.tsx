@@ -210,6 +210,7 @@ function buildOptions(): AnalysisPageState['options'] {
     aors: [option('1', '1')],
     groups: [],
     senders: [],
+    devices: [],
     freqs: [option('100.0000', '100.0000')],
     newFreqs: [option('100.0000', '100.0000')],
     callsigns: [],
@@ -276,6 +277,7 @@ function buildProps(
         aors: 'idle',
         groups: 'idle',
         senders: 'idle',
+        devices: 'idle',
         callsigns: 'idle',
         units: 'idle',
         locations: 'idle',
@@ -300,7 +302,7 @@ function buildProps(
       queryState: emptyQueryState(),
       unitsExactMatchOnlyDefault: false,
       analysisAorFilterEnabled: true,
-      rerReportEnabled: false,
+      rerReportFilterEnabled: false,
       saveInFlight: false,
       savedFilterName: '',
       savedFilters: [],
@@ -418,6 +420,18 @@ describe('AnalysisFiltersPanel', () => {
       ([callProps]) => (callProps as { label: string }).label,
     );
     expect(renderedFilterLabels).not.toContain('Частоти');
+    expect(renderedFilterLabels).not.toContain('Мережі');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('keeps frequencies but hides networks when network hiding is enabled', async () => {
+    const view = await renderComponent(buildProps({ hideNetworks: true }));
+    rendered.push(view);
+
+    const renderedFilterLabels = analysisFilterFieldSpy.mock.calls.map(
+      ([callProps]) => (callProps as { label: string }).label,
+    );
+    expect(renderedFilterLabels).toContain('Частоти');
     expect(renderedFilterLabels).not.toContain('Мережі');
   });
 
@@ -577,6 +591,7 @@ describe('AnalysisFiltersPanel', () => {
   it('keeps the tags section counter scoped to tag controls only', async () => {
     const view = await renderComponent(
       buildProps({
+        counts: { tagsCount: 4 },
         options: {
           ...buildOptions(),
           tags: [
@@ -646,6 +661,21 @@ describe('AnalysisFiltersPanel', () => {
       (groupsField as { preserveSelectedOptionValuesOnChange?: boolean } | undefined)
         ?.preserveSelectedOptionValuesOnChange,
     ).toBe(true);
+  });
+
+  it('hides only the group filter for a dedicated group feed', async () => {
+    rendered.push(
+      await renderComponent({
+        ...buildProps(),
+        hideGroupSelection: true,
+      }),
+    );
+
+    const labels = analysisFilterFieldSpy.mock.calls.map(
+      ([callProps]) => (callProps as { label?: string }).label,
+    );
+    expect(labels).not.toContain('Групи');
+    expect(labels).toContain('Відправники');
   });
 
   it('uses the network stats label and sorts networks by it', async () => {
@@ -925,6 +955,23 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('155');
   });
 
+  it('#3001 shows placeholders for absent counters while preserving completed zeroes', async () => {
+    const view = await renderComponent(
+      buildProps({
+        counts: { sendersCount: 0 },
+        countsLoading: false,
+        filtersLoading: false,
+        queryState: { ...emptyQueryState(), unitsSelected: ['128 омсбр'] },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Групи—');
+    expect(view.container.textContent).toContain('Відправники0');
+    expect(view.container.textContent).toContain('Точний збіг за еталонкою');
+    expect(view.container.textContent).not.toContain('undefined');
+  });
+
   it('keeps reset available while the initial filters load is still in flight', async () => {
     const view = await renderComponent(
       buildProps({
@@ -1055,20 +1102,25 @@ describe('AnalysisFiltersPanel', () => {
     expect(updateQueryState).toHaveBeenCalledWith({ onlyWithMedia: true });
   });
 
-  it('shows the RER report filter only when enabled', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3598
+  it('shows the RER report filter only when enabled regardless of network visibility', async () => {
     const hidden = await renderComponent(buildProps());
     rendered.push(hidden);
-    expect(hidden.container.textContent).not.toContain('для звіту РЕР');
+    expect(hidden.container.textContent).not.toContain('Для звіту РЕР');
 
-    const updateQueryState = vi.fn();
-    const visible = await renderComponent(buildProps({ rerReportEnabled: true, updateQueryState }));
-    rendered.push(visible);
-    await setChecked(findLabelInput(visible.container, 'для звіту РЕР'), true);
+    for (const hideNetworks of [false, true]) {
+      const updateQueryState = vi.fn();
+      const visible = await renderComponent(
+        buildProps({ hideNetworks, rerReportFilterEnabled: true, updateQueryState }),
+      );
+      rendered.push(visible);
+      await setChecked(findLabelInput(visible.container, 'Для звіту РЕР'), true);
 
-    expect(updateQueryState).toHaveBeenCalledWith({
-      onlyWithNetwork: true,
-      withoutNetwork: false,
-    });
+      expect(updateQueryState).toHaveBeenCalledWith({
+        onlyWithNetwork: true,
+        withoutNetwork: false,
+      });
+    }
   });
 
   it('maps the metadata mode buttons into the query state updates and helper text', async () => {
@@ -1320,7 +1372,7 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).toContain('неточних збігів: 7');
   });
 
-  it('keeps the exact-match count stable while counts are still loading', async () => {
+  it('#3001 renders a newly loaded exact-match count without waiting for other counts', async () => {
     const view = await renderComponent(
       buildProps({
         counts: {
@@ -1385,7 +1437,7 @@ describe('AnalysisFiltersPanel', () => {
       );
     });
 
-    expect(view.container.textContent).toContain('точних збігів: 8');
+    expect(view.container.textContent).toContain('точних збігів: 0');
   });
 
   it('sends true when the exact-match checkbox is checked', async () => {

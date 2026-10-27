@@ -198,11 +198,19 @@ setup-dev:
 gen-seaorm:
     #!/bin/bash
     set -euo pipefail
-    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]]
-    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns"
+    NEED_CLI=0
+    [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]] || NEED_CLI=1
+    sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns" || NEED_CLI=1
+
+    if [[ $NEED_CLI -ne 0 ]]; then
+        echo "wrong sea-orm-cli version, please install 2.0.1 (fork) with this command: " 1>&2
+        echo 'cargo install --git https://github.com/k-bx/sea-orm.git --branch echo-im-seaorm-2.0.1-fixes-cli sea-orm-cli' 1>&2
+        exit 1
+    fi
     entity_db="${TEST_DB_NAME:-wd}"
     rm -rf wdintel-rs/src/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${entity_db}" -o src/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --entity-format compact --with-serde both --include-generated-columns -u "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${entity_db}" -o src/entities)
+    git apply patches/gen-seaorm/*.patch
     just fmt
 
 [arg('mode', long='mode')]
@@ -239,7 +247,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -265,7 +273,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
@@ -839,10 +847,21 @@ deploy _server_pos="" server silent="false":
       just _print-servers; exit 1;
     fi
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
+    MAINTENANCE_STARTED=0
+    MAINTENANCE_KEEPALIVE_PID=""
+
+    stop_maintenance_keepalive() {
+      if [[ -n "$MAINTENANCE_KEEPALIVE_PID" ]]; then
+        kill "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        wait "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        MAINTENANCE_KEEPALIVE_PID=""
+      fi
+    }
 
     cleanup() {
       local status=$?
       trap - EXIT
+      stop_maintenance_keepalive
 
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
         echo "Deployment failed; restoring runtime services..." >&2
@@ -860,6 +879,10 @@ deploy _server_pos="" server silent="false":
         '; then
           echo "Failed to restore runtime services after deployment failure." >&2
         fi
+      fi
+
+      if [[ $status -ne 0 && $MAINTENANCE_STARTED -eq 1 ]]; then
+        bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER" || true
       fi
 
       exit "$status"
@@ -951,7 +974,11 @@ deploy _server_pos="" server silent="false":
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     bash "{{ justfile_directory() }}/deploy/prepare-sigint-inbox-callsign-iggy-index.sh" "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/stage-packages.sh" "$SERVER"
+    MAINTENANCE_STARTED=1
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" keepalive "$SERVER" &
+    MAINTENANCE_KEEPALIVE_PID=$!
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
@@ -1004,11 +1031,9 @@ deploy _server_pos="" server silent="false":
         return "$status"
       }
 
-      run_logged 600 "sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update" \
-        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs" \
+      run_logged 1200 "Installing staged Echo packages without downloads" \
         sudo env DEBIAN_FRONTEND=noninteractive \
-          apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs'
+          apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew --no-download -y -qq install echo-install wdintel-rs'
 
     ssh "$SERVER" 'set -euo pipefail
       if sudo -n test -f /etc/echo-peerdb/source.env; then
@@ -1152,6 +1177,7 @@ deploy _server_pos="" server silent="false":
     '
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
+    stop_maintenance_keepalive
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
@@ -1215,10 +1241,21 @@ deploy-from-local _server_pos="" server silent="false":
     REMOTE_DEB_NAME="${DEB_NAME%.deb}-local-$(date -u +%Y%m%d%H%M%S)-$$.deb"
     REMOTE_DEB_PATH="/var/tmp/${REMOTE_DEB_NAME}"
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
+    MAINTENANCE_STARTED=0
+    MAINTENANCE_KEEPALIVE_PID=""
+
+    stop_maintenance_keepalive() {
+      if [[ -n "$MAINTENANCE_KEEPALIVE_PID" ]]; then
+        kill "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        wait "$MAINTENANCE_KEEPALIVE_PID" 2>/dev/null || true
+        MAINTENANCE_KEEPALIVE_PID=""
+      fi
+    }
 
     cleanup() {
       local status=$?
       trap - EXIT
+      stop_maintenance_keepalive
 
       if [[ -n "$REMOTE_DEB_PATH" ]]; then
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
@@ -1233,6 +1270,10 @@ deploy-from-local _server_pos="" server silent="false":
         '; then
           echo "Failed to stop or unmask runtime services after deployment failure." >&2
         fi
+      fi
+
+      if [[ $status -ne 0 && $MAINTENANCE_STARTED -eq 1 ]]; then
+        bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER" || true
       fi
 
       exit "$status"
@@ -1256,7 +1297,11 @@ deploy-from-local _server_pos="" server silent="false":
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
     bash "{{ justfile_directory() }}/deploy/prepare-sigint-inbox-callsign-iggy-index.sh" "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/stage-packages.sh" "$SERVER" "$REMOTE_DEB_PATH"
+    MAINTENANCE_STARTED=1
     bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" keepalive "$SERVER" &
+    MAINTENANCE_KEEPALIVE_PID=$!
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=1
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
@@ -1288,12 +1333,10 @@ deploy-from-local _server_pos="" server silent="false":
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       cd /var/tmp
-      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
-        echo 'Initial local package install failed; updating APT indexes and retrying...'
-        sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
-      fi
-      rm -f './${REMOTE_DEB_NAME}'
+      timeout --foreground 1200s sudo env DEBIAN_FRONTEND=noninteractive \
+        flock --timeout 120 /var/lib/dpkg/lock-frontend \
+        dpkg --force-confnew --force-downgrade -i '${REMOTE_DEB_PATH}'
+      rm -f '${REMOTE_DEB_PATH}'
     "
     REMOTE_DEB_PATH=""
 
@@ -1439,6 +1482,7 @@ deploy-from-local _server_pos="" server silent="false":
     '
     UNMASK_RUNTIME_SERVICES_ON_FAILURE=0
     ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
+    stop_maintenance_keepalive
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
@@ -2692,6 +2736,14 @@ analytics-reconcile-tables:
 
 analytics-reconcile-derived-schema:
     bash deploy/clickhouse/bin/source-reconcile-derived-schema.sh
+
+[arg('server', long='server')]
+oneoff-replicate-attachment-history server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    [[ "{{ server }}" =~ ^[A-Za-z0-9._-]+$ ]] \
+        || { echo "invalid server" >&2; exit 1; }
+    ssh "{{ server }}" 'wdintel-rs --mode=live oneoff-replicate-historical-attachments'
 
 [arg('server', long='server')]
 [arg('table', long='table')]

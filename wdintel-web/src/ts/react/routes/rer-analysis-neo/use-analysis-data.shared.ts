@@ -42,6 +42,7 @@ export const emptyOptions: AnalysisFilterOptions = {
   aors: [],
   groups: [],
   senders: [],
+  devices: [],
   freqs: [],
   newFreqs: [],
   callsigns: [],

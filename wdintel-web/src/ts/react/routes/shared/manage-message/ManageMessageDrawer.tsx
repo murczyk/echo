@@ -1,6 +1,17 @@
-import { canWriteMessages } from '../../../utils/roles';
+import { CitedMessageCard } from '../message-replies/CitedMessageCard';
+import type { MessageTimeBasis } from '../../../services/api/user-settings';
+import { canWriteMessages, hasRole } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
-import React from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
+import type { CSSProperties, MouseEvent, RefObject } from 'react';
 import { FormProvider, Controller, useFormContext } from 'react-hook-form';
 import {
   Typography,
@@ -25,7 +36,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 
-import type { User, InboxMessage } from '../../../../../Bindings';
+import type { User, InboxMessage, CitedMessage } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerForm } from '../../../components/PowerForm';
@@ -64,7 +75,13 @@ import { useObservedWidth } from '../../../hooks/use-observed-width';
 import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-layout';
 
 export type Props = {
+  engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
+  citedMessage?: CitedMessage;
+  citationLoading?: boolean;
+  citationTimeBasis?: MessageTimeBasis;
   open: boolean;
+  hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
   currentUser: User | null;
   onClose: () => void;
@@ -88,13 +105,14 @@ export type Props = {
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   intentKey?: string;
+  initialGroupMasterKey?: string | null;
   presentation?: ManageMessageEditorPresentation;
   interactionActive?: boolean;
   adaptiveEmbeddedForm?: boolean;
   fillEmbeddedSurface?: boolean;
   transparentEmbeddedSurface?: boolean;
   initialFocusTarget?: HTMLElement | null;
-  focusFallbackRef?: React.RefObject<HTMLElement | null>;
+  focusFallbackRef?: RefObject<HTMLElement | null>;
 };
 
 export type { ManageMessageIntentChange } from './useManageMessageDrawer';
@@ -149,9 +167,9 @@ function ReportTextRow({
   embeddedMainColumns: 1 | 2;
 }) {
   const { control } = useFormContext<MessageFormData>();
-  const reportTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const reportTextRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (busy) return;
     const frameId = window.requestAnimationFrame(() => reportTextRef.current?.focus());
     return () => window.cancelAnimationFrame(frameId);
@@ -400,7 +418,7 @@ function ReportSourceHeader({
   );
 }
 
-export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, Props>(
+export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
   function ManageMessageDrawer(props, ref) {
     const presentation = props.presentation ?? 'modal';
     const interactionActive = props.interactionActive ?? true;
@@ -415,15 +433,16 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
     const wideMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'wide';
     const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
     const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
+    const isReplyMode = !props.editTarget && !props.reportSource && props.engagedMessageId != null;
     const canWrite = canWriteMessages(props.currentUser?.roles);
-    const returnFocusRef = React.useRef<HTMLElement | null>(null);
-    const wasOpenRef = React.useRef(false);
+    const returnFocusRef = useRef<HTMLElement | null>(null);
+    const wasOpenRef = useRef(false);
     if (props.open && !wasOpenRef.current) {
       returnFocusRef.current =
         props.initialFocusTarget ??
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     }
-    const restoreFocus = React.useCallback(() => {
+    const restoreFocus = useCallback(() => {
       scheduleAfterPaint(() => {
         const returnTarget = returnFocusRef.current;
         const target =
@@ -433,7 +452,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
         target?.focus();
       });
     }, [props.focusFallbackRef]);
-    const handleClosed = React.useCallback(() => {
+    const handleClosed = useCallback(() => {
       props.onClose();
       restoreFocus();
     }, [props.onClose, restoreFocus]);
@@ -444,8 +463,8 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       onClose: handleClosed,
       open: props.open && canWrite,
     });
-    const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
-    const [deleteInFlight, setDeleteInFlight] = React.useState(false);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteInFlight, setDeleteInFlight] = useState(false);
 
     const {
       isEditMode,
@@ -503,10 +522,10 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       recentValues,
       createSucceeded,
     } = drawerState;
-    const [settingsAnchorEl, setSettingsAnchorEl] = React.useState<null | HTMLElement>(null);
+    const [settingsAnchorEl, setSettingsAnchorEl] = useState<null | HTMLElement>(null);
     const isSettingsOpen = Boolean(settingsAnchorEl);
 
-    const handleOpenSettings = (event: React.MouseEvent<HTMLElement>) => {
+    const handleOpenSettings = (event: MouseEvent<HTMLElement>) => {
       setSettingsAnchorEl(event.currentTarget);
     };
 
@@ -516,8 +535,8 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
     const dismissDisabled = saving || deleteInFlight;
     const busy = formDisabled || deleteInFlight;
     const parseDisabled = busy || parsing;
-    const messageTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
-    const focusedMessageIntentRef = React.useRef<string | null>(null);
+    const messageTextRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+    const focusedMessageIntentRef = useRef<string | null>(null);
     const reportEditLoading = props.editTargetLoadState?.status === 'loading';
     const reportEditError = props.editTargetLoadState?.status === 'error';
     const isReportEditIntent =
@@ -528,9 +547,9 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
           (group) => group.masterKey === props.reportSource?.message.groupMasterKey,
         )?.name ?? props.reportSource.message.groupMasterKey)
       : null;
-    const titleId = React.useId();
+    const titleId = useId();
 
-    React.useEffect(() => {
+    useEffect(() => {
       if (!props.open) {
         focusedMessageIntentRef.current = null;
         return;
@@ -545,24 +564,24 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       });
     }, [busy, intentKey, isEditMode, isReportMode, props.open]);
 
-    React.useEffect(() => {
+    useEffect(() => {
       if (!createSucceeded || isReportMode) return;
       return scheduleAfterPaint(() => messageTextRef.current?.focus());
     }, [createSucceeded, isReportMode]);
 
-    const focusEditor = React.useCallback(() => {
+    const focusEditor = useCallback(() => {
       const root = editorRootRef.current;
       const target = root?.querySelector<HTMLElement>(
         '[aria-invalid="true"], textarea:not(:disabled), input:not(:disabled), button:not(:disabled)',
       );
       (target ?? root)?.focus();
     }, [editorRootRef]);
-    const handleCancelDiscard = React.useCallback(() => {
+    const handleCancelDiscard = useCallback(() => {
       cancelDiscard();
       scheduleAfterPaint(focusEditor);
     }, [cancelDiscard, focusEditor]);
 
-    React.useImperativeHandle(
+    useImperativeHandle(
       ref,
       () => ({
         requestIntentChange(change) {
@@ -594,7 +613,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
       ],
     );
 
-    React.useEffect(() => {
+    useEffect(() => {
       wasOpenRef.current = props.open;
     }, [props.open]);
 
@@ -652,7 +671,11 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                 borderColor: 'divider',
               }}
             >
-              <Typography id={titleId} variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}>
+              <Typography
+                id={titleId}
+                component="h2"
+                variant={adaptiveEmbeddedForm ? 'subtitle2' : 'h6'}
+              >
                 {isReportMode
                   ? isReportEditIntent
                     ? 'Редагувати розвіддонесення'
@@ -738,7 +761,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                                   embeddedFormLayout.sectionColumns,
                                 '--manage-message-metadata-columns':
                                   embeddedFormLayout.metadataColumns,
-                              } as React.CSSProperties)
+                              } as CSSProperties)
                             : undefined
                         }
                         sx={{
@@ -765,6 +788,29 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                           },
                         }}
                       >
+                        {isReplyMode ? (
+                          <section
+                            aria-label="Цитоване повідомлення"
+                            className="col-span-full mb-echo-sm min-w-0"
+                          >
+                            <Typography variant="subtitle2" className="mb-echo-xs!">
+                              Відповідь на повідомлення
+                            </Typography>
+                            {props.citationLoading ? (
+                              <CircularProgress size={20} aria-label="Завантаження цитати" />
+                            ) : (
+                              <CitedMessageCard
+                                message={props.citedMessage}
+                                timeBasis={props.citationTimeBasis ?? 'creation'}
+                              />
+                            )}
+                            {props.replySourceUnavailable ? (
+                              <PowerAlert severity="info" className="mt-echo-sm">
+                                Повідомлення буде збережено як звичайне, без зв’язку з джерелом.
+                              </PowerAlert>
+                            ) : null}
+                          </section>
+                        ) : null}
                         {isReportMode ? (
                           <ReportTextRow
                             originalText={originalReportText}
@@ -883,8 +929,9 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                                     <TextField
                                       {...field}
                                       onChange={(event) => {
-                                        drawerState.handleBodyChange(event.target.value);
-                                        field.onChange(event);
+                                        const value = event.target.value;
+                                        field.onChange(value);
+                                        drawerState.handleBodyChange(value);
                                       }}
                                       label="Текст повідомлення"
                                       fullWidth
@@ -931,6 +978,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
                             groupEditable={isReportMode}
+                            groupLocked={isReplyMode}
                             cyberEchoEnabled={props.cyberEchoEnabled}
                             deviceNameOptions={deviceNameOptions}
                             deviceNamesLoading={deviceNamesLoading}
@@ -941,6 +989,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                           <MetadataSection
                             showAdvanced={showAdvanced}
                             busy={busy}
+                            isEditMode={isEditMode}
                             recentValues={recentValues}
                             tagOptions={tagOptions}
                             postOptions={drawerState.postOptions}
@@ -948,7 +997,12 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                             setPostInput={drawerState.setPostInput}
                             unitOptions={drawerState.unitOptions}
                             unitLoading={drawerState.unitLoading}
-                            setUnitInput={drawerState.setUnitInput}
+                            unitAllowCreate={drawerState.unitAllowCreate}
+                            canMergeUnitDuplicates={hasRole(
+                              props.currentUser?.roles,
+                              'UnitsEditor',
+                            )}
+                            onUnitFocus={drawerState.onUnitFocus}
                             unitLocked={drawerState.unitLocked}
                             callsignOptions={drawerState.callsignOptions}
                             callsignLoading={drawerState.callsignLoading}
@@ -958,6 +1012,7 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
 
                           <NetworkSection
                             radioFeaturesAllowed={drawerState.radioFeaturesAllowed}
+                            hideNetworks={props.hideNetworks ?? false}
                             isEditMode={isEditMode}
                             busy={busy}
                             recentValues={recentValues}
@@ -970,8 +1025,6 @@ export const ManageMessageDrawer = React.forwardRef<ManageMessageEditorHandle, P
                             freqOptions={drawerState.freqOptions}
                             freqLoading={drawerState.freqLoading}
                             setFreqInput={drawerState.setFreqInput}
-                            unitLocked={drawerState.unitLocked}
-                            setUnitLocked={drawerState.setUnitLocked}
                           />
 
                           <LocationsSection

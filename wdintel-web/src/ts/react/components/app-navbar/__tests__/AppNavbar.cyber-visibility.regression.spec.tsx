@@ -2,12 +2,17 @@
  * @vitest-environment happy-dom
  */
 import { act } from 'react';
+import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppNavbar } from '../AppNavbar';
 
 const currentSettingsMock = vi.hoisted(() => vi.fn());
 const fetchUserSettingsMock = vi.hoisted(() => vi.fn());
+const configureDebugRecorderMock = vi.hoisted(() => vi.fn());
+const clearDebugRecorderMock = vi.hoisted(() => vi.fn());
+const mountDebugRecorderPanelMock = vi.hoisted(() => vi.fn());
+const notificationsInboxMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../services/api/system-settings', () => ({
   currentSystemSettings: currentSettingsMock,
@@ -15,6 +20,18 @@ vi.mock('../../../services/api/system-settings', () => ({
 vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: fetchUserSettingsMock,
+}));
+vi.mock('../../../../debug-recorder', () => ({
+  DEBUG_RECORDER_SLOT_ID: 'echo-debug-recorder-slot',
+  configureBrowserDebugRecorder: configureDebugRecorderMock,
+  clearBrowserDebugRecording: clearDebugRecorderMock,
+  mountDebugRecorderPanelIfNeeded: mountDebugRecorderPanelMock,
+}));
+
+vi.mock('../../../mui-theme', () => ({
+  NeoMuiThemeProvider: ({ children }: { children: ReactNode }) => (
+    <div data-testid="neo-mui-theme-provider">{children}</div>
+  ),
 }));
 
 type Rendered = {
@@ -54,7 +71,16 @@ vi.mock('../ChangelogDropdown', () => ({
 }));
 
 vi.mock('../ProfileDropdown', () => ({
-  ProfileDropdown: () => <div data-testid="mock-profile-dropdown" />,
+  ProfileDropdown: ({ onLogout }: { onLogout: () => void }) => (
+    <button data-testid="mock-profile-dropdown" onClick={onLogout} />
+  ),
+}));
+
+vi.mock('../NotificationsInbox', () => ({
+  NotificationsInbox: ({ identity }: { identity: string }) => {
+    notificationsInboxMock(identity);
+    return <div data-testid="mock-notifications-inbox" />;
+  },
 }));
 
 function renderComponent(props: any) {
@@ -80,7 +106,7 @@ describe('AppNavbar', () => {
     },
     shared: {
       themeMode: 'light',
-      serverInfo: { mode: 'live' },
+      serverInfo: { mode: 'live', version: '2026.10.8' },
       changelogPreview: null,
       userLoaded: true,
       changelogLastSeenLoaded: true,
@@ -95,6 +121,47 @@ describe('AppNavbar', () => {
     onOpenChangelog: vi.fn(),
   };
 
+  it.each([
+    ['Basic', ['Basic']],
+    ['Bpla', ['Bpla']],
+  ])('does not mount Inbox for a %s-only user', (_name, roles) => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles },
+    });
+
+    expect(container.querySelector('[data-testid="mock-notifications-inbox"]')).toBeNull();
+    expect(notificationsInboxMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Rer', ['Rer']],
+    ['Cyber', ['Cyber']],
+    ['CyberViewer', ['CyberViewer']],
+    ['Full inherited Rer', ['Full']],
+    ['Admin inherited Rer/Cyber', ['Admin']],
+    ['mixed', ['Basic', 'Cyber']],
+  ])('mounts Inbox for %s access', (_name, roles) => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles },
+    });
+
+    expect(container.querySelector('[data-testid="mock-notifications-inbox"]')).not.toBeNull();
+    expect(notificationsInboxMock).toHaveBeenCalledWith('Test');
+  });
+
+  it('does not mount Inbox before the user is loaded', () => {
+    const { container } = renderComponent({
+      ...defaultProps,
+      user: { ...defaultProps.user, roles: ['Rer'] },
+      shared: { ...defaultProps.shared, userLoaded: false },
+    });
+
+    expect(container.querySelector('[data-testid="mock-notifications-inbox"]')).toBeNull();
+    expect(notificationsInboxMock).not.toHaveBeenCalled();
+  });
+
   it('renders the brand logo and title', () => {
     const { container } = renderComponent(defaultProps);
     const logoImg = Array.from(container.querySelectorAll('img')).find((img) =>
@@ -107,24 +174,84 @@ describe('AppNavbar', () => {
     expect(hoverLogoImg).not.toBeUndefined();
   });
 
-  // Regression: https://github.com/echoua/echo/issues/3568
-  it.each(['Rer', 'Cyber'])('#3568 renders main navigation for %s', (role) => {
-    const { container } = renderComponent({
-      ...defaultProps,
-      user: { ...defaultProps.user, roles: [role] },
+  it('reserves a debug recorder slot immediately before the toolbar', async () => {
+    const { container } = renderComponent(defaultProps);
+    await act(async () => {
+      await Promise.resolve();
     });
-    const content = container.textContent;
-    expect(content).toContain('Оперативний');
-    expect(content).toContain('Аналіз');
-    expect(content).toContain('База даних');
-    expect(content).toContain('Конвертери');
-    // Admin should not be present
-    expect(content).not.toContain('Адмін');
+    const slot = container.querySelector('#echo-debug-recorder-slot');
+
+    expect(slot).not.toBeNull();
+    expect(slot?.nextElementSibling?.classList.contains('app-navbar-toolbar')).toBe(true);
   });
+
+  it.each([
+    ['live', 'Live'],
+    ['debug', 'Debug'],
+  ])('configures debug recorder metadata in %s mode', (mode, deploymentMode) => {
+    renderComponent({
+      ...defaultProps,
+      shared: { ...defaultProps.shared, serverInfo: { mode, version: '2026.10.8' } },
+    });
+    expect(configureDebugRecorderMock).toHaveBeenCalledWith({
+      deploymentMode,
+      echoVersion: '2026.10.8',
+    });
+  });
+
+  it('clears debug recording before dispatching navbar logout', async () => {
+    await import('../../../app-navbar-element');
+    const order: string[] = [];
+    clearDebugRecorderMock.mockImplementation(() => order.push('clear'));
+    const host = document.createElement('app-navbar') as HTMLElement & { props: unknown };
+    host.addEventListener('navbar-logout', () => order.push('logout'));
+    act(() => {
+      document.body.append(host);
+      host.props = defaultProps;
+    });
+
+    const logout = host.querySelector<HTMLButtonElement>('[data-testid="mock-profile-dropdown"]');
+    act(() => logout?.click());
+    expect(order).toEqual(['clear', 'logout']);
+    act(() => host.remove());
+  });
+
+  it('#3610 mounts the navbar custom element inside the Neo MUI theme boundary', async () => {
+    await import('../../../app-navbar-element');
+    const host = document.createElement('app-navbar') as HTMLElement & { props: unknown };
+    act(() => {
+      document.body.append(host);
+      host.props = defaultProps;
+    });
+
+    expect(host.querySelector('[data-testid="neo-mui-theme-provider"]')).not.toBeNull();
+
+    act(() => host.remove());
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3568
+  it.each(['Rer', 'Cyber', 'CyberViewer', 'CyberViewerRestricted'])(
+    '#3568 renders main navigation for %s',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role] },
+      });
+      const content = container.textContent;
+      expect(content).toContain('Оперативний');
+      expect(content).toContain('Аналіз');
+      expect(content).toContain('База даних');
+      expect(content).toContain('Конвертери');
+      // Admin should not be present
+      expect(content).not.toContain('Адмін');
+    },
+  );
 
   // Regression: https://github.com/echoua/echo/issues/3568
   it.each([
     ['Cyber'],
+    ['CyberViewer'],
+    ['CyberViewerRestricted'],
     ['Cyber', 'UnitsEditor'],
     ['Rer'],
     ['Rer', 'Cyber'],
@@ -236,21 +363,24 @@ describe('AppNavbar', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3568
-  it.each(['Rer', 'Cyber'])('#3568 keeps ApiAgent excluded from %s AI chat access', (role) => {
-    const { container } = renderComponent({
-      ...defaultProps,
-      user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
-    });
+  it.each(['Rer', 'Cyber', 'CyberViewer', 'CyberViewerRestricted'])(
+    '#3568 keeps ApiAgent excluded from %s AI chat access',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role, 'ApiAgent'] },
+      });
 
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
-      );
-    });
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('ai-agent-availability', { detail: { enabled: false } }),
+        );
+      });
 
-    expect(container.textContent).toContain('Документація');
-    expect(container.textContent).toContain('Статистика');
-  });
+      expect(container.textContent).toContain('Документація');
+      expect(container.textContent).toContain('Статистика');
+    },
+  );
 
   it('renders Admin menu when user has Admin role', () => {
     const { container } = renderComponent({
@@ -363,6 +493,23 @@ describe('AppNavbar', () => {
     });
     expect(container.textContent).not.toContain('Транскрибація');
   });
+
+  it.each(['CyberViewerRestricted', 'CyberViewer'])(
+    'keeps operational and analysis navigation but gates devices for %s',
+    (role) => {
+      const { container } = renderComponent({
+        ...defaultProps,
+        user: { ...defaultProps.user, roles: [role] },
+        shared: {
+          ...defaultProps.shared,
+          systemSettings: { devicesSectionEnabled: true },
+        },
+      });
+      expect(container.textContent).toContain('Оперативний');
+      expect(container.textContent).toContain('Аналіз');
+      expect(Boolean(container.querySelector('a[href="/devices"]'))).toBe(role === 'CyberViewer');
+    },
+  );
 
   it('renders Devices in the database menu when the Devices section is enabled', () => {
     const { container } = renderComponent({
@@ -518,7 +665,7 @@ describe('AppNavbar', () => {
     });
 
     // Find the fullscreen toggle button
-    const toggleButton = container.querySelector('button[title="Повноекранний режим"]');
+    const toggleButton = container.querySelector('button[aria-label="Повноекранний режим"]');
     expect(toggleButton).not.toBeNull();
     expect(toggleButton?.className).toContain('rounded');
 
@@ -535,7 +682,7 @@ describe('AppNavbar', () => {
     expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).not.toBeNull();
   });
 
-  it('shows a spinner instead of the anonymous profile while the user is loading', () => {
+  it('shows a dash instead of the anonymous profile while the user is loading', () => {
     const { container } = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, name: 'anonymous' },
@@ -544,7 +691,9 @@ describe('AppNavbar', () => {
 
     expect(container.querySelector('[data-testid="mock-profile-dropdown"]')).toBeNull();
     expect(container.querySelector('[aria-label="Завантаження користувача"]')).not.toBeNull();
-    expect(container.querySelector('.MuiCircularProgress-root')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Завантаження користувача"]')?.textContent).toBe(
+      '—',
+    );
     expect(container.textContent).not.toContain('anonymous');
   });
 });

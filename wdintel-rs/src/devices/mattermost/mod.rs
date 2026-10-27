@@ -1,6 +1,6 @@
 use super::analytics::{query, types::AnalysisRunSummary};
 use super::devices::types::DeviceCurrentState;
-use crate::config::DEVICE_MATTERMOST_TIMEOUT_SEC;
+use crate::devices::config::DEVICE_MATTERMOST_TIMEOUT_SEC;
 use crate::entities::device;
 use crate::file_registry::entities::file_analysis_run;
 use crate::h;

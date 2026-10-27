@@ -159,7 +159,7 @@ pub async fn serve_assets(
 }
 
 /// S3 configuration parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct S3Config {
     pub bucket: String,
     pub region: String,
@@ -583,7 +583,7 @@ pub(crate) async fn upload_device_content_plaintext(
     }
     let writer = op
         .writer_with(full_key)
-        .chunk(crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
+        .chunk(crate::devices::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES)
         .await
         .c(h!())
         .map_err(|error| DeviceContentUploadError::Internal(error.into()))?;
@@ -595,7 +595,7 @@ pub(crate) async fn upload_device_content_plaintext(
     })?;
     let mut stream = tokio_util::io::ReaderStream::with_capacity(
         file.take(read_limit),
-        crate::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
+        crate::devices::config::DEVICE_FILE_CONTENT_STREAM_CHUNK_BYTES,
     );
     let mut size = 0_u64;
     let mut first_byte = None;
@@ -822,8 +822,61 @@ async fn download_and_decrypt_messenger_media_from_s3_with_operator_inner(
         .map_err(|_| whole_object_decrypt_busy_error())?
         .map_err(|_| whole_object_decrypt_busy_error())?
     };
+    decrypt_known_object(
+        op,
+        &remote_key,
+        sb,
+        config,
+        object_size,
+        download_timeout,
+        Arc::new(decrypt_permit),
+    )
+    .await
+}
+
+pub(crate) async fn download_and_decrypt_with_admission(
+    op: &Operator,
+    config: &S3Config,
+    strongbox_key_b64: &str,
+    rel_path: &str,
+    download_timeout: Duration,
+    max_size: u64,
+    permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+) -> Result<Vec<u8>, AppError> {
+    let remote_key = config.prefixed_key(rel_path);
+    let key = key_from_b64(strongbox_key_b64).c(h!())?;
+    let sb = StaticStrongBox::new(key.clone(), vec![key]);
+    let size = tokio::time::timeout(
+        download_timeout,
+        s3_object_size_with_limit(op, &remote_key, max_size),
+    )
+    .await
+    .c(h!())?
+    .c(h!())?;
+    Ok(decrypt_known_object(
+        op,
+        &remote_key,
+        sb,
+        config,
+        size,
+        Some(download_timeout),
+        permit,
+    )
+    .await
+    .c(h!())?)
+}
+
+async fn decrypt_known_object(
+    op: &Operator,
+    remote_key: &str,
+    sb: StaticStrongBox,
+    config: &S3Config,
+    object_size: u64,
+    download_timeout: Option<Duration>,
+    decrypt_permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+) -> Result<Vec<u8>, AppError> {
     let download =
-        download_s3_object_with_known_size(op, &remote_key, object_size);
+        download_s3_object_with_known_size(op, remote_key, object_size);
     let encrypted = match download_timeout {
         Some(download_timeout) => tokio::time::timeout(download_timeout, download)
             .await
@@ -834,7 +887,8 @@ async fn download_and_decrypt_messenger_media_from_s3_with_operator_inner(
             })??,
         None => download.await?,
     };
-    let object_aad = aad(&config.bucket, &remote_key);
+    let object_aad = aad(&config.bucket, remote_key);
+    let remote_key = remote_key.to_owned();
     tokio::task::spawn_blocking(move || {
         let _decrypt_permit = decrypt_permit;
         sb.decrypt(&encrypted, object_aad.as_bytes())
@@ -999,6 +1053,126 @@ pub fn generate_strongbox_key_b64() -> String {
 
 pub fn mk_media_url(m: &signal_message_media::Model) -> String {
     format!("/api/messenger/media/{}", m.id)
+}
+
+const ECHO_AUDIO_TRANSCRIPTION_ENVELOPE_OVERHEAD: u64 = 4096;
+const ECHO_AUDIO_TRANSCRIPTION_STORAGE_READ_TIMEOUT_SECS: u64 = 120;
+
+pub(crate) async fn read_transcription_source(
+    env: &Env,
+    key: &str,
+) -> anyhow::Result<Vec<u8>> {
+    use anyhow::Context;
+    use echo_gpu_client::WorkError;
+    use futures::AsyncReadExt;
+    let operator = env
+        .s3
+        .as_ref()
+        .ok_or_else(|| WorkError::terminal("S3 is not configured"))
+        .context(h!())?;
+    let config = env
+        .config
+        .s3_config
+        .as_ref()
+        .ok_or_else(|| WorkError::terminal("S3 is not configured"))
+        .context(h!())?;
+    let limit = crate::config::ECHO_AUDIO_TRANSCRIPTION_MAX_BYTES as u64;
+    let maximum = limit + ECHO_AUDIO_TRANSCRIPTION_ENVELOPE_OVERHEAD;
+    let data = tokio::time::timeout(
+        Duration::from_secs(ECHO_AUDIO_TRANSCRIPTION_STORAGE_READ_TIMEOUT_SECS),
+        async {
+            let reader = operator
+                .reader(key)
+                .await
+                .map_err(|error| transcription_storage_error(&error))
+                .context(h!())?;
+            let reader = reader
+                .into_futures_async_read(..)
+                .await
+                .map_err(|error| transcription_storage_error(&error))
+                .context(h!())?;
+            let mut data = Vec::new();
+            reader
+                .take(maximum + 1)
+                .read_to_end(&mut data)
+                .await
+                .map_err(|error| {
+                    if let Some(storage) = error.get_ref().and_then(|error| {
+                        error.downcast_ref::<opendal::Error>()
+                    }) {
+                        transcription_storage_error(storage)
+                    } else {
+                        WorkError::retryable(format!(
+                            "transcription object read failed: {error}"
+                        ))
+                    }
+                })
+                .context(h!())?;
+            anyhow::Ok(data)
+        },
+    )
+    .await
+    .map_err(|_| WorkError::retryable("transcription object read timed out"))
+    .context(h!())?
+    .context(h!())?;
+    if data.len() as u64 > maximum {
+        return Err(WorkError::terminal(
+            "transcription source exceeds 100 MiB",
+        )
+        .into());
+    }
+    let data = if data.starts_with(&[0xb1, 0xb8, 0xf5]) {
+        let key_material = key_from_b64(&config.strongbox_key).c(h!())?;
+        let object_aad = aad(&config.s3_bucket, key);
+        tokio::task::spawn_blocking(move || {
+            StaticStrongBox::new(key_material.clone(), vec![key_material])
+                .decrypt(&data, object_aad.as_bytes())
+                .map_err(|_| {
+                    WorkError::terminal(
+                        "transcription envelope authentication failed",
+                    )
+                })
+        })
+        .await
+        .map_err(|error| {
+            WorkError::retryable(format!(
+                "transcription decryption task failed: {error}"
+            ))
+        })
+        .context(h!())?
+        .context(h!())?
+    } else {
+        data
+    };
+    if data.is_empty() || data.len() as u64 > limit {
+        return Err(WorkError::terminal(
+            "transcription source is empty or oversized",
+        )
+        .into());
+    }
+    Ok(data)
+}
+
+fn transcription_storage_error(
+    error: &opendal::Error,
+) -> echo_gpu_client::WorkError {
+    use echo_gpu_client::WorkError;
+    use opendal::ErrorKind;
+    match error.kind() {
+        ErrorKind::NotFound => {
+            WorkError::terminal("transcription object is missing")
+        }
+        ErrorKind::PermissionDenied
+        | ErrorKind::ConfigInvalid
+        | ErrorKind::Unsupported
+        | ErrorKind::IsADirectory
+        | ErrorKind::NotADirectory => WorkError::terminal(format!(
+            "transcription storage configuration/input failed: {error}"
+        )),
+        _ => WorkError::retryable(format!(
+            "transcription object read failed: {error}"
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -1337,6 +1511,28 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(error, AppError::ServiceUnavailable { .. }));
+
+        let permit = Arc::new(tokio::sync::Semaphore::new(1))
+            .acquire_owned()
+            .await
+            .unwrap();
+        let size = op
+            .stat(&config.prefixed_key("object"))
+            .await
+            .unwrap()
+            .content_length();
+        let admitted = download_and_decrypt_with_admission(
+            &op,
+            &config,
+            &strongbox_key,
+            "object",
+            Duration::from_secs(1),
+            size,
+            Arc::new(permit),
+        )
+        .await
+        .unwrap();
+        assert_eq!(admitted, plaintext);
 
         let downloaded = download_and_decrypt_from_s3_with_operator(
             &Some(op),

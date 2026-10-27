@@ -1,3 +1,4 @@
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::users::{
     ensure_base_role, has_any_role, has_role, login_id_from_identity,
 };
@@ -52,7 +53,7 @@ pub async fn list_callsigns(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -1405,7 +1406,7 @@ pub async fn callsign_name_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED],
     )
     .await
     .c(h!())?;

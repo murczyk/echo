@@ -1,4 +1,8 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  IMPORTANT_MESSAGE_UPDATED_EVENT,
+  requestImportantMessage,
+} from '../../components/app-navbar/ImportantMessageDialog';
 import { isNullOrUndefined } from '../../utils/misc';
 
 import type { InboxMessage, SummaryTableFreqRow } from '../../../../Bindings';
@@ -7,7 +11,6 @@ import {
   bookmarkRemove,
   deleteMessage,
   editAnalysisFreqUnitName,
-  importantAdd,
   importantRemove,
   inboxMessageTagsAdd,
   inboxMessageTagsModelError,
@@ -45,6 +48,7 @@ type Params = {
   reconcileTagMutation: (messageId: number) => Promise<void>;
   registerLocalInboxChangeOrigin: () => string;
   refreshTagFacet: () => Promise<void>;
+  refreshMessageCounts: () => void;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   setMapOpenMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
   setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>>;
@@ -121,6 +125,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? { ...message, bookmarked: !currentlyBookmarked } : message,
         );
+        if (params.queryState.orBookmarked) params.refreshMessageCounts();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -134,15 +139,21 @@ export function useAnalysisDataMessageActions(params: Params) {
 
   const onToggleMessageImportant = useCallback(
     async (messageId: number, currentlyImportant: boolean) => {
+      if (!currentlyImportant) {
+        const message =
+          params.messages.find(([id]) => id === messageId)?.[1] ??
+          params.mapOpenMessages.find(([id]) => id === messageId)?.[1];
+        requestImportantMessage({ messageId, groupMasterKey: message?.groupMasterKey });
+        return;
+      }
       setMessageActionCount((current) => current + 1);
       try {
-        const important = currentlyImportant
-          ? await importantRemove({ messageId })
-          : await importantAdd({ messageId });
+        const important = await importantRemove({ messageId });
 
         params.patchMessages((id, message) =>
-          id === messageId ? { ...message, important } : message,
+          id === messageId ? { ...message, important, aiImportant: false } : message,
         );
+        if (params.queryState.orImportant) params.refreshMessageCounts();
       } catch (loadError) {
         if (!params.onUnauthorized(loadError)) {
           params.onError(params.toErrorMessage(loadError));
@@ -153,6 +164,18 @@ export function useAnalysisDataMessageActions(params: Params) {
     },
     [params],
   );
+
+  useEffect(() => {
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<{ messageId: number; important: boolean }>).detail;
+      params.patchMessages((id, message) =>
+        id === detail.messageId ? { ...message, important: detail.important } : message,
+      );
+      if (params.queryState.orImportant) params.refreshMessageCounts();
+    };
+    window.addEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
+    return () => window.removeEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
+  }, [params]);
 
   const onToggleMessageTag = useCallback(
     async (messageId: number, tagId: number) => {
@@ -193,6 +216,9 @@ export function useAnalysisDataMessageActions(params: Params) {
           if (id !== messageId) return message;
           return toggleHumanTag(message, tagId, currentUserName, currentUserOrganismId);
         });
+        if (params.queryState.tags.includes(tagId) || params.queryState.reportTagsOnlyThisUnit) {
+          params.refreshMessageCounts();
+        }
 
         // Do not reload the inbox after a tag mutation. The Tags facet refreshes immediately when it
         // is already open; the paginated message list reconciles on the next explicit pagination,
@@ -227,6 +253,9 @@ export function useAnalysisDataMessageActions(params: Params) {
         params.patchMessages((id, message) =>
           id === messageId ? removeBotTags(message, tagId) : message,
         );
+        if (params.queryState.tags.includes(tagId) || params.queryState.reportTagsOnlyThisUnit) {
+          params.refreshMessageCounts();
+        }
       } finally {
         setMessageActionCount((current) => Math.max(0, current - 1));
       }

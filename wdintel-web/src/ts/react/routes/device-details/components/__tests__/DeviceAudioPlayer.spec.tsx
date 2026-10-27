@@ -3,12 +3,15 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Storage } from 'happy-dom';
-import { headDeviceAudioContent } from '../../../../services/api/device-audio';
+import { headDeviceAudioContent, prepareDeviceAudio } from '../../../../services/api/device-audio';
 import { HttpRequestError } from '../../../../services/api/client';
 import { DeviceAudioPlayer } from '../DeviceAudioPlayer';
 
 const notify = vi.hoisted(() => vi.fn());
-vi.mock('../../../../services/api/device-audio', () => ({ headDeviceAudioContent: vi.fn() }));
+vi.mock('../../../../services/api/device-audio', () => ({
+  headDeviceAudioContent: vi.fn(),
+  prepareDeviceAudio: vi.fn(),
+}));
 vi.mock('../../../../components/PowerSnackbar', () => ({
   useOptionalPowerSnackbar: () => ({ notify }),
 }));
@@ -51,6 +54,13 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(prepareDeviceAudio).mockResolvedValue({
+    content: 'ready',
+    wave: 'ready',
+    spectrogram: 'ready',
+    retryAfterMs: 1000,
+    transcriptionAdmissionError: null,
+  });
   vi.stubGlobal('localStorage', new Storage());
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -58,8 +68,68 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  vi.useRealTimers();
   container.remove();
   vi.unstubAllGlobals();
+});
+
+it('waits for prepared content and adds delayed graphics without restarting playback', async () => {
+  vi.useFakeTimers();
+  vi.mocked(prepareDeviceAudio)
+    .mockResolvedValueOnce({
+      content: 'queued',
+      wave: 'queued',
+      spectrogram: 'queued',
+      retryAfterMs: 1000,
+      transcriptionAdmissionError: null,
+    })
+    .mockResolvedValueOnce({
+      content: 'ready',
+      wave: 'preparing',
+      spectrogram: 'queued',
+      retryAfterMs: 1000,
+      transcriptionAdmissionError: null,
+    });
+  await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="one" />));
+  expect(container.querySelector('custom-audio-player')).toBeNull();
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  const instance = player();
+  const native = instance.audio;
+  native.currentTime = 12;
+  expect(instance.hasAttribute('wave-src')).toBe(false);
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(player()).toBe(instance);
+  expect(player().audio).toBe(native);
+  expect(native.currentTime).toBe(12);
+  expect(instance.getAttribute('wave-src')).toBe('/api/device/audio/device/one/wave');
+  expect(instance.getAttribute('spectrum-src')).toBe('/api/device/audio/device/one/spectrogram');
+});
+
+it('discards a late preparation response after changing the selected recording', async () => {
+  let resolve!: (value: Awaited<ReturnType<typeof prepareDeviceAudio>>) => void;
+  vi.mocked(prepareDeviceAudio).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="one" />));
+  const signal = vi.mocked(prepareDeviceAudio).mock.calls[0][1]!.signal;
+  await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="two" />));
+  const current = player();
+  await act(async () =>
+    resolve({
+      content: 'failed',
+      wave: 'failed',
+      spectrogram: 'failed',
+      retryAfterMs: 1000,
+      transcriptionAdmissionError: null,
+    }),
+  );
+  expect(signal!.aborted).toBe(true);
+  expect(player()).toBe(current);
+  expect(current.getAttribute('src')).toBe('/api/device/audio/device/two/content');
+  expect(notify).not.toHaveBeenCalled();
 });
 function player() {
   const value = container.querySelector<TestPlayer>('custom-audio-player');
@@ -156,4 +226,33 @@ it('retry discards the previous native events and pending access probe', async (
   await act(async () => root.render(<DeviceAudioPlayer deviceId="device" audioId="one" />));
   expect(player()).toBe(instance);
   expect(player().audio).toBe(native);
+});
+
+it('reports cached preparation and admission failure without replacing the native player', async () => {
+  const onPrepared = vi.fn();
+  vi.mocked(prepareDeviceAudio).mockResolvedValue({
+    content: 'ready',
+    wave: 'ready',
+    spectrogram: 'ready',
+    retryAfterMs: 1000,
+    transcriptionAdmissionError: {
+      code: 'transcription_unavailable',
+      message: 'Транскрибація тимчасово недоступна',
+    },
+  });
+  await act(async () =>
+    root.render(<DeviceAudioPlayer deviceId="device" audioId="one" onPrepared={onPrepared} />),
+  );
+  expect(onPrepared).toHaveBeenCalledTimes(1);
+  expect(notify).toHaveBeenCalledWith(
+    expect.objectContaining({ message: 'Транскрибація тимчасово недоступна' }),
+  );
+  const instance = player();
+  instance.audio.currentTime = 12;
+  await act(async () =>
+    root.render(<DeviceAudioPlayer deviceId="device" audioId="one" onPrepared={() => {}} />),
+  );
+  expect(player()).toBe(instance);
+  expect(player().audio.currentTime).toBe(12);
+  expect(prepareDeviceAudio).toHaveBeenCalledTimes(1);
 });

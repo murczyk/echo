@@ -14,8 +14,8 @@ import { isAbortError } from '../../services/api/client';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
 import {
   ANALYSIS_MESSAGES_PAGE_SIZE,
+  ANALYSIS_MESSAGE_WINDOW_LIMIT,
   buildInboxReq,
-  getFirstLoadedMessagesPageIndex,
 } from './helpers';
 import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comments';
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
@@ -24,9 +24,12 @@ import { useAnalysisMessageCounts } from './use-analysis-message-counts';
 import { mergeSignalProfiles } from './use-analysis-data.reload';
 import type { AnalysisAorEntry, AnalysisMessagePageCursor, AnalysisQueryState } from './types';
 import { isNullOrUndefined } from '../../utils/misc';
+import { mergeMessageWindow } from '../shared/message-feed/windowing';
 
 type Params = {
   deferInitialLoad: boolean;
+  messageWindowLimit?: number;
+  focusedTargetMessageIndex?: number | null;
   focusedHasMoreEarlier?: boolean;
   focusedHasMoreLater?: boolean;
   focusedMessageId?: number | null;
@@ -79,10 +82,12 @@ function transformPageMessages(
 
 export function useAnalysisMessageList({
   deferInitialLoad,
+  messageWindowLimit = ANALYSIS_MESSAGE_WINDOW_LIMIT,
   focusedHasMoreEarlier: initialFocusedHasMoreEarlier = false,
   focusedHasMoreLater: initialFocusedHasMoreLater = false,
   focusedMessageId = null,
   focusedMessageActive = false,
+  focusedTargetMessageIndex = null,
   loadMissingNetworksForMessages,
   newestFirst,
   onError,
@@ -93,23 +98,33 @@ export function useAnalysisMessageList({
   setProfiles,
   setSummaryCallsignsInfo,
 }: Params) {
-  const [counts, setCounts] = useState<CountStatsRsp | null>(null);
+  const [counts, setCounts] = useState<Partial<CountStatsRsp> | null>(null);
   const [aorEntries, setAorEntries] = useState<AnalysisAorEntry[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [hasLoadedInitialMessages, setHasLoadedInitialMessages] = useState(false);
   const [messagesPaging, setMessagesPaging] = useState(false);
-  const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
-  const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
+  const [messages, setMessageState] = useState<Array<[number, InboxMessage]>>([]);
+  const [messageComments, setMessageCommentsState] = useState<Record<number, MessageComment[]>>({});
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
   const [focusedHasMoreEarlier, setFocusedHasMoreEarlier] = useState(initialFocusedHasMoreEarlier);
   const [focusedHasMoreLater, setFocusedHasMoreLater] = useState(initialFocusedHasMoreLater);
   const [focusedLoadingEarlier, setFocusedLoadingEarlier] = useState(false);
   const [focusedLoadingLater, setFocusedLoadingLater] = useState(false);
-  const [nolimitShown, setNolimitShown] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
+  const [firstLoadedMessageIndex, setFirstLoadedMessageIndex] = useState(0);
+  const [loadingBeforeWindow, setLoadingBeforeWindow] = useState(false);
+  const [loadingAfterWindow, setLoadingAfterWindow] = useState(false);
+  const [exhaustedBeforeWindowMessageId, setExhaustedBeforeWindowMessageId] = useState<
+    number | null
+  >(null);
+  const highestVisitedPageRef = useRef(0);
   const messageCommentsRef = useRef(messageComments);
+  const recentCommentMessageIdsRef = useRef<number[]>([]);
+  const messagesRef = useRef(messages);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const pageRequestInFlightRef = useRef<number | null>(null);
+  const exhaustedBeforeWindowMessageIdRef = useRef<number | null>(null);
   const focusedLoadGenerationRef = useRef(0);
   const focusedMessageIdRef = useRef(focusedMessageId);
   const focusedMessageActiveRef = useRef(focusedMessageActive);
@@ -125,6 +140,7 @@ export function useAnalysisMessageList({
   focusedMessageIdRef.current = focusedMessageId;
   focusedMessageActiveRef.current = focusedMessageActive;
   focusedQueryStateRef.current = queryState;
+  messagesRef.current = messages;
   const {
     messagesOverallCount,
     messagesTotalCount,
@@ -151,12 +167,84 @@ export function useAnalysisMessageList({
     [setGroupInfos, setProfiles],
   );
 
+  const retainCommentMessageIds = useCallback(
+    (ids: number[]) => {
+      const incoming = new Set(ids);
+      recentCommentMessageIdsRef.current = [
+        ...recentCommentMessageIdsRef.current.filter((id) => !incoming.has(id)),
+        ...incoming,
+      ].slice(-messageWindowLimit * 3);
+    },
+    [messageWindowLimit],
+  );
+
+  const setMessageComments: React.Dispatch<React.SetStateAction<Record<number, MessageComment[]>>> =
+    useCallback(
+      (action) => {
+        if (typeof action !== 'function' && Object.keys(action).length === 0) {
+          recentCommentMessageIdsRef.current = [];
+        } else {
+          retainCommentMessageIds(messagesRef.current.map(([id]) => id));
+        }
+        setMessageCommentsState((current) => {
+          const next = typeof action === 'function' ? action(current) : action;
+          const retained = new Set(recentCommentMessageIdsRef.current);
+          const entries = Object.entries(next).filter(([id]) => retained.has(Number(id)));
+          return entries.length === Object.keys(next).length ? next : Object.fromEntries(entries);
+        });
+      },
+      [retainCommentMessageIds],
+    );
+
   useEffect(() => {
     messageCommentsRef.current = messageComments;
   }, [messageComments]);
 
   useEffect(() => {
+    retainCommentMessageIds(messages.map(([id]) => id));
+    setMessageComments((current) => current);
+  }, [messages, retainCommentMessageIds, setMessageComments]);
+
+  const setMessages: React.Dispatch<React.SetStateAction<Array<[number, InboxMessage]>>> =
+    useCallback(
+      (action) => {
+        const current = messagesRef.current;
+        const next = typeof action === 'function' ? action(current) : action;
+        const addedAtStart = current.length > 0 && next[0]?.[0] !== current[0]?.[0];
+        const edge = addedAtStart ? 'above' : 'below';
+        const result = mergeMessageWindow([], next, edge, {
+          limit: messageWindowLimit,
+          getId: ([id]) => id,
+        });
+        const displayedResult =
+          focusedMessageActive && newestFirst ? [...result.items].reverse() : result.items;
+        const targetLocalIndex = displayedResult.findIndex(([id]) => id === focusedMessageId);
+        messagesRef.current = result.items;
+        setMessageState(result.items);
+        if (focusedMessageActive && result.removedItems.length > 0) {
+          if (edge === 'below') setFocusedHasMoreEarlier(true);
+          else setFocusedHasMoreLater(true);
+        }
+        if (focusedMessageActive && focusedTargetMessageIndex != null && targetLocalIndex >= 0) {
+          setFirstLoadedMessageIndex(Math.max(0, focusedTargetMessageIndex - targetLocalIndex));
+        } else if (edge === 'below' && result.removedItems.length > 0) {
+          setFirstLoadedMessageIndex((index) => index + result.removedItems.length);
+        }
+      },
+      [
+        focusedMessageActive,
+        focusedMessageId,
+        focusedTargetMessageIndex,
+        messageWindowLimit,
+        newestFirst,
+      ],
+    );
+
+  useEffect(() => {
     loadMoreMessagesRequestRef.current += 1;
+    pageRequestInFlightRef.current = null;
+    exhaustedBeforeWindowMessageIdRef.current = null;
+    setExhaustedBeforeWindowMessageId(null);
     const earlierLoading = isCurrentFocusedLoadScope(
       focusedLoadingDirectionsRef.current.earlier,
       focusedMessageActive,
@@ -187,15 +275,8 @@ export function useAnalysisMessageList({
   ]);
 
   const displayedMessages = useMemo(() => {
-    if (!focusedMessageActive || isNullOrUndefined(focusedMessageId)) return messages;
-    const targetIndex = messages.findIndex(([id]) => id === focusedMessageId);
-    if (targetIndex < 0 || !newestFirst) return messages;
-
-    const earlierMessages = messages.slice(0, targetIndex);
-    const targetMessage = messages[targetIndex];
-    const laterMessages = messages.slice(targetIndex + 1);
-    return [...laterMessages].reverse().concat([targetMessage], [...earlierMessages].reverse());
-  }, [focusedMessageActive, focusedMessageId, messages, newestFirst]);
+    return focusedMessageActive && newestFirst ? [...messages].reverse() : messages;
+  }, [focusedMessageActive, messages, newestFirst]);
 
   const invalidateCallsignEnrichment = useCallback(() => {
     callsignEnrichmentGenerationRef.current += 1;
@@ -206,16 +287,23 @@ export function useAnalysisMessageList({
   const invalidateMessagePageRequests = useCallback(() => {
     invalidateCallsignEnrichment();
     loadMoreMessagesRequestRef.current += 1;
+    pageRequestInFlightRef.current = null;
+    exhaustedBeforeWindowMessageIdRef.current = null;
+    setExhaustedBeforeWindowMessageId(null);
     focusedLoadGenerationRef.current += 1;
     focusedLoadingDirectionsRef.current = { earlier: null, later: null };
     setFocusedLoadingEarlier(false);
     setFocusedLoadingLater(false);
     setMessagesPaging(false);
+    setLoadingBeforeWindow(false);
+    setLoadingAfterWindow(false);
   }, [invalidateCallsignEnrichment]);
 
   const invalidateMessagePaging = useCallback(() => {
     invalidateMessagePageRequests();
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+    highestVisitedPageRef.current = 0;
+    setFirstLoadedMessageIndex(0);
     setPageIndex(0);
   }, [invalidateMessagePageRequests]);
 
@@ -270,17 +358,16 @@ export function useAnalysisMessageList({
   }, [enrichCallsignsForMessages, messages]);
 
   const getCurrentMessagePageCursor = useCallback(
-    () => pageCursorsRef.current[pageIndex] ?? FIRST_PAGE_CURSOR,
+    (targetPageIndex = pageIndex) => pageCursorsRef.current[targetPageIndex] ?? FIRST_PAGE_CURSOR,
     [pageIndex],
   );
 
   const replaceCurrentMessagePage = useCallback(
-    (pageMessages: Array<[number, InboxMessage]>) => {
-      setMessages((current) => {
-        const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, current.length);
+    (pageMessages: Array<[number, InboxMessage]>, targetPageIndex = pageIndex) => {
+      setMessageState((current) => {
         const pageStart = Math.max(
           0,
-          (pageIndex - firstLoadedPageIndex) * ANALYSIS_MESSAGES_PAGE_SIZE,
+          targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE - firstLoadedMessageIndex,
         );
         const refreshedIds = new Set(pageMessages.map(([messageId]) => messageId));
         const retainedBefore = current
@@ -289,14 +376,23 @@ export function useAnalysisMessageList({
         const retainedAfter = current
           .slice(pageStart + ANALYSIS_MESSAGES_PAGE_SIZE)
           .filter(([messageId]) => !refreshedIds.has(messageId));
-        return [...retainedBefore, ...pageMessages, ...retainedAfter];
+        return mergeMessageWindow(
+          [],
+          [...retainedBefore, ...pageMessages, ...retainedAfter],
+          'below',
+          {
+            limit: messageWindowLimit,
+            getId: ([id]) => id,
+          },
+        ).items;
       });
     },
-    [pageIndex],
+    [firstLoadedMessageIndex, messageWindowLimit, pageIndex],
   );
 
   const loadMessageComments = useCallback(
     async (loadedMessages: Array<[number, InboxMessage]>, forceReload = false) => {
+      retainCommentMessageIds(loadedMessages.map(([id]) => id));
       await loadMissingMessageCommentsForMessages(
         loadedMessages,
         {
@@ -309,59 +405,31 @@ export function useAnalysisMessageList({
         forceReload,
       );
     },
-    [onError, onUnauthorized],
+    [onError, onUnauthorized, retainCommentMessageIds, setMessageComments],
   );
-
-  const loadAllMessages = useCallback(async () => {
-    const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
-    if (isNullOrUndefined(inboxReq)) return;
-
-    setMessagesPaging(true);
-    try {
-      const rsp = await fetchInboxMessages({ ...inboxReq, nolimit: true, newestFirst });
-      mergeMessageReferences(rsp);
-      setMessages(rsp.inboxItems ?? []);
-      setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
-      await loadMissingNetworksForMessages(rsp.inboxItems ?? []);
-      await loadMessageComments(rsp.inboxItems ?? [], false);
-      setNolimitShown(true);
-      setNoMoreToLoad(isAnalysisInboxPageExhausted(rsp.inboxItems, rsp.pageLimit));
-    } catch (loadError) {
-      if (!onUnauthorized(loadError)) {
-        onError(toErrorMessage(loadError));
-      }
-    } finally {
-      setMessagesPaging(false);
-    }
-  }, [
-    loadMessageComments,
-    loadMissingNetworksForMessages,
-    mergeMessageReferences,
-    newestFirst,
-    onError,
-    onUnauthorized,
-    optionsFreqValues,
-    queryState,
-    setSummaryCallsignsInfo,
-  ]);
 
   const fetchPage = useCallback(
     async (
       cursor: AnalysisMessagePageCursor,
       options: {
-        append?: boolean;
+        mode?: 'above' | 'below';
         keepCurrentOnEmpty?: boolean;
+        markNoMoreOnEmpty?: boolean;
         targetPageIndex: number;
       },
     ) => {
       const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
       if (isNullOrUndefined(inboxReq)) return null;
+      if (options.mode && pageRequestInFlightRef.current !== null) return null;
 
       const requestId = loadMoreMessagesRequestRef.current + 1;
       loadMoreMessagesRequestRef.current = requestId;
+      pageRequestInFlightRef.current = requestId;
       const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
 
       setMessagesPaging(true);
+      if (options.mode === 'above') setLoadingBeforeWindow(true);
+      if (options.mode === 'below') setLoadingAfterWindow(true);
       try {
         const paginatedReq = {
           ...inboxReq,
@@ -374,17 +442,60 @@ export function useAnalysisMessageList({
         mergeMessageReferences(rsp);
         const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
         if (options.keepCurrentOnEmpty && pageMessages.length === 0) {
-          setNoMoreToLoad(true);
+          if (options.mode === 'above') {
+            exhaustedBeforeWindowMessageIdRef.current = messages[0]?.[0] ?? null;
+            setExhaustedBeforeWindowMessageId(exhaustedBeforeWindowMessageIdRef.current);
+          }
+          if (options.markNoMoreOnEmpty) setNoMoreToLoad(true);
           return pageMessages;
         }
         setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
-        setMessages((current) => (options.append ? [...current, ...pageMessages] : pageMessages));
-        setPageIndex(options.targetPageIndex);
+        if (options.mode) {
+          const merged = mergeMessageWindow(messages, pageMessages, options.mode, {
+            limit: messageWindowLimit,
+            getId: ([id]) => id,
+          });
+          setMessageState(merged.items);
+          if (options.mode === 'below') {
+            setFirstLoadedMessageIndex(firstLoadedMessageIndex + merged.removedItems.length);
+            setPageIndex(options.targetPageIndex);
+            highestVisitedPageRef.current = Math.max(
+              highestVisitedPageRef.current,
+              options.targetPageIndex,
+            );
+          } else {
+            setFirstLoadedMessageIndex(
+              Math.max(0, firstLoadedMessageIndex - merged.addedItems.length),
+            );
+            if (merged.removedItems.length > 0) {
+              setPageIndex(
+                Math.max(
+                  options.targetPageIndex,
+                  pageIndex - Math.ceil(merged.removedItems.length / ANALYSIS_MESSAGES_PAGE_SIZE),
+                ),
+              );
+            }
+          }
+        } else {
+          setMessageState(
+            mergeMessageWindow([], pageMessages, 'below', {
+              limit: messageWindowLimit,
+              getId: ([id]) => id,
+            }).items,
+          );
+          setFirstLoadedMessageIndex(options.targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE);
+          setPageIndex(options.targetPageIndex);
+          highestVisitedPageRef.current = Math.max(
+            highestVisitedPageRef.current,
+            options.targetPageIndex,
+          );
+        }
         await loadMissingNetworksForMessages(pageMessages);
         if (isStale()) return null;
         await loadMessageComments(pageMessages, false);
         if (isStale()) return null;
-        setNoMoreToLoad(isAnalysisInboxPageExhausted(pageMessages, rsp.pageLimit));
+        if (options.mode !== 'above')
+          setNoMoreToLoad(isAnalysisInboxPageExhausted(pageMessages, rsp.pageLimit));
         return pageMessages;
       } catch (loadError) {
         if (isStale()) return null;
@@ -393,19 +504,28 @@ export function useAnalysisMessageList({
         }
         return null;
       } finally {
+        if (pageRequestInFlightRef.current === requestId) {
+          pageRequestInFlightRef.current = null;
+        }
         if (!isStale()) {
           setMessagesPaging(false);
+          setLoadingBeforeWindow(false);
+          setLoadingAfterWindow(false);
         }
       }
     },
     [
       loadMessageComments,
       loadMissingNetworksForMessages,
+      firstLoadedMessageIndex,
+      messageWindowLimit,
       mergeMessageReferences,
+      messages,
       newestFirst,
       onError,
       onUnauthorized,
       optionsFreqValues,
+      pageIndex,
       queryState,
       setSummaryCallsignsInfo,
     ],
@@ -421,24 +541,46 @@ export function useAnalysisMessageList({
         : { beforeIdNoninclusive: null, sinceIdNoninclusive: lastMessage[0] };
 
       const fetched = await fetchPage(nextCursor, {
-        append,
+        mode: append ? 'below' : undefined,
         keepCurrentOnEmpty: true,
+        markNoMoreOnEmpty: true,
         targetPageIndex: pageIndex + 1,
       });
       if (fetched === null || fetched.length === 0) return false;
 
-      pageCursorsRef.current = pageCursorsRef.current.slice(0, pageIndex + 1);
       pageCursorsRef.current[pageIndex + 1] = nextCursor;
       return true;
     },
     [fetchPage, messages, newestFirst, pageIndex],
   );
 
-  const loadNextPage = useCallback(async () => {
-    await loadNextMessages(false);
-  }, [loadNextMessages]);
+  const loadNextPage = useCallback(() => loadNextMessages(false), [loadNextMessages]);
 
   const loadMoreMessages = useCallback(() => loadNextMessages(true), [loadNextMessages]);
+
+  const loadPreviousMessages = useCallback(async () => {
+    if (firstLoadedMessageIndex === 0 || messages.length === 0) return false;
+    const firstMessageId = messages[0][0];
+    if (exhaustedBeforeWindowMessageIdRef.current === firstMessageId) return false;
+    const previousPageIndex = Math.max(
+      0,
+      Math.floor((firstLoadedMessageIndex - 1) / ANALYSIS_MESSAGES_PAGE_SIZE),
+    );
+    const previousCursor: AnalysisMessagePageCursor = {
+      beforeIdNoninclusive: newestFirst ? null : firstMessageId,
+      sinceIdNoninclusive: newestFirst ? firstMessageId : null,
+      requestNewestFirst: !newestFirst,
+      reverseResults: true,
+    };
+    const fetched = await fetchPage(previousCursor, {
+      mode: 'above',
+      keepCurrentOnEmpty: true,
+      targetPageIndex: previousPageIndex,
+    });
+    if (fetched === null || fetched.length === 0) return false;
+    pageCursorsRef.current[previousPageIndex] = previousCursor;
+    return true;
+  }, [fetchPage, firstLoadedMessageIndex, messages, newestFirst]);
 
   const loadFocusedMessages = useCallback(
     async (direction: 'earlier' | 'later') => {
@@ -477,8 +619,6 @@ export function useAnalysisMessageList({
           ...inboxReq,
           beforeIdNoninclusive: direction === 'earlier' ? boundaryMessage[0] : null,
           sinceIdNoninclusive: direction === 'later' ? boundaryMessage[0] : null,
-          sinceDateInclusiveMs: null,
-          tillDateInclusiveMs: null,
           newestFirst: direction === 'earlier',
         });
         if (isStale()) return false;
@@ -492,13 +632,28 @@ export function useAnalysisMessageList({
         await loadMessageComments(pageMessages, false);
         if (isStale()) return false;
         const hasMore = !isAnalysisInboxPageExhausted(responseMessages, rsp.pageLimit);
-        setMessages((current) => {
-          const currentIds = new Set(current.map(([id]) => id));
-          const uniqueMessages = pageMessages.filter(([id]) => !currentIds.has(id));
-          return direction === 'earlier'
-            ? [...uniqueMessages, ...current]
-            : [...current, ...uniqueMessages];
+        const currentMessages = messagesRef.current;
+        const displayedCurrent = newestFirst ? [...currentMessages].reverse() : currentMessages;
+        const displayedIncoming = newestFirst ? [...pageMessages].reverse() : pageMessages;
+        const edge = (direction === 'earlier') === newestFirst ? 'below' : 'above';
+        const merged = mergeMessageWindow(displayedCurrent, displayedIncoming, edge, {
+          limit: messageWindowLimit,
+          getId: ([id]) => id,
         });
+        if (merged.items !== displayedCurrent) {
+          const nextMessages = newestFirst ? [...merged.items].reverse() : merged.items;
+          messagesRef.current = nextMessages;
+          setMessageState(nextMessages);
+        }
+        if (edge === 'above') {
+          setFirstLoadedMessageIndex((index) => Math.max(0, index - merged.addedItems.length));
+        } else {
+          setFirstLoadedMessageIndex((index) => index + merged.removedItems.length);
+        }
+        if (merged.removedItems.length > 0) {
+          if (direction === 'earlier') setFocusedHasMoreLater(true);
+          else setFocusedHasMoreEarlier(true);
+        }
         if (direction === 'earlier') setFocusedHasMoreEarlier(hasMore);
         else setFocusedHasMoreLater(hasMore);
         return pageMessages.length > 0;
@@ -528,7 +683,9 @@ export function useAnalysisMessageList({
       loadMessageComments,
       loadMissingNetworksForMessages,
       mergeMessageReferences,
+      messageWindowLimit,
       messages,
+      newestFirst,
       onError,
       onUnauthorized,
       optionsFreqValues,
@@ -564,11 +721,11 @@ export function useAnalysisMessageList({
 
   const loadPrevPage = useCallback(
     async (targetPageIndex = pageIndex - 1) => {
-      if (targetPageIndex < 0 || targetPageIndex >= pageIndex) return;
+      if (targetPageIndex < 0 || targetPageIndex >= pageIndex) return false;
       let prevCursor = pageCursorsRef.current[targetPageIndex];
       if (isNullOrUndefined(prevCursor)) {
         const firstMessage = messages.at(0);
-        if (isNullOrUndefined(firstMessage)) return;
+        if (isNullOrUndefined(firstMessage)) return false;
 
         prevCursor = newestFirst
           ? {
@@ -585,29 +742,34 @@ export function useAnalysisMessageList({
             };
       }
 
-      const fetched = await fetchPage(prevCursor, { targetPageIndex });
-      if (fetched === null) return;
+      const fetched = await fetchPage(prevCursor, { targetPageIndex, keepCurrentOnEmpty: true });
+      if (fetched === null || fetched.length === 0) return false;
 
       pageCursorsRef.current[targetPageIndex] = prevCursor;
+      return true;
     },
     [fetchPage, messages, newestFirst, pageIndex],
   );
 
   const loadFirstPage = useCallback(async () => {
-    if (pageIndex === 0) return;
-    const fetched = await fetchPage(FIRST_PAGE_CURSOR, { targetPageIndex: 0 });
-    if (fetched === null) return;
+    if (pageIndex === 0) return false;
+    const fetched = await fetchPage(FIRST_PAGE_CURSOR, {
+      targetPageIndex: 0,
+      keepCurrentOnEmpty: true,
+    });
+    if (fetched === null || fetched.length === 0) return false;
 
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
+    return true;
   }, [fetchPage, pageIndex]);
 
   const loadLastPage = useCallback(async () => {
-    if (isNullOrUndefined(messagesTotalCount) || messagesTotalCount === 0) return;
+    if (isNullOrUndefined(messagesTotalCount) || messagesTotalCount === 0) return false;
     const lastPageIndex = Math.max(
       0,
       Math.ceil(messagesTotalCount / ANALYSIS_MESSAGES_PAGE_SIZE) - 1,
     );
-    if (pageIndex === lastPageIndex) return;
+    if (pageIndex === lastPageIndex) return false;
 
     const lastPageSize = messagesTotalCount % ANALYSIS_MESSAGES_PAGE_SIZE;
     const lastPageCursor: AnalysisMessagePageCursor = {
@@ -616,12 +778,16 @@ export function useAnalysisMessageList({
       reverseResults: true,
       resultLimit: lastPageSize || ANALYSIS_MESSAGES_PAGE_SIZE,
     };
-    const fetched = await fetchPage(lastPageCursor, { targetPageIndex: lastPageIndex });
-    if (fetched === null) return;
+    const fetched = await fetchPage(lastPageCursor, {
+      targetPageIndex: lastPageIndex,
+      keepCurrentOnEmpty: true,
+    });
+    if (fetched === null || fetched.length === 0) return false;
 
     pageCursorsRef.current = [FIRST_PAGE_CURSOR];
     pageCursorsRef.current[lastPageIndex] = lastPageCursor;
     setNoMoreToLoad(true);
+    return true;
   }, [fetchPage, messagesTotalCount, newestFirst, pageIndex]);
 
   return {
@@ -629,15 +795,21 @@ export function useAnalysisMessageList({
     counts,
     getCurrentMessagePageCursor,
     hasLoadedInitialMessages,
+    firstLoadedMessageIndex,
+    hasMoreBeforeWindow:
+      firstLoadedMessageIndex > 0 && messages[0]?.[0] !== exhaustedBeforeWindowMessageId,
+    hasMoreAfterWindow: pageIndex < highestVisitedPageRef.current || !noMoreToLoad,
+    loadingBeforeWindow,
+    loadingAfterWindow,
     invalidateMessagePageRequests,
     invalidateMessagePaging,
-    loadAllMessages,
     loadFirstPage,
     loadFocusedEarlier,
     loadFocusedLater,
     loadLastPage,
     loadMessageComments,
     loadMoreMessages,
+    loadPreviousMessages,
     loadNextPage,
     loadPrevPage,
     messageComments,
@@ -653,7 +825,6 @@ export function useAnalysisMessageList({
     focusedLoadingEarlier: currentFocusedLoadingEarlier,
     focusedLoadingLater: currentFocusedLoadingLater,
     noMoreToLoad,
-    nolimitShown,
     pageIndex,
     refreshMessageCounts,
     replaceCurrentMessagePage,
@@ -666,6 +837,5 @@ export function useAnalysisMessageList({
     setMessagesLoading,
     setMessagesPaging,
     setNoMoreToLoad,
-    setNolimitShown,
   };
 }

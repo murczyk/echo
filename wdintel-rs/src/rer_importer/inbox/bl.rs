@@ -27,7 +27,6 @@ use geoconvert::{LatLon, Mgrs};
 use itertools::Itertools;
 use sea_orm::*;
 use sea_query::Expr;
-use sqlx::Row;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InboxLocationSubmitMode {
@@ -38,6 +37,7 @@ pub enum InboxLocationSubmitMode {
 #[derive(Debug, FromQueryResult)]
 pub struct InboxMessageDesc {
     pub id: i64,
+    pub login_id: Option<uuid::Uuid>,
     pub id_uuid: Option<uuid::Uuid>,
     pub message_uid: Option<String>,
     pub body: Option<String>,
@@ -164,17 +164,17 @@ fn inbox_message_summary(
 }
 
 async fn load_attachment_info(
+    env: &Env,
     message_ids: &HashSet<i64>,
     dbx: &DatabaseConnection,
 ) -> Result<(HashMap<i64, i64>, HashMap<i64, Vec<String>>), AppError> {
-    let rows = signal_message_media::Entity::find()
-        .filter(
-            signal_message_media::Column::SignalMessageId
-                .is_in(message_ids.iter().copied()),
-        )
-        .all(dbx)
-        .await
-        .c(h!())?;
+    let rows = crate::messenger::audio_ref::for_messages(
+        env,
+        dbx,
+        &message_ids.iter().copied().collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
 
     let mut counts = HashMap::new();
     let mut names: HashMap<i64, Vec<String>> = HashMap::new();
@@ -194,6 +194,7 @@ async fn load_attachment_info(
 }
 
 async fn load_intelligence_report_summaries(
+    env: &Env,
     message_ids: &[i64],
     allowed_groups: &[String],
     login: &uuid::Uuid,
@@ -204,9 +205,9 @@ async fn load_intelligence_report_summaries(
         return Ok(IntelligenceReportSummaries::default());
     }
     let links = intel_product::Entity::find()
-        .filter(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_REPORT,
-            intel_product::RELATION_KIND_COMMENT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
         ]))
         .filter(
             Condition::any()
@@ -263,7 +264,7 @@ async fn load_intelligence_report_summaries(
         .map(|item| (item.id, item))
         .collect::<HashMap<_, _>>();
     let (attachment_counts, media_file_names) =
-        load_attachment_info(&related_ids, dbx).await.c(h!())?;
+        load_attachment_info(env, &related_ids, dbx).await.c(h!())?;
     let group_rows = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId
@@ -375,7 +376,9 @@ async fn load_intelligence_report_summaries(
             .get(&link.intel_message_id)
             .is_none_or(|message| message.deleted);
 
-        if link.relation_kind == intel_product::RELATION_KIND_COMMENT {
+        if link.relation_kind
+            == crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT
+        {
             if requested_ids.contains(&link.intel_message_id) {
                 if let Some(parent) = inbox_message_summary(
                     link.source_message_id,
@@ -732,6 +735,32 @@ limit ${limit_parameter}
     )
 }
 
+fn search_headline_query(
+    req: &InboxMessagesReq,
+) -> anyhow::Result<Option<(&'static str, String)>> {
+    if req.highlight_searchres != Some(true) {
+        return Ok(None);
+    }
+    let Some(search) = m_str_trim(&req.search) else {
+        return Ok(None);
+    };
+    Ok(match req.search_mode.unwrap_or_default() {
+        AnalysisSearchMode::Fuzzy => Some((
+            "select ts_headline('russian', $1, websearch_to_tsquery('russian', $2), 'HighlightAll=true')",
+            search,
+        )),
+        search_mode => crate::attachments::search::message_headline_pattern(
+            &search,
+            search_mode,
+        )
+        .c(h!())?
+        .map(|pattern| (
+            r"select regexp_replace($1, $2, '<b>\&</b>', 'gi')",
+            pattern,
+        )),
+    })
+}
+
 pub async fn aggregate_to_inbox_messages(
     login: &uuid::Uuid,
     messages: Vec<InboxMessageDesc>,
@@ -747,6 +776,7 @@ pub async fn aggregate_to_inbox_messages(
         )
         .c(h!())?;
     let dbx_raw = env.dbx.get_postgres_connection_pool();
+    let search_headline_query = search_headline_query(req).c(h!())?;
 
     let message_ids: Vec<i64> = messages.iter().map(|m| m.id).collect();
     let mut coords_with_locality =
@@ -777,6 +807,15 @@ pub async fn aggregate_to_inbox_messages(
         .into_iter()
         .map(|imp| imp.signal_message_id)
         .collect::<HashSet<_>>();
+    #[derive(sea_orm::FromQueryResult)]
+    struct AiImportant {
+        message_id: i64,
+    }
+    let ai_important_ids = AiImportant::find_by_statement(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "select job.message_id from ai_transcript_analysis_job job join sigint_important importance on importance.id=job.important_id where job.message_id=any($1) and not importance.deleted",
+        [message_ids.clone().into()],
+    )).all(&env.dbx).await.c(h!())?.into_iter().map(|row| row.message_id).collect::<HashSet<_>>();
     let bookmarked_ids = sigint_bookmark::Entity::find()
         .filter(
             sigint_bookmark::Column::SignalMessageId
@@ -796,6 +835,7 @@ pub async fn aggregate_to_inbox_messages(
             .await
             .c(h!())?;
     let mut intelligence_report_summaries = load_intelligence_report_summaries(
+        env,
         &message_ids,
         &sigint_groups,
         login,
@@ -813,6 +853,24 @@ pub async fn aggregate_to_inbox_messages(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
+    let membership_rows = group_query
+        .clone()
+        .select_only()
+        .column(signal_message_group::Column::SignalMessageId)
+        .column(signal_message_group::Column::GroupMasterKey)
+        .into_tuple::<(i64, Option<String>)>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let mut group_memberships: HashMap<i64, BTreeSet<String>> = HashMap::new();
+    for (message_id, group_master_key) in membership_rows {
+        if let Some(group_master_key) = group_master_key {
+            group_memberships
+                .entry(message_id)
+                .or_default()
+                .insert(group_master_key);
+        }
+    }
     if let Some(selected_groups) = req.selected_groups.as_ref() {
         if !selected_groups.is_empty() {
             group_query = group_query.filter(
@@ -854,15 +912,10 @@ pub async fn aggregate_to_inbox_messages(
     let mut message_unit_ids = load_message_unit_ids(&message_ids, &env.dbx)
         .await
         .c(h!())?;
-    let media_entries = signal_message_media::Entity::find()
-        .filter(
-            signal_message_media::Column::SignalMessageId
-                .eq_any(message_ids.clone()),
-        )
-        .order_by_asc(signal_message_media::Column::Id)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let media_entries =
+        crate::messenger::audio_ref::for_messages(env, &env.dbx, &message_ids)
+            .await
+            .c(h!())?;
     let transcriptions_by_media =
         load_completed_audio_transcriptions(&env.dbx, &media_entries)
             .await
@@ -875,6 +928,12 @@ pub async fn aggregate_to_inbox_messages(
         crate::media_summary::load_statuses(&env.dbx, &media_entries)
             .await
             .c(h!())?;
+    let coordinates_by_media = crate::attachments::coordinates::load_statuses(
+        &env.dbx,
+        &media_entries,
+    )
+    .await
+    .c(h!())?;
     let kmz_conversion_statuses =
         crate::sigint::media_conversion::load_statuses(
             &env.dbx,
@@ -922,19 +981,27 @@ pub async fn aggregate_to_inbox_messages(
     };
 
     let highlight_points = req.highlight_points.unwrap_or(false);
-    let highlight_positions =
-        highlight_points || req.highlight_callsigns.unwrap_or(false);
-    let mut positions_by_media = crate::ai_position::list::positions_by_media(
-        &env.dbx,
-        media_by_message
-            .values()
-            .flatten()
-            .map(|media| media.id)
-            .collect(),
-        &sigint_groups.iter().cloned().collect(),
-    )
-    .await
-    .c(h!())?;
+    let ai_position_highlights_enabled =
+        crate::user_settings::ai_position_highlights_enabled(&env.dbx, *login)
+            .await
+            .c(h!())?;
+    let highlight_positions = ai_position_highlights_enabled
+        && (highlight_points || req.highlight_callsigns.unwrap_or(false));
+    let mut positions_by_media = if ai_position_highlights_enabled {
+        crate::ai_position::list::positions_by_media(
+            &env.dbx,
+            media_by_message
+                .values()
+                .flatten()
+                .map(|media| media.id)
+                .collect(),
+            &sigint_groups.iter().cloned().collect(),
+        )
+        .await
+        .c(h!())?
+    } else {
+        HashMap::new()
+    };
     let mut positions_by_message = if highlight_positions {
         crate::ai_position::list::positions_by_message(
             &env.dbx,
@@ -985,6 +1052,7 @@ pub async fn aggregate_to_inbox_messages(
                 transcription: transcriptions_by_media.get(&m.id).cloned(),
                 ocr: ocr_by_media.get(&m.id).cloned(),
                 summary: summaries_by_media.get(&m.id).cloned(),
+                coordinate_status: coordinates_by_media.get(&m.id).cloned(),
                 kmz_conversion_status: kmz_conversion_statuses
                     .get(&m.id)
                     .cloned(),
@@ -1062,21 +1130,16 @@ pub async fn aggregate_to_inbox_messages(
             Some(set) => extract_keywords_with_set(&body, set)?,
             None => vec![],
         };
-        let ts_headline = match m_str_trim(&req.search) {
+        let ts_headline = match &search_headline_query {
             None => None,
-            Some(ref search) => {
-                sqlx::query(
-                    "select ts_headline('russian', $1, websearch_to_tsquery('russian', $2), 'HighlightAll=true') as headline from sigint_search where id=$3"
-                )
-                    .bind(body.clone().to_lowercase())
-                    .bind(search.to_lowercase().clone())
-                    .bind(message.id)
+            Some((query, pattern)) => Some(
+                sqlx::query_scalar::<_, String>(*query)
+                    .bind(&body)
+                    .bind(pattern)
                     .fetch_one(dbx_raw)
                     .await
-                    .ok()
-                    .and_then(|row| row.try_get::<Option<String>, _>("headline").ok())
-                    .flatten()
-            }
+                    .c(h!())?,
+            ),
         };
         let m_position_tokens =
             positions_by_message.remove(&message.id).unwrap_or_default();
@@ -1096,6 +1159,7 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_positions: Some(highlight_positions),
                 highlight_signals: req.highlight_signals,
                 highlight_searchres: req.highlight_searchres,
+                search_mode: req.search_mode,
             },
         )?;
         let m_comment = find_editable_linked_message_comment(
@@ -1129,6 +1193,7 @@ pub async fn aggregate_to_inbox_messages(
                 callsigns,
                 checked: message.checked.unwrap_or(false),
                 important: important_ids.contains(&message.id),
+                ai_important: ai_important_ids.contains(&message.id),
                 bookmarked: bookmarked_ids.contains(&message.id),
                 timestamp: message
                     .timestamp
@@ -1139,10 +1204,18 @@ pub async fn aggregate_to_inbox_messages(
                 created_at_order: Some(
                     message.created_at.and_utc().timestamp_micros(),
                 ),
+                is_own: Some(message.login_id == Some(*login)),
                 has_date_in_header: crate::rer_importer::body_noheader::leading_header_has_calendar_date(&body),
                 group_master_key: group_entry
                     .as_ref()
                     .and_then(|(entry, _)| entry.group_master_key.clone()),
+                group_master_keys: Some(
+                    group_memberships
+                        .remove(&message.id)
+                        .into_iter()
+                        .flatten()
+                        .collect(),
+                ),
                 sender,
                 extended_form: m_comment.as_ref().map(|x| x.comment.clone()),
                 message_comments: message_comments_by_id
@@ -2001,6 +2074,9 @@ pub async fn submit_upsert_inbox_item(
     parse_body_coordinates: bool,
     invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
+    crate::ai_settlement::worker::delete_job(txn, id)
+        .await
+        .c(h!())?;
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     let existing_message = m_existing.is_some();
     if let Some(existing) = m_existing {
@@ -2333,6 +2409,9 @@ async fn clear_body_derived_fields(
     inbox_id: i64,
     inbox_item_uuid: Option<uuid::Uuid>,
 ) -> Result<(), AppError> {
+    crate::palitra::worker::enqueue_highlight(txn, inbox_id)
+        .await
+        .c(h!())?;
     sigint_inbox_item::Entity::update_many()
         .col_expr(
             sigint_inbox_item::Column::SignalTokens,
@@ -2365,15 +2444,6 @@ async fn clear_body_derived_fields(
     .exec(txn)
     .await
     .c(h!())?;
-    palitra_highlight_worker_job::Entity::insert(
-        palitra_highlight_worker_job::ActiveModel {
-            sigint_inbox_item_id: Set(inbox_id),
-        },
-    )
-    .on_conflict_do_nothing()
-    .exec(txn)
-    .await
-    .c(h!())?;
     crate::ai_callsign::worker::enqueue_if_enabled(
         txn,
         inbox_id,
@@ -2381,9 +2451,6 @@ async fn clear_body_derived_fields(
     )
     .await
     .c(h!())?;
-    crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
-        .await
-        .c(h!())?;
     crate::ai_position::worker::enqueue_message_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;
@@ -2494,6 +2561,113 @@ fn split_manual_locations(location: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reprocessing_waits_for_highlight_job_before_tokens_3780() {
+        use crate::functest::tests::*;
+
+        let env = cleanup().await.unwrap();
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let item = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let palitra = palitra::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let tokens = sigint_inbox_item_point_token::ActiveModel {
+            sigint_inbox_item_id: Set(item.id),
+            sigint_inbox_item_uuid: Set(item.id_uuid),
+            palitra_id: Set(palitra.id),
+            point_tokens: Set(serde_json::json!([])),
+            ..Default::default()
+        };
+        tokens.clone().insert(&env.dbx).await.unwrap();
+        crate::palitra::worker::enqueue_highlight(&env.dbx, item.id)
+            .await
+            .unwrap();
+        let worker = env.dbx.begin().await.unwrap();
+        palitra_highlight_worker_job::Entity::delete_by_id(item.id)
+            .exec(&worker)
+            .await
+            .unwrap();
+        let worker_pid: i32 = worker
+            .query_one_raw(Statement::from_string(
+                DbBackend::Postgres,
+                "SELECT pg_backend_pid() AS pid",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "pid")
+            .unwrap();
+        let db = env.dbx.clone();
+        let reprocessing = tokio::spawn(async move {
+            let transaction = db.begin().await.unwrap();
+            clear_body_derived_fields(&transaction, item.id, item.id_uuid)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = env.dbx.query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid))) AS waiting",
+                    [worker_pid.into()],
+                )).await.unwrap().unwrap().try_get("", "waiting").unwrap();
+                if waiting {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+        worker
+            .execute_unprepared("SET LOCAL lock_timeout='500ms'")
+            .await
+            .unwrap();
+        sigint_inbox_item_point_token::Entity::insert(tokens)
+            .on_conflict(
+                sea_query::OnConflict::columns([
+                    sigint_inbox_item_point_token::Column::SigintInboxItemId,
+                    sigint_inbox_item_point_token::Column::PalitraId,
+                ])
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(&worker)
+            .await
+            .unwrap();
+        worker.commit().await.unwrap();
+        reprocessing.await.unwrap();
+        assert!(palitra_highlight_worker_job::Entity::find_by_id(item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        assert_eq!(
+            sigint_inbox_item_point_token::Entity::find()
+                .filter(
+                    sigint_inbox_item_point_token::Column::SigintInboxItemId
+                        .eq(item.id)
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
     #[test]
     fn redacted_intelligence_summary_exposes_only_safe_metadata() {
         let summary = reference_inbox_message_summary(

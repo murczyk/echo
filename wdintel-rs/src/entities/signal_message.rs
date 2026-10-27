@@ -10,14 +10,12 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub id_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub body: Option<String>,
     pub created_at: DateTime,
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
-    pub login_id: Option<Uuid>,
     pub format: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
@@ -29,10 +27,14 @@ pub struct Model {
     pub echo_inbox_message_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub attachments_hash: Option<String>,
+    pub login_id: Option<Uuid>,
+    pub id_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::ai_transcript_analysis_job::Entity")]
+    AiTranscriptAnalysisJob,
     #[sea_orm(
         belongs_to = "super::datasource_group::Entity",
         from = "Column::DatasourceGroupId",
@@ -41,6 +43,10 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DatasourceGroup,
+    #[sea_orm(has_many = "super::importance_operation::Entity")]
+    ImportanceOperation,
+    #[sea_orm(has_many = "super::device_audio_forwarding_delivery::Entity")]
+    DeviceAudioForwardingDelivery,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::LoginId",
@@ -49,14 +55,20 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     Login,
+    #[sea_orm(has_many = "super::notification_event::Entity")]
+    NotificationEvent,
+    #[sea_orm(has_one = "super::rer_csv_import_message::Entity")]
+    RerCsvImportMessage,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
-    #[sea_orm(has_many = "super::sigint_comment::Entity")]
-    SigintComment,
     #[sea_orm(has_many = "super::sigint_important::Entity")]
     SigintImportant,
     #[sea_orm(has_one = "super::sigint_inbox_item::Entity")]
     SigintInboxItem,
+    #[sea_orm(has_many = "super::signal_message_audio_ref::Entity")]
+    SignalMessageAudioRef,
+    #[sea_orm(has_many = "super::signal_message_audio_search::Entity")]
+    SignalMessageAudioSearch,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
     #[sea_orm(has_many = "super::signal_message_media::Entity")]
@@ -65,9 +77,27 @@ pub enum Relation {
     SignalMessageMediaConversionJob,
 }
 
+impl Related<super::ai_transcript_analysis_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiTranscriptAnalysisJob.def()
+    }
+}
+
 impl Related<super::datasource_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DatasourceGroup.def()
+    }
+}
+
+impl Related<super::importance_operation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ImportanceOperation.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingDelivery.def()
     }
 }
 
@@ -77,15 +107,21 @@ impl Related<super::login::Entity> for Entity {
     }
 }
 
-impl Related<super::sigint_bookmark::Entity> for Entity {
+impl Related<super::notification_event::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SigintBookmark.def()
+        Relation::NotificationEvent.def()
     }
 }
 
-impl Related<super::sigint_comment::Entity> for Entity {
+impl Related<super::rer_csv_import_message::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SigintComment.def()
+        Relation::RerCsvImportMessage.def()
+    }
+}
+
+impl Related<super::sigint_bookmark::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintBookmark.def()
     }
 }
 
@@ -98,6 +134,18 @@ impl Related<super::sigint_important::Entity> for Entity {
 impl Related<super::sigint_inbox_item::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItem.def()
+    }
+}
+
+impl Related<super::signal_message_audio_ref::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageAudioRef.def()
+    }
+}
+
+impl Related<super::signal_message_audio_search::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageAudioSearch.def()
     }
 }
 

@@ -1,7 +1,10 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
-import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import type {
+  MessageAttachmentPreviewMode,
+  MessageTextPreviewLineLimit,
+} from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsMessageCard } from './SettingsMessageCard';
@@ -24,6 +27,9 @@ export type SettingsDutySectionProps = {
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
+  aiPositionHighlightsEnabled: boolean;
+  aiPositionHighlightsEnabledGlobally: boolean;
+  onAiPositionHighlightsEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
@@ -35,8 +41,10 @@ export type SettingsDutySectionProps = {
   showClassicDutySetting: boolean;
   showClassicDuty: boolean;
   onShowClassicDutyChange: (value: boolean) => void;
-  collapseMediaPreviews: boolean;
-  onCollapseMediaPreviewsChange: (value: boolean) => void;
+  attachmentPreviewMode: MessageAttachmentPreviewMode;
+  largeMessageCardText: boolean;
+  onLargeMessageCardTextChange: (value: boolean) => void;
+  onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
 };
 
 export function SettingsDutySection({
@@ -49,6 +57,9 @@ export function SettingsDutySection({
   onMessageTextPreviewLinesChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
+  aiPositionHighlightsEnabled,
+  aiPositionHighlightsEnabledGlobally,
+  onAiPositionHighlightsEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
   doNotPersistCurrentFilter,
@@ -59,8 +70,10 @@ export function SettingsDutySection({
   showClassicDutySetting,
   showClassicDuty,
   onShowClassicDutyChange,
-  collapseMediaPreviews,
-  onCollapseMediaPreviewsChange,
+  attachmentPreviewMode,
+  largeMessageCardText,
+  onLargeMessageCardTextChange,
+  onAttachmentPreviewModeChange,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -101,10 +114,15 @@ export function SettingsDutySection({
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+            aiPositionHighlightsEnabled={aiPositionHighlightsEnabled}
+            aiPositionHighlightsEnabledGlobally={aiPositionHighlightsEnabledGlobally}
+            onAiPositionHighlightsEnabledChange={onAiPositionHighlightsEnabledChange}
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
-            collapseMediaPreviews={collapseMediaPreviews}
-            onCollapseMediaPreviewsChange={onCollapseMediaPreviewsChange}
+            attachmentPreviewMode={attachmentPreviewMode}
+            largeMessageCardText={largeMessageCardText}
+            onLargeMessageCardTextChange={onLargeMessageCardTextChange}
+            onAttachmentPreviewModeChange={onAttachmentPreviewModeChange}
             loadInProgress={loadInProgress}
           />
 

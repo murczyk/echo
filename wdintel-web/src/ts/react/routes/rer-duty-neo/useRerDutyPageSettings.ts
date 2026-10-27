@@ -22,8 +22,12 @@ export type RerDutyPageSettings = {
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   hideBotTags: boolean;
+  hideNetworks: boolean;
+  networkVisibilityReady: boolean;
   dutyExcludeMenuEnabled: boolean;
   collapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
 };
@@ -49,10 +53,13 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
   const [hideBotTags, setHideBotTags] = useState(false);
+  const [hideNetworks, setHideNetworks] = useState(false);
   const [dutyExcludeMenuEnabled, setDutyExcludeMenuEnabled] = useState(false);
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
+  const [largeMediaPreviews, setLargeMediaPreviews] = useState(false);
+  const [largeMessageCardText, setLargeMessageCardText] = useState(false);
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
@@ -68,6 +75,8 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
+        setLargeMediaPreviews(prefs.largeMediaPreviews ?? false);
+        setLargeMessageCardText(prefs.largeMessageCardText ?? false);
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
@@ -75,6 +84,8 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
+        setLargeMediaPreviews(false);
+        setLargeMessageCardText(false);
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
       }
@@ -92,6 +103,8 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
           dutyCollapseMediaPreviews?: boolean;
+          largeMediaPreviews?: boolean;
+          largeMessageCardText?: boolean;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
         }>
@@ -104,6 +117,12 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       }
       if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
         setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
+      }
+      if (typeof detail?.largeMediaPreviews === 'boolean') {
+        setLargeMediaPreviews(detail.largeMediaPreviews);
+      }
+      if (typeof detail?.largeMessageCardText === 'boolean') {
+        setLargeMessageCardText(detail.largeMessageCardText);
       }
       if (typeof detail?.mediaSummaryEnabled === 'boolean') {
         setMediaSummaryEnabled(detail.mediaSummaryEnabled);
@@ -132,6 +151,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setDevicesSectionEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
         setHideBotTags(settings.disableBotTags ?? false);
+        setHideNetworks(settings.hideNetworks ?? false);
         setDutyExcludeMenuEnabled(settings.dutyExcludeMenuEnabled ?? true);
         setDevicesSettingsStatus('success');
       })
@@ -140,6 +160,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setDevicesSectionEnabled(false);
         setAudioTranscriptionEnabled(false);
         setHideBotTags(false);
+        setHideNetworks(false);
         setDevicesSettingsStatus('error');
         setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
@@ -189,8 +210,12 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     hideBotTags,
+    hideNetworks,
+    networkVisibilityReady: devicesSettingsStatus === 'success',
     dutyExcludeMenuEnabled,
     collapseMediaPreviews,
+    largeMediaPreviews,
+    largeMessageCardText,
     mediaSummaryEnabled,
     messageTextPreviewLines,
   };

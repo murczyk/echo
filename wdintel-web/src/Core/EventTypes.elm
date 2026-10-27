@@ -3,11 +3,17 @@ module Core.EventTypes exposing (EventState, EventSubscriptions, subscribeToEven
 import Bindings as B
 import Dict exposing (Dict)
 import Route.Path
+import Time
 
 
 type alias EventState =
     { isPolling : Bool
+    , flavor : B.LongPollFlavor
+    , requestInFlight : Bool
+    , generation : Int
     , lastEventId : Maybe String
+    , lastPollStartedAt : Maybe Time.Posix
+    , lastGenericFullAt : Maybe Time.Posix
     , error : Maybe String
     , connectionInterrupted : Bool
     , persistentErrorReported : Bool

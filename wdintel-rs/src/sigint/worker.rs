@@ -164,6 +164,7 @@ mod tests {
             created_at: now,
             name: "group".to_string(),
             deleted: false,
+            messenger_type: None,
         };
 
         let result = unstage_message(

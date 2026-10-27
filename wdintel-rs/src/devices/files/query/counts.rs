@@ -32,6 +32,10 @@ pub(in crate::devices::files) async fn count_file_subtrees(
     let file = Alias::new("file");
     let file_join =
         Condition::all()
+            .add(
+                Expr::col((file.clone(), file_entry::Column::ArchiveFileId))
+                    .is_null(),
+            )
             .add(Expr::col((file.clone(), file_entry::Column::DeviceId)).eq(
                 Expr::col((directory.clone(), file_entry::Column::DeviceId)),
             ))
@@ -76,6 +80,10 @@ pub(in crate::devices::files) async fn count_file_subtrees(
         .and_where(
             Expr::col((directory.clone(), file_entry::Column::Id))
                 .is_in(directory_entry_ids.iter().copied()),
+        )
+        .and_where(
+            Expr::col((directory.clone(), file_entry::Column::ArchiveFileId))
+                .is_null(),
         )
         .and_where(parent_filter)
         .group_by_col((directory, file_entry::Column::Id))

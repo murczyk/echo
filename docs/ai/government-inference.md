@@ -19,6 +19,10 @@ Every government request reloads the shared settings. Each Echo process caches i
 
 For `gpt-6-sol` and `gpt-6-luna`, Echo replaces `max_tokens` with `max_completion_tokens`, omits `temperature`, and supplies `reasoning_effort: none` with `allowed_openai_params: ["reasoning_effort"]` required by the provider's LiteLLM gateway. Tools, strict JSON schemas, vision content and streaming pass through. Other engine requests keep their existing parameters. Other listed provider models require separate compatibility checks before assignment.
 
+Government `glm-5.3` position extraction and summaries use at least 16,384 output tokens to leave room for reasoning before the JSON answer. GLM keeps its selected engine and reasoning effort. Intelligence reports and agent requests retain their configured budgets.
+
+After a GLM HTTP 429 response, callers sharing that process's AI client wait until the provider's `Retry-After` deadline; absent or invalid headers use 60 seconds. Concurrent responses can extend that cooldown. The wait counts toward the caller's request deadline, including the shorter interactive callsign deadline. Deploy the backend and restart its application workers to activate these changes. Existing failed jobs require a separately approved reprocessing operation. Persistent backend timeouts or unavailable deployments still require the gateway operator to check GLM capacity and deployment health.
+
 Agent containers receive an Echo capability, never Azure secrets or bearer tokens. Semantic OCR uses the same client through `/internal/ocr/infer`. Document extraction continues to use the existing extractor, Paddle and NuExtract3.
 
 ## echo-tsur rollout

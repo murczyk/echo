@@ -1,0 +1,449 @@
+[
+ {
+  "id": "unit-report-glued",
+  "category": "unit-search",
+  "split": "development",
+  "asOf": "2026-10-10T12:00:00Z",
+  "groups": [
+   "visible"
+  ],
+  "turns": [
+   "зроби звіт по 8дшр 3дшб  104дшп 76дшд за сьогодні"
+  ],
+  "units": [
+   {
+    "id": 79989,
+    "name": "шр 3 дшб 104 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "104 дшп",
+    "division": "76 дшд"
+   },
+   {
+    "id": 79990,
+    "name": "3 дшб 105 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "105 дшп",
+    "division": "76 дшд"
+   }
+  ],
+  "messages": [
+   {
+    "id": 101,
+    "uid": "unit-0101",
+    "timestamp": 1791619200000,
+    "groupKey": "visible",
+    "text": "ОРЕЛ ГНІЗДО 1. Гніздо, я Орел, рух по маршруту без змін. 2. Орел, прийняв, чекаю відбою.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 102,
+    "uid": "unit-0102",
+    "timestamp": 1791619260000,
+    "groupKey": "visible",
+    "text": "СОКІЛ ВЕЖА 1. Вежа, я Сокіл, на точці, пакети отримали. 2. Сокіл, добре, виходимо на зв'язок за годину.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 103,
+    "uid": "unit-0103",
+    "timestamp": 1791619320000,
+    "groupKey": "visible",
+    "text": "ЯСЕН КЛЕН 1. Клен, я Ясен, перевірка зв'язку, чутність нормальна. 2. Ясен, прийняв.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 104,
+    "uid": "unit-0104",
+    "timestamp": 1791619500000,
+    "groupKey": "visible",
+    "text": "Дшб іншого формування: координати для обстрілу, скільки підготувати? Три.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "145 пмп"
+   }
+  ],
+  "expect": {
+   "evidenceIds": [
+    101,
+    102,
+    103
+   ],
+   "forbiddenEvidenceIds": [
+    104
+   ],
+   "unitSearch": true,
+   "bothSearches": false,
+   "forbiddenPatterns": [
+    "не зафіксован",
+    "немає підтверджен",
+    "не знайдено"
+   ]
+  }
+ },
+ {
+  "id": "unit-report-spaced",
+  "category": "unit-search",
+  "split": "development",
+  "asOf": "2026-10-10T12:00:00Z",
+  "groups": [
+   "visible"
+  ],
+  "turns": [
+   "Що відомо про 3 дшб 104 дшп 76 дшд за сьогодні?"
+  ],
+  "units": [
+   {
+    "id": 79989,
+    "name": "шр 3 дшб 104 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "104 дшп",
+    "division": "76 дшд"
+   },
+   {
+    "id": 79990,
+    "name": "3 дшб 105 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "105 дшп",
+    "division": "76 дшд"
+   }
+  ],
+  "messages": [
+   {
+    "id": 101,
+    "uid": "unit-0101",
+    "timestamp": 1791619200000,
+    "groupKey": "visible",
+    "text": "ОРЕЛ ГНІЗДО 1. Гніздо, я Орел, рух по маршруту без змін. 2. Орел, прийняв, чекаю відбою.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 102,
+    "uid": "unit-0102",
+    "timestamp": 1791619260000,
+    "groupKey": "visible",
+    "text": "СОКІЛ ВЕЖА 1. Вежа, я Сокіл, на точці, пакети отримали. 2. Сокіл, добре, виходимо на зв'язок за годину.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 103,
+    "uid": "unit-0103",
+    "timestamp": 1791619320000,
+    "groupKey": "visible",
+    "text": "ЯСЕН КЛЕН 1. Клен, я Ясен, перевірка зв'язку, чутність нормальна. 2. Ясен, прийняв.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 104,
+    "uid": "unit-0104",
+    "timestamp": 1791619500000,
+    "groupKey": "visible",
+    "text": "Дшб іншого формування: координати для обстрілу, скільки підготувати? Три.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "145 пмп"
+   }
+  ],
+  "expect": {
+   "evidenceIds": [
+    101,
+    102,
+    103
+   ],
+   "forbiddenEvidenceIds": [
+    104
+   ],
+   "unitSearch": true,
+   "bothSearches": false,
+   "forbiddenPatterns": [
+    "не зафіксован",
+    "немає підтверджен",
+    "не знайдено"
+   ]
+  }
+ },
+ {
+  "id": "unit-body-mention-only",
+  "category": "unit-search",
+  "split": "validation",
+  "asOf": "2026-10-10T12:00:00Z",
+  "groups": [
+   "visible"
+  ],
+  "turns": [
+   "Знайди повідомлення про 104 дшп за сьогодні."
+  ],
+  "units": [
+   {
+    "id": 79989,
+    "name": "шр 3 дшб 104 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "104 дшп",
+    "division": "76 дшд"
+   },
+   {
+    "id": 79990,
+    "name": "3 дшб 105 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "105 дшп",
+    "division": "76 дшд"
+   }
+  ],
+  "messages": [
+   {
+    "id": 201,
+    "uid": "unit-0201",
+    "timestamp": 1791619200000,
+    "groupKey": "visible",
+    "text": "Повідомили, що 104 дшп просить підкріплення на північ, як прийняли.",
+    "callsigns": [],
+    "indexed": true
+   }
+  ],
+  "expect": {
+   "evidenceIds": [
+    201
+   ],
+   "bothSearches": false
+  }
+ },
+ {
+  "id": "unit-ambiguous-designation",
+  "category": "unit-search",
+  "split": "validation",
+  "asOf": "2026-10-10T12:00:00Z",
+  "groups": [
+   "visible"
+  ],
+  "turns": [
+   "Зроби звіт по 3 дшб за сьогодні."
+  ],
+  "units": [
+   {
+    "id": 79989,
+    "name": "шр 3 дшб 104 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "104 дшп",
+    "division": "76 дшд"
+   },
+   {
+    "id": 79990,
+    "name": "3 дшб 105 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "105 дшп",
+    "division": "76 дшд"
+   }
+  ],
+  "messages": [
+   {
+    "id": 101,
+    "uid": "unit-0101",
+    "timestamp": 1791619200000,
+    "groupKey": "visible",
+    "text": "ОРЕЛ ГНІЗДО 1. Гніздо, я Орел, рух по маршруту без змін. 2. Орел, прийняв, чекаю відбою.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 102,
+    "uid": "unit-0102",
+    "timestamp": 1791619260000,
+    "groupKey": "visible",
+    "text": "СОКІЛ ВЕЖА 1. Вежа, я Сокіл, на точці, пакети отримали. 2. Сокіл, добре, виходимо на зв'язок за годину.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 103,
+    "uid": "unit-0103",
+    "timestamp": 1791619320000,
+    "groupKey": "visible",
+    "text": "ЯСЕН КЛЕН 1. Клен, я Ясен, перевірка зв'язку, чутність нормальна. 2. Ясен, прийняв.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   },
+   {
+    "id": 202,
+    "uid": "unit-0202",
+    "timestamp": 1791619600000,
+    "groupKey": "visible",
+    "text": "БУРЯ ЛІС 1. Ліс, я Буря, працюємо за планом.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 105 дшп 76 дшд пдв",
+    "unitIds": [
+     79990
+    ]
+   }
+  ],
+  "expect": {
+   "evidenceIds": [
+    101,
+    102,
+    103,
+    202
+   ],
+   "unitSearch": true,
+   "bothSearches": false
+  }
+ },
+ {
+  "id": "unit-restricted-group",
+  "category": "unit-search",
+  "split": "validation",
+  "asOf": "2026-10-10T12:00:00Z",
+  "groups": [
+   "visible"
+  ],
+  "turns": [
+   "Що відомо про 3 дшб 104 дшп за сьогодні?"
+  ],
+  "units": [
+   {
+    "id": 79989,
+    "name": "шр 3 дшб 104 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "104 дшп",
+    "division": "76 дшд"
+   },
+   {
+    "id": 79990,
+    "name": "3 дшб 105 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "105 дшп",
+    "division": "76 дшд"
+   }
+  ],
+  "messages": [
+   {
+    "id": 203,
+    "uid": "unit-0203",
+    "timestamp": 1791619200000,
+    "groupKey": "secret",
+    "text": "СЕКРЕТ ТОЧКА 1. Точка, я Секрет, працюємо.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   }
+  ],
+  "expect": {
+   "evidenceIds": [],
+   "forbiddenEvidenceIds": [
+    203
+   ],
+   "unitSearch": true,
+   "bothSearches": false,
+   "forbiddenPatterns": [
+    "Секрет"
+   ]
+  }
+ },
+ {
+  "id": "unit-empty-period",
+  "category": "unit-search",
+  "split": "validation",
+  "asOf": "2026-10-10T12:00:00Z",
+  "groups": [
+   "visible"
+  ],
+  "turns": [
+   "Зроби звіт по 3 дшб 104 дшп за сьогодні."
+  ],
+  "units": [
+   {
+    "id": 79989,
+    "name": "шр 3 дшб 104 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "104 дшп",
+    "division": "76 дшд"
+   },
+   {
+    "id": 79990,
+    "name": "3 дшб 105 дшп 76 дшд",
+    "active": true,
+    "battalion": "3 дшб",
+    "regiment": "105 дшп",
+    "division": "76 дшд"
+   }
+  ],
+  "messages": [
+   {
+    "id": 204,
+    "uid": "unit-0204",
+    "timestamp": 1791360000000,
+    "groupKey": "visible",
+    "text": "Вчорашнє повідомлення.",
+    "callsigns": [],
+    "indexed": true,
+    "unit": "8 дшр 3 дшб 104 дшп 76 дшд пдв",
+    "unitIds": [
+     79989
+    ]
+   }
+  ],
+  "expect": {
+   "evidenceIds": [],
+   "unitSearch": true,
+   "bothSearches": false,
+   "dateBounds": [
+    1791579600000,
+    1791665999999
+   ]
+  }
+ }
+]

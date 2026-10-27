@@ -48,7 +48,8 @@ pub(in crate::devices::files) async fn find_matching_tree_entry_ids(
     db: &impl ConnectionTrait,
     device_id: Uuid,
     entry_ids: &[Uuid],
-    tag_filter: &TagFilter,
+    tag_filter: Option<&TagFilter>,
+    has_content: Option<bool>,
 ) -> Result<BTreeSet<Uuid>, FilesystemError> {
     if entry_ids.is_empty() {
         return Ok(BTreeSet::new());
@@ -56,9 +57,12 @@ pub(in crate::devices::files) async fn find_matching_tree_entry_ids(
 
     let candidate = Alias::new("candidate");
     let matching_file = Alias::new("matching_file");
-    let matching_file_query = Query::select()
+    let mut matching_file_query = Query::select()
         .expr(Expr::value(1))
         .from_as(file_entry::Entity, matching_file.clone())
+        .and_where(super::super::archive::query::current_visibility_for(
+            "matching_file",
+        ))
         .and_where(
             Expr::col((matching_file.clone(), file_entry::Column::DeviceId))
                 .eq(Expr::col((
@@ -103,14 +107,31 @@ pub(in crate::devices::files) async fn find_matching_tree_entry_ids(
                 )
                 .into(),
         )
-        .and_where(core::file_tag_filter(matching_file, tag_filter))
         .to_owned();
+    if let Some(tag_filter) = tag_filter {
+        matching_file_query.and_where(core::file_tag_filter(
+            matching_file.clone(),
+            tag_filter,
+        ));
+    }
+    if let Some(has_content) = has_content {
+        let content =
+            Expr::col((matching_file, file_entry::Column::ContentPath));
+        matching_file_query.and_where(if has_content {
+            content.is_not_null()
+        } else {
+            content.is_null()
+        });
+    }
     let query = Query::select()
         .expr_as(
             Expr::col((candidate.clone(), file_entry::Column::Id)),
             Alias::new("entry_id"),
         )
         .from_as(file_entry::Entity, candidate.clone())
+        .and_where(super::super::archive::query::current_visibility_for(
+            "candidate",
+        ))
         .and_where(
             Expr::col((candidate.clone(), file_entry::Column::DeviceId))
                 .eq(device_id),

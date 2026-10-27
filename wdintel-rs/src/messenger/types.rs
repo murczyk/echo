@@ -1,6 +1,6 @@
 use crate::entities::signal_message;
 use crate::messenger::group::types::{
-    SignalGroupStats, SignalGroupStatsTimelinePoint,
+    SignalGroupColor, SignalGroupStats, SignalGroupStatsTimelinePoint,
 };
 use crate::sigint::aor::types::AreaOfResponsibility;
 use crate::sigint::types::InterseptionKind;
@@ -23,6 +23,8 @@ pub struct Message {
 pub struct EchoAccountF1 {
     pub id: i64,
     pub area_of_responsibility: Option<AreaOfResponsibility>,
+    pub can_read_messages: Option<bool>,
+    pub can_send_messages: Option<bool>,
     pub status: String,
     pub created_at: i64,
     pub client_id: Option<i32>,
@@ -71,6 +73,7 @@ pub struct GroupEntryF1 {
     pub long_note: Option<String>,
     pub group_stats: SignalGroupStats,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
+    pub color_key: SignalGroupColor,
 }
 
 #[derive(Debug, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -120,6 +123,8 @@ pub struct AccountStatusReq {
     pub account_id: i64,
     pub aor_id: Option<i64>,
     pub is_active: bool,
+    pub can_read_messages: Option<bool>,
+    pub can_send_messages: Option<bool>,
     pub display_name: String,
     pub description: Option<String>,
     pub api_login: Option<String>,
@@ -173,6 +178,7 @@ pub struct LinkAccountRsp {
 )]
 pub struct GroupUpdateReq {
     pub master_key: String,
+    pub color_key: Option<SignalGroupColor>,
     pub short_note: Option<String>,
     pub long_note: Option<String>,
     /// Deprecated - use area_of_responsibility_ids instead
@@ -181,6 +187,8 @@ pub struct GroupUpdateReq {
     pub interseption_kind: Option<InterseptionKind>,
     pub disable_network_assignment: Option<bool>,
     pub is_aviation_group: Option<bool>,
+    pub ai_transcript_analysis_enabled: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
 }
 
 pub struct UnstageResult {

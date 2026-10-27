@@ -227,6 +227,12 @@ export const aiAgentAdminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/ai/transcript-analysis' },
+    activeName: 'ai-agent-transcript-analysis',
+    label: 'Аналіз транскрипцій',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/ai/positions' },
     activeName: 'ai-agent-positions',
     label: 'Позиції',
@@ -258,6 +264,12 @@ export const aiAgentAdminSubs: Menu[] = [
 ];
 
 export const adminDatabaseSubs: Menu[] = [
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/transcription-forwarding' },
+    activeName: 'transcription-forwarding',
+    label: 'Пересилання транскрибації',
+  },
   {
     type: 'item',
     link: { type: 'internal', path: '/admin/transcription-settings' },
@@ -308,7 +320,7 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/units?tab=duplicates' },
+    link: { type: 'internal', path: '/admin/units' },
     activeName: 'unit-admin',
     label: 'Підрозділи',
   },
@@ -387,5 +399,11 @@ export const adminSubs: Menu[] = [
         label: 'Імпорт Delta',
       },
     ],
+  },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/kpi' },
+    activeName: 'kpi',
+    label: 'KPI',
   },
 ];

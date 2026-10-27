@@ -93,11 +93,11 @@
   // ------------------------------------------------------------------------
 
   // Parse the whole document into its text stories, or null on failure.
-  function parse(input) {
+  function parse(input, maxBytes) {
     try {
       var bytes = toUint8(input);
       if (!bytes || bytes.length < 512) return null;
-      var cfb = parseCfb(bytes);
+      var cfb = parseCfb(bytes, maxBytes);
       if (!cfb) return null;
       var wordDocument = cfb.byName['WordDocument'];
       if (!wordDocument) return null;
@@ -113,16 +113,17 @@
     return doc ? doc.body : null;
   }
 
-  docToText.model = function (input) {
-    var doc = parse(input);
+  docToText.model = function (input, maxBytes) {
+    var doc = parse(input, maxBytes);
     return doc ? doc.model : null;
   };
 
   // ------------------------------------------------------------------------
   // Layer 1 — [MS-CFB] OLE2 container
   // ------------------------------------------------------------------------
-  function parseCfb(bytes) {
-    if (bytes.length > ECHO_PREVIEW_MAX_CFB_BYTES) return null;
+  function parseCfb(bytes, maxBytes) {
+    if (bytes.length > (maxBytes || ECHO_PREVIEW_MAX_CFB_BYTES)) return null;
+    var allocationLimit = Math.max(ECHO_PREVIEW_MAX_CFB_BYTES, maxBytes || 0);
     var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
     for (var i = 0; i < 8; i++) {
@@ -200,7 +201,7 @@
 
     // -- Read the FAT into one flat Uint32Array. --
     var entriesPerSector = sectorSize / 4;
-    if (fatSectorLocs.length * entriesPerSector * 4 > ECHO_PREVIEW_MAX_CFB_BYTES) return null;
+    if (fatSectorLocs.length * entriesPerSector * 4 > allocationLimit) return null;
     var fat = new Uint32Array(fatSectorLocs.length * entriesPerSector);
     var fi = 0;
     for (var f = 0; f < fatSectorLocs.length; f++) {
@@ -237,7 +238,7 @@
         var endOff = off + sectorSize;
         chunks.push(bytes.subarray(off, endOff));
         collected += endOff - off;
-        if (collected > ECHO_PREVIEW_MAX_CFB_BYTES) throw new Error('CFB allocation limit');
+        if (collected > allocationLimit) throw new Error('CFB allocation limit');
         sid = fat[sid];
       }
       if (
@@ -378,7 +379,7 @@
         var endOff = off + miniSectorSize;
         chunks.push(miniStream.subarray(off, endOff));
         collected += endOff - off;
-        if (collected > ECHO_PREVIEW_MAX_CFB_BYTES) throw new Error('CFB allocation limit');
+        if (collected > allocationLimit) throw new Error('CFB allocation limit');
         sid = miniFat[sid];
       }
       if (chunks.length !== expected || (sizeLimit === 0 && startSid !== ENDOFCHAIN))

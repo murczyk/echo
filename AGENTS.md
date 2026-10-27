@@ -2,6 +2,30 @@
 
 - Read README.md to understand the general project purpose
 
+## Deployment and real-environment approval
+
+- Require explicit user approval naming the operation and target before deploying
+  or otherwise changing a real environment. This includes staging and production;
+  `echo-staging` is a real environment.
+- A request to investigate or fix a deployment authorizes investigation and local
+  preparation, not deployment or remote repair. SSH access, credentials, and an
+  unlocked session are not permission to change the environment.
+- Generic messages such as "please proceed", "continue", or "looks good" count
+  as approval only when directly answering an explicit approval question naming
+  the operation and target. Silence or an agent's announcement is not approval.
+- Finish local changes and relevant validation before requesting approval. State
+  the target, proposed operation or commands, and expected impact, then wait for
+  the user's answer. Reuse approval only within its expressly authorized scope.
+- This gate also applies to indirect changes through recipes, scripts, skills,
+  and CI: package installation, release activation, configuration changes,
+  service restarts, migrations, database writes, analytics reconciliation,
+  resnapshots, and rollbacks. A check that writes heartbeat or health metadata
+  is a mutation too. A documented procedure or skill is not user approval.
+- Keep remote investigation read-only until mutations are approved. If an
+  operation fails or partially completes, report its state and obtain approval
+  for recovery actions outside the approved scope; do not expand the scope
+  automatically.
+
 ## Documentation scope
 
 - Keep `README.md` and `docs/README.md` human-readable, system-level overviews.
@@ -54,9 +78,8 @@
 
 ## Git
 
-- Use `stable` as the base branch for performance regression fixes, bugfixes, and similar changes intended for immediate deployment.
-- Use `main` as the base branch for big features and potentially breaking UI changes.
-- In plan mode, if the base branch seems wrong for the planned work, suggest the appropriate branch (`stable` or `main`).
+- Use the base branch explicitly requested by the user.
+- Do not rebase or change the base branch without an explicit user instruction.
 - Name issue branches `<issue-id>-<short-title>`, for example `123-foo-bar`, where the number is the GitHub issue ID.
 - Alternatively, use `<author>/YYYY-MM-DD-<short-title>`, for example `k-bx/2026-09-23-foo-bar`, where the author is a GitHub username, person's name, or callsign.
 - Use lowercase English words separated by hyphens for the short title, usually two or three words describing the issue title or the essence of the work.
@@ -89,6 +112,8 @@
   `echo-migration/src` and use the style of one of existing files
 - make pure sql migrations, see
   `echo-migration/src` for examples, don't write sea orm style migrations
+- Keep migration and test-fixture SQL in `.rs` raw string literals; do not
+  create standalone `.sql` files.
 - Add new migrations to `echo-migration/src/lib.rs`
 - Afterwards run `just migrate-up` to apply the migration locally, you can undo last migration via `just migrate-down`
 - If you want to manually un-apply a migration -- don't forget to

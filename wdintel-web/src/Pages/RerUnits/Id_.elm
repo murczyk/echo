@@ -575,6 +575,7 @@ submitUnitEdit req model =
                         , army = req.army
                         , militaryDistrict = req.militaryDistrict
                         , armyRegion = req.armyRegion
+                        , combatTypeId = req.combatTypeId
                         , name = Maybe.withDefault unit.name req.name
                         , active = req.active
                         , isDeduplicateCandidate = req.isDeduplicateCandidate
@@ -1332,7 +1333,10 @@ changelogFieldLabel field =
             "Армія"
 
         "military_district" ->
-            "Група армій/Фронт/Види та роди ЗС"
+            "Група армій/Фронт"
+
+        "combat_type_id" ->
+            "Види та роди ЗС"
 
         "army_region" ->
             "Регіон/ТВД/Збройні Сили"
@@ -1630,8 +1634,9 @@ unitOverviewCard canEdit shared state details =
             , overviewField "Дивізія" unit.division
             , overviewField "Корпус" unit.corps
             , overviewField "Армія" unit.army
-            , overviewField "Група армій/Фронт/Види та роди ЗС" unit.militaryDistrict
+            , overviewField "Група армій/Фронт" unit.militaryDistrict
             , overviewField "Регіон/ТВД/Збройні Сили" unit.armyRegion
+            , overviewField "Види та роди ЗС" (Maybe.withDefault "" unit.combatTypeName)
             , overviewField
                 "Статус"
                 (if unit.active then

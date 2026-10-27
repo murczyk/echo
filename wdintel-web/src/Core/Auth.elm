@@ -37,6 +37,8 @@ hasRole role user =
                 || List.member "Bpla" user.roles
                 || List.member "Rer" user.roles
                 || List.member "Cyber" user.roles
+                || List.member "CyberViewer" user.roles
+                || List.member "CyberViewerRestricted" user.roles
                 || List.member "Basic" user.roles
 
         "UnitsEditor" ->
@@ -55,6 +57,15 @@ hasRole role user =
             List.member "Admin" user.roles
                 || List.member "Cyber" user.roles
 
+        "CyberViewer" ->
+            List.member "Admin" user.roles
+                || List.member "Cyber" user.roles
+                || List.member "CyberViewer" user.roles
+
+        "CyberViewerRestricted" ->
+            hasRole "CyberViewer" user
+                || List.member "CyberViewerRestricted" user.roles
+
         "AdvancedReports" ->
             List.member "Admin" user.roles
                 || List.member "AdvancedReports" user.roles
@@ -70,6 +81,9 @@ hasRole role user =
         "No2FA" ->
             List.member "No2FA" user.roles
 
+        "MessengerIngest" ->
+            List.member "MessengerIngest" user.roles
+
         _ ->
             -- impossible! unknown role
             False
@@ -77,7 +91,7 @@ hasRole role user =
 
 hasRerOrCyber : User -> Bool
 hasRerOrCyber user =
-    hasRole "Rer" user || hasRole "Cyber" user
+    hasRole "Rer" user || hasRole "CyberViewerRestricted" user
 
 
 canUseRadioFeatures : User -> Bool
@@ -87,7 +101,7 @@ canUseRadioFeatures user =
 
 canReadDevices : User -> Bool
 canReadDevices user =
-    hasRole "Cyber" user
+    hasRole "CyberViewer" user
 
 
 serverModeIs : String -> Maybe B.ServerInfo -> Bool

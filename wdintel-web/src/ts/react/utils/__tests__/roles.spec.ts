@@ -70,11 +70,7 @@ describe('roles', () => {
     expect(canWriteMessages([role])).toBe(true);
   });
 
-  it.each([
-    { roles: ['DeviceSource'] },
-    { roles: ['CyberViewer'] },
-    { roles: ['DeviceSource', 'CyberViewer'] },
-  ])('denies access from removed roles $roles', ({ roles }) => {
+  it.each([{ roles: ['DeviceSource'] }])('denies access from removed roles $roles', ({ roles }) => {
     expect(hasRole(roles, 'Basic')).toBe(false);
     expect(hasRerOrCyber(roles)).toBe(false);
     expect(canReadDevices(roles)).toBe(false);
@@ -87,6 +83,61 @@ describe('roles', () => {
       canWriteAnalyticalData: false,
     });
   });
+
+  it.each([['CyberViewer'], ['DeviceSource', 'CyberViewer']])(
+    '#3569 restores viewer access without message or analytical writes: %j',
+    (...roles) => {
+      expect(hasRole(roles, 'Basic')).toBe(true);
+      expect(hasRole(roles, 'CyberViewer')).toBe(true);
+      expect(hasRole(roles, 'Cyber')).toBe(false);
+      expect(hasRerOrCyber(roles)).toBe(true);
+      expect(canUseRadioFeatures(roles)).toBe(false);
+      expect(canUseMessageDevices(roles, true)).toBe(true);
+      expect(canUseMessageDevices(roles, false)).toBe(false);
+      expect(canWriteMessages(roles)).toBe(false);
+      expect(hasRole(roles, 'DeleteMsg')).toBe(false);
+      expect(resolveDevicesCapabilities(roles)).toEqual({
+        canRead: true,
+        canCreate: true,
+        canWriteSourceData: true,
+        canWriteAnalyticalData: false,
+      });
+    },
+  );
+
+  it.each(['Cyber', 'Rer', 'Full', 'Admin'])(
+    '#3569 preserves additional write permissions for CyberViewer with %s',
+    (role) => {
+      expect(canWriteMessages(['CyberViewer', role])).toBe(true);
+    },
+  );
+
+  it('grants restricted viewers the shared permissions without any device capability', () => {
+    const roles = ['CyberViewerRestricted'];
+    expect(hasRole(roles, 'Basic')).toBe(true);
+    expect(hasRerOrCyber(roles)).toBe(true);
+    expect(hasRole(roles, 'CyberViewer')).toBe(false);
+    expect(canUseRadioFeatures(roles)).toBe(false);
+    expect(canWriteMessages(roles)).toBe(false);
+    expect(canUseMessageDevices(roles, true)).toBe(false);
+    expect(resolveDevicesCapabilities(roles)).toEqual({
+      canRead: false,
+      canCreate: false,
+      canWriteSourceData: false,
+      canWriteAnalyticalData: false,
+    });
+  });
+
+  it.each(['Rer', 'Full', 'CyberViewer', 'Cyber', 'Admin'])(
+    'keeps restricted viewer permissions additive with %s',
+    (role) => {
+      const roles = ['CyberViewerRestricted', role];
+      expect(hasRerOrCyber(roles)).toBe(true);
+      expect(canUseMessageDevices(roles, true)).toBe(canUseMessageDevices([role], true));
+      expect(resolveDevicesCapabilities(roles)).toEqual(resolveDevicesCapabilities([role]));
+      expect(canWriteMessages(roles)).toBe(canWriteMessages([role]));
+    },
+  );
 
   it('checks any role through the same hierarchy', () => {
     expect(hasAnyRole(['Admin'], ['AdvancedReports'])).toBe(true);

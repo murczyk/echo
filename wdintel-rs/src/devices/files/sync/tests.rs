@@ -365,7 +365,10 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         } => {
             assert_eq!(*operation, FileSyncOperation::Created);
             assert_eq!(*revision, 1);
-            assert_eq!(file.absolute_path, "C:\\reports\\report.log");
+            assert_eq!(
+                file.absolute_path.as_deref(),
+                Some("C:\\reports\\report.log")
+            );
             assert_eq!(file.mime_type.as_deref(), Some("text/plain"));
             assert_eq!(file.extension.as_deref(), Some("LOG"));
             let source = file.source_file_state.as_ref().unwrap();
@@ -406,9 +409,11 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         .unwrap();
     assert_eq!(current.revision, Some(revision.revision));
     assert_eq!(current.sync_id, Some(revision.sync_id));
+    assert_eq!(current.is_archive, Some(false));
+    assert_eq!(revision.is_archive, Some(false));
     assert_eq!(
         current.absolute_path.as_ref(),
-        Some(&revision.absolute_path)
+        revision.absolute_path.as_ref()
     );
     assert_eq!(current.mime_type, revision.mime_type);
     assert_eq!(current.extension, revision.extension);
@@ -423,8 +428,8 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     );
     assert_eq!(current.analysis_input_revision, Some(1));
     assert_eq!(current.current_analysis_run_id, None);
-    assert_eq!(revision.source_sequence, 1);
-    assert_eq!(revision.analysis_input_revision, 1);
+    assert_eq!(revision.source_sequence, Some(1));
+    assert_eq!(revision.analysis_input_revision, Some(1));
     let first_analysis_run =
         file_analysis_run::Entity::find_by_id(first_analysis_run_id)
             .one(file_db)
@@ -471,8 +476,8 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
             .await
             .unwrap()
             .unwrap();
-    assert_eq!(metadata_only_revision.source_sequence, 2);
-    assert_eq!(metadata_only_revision.analysis_input_revision, 1);
+    assert_eq!(metadata_only_revision.source_sequence, Some(2));
+    assert_eq!(metadata_only_revision.analysis_input_revision, Some(1));
 
     let mut changed = raw_item("C:\\reports\\report.log");
     changed.extension = Some(" TXT ".to_string());
@@ -509,15 +514,15 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(updated_revision.source_sequence, 3);
-    assert_eq!(updated_revision.analysis_input_revision, 3);
+    assert_eq!(updated_revision.source_sequence, Some(3));
+    assert_eq!(updated_revision.analysis_input_revision, Some(3));
     let new_revision = file_revision::Entity::find_by_id((new_file_id, 1))
         .one(file_db)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(new_revision.source_sequence, 4);
-    assert_eq!(new_revision.analysis_input_revision, 1);
+    assert_eq!(new_revision.source_sequence, Some(4));
+    assert_eq!(new_revision.analysis_input_revision, Some(1));
     let changed_analysis_run =
         file_analysis_run::Entity::find_by_id(changed_analysis_run_id)
             .one(file_db)
@@ -568,7 +573,10 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         } => {
             assert_eq!(Uuid::parse_str(historical_file_id).unwrap(), file_id);
             assert_eq!(*revision, 1);
-            assert_eq!(file.absolute_path, "C:\\reports\\report.log");
+            assert_eq!(
+                file.absolute_path.as_deref(),
+                Some("C:\\reports\\report.log")
+            );
             assert_eq!(file.extension.as_deref(), Some("LOG"));
             let source = file.source_file_state.as_ref().unwrap();
             assert_eq!(source.state, SourceFileStateKind::Downloaded);
@@ -634,12 +642,14 @@ async fn content_upload_terminal_transitions_are_recorded() {
     )
     .await;
     super::super::content::worker::cleanup_one_for_test(
+        &env,
         &content_runtime,
         expired_upload_id,
     )
     .await
     .unwrap();
     super::super::content::worker::cleanup_one_for_test(
+        &env,
         &content_runtime,
         expired_upload_id,
     )
@@ -817,7 +827,7 @@ async fn explicit_sync_recovers_persisted_batches_and_completes_idempotently() {
         &actor,
         sync_id,
         0,
-        (0..=crate::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT)
+        (0..=crate::devices::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT)
             .map(|index| raw_item(&format!("C:\\ignored\\{index}.log")))
             .collect(),
     )
@@ -932,7 +942,8 @@ async fn explicit_sync_preserves_duplicate_detection_at_batch_limit() {
         .await
         .unwrap();
     let sync_id = Uuid::parse_str(&started.response.sync.sync_id).unwrap();
-    let unique_count = crate::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT - 1;
+    let unique_count =
+        crate::devices::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT - 1;
     let mut files = (0..unique_count)
         .map(|index| {
             raw_item(&format!(
@@ -949,7 +960,7 @@ async fn explicit_sync_preserves_duplicate_detection_at_batch_limit() {
 
     assert_eq!(
         applied.batch.counts.received,
-        crate::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT as u64
+        crate::devices::config::DEVICE_FILE_SYNC_BATCH_MAX_COUNT as u64
     );
     assert_eq!(applied.batch.counts.accepted, unique_count as u64);
     assert_eq!(applied.batch.counts.rejected, 1);

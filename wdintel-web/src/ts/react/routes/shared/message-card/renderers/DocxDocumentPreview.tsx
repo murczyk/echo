@@ -10,7 +10,7 @@ import { runWorkerTask } from '../workers/worker-client';
 const MAX_DOCX_FILE_MB = 10;
 const MAX_DOCX_FILE_BYTES = MAX_DOCX_FILE_MB * 1024 * 1024;
 
-function formatDocxPreviewErrorMessage(error: string | null): string {
+export function formatDocxPreviewErrorMessage(error: string | null): string {
   if (error === 'DOCX_FILE_TOO_LARGE') {
     return `Файл DOCX завеликий для попереднього перегляду. Максимум: ${MAX_DOCX_FILE_MB} МБ.`;
   }
@@ -21,12 +21,16 @@ export function DocxDocumentPreview({
   href,
   zoom,
   sizeBytes,
+  maxBytes = MAX_DOCX_FILE_BYTES,
   onError,
+  signal,
 }: {
   href: string;
   zoom: number;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 }) {
   const theme = useTheme();
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -36,6 +40,9 @@ export function DocxDocumentPreview({
 
   useEffect(() => {
     const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
 
     const load = async () => {
@@ -43,24 +50,25 @@ export function DocxDocumentPreview({
       setError(null);
       setHtml('');
       setPageSize(null);
+      if (abortController.signal.aborted) return;
 
       try {
-        if (sizeBytes != null && sizeBytes > MAX_DOCX_FILE_BYTES) {
+        if (sizeBytes != null && sizeBytes > maxBytes) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
 
         const { buffer, contentLength } = await fetchCachedDocumentResponse(
           href,
-          MAX_DOCX_FILE_BYTES,
+          maxBytes,
           'DOCX_FILE_TOO_LARGE',
           abortController.signal,
         );
 
-        if (contentLength != null && contentLength > MAX_DOCX_FILE_BYTES) {
+        if (contentLength != null && contentLength > maxBytes) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
 
-        if (buffer.byteLength > MAX_DOCX_FILE_BYTES) {
+        if (buffer.byteLength > maxBytes) {
           throw new Error('DOCX_FILE_TOO_LARGE');
         }
         const result = await runWorkerTask<{ buffer: ArrayBuffer }, DocxPreviewResult>(
@@ -72,7 +80,7 @@ export function DocxDocumentPreview({
           abortController.signal,
           [buffer],
         );
-        if (disposed) return;
+        if (disposed || abortController.signal.aborted) return;
         setHtml(sanitizeDocxHtml(result.html));
         setPageSize(result.pageSize);
         setStatus('ready');
@@ -88,9 +96,10 @@ export function DocxDocumentPreview({
 
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes, onError]);
+  }, [href, sizeBytes, maxBytes, onError, signal]);
 
   const srcDoc = useMemo(
     () => buildDocxHtmlDocument(html, pageSize, zoom, theme.palette.mode),

@@ -143,6 +143,7 @@ Hovering or focusing a located text position opens the shared overview/detail
 preview; clicking or pressing Enter/Space opens the full message map focused on
 that point. Positions without parseable coordinates remain textual. Regression:
 `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
+
 - **Source implementation:** `message-coordinate-preview.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational coordinate parser coverage.
@@ -215,7 +216,7 @@ that point. Positions without parseable coordinates remain textual. Regression:
 - **Status:** issue-backed regressions
 - **Behavior ID:** `react-message-card-issue-regressions`
 - **Affected route/component:** `MessageCard.tsx`, `MessageCardHeader.tsx`, and bot-tag controls
-- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets. Echo #3515 keeps date-only messages free of generated noon times; an interception-basis card renders the interception date, while a creation-basis card renders creation and interception dates independently.
+- **Expected observable result:** Echo #3461 exposes device metadata only through an allowed device-access provider. Echo #3324 scopes bot-tag confirmation/cancellation to the matching message and tag, preserves its Popover anchor through unrelated rerenders, and suppresses the action for read-only cards, disabled bot tags, and different message/tag targets. Echo #3515 keeps date-only interception metadata free of generated noon times. The header renders one selected absolute timestamp: creation uses `createdAt`; interception uses the event date/time formatter. The independent receipt-time display uses `createdAt` without changing when the selected basis changes; Duty and Analysis both retain a dedicated, right-aligned footer row in normal document flow to preserve stable card geometry and reader anchors.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardHeader.tsx`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3461](https://github.com/echoua/echo/issues/3461), [#3324](https://github.com/echoua/echo/issues/3324), [#3515](https://github.com/echoua/echo/issues/3515)
@@ -233,10 +234,16 @@ that point. Positions without parseable coordinates remain textual. Regression:
 
 - **Status:** inferred characterization
 - **Behavior ID:** `react-message-card-presentation-workflows`
+- **Coordinate preloading:** Coordinate lookup and thumbnail-map mounting start within 1000px above or below the nearest message-feed scroller, falling back to the browser viewport outside feeds. More distant coordinates stay deferred; collapsed categories still mount nothing until revealed. Duty windowing and idle offloading remain unchanged, so only mounted cards can preload.
+- **Reply chains:** Two-message chains have no standalone Analysis action beside their heading; cited-message navigation remains available. Longer chains retain the all-messages popover and its labeled Analysis link. In dark mode, the popover mixes the card surface with 6% foreground to sit one tone above the card; its existing translucent cited-message fills create a slightly lighter inner level. Light-mode paper, the semantic border, and the popover shadow are unchanged; MUI's elevation overlay remains disabled.
 - **Affected route/component:** MessageCard and supporting presentation children
-- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior. The header owns date/time presentation in both modes: interception metadata is not prepended to message body text, interception time uses its labeled calendar item, creation-basis cards add a separate muted creation timestamp, and Duty cards do not show the former relative-time counter.
+- **Attachment display:** Shared card settings offer semantic `Collapsed`, `Compact`, and `Large` modes. Existing `dutyCollapseMediaPreviews` selects deferred exclusive category reveal; `largeMediaPreviews` selects larger photo/video/coordinate tiles only when previews are not collapsed. Compact tiles are 72px square with 8px gallery gaps; large tiles are 144px square with 4px gallery gaps, fitting four previews per row at Duty's maximum single-feed width. Sizes are defined in shared CSS rather than preference values or size-specific symbol names. Shells, controls, and coordinate loading/error tiles share the selected square size; download controls stay anchored within tiles and galleries wrap within narrow cards. Documents, audio players, full-screen previews, and hover maps retain their existing sizes. Missing or NULL large-preview flags mean compact; old clients omitting that setting preserve the stored value. Settings updates propagate to mounted Duty and Analysis cards without per-card layout wrappers.
+- **Typography:** With the app's 14px root, message text, audio transcriptions, and header unit/date use 14px/21px by default or 16px/24px when the shared `largeMessageCardText` setting is enabled; unit weight remains 500. Missing or NULL flags mean 14px, and older clients omitting the flag preserve the stored selection. The choice is available in both card-settings sections and updates mounted feeds, loading skeletons, and the animated settings preview without a reload. Ordinary metadata remains 14px/20px. Comments, reports, and cited/hover previews remain 14px/21px; tags, callsigns, and attachment filenames remain 13px/18px; tertiary actions and the receipt-time footer remain 12px/16px. Sizes are rem-based and line heights scale with the text. Icons, the existing system font family, theme colors, player-internal typography, watermark, and column geometry remain unchanged.
+- **Settings preview:** Duty and Analysis settings share an API-free skeleton preview using the card's responsive header/body/footer geometry and attachment sizes. It contains no sample text, dates, coordinates, or tag labels; muted bars and primary-colored placeholders retain the earlier skeleton styling. Tag density, attachment mode, AI positions (including global enablement), file summary, and text folding update the preview with scoped transitions; reduced-motion preferences remove animation. Attachment labels and helper text match the corresponding existing settings typography and theme colors. Browser coverage: `wdintel-web/tests/e2e/message-card-settings-preview.spec.ts`.
+- **Receipt-time placement:** In two-column cards without full-width comments, the main content spans two grid rows while details and receipt time share the right column. The time aligns with the bottom of taller left content, or sits below taller right content with a gap; no absolute positioning or JavaScript measurements are used. On single-column cards it follows details. Full-width comments retain the separate footer below them. Feed skeletons and settings previews use the same grid placement.
+- **Expected observable result:** Duty and Analysis expose their respective actions and navigation; text folding, headers, timestamps, missing-value fallbacks, comment authorship/disclosure, callsign/tag/report/transcription visibility, and ordinary loading/empty presentation follow the current component behavior. The header always shows a red outlined diamond beside the explicit unit above one labeled absolute timestamp selected by its time basis: creation (`createdAt`) or interception (event date/time); either header date includes the year. The row shows the trimmed explicit unit or `—`; strict-network and hide-network policies never replace or suppress it. Network bindings remain in details. A divider separates the header from content. The muted bottom-right footer independently shows `createdAt` as `HH:mm` today, `DD.MM, HH:mm` on other dates this year, and `DD.MM.YYYY, HH:mm` in other years, using the Kyiv calendar and shared visibility-aware day/year-boundary scheduling. The body uses one column below 760px and two columns from 760px: the right column takes 32% (minimum 220px), the left takes the remaining width, with a 24px gap. Text and attachments stay together on the left, with metadata, tags, reports, and replies on the right. On narrow cards, details follow text and attachments. The toolbar is right-aligned; at inner card widths up to 520px it keeps report creation direct and moves other applicable actions into overflow.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/shared/message-card/`
-- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
+- **Existing test(s):** `wdintel-web/tests/e2e/message-card-layout.spec.ts`, `wdintel-web/tests/e2e/message-card-duty-header.spec.ts`, `wdintel-web/tests/e2e/message-card-attachment-display.spec.ts`, `wdintel-web/tests/UserSettingsRegressionTests.elm`.
 
 ## Message edit mapping
 
@@ -260,7 +267,7 @@ that point. Positions without parseable coordinates remain textual. Regression:
 ## Duty header regression
 
 - **Behavior ID:** `react-message-card-duty-header`
-- **Expected observable result:** the narrow Duty header remains compact and right-aligned without duplicate timestamp or tag controls.
+- **Expected observable result:** the narrow Duty header keeps the explicit unit/date at left and direct report creation plus overflow actions at right, without duplicate timestamp or tag controls.
 - **Existing test(s):** `wdintel-web/tests/e2e/message-card-duty-header.spec.ts`
 - **Original Echo issue/PR, if known:** [#3570](https://github.com/echoua/echo/issues/3570)
 
@@ -290,3 +297,11 @@ that point. Positions without parseable coordinates remain textual. Regression:
 - Coverage: `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-card-video-loading.spec.ts`,
   `wdintel-web/src/ts/react/routes/shared/message-card/renderers/__tests__/VideoAttachmentPreviewRenderer.spec.tsx`
   and `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`.
+
+Attachment map readiness uses `coordinateStatus.hasCoordinates` when a published
+attachment revision is present, regardless of the AI summary state. Revision
+changes reload points; an empty revision clears stale coordinates. Legacy summary
+readiness applies only when coordinate status is absent. Maps retain lazy mounting
+and visible lookup errors. Regression coverage:
+`wdintel-web/src/ts/react/routes/shared/message-card/__tests__/message-coordinate-preview.spec.ts`
+and `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardCoordinateAttachment.spec.tsx`.

@@ -80,8 +80,11 @@ export function previewXlsxRows(
   };
 }
 
-export async function buildXlsxPreview(buffer: ArrayBuffer): Promise<XlsxPreviewResult> {
-  if (buffer.byteLength > MAX_XLSX_FILE_BYTES) {
+export async function buildXlsxPreview(
+  buffer: ArrayBuffer,
+  maxBytes = MAX_XLSX_FILE_BYTES,
+): Promise<XlsxPreviewResult> {
+  if (buffer.byteLength > maxBytes) {
     throw new XlsxPreviewError('XLSX_FILE_TOO_LARGE', 'XLSX file is too large');
   }
 

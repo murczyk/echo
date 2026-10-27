@@ -2,16 +2,40 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, FixedOffset};
 use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction,
-    QueryResult, Statement, TransactionTrait,
+    FromQueryResult, QueryResult, Statement, TransactionTrait,
 };
 use std::time::Instant;
 use uuid::Uuid;
 
-use crate::config::DeviceFileContentConfig;
+use crate::config::ContentLimitsConfig;
 use crate::h;
+use log::warn;
 
 const RESERVATION_LOCK_SQL: &str =
     "select pg_advisory_xact_lock(hashtextextended('echo:device-file-content-reservation', 0))";
+
+#[derive(FromQueryResult)]
+pub(in crate::devices) struct PublishedContent {
+    pub name: String,
+    pub extension: Option<String>,
+    pub mime_type: Option<String>,
+    pub object_key: String,
+    pub source_sha256: Vec<u8>,
+    pub source_size_bytes: i64,
+    pub is_encrypted: bool,
+}
+
+pub(in crate::devices) async fn find_published_content(
+    db: &DatabaseConnection,
+    device_id: Uuid,
+    file_id: Uuid,
+    revision: i64,
+) -> Result<Option<PublishedContent>> {
+    super::super::archive::access::find_published_content(
+        db, device_id, file_id, revision,
+    )
+    .await
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UploadStatus {
@@ -141,10 +165,10 @@ pub(crate) async fn load_upload(
     load_upload_on(db, upload_id, false).await.context(h!())
 }
 
-pub(crate) async fn create_or_replay(
+pub(super) async fn create_or_replay(
     db: &DatabaseConnection,
     request: NewUpload,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimitsConfig,
 ) -> Result<CreateOutcome> {
     let started = Instant::now();
     let transaction = db
@@ -173,7 +197,7 @@ pub(crate) async fn create_or_replay(
 async fn create_or_replay_in(
     transaction: &DatabaseTransaction,
     mut request: NewUpload,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimitsConfig,
     started: Instant,
 ) -> Result<CreateOutcome> {
     let requested_at = request.now;
@@ -236,7 +260,25 @@ async fn create_or_replay_in(
     let quota = load_quota(transaction, request.created_by_login_id)
         .await
         .context(h!())?;
-    if !quota_accepts(&quota, &request, config) {
+    if let Some(reason) = quota_rejection(&quota, &request, config) {
+        warn!(
+            "device content upload rejected by quota ({reason}): device={} file={} revision={} login={} upload_length={} reserved_bytes={} creator_reserved_bytes={} reserved_count={} creator_reserved_count={} available_spool_bytes={} limits=[max_reserved_bytes={} max_reserved_per_login={} max_reserved_count={} max_count_per_login={} spool_min_free_bytes={}]",
+            request.device_id,
+            request.file_id,
+            request.revision,
+            request.created_by_login_id,
+            request.upload_length,
+            quota.reserved_bytes,
+            quota.creator_reserved_bytes,
+            quota.reserved_count,
+            quota.creator_reserved_count,
+            request.available_spool_bytes,
+            config.max_reserved_bytes,
+            config.max_reserved_per_login,
+            config.max_reserved_count,
+            config.max_count_per_login,
+            config.spool_min_free_bytes,
+        );
         return Ok(CreateOutcome::CapacityUnavailable);
     }
     request.now = time_after_wait(requested_at, started).context(h!())?;
@@ -249,8 +291,11 @@ async fn create_or_replay_in(
     let hard_expires_at =
         deadline_after(request.now, config.upload_max_lifetime_secs)
             .context(h!())?;
-    let expires_at = deadline_after(request.now, config.upload_idle_ttl_secs)
-        .context(h!())?;
+    let expires_at = std::cmp::min(
+        deadline_after(request.now, config.upload_idle_ttl_secs)
+            .context(h!())?,
+        hard_expires_at,
+    );
     let upload_length = i64::try_from(request.upload_length)
         .context("convert upload length")
         .context(h!())?;
@@ -400,12 +445,12 @@ async fn revalidate_open_in(
     Ok((RevalidateOutcome::Open(upload), None))
 }
 
-pub(crate) async fn refresh_open(
+pub(super) async fn refresh_open(
     db: &DatabaseConnection,
     known: &Upload,
     now: DateTime<FixedOffset>,
     touch_activity: bool,
-    config: &DeviceFileContentConfig,
+    config: &ContentLimitsConfig,
     metrics: Option<&crate::telemetry::Metrics>,
 ) -> Result<RevalidateOutcome> {
     let started = Instant::now();
@@ -648,6 +693,14 @@ where id = $1 and status = 'open'
         .await
         .context("complete content upload")
         .context(h!())?;
+    super::super::archive::enqueue::ensure_in(
+        transaction,
+        upload.device_id,
+        upload.file_id,
+        upload.revision,
+    )
+    .await
+    .context(h!())?;
     Ok((
         PublishOutcome::Completed(completed(&upload)),
         Some(UploadStatus::Completed),
@@ -928,7 +981,7 @@ async fn load_target_for_update(
             r#"
 select device_id, kind::text as kind, revision, content_path
 from file_entry
-where id = $1
+where id = $1 and archive_file_id is null
 for update
 "#,
             [file_id.into()],
@@ -1045,32 +1098,40 @@ where spool_removed_at is null or status <> 'completed'
     })
 }
 
-fn quota_accepts(
+fn quota_rejection(
     quota: &QuotaUsage,
     request: &NewUpload,
-    config: &DeviceFileContentConfig,
-) -> bool {
+    config: &ContentLimitsConfig,
+) -> Option<&'static str> {
     let Some(reserved_bytes) =
         quota.reserved_bytes.checked_add(request.upload_length)
     else {
-        return false;
+        return Some("reserved bytes overflow");
     };
     let Some(creator_bytes) = quota
         .creator_reserved_bytes
         .checked_add(request.upload_length)
     else {
-        return false;
+        return Some("creator reserved bytes overflow");
     };
     let Some(required_available) =
         reserved_bytes.checked_add(config.spool_min_free_bytes)
     else {
-        return false;
+        return Some("required spool space overflow");
     };
-    reserved_bytes <= config.max_reserved_bytes
-        && creator_bytes <= config.max_reserved_per_login
-        && quota.reserved_count < config.max_reserved_count
-        && quota.creator_reserved_count < config.max_count_per_login
-        && request.available_spool_bytes >= required_available
+    if reserved_bytes > config.max_reserved_bytes {
+        Some("global reserved bytes")
+    } else if creator_bytes > config.max_reserved_per_login {
+        Some("per-login reserved bytes")
+    } else if quota.reserved_count >= config.max_reserved_count {
+        Some("global reserved count")
+    } else if quota.creator_reserved_count >= config.max_count_per_login {
+        Some("per-login reserved count")
+    } else if request.available_spool_bytes < required_available {
+        Some("spool free space")
+    } else {
+        None
+    }
 }
 
 fn replay_outcome(upload: Upload, request: &NewUpload) -> CreateOutcome {

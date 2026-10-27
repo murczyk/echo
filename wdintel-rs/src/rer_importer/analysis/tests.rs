@@ -28,6 +28,253 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[serial]
+#[tokio::test]
+async fn issue_3780_message_group_lookup_preserves_access_and_scope() {
+    let env = cleanup().await.unwrap();
+    let allowed = mk_signal_group(&env.dbx, Default::default())
+        .await
+        .unwrap()
+        .master_key;
+    let denied = mk_signal_group(&env.dbx, Default::default())
+        .await
+        .unwrap()
+        .master_key;
+    let mut ids = Vec::new();
+    for groups in [
+        vec![
+            Some(allowed.clone()),
+            Some(allowed.clone()),
+            Some(denied.clone()),
+        ],
+        vec![Some(denied.clone())],
+        vec![None],
+    ] {
+        let message = mk_signal_message(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        for group in groups {
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(group),
+                    datasource_group_id: Set(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        ids.push(message.id);
+    }
+
+    for lookup_by_message in [false, true] {
+        for (keys, scope, expected) in [
+            (vec![allowed.clone()], None, vec![ids[0]]),
+            (vec![denied.clone()], None, vec![ids[0], ids[1]]),
+            (
+                vec![allowed.clone(), denied.clone()],
+                None,
+                vec![ids[0], ids[1]],
+            ),
+            (vec![], None, vec![]),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![],
+            ),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::From(ids[1])),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[0],
+                    max_id: ids[0],
+                }),
+                vec![ids[0]],
+            ),
+            (
+                vec![allowed.clone(), denied.clone()],
+                Some(AnalyticsMessageIdScope::Empty),
+                vec![],
+            ),
+        ] {
+            let actual = signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(signal_message::Column::Id.is_in(ids.clone()))
+                .filter(message_in_groups_exists_with_correlation(
+                    keys,
+                    scope.as_ref(),
+                    lookup_by_message,
+                ))
+                .order_by_asc(signal_message::Column::Id)
+                .into_tuple::<i64>()
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires the isolated callsign benchmark database"]
+async fn capture_callsign_page_production_builder_plans() {
+    let output = std::path::PathBuf::from(
+        std::env::var("CALLSIGN_PLAN_OUTPUT").unwrap(),
+    );
+    std::fs::create_dir_all(&output).unwrap();
+    let env = crate::server::new_env(crate::types::Mode::Test)
+        .await
+        .unwrap();
+    let state = env
+        .dbx
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT master_key, creator FROM callsign_benchmark_state",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    let master_key: String = state.try_get_by("master_key").unwrap();
+    let login: uuid::Uuid = state.try_get_by("creator").unwrap();
+    let network_id: i64 = env
+        .dbx
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT id FROM sigint_network WHERE name = 'BENCH-NET-000'",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get_by("id")
+        .unwrap();
+    let req = mk_analysis_stats_req(1_786_060_800_000, 1_791_320_400_000);
+
+    let broad = AnalysisCallsignPageReq {
+        req: req.clone(),
+        query: String::new(),
+        page_size: Some(50),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::CountDesc,
+    };
+    let broad_first = stats::fetch_callsigns_page_for_login(
+        &broad,
+        &login,
+        &env.dbx,
+        vec![master_key.clone()],
+    )
+    .await
+    .unwrap();
+    let broad_second = AnalysisCallsignPageReq {
+        cursor: broad_first.next_cursor,
+        ..broad.clone()
+    };
+    let partial = AnalysisCallsignPageReq {
+        req: req.clone(),
+        query: "CS-099".to_string(),
+        page_size: Some(50),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let partial_first = stats::fetch_callsigns_page_for_login(
+        &partial,
+        &login,
+        &env.dbx,
+        vec![master_key.clone()],
+    )
+    .await
+    .unwrap();
+    let partial_second = AnalysisCallsignPageReq {
+        cursor: partial_first.next_cursor,
+        ..partial.clone()
+    };
+    let mut partial_deep = partial.clone();
+    for _ in 0..10 {
+        let page = stats::fetch_callsigns_page_for_login(
+            &partial_deep,
+            &login,
+            &env.dbx,
+            vec![master_key.clone()],
+        )
+        .await
+        .unwrap();
+        partial_deep.cursor = page.next_cursor;
+    }
+    let exact = AnalysisCallsignPageReq {
+        query: "CS-099000".to_string(),
+        ..partial.clone()
+    };
+    let case_variant = AnalysisCallsignPageReq {
+        query: "cs-099".to_string(),
+        ..partial.clone()
+    };
+    let no_match = AnalysisCallsignPageReq {
+        query: "NO-SUCH-CALLSIGN".to_string(),
+        ..partial.clone()
+    };
+    let mut narrow_req = req;
+    narrow_req.selected_freqs = Some(vec!["100.000".to_string()]);
+    narrow_req.selected_networks = Some(vec![network_id]);
+    let narrow = AnalysisCallsignPageReq {
+        req: narrow_req,
+        ..broad.clone()
+    };
+
+    for (name, page_req) in [
+        ("broad-first", broad),
+        ("broad-second", broad_second),
+        ("partial-first", partial),
+        ("partial-second", partial_second),
+        ("partial-deep", partial_deep),
+        ("exact-first", exact),
+        ("case-variant-first", case_variant),
+        ("no-match", no_match),
+        ("narrow-first", narrow),
+    ] {
+        let statement = stats::callsign_page_statement_for_test(
+            &page_req,
+            &login,
+            vec![master_key.clone()],
+        )
+        .unwrap();
+        std::fs::write(output.join(format!("{name}.sql")), &statement.sql)
+            .unwrap();
+        for run in 1..=3 {
+            let mut explain = statement.clone();
+            explain.sql = format!(
+                "EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON) {}",
+                explain.sql,
+            );
+            let plan = env.dbx.query_all_raw(explain).await.unwrap();
+            let plan = plan
+                .iter()
+                .map(|row| row.try_get_by_index::<String>(0).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            std::fs::write(output.join(format!("{name}-{run}.plan")), plan)
+                .unwrap();
+        }
+    }
+}
 struct NetworkFixture {
     network: sigint_network::Model,
 }
@@ -209,6 +456,7 @@ fn short_state_filter(
 
 fn short_state(groups_selected: Option<Vec<String>>) -> RerDutyQueryState {
     RerDutyQueryState {
+        group_scopes: None,
         waterfalls: Some(vec![(
             "mf-0".to_string(),
             short_state_filter(groups_selected),
@@ -239,6 +487,7 @@ fn mk_analysis_stats_req(
         or_with_coords: None,
         or_without_coords: None,
         search: None,
+        search_mode: None,
         selected_tags: None,
         denied_tags: None,
         tag_presence: None,
@@ -1070,22 +1319,119 @@ WHERE NOT network.deleted
         )
         .await
         .context(h!())?;
-    let (login, master_keys) = analysis_login_and_master_keys(env).await?;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(env).await.context(h!())?;
     let statement = stats::build_aors_analytics_query(
         req,
         &login,
-        crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
-        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
+        crate::utils::dt_from_millis(req.since_date_inclusive_ms)
+            .context(h!())?,
+        crate::utils::dt_from_millis(req.till_date_noninclusive_ms)
+            .context(h!())?,
         master_keys,
-    )?;
+    )
+    .context(h!())?;
     let aors = AorQueryResult::find_by_statement(statement)
         .all(&env.dbx)
         .await
         .context(h!())?;
-    Ok(aors
+    let aors: BTreeMap<i64, i64> = aors
         .into_iter()
         .map(|aor| (aor.aor_id, aor.count))
-        .collect())
+        .collect();
+    for scope in [
+        None,
+        Some(AnalyticsMessageIdScope::From(0)),
+        Some(AnalyticsMessageIdScope::Inclusive {
+            min_id: 0,
+            max_id: i64::MAX,
+        }),
+        Some(AnalyticsMessageIdScope::Empty),
+    ] {
+        let count = fetch_analytics_aor_count_for_req(env, req, scope.as_ref())
+            .await
+            .context(h!())?;
+        let expected = if scope.is_some_and(|scope| scope.is_empty()) {
+            0
+        } else {
+            aors.len() as i64
+        };
+        assert_eq!(count, expected);
+    }
+    Ok(aors)
+}
+
+async fn fetch_analytics_aor_count_for_req(
+    env: &Arc<Env>,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<i64, AppError> {
+    let (login, _) = analysis_login_and_master_keys(env).await.context(h!())?;
+    let store = RedisSessionStore::new(
+        crate::redis_conn_string(&env.config).context(h!())?,
+    )
+    .await
+    .c(h!())?;
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .app_data(Data::new(scope.cloned()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .route(
+                "/test/aor-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .route(
+                "/test/aor-count",
+                web::post().to(analytics_aor_count_for_test),
+            ),
+    )
+    .await;
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/aor-login/{login}"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/test/aor-count")
+            .cookie(cookie)
+            .set_json(req)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    Ok(actix_test::read_body_json(response).await)
+}
+
+async fn analytics_aor_count_for_test(
+    req: Json<AnalysisStatsReq>,
+    user: Identity,
+    env: Data<Env>,
+    scope: Data<Option<AnalyticsMessageIdScope>>,
+) -> Result<Json<i64>, AppError> {
+    let login = login_id_from_identity(&user).context(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let count = stats::count_aors_raw_with_db(
+        &req,
+        &user,
+        &env.dbx,
+        &env.dbx,
+        master_keys,
+        scope.get_ref().as_ref(),
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
 }
 
 #[derive(FromQueryResult)]
@@ -1250,6 +1596,22 @@ async fn fetch_callsign_counts_for_req(
             .await
             .context(h!())?;
     Ok(callsign_counts(callsigns))
+}
+
+async fn fetch_callsign_page_for_req(
+    env: &Arc<Env>,
+    req: AnalysisCallsignPageReq,
+) -> Result<AnalysisCallsignPageRsp, AppError> {
+    let (login, master_keys) =
+        analysis_login_and_master_keys(env).await.context(h!())?;
+    Ok(stats::fetch_callsigns_page_for_login(
+        &req,
+        &login,
+        &env.dbx,
+        master_keys,
+    )
+    .await
+    .context(h!())?)
 }
 
 async fn fetch_tag_counts_for_req(
@@ -1895,6 +2257,7 @@ fn analytics_senders_selected_networks_use_scoped_flat_joins() {
         vec!["group".to_string()],
         Some(&scope),
         None,
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -1939,6 +2302,7 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
         vec!["group".to_string()],
         None,
         None,
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -1965,6 +2329,7 @@ fn postgres_senders_creation_breakdown_qualifies_created_at() {
         test_dt(1970, 1, 1, 0, 0),
         test_dt(1970, 1, 2, 0, 0),
         vec!["group".to_string()],
+        None,
         None,
         None,
     )
@@ -2060,6 +2425,974 @@ async fn rer_analysis_search_matches_plain_prefix() {
             .unwrap(),
         1
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_search_modes_match_case_insensitively_in_counts_and_inbox_3780(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let login = find_test_login(&fixture.env.dbx).await.unwrap();
+    let mut ids = Vec::new();
+    for (index, text) in
+        ["нора", "НОРА!", "панорама", "норма", "нормальний", "норою"]
+            .into_iter()
+            .enumerate()
+    {
+        ids.push(
+            mk_analysis_message(
+                &fixture.env.dbx,
+                text,
+                "155.2750",
+                test_dt(2026, 3, 1, 10, index as u32),
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    for (mode, expected_indexes) in [
+        (None, vec![0, 1, 3, 4, 5]),
+        (Some(AnalysisSearchMode::Fuzzy), vec![0, 1, 3, 4, 5]),
+        (Some(AnalysisSearchMode::Exact), vec![0, 1]),
+        (Some(AnalysisSearchMode::Substring), vec![0, 1, 2]),
+    ] {
+        let mut req = analysis_stats_req0(&fixture);
+        req.search = Some("НоРа".into());
+        req.search_mode = mode;
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected_indexes.len() as i64,
+            "{mode:?}"
+        );
+        let inbox_req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(req.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(req.till_date_noninclusive_ms - 1),
+            search: req.search.clone(),
+            search_mode: mode,
+            selected_groups: Some(vec![fixture
+                .alpha
+                .signal_group
+                .master_key
+                .clone()]),
+            ..Default::default()
+        };
+        let actual = inbox_map_item_ids(&fixture.env, &login.id, &inbox_req)
+            .await
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        let expected = expected_indexes
+            .iter()
+            .map(|index| ids[*index])
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(actual, expected, "{mode:?}");
+    }
+    let mut req = analysis_stats_req0(&fixture);
+    req.search_mode = Some(AnalysisSearchMode::Exact);
+    for (query, expected) in
+        [("нора -панорама", 2), ("нора or норма", 3), ("\"нора\"", 2)]
+    {
+        req.search = Some(query.into());
+        assert_eq!(
+            fetch_selected_count_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected,
+            "{query}"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_search_highlights_follow_selected_mode_3780() {
+    use crate::rer_importer::highlight::ContentNode;
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let login = find_test_login(&fixture.env.dbx).await.unwrap();
+    let text =
+        "🙂 НоРа,НОРА! норою панорама норма БА123З foo_bar fooXbar 100% 1000";
+    let mut ids = Vec::new();
+    for body in [text, "панорама"] {
+        ids.push(
+            mk_analysis_message(
+                &fixture.env.dbx,
+                body,
+                "155.2750",
+                test_dt(2026, 3, 1, 10, 0),
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    for (mode, query, expected) in [
+        (None, "НоРа", vec!["НоРа", "НОРА", "норою"]),
+        (
+            Some(AnalysisSearchMode::Exact),
+            "НоРа",
+            vec!["НоРа", "НОРА"],
+        ),
+        (
+            Some(AnalysisSearchMode::Exact),
+            "\"НоРа\"",
+            vec!["НоРа", "НОРА"],
+        ),
+        (
+            Some(AnalysisSearchMode::Exact),
+            "НоРа or absent -норою",
+            vec!["НоРа", "НОРА"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "НоРа",
+            vec!["НоРа", "НОРА", "нора"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "\"НоРа\"",
+            vec!["НоРа", "НОРА", "нора"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "НоРа or absent -норма",
+            vec!["НоРа", "НОРА", "нора"],
+        ),
+        (Some(AnalysisSearchMode::Exact), "\"БА%З\"", vec!["БА123З"]),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "\"БА%З\"",
+            vec!["БА123З"],
+        ),
+        (
+            Some(AnalysisSearchMode::Substring),
+            "foo_bar",
+            vec!["foo_bar"],
+        ),
+        (Some(AnalysisSearchMode::Substring), "100%", vec!["100%"]),
+    ] {
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+            till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms - 1),
+            selected_groups: Some(vec![fixture
+                .alpha
+                .signal_group
+                .master_key
+                .clone()]),
+            search: Some(query.into()),
+            search_mode: mode,
+            highlight_searchres: Some(true),
+            ..Default::default()
+        };
+        let messages = crate::rer_importer::inbox::get_inbox_messages(
+            &login.id,
+            &vec![login.id],
+            &fixture.env,
+            &req,
+        )
+        .await
+        .unwrap();
+        assert!(
+            messages.iter().any(|(id, _)| *id == ids[0]),
+            "{mode:?}: {query}"
+        );
+        if mode == Some(AnalysisSearchMode::Substring) && expected.len() == 3 {
+            assert!(messages.iter().any(|(id, _)| *id == ids[1]), "{query}");
+        }
+        for (id, message) in messages {
+            let highlights = message
+                .text_marked
+                .unwrap()
+                .into_iter()
+                .filter_map(|node| match node {
+                    ContentNode::CNHighlightC(highlight) => Some(highlight),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let actual = highlights
+                .iter()
+                .map(|highlight| highlight.text.as_str())
+                .collect::<Vec<_>>();
+            if id == ids[0] {
+                assert_eq!(actual, expected, "{mode:?}: {query}");
+            } else if id == ids[1] {
+                assert_eq!(mode, Some(AnalysisSearchMode::Substring));
+                assert_eq!(actual, vec!["нора"]);
+                assert_eq!((highlights[0].begin, highlights[0].end), (2, 6));
+            }
+            for highlight in highlights {
+                assert_eq!(
+                    message
+                        .text
+                        .chars()
+                        .skip(highlight.begin)
+                        .take(highlight.end - highlight.begin)
+                        .collect::<String>(),
+                    highlight.text,
+                );
+            }
+        }
+    }
+}
+
+async fn seed_search_pagination_messages(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    tag_id: i64,
+) {
+    let db = &fixture.env.dbx;
+    for index in 0..27 {
+        let datetime = test_dt(2026, 3, 1, 10, index % 3);
+        let message = mk_analysis_message(
+            db,
+            &format!("Береза pagination {index}"),
+            "155.2750",
+            datetime,
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(tag_id),
+            confidence: Set(1.0),
+            login_id: Set(Some(*login)),
+            model: Set(None),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_metadata(
+            db,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                color_code: Set(Some("7".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        if index == 26 {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let tag = mk_tag(
+        db,
+        tag::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    seed_search_pagination_messages(&fixture, &login.id, tag.id).await;
+    for sort_by in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ] {
+        for newest_first in [false, true] {
+            let mut req = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                ),
+                search: Some("Берез".into()),
+                search_mode: None,
+                selected_groups: Some(vec![fixture
+                    .alpha
+                    .signal_group
+                    .master_key
+                    .clone()]),
+                selected_freqs: Some(vec!["155.2750".into()]),
+                selected_tags: Some(vec![tag.id]),
+                metadata_cc: Some(vec!["7".into()]),
+                without_model_tags: Some(true),
+                sort_by: Some(sort_by),
+                newest_first: Some(newest_first),
+                ..Default::default()
+            };
+            let mut first_ids = Vec::new();
+            for page_index in 0..2 {
+                let expected =
+                    inbox_map_item_ids(&fixture.env, &login.id, &req).await;
+                let messages = crate::rer_importer::inbox::get_inbox_messages(
+                    &login.id,
+                    &vec![login.id],
+                    &fixture.env,
+                    &req,
+                )
+                .await
+                .unwrap();
+                let ids =
+                    messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+                assert_eq!(ids, expected);
+                let tail = crate::rer_importer::inbox::query::load_postgres_fresh_tail_inbox_candidates(
+                    db,
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    test_dt(2026, 3, 1, 9, 0),
+                )
+                .await
+                .unwrap();
+                assert_eq!(tail, expected);
+                let tail_query = crate::rer_importer::inbox::query::build_postgres_fresh_tail_inbox_digest_query(
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    test_dt(2026, 3, 1, 9, 0),
+                )
+                .await
+                .unwrap();
+                let tail = db
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        tail_query,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    tail.try_get::<i64>("", "count").unwrap(),
+                    if page_index == 0 { 26 } else { 6 }
+                );
+                assert_eq!(
+                    messages.len(),
+                    if page_index == 0 {
+                        INBOX_MESSAGES_PAGE_LIMIT
+                    } else {
+                        6
+                    }
+                );
+                assert!(messages
+                    .iter()
+                    .all(|(_, message)| message.tags == Some(vec![tag.id])
+                        && message.metadata.len() == 1));
+                if page_index == 0 {
+                    first_ids = ids.clone();
+                    if newest_first {
+                        req.before_id_noninclusive = ids.last().copied();
+                    } else {
+                        req.since_id_noninclusive = ids.last().copied();
+                    }
+                } else {
+                    assert!(ids.iter().all(|id| !first_ids.contains(id)));
+                }
+            }
+        }
+    }
+}
+
+async fn seed_fresh_tail_search_messages_3780(
+    fixture: &RerAnalysisFixture,
+    unit_ids: [i64; 2],
+    date: NaiveDateTime,
+) -> Vec<i64> {
+    let db = &fixture.env.dbx;
+    let mut ids = Vec::new();
+    for (index, text) in [
+        "Береза коридор",
+        "Вільха",
+        "Береза стара",
+        "Вільха вкладення",
+        "Вільха застаріла ревізія",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            text,
+            "155.2750",
+            if index == 2 {
+                date - chrono::Duration::hours(1)
+            } else {
+                date
+            },
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        ids.push(message.id);
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::UnitV2,
+                Expr::value(if index == 3 {
+                    "3780 attachment tail"
+                } else {
+                    "3780 fresh tail"
+                }),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(message.id))
+            .exec(db)
+            .await
+            .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(unit_ids[usize::from(index == 3)]),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        if matches!(index, 1 | 3 | 4) {
+            seed_fresh_tail_search_attachment_3780(db, message.id, index).await;
+        }
+    }
+    ids
+}
+
+async fn seed_fresh_tail_search_attachment_3780(
+    db: &DatabaseConnection,
+    message_id: i64,
+    index: usize,
+) {
+    let media = signal_message_media::ActiveModel {
+        id: Set(uuid::Uuid::new_v4()),
+        signal_message_id: Set(message_id),
+        file_name: Set(Some(
+            if index == 1 {
+                "Береза.txt"
+            } else {
+                "content.txt"
+            }
+            .into(),
+        )),
+        content_type: Set("text/plain".into()),
+        size_bytes: Set(1),
+        is_encrypted: Set(true),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    if index == 1 {
+        return;
+    }
+    let revision = uuid::Uuid::new_v4();
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"
+        WITH document AS (
+            UPDATE attachment_document SET revision = $2
+            WHERE media_id = $1 RETURNING media_id
+        )
+        INSERT INTO attachment_chunk
+            (media_id, revision, ordinal, member, locator, text, markdown, html)
+        SELECT media_id, $3, 0, 'content.txt', '1',
+            'Береза зміна позиції', '', '' FROM document
+        "#,
+        [
+            media.id.into(),
+            revision.into(),
+            if index == 4 {
+                uuid::Uuid::new_v4()
+            } else {
+                revision
+            }
+            .into(),
+        ],
+    ))
+    .await
+    .unwrap();
+}
+
+fn fresh_tail_unit_filters_3780(
+    unit_ids: [i64; 2],
+) -> Vec<(InboxMessagesReq, Vec<usize>)> {
+    vec![
+        (InboxMessagesReq::default(), vec![0, 1, 3, 4]),
+        (
+            InboxMessagesReq {
+                selected_units: Some(vec!["3780 fresh tail".into()]),
+                ..Default::default()
+            },
+            vec![0, 1, 4],
+        ),
+        (
+            InboxMessagesReq {
+                selected_unit_ids: Some(vec![unit_ids[0]]),
+                ..Default::default()
+            },
+            vec![0, 1, 4],
+        ),
+        (
+            InboxMessagesReq {
+                selected_units: Some(vec!["3780 fresh tail".into()]),
+                selected_unit_ids: Some(vec![unit_ids[1]]),
+                ..Default::default()
+            },
+            vec![0, 1, 3, 4],
+        ),
+        (
+            InboxMessagesReq {
+                denied_units: Some(vec!["3780 fresh tail".into()]),
+                ..Default::default()
+            },
+            vec![3],
+        ),
+        (
+            InboxMessagesReq {
+                denied_unit_ids: Some(vec![unit_ids[0]]),
+                ..Default::default()
+            },
+            vec![3],
+        ),
+    ]
+}
+
+async fn assert_fresh_tail_search_3780(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    date: NaiveDateTime,
+    expected: &[i64],
+) {
+    use crate::rer_importer::inbox::query::{
+        build_postgres_fresh_tail_inbox_digest_query,
+        load_postgres_fresh_tail_inbox_candidates,
+    };
+
+    let db = &env.dbx;
+    let cutoff = date - chrono::Duration::minutes(1);
+    let actual =
+        load_postgres_fresh_tail_inbox_candidates(db, login, env, req, cutoff)
+            .await
+            .unwrap();
+    assert_eq!(actual, expected, "{req:?}");
+    let query =
+        build_postgres_fresh_tail_inbox_digest_query(login, env, req, cutoff)
+            .await
+            .unwrap();
+    let row = db
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        expected.len() as i64
+    );
+    assert_eq!(
+        row.try_get::<Option<NaiveDateTime>>("", "first_element_ts")
+            .unwrap(),
+        (!expected.is_empty()).then_some(date)
+    );
+}
+
+async fn assert_full_period_search_results_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    mut expected: Vec<i64>,
+) {
+    let mut actual = inbox_map_item_ids(&fixture.env, login, req).await;
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected, "{req:?}");
+    let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+        login,
+        &fixture.env,
+        req,
+    )
+    .await
+    .unwrap();
+    let row = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        expected.len() as i64
+    );
+    let mut stats_req = mk_analysis_stats_req(
+        req.since_date_inclusive_ms.unwrap(),
+        req.till_date_inclusive_ms.unwrap(),
+    );
+    stats_req.selected_groups = req.selected_groups.clone();
+    stats_req.selected_freqs = req.selected_freqs.clone();
+    stats_req.search = req.search.clone();
+    stats_req.search_mode = req.search_mode;
+    let groups = fetch_group_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert_eq!(
+        groups
+            .get(&fixture.alpha.signal_group.master_key)
+            .copied()
+            .unwrap_or(0),
+        expected.len() as i64,
+        "{req:?}"
+    );
+    let sender_counts = fetch_sender_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert_eq!(
+        sender_counts.values().sum::<i64>(),
+        expected.len() as i64,
+        "{req:?}"
+    );
+    let freqs = fetch_freq_counts_for_req(&fixture.env, &stats_req)
+        .await
+        .unwrap();
+    assert!(!freqs.is_empty());
+    stats_req.selected_freqs = Some(vec!["999.9999".into()]);
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &stats_req)
+            .await
+            .unwrap(),
+        freqs,
+        "frequency facet must ignore its own selection: {req:?}"
+    );
+}
+
+async fn seed_full_period_audio_search_3780(
+    fixture: &RerAnalysisFixture,
+    date: NaiveDateTime,
+) -> i64 {
+    let db = &fixture.env.dbx;
+    let message = mk_analysis_message(
+        db,
+        "Аудіозапис",
+        "155.2750",
+        date,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"
+        with source as (
+            insert into transcription_source(id, source_key)
+            values ($1, '3780-audio/' || $1::text) returning id
+        ), audio as (
+            insert into signal_message_audio_ref
+                (id, signal_message_id, audio_id, transcription_source_id)
+            select $1, $2, $1, id from source returning id
+        )
+        insert into signal_message_audio_search(id, signal_message_id, file_name)
+        select id, $2, 'Береза.wav' from audio
+        "#,
+        [uuid::Uuid::new_v4().into(), message.id.into()],
+    ))
+    .await
+    .unwrap();
+    message.id
+}
+
+async fn assert_attachment_search_without_inbox_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    message: i64,
+    date: NaiveDateTime,
+) {
+    let db = &fixture.env.dbx;
+    for body in [
+        None,
+        Some(serde_json::Value::Null),
+        Some(serde_json::json!({"body": null})),
+        Some(serde_json::json!({"body": ""})),
+    ] {
+        sigint_inbox_item::Entity::delete_by_id(message)
+            .exec(db)
+            .await
+            .unwrap();
+        if let Some(body) = body {
+            crate::functest::tests::mk_sigint_inbox_item(
+                db,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message),
+                    body_noheader: Set(Some(body)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        for sort_by in [
+            InboxMessagesSortBy::IMSCreatedAt,
+            InboxMessagesSortBy::IMSDatetime,
+        ] {
+            for search_mode in
+                [AnalysisSearchMode::Exact, AnalysisSearchMode::Substring]
+            {
+                for (search, matches) in [
+                    ("\"Береза.txt\"", true),
+                    ("-Невідомий", true),
+                    ("-Береза", false),
+                    ("\"%\"", true),
+                    ("-\"%\"", false),
+                ] {
+                    let req = InboxMessagesReq {
+                        since_date_inclusive_ms: (sort_by
+                            == InboxMessagesSortBy::IMSCreatedAt)
+                            .then_some(date.and_utc().timestamp_millis()),
+                        selected_groups: Some(vec![fixture
+                            .alpha
+                            .signal_group
+                            .master_key
+                            .clone()]),
+                        search: Some(search.into()),
+                        search_mode: Some(search_mode),
+                        sort_by: Some(sort_by),
+                        nolimit: Some(true),
+                        load_latest: Some(true),
+                        ..Default::default()
+                    };
+                    assert_optional_inbox_search_result_3780(
+                        fixture, login, &req, message, matches,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+}
+
+async fn assert_optional_inbox_search_result_3780(
+    fixture: &RerAnalysisFixture,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    message: i64,
+    matches: bool,
+) {
+    let actual = inbox_map_item_ids(&fixture.env, login, req).await;
+    assert_eq!(actual.contains(&message), matches, "{req:?}");
+    let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+        login,
+        &fixture.env,
+        req,
+    )
+    .await
+    .unwrap();
+    let row = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.try_get::<i64>("", "count").unwrap(),
+        actual.len() as i64,
+        "{req:?}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 10, 25, 10, 0);
+    let ids = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, unit.id],
+        date,
+    )
+    .await;
+    let audio = seed_full_period_audio_search_3780(&fixture, date).await;
+    let mut other_frequency = 0;
+    for (index, group, datetime, deleted) in [
+        (0, &fixture.alpha, date, false),
+        (1, &fixture.secret_live, date, false),
+        (2, &fixture.alpha, date - chrono::Duration::days(32), false),
+        (3, &fixture.alpha, date, true),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            "Береза",
+            if index == 0 { "155.3000" } else { "155.2750" },
+            datetime,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        if deleted {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+        if index == 0 {
+            other_frequency = message.id;
+        }
+    }
+    for days in [1, 7, 8, 16, 31] {
+        for selected_freqs in [None, Some(vec!["155.2750".into()])] {
+            for search_mode in [
+                AnalysisSearchMode::Fuzzy,
+                AnalysisSearchMode::Exact,
+                AnalysisSearchMode::Substring,
+            ] {
+                for (search, indexes) in [
+                    ("Береза", vec![0, 1, 2, 3]),
+                    ("-Береза", vec![4]),
+                    ("\"зміна позиції\"", vec![3]),
+                ] {
+                    let req = InboxMessagesReq {
+                        since_date_inclusive_ms: Some(
+                            (date - chrono::Duration::days(days))
+                                .and_utc()
+                                .timestamp_millis(),
+                        ),
+                        till_date_inclusive_ms: Some(
+                            (date + chrono::Duration::hours(1))
+                                .and_utc()
+                                .timestamp_millis(),
+                        ),
+                        selected_groups: Some(vec![fixture
+                            .alpha
+                            .signal_group
+                            .master_key
+                            .clone()]),
+                        selected_freqs: selected_freqs.clone(),
+                        search: Some(search.into()),
+                        search_mode: Some(search_mode),
+                        nolimit: Some(true),
+                        ..Default::default()
+                    };
+                    let mut expected = indexes
+                        .iter()
+                        .map(|index| ids[*index])
+                        .collect::<Vec<_>>();
+                    if search == "Береза" {
+                        expected.push(audio);
+                    }
+                    if selected_freqs.is_none() && search == "Береза" {
+                        expected.push(other_frequency);
+                    }
+                    assert_full_period_search_results_3780(
+                        &fixture, &login.id, &req, expected,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+    assert_attachment_search_without_inbox_3780(
+        &fixture, &login.id, ids[1], date,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn postgres_fresh_tail_search_preserves_matches_and_unit_filters_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let attachment_unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 3, 2, 10, 0);
+    let ids = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, attachment_unit.id],
+        date,
+    )
+    .await;
+    for (filters, eligible) in
+        fresh_tail_unit_filters_3780([unit.id, attachment_unit.id])
+    {
+        for search_mode in [
+            AnalysisSearchMode::Fuzzy,
+            AnalysisSearchMode::Exact,
+            AnalysisSearchMode::Substring,
+        ] {
+            for (search, matches) in [
+                ("Береза", vec![0, 1, 3]),
+                ("-Береза", vec![4]),
+                ("Береза or Вільха", vec![0, 1, 3, 4]),
+                ("155.275 Береза", vec![0, 1, 3]),
+                ("\"Береза\" -відсутній", vec![0, 1, 3]),
+                ("\"зміна позиції\"", vec![3]),
+            ] {
+                let req = InboxMessagesReq {
+                    since_date_inclusive_ms: Some(
+                        (date - chrono::Duration::hours(2))
+                            .and_utc()
+                            .timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        (date + chrono::Duration::days(1))
+                            .and_utc()
+                            .timestamp_millis(),
+                    ),
+                    search: Some(search.into()),
+                    search_mode: Some(search_mode),
+                    nolimit: Some(true),
+                    ..filters.clone()
+                };
+                let expected = matches
+                    .into_iter()
+                    .filter(|index| eligible.contains(index))
+                    .map(|index| ids[index])
+                    .collect::<Vec<_>>();
+                let mut full_period =
+                    inbox_map_item_ids(&fixture.env, &login.id, &req).await;
+                full_period.retain(|id| *id != ids[2]);
+                assert_eq!(full_period, expected, "{search_mode:?}: {search}");
+                for sort_by in [
+                    InboxMessagesSortBy::IMSDatetime,
+                    InboxMessagesSortBy::IMSCreatedAt,
+                ] {
+                    let req = InboxMessagesReq {
+                        sort_by: Some(sort_by),
+                        ..req.clone()
+                    };
+                    assert_fresh_tail_search_3780(
+                        &fixture.env,
+                        &login.id,
+                        &req,
+                        date,
+                        &expected,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -2328,6 +3661,114 @@ async fn rer_analysis_aor_filter_hides_groups_outside_selected_aor() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_aor_membership_preserves_union_counts_and_cursors_3780() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    for (index, (groups, networks)) in [
+        (vec![&fixture.group_x], vec![]),
+        (vec![&fixture.group_y], vec![fixture.network_k.network.id]),
+        (
+            vec![&fixture.group_x, &fixture.group_y],
+            vec![fixture.network_k.network.id, fixture.network_l.network.id],
+        ),
+        (vec![&fixture.group_y], vec![fixture.network_l.network.id]),
+        (vec![&fixture.group_y], vec![]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        mk_analysis_message(
+            db,
+            &format!("membership-{index}"),
+            "901.3",
+            test_dt(2026, 3, 2, 10, index as u32),
+            &groups,
+            &networks,
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    let login = crate::users::login_id_by_name(db, "Tester").await.unwrap();
+    let mut req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(
+            test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+        ),
+        till_date_inclusive_ms: Some(
+            test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+        ),
+        selected_aors: Some(vec![fixture.aor_a.id]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    for selected_group in
+        [None, Some(fixture.group_y.signal_group.master_key.clone())]
+    {
+        req.selected_groups = selected_group.map(|group| vec![group]);
+        let mut expected =
+            crate::rer_importer::inbox::query::build_filtered_inbox_query(
+                db,
+                &login,
+                &fixture.env,
+                &req,
+            )
+            .await
+            .unwrap()
+            .select_only()
+            .column(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(db)
+            .await
+            .unwrap();
+        expected.sort_unstable();
+        expected.dedup();
+        assert_eq!(
+            expected.len(),
+            if req.selected_groups.is_some() { 2 } else { 3 }
+        );
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected);
+        let digest = crate::rer_importer::inbox::query::build_analytics_inbox_digest_query(&login, &fixture.env, &req, db, 90_000).await.unwrap().unwrap();
+        let quantity: i64 = db
+            .query_one_raw(Statement::from_string(DbBackend::Postgres, digest))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", "count")
+            .unwrap();
+        assert_eq!(quantity, expected.len() as i64);
+        let cursor_req = InboxMessagesReq {
+            nolimit: Some(false),
+            since_id_noninclusive: Some(expected[0]),
+            ..req.clone()
+        };
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &cursor_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected[1..]);
+    }
 }
 
 #[tokio::test]
@@ -3526,6 +4967,314 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
     );
 }
 
+async fn seed_note_filter_comments(
+    fixture: &RerAnalysisFixture,
+) -> (BTreeSet<i64>, BTreeSet<i64>) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    let datetime = test_dt(2026, 3, 1, 10, 5);
+    let mut all_note_ids = BTreeSet::new();
+    let mut user_note_ids = BTreeSet::new();
+    for legacy in [true, false] {
+        for authors in [
+            vec![system_login_id],
+            vec![login.id],
+            vec![system_login_id, login.id],
+        ] {
+            let message = mk_analysis_message(
+                db,
+                "note-filter-message",
+                "940.9",
+                datetime,
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+            all_note_ids.insert(message.id);
+            if authors.contains(&login.id) {
+                user_note_ids.insert(message.id);
+            }
+            for author in authors {
+                if legacy {
+                    mk_sigint_comment(
+                        db,
+                        sigint_comment::ActiveModel {
+                            signal_message_id: Set(message.id),
+                            login_id: Set(author),
+                            comment: Set("note".to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                } else {
+                    crate::sigint::comments::create_linked_message_comment_from_ingestion(
+                        db,
+                        &fixture.env.config,
+                        message.id,
+                        &author,
+                        "note",
+                        datetime,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    }
+    (all_note_ids, user_note_ids)
+}
+
+async fn mk_note_filter_parent(
+    fixture: &RerAnalysisFixture,
+) -> signal_message::Model {
+    mk_analysis_message(
+        &fixture.env.dbx,
+        "note-filter-parent",
+        "940.9",
+        test_dt(2026, 3, 1, 10, 5),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap()
+}
+
+async fn seed_note_filter_sender_authors(
+    fixture: &RerAnalysisFixture,
+    all_note_ids: &mut BTreeSet<i64>,
+    user_note_ids: &mut BTreeSet<i64>,
+) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    for (author, sender, system_only) in [
+        (None, Some(system_login_id.to_string()), true),
+        (None, Some(system_login_id.to_string().to_uppercase()), true),
+        (None, Some(system_login_id.simple().to_string()), true),
+        (None, Some(system_login_id.braced().to_string()), true),
+        (None, Some(system_login_id.urn().to_string()), true),
+        (None, Some(login.id.to_string()), false),
+        (Some(login.id), Some(system_login_id.to_string()), false),
+        (Some(system_login_id), Some(login.id.to_string()), true),
+        (None, None, false),
+        (None, Some("non-UUID sender".to_string()), false),
+    ] {
+        let parent = mk_note_filter_parent(fixture).await;
+        let child = crate::sigint::comments::create_linked_message_comment_from_ingestion(
+            db,
+            &fixture.env.config,
+            parent.id,
+            &login.id,
+            "note",
+            test_dt(2026, 3, 1, 10, 5),
+            None,
+        )
+        .await
+        .unwrap();
+        signal_message::ActiveModel {
+            id: Set(child),
+            login_id: Set(author),
+            sender: Set(sender),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        all_note_ids.insert(parent.id);
+        if !system_only {
+            user_note_ids.insert(parent.id);
+        }
+    }
+}
+
+async fn seed_note_filter_non_notes(
+    fixture: &RerAnalysisFixture,
+) -> BTreeSet<i64> {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let parent = mk_note_filter_parent(fixture).await;
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            signal_message_id: Set(parent.id),
+            login_id: Set(login.id),
+            comment: Set(String::new()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut ids = BTreeSet::from([parent.id]);
+    for (body, deleted, relation_kind) in [
+        (Some(""), false, intel_product_filter::RELATION_KIND_COMMENT),
+        (None, false, intel_product_filter::RELATION_KIND_COMMENT),
+        (
+            Some("note"),
+            true,
+            intel_product_filter::RELATION_KIND_COMMENT,
+        ),
+        (
+            Some("report"),
+            false,
+            intel_product_filter::RELATION_KIND_REPORT,
+        ),
+    ] {
+        let parent = mk_note_filter_parent(fixture).await;
+        ids.insert(parent.id);
+        let child = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                login_id: Set(Some(login.id)),
+                body: Set(body.map(str::to_string)),
+                deleted: Set(deleted),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(child.id),
+            source_message_id: Set(parent.id),
+            relation_kind: Set(relation_kind),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            db,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(parent.id),
+                login_id: Set(login.id),
+                comment: Set("stale migrated note".to_string()),
+                migrated_signal_message_id: Set(Some(child.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    ids
+}
+
+async fn assert_note_filter_matches(
+    fixture: &RerAnalysisFixture,
+    request: &InboxMessagesReq,
+    candidates: &[i64],
+    expected: &BTreeSet<i64>,
+) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
+        .await
+        .unwrap();
+    for nolimit in [true, false] {
+        let request = InboxMessagesReq {
+            nolimit: Some(nolimit),
+            ..request.clone()
+        };
+        let messages = crate::rer_importer::inbox::get_inbox_messages(
+            &login.id,
+            &logins,
+            &fixture.env,
+            &request,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            messages.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>(),
+            *expected,
+        );
+    }
+    let mut stats_request = analysis_stats_req0(fixture);
+    stats_request.or_with_extended_form = Some(true);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &stats_request)
+            .await
+            .unwrap(),
+        expected.len() as i64,
+    );
+    let query =
+        crate::rer_importer::inbox::query::build_inbox_query_for_candidate_ids(
+            db,
+            &login.id,
+            &fixture.env,
+            request,
+            candidates,
+            false,
+        )
+        .await
+        .unwrap();
+    let matching_ids = db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.try_get_by::<i64, _>("id").unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(matching_ids, *expected);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_note_filter_respects_comment_parsing_setting() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let (mut all_note_ids, mut user_note_ids) =
+        seed_note_filter_comments(&fixture).await;
+    seed_note_filter_sender_authors(
+        &fixture,
+        &mut all_note_ids,
+        &mut user_note_ids,
+    )
+    .await;
+    let mut candidates = seed_note_filter_non_notes(&fixture).await;
+    candidates.extend(&all_note_ids);
+    let candidates = candidates.into_iter().collect::<Vec<_>>();
+    let request = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        or_with_extended_form: Some(true),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    for (index, (enabled, expected)) in [
+        (None, &all_note_ids),
+        (Some(true), &user_note_ids),
+        (Some(false), &all_note_ids),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if let Some(enabled) = enabled {
+            system_settings::ActiveModel {
+                sigint_comment_parsing_enabled: Set(enabled),
+                updated_at: Set(test_dt(2026, 3, 1, 12, index as u32)),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        system_settings::ActiveModel {
+            sigint_comment_parsing_enabled: Set(enabled != Some(true)),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        assert_note_filter_matches(&fixture, &request, &candidates, expected)
+            .await;
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn rer_analysis_comments_api_returns_other_organism_comment_for_accessible_message(
@@ -4246,6 +5995,274 @@ async fn rer_analysis_sender_callsign_and_post_filters_recalculate_values() {
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap();
     assert!(!freq_counts.contains_key("942.1"));
     assert!(freq_counts.contains_key("942.2"));
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_callsign_page_paginates_full_order_and_escapes_literal_search(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    for (index, callsign) in [
+        "PAGER-ALPHA",
+        "PAGER-BRAVO",
+        "PAGER-CHARLIE",
+        "A-PAGER",
+        "PAGER",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let message = mk_analysis_message(
+            db,
+            &format!("callsign-page-{index}"),
+            "943.1",
+            test_dt(2026, 3, 1, 10, index as u32),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_callsigns(db, message.id, serde_json::json!([callsign]))
+            .await
+            .unwrap();
+    }
+    let variant = mk_analysis_message(
+        db,
+        "callsign-page-variant",
+        "943.1",
+        test_dt(2026, 3, 1, 10, 3),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(db, variant.id, serde_json::json!(["pager-alpha"]))
+        .await
+        .unwrap();
+    let literal = mk_analysis_message(
+        db,
+        "callsign-page-literal",
+        "943.2",
+        test_dt(2026, 3, 1, 10, 9),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    set_message_callsigns(db, literal.id, serde_json::json!(["PCT%_\\'"]))
+        .await
+        .unwrap();
+
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_callsigns = Some(vec!["DOES-NOT-EXIST".to_string()]);
+    let page = AnalysisCallsignPageReq {
+        req,
+        query: "PAGER".to_string(),
+        page_size: Some(1),
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let mut cursor = None;
+    let mut first_cursor = None;
+    let mut labels = Vec::new();
+    let mut alpha = None;
+    for _ in 0..5 {
+        let current = fetch_callsign_page_for_req(
+            &fixture.env,
+            AnalysisCallsignPageReq {
+                cursor: cursor.clone(),
+                ..page.clone()
+            },
+        )
+        .await
+        .unwrap();
+        let entry = current.entries.into_iter().next().unwrap();
+        if entry.label == "PAGER-ALPHA" {
+            alpha = Some(entry.clone());
+        }
+        if labels.is_empty() {
+            first_cursor = current.next_cursor.clone();
+        }
+        labels.push(entry.label);
+        cursor = current.next_cursor;
+    }
+    assert_eq!(
+        labels,
+        vec![
+            "PAGER",
+            "A-PAGER",
+            "PAGER-ALPHA",
+            "PAGER-BRAVO",
+            "PAGER-CHARLIE"
+        ]
+    );
+    assert!(cursor.is_none());
+    let alpha = alpha.unwrap();
+    assert_eq!(alpha.count, 2);
+    assert_eq!(
+        alpha.values.iter().cloned().collect::<BTreeSet<_>>(),
+        BTreeSet::from(["PAGER-ALPHA".to_string(), "pager-alpha".to_string()])
+    );
+    let literal_page = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            query: "PCT%_\\'".to_string(),
+            page_size: Some(50),
+            cursor: None,
+            ..page.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(literal_page.entries.len(), 1);
+    assert_eq!(literal_page.entries[0].label, "PCT%_\\'");
+
+    for index in 0..101 {
+        let message = mk_analysis_message(
+            db,
+            &format!("callsign-page-size-{index}"),
+            "943.3",
+            test_dt(2026, 3, 1, 10, 0),
+            &[&fixture.alpha],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_callsigns(
+            db,
+            message.id,
+            serde_json::json!([format!("SIZE-{index:03}")]),
+        )
+        .await
+        .unwrap();
+    }
+    let size_page = AnalysisCallsignPageReq {
+        req: analysis_stats_req0(&fixture),
+        query: "SIZE-".to_string(),
+        page_size: None,
+        cursor: None,
+        order: AnalysisCallsignPageOrder::MatchThenName,
+    };
+    let default_size =
+        fetch_callsign_page_for_req(&fixture.env, size_page.clone())
+            .await
+            .unwrap();
+    assert_eq!(default_size.entries.len(), 50);
+    assert!(default_size.has_more);
+    let max_size = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            page_size: Some(200),
+            ..size_page
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(max_size.entries.len(), 100);
+    assert!(max_size.has_more);
+
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            page_size: Some(2),
+            cursor: first_cursor.clone(),
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            order: AnalysisCallsignPageOrder::CountDesc,
+            cursor: first_cursor.clone(),
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    assert!(fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            query: "PAGER-BRAVO".to_string(),
+            cursor: first_cursor,
+            ..page.clone()
+        },
+    )
+    .await
+    .is_err());
+    for cursor in ["!", "e30"] {
+        let error = fetch_callsign_page_for_req(
+            &fixture.env,
+            AnalysisCallsignPageReq {
+                cursor: Some(cursor.to_owned()),
+                ..page.clone()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            crate::error::AppError::Form(errors) if errors.contains_key("cursor")
+        ));
+    }
+
+    let count_page = AnalysisCallsignPageReq {
+        order: AnalysisCallsignPageOrder::CountDesc,
+        ..page
+    };
+    let count_first =
+        fetch_callsign_page_for_req(&fixture.env, count_page.clone())
+            .await
+            .unwrap();
+    assert_eq!(count_first.entries[0].label, "PAGER-ALPHA");
+    assert_eq!(count_first.entries[0].count, 2);
+    assert_eq!(
+        count_first.entries[0]
+            .values
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["PAGER-ALPHA".to_string(), "pager-alpha".to_string()])
+    );
+    let count_second = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            cursor: count_first.next_cursor.clone(),
+            ..count_page.clone()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(count_second.entries[0].label, "A-PAGER");
+    assert_eq!(count_second.entries[0].count, 1);
+    assert_eq!(count_second.entries[0].values, vec!["A-PAGER"]);
+
+    let mut callsign_facet_changed = count_page;
+    callsign_facet_changed.req.selected_callsigns =
+        Some(vec!["DOES-NOT-EXIST".to_string()]);
+    let count_second_with_callsign_facet_changed = fetch_callsign_page_for_req(
+        &fixture.env,
+        AnalysisCallsignPageReq {
+            cursor: count_first.next_cursor,
+            ..callsign_facet_changed
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        count_second_with_callsign_facet_changed.entries[0].label,
+        "A-PAGER"
+    );
+    assert_eq!(
+        count_second_with_callsign_facet_changed.entries,
+        count_second.entries
+    );
 }
 
 #[tokio::test]
@@ -5401,6 +7418,56 @@ async fn rer_analysis_unit_id_filter_keeps_same_name_units_distinct() {
         .unwrap();
     assert_eq!(item_ids, vec![second_message.id]);
 
+    sigint_inbox_item::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item::Column::UnitV2,
+            Expr::value("Header branch"),
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(second_message.id))
+        .exec(db)
+        .await
+        .unwrap();
+    for (selected_units, selected_unit_ids, denied_unit_ids, expected) in [
+        (
+            None,
+            vec![first_unit.id, second_unit.id],
+            Some(vec![first_unit.id]),
+            vec![second_message.id],
+        ),
+        (
+            Some(vec!["Header branch".to_string()]),
+            vec![first_unit.id],
+            None,
+            vec![first_message.id, second_message.id],
+        ),
+        (
+            Some(vec![]),
+            vec![first_unit.id],
+            None,
+            vec![first_message.id],
+        ),
+        (None, vec![-1], None, vec![]),
+    ] {
+        let inbox_req = InboxMessagesReq {
+            selected_units,
+            selected_unit_ids: Some(selected_unit_ids),
+            denied_unit_ids,
+            ..inbox_req.clone()
+        };
+        let candidates =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login_id,
+                &fixture.env,
+                &inbox_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(candidates, expected);
+    }
+
     let first_unit_id = first_unit.id;
     let mut first_unit = first_unit.into_active_model();
     first_unit.deleted = Set(true);
@@ -5831,6 +7898,85 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
         .await,
         0
     );
+    sigint_inbox_item_unit::ActiveModel {
+        item_id: Set(msg_other.id),
+        unit_id: Set(other_unit.id),
+        kind: Set(SigintInboxItemUnitKind::Parsed),
+        created_at: Set(fixture.created_at),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    assert_materialized_unit_counts_3780(
+        &fixture.env,
+        &login,
+        cursor.id,
+        other_unit.id,
+    )
+    .await;
+}
+
+async fn assert_materialized_unit_counts_3780(
+    env: &Env,
+    login: &uuid::Uuid,
+    cursor: i64,
+    linked_unit: i64,
+) {
+    for exact in [false, true] {
+        for (selected, denied) in [
+            (Some(vec!["2 бат 1 полк".into()]), None),
+            (None, Some(vec!["2 бат".into()])),
+            (Some(vec!["Не визначено".into()]), None),
+            (None, Some(vec!["Не визначено".into()])),
+            (Some(vec!["2 бат".into(), "Не визначено".into()]), None),
+        ] {
+            for sort_by in [
+                InboxMessagesSortBy::IMSCreatedAt,
+                InboxMessagesSortBy::IMSTimestamp,
+            ] {
+                let req = InboxMessagesReq {
+                    page_id: Some(RER_DUTY_PAGE_ID.to_string()),
+                    since_id_noninclusive: Some(cursor),
+                    sort_by: Some(sort_by),
+                    selected_units: selected.clone(),
+                    denied_units: denied.clone(),
+                    selected_unit_ids: Some(vec![linked_unit]),
+                    units_exact_match_only: Some(exact),
+                    nolimit: Some(true),
+                    ..Default::default()
+                };
+                let expected =
+                    crate::rer_importer::inbox::bl::get_inbox_map_items(
+                        login, env, &req,
+                    )
+                    .await
+                    .unwrap()
+                    .len() as i64;
+                assert_eq!(
+                    fetch_correlated_inbox_count(env, login, &req).await,
+                    expected
+                );
+                let sql = crate::rer_importer::inbox::query::build_inbox_digest_query(
+                    login, env, &req,
+                )
+                .await
+                .unwrap();
+                let count: i64 = env
+                    .dbx
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        sql,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get("", "count")
+                    .unwrap();
+                assert_eq!(count, expected);
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -7087,6 +9233,16 @@ async fn rer_analysis_count_uses_aggregated_count_for_open_filters() {
     .await
     .unwrap();
 
+    let matches = stats::count_unit_exact_match_breakdown_for_login(
+        &req,
+        &test_identity_login_id(&fixture.env, &test_identity).await,
+        &fixture.env,
+        master_keys.clone(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(matches, (7, 0));
+
     let (count_overall, count_selected) = stats::fetch_counts_for_login(
         &req,
         &test_identity_login_id(&fixture.env, &test_identity).await,
@@ -7294,6 +9450,215 @@ async fn rer_analysis_analytics_aor_query_matches_postgres_query() {
             .unwrap(),
         expected
     );
+
+    req.selected_aors = Some(vec![fixture.north_aor.id]);
+    assert_eq!(
+        fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        expected
+    );
+    req.selected_freqs = Some(vec!["888.8".to_string()]);
+    req.selected_groups =
+        Some(vec![fixture.secret_hidden.signal_group.master_key.clone()]);
+    assert!(fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_aor_count_preserves_overlap_posts_and_scope() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let message = mk_analysis_message(
+        &fixture.env.dbx,
+        "msg-overlapping-aors",
+        "999.9",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha, &fixture.beta],
+        &[fixture.network_south.network.id],
+        false,
+    )
+    .await
+    .unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["999.9".to_string()]);
+    let expected =
+        BTreeMap::from([(fixture.north_aor.id, 1), (fixture.south_aor.id, 1)]);
+    for (posts, expected) in [
+        (None, expected.clone()),
+        (Some(vec![]), BTreeMap::new()),
+        (Some(vec!["".to_string()]), expected),
+    ] {
+        req.selected_posts = posts;
+        assert_eq!(
+            fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    let post = sigint_post::ActiveModel {
+        name: Set("post-3780".to_string()),
+        deleted: Set(false),
+        created_at: Set(test_dt(2026, 3, 1, 10, 0)),
+        ..Default::default()
+    }
+    .insert(&fixture.env.dbx)
+    .await
+    .unwrap();
+    sigint_inbox_item::ActiveModel {
+        id: Set(message.id),
+        post_id: Set(Some(post.id)),
+        ..Default::default()
+    }
+    .update(&fixture.env.dbx)
+    .await
+    .unwrap();
+    req.selected_posts = Some(vec![post.name]);
+    for (scope, expected) in [
+        (AnalyticsMessageIdScope::From(message.id), 2),
+        (
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: message.id,
+                max_id: message.id,
+            },
+            2,
+        ),
+        (AnalyticsMessageIdScope::From(message.id + 1), 0),
+    ] {
+        assert_eq!(
+            fetch_analytics_aor_count_for_req(&fixture.env, &req, Some(&scope))
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_aor_count_preserves_time_and_live_aors() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let created_at = test_dt(2026, 3, 1, 10, 8);
+    let intercepted_at = test_dt(2026, 3, 1, 11, 8);
+    let message = mk_analysis_message(
+        db,
+        "msg-aor-time-boundaries",
+        "3780.1",
+        created_at,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    sigint_inbox_item::ActiveModel {
+        id: Set(message.id),
+        datetime: Set(Some(intercepted_at)),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    let created = created_at.and_utc().timestamp_millis();
+    let intercepted = intercepted_at.and_utc().timestamp_millis();
+    let creation =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    for (basis, since, till, present) in [
+        (None, created, created + 60_000, false),
+        (creation, created, created + 60_000, true),
+        (None, intercepted, intercepted + 60_000, true),
+        (None, intercepted - 60_000, intercepted, false),
+        (creation, created - 60_000, created, false),
+        (creation, created + 1, created + 60_000, false),
+    ] {
+        req.message_time_basis = basis;
+        req.since_date_inclusive_ms = since;
+        req.till_date_noninclusive_ms = till;
+        let expected = if present {
+            BTreeMap::from([(fixture.north_aor.id, 1)])
+        } else {
+            BTreeMap::new()
+        };
+        assert_eq!(
+            fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_analytics_aor_count_excludes_deleted_messages_and_aors() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let message = mk_analysis_message(
+        db,
+        "msg-aor-deletion",
+        "3780.1",
+        test_dt(2026, 3, 1, 10, 8),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for (message_deleted, aor_deleted, top_level, present) in [
+        (false, true, true, false),
+        (false, false, false, false),
+        (false, false, true, true),
+        (true, false, true, false),
+    ] {
+        signal_message::ActiveModel {
+            id: Set(message.id),
+            deleted: Set(message_deleted),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        area_of_responsibility::ActiveModel {
+            id: Set(fixture.north_aor.id),
+            deleted: Set(aor_deleted),
+            is_top_level: Set(top_level),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        let expected = if present {
+            BTreeMap::from([(fixture.north_aor.id, 1)])
+        } else {
+            BTreeMap::new()
+        };
+        assert_eq!(
+            fetch_aor_counts_for_req(&fixture.env, &req).await.unwrap(),
+            expected
+        );
+        assert_eq!(
+            fetch_analytics_aor_counts_for_req(&fixture.env, &req)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
 }
 
 #[tokio::test]
@@ -7541,6 +9906,108 @@ async fn rer_analysis_analytics_tag_count_matches_postgres_query() {
             .unwrap(),
         expected
     );
+
+    let post = sigint_post::ActiveModel {
+        name: Set("Tagged posts 3780".to_string()),
+        deleted: Set(false),
+        created_at: Set(test_dt(2026, 3, 1, 10, 0)),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    sigint_inbox_item::ActiveModel {
+        id: Set(message.id),
+        post_id: Set(Some(post.id)),
+        ..Default::default()
+    }
+    .update(db)
+    .await
+    .unwrap();
+
+    // #3780: sender pushdown must preserve ownership and duplicate-row counts.
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(public_tag.id),
+            login_id: Set(Some(login.id)),
+            model: Set(Some("duplicate-association".into())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let (login_id, groups) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login_id, true)
+        .await
+        .unwrap();
+    let scope = AnalyticsMessageIdScope::From(1);
+    for selected in [
+        vec![public_tag.id, owner_tag.id],
+        vec![public_tag.id, inaccessible_tag.id],
+    ] {
+        for without_model in [false, true] {
+            let mut req = analysis_stats_req0(&fixture);
+            req.selected_tags = Some(selected.clone());
+            req.filter_tags_option = Some(TagFilterOption::AllTags);
+            req.without_model_tags = Some(without_model);
+            req.report_tags_only_this_unit = Some(true);
+            for scope in [None, Some(&scope)] {
+                let mut results = Vec::new();
+                for access in [None, Some(&access)] {
+                    let query = stats::build_sender_breakdown_query(
+                        &Json(req.clone()),
+                        &login_id,
+                        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+                        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+                        groups.clone(),
+                        scope,
+                        None,
+                        access,
+                    )
+                    .unwrap();
+                    let count: i64 = db
+                        .query_all_raw(query.build(DbBackend::Postgres))
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|row| row.try_get::<i64>("", "count").unwrap())
+                        .sum();
+                    results.push(count);
+                }
+                let mut post_results = Vec::new();
+                for access in [None, Some(&access)] {
+                    let query = stats::build_posts_query(
+                        &&Json(req.clone()),
+                        &login_id,
+                        groups.clone(),
+                        dt_from_millis(req.since_date_inclusive_ms).unwrap(),
+                        dt_from_millis(req.till_date_noninclusive_ms).unwrap(),
+                        scope,
+                        None,
+                        access,
+                    )
+                    .unwrap();
+                    let count: i64 = db
+                        .query_all_raw(query.build(DbBackend::Postgres))
+                        .await
+                        .unwrap()
+                        .iter()
+                        .map(|row| row.try_get::<i64>("", "count").unwrap())
+                        .sum();
+                    post_results.push(count);
+                }
+                assert_eq!(post_results, results);
+                assert_eq!(results[0], results[1]);
+                assert_eq!(
+                    results[1],
+                    i64::from(selected[1] == owner_tag.id && without_model)
+                );
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -7940,6 +10407,42 @@ async fn count_stats_analytics_success_skips_postgres() {
 }
 
 #[tokio::test]
+async fn count_stats_analytics_resource_limits_preserve_circuit_3780() {
+    for (message, opens_circuit) in [
+        ("Code: 241. Query memory limit exceeded (MEMORY_LIMIT_EXCEEDED)", false),
+        ("Code: 241. Memory limit (for user) exceeded (MEMORY_LIMIT_EXCEEDED)", false),
+        ("Code: 202. Too many simultaneous queries (TOO_MANY_SIMULTANEOUS_QUERIES)", false),
+        ("Code: 241. (total) memory limit exceeded (MEMORY_LIMIT_EXCEEDED)", true),
+        ("pg_clickhouse: DB::Exception: Query memory limit exceeded: maximum 2 GiB", false),
+        ("pg_clickhouse: DB::Exception: Memory limit (for user) exceeded", false),
+        ("pg_clickhouse: DB::Exception: Too many simultaneous queries for user echo_gateway", false),
+        ("pg_clickhouse: DB::Exception: (total) memory limit exceeded", true),
+    ] {
+        let retry_state = AtomicU64::new(0);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let analytics_query = async {
+            Err::<&str, AppError>(anyhow::anyhow!(message).context(h!()).into())
+        };
+        let response = with_count_stats_analytics_fallback(
+            Some(analytics_query),
+            None,
+            core::time::Duration::from_secs(1),
+            async { Ok::<_, AppError>("postgres") },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response, "postgres");
+        assert_eq!(analytics_retry_attempt(&retry_state).is_none(), opens_circuit);
+    }
+    assert!(analytics_fallback_needs_capacity(
+        "analytics_resource_limit"
+    ));
+}
+
+#[tokio::test]
 async fn count_stats_analytics_error_retries_postgres_once() {
     let postgres_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let postgres_attempts_query = postgres_attempts.clone();
@@ -8029,7 +10532,13 @@ fn count_stats_analytics_supports_tag_filters() {
 
     req.or_without_coords = None;
     req.or_with_extended_form = Some(true);
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
+    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&InboxMessagesReq {
+        since_date_inclusive_ms: Some(0),
+        or_with_extended_form: Some(true),
+        ..Default::default()
+    }));
 
     req.or_with_extended_form = None;
     req.report_tags_only_this_unit = Some(true);
@@ -8046,11 +10555,11 @@ fn creation_time_requests_bypass_interception_scoped_analytics() {
 }
 
 #[test]
-fn count_stats_analytics_supports_callsigns_but_bypasses_text_search() {
+fn count_stats_analytics_supports_callsigns_and_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
 
     req.search = Some("callsign".to_string());
-    assert!(!analytics_count_request_supported(&req));
+    assert!(analytics_count_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8065,7 +10574,7 @@ fn count_stats_analytics_supports_unit_filters() {
 }
 
 #[test]
-fn summary_table_analytics_supports_units_but_bypasses_text_search() {
+fn summary_table_analytics_supports_units_and_text_search() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
     assert!(analytics_summary_table_request_supported(&req));
@@ -8073,11 +10582,11 @@ fn summary_table_analytics_supports_units_but_bypasses_text_search() {
 
     req.selected_units = None;
     req.search = Some("message".to_string());
-    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(analytics_summary_table_request_supported(&req));
 }
 
 #[test]
-fn analytical_inbox_reads_support_callsigns_but_bypass_text_search() {
+fn analytical_inbox_reads_support_callsigns_and_text_search() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_request_supported(&req));
 
@@ -8089,7 +10598,7 @@ fn analytical_inbox_reads_support_callsigns_but_bypass_text_search() {
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());
-    assert!(!analytics_inbox_request_supported(&req));
+    assert!(analytics_inbox_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -8127,7 +10636,7 @@ fn analytical_inbox_candidates_reject_unbounded_and_support_bounded_media_and_no
 
     req.only_with_media = None;
     req.search = Some("message".to_string());
-    assert!(!analytics_inbox_candidates_supported(&req));
+    assert!(analytics_inbox_candidates_supported(&req));
 
     req.search = None;
     req.nolimit = Some(true);
@@ -8202,6 +10711,285 @@ async fn analytics_read_outcome_distinguishes_unconfigured_and_unavailable() {
     assert!(result.postgres_fallback_permit.is_some());
 }
 
+#[tokio::test]
+#[serial]
+async fn analysis_split_count_endpoints_preserve_totals_and_device_authorization(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let (login, _) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    set_login_roles(&fixture.env.dbx, login, serde_json::json!(["Rer"])).await;
+    let store = RedisSessionStore::new(
+        crate::redis_conn_string(&fixture.env.config).unwrap(),
+    )
+    .await
+    .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(fixture.env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(store, Key::generate()))
+            .route(
+                "/test/count-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(count_stats)
+            .service(message_stats_count)
+            .service(unit_match_stats_count)
+            .service(group_stats_count)
+            .service(sender_stats_count)
+            .service(post_stats_count)
+            .service(freq_stats_count)
+            .service(callsign_stats_count)
+            .service(tag_stats_count)
+            .service(unit_stats_count)
+            .service(location_stats_count)
+            .service(aor_stats_count)
+            .service(network_stats_count),
+    )
+    .await;
+    let endpoints = [
+        "messages",
+        "units/matches",
+        "groups",
+        "senders",
+        "posts",
+        "freqs",
+        "callsigns",
+        "tags",
+        "units",
+        "locations",
+        "aors",
+        "networks",
+    ];
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_aors = Some(vec![fixture.north_aor.id]);
+    for endpoint in endpoints {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/rer/analysis/stats/{endpoint}/count"))
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{endpoint}");
+    }
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/count-login/{login}"))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let combined: serde_json::Value = actix_test::call_and_read_body_json(
+        &app,
+        actix_test::TestRequest::post()
+            .uri("/api/rer/analysis/stats/count")
+            .cookie(cookie.clone())
+            .set_json(&req)
+            .to_request(),
+    )
+    .await;
+    for endpoint in endpoints {
+        let result: serde_json::Value = actix_test::call_and_read_body_json(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/rer/analysis/stats/{endpoint}/count"))
+                .cookie(cookie.clone())
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        let expected = match endpoint {
+            "messages" => {
+                serde_json::json!({ "count_overall": combined["count_overall"], "count_selected": combined["count_selected"] })
+            }
+            "units/matches" => {
+                serde_json::json!({ "exact_matches_count": combined["units_exact_matches_count"], "non_exact_matches_count": combined["units_non_exact_matches_count"] })
+            }
+            dimension => combined[format!("{dimension}_count")].clone(),
+        };
+        assert_eq!(result, expected, "{endpoint}");
+    }
+    set_devices_section_enabled(&fixture.env.dbx, true).await;
+    req.selected_device_names = Some(vec!["restricted-device".to_string()]);
+    for endpoint in endpoints {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri(&format!("/api/rer/analysis/stats/{endpoint}/count"))
+                .cookie(cookie.clone())
+                .set_json(&req)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_waves(
+) {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(
+        serde_json::from_value(serde_json::json!({
+            "pg_host": "unavailable",
+            "pg_user": "unavailable",
+            "pg_password": "unavailable",
+            "pg_dbname": "unavailable"
+        }))
+        .unwrap(),
+    );
+    let req = analysis_stats_req0(&fixture);
+    let login = uuid::Uuid::new_v4();
+    let active = std::sync::atomic::AtomicUsize::new(0);
+    let maximum = std::sync::atomic::AtomicUsize::new(0);
+    let active = &active;
+    let maximum = &maximum;
+    let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
+    let load = |request, operation| {
+        counts::read_with_fallback(
+            &env,
+            login,
+            request,
+            operation,
+            |_db| async { panic!("unavailable analytics must not be queried") },
+            |db| async move {
+                let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                maximum.fetch_max(concurrent, Ordering::SeqCst);
+                db.execute_unprepared("select pg_sleep(0.02)")
+                    .await
+                    .c(h!())?;
+                active.fetch_sub(1, Ordering::SeqCst);
+                Ok::<_, AppError>(())
+            },
+        )
+    };
+    let (first, second, third) = tokio::join!(
+        load(&req, "analysis stats groups count"),
+        load(&req, "analysis stats senders count"),
+        load(&req, "analysis stats units count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    third.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
+        available
+    );
+    load(&req, "analysis stats networks count").await.unwrap();
+    maximum.store(0, Ordering::SeqCst);
+    let mut other_req = req.clone();
+    other_req.selected_groups = Some(vec!["other-filter".to_string()]);
+    let (first, second) = tokio::join!(
+        load(&req, "analysis stats groups count"),
+        load(&other_req, "analysis stats groups count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 2);
+    maximum.store(0, Ordering::SeqCst);
+    let mut postgres_req = other_req.clone();
+    postgres_req.search = Some("postgres-only filter".to_string());
+    let (first, second, third) = tokio::join!(
+        load(&postgres_req, "analysis stats groups count"),
+        load(&postgres_req, "analysis stats senders count"),
+        load(&postgres_req, "analysis stats units count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    third.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
+        available
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    assert!(fixture.env.analytics.is_none());
+    assert!(fixture.env.config.analytics.is_none());
+    let req = analysis_stats_req0(&fixture);
+    let mut search_req = req.clone();
+    search_req.search = Some("postgres-only filter".to_string());
+    let mut creation_req = req.clone();
+    creation_req.message_time_basis =
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation);
+    let login = uuid::Uuid::new_v4();
+    let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
+
+    for req in [req, search_req, creation_req] {
+        let active = std::sync::atomic::AtomicUsize::new(0);
+        let maximum = std::sync::atomic::AtomicUsize::new(0);
+        let active = &active;
+        let maximum = &maximum;
+        let load = |operation| {
+            counts::read_with_fallback(
+                &fixture.env,
+                login,
+                &req,
+                operation,
+                |_db| async {
+                    panic!("PostgreSQL-only request used analytics")
+                },
+                |db| async move {
+                    assert_eq!(
+                        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+                            .available_permits(),
+                        available
+                    );
+                    let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    maximum.fetch_max(concurrent, Ordering::SeqCst);
+                    db.execute_unprepared("select pg_sleep(0.02)")
+                        .await
+                        .c(h!())?;
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok::<_, AppError>(())
+                },
+            )
+        };
+        let (first, second, third, fourth) = tokio::join!(
+            load("analysis stats groups count"),
+            load("analysis stats senders count"),
+            load("analysis stats units count"),
+            load("analysis stats networks count"),
+        );
+        first.unwrap();
+        second.unwrap();
+        third.unwrap();
+        fourth.unwrap();
+        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[test]
+fn analysis_split_count_failure_opens_the_circuit_for_later_dimensions() {
+    let states = RwLock::new(HashMap::new());
+    let groups = analytics_retry_state_for_operation(
+        &states,
+        "analysis stats groups count",
+    );
+    analytics_retry_attempt(&groups)
+        .unwrap()
+        .record_failure(core::time::Duration::from_secs(30));
+    let units = analytics_retry_state_for_operation(
+        &states,
+        "analysis stats units matches count",
+    );
+    assert!(analytics_retry_attempt(&units).is_none());
+    let inbox = analytics_retry_state_for_operation(&states, "analysis inbox");
+    assert!(analytics_retry_attempt(&inbox).is_some());
+}
+
 #[test]
 fn fallback_capacity_only_limits_analytics_incident_routes() {
     for reason in [
@@ -8210,6 +10998,7 @@ fn fallback_capacity_only_limits_analytics_incident_routes() {
         "analytics_saturated",
         "analytics_unhealthy",
         "analytics_unavailable",
+        "attachment_history_incomplete",
         "candidate_ordering_incomplete",
         "candidate_revalidation_incomplete",
         "circuit_open",
@@ -8757,6 +11546,735 @@ fn new_callsign_thresholds_keep_existing_boundary_semantics() {
         vec!["exact-30d", "exact-7d", "never"]
     );
     assert_eq!(result.not_seen_30days, vec!["exact-30d", "never"]);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_frequency_candidates_3780_preserve_order_and_access()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    for sort_by in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+        InboxMessagesSortBy::IMSCreatedAt,
+    ] {
+        for (newest_first, nolimit) in
+            [(true, false), (false, false), (true, true), (false, true)]
+        {
+            for (selected_freqs, denied_freqs) in [
+                (Some(vec!["3780.1".to_string()]), None),
+                (None, Some(vec!["3780.2".to_string()])),
+                (
+                    Some(vec!["3780.1".to_string(), "".to_string()]),
+                    Some(vec!["".to_string()]),
+                ),
+                (None, None),
+            ] {
+                let mut req = InboxMessagesReq {
+                    selected_freqs,
+                    denied_freqs,
+                    sort_by: Some(sort_by),
+                    since_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    till_date_inclusive_ms: Some(
+                        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                    ),
+                    newest_first: Some(newest_first),
+                    nolimit: Some(nolimit),
+                    ..Default::default()
+                };
+                for _page in 0..2 {
+                    let expected =
+                        inbox_map_item_ids(&fixture.env, &login, &req).await;
+                    let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                        &login,
+                        &fixture.env,
+                        &req,
+                        &fixture.env.dbx,
+                        90_000,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap();
+                    assert_eq!(actual, expected, "{sort_by:?}");
+                    if newest_first {
+                        req.before_id_noninclusive = expected.last().copied();
+                    } else {
+                        req.since_id_noninclusive = expected.last().copied();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_latest_candidates_3780_preserve_limits_and_units() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    for req in [
+        InboxMessagesReq {
+            selected_freqs: Some(vec!["3780.1".to_string()]),
+            load_latest: Some(true),
+            ..Default::default()
+        },
+        InboxMessagesReq {
+            selected_freqs: Some(vec!["3780.1".to_string()]),
+            load_latest: Some(true),
+            nolimit: Some(true),
+            ..Default::default()
+        },
+        InboxMessagesReq {
+            selected_units: Some(vec!["3780 header".to_string()]),
+            load_latest: Some(true),
+            ..Default::default()
+        },
+    ] {
+        let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+        assert!(!expected.is_empty());
+        let actual =
+            crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login,
+                &fixture.env,
+                &req,
+                &fixture.env.dbx,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual, expected);
+    }
+    let recent = chrono::Utc::now().naive_utc() - chrono::Duration::hours(1);
+    let old = recent - chrono::Duration::days(10);
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for recent_count in [messages.len(), 3, 0] {
+        for (index, message) in messages.iter().enumerate() {
+            signal_message::Entity::update_many()
+                .col_expr(
+                    signal_message::Column::CreatedAt,
+                    Expr::value(if index < recent_count {
+                        recent
+                    } else {
+                        old
+                    }),
+                )
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(&fixture.env.dbx)
+                .await
+                .unwrap();
+        }
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSTimestamp,
+            InboxMessagesSortBy::IMSCreatedAt,
+        ] {
+            let req = InboxMessagesReq {
+                selected_units: Some(vec!["3780 header".to_string()]),
+                sort_by: Some(sort_by),
+                load_latest: Some(true),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(expected.len(), INBOX_MESSAGES_PAGE_LIMIT);
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected, "{sort_by:?}, recent={recent_count}");
+            if recent_count == messages.len() {
+                assert_eq!(candidate_queries.load(Ordering::SeqCst), 2);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
+{
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    let units = seed_chunked_unit_links_3780(&fixture, &messages, login).await;
+    let candidate_queries = Arc::new(AtomicUsize::new(0));
+    let callback_queries = candidate_queries.clone();
+    let mut analytics_db = fixture.env.dbx.clone();
+    analytics_db.set_metric_callback(move |metric| {
+        if metric.statement.sql.contains("\"ordering_value\"") {
+            callback_queries.fetch_add(1, Ordering::SeqCst);
+        }
+    });
+    for (selected_unit_ids, denied_unit_ids, total) in [
+        (Some(vec![units[0]]), None, 28),
+        (Some(vec![units[1]]), None, 3),
+        (None, Some(vec![units[0]]), 4),
+        (Some(vec![units[0], units[1]]), Some(vec![units[1]]), 28),
+        (Some(vec![units[2]]), None, 0),
+        (None, Some(vec![units[2]]), 32),
+        (Some(vec![]), Some(vec![]), 32),
+    ] {
+        for nolimit in [false, true] {
+            let req = InboxMessagesReq {
+                selected_unit_ids: selected_unit_ids.clone(),
+                denied_unit_ids: denied_unit_ids.clone(),
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+                ),
+                sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+                newest_first: Some(true),
+                nolimit: Some(nolimit),
+                ..Default::default()
+            };
+            let expected = inbox_map_item_ids(&fixture.env, &login, &req).await;
+            assert_eq!(
+                expected.len(),
+                if nolimit {
+                    total
+                } else {
+                    std::cmp::min(total, INBOX_MESSAGES_PAGE_LIMIT)
+                }
+            );
+            candidate_queries.store(0, Ordering::SeqCst);
+            let actual = crate::rer_importer::inbox::query::load_analytics_inbox_candidates(
+                &login, &fixture.env, &req, &analytics_db, 90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, expected);
+            assert_eq!(
+                candidate_queries.load(Ordering::SeqCst),
+                2,
+                "selected={selected_unit_ids:?}, denied={denied_unit_ids:?}"
+            );
+        }
+    }
+}
+
+async fn seed_chunked_unit_links_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+    login: uuid::Uuid,
+) -> Vec<i64> {
+    let db = &fixture.env.dbx;
+    let mut units = Vec::new();
+    for deleted in [false, false, true] {
+        units.push(
+            mk_sigint_unit(
+                db,
+                sigint_unit::ActiveModel {
+                    name: Set("3780 shared unit name".to_string()),
+                    created_by_login_id: Set(login),
+                    deleted: Set(deleted),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id,
+        );
+    }
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let mut links = Vec::new();
+    for message in messages {
+        let index = (message.id - base)
+            % crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+        let unit_index = match index {
+            28..=30 => 1,
+            31 => 2,
+            _ => 0,
+        };
+        links.push(sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(units[unit_index]),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        });
+        if message.id == base {
+            links.push(sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(message.id),
+                unit_id: Set(units[unit_index]),
+                kind: Set(SigintInboxItemUnitKind::Network),
+                ..Default::default()
+            });
+        }
+    }
+    sigint_inbox_item_unit::Entity::insert_many(links)
+        .exec(db)
+        .await
+        .unwrap();
+    units
+}
+
+async fn seed_chunked_messages_3780(
+    fixture: &RerAnalysisFixture,
+) -> Vec<signal_message::Model> {
+    let db = &fixture.env.dbx;
+    let base: i64 = signal_message::Entity::find()
+        .select_only()
+        .column_as(signal_message::Column::Id.max(), "max_id")
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap()
+        + 1;
+    let date = test_dt(2026, 3, 2, 10, 0);
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let messages = signal_message::Entity::insert_many((0..34).map(|index| {
+        let created_at = date + chrono::Duration::seconds((index * 17) % 37);
+        signal_message::ActiveModel {
+            id: Set(base + index + (index % 2) * width),
+            body: Set(Some(format!("3780 chunk {index}"))),
+            created_at: Set(created_at),
+            timestamp: Set(Some(created_at)),
+            deleted: Set(index == 32),
+            datasource_group_id: Set(Some(fixture.alpha.datasource_group.id)),
+            ..Default::default()
+        }
+    }))
+    .exec_with_returning(db)
+    .await
+    .unwrap();
+    sigint_inbox_item::Entity::insert_many(messages.iter().map(|message| {
+        let index = (message.id - base) % width;
+        let freq = match index {
+            29 => Some("3780.2"),
+            30 => Some(""),
+            31 => None,
+            _ => Some("3780.1"),
+        };
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            datetime: Set(message.timestamp),
+            freq: Set(freq.map(str::to_string)),
+            unit_v2: Set(Some("3780 header".to_string())),
+            ..Default::default()
+        }
+    }))
+    .exec(db)
+    .await
+    .unwrap();
+    let mut memberships = Vec::new();
+    for message in &messages {
+        let index = (message.id - base) % width;
+        let groups = match index {
+            0 => vec![&fixture.alpha, &fixture.beta],
+            33 => vec![&fixture.secret_hidden],
+            _ => vec![&fixture.alpha],
+        };
+        for group in groups {
+            memberships.push(signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(
+                    group.signal_group.master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(group.datasource_group.id)),
+                created_at: Set(date),
+                ..Default::default()
+            });
+        }
+    }
+    signal_message_group::Entity::insert_many(memberships)
+        .exec(db)
+        .await
+        .unwrap();
+    messages
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_inbox_counts_3780_keep_access_and_fresh_tail_split()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    seed_chunked_messages_3780(&fixture).await;
+    let login = crate::users::login_id_by_name(&fixture.env.dbx, "Tester")
+        .await
+        .unwrap();
+    let req = InboxMessagesReq {
+        sort_by: Some(InboxMessagesSortBy::IMSCreatedAt),
+        since_date_inclusive_ms: Some(
+            test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        ),
+        till_date_inclusive_ms: Some(
+            test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+        ),
+        ..Default::default()
+    };
+    let split = test_dt(2026, 3, 2, 10, 0) + chrono::Duration::seconds(18);
+    let full = crate::rer_importer::inbox::query::load_analytics_inbox_digest(
+        &login,
+        &fixture.env,
+        &req,
+        &fixture.env.dbx,
+        90_000,
+        None,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(full.0, 32);
+    let historical =
+        crate::rer_importer::inbox::query::load_analytics_inbox_digest(
+            &login,
+            &fixture.env,
+            &req,
+            &fixture.env.dbx,
+            90_000,
+            Some(split),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    let source = crate::rer_importer::inbox::query::build_postgres_fresh_tail_inbox_digest_query(
+        &login, &fixture.env, &req, split,
+    ).await.unwrap();
+    let tail = fixture
+        .env
+        .dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, source))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        historical.0 + tail.try_get::<i64>("", "count").unwrap(),
+        full.0
+    );
+    assert_eq!(historical.1, full.1);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_tag_counts_3780_deduplicate_messages_per_tag() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    for message in &messages {
+        mk_sigint_inbox_item_tag(
+            db,
+            sigint_inbox_item_tag::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                tag_id: Set(tag.id),
+                confidence: Set(1.0),
+                model: Set(
+                    (message.id - base == 28).then(|| "3780".to_string())
+                ),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    mk_sigint_inbox_item_tag(
+        db,
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(base),
+            tag_id: Set(tag.id),
+            confidence: Set(1.0),
+            model: Set(Some("3780 duplicate actor".to_string())),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login, false)
+        .await
+        .unwrap();
+    let mut req = mk_analysis_stats_req(
+        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+    );
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for without_model_tags in [false, true] {
+        req.without_model_tags = Some(without_model_tags);
+        req.denied_tags = Some(vec![tag.id]);
+        let rows = stats::fetch_analytics_tags_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &access,
+            &AnalyticsMessageIdScope::From(base),
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].tag_id, tag.id);
+        assert_eq!(rows[0].count, 29);
+    }
+}
+
+#[test]
+fn analytics_message_id_chunks_3780_cover_boundaries_without_overlap() {
+    let width = crate::config::ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE;
+    let chunks = AnalyticsMessageIdScope::Inclusive {
+        min_id: i64::MAX - width,
+        max_id: i64::MAX,
+    }
+    .chunks(width);
+    assert_eq!(
+        chunks,
+        vec![
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: i64::MAX - width,
+                max_id: i64::MAX - 1,
+            },
+            AnalyticsMessageIdScope::Inclusive {
+                min_id: i64::MAX,
+                max_id: i64::MAX,
+            },
+        ]
+    );
+    assert!(AnalyticsMessageIdScope::Inclusive {
+        min_id: 2,
+        max_id: 1,
+    }
+    .chunks(width)
+    .is_empty());
+    assert!(AnalyticsMessageIdScope::Empty.chunks(width).is_empty());
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_recent_scope_3780_keeps_replication_tail_open() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    let db = &fixture.env.dbx;
+    let min_id = messages.iter().map(|message| message.id).min().unwrap();
+    let max_id = messages.iter().map(|message| message.id).max().unwrap();
+    let width = crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE;
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(min_id),
+        width,
+    )
+    .await
+    .unwrap();
+    let arriving = signal_message::ActiveModel {
+        id: Set(max_id + width),
+        body: Set(Some("3780 arriving during chunk planning".to_string())),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let mut ids = Vec::new();
+    for scope in scopes {
+        ids.extend(
+            signal_message::Entity::find()
+                .select_only()
+                .column(signal_message::Column::Id)
+                .filter(scope.condition(signal_message::Column::Id))
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .unwrap(),
+        );
+    }
+    assert_eq!(ids.len(), messages.len() + 1);
+    assert!(ids.contains(&arriving.id));
+    let scopes = analytics_message_id_chunks(
+        db,
+        AnalyticsMessageIdScope::From(arriving.id + 1),
+        width,
+    )
+    .await
+    .unwrap();
+    assert_eq!(scopes, vec![AnalyticsMessageIdScope::From(arriving.id + 1)]);
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_chunked_facets_3780_preserve_distinct_counts_and_metadata() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let messages = seed_chunked_messages_3780(&fixture).await;
+    seed_chunked_metadata_and_networks_3780(&fixture, &messages).await;
+    let db = &fixture.env.dbx;
+    let (login, master_keys) =
+        analysis_login_and_master_keys(&fixture.env).await.unwrap();
+    let access = stats::resolve_analytics_tag_access(db, &login, false)
+        .await
+        .unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    let scope = AnalyticsMessageIdScope::From(base);
+    let mut req = mk_analysis_stats_req(
+        test_dt(2026, 3, 2, 0, 0).and_utc().timestamp_millis(),
+        test_dt(2026, 3, 3, 0, 0).and_utc().timestamp_millis(),
+    );
+    req.selected_freqs = Some(vec!["3780.1".to_string()]);
+    for basis in [
+        None,
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+    ] {
+        req.message_time_basis = basis;
+        let expected_metadata = stats::fetch_metadata_stats_with_db(
+            &req,
+            &login,
+            db,
+            master_keys.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        let metadata = stats::fetch_analytics_metadata_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &scope,
+        )
+        .await
+        .unwrap();
+        assert_eq!(metadata, expected_metadata);
+        assert_eq!(metadata.ccs.iter().map(|row| row.count).sum::<i64>(), 29);
+        assert_eq!(metadata.senders.len(), 1);
+        assert_eq!(metadata.senders[0].count, 29);
+        for (selected_units, expected) in [
+            (None, (29, 0)),
+            (Some(vec!["3780 header".to_string()]), (0, 29)),
+            (Some(vec!["3780 absent".to_string()]), (0, 0)),
+        ] {
+            let mut req = req.clone();
+            req.selected_units = selected_units;
+            let counts = stats::count_unit_exact_match_breakdown_for_login(
+                &Json(req),
+                &login,
+                fixture.env.as_ref(),
+                master_keys.clone(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(counts, expected);
+        }
+        let networks = stats::fetch_analytics_networks_for_login_with_scope(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            &access,
+            &scope,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            networks,
+            vec![AnalysisStatsNetwork {
+                network_id: fixture.network_wide.network.id,
+                count: 29,
+            }]
+        );
+        let expected_daily =
+            stats::fetch_daily_group_activity_for_login_with_db(
+                &req,
+                &login,
+                db,
+                db,
+                master_keys.clone(),
+                None,
+            )
+            .await
+            .unwrap();
+        let daily = stats::fetch_daily_group_activity_for_login_with_db(
+            &req,
+            &login,
+            db,
+            db,
+            master_keys.clone(),
+            Some(&scope),
+        )
+        .await
+        .unwrap();
+        let counts = |rows: Vec<stats::AnalysisDailyGroupActivity>| {
+            rows.into_iter()
+                .map(|row| ((row.msg_date, row.group), row.value))
+                .collect::<BTreeMap<_, _>>()
+        };
+        assert_eq!(counts(daily), counts(expected_daily));
+    }
+}
+
+async fn seed_chunked_metadata_and_networks_3780(
+    fixture: &RerAnalysisFixture,
+    messages: &[signal_message::Model],
+) {
+    let db = &fixture.env.dbx;
+    db.execute_unprepared(
+        r#"
+        CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+        CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
+        SELECT sigint_inbox_item_id, sigint_network_id
+        FROM sigint_inbox_item_network
+    "#,
+    )
+    .await
+    .unwrap();
+    let base = messages.iter().map(|message| message.id).min().unwrap();
+    for message in messages {
+        mk_sigint_inbox_item_metadata(
+            db,
+            sigint_inbox_item_metadata::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                color_code: Set(Some(
+                    if message.id == base { " 3780 " } else { "3780" }
+                        .to_string(),
+                )),
+                hash_id: Set(Some("3780-hash".to_string())),
+                sender_id: Set(Some(" 3780-sender ".to_string())),
+                sender_name: Set(Some("3780-sender".to_string())),
+                call_group_id: Set(Some("3780-receiver".to_string())),
+                call_group_name: Set(Some("3780-receiver".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item_network(
+            db,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(fixture.network_wide.network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
 }
 
 #[tokio::test]
@@ -9451,6 +12969,172 @@ async fn echo_3308_location_wildcards_match_literally() {
     assert!(!selected_wildcards.contains(&messages.location_b));
 }
 
+#[tokio::test]
+#[serial]
+async fn issue_3783_device_facet_counts_accessible_messages_with_other_filters()
+{
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &identity).await;
+    let mut devices = Vec::new();
+    for name in ["3783 Alpha", "3783 Alpha", "3783 Beta"] {
+        devices.push(
+            device_name::ActiveModel {
+                name: Set(Some(name.to_string())),
+                login_id: Set(login_id),
+                created_at: Set(test_dt(2026, 3, 1, 7, 0)),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap(),
+        );
+    }
+    let mut ids = Vec::new();
+    for (index, device) in devices.iter().enumerate() {
+        let datetime = test_dt(2026, 3, 1, 8, index as u32);
+        let message = mk_analysis_message(
+            db,
+            &format!("3783-device-{index}"),
+            if index == 2 { "3783.2" } else { "3783.1" },
+            datetime,
+            &[&fixture.alpha, &fixture.beta],
+            &[],
+            true,
+        )
+        .await
+        .unwrap();
+        assign_message_device_name(db, message.id, Some(device.id), datetime)
+            .await;
+        ids.push(message.id);
+    }
+    for (suffix, group, datetime, deleted) in [
+        (
+            "hidden",
+            &fixture.secret_hidden,
+            test_dt(2026, 3, 1, 8, 4),
+            false,
+        ),
+        ("old", &fixture.alpha, test_dt(2026, 2, 1, 8, 4), false),
+        ("deleted", &fixture.alpha, test_dt(2026, 3, 1, 8, 4), true),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            &format!("3783-{suffix}"),
+            "3783.1",
+            datetime,
+            &[group],
+            &[],
+            true,
+        )
+        .await
+        .unwrap();
+        assign_message_device_name(
+            db,
+            message.id,
+            Some(devices[0].id),
+            datetime,
+        )
+        .await;
+        if deleted {
+            let mut message = message.into_active_model();
+            message.deleted = Set(true);
+            message.update(db).await.unwrap();
+        }
+    }
+    let mut req = analysis_stats_req0(&fixture);
+    req.selected_device_names = Some(vec!["3783 Alpha".to_string()]);
+    let groups = vec![
+        fixture.alpha.signal_group.master_key.clone(),
+        fixture.beta.signal_group.master_key.clone(),
+    ];
+    for (scope, time_basis) in [
+        (None, None),
+        (
+            None,
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+        ),
+        (Some(AnalyticsMessageIdScope::From(0)), None),
+    ] {
+        req.message_time_basis = time_basis;
+        let counts = stats::fetch_device_names_with_db(
+            &req,
+            &login_id,
+            db,
+            db,
+            groups.clone(),
+            scope.as_ref(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                AnalysisStatsDeviceName {
+                    name: "3783 Alpha".to_string(),
+                    count: 2
+                },
+                AnalysisStatsDeviceName {
+                    name: "3783 Beta".to_string(),
+                    count: 1
+                },
+            ]
+        );
+        let mut filtered = req.clone();
+        filtered.selected_freqs = Some(vec!["3783.2".to_string()]);
+        assert_eq!(
+            stats::fetch_device_names_with_db(
+                &filtered,
+                &login_id,
+                db,
+                db,
+                groups.clone(),
+                scope.as_ref()
+            )
+            .await
+            .unwrap(),
+            vec![AnalysisStatsDeviceName {
+                name: "3783 Beta".to_string(),
+                count: 1
+            },]
+        );
+        filtered.selected_locations =
+            Some(vec!["no-such-location".to_string()]);
+        assert!(stats::fetch_device_names_with_db(
+            &filtered,
+            &login_id,
+            db,
+            db,
+            groups.clone(),
+            scope.as_ref()
+        )
+        .await
+        .unwrap()
+        .is_empty());
+    }
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: ids[2],
+        max_id: ids[2],
+    };
+    assert_eq!(
+        stats::fetch_device_names_with_db(
+            &req,
+            &login_id,
+            db,
+            db,
+            groups,
+            Some(&scope)
+        )
+        .await
+        .unwrap(),
+        vec![AnalysisStatsDeviceName {
+            name: "3783 Beta".to_string(),
+            count: 1
+        },]
+    );
+}
+
 #[actix_web::test]
 #[serial]
 async fn echo_3461_activity_daily_requires_device_filter_access() {
@@ -9525,6 +13209,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
                 web::post().to(activity_daily_test_login),
             )
             .service(activity_daily)
+            .service(device_name_stats)
             .service(edit_freq_unit_name),
     )
     .await;
@@ -9554,6 +13239,16 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
                 .uri("/api/rer/analysis/activity-daily")
                 .cookie(session_cookie.clone())
                 .set_json(req)
+                .to_request(),
+        )
+    };
+    let call_devices = || {
+        actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/stats/device-names")
+                .cookie(session_cookie.clone())
+                .set_json(request(None))
                 .to_request(),
         )
     };
@@ -9599,6 +13294,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         destructive_inbox
     );
     assert_ne!(call(request(None)).await.status(), StatusCode::FORBIDDEN);
+    assert_eq!(call_devices().await.status(), StatusCode::FORBIDDEN);
 
     set_login_roles(
         &fixture.env.dbx,
@@ -9651,6 +13347,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         serde_json::json!([ROLE_ADMIN]),
     ] {
         set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_eq!(call_devices().await.status(), StatusCode::OK);
         assert_ne!(
             call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
                 .await
@@ -9665,6 +13362,7 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         serde_json::json!([ROLE_ADMIN]),
     ] {
         set_login_roles(&fixture.env.dbx, login_id, roles).await;
+        assert_eq!(call_devices().await.status(), StatusCode::FORBIDDEN);
         assert_eq!(
             call(request(Some(vec!["ECHO-3461 Alpha".to_string()])))
                 .await

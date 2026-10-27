@@ -1,5 +1,12 @@
 # Units
 
+## Unit event polling
+
+- **Affected route/component:** `/rer-units-neo`, shared Elm event service.
+- **Expected observable result:** the first long-poll starts immediately; subsequent requests wait at least five seconds after the previous response, including temporary failures. Requests remain sequential, and successful responses retain their event cursor. Units use deployment-only `generic` polling, with authenticated `generic-full` housekeeping every ten seconds after successful full checks; failed full checks retry before lightweight polling resumes. All routes keep request starts at least two seconds apart, including flavor changes and retries.
+- **Existing test(s):** `wdintel-web/tests/e2e/units-polling.spec.ts`.
+- **Original Echo issue/PR:** [#3858](https://github.com/echoua/echo/issues/3858).
+
 ## Unit API response normalization
 
 - **Status:** operational compatibility
@@ -42,5 +49,25 @@
 - **Status:** normative
 - **Behavior ID:** `react-units-orbit-presence-and-duplicate-selection`
 - **Affected route/component:** RER Unit form drawer.
-- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. Creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship.
+- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. For `UnitsEditor`, creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship. Message writers without `UnitsEditor` can create full units but cannot select or submit destructive duplicate merges.
 - **Source implementation:** `src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`.
+
+## Unlinked-unit reconciliation
+
+- **Status:** normative
+- **Affected route/component:** `/admin/units`, default tab `unlinked` («Відсутні в Orbit»).
+- **Expected observable result:** all non-deleted units without an active Orbit link, including inactive units, are searchable and paginated using seek boundaries with a deterministic ID tie-breaker (name and ID by default), without growing offsets. Previous-page navigation reuses saved cursors; changing filters or sorting starts at the first page. Editors can link Orbit units and merge duplicates. Completion refreshes the current page and counts, clamping an emptied last page; attachment-metadata failures do not retain removed rows. Settings and list failures provide retry actions. Query filters survive reload and tab selection follows browser history.
+- **Existing test(s):** `wdintel-web/tests/e2e/admin-units-unlinked.spec.ts`, `wdintel-web/src/ts/react/routes/rer-units-neo/__tests__/use-rer-units-page.spec.tsx`, `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`.
+- **Original Echo issue/PR:** [#3535](https://github.com/echoua/echo/issues/3535).
+
+## SIGINT combat types
+
+- **Status:** normative
+- **Behavior ID:** `react-units-combat-type`
+- **Affected route/component:** `/rer-units-neo`, `/rer-units/{id}`, shared `UnitFormDrawer`.
+- **Expected observable result:** the default-visible «Види та роди ЗС» column follows «Регіон/ТВД/Збройні Сили» and displays the retained SIGINT dictionary name. Text filtering and ascending/descending sorting use that name. Both editing routes assign, change, and clear the nullable dictionary reference; unassigned units display an empty table value.
+- **Loading/empty/error/success behavior:** selectors wait for dictionary loading, display load failures, retain existing assignments, and offer «Не визначено» to clear them. Unit writes retain existing authorization and error handling.
+- **API endpoint and compatibility requirements:** `/api/sigint/unit/combat-types` returns the copied dictionary; omission of `combat_type_id` preserves an assignment and explicit null clears it. ORBIT sync only inserts missing dictionary entries; it does not overwrite local names or unit assignments.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-units-neo/components/UnitsTable.tsx`, `wdintel-web/src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`, `wdintel-web/src/Pages/RerUnits/Id_.elm`.
+- **Existing test(s):** `wdintel-web/tests/e2e/units-combat-type.spec.ts`, `wdintel-web/src/ts/react/routes/rer-units-neo/__tests__/index.spec.tsx`, `wdintel-rs/src/sigint/unit/combat_type.rs`, `wdintel-rs/src/orbit/combat_type.rs`.
+- **Original Echo issue/PR:** [#3113](https://github.com/echoua/echo/issues/3113).

@@ -34,6 +34,21 @@ run_case() {
     recoverable_failure)
       grep -q '^recovery-pause$' "$case_dir/operations"
       ;;
+    refresh_waits_for_catchup)
+      [[ ! -f "$case_dir/repair-state" ]]
+      [[ $(grep -c '^check-analytics-health.sh$' "$case_dir/operations") == 2 ]]
+      ! grep -q '^recovery-pause$' "$case_dir/operations"
+      ;;
+    refresh_catchup_timeout)
+      [[ "$status" == 75 ]]
+      [[ -f "$case_dir/repair-state" ]]
+      ! grep -q '^recovery-pause$' "$case_dir/operations"
+      ;;
+    refresh_health_failure)
+      [[ -f "$case_dir/repair-state" ]]
+      [[ $(grep -c '^check-analytics-health.sh$' "$case_dir/operations") == 1 ]]
+      grep -q '^recovery-pause$' "$case_dir/operations"
+      ;;
   esac
   rm -rf -- "$case_dir"
 }
@@ -45,6 +60,9 @@ if [[ $# -eq 0 ]]; then
   run_case cdc_empty success
   run_case cdc_race failure
   run_case no_drift success
+  run_case forced_history success
+  run_case forced_history_retry success
+  run_case forced_history_missing_raw success
   run_case additive_empty success
   run_case additive_nonempty success
   run_case nonempty failure
@@ -54,6 +72,9 @@ if [[ $# -eq 0 ]]; then
   run_case refresh_reconciles_state success
   run_case refresh_retries_gateway_deadlock success
   run_case refresh_retries_health_deadlock success
+  run_case refresh_waits_for_catchup success
+  run_case refresh_catchup_timeout failure
+  run_case refresh_health_failure failure
   run_case strategy_mismatch failure
   run_case terminal_state failure
   run_case recoverable_failure failure
@@ -74,7 +95,10 @@ source "$SCRIPT_DIR/resnapshot-table.sh"
 
 if [[ $scenario == refresh_reconciles_state \
   || $scenario == refresh_retries_gateway_deadlock \
-  || $scenario == refresh_retries_health_deadlock ]]; then
+  || $scenario == refresh_retries_health_deadlock \
+  || $scenario == refresh_waits_for_catchup \
+  || $scenario == refresh_catchup_timeout \
+  || $scenario == refresh_health_failure ]]; then
   # shellcheck disable=SC1091
   source "$TEST_DIR/../bin/lib.sh"
   analytics_bin_dir=$case_dir/bin
@@ -99,6 +123,24 @@ elif [[ $helper == reconcile-if-needed.sh ]]; then
   touch "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled"
 elif [[ $helper == check-analytics-health.sh ]]; then
   [[ -f "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled" ]]
+  case $ECHO_RESNAPSHOT_TEST_SCENARIO in
+    refresh_waits_for_catchup)
+      if [[ -f "$ECHO_RESNAPSHOT_TEST_CASE_DIR/heartbeat-delayed" ]]; then
+        rm "$ECHO_RESNAPSHOT_TEST_CASE_DIR/heartbeat-delayed" \
+          "$ECHO_RESNAPSHOT_TEST_CASE_DIR/reconciled"
+        printf 'source heartbeat was not visible through ClickHouse within 45s\n' >&2
+        exit 75
+      fi
+      ;;
+    refresh_catchup_timeout)
+      sleep 1
+      exit 75
+      ;;
+    refresh_health_failure)
+      printf 'required service is not active: clickhouse-server.service\n' >&2
+      exit 1
+      ;;
+  esac
 fi
 MOCK
     chmod +x "$analytics_bin_dir/$helper"
@@ -106,6 +148,8 @@ MOCK
   touch "$case_dir/deadlock-once"
   export SOURCE_RECONCILE_RETRY_ATTEMPTS=2
   export SOURCE_RECONCILE_RETRY_DELAY_SECONDS=0
+  export ECHO_RESNAPSHOT_TEST_SCENARIO=$scenario
+  export ECHO_RESNAPSHOT_TEST_FAIL_HELPER=
   case $scenario in
     refresh_reconciles_state)
       export ECHO_RESNAPSHOT_TEST_FAIL_HELPER=reconcile-schema.sh
@@ -117,6 +161,20 @@ MOCK
       export ECHO_RESNAPSHOT_TEST_FAIL_HELPER=check-analytics-health.sh
       ;;
   esac
+  if [[ $scenario == refresh_waits_for_catchup \
+    || $scenario == refresh_catchup_timeout \
+    || $scenario == refresh_health_failure ]]; then
+    table_cdc_timeout=5
+    [[ $scenario != refresh_catchup_timeout ]] || table_cdc_timeout=1
+    touch "$case_dir/heartbeat-delayed" "$case_dir/repair-state"
+    resume_mirror() { :; }
+    clear_state_mapping() { rm "$case_dir/repair-state"; }
+    leave_mirror_paused() { printf 'recovery-pause\n' >>"$operations_file"; }
+    mutation_started=true
+    trap handle_exit EXIT
+    finish_repair public.echo_automation
+    exit 0
+  fi
   refresh_analytics
   if [[ $scenario == refresh_reconciles_state ]]; then
     diff -u \
@@ -248,6 +306,34 @@ refresh_analytics() {
 }
 
 case $scenario in
+  forced_history_retry|forced_history_missing_raw)
+    mock_mapping='{"sourceTableIdentifier":"public.attachment_document","destinationTableIdentifier":"attachment_document"}'
+    mock_raw_columns=$mock_source_columns
+    mock_has_rows=true
+    force_resnapshot=true
+    if [[ "$scenario" == forced_history_retry ]]; then
+      write_state_mapping public.attachment_document replicated_snapshot "$mock_mapping"
+      force_resnapshot=false
+    else
+      mock_raw_exists=false
+      mock_raw_columns=
+    fi
+    resnapshot_table replicated_snapshot public.attachment_document
+    grep -q '^invalidate-coverage$' "$operations_file"
+    grep -q '^remove' "$operations_file"
+    grep -q '^snapshot$' "$operations_file"
+    ;;
+  forced_history)
+    mock_raw_columns=$mock_source_columns
+    mock_has_rows=true
+    force_resnapshot=true
+    resnapshot_table replicated_snapshot public.echo_automation
+    grep -q '^remove' "$operations_file"
+    grep -q '^drop' "$operations_file"
+    grep -q '^add' "$operations_file"
+    grep -q '^snapshot$' "$operations_file"
+    grep -q '^refresh$' "$operations_file"
+    ;;
   no_drift)
     mock_raw_columns=$mock_source_columns
     mock_has_rows=true

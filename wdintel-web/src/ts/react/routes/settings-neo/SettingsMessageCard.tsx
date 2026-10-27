@@ -1,10 +1,6 @@
-import DescriptionIcon from '@mui/icons-material/Description';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ImageIcon from '@mui/icons-material/Image';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Box,
-  Collapse,
   FormControlLabel,
   Stack,
   Switch,
@@ -14,8 +10,12 @@ import {
 } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 
-import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import {
+  MessageAttachmentPreviewMode,
+  type MessageTextPreviewLineLimit,
+} from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import { SettingsMessageCardPreview } from './SettingsMessageCardPreview';
 
 const cardSx = {
   border: 1,
@@ -25,105 +25,20 @@ const cardSx = {
   p: { xs: 2, sm: 2.5 },
 };
 
-function MessageCardPreviewMock({
-  tagsLayout,
-  mediaSummaryEnabled,
-  collapseMediaPreviews,
-}: {
-  tagsLayout: TagsLayoutVariant;
-  mediaSummaryEnabled: boolean;
-  collapseMediaPreviews: boolean;
-}) {
-  return (
-    <div
-      data-message-card-mock="true"
-      data-message-card-tags-mock="true"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      className="flex max-w-105 cursor-default flex-col gap-2 rounded-xl border border-echo-divider bg-black/2 p-3 dark:bg-white/2"
-    >
-      {/* Header skeleton */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <div className="h-2.25 w-20 rounded-sm bg-echo-text-muted/40" />
-          <div className="h-2.25 w-10 rounded-sm bg-echo-text-muted/25" />
-        </div>
-        <div className="h-2.25 w-6.5 rounded-sm bg-echo-text-muted/25" />
-      </div>
-
-      {/* Attachment skeleton */}
-      <Collapse in={!collapseMediaPreviews} timeout={250} unmountOnExit>
-        <div className="flex items-center gap-2">
-          <div className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded bg-echo-primary text-echo-on-primary">
-            <ImageIcon sx={{ fontSize: 14 }} />
-          </div>
-          <div className="h-2.25 w-30 rounded-sm bg-echo-text-muted/35" />
-        </div>
-      </Collapse>
-
-      {/* Animated AI Summary skeleton */}
-      <Collapse in={mediaSummaryEnabled} timeout={250} unmountOnExit>
-        <div
-          data-media-summary-mock="true"
-          className="flex items-start gap-1.5 rounded-md border-l-[3px] border-echo-primary bg-echo-primary/5 p-1.5"
-        >
-          <DescriptionIcon sx={{ fontSize: 15 }} className="mt-0.5 shrink-0 text-echo-primary" />
-          <div className="flex flex-1 flex-col gap-1 pt-1">
-            <div className="h-1.75 w-[90%] rounded-sm bg-echo-primary/55" />
-            <div className="h-1.75 w-[60%] rounded-sm bg-echo-primary/40" />
-          </div>
-        </div>
-      </Collapse>
-
-      {/* Message body skeleton */}
-      <div className="flex flex-col gap-1 pt-0.5">
-        <div className="h-1.75 w-[85%] rounded-sm bg-echo-text-muted/30" />
-        <div className="h-1.75 w-[50%] rounded-sm bg-echo-text-muted/25" />
-      </div>
-
-      {/* Tags skeleton with animated layout changes */}
-      <Collapse in={tagsLayout !== 'hidden'} timeout={250} unmountOnExit>
-        <div data-tags-mock="true" className="pt-0.5">
-          <div className="flex flex-col gap-1.5">
-            {/* Row 1 - fills the full line */}
-            <div className="flex w-full items-center gap-1.5">
-              <div className="h-3.5 flex-1 rounded-sm bg-echo-primary/35" />
-              <div className="h-3.5 flex-[1.25] rounded-sm bg-echo-primary/35" />
-              <div className="h-3.5 flex-[0.95] rounded-sm bg-echo-primary/35" />
-              {tagsLayout === 'full' ? (
-                <div className="h-3.5 flex-[1.15] rounded-sm bg-echo-primary/35" />
-              ) : (
-                <div className="flex h-3.5 flex-[1.15] items-center justify-center gap-1 rounded-sm border border-echo-primary/30 bg-echo-primary/10">
-                  <div className="h-1.5 w-9.5 rounded-sm bg-echo-primary/60" />
-                  <ExpandMoreIcon sx={{ fontSize: 10 }} className="text-echo-primary/80" />
-                </div>
-              )}
-            </div>
-
-            {/* Row 2 (animated collapse for full mode - exactly 1 tag) */}
-            <Collapse in={tagsLayout === 'full'} timeout={250} unmountOnExit>
-              <div className="flex gap-1.5">
-                <div className="h-3.5 w-[26%] rounded-sm bg-echo-primary/35" />
-              </div>
-            </Collapse>
-          </div>
-        </div>
-      </Collapse>
-    </div>
-  );
-}
-
 export type SettingsMessageCardProps = {
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
+  aiPositionHighlightsEnabled: boolean;
+  aiPositionHighlightsEnabledGlobally: boolean;
+  onAiPositionHighlightsEnabledChange: (value: boolean) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
-  collapseMediaPreviews: boolean;
-  onCollapseMediaPreviewsChange: (value: boolean) => void;
+  attachmentPreviewMode: MessageAttachmentPreviewMode;
+  largeMessageCardText: boolean;
+  onLargeMessageCardTextChange: (value: boolean) => void;
+  onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
   loadInProgress: boolean;
 };
 
@@ -134,16 +49,51 @@ export function SettingsMessageCard({
   onMessageTextPreviewLinesChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
-  collapseMediaPreviews,
-  onCollapseMediaPreviewsChange,
+  aiPositionHighlightsEnabled,
+  aiPositionHighlightsEnabledGlobally,
+  onAiPositionHighlightsEnabledChange,
+  attachmentPreviewMode,
+  largeMessageCardText,
+  onLargeMessageCardTextChange,
+  onAttachmentPreviewModeChange,
   loadInProgress,
 }: SettingsMessageCardProps) {
   return (
     <Box sx={cardSx}>
-      <Stack spacing={2.5}>
+      <div className="flex flex-col gap-echo-xl">
         <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
           Картка повідомлення
         </Typography>
+
+        <Stack spacing={1}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Розмір тексту:
+          </Typography>
+          <Box>
+            <ToggleButtonGroup
+              aria-label="Розмір тексту картки"
+              value={largeMessageCardText}
+              exclusive
+              color="primary"
+              size="small"
+              disabled={loadInProgress}
+              onChange={(_, value: boolean | null) => {
+                if (isPresent(value)) onLargeMessageCardTextChange(value);
+              }}
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  fontSize: 14,
+                  px: 2,
+                  py: 1,
+                },
+              }}
+            >
+              <ToggleButton value={false}>Стандартний</ToggleButton>
+              <ToggleButton value={true}>Збільшений</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        </Stack>
 
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
@@ -178,6 +128,28 @@ export function SettingsMessageCard({
         </Stack>
 
         <FormControlLabel
+          className="m-0! items-start! gap-echo-md"
+          control={
+            <Switch
+              checked={aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled}
+              onChange={(_, checked) => onAiPositionHighlightsEnabledChange(checked)}
+              disabled={loadInProgress || aiPositionHighlightsEnabledGlobally}
+            />
+          }
+          label={
+            <div className="flex flex-col gap-echo-xs pt-0.5">
+              <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                Показувати ШІ-позиції (експериментально)
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                Підсвічування позицій та їхні координати у картках оперативного й аналізу.
+                {aiPositionHighlightsEnabledGlobally && ' Увімкнено адміністратором для всіх.'}
+              </Typography>
+            </div>
+          }
+        />
+
+        <FormControlLabel
           sx={{
             alignItems: 'flex-start',
             m: 0,
@@ -204,37 +176,55 @@ export function SettingsMessageCard({
           }
         />
 
-        <FormControlLabel
-          sx={{
-            alignItems: 'flex-start',
-            m: 0,
-            gap: 1.5,
-            '& .MuiFormControlLabel-label': { width: '100%' },
-          }}
-          control={
-            <Switch
-              checked={collapseMediaPreviews}
-              onChange={(_, checked) => onCollapseMediaPreviewsChange(checked)}
-              disabled={loadInProgress}
-            />
-          }
-          label={
-            <Stack spacing={0.5} sx={{ pt: 0.25 }}>
-              <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                Згортати вкладення
-              </Typography>
-              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
-                Зображення, відео, документи, координати та аудіо спочатку згорнуті; одночасно можна
-                розгорнути один тип вкладень.
-              </Typography>
-            </Stack>
-          }
-        />
+        <fieldset className="m-0 flex min-w-0 flex-col gap-echo-sm border-0 p-0">
+          <Typography
+            component="legend"
+            variant="body2"
+            className="p-0"
+            sx={{ color: 'text.secondary' }}
+          >
+            Вкладення:
+          </Typography>
+          <ToggleButtonGroup
+            aria-label="Відображення вкладень"
+            sx={{
+              flexWrap: 'wrap',
+              '& .MuiToggleButton-root': {
+                textTransform: 'none',
+                fontSize: 14,
+                px: 2,
+                py: 1,
+                whiteSpace: 'nowrap',
+              },
+            }}
+            value={attachmentPreviewMode}
+            exclusive
+            color="primary"
+            size="small"
+            disabled={loadInProgress}
+            onChange={(_, value: MessageAttachmentPreviewMode | null) => {
+              if (isPresent(value)) onAttachmentPreviewModeChange(value);
+            }}
+          >
+            <ToggleButton value={MessageAttachmentPreviewMode.Collapsed}>Згорнуті</ToggleButton>
+            <ToggleButton value={MessageAttachmentPreviewMode.Compact}>Компактні</ToggleButton>
+            <ToggleButton value={MessageAttachmentPreviewMode.Large}>Збільшені</ToggleButton>
+          </ToggleButtonGroup>
+          <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+            Розмір попереднього перегляду зображень, відео та координат. У згорнутому режимі
+            одночасно можна розгорнути один тип вкладень.
+          </Typography>
+        </fieldset>
 
-        <MessageCardPreviewMock
+        <SettingsMessageCardPreview
+          largeMessageCardText={largeMessageCardText}
           tagsLayout={tagsLayout}
           mediaSummaryEnabled={mediaSummaryEnabled}
-          collapseMediaPreviews={collapseMediaPreviews}
+          attachmentPreviewMode={attachmentPreviewMode}
+          aiPositionHighlightsEnabled={
+            aiPositionHighlightsEnabledGlobally || aiPositionHighlightsEnabled
+          }
+          messageTextPreviewLines={messageTextPreviewLines}
         />
 
         <Stack spacing={1}>
@@ -270,11 +260,10 @@ export function SettingsMessageCard({
               <ToggleButton value="off">Без скорочення</ToggleButton>
             </ToggleButtonGroup>
           </Box>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Визначає, коли з’являється кнопка «Показати більше».
+          </Typography>
         </Stack>
-
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Визначає, коли з’являється кнопка «Показати більше».
-        </Typography>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />
@@ -282,7 +271,7 @@ export function SettingsMessageCard({
             Спільні налаштування для Оперативного та Аналізу.
           </Typography>
         </Stack>
-      </Stack>
+      </div>
     </Box>
   );
 }

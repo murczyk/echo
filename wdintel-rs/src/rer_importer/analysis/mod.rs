@@ -28,6 +28,7 @@ use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpResponse;
 use chrono::prelude::*;
+use futures::{stream, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use redis::AsyncCommands;
 use rust_xlsxwriter::{Format, Workbook};
@@ -40,6 +41,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 pub(in crate::rer_importer) mod analytics_unit;
+mod counts;
 pub mod geojson;
 pub mod kmz;
 pub mod search;
@@ -48,7 +50,7 @@ pub mod stats;
 mod tests;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum AnalyticsMessageIdScope {
+pub(crate) enum AnalyticsMessageIdScope {
     Empty,
     From(i64),
     Inclusive { min_id: i64, max_id: i64 },
@@ -59,7 +61,7 @@ impl AnalyticsMessageIdScope {
         matches!(self, Self::Empty)
     }
 
-    pub(super) fn condition<C>(self, column: C) -> SimpleExpr
+    pub(crate) fn condition<C>(self, column: C) -> SimpleExpr
     where
         C: IntoColumnRef,
     {
@@ -71,6 +73,118 @@ impl AnalyticsMessageIdScope {
             }
         }
     }
+
+    fn chunks(self, chunk_size: i64) -> Vec<Self> {
+        assert!(chunk_size > 0);
+        if self.is_empty() {
+            return Vec::new();
+        }
+        let Self::Inclusive { min_id, max_id } = self else {
+            return vec![self];
+        };
+        let mut chunks = Vec::new();
+        let mut min_id = min_id;
+        while min_id <= max_id {
+            let end =
+                std::cmp::min(min_id.saturating_add(chunk_size - 1), max_id);
+            chunks.push(Self::Inclusive {
+                min_id,
+                max_id: end,
+            });
+            if end == max_id {
+                break;
+            }
+            min_id = end + 1;
+        }
+        chunks
+    }
+}
+
+pub(super) async fn analytics_message_id_chunks(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    chunk_size: i64,
+) -> anyhow::Result<Vec<AnalyticsMessageIdScope>> {
+    if let AnalyticsMessageIdScope::From(min_id) = scope {
+        let max_id = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "max_id")
+            .into_tuple::<Option<i64>>()
+            .one(source_db)
+            .await
+            .context(h!())?
+            .flatten();
+        let mut chunks = AnalyticsMessageIdScope::Inclusive {
+            min_id,
+            max_id: std::cmp::max(max_id.unwrap_or(min_id), min_id),
+        }
+        .chunks(chunk_size);
+        if let Some(last) = chunks.last_mut() {
+            let AnalyticsMessageIdScope::Inclusive { min_id, .. } = *last
+            else {
+                unreachable!();
+            };
+            *last = AnalyticsMessageIdScope::From(min_id);
+        }
+        return Ok(chunks);
+    }
+    Ok(scope.chunks(chunk_size))
+}
+
+pub(crate) async fn load_analytics_message_id_chunks<T, F, Fut>(
+    source_db: &DatabaseConnection,
+    scope: AnalyticsMessageIdScope,
+    load: F,
+) -> anyhow::Result<Vec<T>>
+where
+    F: Fn(AnalyticsMessageIdScope) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    let scopes = analytics_message_id_chunks(
+        source_db,
+        scope,
+        ANALYTICS_STATS_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .context(h!())?;
+    stream::iter(scopes)
+        .map(load)
+        .buffered(ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect()
+        .await
+        .context(h!())
+}
+
+pub(super) async fn ensure_analytics_search_coverage(
+    source: &DatabaseConnection,
+    analytics: &DatabaseConnection,
+    req: &AnalysisStatsReq,
+    groups: &[String],
+    freshness_max_age_ms: u64,
+) -> anyhow::Result<()> {
+    use crate::attachments::analytics::{SearchCoverageScope, SearchTimeBasis};
+    let time_basis = match req.message_time_basis {
+        Some(crate::user_settings::MessageTimeBasis::MessageCreation) => {
+            SearchTimeBasis::Creation
+        }
+        _ => SearchTimeBasis::Interception,
+    };
+    crate::attachments::analytics::ensure_search_coverage_scoped(
+        source,
+        analytics,
+        &req.search,
+        req.search_mode,
+        freshness_max_age_ms,
+        SearchCoverageScope {
+            since: Some(dt_from_millis(req.since_date_inclusive_ms).c(h!())?),
+            till: Some(dt_from_millis(req.till_date_noninclusive_ms).c(h!())?),
+            till_inclusive: false,
+            time_basis,
+            groups,
+        },
+    )
+    .await
+    .c(h!())
 }
 
 pub fn filter_selected_groups<Q>(
@@ -224,35 +338,70 @@ pub fn message_in_groups_exists(keys: Vec<String>) -> SimpleExpr {
     message_in_groups_exists_with_scope(keys, None)
 }
 
-pub(super) fn message_in_groups_exists_with_scope(
+pub(crate) fn message_in_groups_exists_with_scope(
     keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
+    message_in_groups_exists_with_correlation(keys, scope, false)
+}
+
+pub(super) fn message_in_groups_exists_with_correlation(
+    keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    lookup_by_message: bool,
 ) -> SimpleExpr {
     if keys.is_empty() {
         return Expr::cust("FALSE");
     }
 
-    let subquery = signal_message_group::Entity::find()
-        .select_only()
-        .expr(Expr::value(1))
-        .filter(
-            Expr::col((
-                signal_message_group::Entity,
-                signal_message_group::Column::SignalMessageId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys));
+    let subquery = signal_message_group::Entity::find().select_only().filter(
+        Expr::col((
+            signal_message_group::Entity,
+            signal_message_group::Column::SignalMessageId,
+        ))
+        .equals((signal_message::Entity, signal_message::Column::Id)),
+    );
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
             signal_message_group::Column::SignalMessageId,
         ))),
         None => subquery,
-    }
-    .into_query();
+    };
 
-    Expr::exists(subquery)
+    if lookup_by_message && keys.len() > 1 {
+        let access_groups = Alias::new("access_groups");
+        // Keep group filtering outside the message-ID lookup so PostgreSQL
+        // does not probe the group-first index once per allowed group.
+        let subquery = subquery
+            .column(signal_message_group::Column::GroupMasterKey)
+            .offset(0)
+            .into_query();
+        return Expr::exists(
+            Query::select()
+                .expr(Expr::value(1))
+                .from_subquery(subquery, access_groups.clone())
+                .and_where(sea_query::extension::postgres::PgExpr::eq_any(
+                    Expr::col((
+                        access_groups,
+                        signal_message_group::Column::GroupMasterKey,
+                    )),
+                    keys,
+                ))
+                .to_owned(),
+        );
+    }
+
+    let subquery = subquery
+        .expr(Expr::value(1))
+        .filter(signal_message_group::Column::GroupMasterKey.eq_any(keys));
+    let subquery = if lookup_by_message {
+        subquery.offset(0)
+    } else {
+        subquery
+    };
+
+    Expr::exists(subquery.into_query())
 }
 
 fn message_in_groups_with_senders_exists(
@@ -691,6 +840,7 @@ where
         selected_units,
         units_exact_match_only,
         force_correlation,
+        None,
     );
     Ok(match condition {
         Some(condition) => q.filter(condition),
@@ -702,6 +852,7 @@ fn selected_units_condition(
     selected_units: &Option<Vec<String>>,
     units_exact_match_only: &Option<bool>,
     force_correlation: bool,
+    mut network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> Option<SimpleExpr> {
     let mut m_empty_filter = None;
     let mut m_filter = None;
@@ -716,6 +867,7 @@ fn selected_units_condition(
                 ))
                 .is_not_null(),
                 force_correlation,
+                network_ctes.as_deref_mut(),
             )
             .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
@@ -731,8 +883,11 @@ fn selected_units_condition(
                 selected_units.clone(),
                 !exact_match_only,
             );
-            let in_subquery_condition =
-                message_has_linked_unit(linked_unit_match, force_correlation);
+            let in_subquery_condition = message_has_linked_unit(
+                linked_unit_match,
+                force_correlation,
+                network_ctes,
+            );
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
             let expr = if exact_match_only {
@@ -769,6 +924,7 @@ where
         selected_unit_ids,
         units_exact_match_only,
         false,
+        None,
     )
 }
 
@@ -787,6 +943,7 @@ where
         selected_unit_ids,
         units_exact_match_only,
         true,
+        None,
     )
 }
 
@@ -796,6 +953,7 @@ fn filter_selected_units_or_ids_with_correlation<Q>(
     selected_unit_ids: &Option<Vec<i64>>,
     units_exact_match_only: &Option<bool>,
     force_correlation: bool,
+    network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -804,6 +962,7 @@ where
         selected_units,
         units_exact_match_only,
         force_correlation,
+        network_ctes,
     );
     let unit_ids = selected_unit_ids
         .as_ref()
@@ -841,6 +1000,7 @@ where
         denied_units,
         units_exact_match_only,
         false,
+        None,
     )
 }
 
@@ -901,6 +1061,32 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
     force_correlation: bool,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        force_correlation,
+        scope,
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+    )
+}
+
+pub(in crate::rer_importer) fn analytics_message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    scope: &AnalyticsMessageIdScope,
+) -> SimpleExpr {
+    linked_unit_ids_condition(
+        unit_ids,
+        false,
+        Some(scope),
+        Expr::col((signal_message::Entity, signal_message::Column::Id)),
+    )
+}
+
+fn linked_unit_ids_condition(
+    unit_ids: &[i64],
+    force_correlation: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    message_id: sea_query::Expr,
+) -> SimpleExpr {
     let link_alias = Alias::new("selected_unit_link");
     let unit_alias = Alias::new("selected_unit_by_id");
     let mut query = Query::select();
@@ -921,7 +1107,7 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::ItemId,
             ))
-            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+            .eq(message_id),
         )
         .and_where(
             Expr::col((
@@ -960,6 +1146,7 @@ where
         denied_units,
         units_exact_match_only,
         true,
+        None,
     )
 }
 
@@ -968,6 +1155,7 @@ fn filter_denied_units_with_correlation<Q>(
     denied_units: &Option<Vec<String>>,
     units_exact_match_only: &Option<bool>,
     force_correlation: bool,
+    mut network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> Result<Q, AppError>
 where
     Q: QueryFilter,
@@ -985,6 +1173,7 @@ where
                 ))
                 .is_not_null(),
                 force_correlation,
+                network_ctes.as_deref_mut(),
             )
             .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
@@ -1000,9 +1189,12 @@ where
                 selected_units.clone(),
                 !exact_match_only,
             );
-            let in_subquery_condition =
-                message_has_linked_unit(linked_unit_match, force_correlation)
-                    .not();
+            let in_subquery_condition = message_has_linked_unit(
+                linked_unit_match,
+                force_correlation,
+                network_ctes,
+            )
+            .not();
 
             let expr = if exact_match_only {
                 in_subquery_condition
@@ -1187,12 +1379,69 @@ fn sigint_unit_hierarchy_columns() -> [sigint_unit::Column; 5] {
 fn message_has_linked_unit(
     filter_expr: SimpleExpr,
     force_correlation: bool,
+    network_ctes: Option<&mut Vec<CommonTableExpression>>,
 ) -> SimpleExpr {
-    let mut query = select_sigint_units_by_names(filter_expr);
+    let networks = select_network_ids_by_unit(filter_expr);
+    let networks = match network_ctes {
+        Some(ctes) => materialize_unit_network_ids(networks, ctes),
+        None => networks,
+    };
+    let mut query = select_sigint_units_by_network_ids(networks);
     if force_correlation {
         query.offset(0);
     }
     Expr::exists(query)
+}
+
+fn materialize_unit_network_ids(
+    query: SelectStatement,
+    ctes: &mut Vec<CommonTableExpression>,
+) -> SelectStatement {
+    let alias = Alias::new(format!("inbox_unit_networks_{}", ctes.len()));
+    ctes.push(
+        CommonTableExpression::new()
+            .query(query)
+            .table_name(alias.clone())
+            .materialized(true)
+            .to_owned(),
+    );
+    Query::select()
+        .column((alias.clone(), sigint_network_unit::Column::NetworkId))
+        .from(alias)
+        .to_owned()
+}
+
+pub(crate) fn filter_inbox_units_with_materialized_networks(
+    mut query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+    force_correlation: bool,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    let mut ctes = Vec::new();
+    query = filter_selected_units_or_ids_with_correlation(
+        query,
+        &req.selected_units,
+        &req.selected_unit_ids,
+        &req.units_exact_match_only,
+        force_correlation,
+        Some(&mut ctes),
+    )
+    .c(h!())?;
+    query = filter_denied_units_with_correlation(
+        query,
+        &req.denied_units,
+        &req.units_exact_match_only,
+        force_correlation,
+        Some(&mut ctes),
+    )
+    .c(h!())?;
+    if !ctes.is_empty() {
+        let mut with_clause = WithClause::new();
+        for cte in ctes {
+            with_clause.cte(cte);
+        }
+        QuerySelect::query(&mut query).with_cte(with_clause);
+    }
+    Ok(query)
 }
 
 pub(super) fn selected_unit_network_ids_query(
@@ -1302,7 +1551,12 @@ where
         Expr::cust(format!(r#""sigint_inbox_item"."id" IN ({matching_ids})"#))
     })
     .or_else(|| {
-        selected_units_condition(selected_units, units_exact_match_only, false)
+        selected_units_condition(
+            selected_units,
+            units_exact_match_only,
+            false,
+            None,
+        )
     });
     let unit_ids = selected_unit_ids
         .as_ref()
@@ -1633,12 +1887,6 @@ fn linked_unit_inbox_item_is_active(
             ))
             .gte(message_datetime)),
         )
-}
-
-/// Ця функція обирає тільки ті повідомлення, для яких є активна мережа
-/// з прив'язаним підрозділом, який задовольняє `filter_expr`.
-fn select_sigint_units_by_names(filter_expr: SimpleExpr) -> SelectStatement {
-    select_sigint_units_by_network_ids(select_network_ids_by_unit(filter_expr))
 }
 
 fn select_sigint_units_by_network_ids(
@@ -2026,10 +2274,6 @@ fn get_related_tag_items_filter(
     let expected_count = unique_tags.len();
 
     let mut q = sigint_inbox_item_tag::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_tag::Relation::Tag.def(),
-        )
         .filter(
             Expr::col((
                 sigint_inbox_item_tag::Entity,
@@ -2045,8 +2289,21 @@ fn get_related_tag_items_filter(
             sigint_inbox_item_tag::Column::Confidence
                 .gte(TAG_MINIMUM_CONFIDENCE),
         )
-        .filter(access.owner_condition())
         .select_only();
+    q = match access {
+        TagFilterAccess::Unresolved { .. } => q
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_tag::Relation::Tag.def(),
+            )
+            .filter(access.owner_condition()),
+        TagFilterAccess::Resolved {
+            accessible_tag_ids, ..
+        } => q.filter(
+            sigint_inbox_item_tag::Column::TagId
+                .eq_any(accessible_tag_ids.to_vec()),
+        ),
+    };
 
     if let Some(scope) = scope {
         q = q.filter(scope.condition((
@@ -2372,17 +2629,26 @@ where
             )
             .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::LoginId,
+                )),
+                None,
+            ))
+            // Keep EXISTS correlated so each parent probes the comment index.
+            .offset(0)
             .into_query();
         let linked_message = Alias::new("linked_message");
         let linked_comment_exists = intel_product::Entity::find()
             .select_only()
             .expr(Expr::value(1))
-            .filter(intel_product::relation_kind_eq(
-                intel_product::RELATION_KIND_COMMENT,
+            .filter(crate::rer_importer::intel_product_filter::relation_kind_eq(
+                crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
             ))
             .join_as(
                 JoinType::InnerJoin,
-                intel_product::Relation::SignalMessage1.def(),
+                intel_product::Relation::SignalMessage2.def(),
                 linked_message.clone(),
             )
             .filter(
@@ -2400,9 +2666,24 @@ where
                 .eq(false),
             )
             .filter(
-                Expr::col((linked_message, signal_message::Column::Body))
+                Expr::col((linked_message.clone(), signal_message::Column::Body))
                     .ne(""),
             )
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::LoginId,
+                )),
+                Some(
+                    Func::lower(Expr::col((
+                        linked_message,
+                        signal_message::Column::Sender,
+                    )))
+                    .into(),
+                ),
+            ))
+            // Avoid hashing the full linked-message relation for a narrow page.
+            .offset(0)
             .into_query();
 
         q = q.filter(
@@ -2463,10 +2744,60 @@ where
     Ok(q)
 }
 
+fn note_comment_author_filter(
+    author: SimpleExpr,
+    sender: Option<SimpleExpr>,
+) -> SimpleExpr {
+    let parsing_enabled = system_settings::Entity::find()
+        .select_only()
+        .column(system_settings::Column::SigintCommentParsingEnabled)
+        .filter(system_settings::Column::Deleted.eq(false))
+        .order_by_desc(system_settings::Column::UpdatedAt)
+        .limit(1)
+        .into_query();
+    let system_logins = login::Entity::find()
+        .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
+        .filter(Expr::value(true).in_subquery(parsing_enabled));
+    let unknown_author = author.clone().is_null();
+    let unknown_author = if let Some(sender) = sender {
+        let system_senders = system_logins
+            .clone()
+            .select_only()
+            .expr(Expr::cust_with_expr(
+                "unnest(ARRAY(VALUES ($1::text), (replace($1::text, '-', '')), \
+                 ('{' || $1::text || '}'), ('urn:uuid:' || $1::text)))",
+                Expr::col(login::Column::Id),
+            ))
+            .into_query();
+        unknown_author.and(
+            sender
+                .clone()
+                .is_null()
+                .or(sender.not_in_subquery(system_senders)),
+        )
+    } else {
+        unknown_author
+    };
+    unknown_author.or(author.not_in_subquery(
+        system_logins
+            .select_only()
+            .column(login::Column::Id)
+            .into_query(),
+    ))
+}
+
 fn selected_tags_accessible_expr(
     unique_tags: BTreeSet<i64>,
     access: TagFilterAccess<'_>,
 ) -> SimpleExpr {
+    if let TagFilterAccess::Resolved {
+        accessible_tag_ids, ..
+    } = access
+    {
+        return Expr::value(
+            unique_tags.iter().all(|id| accessible_tag_ids.contains(id)),
+        );
+    }
     let expected_count = unique_tags.len();
     let subquery = tag::Entity::find()
         .filter(
@@ -3506,20 +3837,82 @@ pub fn filter_search<Q>(q: Q, search: &Option<String>) -> Result<Q, AppError>
 where
     Q: QueryFilter + QuerySelect,
 {
+    Ok(filter_search_with_mode(q, search, None).c(h!())?)
+}
+
+pub fn filter_search_with_mode<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    Ok(
+        filter_search_with_correlated_terms(q, search, search_mode, false)
+            .c(h!())?,
+    )
+}
+
+pub(crate) fn filter_search_with_correlated_terms<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    Ok(filter_search_with_scope(
+        q,
+        search,
+        search_mode,
+        correlated_terms,
+        None,
+        false,
+    )
+    .c(h!())?)
+}
+
+pub(in crate::rer_importer) fn search_uses_candidate_ids(
+    selected_freqs: &Option<Vec<String>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> bool {
+    scope.is_some()
+        || matches!(selected_freqs.as_deref(), Some([frequency]) if !frequency.is_empty())
+}
+
+pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        q2 = q2.filter(
-            crate::attachments::search::message_filter(search, "all")
-                .c(h!())?,
-        );
+        let predicate = crate::attachments::search::analysis_message_filter(
+            search,
+            search_mode,
+            correlated_terms,
+            scope.is_some(),
+            inbox_required,
+        )
+        .c(h!())?;
+        q2 = q2.filter(predicate);
 
         if !search_parts.freq.is_empty() {
-            q2 = filter_selected_freqs(q2, &Some(search_parts.freq))?;
+            q2 = filter_selected_freqs(q2, &Some(search_parts.freq)).c(h!())?;
         }
 
         if !search_parts.not_freq.is_empty() {
-            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))?;
+            q2 = filter_denied_freqs(q2, &Some(search_parts.not_freq))
+                .c(h!())?;
         }
 
         if !search_parts.message_uids.is_empty() {
@@ -3720,7 +4113,9 @@ async fn query_summary_table_freq_analytics(
         stats::resolve_analytics_message_id_scope(
             req,
             db,
+            &env.dbx,
             freshness_max_age_ms,
+            master_keys,
         ),
         analytics_unit::resolve_analytics_unit_filters(
             &env.dbx,
@@ -4381,7 +4776,15 @@ fn build_summary_table_filtered_messages_query_with_access(
         .context(h!())?;
     let q =
         filter_selected_metadata_for_analysis_stats(q, req).context(h!())?;
-    let q = filter_search(q, &req.search).context(h!())?;
+    let q = filter_search_with_scope(
+        q,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     Ok(filter_selected_device_names(q, &req.selected_device_names)
         .context(h!())?)
 }
@@ -5383,11 +5786,21 @@ async fn correlated_freqs(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let postgres_source_db = env.dbx.clone();
     let freqs = with_analytics_read_fallback(
         env.get_ref(),
         "analysis correlated frequencies",
         analytics_count_request_supported(&req),
         |db| async move {
+            ensure_analytics_search_coverage(
+                &postgres_source_db,
+                &db,
+                analytics_req,
+                &analytics_groups,
+                freshness_max_age_ms,
+            )
+            .await
+            .c(h!())?;
             let scope = stats::resolve_analytics_message_id_scope_for_range(
                 dt_since,
                 dt_till,
@@ -5810,7 +6223,12 @@ pub async fn edit_freq_unit_name(
     .context(h!())?;
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
-    let rows_res = filter_search(rows_res, &req.search)?;
+    let rows_res = filter_search_with_mode(
+        rows_res,
+        &req.search,
+        req.analysis_stats_req.search_mode,
+    )
+    .c(h!())?;
     let rows_res =
         filter_selected_device_names(rows_res, &reqan.selected_device_names)?;
     // println!(
@@ -6215,6 +6633,18 @@ pub async fn bi_new_callsigns(
         "analysis new callsigns",
         analytics_supported,
         |db| async move {
+            let mut coverage_req = analytics_req.clone();
+            coverage_req.since_date_inclusive_ms =
+                lookback_since.and_utc().timestamp_millis();
+            ensure_analytics_search_coverage(
+                &env.dbx,
+                &db,
+                &coverage_req,
+                &analytics_groups,
+                freshness_max_age_ms,
+            )
+            .await
+            .c(h!())?;
             let (current_scope, lookback_scope) = tokio::try_join!(
                 stats::resolve_analytics_message_id_scope_for_range(
                     report_since,
@@ -6726,7 +7156,15 @@ fn build_new_callsign_filtered_items_query(
         callsign_source,
         scope,
     )?;
-    let query = filter_search(query, &req.search)?;
+    let query = filter_search_with_scope(
+        query,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .c(h!())?;
     let query = filter_selected_device_names(query, &req.selected_device_names)
         .c(h!())?;
     let query =
@@ -7068,7 +7506,7 @@ async fn editable_comment_logins(
     Ok(logins)
 }
 
-async fn accessible_message_ids(
+pub(crate) async fn accessible_message_ids(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     message_ids: &[i64],
@@ -7150,8 +7588,8 @@ async fn accessible_message_ids(
     let parent_access = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .and_where(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .and_where(
             Expr::col((
@@ -7326,13 +7764,17 @@ pub async fn activity_daily(
             let scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                postgres_db,
                 freshness_max_age_ms,
+                &analytics_groups,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_daily_group_activity_with_db(
                 &analytics_req.0,
                 analytics_user,
                 &db,
+                postgres_db,
                 analytics_groups,
                 Some(&scope),
             )
@@ -7342,6 +7784,7 @@ pub async fn activity_daily(
             stats::fetch_daily_group_activity_with_db(
                 &postgres_req.0,
                 postgres_user,
+                postgres_db,
                 postgres_db,
                 postgres_groups,
                 None,
@@ -7421,9 +7864,12 @@ pub async fn callsign_relations(
             let scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                postgres_db,
                 freshness_max_age_ms,
+                &analytics_groups,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_callsign_relation_messages_with_db(
                 &analytics_req.0,
                 None,
@@ -7529,9 +7975,12 @@ pub async fn callsign_frequency_matches(
             let scope = stats::resolve_analytics_message_id_scope(
                 analytics_req,
                 &db,
+                postgres_db,
                 freshness_max_age_ms,
+                &analytics_groups,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_callsign_frequency_matches_with_db(
                 analytics_req,
                 analytics_callsigns,
@@ -7610,9 +8059,12 @@ async fn group_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             let groups = stats::fetch_groups_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -7790,6 +8242,72 @@ async fn sender_stats(
     }))
 }
 
+#[post("/api/rer/analysis/stats/device-names")]
+async fn device_name_stats(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<Vec<AnalysisStatsDeviceName>>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    crate::devices::access::require_message_devices(&env.dbx, &login)
+        .await
+        .c(h!())?;
+    let master_keys =
+        get_identity_sigint_groups(&env.dbx, &login).await.c(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req.0;
+    let postgres_req = &req.0;
+    let source_db = &env.dbx;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let devices = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis stats device names",
+        analytics_count_request_supported(&req),
+        |db| async move {
+            let scope = stats::resolve_analytics_message_id_scope(
+                analytics_req,
+                &db,
+                source_db,
+                freshness_max_age_ms,
+                &analytics_master_keys,
+            )
+            .await
+            .c(h!())?;
+            Ok(stats::fetch_device_names_with_db(
+                analytics_req,
+                &login,
+                &db,
+                source_db,
+                analytics_master_keys,
+                Some(&scope),
+            )
+            .await
+            .c(h!())?)
+        },
+        |db| async move {
+            Ok(stats::fetch_device_names_with_db(
+                postgres_req,
+                &login,
+                &db,
+                source_db,
+                master_keys,
+                None,
+            )
+            .await
+            .c(h!())?)
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(devices))
+}
+
 #[post("/api/rer/analysis/stats/posts")]
 async fn post_stats(
     user: Identity,
@@ -7826,9 +8344,12 @@ async fn post_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_posts_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -7861,9 +8382,13 @@ async fn freq_stats(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<FreqStatsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -7951,9 +8476,12 @@ async fn callsign_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_callsigns_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -7977,6 +8505,32 @@ async fn callsign_stats(
     .await
     .context(h!())?;
     Ok(Json(CallsignStatsRsp { callsigns }))
+}
+
+#[post("/api/rer/analysis/callsigns-page")]
+async fn callsign_page(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisCallsignPageReq>,
+) -> Result<Json<AnalysisCallsignPageRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req.req)
+        .await
+        .c(h!())?;
+    let master_keys =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+            .await
+            .c(h!())?;
+    let page = stats::fetch_callsigns_page_for_login(
+        &req,
+        &login,
+        &env.replica(),
+        master_keys,
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(page))
 }
 
 #[post("/api/rer/analysis/stats/metadata")]
@@ -8015,9 +8569,12 @@ async fn metadata_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_metadata_stats_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -8081,9 +8638,12 @@ async fn tag_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_tags_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -8145,9 +8705,12 @@ async fn unit_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_units_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -8208,9 +8771,12 @@ async fn location_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_locations_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -8287,9 +8853,12 @@ async fn aor_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_aors_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -8396,13 +8965,17 @@ async fn network_stats(
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::fetch_networks_analytics_with_db(
                 analytics_req,
                 analytics_user,
                 &db,
+                &postgres_env.dbx,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 &message_id_scope,
@@ -8585,14 +9158,26 @@ async fn count_stats(
 }
 
 fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
-    if req.search.as_ref().is_some_and(|s| !s.trim().is_empty()) {
-        return false;
-    }
     // Analytics scopes are materialized from interception-time partitions. Until
     // their creation-time equivalent is available, route creation-basis requests
     // through PostgreSQL so every panel describes the same message set.
     req.message_time_basis
         != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && req.or_with_extended_form != Some(true)
+        && analytics_text_search_supported(&req.search, req.search_mode)
+}
+
+fn analytics_text_search_supported(
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+) -> bool {
+    m_str_trim(search).is_none()
+        || (search_mode.unwrap_or_default() == AnalysisSearchMode::Fuzzy
+            && search.as_deref().is_none_or(|search| {
+                search::parse_search_parts(search).is_ok_and(|parts| {
+                    parts.ilike.is_empty() && parts.not_ilike.is_empty()
+                })
+            }))
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -8628,11 +9213,10 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    if req.search.as_ref().is_some_and(|s| !s.trim().is_empty()) {
-        return false;
-    }
-    !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
-        || (req.load_latest == Some(true) && req.nolimit != Some(true))
+    req.or_with_extended_form != Some(true)
+        && analytics_text_search_supported(&req.search, req.search_mode)
+        && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+            || (req.load_latest == Some(true) && req.nolimit != Some(true)))
 }
 
 pub(crate) fn analytics_inbox_candidates_supported(
@@ -8830,6 +9414,7 @@ where
         operation,
         analytics_supported,
         true,
+        None,
         analytics_query,
         postgres_query,
     )
@@ -8856,6 +9441,7 @@ where
         operation,
         analytics_supported,
         true,
+        None,
         analytics_query,
         postgres_query,
     )
@@ -8887,6 +9473,7 @@ where
         operation,
         analytics_supported,
         false,
+        None,
         analytics_query,
         postgres_query,
     )
@@ -8900,6 +9487,7 @@ async fn with_analytics_read_fallback_inner<T, A, AFut, P, PFut>(
     operation: &str,
     analytics_supported: bool,
     use_configured_timeout: bool,
+    postgres_queue: Option<Arc<tokio::sync::Mutex<()>>>,
     analytics_query: A,
     postgres_query: P,
 ) -> Result<AnalyticsReadOutcome<T>, AppError>
@@ -8946,16 +9534,23 @@ where
             .map(AnalyticsConfig::freshness_max_age_ms)
             .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
         let analytics_conn = analytics.conn.clone();
-        let query = async move {
-            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms)
-                .await?;
-            analytics_query(analytics_conn).await
-        };
-
-        let response = if use_configured_timeout {
-            tokio::time::timeout(timeout, query).await.ok()
-        } else {
-            Some(query.await)
+        let deadline = tokio::time::Instant::now() + timeout;
+        let response = match tokio::time::timeout_at(
+            deadline,
+            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms),
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                let query = analytics_query(analytics_conn);
+                if use_configured_timeout {
+                    tokio::time::timeout_at(deadline, query).await.ok()
+                } else {
+                    Some(query.await)
+                }
+            }
+            Ok(Err(err)) => Some(Err(err)),
+            Err(_) => None,
         };
         let open_circuit = match response {
             Some(Ok(response)) => {
@@ -8999,6 +9594,10 @@ where
         );
     }
 
+    let _postgres_queue_guard = match postgres_queue {
+        Some(queue) => Some(queue.lock_owned().await),
+        None => None,
+    };
     let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
     {
         Some(
@@ -9028,8 +9627,10 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
         "analytics_error"
             | "analytics_timeout"
             | "analytics_saturated"
+            | "analytics_resource_limit"
             | "analytics_unhealthy"
             | "analytics_unavailable"
+            | "attachment_history_incomplete"
             | "circuit_open"
             | "candidate_ordering_incomplete"
             | "candidate_revalidation_incomplete"
@@ -9124,6 +9725,29 @@ fn analytics_failure_reason(
     let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {
+        let message = error.to_string();
+        let normalized = message.to_ascii_lowercase();
+        let native_exception =
+            message.contains("pg_clickhouse: DB::Exception:");
+        let memory_limit = message.contains("MEMORY_LIMIT_EXCEEDED")
+            || (native_exception
+                && normalized.contains("memory limit")
+                && normalized.contains("exceeded"));
+        let concurrency_limit = message
+            .contains("TOO_MANY_SIMULTANEOUS_QUERIES")
+            || (native_exception
+                && normalized.contains("too many simultaneous queries"));
+        if (memory_limit && !normalized.contains("(total)"))
+            || concurrency_limit
+        {
+            return "analytics_resource_limit";
+        }
+        if error
+            .downcast_ref::<crate::attachments::analytics::AttachmentSearchCoverageError>()
+            .is_some()
+        {
+            return "attachment_history_incomplete";
+        }
         if error
             .downcast_ref::<AnalyticsReplicationHealthError>()
             .is_some()
@@ -9200,6 +9824,13 @@ fn analytics_retry_state_for_operation(
     retry_states: &RwLock<HashMap<String, Arc<AtomicU64>>>,
     operation: &str,
 ) -> Arc<AtomicU64> {
+    let operation = if operation.starts_with("analysis stats ")
+        && operation.ends_with(" count")
+    {
+        "analysis stats count"
+    } else {
+        operation
+    };
     if let Some(retry_state) = retry_states
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -9307,9 +9938,12 @@ async fn query_count_stats_raw(
     let message_id_scope = stats::resolve_analytics_message_id_scope(
         &req.0,
         db,
+        &env.dbx,
         freshness_max_age_ms,
+        &access.master_keys,
     )
-    .await?;
+    .await
+    .c(h!())?;
     let (exact_resolved_units, combined_resolved_units) =
         analytics_unit::resolve_analysis_unit_filter_variants_for_analytics(
             &env.dbx,
@@ -9716,6 +10350,255 @@ async fn query_count_stats_catalog_dimensions_postgres(
     })
 }
 
+async fn query_message_stats_count_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness_max_age_ms: u64,
+) -> Result<MessageStatsCountRsp, AppError> {
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        &env.dbx,
+        freshness_max_age_ms,
+        &master_keys,
+    )
+    .await
+    .context(h!())?;
+    let (count_overall, count_selected) = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        master_keys,
+        Some(&message_id_scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(MessageStatsCountRsp {
+        count_overall,
+        count_selected,
+    })
+}
+
+async fn query_message_stats_count_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<MessageStatsCountRsp, AppError> {
+    let (count_overall, count_selected) =
+        stats::fetch_counts(req, user, env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(MessageStatsCountRsp {
+        count_overall,
+        count_selected,
+    })
+}
+
+async fn query_unit_match_stats_count_raw(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness_max_age_ms: u64,
+) -> Result<UnitMatchStatsCountRsp, AppError> {
+    let message_id_scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        &env.dbx,
+        freshness_max_age_ms,
+        &master_keys,
+    )
+    .await
+    .context(h!())?;
+    let (exact_resolved_units, combined_resolved_units) =
+        analytics_unit::resolve_analysis_unit_filter_variants_for_analytics(
+            &env.dbx,
+            &req.selected_units,
+            Some(&message_id_scope),
+        )
+        .await
+        .context(h!())?;
+    let (resolved_units, alternate_resolved_units) =
+        if req.units_exact_match_only.unwrap_or(false) {
+            (exact_resolved_units, combined_resolved_units)
+        } else {
+            (combined_resolved_units, exact_resolved_units)
+        };
+    let count_selected = stats::fetch_selected_count_raw_with_db(
+        req,
+        user,
+        env,
+        db,
+        master_keys.clone(),
+        Some(&message_id_scope),
+        resolved_units.as_ref(),
+    )
+    .await
+    .context(h!())?;
+    let selected_units = req
+        .selected_units
+        .as_ref()
+        .filter(|selected_units| !selected_units.is_empty());
+    let (exact_matches_count, non_exact_matches_count) =
+        if selected_units.is_none() {
+            (count_selected, 0)
+        } else {
+            stats::count_unit_exact_match_breakdown_raw_with_db(
+                req,
+                user,
+                env,
+                db,
+                master_keys,
+                Some(&message_id_scope),
+                count_selected,
+                alternate_resolved_units.as_ref(),
+            )
+            .await
+            .context(h!())?
+        };
+    Ok(UnitMatchStatsCountRsp {
+        exact_matches_count,
+        non_exact_matches_count,
+    })
+}
+
+async fn query_unit_match_stats_count_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<UnitMatchStatsCountRsp, AppError> {
+    let (exact_matches_count, non_exact_matches_count) =
+        stats::count_unit_exact_match_breakdown(req, user, env, master_keys)
+            .await
+            .context(h!())?;
+    Ok(UnitMatchStatsCountRsp {
+        exact_matches_count,
+        non_exact_matches_count,
+    })
+}
+
+#[post("/api/rer/analysis/stats/messages/count")]
+async fn message_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<MessageStatsCountRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = &env;
+    let postgres_env = &env;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let count = counts::read_with_fallback(
+        env.get_ref(),
+        login,
+        &req,
+        "analysis stats messages count",
+        |db| async move {
+            query_message_stats_count_raw(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+                freshness_max_age_ms,
+            )
+            .await
+        },
+        |_db| {
+            query_message_stats_count_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
+}
+
+#[post("/api/rer/analysis/stats/units/matches/count")]
+async fn unit_match_stats_count(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<UnitMatchStatsCountRsp>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    require_analysis_device_filter_access(&env.dbx, &login, &req)
+        .await
+        .c(h!())?;
+    let master_keys = get_identity_sigint_groups(&env.dbx, &login)
+        .await
+        .context(h!())?;
+    let analytics_master_keys = master_keys.clone();
+    let analytics_req = &req;
+    let postgres_req = &req;
+    let analytics_user = &user;
+    let postgres_user = &user;
+    let analytics_env = &env;
+    let postgres_env = &env;
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let count = counts::read_with_fallback(
+        env.get_ref(),
+        login,
+        &req,
+        "analysis stats unit matches count",
+        |db| async move {
+            query_unit_match_stats_count_raw(
+                analytics_req,
+                analytics_user,
+                analytics_env,
+                &db,
+                analytics_master_keys,
+                freshness_max_age_ms,
+            )
+            .await
+        },
+        |_db| {
+            query_unit_match_stats_count_postgres(
+                postgres_req,
+                postgres_user,
+                postgres_env,
+                master_keys,
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(count))
+}
+
 /// STATS
 #[post("/api/rer/analysis/stats/groups/count")]
 async fn group_stats_count(
@@ -9745,17 +10628,21 @@ async fn group_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let groups_count = with_analytics_read_fallback(
+    let groups_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats groups count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             query_count_stats_groups(
                 analytics_req,
                 analytics_user,
@@ -9809,17 +10696,21 @@ async fn sender_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let senders_count = with_analytics_read_fallback(
+    let senders_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats senders count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_senders_with_db(
                 analytics_req,
                 analytics_user,
@@ -9874,17 +10765,21 @@ async fn post_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let posts_count = with_analytics_read_fallback(
+    let posts_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats posts count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_posts_with_db(
                 analytics_req,
                 analytics_user,
@@ -9918,9 +10813,13 @@ async fn freq_stats_count(
     req: Json<AnalysisStatsReq>,
 ) -> Result<Json<i64>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     require_analysis_device_filter_access(&env.dbx, &login, &req)
         .await
         .c(h!())?;
@@ -9942,17 +10841,21 @@ async fn freq_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let freqs_count = with_analytics_read_fallback(
+    let freqs_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats freqs count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_freqs_with_db(
                 analytics_req,
                 analytics_user,
@@ -10007,17 +10910,21 @@ async fn callsign_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let callsigns_count = with_analytics_read_fallback(
+    let callsigns_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats callsigns count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_callsigns_analytics_with_db(
                 analytics_req,
                 analytics_user,
@@ -10073,17 +10980,21 @@ async fn tag_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let tags_count = with_analytics_read_fallback(
+    let tags_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats tags count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_tags_analytics_with_db(
                 analytics_req,
                 &login,
@@ -10138,17 +11049,21 @@ async fn unit_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let units_count = with_analytics_read_fallback(
+    let units_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats units count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_units_with_db(
                 analytics_req,
                 analytics_user,
@@ -10201,17 +11116,21 @@ async fn location_stats_count(
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let analytics_source_db = env.dbx.clone();
-    let locations_count = with_analytics_read_fallback(
+    let locations_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats locations count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_locations_with_db(
                 analytics_req,
                 analytics_user,
@@ -10280,17 +11199,21 @@ async fn aor_stats_count(
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let analytics_source_db = env.dbx.clone();
-    let aors_count = with_analytics_read_fallback(
+    let aors_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats aors count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_aors_raw_with_db(
                 analytics_req,
                 analytics_user,
@@ -10360,17 +11283,21 @@ async fn network_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-    let networks_count = with_analytics_read_fallback(
+    let networks_count = counts::read_with_fallback(
         env.get_ref(),
+        login,
+        &req,
         "analysis stats networks count",
-        analytics_count_request_supported(&req),
         |db| async move {
             let message_id_scope = stats::resolve_analytics_message_id_scope(
                 &analytics_req.0,
                 &db,
+                &postgres_env.dbx,
                 analytics_freshness_max_age_ms,
+                &analytics_master_keys,
             )
-            .await?;
+            .await
+            .c(h!())?;
             stats::count_networks_analytics_with_db(
                 analytics_req,
                 analytics_user,
@@ -10508,10 +11435,15 @@ async fn query_combined_stats_analytics(
     freshness: u64,
 ) -> Result<AnalysisStatsRsp, AppError> {
     let login = login_id_from_identity(user).context(h!())?;
-    let scope =
-        stats::resolve_analytics_message_id_scope(&req.0, &db, freshness)
-            .await
-            .context(h!())?;
+    let scope = stats::resolve_analytics_message_id_scope(
+        &req.0,
+        &db,
+        &env.dbx,
+        freshness,
+        &master_keys,
+    )
+    .await
+    .context(h!())?;
     let access = stats::resolve_analytics_tag_access(
         &env.dbx,
         &login,
@@ -10691,6 +11623,9 @@ async fn collect_group_names(
             signal_group::Column::InterseptionKind,
             signal_group::Column::DisableNetworkAssignment,
             signal_group::Column::IsAviationGroup,
+            signal_group::Column::AiTranscriptAnalysisEnabled,
+            signal_group::Column::ColorKey,
+            signal_group::Column::FetchNewMessages,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(
@@ -10700,6 +11635,9 @@ async fn collect_group_names(
             sea_orm_active_enums::InterseptionKind,
             bool,
             Option<bool>,
+            Option<bool>,
+            Option<String>,
+            Option<bool>,
         )>()
         .all(txn)
         .await
@@ -10707,7 +11645,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -10733,6 +11671,9 @@ async fn collect_group_names(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        ai_transcript_analysis_enabled,
+        color_key,
+        fetch_new_messages,
     ) in signal_groups
     {
         if let Some(name) = name {
@@ -10748,9 +11689,16 @@ async fn collect_group_names(
                 interseption_kind: interseption_kind.into(),
                 disable_network_assignment,
                 is_aviation_group: is_aviation_group.unwrap_or(false),
+                ai_transcript_analysis_enabled: ai_transcript_analysis_enabled
+                    .unwrap_or(false),
+                fetch_new_messages: fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
+                color_key: SignalGroupColor::from_optional_db_value(
+                    color_key.as_deref(),
+                )
+                .context(h!())?,
             });
         }
     }
@@ -10782,9 +11730,12 @@ async fn collect_group_names(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
+            fetch_new_messages: true,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,
+            color_key: SignalGroupColor::BlueGrey,
         });
     }
     Ok(result)

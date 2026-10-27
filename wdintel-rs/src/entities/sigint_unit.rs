@@ -71,6 +71,7 @@ pub struct Model {
     pub is_inconsistent: bool,
     pub updated_at: DateTime,
     pub present_in_orbit: Option<bool>,
+    pub combat_type_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -91,6 +92,8 @@ pub enum Relation {
     SigintCallsign,
     #[sea_orm(has_many = "super::sigint_inbox_item_unit::Entity")]
     SigintInboxItemUnit,
+    #[sea_orm(has_many = "super::sigint_inbox_item_unit_selection::Entity")]
+    SigintInboxItemUnitSelection,
     #[sea_orm(has_many = "super::sigint_network_callsign::Entity")]
     SigintNetworkCallsign,
     #[sea_orm(has_many = "super::sigint_network_unit::Entity")]
@@ -113,6 +116,16 @@ pub enum Relation {
     SigintUnitChangelog,
     #[sea_orm(has_many = "super::sigint_unit_label::Entity")]
     SigintUnitLabel,
+    #[sea_orm(
+        belongs_to = "super::sigint_unit_orbit_combat_type::Entity",
+        from = "Column::CombatTypeId",
+        to = "super::sigint_unit_orbit_combat_type::Column::Id",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    SigintUnitOrbitCombatType,
+    #[sea_orm(has_one = "super::sigint_unit_rer_report_metadata::Entity")]
+    SigintUnitRerReportMetadata,
 }
 
 impl Related<super::device::Entity> for Entity {
@@ -193,6 +206,18 @@ impl Related<super::sigint_unit_label::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_unit_orbit_combat_type::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitOrbitCombatType.def()
+    }
+}
+
+impl Related<super::sigint_unit_rer_report_metadata::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitRerReportMetadata.def()
+    }
+}
+
 impl Related<super::orbit_unit::Entity> for Entity {
     fn to() -> RelationDef {
         super::orbit_unit_sigint_unit::Relation::OrbitUnit.def()
@@ -203,6 +228,12 @@ impl Related<super::orbit_unit::Entity> for Entity {
                 .def()
                 .rev(),
         )
+    }
+}
+
+impl Related<super::sigint_inbox_item_unit_selection::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemUnitSelection.def()
     }
 }
 

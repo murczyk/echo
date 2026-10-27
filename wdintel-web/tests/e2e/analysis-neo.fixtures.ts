@@ -1,17 +1,27 @@
 import type { Page, Route } from '@playwright/test';
+import type { ListUnitsRsp } from '../../src/Bindings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
-import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
+import { transformCamelToSnake } from '../../src/ts/snake-to-camel';
+import {
+  emptyNetworksListResponse,
+  networkSettingsResponse,
+  systemSettingsCurrentResponse,
+} from './fixture-responses';
 
 type AnalysisNeoMockOptions = {
+  messageSortBy?: 'creation' | 'interception';
   userRoles?: string[];
   enableAudioTranscription?: boolean;
   analysisAorFilterEnabled?: boolean;
+  hideNetworks?: boolean;
+  systemSettingsFailure?: boolean;
   summaryDelayMs?: number;
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
   inboxResponse?: InboxMessagesRspRaw | null;
   signalGroups?: string[];
   networkInfoResponse?: unknown[];
+  callsignPageResponse?: (request: { cursor?: string | null; query?: string }) => unknown;
 };
 
 function jsonBody(body: unknown): string {
@@ -27,25 +37,6 @@ async function fulfillJson(route: Route, body: unknown, delayMs = 0): Promise<vo
     contentType: 'application/json; charset=utf-8',
     body: jsonBody(body),
   });
-}
-
-function emptyCountResponse() {
-  return {
-    count_overall: 2,
-    count_selected: 1,
-    groups_count: 0,
-    senders_count: 0,
-    freqs_count: 1,
-    posts_count: 0,
-    callsigns_count: 0,
-    units_count: 0,
-    units_exact_matches_count: 0,
-    units_non_exact_matches_count: 0,
-    locations_count: 0,
-    tags_count: 0,
-    aors_count: 0,
-    networks_count: 0,
-  };
 }
 
 function emptyInboxResponse() {
@@ -159,24 +150,44 @@ function emptySummaryResponse() {
 }
 
 function emptyUnitsResponse() {
-  return {
-    show_load_more: false,
+  const response: ListUnitsRsp = {
+    showLoadMore: false,
+    totalCount: 1,
+    statusCounts: { active: 1, inactive: 0 },
     units: [
       {
         id: 1,
+        other: '',
+        teamOrCrew: '',
+        section: '',
+        squad: '',
+        platoon: '',
         company: '',
         battalion: '',
         regiment: '',
+        brigade: '',
         division: '',
+        corps: '',
         army: '',
+        militaryDistrict: '',
+        armyRegion: '',
+        combatTypeId: null,
+        combatTypeName: null,
         comment: '',
+        orbitNote: null,
+        presentInOrbit: null,
         name: '1',
         active: true,
-        created_at: 0,
-        created_by: 'e2e',
+        isDeduplicateCandidate: null,
+        createdAt: 0,
+        createdByLoginId: 'e2e',
+        hasOrbit: false,
+        orbitUnitIds: [],
+        orbitUnitGenerativeNames: [],
       },
     ],
   };
+  return transformCamelToSnake<Record<string, unknown>>(response);
 }
 
 function emptyNetworksResponse() {
@@ -201,10 +212,11 @@ function emptySavedFiltersResponse() {
   return [];
 }
 
-function emptyUserSettingsResponse() {
+function emptyUserSettingsResponse(messageSortBy?: 'creation' | 'interception') {
   return {
     tagsLayout: 'compact',
     disableAutoScroll: false,
+    messageSortBy,
   };
 }
 
@@ -234,6 +246,11 @@ export async function installAnalysisNeoApiMocks(
     const url = new URL(request.url());
     const { pathname } = url;
 
+    if (pathname === '/api/rer-importer/message-replies') {
+      await fulfillJson(route, { replies: [], reply_messages: [] });
+      return;
+    }
+
     if (pathname === '/api/user') {
       await fulfillJson(route, {
         id: 'analysis-tester',
@@ -247,23 +264,29 @@ export async function installAnalysisNeoApiMocks(
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        rer_report_eligible: false,
       });
       return;
     }
 
     if (pathname === '/api/system-settings/current') {
+      if (options.systemSettingsFailure) {
+        await route.fulfill({ status: 500, body: 'System settings unavailable' });
+        return;
+      }
       await fulfillJson(
         route,
         systemSettingsCurrentResponse({
           enableAudioTranscription: options.enableAudioTranscription,
           analysisAorFilterEnabled: options.analysisAorFilterEnabled,
+          hideNetworks: options.hideNetworks,
         }),
       );
       return;
     }
 
     if (pathname === '/api/user/settings') {
-      await fulfillJson(route, emptyUserSettingsResponse());
+      await fulfillJson(route, emptyUserSettingsResponse(options.messageSortBy));
       return;
     }
 
@@ -294,8 +317,18 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
-    if (pathname === '/api/rer/analysis/stats/count') {
-      await fulfillJson(route, emptyCountResponse());
+    if (pathname === '/api/rer/analysis/stats/messages/count') {
+      await fulfillJson(route, { count_overall: 0, count_selected: 0 });
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/stats/units/matches/count') {
+      await fulfillJson(route, { exact_matches_count: 0, non_exact_matches_count: 0 });
+      return;
+    }
+
+    if (/^\/api\/rer\/analysis\/stats\/[^/]+\/count$/.test(pathname)) {
+      await fulfillJson(route, 0);
       return;
     }
 
@@ -316,6 +349,15 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/rer/analysis/stats/callsigns') {
       await fulfillJson(route, { callsigns: [] }, options.sidebarDelayMs);
+      return;
+    }
+
+    if (pathname === '/api/rer/analysis/callsigns-page') {
+      const body = request.postDataJSON() as { cursor?: string | null; query?: string };
+      await fulfillJson(
+        route,
+        options.callsignPageResponse?.(body) ?? { entries: [], has_more: false, next_cursor: null },
+      );
       return;
     }
 
@@ -359,6 +401,16 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
+    if (pathname === '/api/rer-importer/inbox-item-context') {
+      const reference = route.request().postDataJSON().message_uid;
+      const message = options.inboxResponse?.inbox_items.find(
+        ([id, item]) =>
+          String(id) === reference || item.messageUid === reference || item.idUuid === reference,
+      );
+      await fulfillJson(route, { message: message ?? null });
+      return;
+    }
+
     if (pathname === '/api/rer-importer/get-inbox') {
       await fulfillJson(
         route,
@@ -380,6 +432,11 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/sigint/units') {
       await fulfillJson(route, emptyUnitsResponse());
+      return;
+    }
+
+    if (pathname === '/api/sigint/network-list') {
+      await fulfillJson(route, emptyNetworksListResponse());
       return;
     }
 

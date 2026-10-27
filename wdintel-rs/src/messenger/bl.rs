@@ -4,8 +4,8 @@ use crate::entities::area_of_responsibility::Model;
 use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::error::ContextAndError;
-use crate::messenger::group::collect_group_stats;
 use crate::messenger::group::types::SignalGroupStats;
+use crate::messenger::group::{collect_group_stats, set_signal_group_color};
 use crate::messenger::types::{
     AccountSyncResult, EchoAccountF1, GroupUpdateReq,
 };
@@ -78,6 +78,8 @@ pub async fn edit_account(
     id: i64,
     aor_id: Option<i64>,
     set_active: bool,
+    can_read_messages: Option<bool>,
+    can_send_messages: Option<bool>,
     display_name: String,
     description: Option<String>,
     api_login: Option<String>,
@@ -85,9 +87,13 @@ pub async fn edit_account(
     dbx: &DatabaseConnection,
     login: &Uuid,
 ) -> anyhow::Result<()> {
+    crate::datasource::native::require_external_datasource(dbx, id)
+        .await
+        .c(h!())?;
     let api_login = api_login
         .map(|api_login| Uuid::parse_str(&api_login))
-        .transpose()?;
+        .transpose()
+        .c(h!())?;
     let txn = dbx.begin().await.cae(h!())?;
     let mut account = datasource::Entity::find_by_id(id)
         .one(&txn)
@@ -95,6 +101,12 @@ pub async fn edit_account(
         .c(h!())?
         .c(h!())?
         .into_active_model();
+    if let Some(can_read_messages) = can_read_messages {
+        account.can_read_messages = Set(Some(can_read_messages));
+    }
+    if let Some(can_send_messages) = can_send_messages {
+        account.can_send_messages = Set(Some(can_send_messages));
+    }
     account.default_aor_id = Set(aor_id);
     account.display_name = Set(display_name);
     account.description = Set(description);
@@ -117,6 +129,9 @@ pub async fn deactivate_account(
     login: Option<Uuid>,
     mark_deleted: bool,
 ) -> Result<(), AppError> {
+    crate::datasource::native::require_external_datasource(txn, id)
+        .await
+        .c(h!())?;
     let account = load_echo_account(id, txn).await.c(h!())?;
     let datasource = datasource::Entity::find_by_id(account.id)
         .one(txn)
@@ -154,6 +169,11 @@ pub async fn link_account(
     txn: &DatabaseTransaction,
     login: &Uuid,
 ) -> Result<EchoAccountF1, AppError> {
+    if let Some(id) = datasource_id {
+        crate::datasource::native::require_external_datasource(txn, id)
+            .await
+            .c(h!())?;
+    }
     validate_system_service_name(system_service_name)?;
     let source =
         EchoMessageSource::try_from_value(&source.to_string()).c(h!())?;
@@ -237,6 +257,8 @@ pub async fn link_account(
         datasource.update(txn).await.c(h!())?.id
     } else {
         datasource::ActiveModel {
+            can_read_messages: NotSet,
+            can_send_messages: NotSet,
             echo_client_lock_id: Set(Some(lock.id as i64)),
             id: NotSet,
             status: NotSet,
@@ -511,6 +533,9 @@ pub async fn get_qr_code(
     db: &DatabaseConnection,
     login: &Uuid,
 ) -> Result<String, AppError> {
+    crate::datasource::native::require_external_datasource(db, account_id)
+        .await
+        .c(h!())?;
     let m_account = list_echo_accounts(Some(account_id), db)
         .await
         .c(h!())?
@@ -605,6 +630,8 @@ where
         pub display_name: String,
         pub description: Option<String>,
         pub status: AccountStatus,
+        pub can_read_messages: Option<bool>,
+        pub can_send_messages: Option<bool>,
         pub created_at: DateTime,
         pub client_id: Option<i32>,
         pub account_id: Option<i32>,
@@ -621,7 +648,8 @@ where
         pub attachments_path: Option<String>,
     }
 
-    let mut q = datasource::Entity::find();
+    let mut q = datasource::Entity::find()
+        .filter(datasource::Column::Kind.ne(DATASOURCE_ECHO_NATIVE_KIND));
     if let Some(id) = m_id {
         q = q.filter(datasource::Column::Id.eq(id));
     }
@@ -653,6 +681,8 @@ where
         .column(datasource::Column::DisplayName)
         .column(datasource::Column::Description)
         .column(datasource::Column::Status)
+        .column(datasource::Column::CanReadMessages)
+        .column(datasource::Column::CanSendMessages)
         .column(datasource::Column::CreatedAt)
         .column(echo_client_lock::Column::ClientId)
         .column(echo_client_lock::Column::AccountId)
@@ -707,6 +737,8 @@ where
 
         datasources.push(EchoAccountF1 {
             id: a.id,
+            can_read_messages: a.can_read_messages,
+            can_send_messages: a.can_send_messages,
             area_of_responsibility,
             status: a.status.into_value().value.into_owned(),
             created_at: a.created_at.and_utc().timestamp_millis(),
@@ -755,6 +787,8 @@ where
             let aor = ods.default_aor_id.and_then(|id| aors.get(&id).cloned());
             datasources.push(EchoAccountF1 {
                 id: ods.id,
+                can_read_messages: ods.can_read_messages,
+                can_send_messages: ods.can_send_messages,
                 area_of_responsibility: aor,
                 status: ods.status.into_value().value.into_owned(),
                 created_at: ods.created_at.and_utc().timestamp_millis(),
@@ -769,6 +803,62 @@ where
                 api_endpoint: ods.api_endpoint,
                 is_linked: true,
                 description: ods.description,
+                is_imported: false,
+                signal_port: None,
+                process_name: None,
+                attachments_path: None,
+                echo_client_id: None,
+                echo_account_id: None,
+                echo_client_lock_id: None,
+            })
+        }
+    }
+    let ingest_datasources = datasource::Entity::find()
+        .filter(
+            datasource::Column::Kind
+                .eq(crate::config::MESSENGER_INGEST_DATASOURCE_KIND),
+        )
+        .filter(datasource::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    if !ingest_datasources.is_empty() {
+        let aor_ids = ingest_datasources
+            .iter()
+            .filter_map(|a| a.default_aor_id)
+            .collect::<Vec<_>>();
+        let aors = if aor_ids.is_empty() {
+            HashMap::new()
+        } else {
+            area_of_responsibility::Entity::find()
+                .filter(area_of_responsibility::Column::Id.eq_any(aor_ids))
+                .all(txn)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|aor| (aor.id, render_aor(aor)))
+                .collect::<HashMap<_, _>>()
+        };
+        for ids in ingest_datasources {
+            let aor = ids.default_aor_id.and_then(|id| aors.get(&id).cloned());
+            datasources.push(EchoAccountF1 {
+                id: ids.id,
+                can_read_messages: None,
+                can_send_messages: None,
+                area_of_responsibility: aor,
+                status: ids.status.into_value().value.into_owned(),
+                created_at: ids.created_at.and_utc().timestamp_millis(),
+                client_id: None,
+                display_name: ids.display_name,
+                system_service_name: None,
+                messenger: ids.kind,
+                phone_number: "".to_string(),
+                api_login: ids
+                    .api_login_id
+                    .map(|login_id| login_id.to_string()),
+                api_endpoint: ids.api_endpoint,
+                is_linked: true,
+                description: ids.description,
                 is_imported: false,
                 signal_port: None,
                 process_name: None,
@@ -888,9 +978,6 @@ pub async fn upsert_group_area_of_responsibility(
         }
     };
     if aor_ids_changed {
-        crate::battle_line::requeue_settlement_links_for_group(txn, master_key)
-            .await
-            .c(h!())?;
         let group = signal_group::Entity::find_by_id(master_key.to_string())
             .one(txn)
             .await
@@ -928,6 +1015,9 @@ pub async fn bl_group_update(
     txn: &DatabaseTransaction,
 ) -> Result<BlGroupUpdateRes, AppError> {
     let mut network_invalidation_enqueued = false;
+    set_signal_group_color(txn, &req.master_key, req.color_key)
+        .await
+        .c(h!())?;
     let m_group = group_admin_data::Entity::find()
         .filter(
             group_admin_data::Column::GroupMasterKey.eq(req.master_key.clone()),
@@ -1011,6 +1101,20 @@ pub async fn bl_group_update(
     } else {
         group
     };
+    crate::sigint::zone::bl::update_group_fetch_new_messages_if_present(
+        req.fetch_new_messages,
+        &group.master_key,
+        txn,
+    )
+    .await
+    .c(h!())?;
+    crate::ai_transcript_analysis::settings::set_group(
+        txn,
+        &group.master_key,
+        req.ai_transcript_analysis_enabled,
+    )
+    .await
+    .c(h!())?;
     crate::sigint::zone::bl::update_group_aviation_if_present(
         req.is_aviation_group,
         &group.master_key,

@@ -15,6 +15,21 @@ where
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitCombatType {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitCombatTypesRsp {
+    pub combat_types: Vec<UnitCombatType>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct Unit {
     pub id: i64,
     #[serde(default)]
@@ -40,6 +55,10 @@ pub struct Unit {
     pub military_district: String,
     #[serde(default)]
     pub army_region: String,
+    #[serde(default)]
+    pub combat_type_id: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub combat_type_name: Option<String>,
     pub comment: String,
     pub orbit_note: Option<String>,
     pub present_in_orbit: Option<bool>,
@@ -152,6 +171,8 @@ pub enum ListUnitsSortBy {
     UnitMilitaryDistrictDesc,
     UnitArmyRegionAsc,
     UnitArmyRegionDesc,
+    UnitCombatTypeAsc,
+    UnitCombatTypeDesc,
     UnitCommentAsc,
     UnitCommentDesc,
     UnitOrbitNoteAsc,
@@ -202,6 +223,7 @@ pub struct ListUnitsReq {
     pub filter_army: Option<String>,
     pub filter_military_district: Option<String>,
     pub filter_army_region: Option<String>,
+    pub filter_combat_type: Option<String>,
     pub filter_comment: Option<String>,
     pub filter_orbit_note: Option<String>,
     pub filter_is_deduplicate_candidate: Option<bool>,
@@ -278,7 +300,15 @@ pub struct ListInconsistentUnitsRsp {
 }
 
 #[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Default,
 )]
 pub struct CreateUnitReq {
     #[serde(default)]
@@ -306,6 +336,8 @@ pub struct CreateUnitReq {
     pub military_district: String,
     #[serde(default)]
     pub army_region: String,
+    #[serde(default)]
+    pub combat_type_id: Option<String>,
     pub active: bool,
     pub is_deduplicate_candidate: Option<bool>,
     pub comment: String,
@@ -344,6 +376,8 @@ pub struct UpdateUnitReq {
     pub military_district: Option<String>,
     #[serde(default)]
     pub army_region: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_update")]
+    pub combat_type_id: Option<Option<String>>,
     pub active: bool,
     pub comment: String,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
@@ -373,6 +407,7 @@ impl From<Unit> for UpdateUnitReq {
             army: unit.army,
             military_district: Some(unit.military_district),
             army_region: Some(unit.army_region),
+            combat_type_id: Some(unit.combat_type_id),
             active: unit.active,
             comment: unit.comment,
             orbit_note: Some(unit.orbit_note),
@@ -486,6 +521,10 @@ pub struct DeleteUnitDuplicateReq {
 )]
 pub struct UnitSearchReq {
     pub search: String,
+    #[serde(default)]
+    pub include_inactive: Option<bool>,
+    #[serde(default)]
+    pub names: Option<Vec<String>>,
 }
 
 #[derive(

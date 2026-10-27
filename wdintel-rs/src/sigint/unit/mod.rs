@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::config::{
     SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME, SIGINT_UNIT_LIST_DEFAULT_LIMIT,
     SIGINT_UNIT_LIST_MAX_LIMIT, SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
@@ -22,15 +23,16 @@ use crate::users::{
 use actix_web::post;
 use actix_web::web::Json;
 use sea_orm::*;
-use sea_query::types::IntoColumnRef;
 use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
 pub mod activity;
 pub mod attachment;
 pub mod changelog;
+pub mod combat_type;
 pub mod labels;
 mod merge_task;
+pub(crate) mod message_creation;
 pub(crate) use merge_task::guard_capacity as unit_merge_guard_capacity;
 pub mod orbit;
 pub mod types;
@@ -260,9 +262,13 @@ pub async fn list_units(
     req: Json<ListUnitsReq>,
 ) -> Result<Json<ListUnitsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     let can_view_orbit =
         orbit::can_view_orbit_data(&env.dbx, &login_id).await?;
     let mut response =
@@ -297,9 +303,13 @@ pub async fn unit_status_counts(
     env: actix_web::web::Data<Env>,
 ) -> Result<Json<UnitStatusCountsRsp>, AppError> {
     let login_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login_id, vec!["Rer", "Cyber", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     Ok(Json(read_unit_status_counts(&env.dbx).await?))
 }
 
@@ -353,7 +363,8 @@ async fn read_units_with_orbit_visibility(
     req: &ListUnitsReq,
     can_view_orbit: bool,
 ) -> Result<ListUnitsRsp, AppError> {
-    let mut units = available_units_query(true);
+    let mut units = available_units_query(true)
+        .left_join(sigint_unit_orbit_combat_type::Entity);
     units = apply_unit_list_filters(units, req, can_view_orbit);
     let status_counts = count_unit_statuses(dbx, units.clone()).await?;
     if let Some(active) = req.filter_active {
@@ -372,6 +383,9 @@ async fn read_units_with_orbit_visibility(
             .c(h!())?;
         units = apply_unit_search_order(units, req, can_view_orbit);
     } else if let Some((column, order)) = simple_unit_list_sort(&sort_by) {
+        units = apply_unit_list_cursor(dbx, units, req, column, &order)
+            .await
+            .c(h!())?;
         units = units
             .order_by(column, order.clone())
             .order_by(sigint_unit::Column::Id, order);
@@ -383,10 +397,8 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *before_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::CreatedAt
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                            sigint_unit::Column::CreatedAt.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .lt(SimpleExpr::Tuple(vec![
                             before_unit.created_at.into(),
@@ -404,10 +416,8 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *after_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::CreatedAt
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                            sigint_unit::Column::CreatedAt.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.created_at.into(),
@@ -425,41 +435,22 @@ async fn read_units_with_orbit_visibility(
                         find_unit(dbx, *after_unit_id).await.c(h!())?;
                     units = units.filter(
                         Expr::tuple([
-                            sigint_unit::Column::ArmyRegion
-                                .into_column_ref()
-                                .into(),
+                            sigint_unit::Column::ArmyRegion.into_simple_expr(),
                             sigint_unit::Column::MilitaryDistrict
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Army.into_column_ref().into(),
-                            sigint_unit::Column::Corps.into_column_ref().into(),
-                            sigint_unit::Column::Division
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Brigade
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Regiment
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Battalion
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Company
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Platoon
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Squad.into_column_ref().into(),
-                            sigint_unit::Column::Section
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::TeamOrCrew
-                                .into_column_ref()
-                                .into(),
-                            sigint_unit::Column::Other.into_column_ref().into(),
-                            sigint_unit::Column::Id.into_column_ref().into(),
+                                .into_simple_expr(),
+                            sigint_unit::Column::Army.into_simple_expr(),
+                            sigint_unit::Column::Corps.into_simple_expr(),
+                            sigint_unit::Column::Division.into_simple_expr(),
+                            sigint_unit::Column::Brigade.into_simple_expr(),
+                            sigint_unit::Column::Regiment.into_simple_expr(),
+                            sigint_unit::Column::Battalion.into_simple_expr(),
+                            sigint_unit::Column::Company.into_simple_expr(),
+                            sigint_unit::Column::Platoon.into_simple_expr(),
+                            sigint_unit::Column::Squad.into_simple_expr(),
+                            sigint_unit::Column::Section.into_simple_expr(),
+                            sigint_unit::Column::TeamOrCrew.into_simple_expr(),
+                            sigint_unit::Column::Other.into_simple_expr(),
+                            sigint_unit::Column::Id.into_simple_expr(),
                         ])
                         .gt(SimpleExpr::Tuple(vec![
                             after_unit.army_region.into(),
@@ -497,6 +488,18 @@ async fn read_units_with_orbit_visibility(
                 units = units.order_by_asc(sigint_unit::Column::Other);
                 units = units.order_by_asc(sigint_unit::Column::Id);
             }
+            ListUnitsSortBy::UnitCombatTypeAsc
+            | ListUnitsSortBy::UnitCombatTypeDesc => {
+                let order =
+                    if matches!(sort_by, ListUnitsSortBy::UnitCombatTypeAsc) {
+                        Order::Asc
+                    } else {
+                        Order::Desc
+                    };
+                units = combat_type::apply_sort(dbx, units, req, order)
+                    .await
+                    .c(h!())?;
+            }
             ListUnitsSortBy::UnitNameLengthAsc => {
                 units = units
                     .order_by_asc(Expr::cust(
@@ -529,17 +532,26 @@ async fn read_units_with_orbit_visibility(
         .offset
         .and_then(|offset| u64::try_from(offset).ok())
         .unwrap_or(0);
-    let units = units.limit(limit).offset(offset).all(dbx).await.c(h!())?;
+    let has_cursor =
+        req.after_unit_id.is_some() || req.before_unit_id.is_some();
+    let fetch_limit = if has_cursor { limit + 1 } else { limit };
+    let mut units = units
+        .limit(fetch_limit)
+        .offset(offset)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let show_load_more = if has_cursor {
+        units.len() as u64 > limit
+    } else {
+        offset.saturating_add(units.len() as u64) < total_count_u64
+    };
+    units.truncate(limit as usize);
     let mut res = vec![];
     for unit in units {
         res.push(render_unit(&unit)?);
     }
-    let show_load_more =
-        if req.after_unit_id.is_some() || req.before_unit_id.is_some() {
-            res.len() as u64 == limit
-        } else {
-            offset.saturating_add(res.len() as u64) < total_count_u64
-        };
+    combat_type::populate_names(dbx, &mut res).await.c(h!())?;
     Ok(ListUnitsRsp {
         show_load_more,
         total_count,
@@ -560,6 +572,59 @@ fn selected_unit_count(
         }
         None => status_counts.active,
     }
+}
+
+async fn apply_unit_list_cursor(
+    dbx: &DatabaseConnection,
+    units: Select<sigint_unit::Entity>,
+    req: &ListUnitsReq,
+    column: sigint_unit::Column,
+    order: &Order,
+) -> anyhow::Result<Select<sigint_unit::Entity>> {
+    let ascending = matches!(order, Order::Asc);
+    let cursor_id = if ascending {
+        req.after_unit_id
+    } else {
+        req.before_unit_id
+    };
+    let Some(cursor_id) = cursor_id else {
+        return Ok(units);
+    };
+    let cursor = find_unit(dbx, cursor_id).await.c(h!())?;
+    let value = cursor.get(column);
+    let key = Expr::tuple([
+        Expr::col((sigint_unit::Entity, column)),
+        sigint_unit::Column::Id.into_simple_expr(),
+    ]);
+    let boundary = SimpleExpr::Tuple(vec![value.into(), cursor_id.into()]);
+    if !matches!(column, sigint_unit::Column::OrbitNote) {
+        return Ok(units.filter(if ascending {
+            key.gt(boundary)
+        } else {
+            key.lt(boundary)
+        }));
+    }
+    let condition = if cursor.orbit_note.is_none() {
+        let id_boundary = if ascending {
+            sigint_unit::Column::Id.gt(cursor_id)
+        } else {
+            sigint_unit::Column::Id.lt(cursor_id)
+        };
+        let null_boundary =
+            Condition::all().add(column.is_null()).add(id_boundary);
+        if ascending {
+            Condition::any().add(null_boundary)
+        } else {
+            Condition::any()
+                .add(null_boundary)
+                .add(column.is_not_null())
+        }
+    } else if ascending {
+        Condition::any().add(key.gt(boundary)).add(column.is_null())
+    } else {
+        Condition::any().add(key.lt(boundary))
+    };
+    Ok(units.filter(condition))
 }
 
 fn unit_list_sort(
@@ -627,7 +692,9 @@ fn simple_unit_list_sort(
         | NaturalMilitarySortAsc
         | UnitNameLengthAsc
         | UnitOrbitLinkedAsc
-        | UnitOrbitLinkedDesc => return None,
+        | UnitOrbitLinkedDesc
+        | UnitCombatTypeAsc
+        | UnitCombatTypeDesc => return None,
     })
 }
 
@@ -743,6 +810,10 @@ fn apply_unit_list_filters(
         (
             r#""sigint_unit"."army_region""#,
             req.filter_army_region.as_deref(),
+        ),
+        (
+            r#"coalesce("sigint_unit_orbit_combat_type"."name", '')"#,
+            req.filter_combat_type.as_deref(),
         ),
         (r#""sigint_unit"."comment""#, req.filter_comment.as_deref()),
         (
@@ -925,23 +996,21 @@ fn unit_search_sort_expressions(
     }
     expressions.extend([
         Expr::cust(unit_echelon_sort_rank_sql()),
-        sigint_unit::Column::ArmyRegion.into_column_ref().into(),
-        sigint_unit::Column::MilitaryDistrict
-            .into_column_ref()
-            .into(),
-        sigint_unit::Column::Army.into_column_ref().into(),
-        sigint_unit::Column::Corps.into_column_ref().into(),
-        sigint_unit::Column::Division.into_column_ref().into(),
-        sigint_unit::Column::Brigade.into_column_ref().into(),
-        sigint_unit::Column::Regiment.into_column_ref().into(),
-        sigint_unit::Column::Battalion.into_column_ref().into(),
-        sigint_unit::Column::Company.into_column_ref().into(),
-        sigint_unit::Column::Platoon.into_column_ref().into(),
-        sigint_unit::Column::Squad.into_column_ref().into(),
-        sigint_unit::Column::Section.into_column_ref().into(),
-        sigint_unit::Column::TeamOrCrew.into_column_ref().into(),
-        sigint_unit::Column::Other.into_column_ref().into(),
-        sigint_unit::Column::Id.into_column_ref().into(),
+        sigint_unit::Column::ArmyRegion.into_simple_expr(),
+        sigint_unit::Column::MilitaryDistrict.into_simple_expr(),
+        sigint_unit::Column::Army.into_simple_expr(),
+        sigint_unit::Column::Corps.into_simple_expr(),
+        sigint_unit::Column::Division.into_simple_expr(),
+        sigint_unit::Column::Brigade.into_simple_expr(),
+        sigint_unit::Column::Regiment.into_simple_expr(),
+        sigint_unit::Column::Battalion.into_simple_expr(),
+        sigint_unit::Column::Company.into_simple_expr(),
+        sigint_unit::Column::Platoon.into_simple_expr(),
+        sigint_unit::Column::Squad.into_simple_expr(),
+        sigint_unit::Column::Section.into_simple_expr(),
+        sigint_unit::Column::TeamOrCrew.into_simple_expr(),
+        sigint_unit::Column::Other.into_simple_expr(),
+        sigint_unit::Column::Id.into_simple_expr(),
     ]);
     expressions
 }
@@ -1091,9 +1160,13 @@ pub async fn list_units_by_id(
     req: Json<ListUnitsByIdReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "Api"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
+    )
+    .await
+    .c(h!())?;
     let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
     let units = units_by_id_query(req.ids.as_deref())
         .all(&env.dbx)
@@ -1108,7 +1181,24 @@ pub async fn list_units_by_id(
         }
         res.push(unit);
     }
+    combat_type::populate_names(&env.dbx, &mut res)
+        .await
+        .c(h!())?;
     Ok(Json(ListUnitsByIdRsp { units: res }))
+}
+
+pub(super) async fn ensure_unit_creation(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    req: &CreateUnitReq,
+) -> Result<(), AppError> {
+    has_any_role(dbx, login, vec!["UnitsEditor", "Rer", "Cyber"])
+        .await
+        .c(h!())?;
+    if !req.duplicate_unit_ids.is_empty() {
+        has_role(dbx, login, "UnitsEditor").await.c(h!())?;
+    }
+    Ok(())
 }
 
 #[post("/api/sigint/unit/create")]
@@ -1118,15 +1208,17 @@ pub async fn create_unit(
     req: Json<CreateUnitReq>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    let login = login_id_from_identity(&user)?;
-    has_role(&env.dbx, &login, "UnitsEditor").await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    ensure_unit_creation(&env.dbx, &login, &req).await.c(h!())?;
 
     let (unit, can_view_orbit) =
-        create_unit_for_login(&login, &env, req.into_inner()).await?;
+        create_unit_for_login(&login, &env, req.into_inner())
+            .await
+            .context(h!())?;
 
-    fanout_unit_changed(&env).await?;
+    fanout_unit_changed(&env).await.context(h!())?;
 
-    let mut unit = render_unit(&unit)?;
+    let mut unit = render_unit(&unit).context(h!())?;
     apply_unit_orbit_visibility(&env.dbx, &mut unit, can_view_orbit)
         .await
         .context(h!())?;
@@ -1140,9 +1232,14 @@ async fn create_unit_for_login(
 ) -> Result<(sigint_unit::Model, bool), AppError> {
     let can_view_orbit =
         clear_create_unit_orbit_note_if_hidden(&env.dbx, login, &mut req)
-            .await?;
-    let transaction = begin_unit_creation_transaction(&env.dbx, &req).await?;
-    let unit = insert_merge_link_unit(&transaction, login, &req).await?;
+            .await
+            .context(h!())?;
+    let transaction = begin_unit_creation_transaction(&env.dbx, &req)
+        .await
+        .context(h!())?;
+    let unit = insert_merge_link_unit(&transaction, login, &req)
+        .await
+        .context(h!())?;
     transaction.commit().await.context(h!())?;
     Ok((unit, can_view_orbit))
 }
@@ -1154,10 +1251,10 @@ pub async fn create_unit_with_auto_network(
     req: Json<CreateUnitWithAutoNetworkReq>,
 ) -> Result<Json<CreateUnitWithAutoNetworkRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
-    has_role(&env.dbx, &login_id_from_identity(&user)?, "UnitsEditor")
+    let login = login_id_from_identity(&user).c(h!())?;
+    ensure_unit_creation(&env.dbx, &login, &req.unit)
         .await
         .c(h!())?;
-    let login = login_id_from_identity(&user)?;
 
     Ok(Json(
         create_unit_with_auto_network_for_login(&login, &env, req.into_inner())
@@ -1256,28 +1353,15 @@ pub async fn create_unit_with_auto_network_for_login(
     let transaction =
         begin_unit_creation_transaction(&env.dbx, &req.unit).await?;
     let unit = insert_merge_link_unit(&transaction, login, &req.unit).await?;
-    let (network_id, created_network) = match network_locations {
-        None => (None, None),
-        Some(locations) => {
-            if let Some(network) =
-                active_network_for_unit(&transaction, unit.id).await?
-            {
-                (Some(network.id), None)
-            } else {
-                let network = insert_auto_cyber_network(
-                    &transaction,
-                    login,
-                    &req,
-                    unit.id,
-                    locations,
-                    req.unit_mask.clone(),
-                )
-                .await
-                .c(h!())?;
-                (Some(network.id), Some(network))
-            }
-        }
-    };
+    let (network_id, created_network) = create_optional_unit_network(
+        &transaction,
+        login,
+        &req,
+        unit.id,
+        network_locations,
+    )
+    .await
+    .c(h!())?;
     transaction.commit().await.context(h!())?;
 
     render_created_unit_with_optional_network(
@@ -1288,6 +1372,38 @@ pub async fn create_unit_with_auto_network_for_login(
         created_network,
     )
     .await
+}
+
+async fn create_optional_unit_network(
+    transaction: &DatabaseTransaction,
+    login: &uuid::Uuid,
+    req: &CreateUnitWithAutoNetworkReq,
+    unit_id: i64,
+    network_locations: Option<Vec<String>>,
+) -> anyhow::Result<(Option<i64>, Option<sigint_network::Model>)> {
+    Ok(match network_locations {
+        None => (None, None),
+        Some(locations) => {
+            if let Some(network) = active_network_for_unit(transaction, unit_id)
+                .await
+                .c(h!())?
+            {
+                (Some(network.id), None)
+            } else {
+                let network = insert_auto_cyber_network(
+                    transaction,
+                    login,
+                    req,
+                    unit_id,
+                    locations,
+                    req.unit_mask.clone(),
+                )
+                .await
+                .c(h!())?;
+                (Some(network.id), Some(network))
+            }
+        }
+    })
 }
 
 async fn begin_unit_creation_transaction(
@@ -1433,7 +1549,7 @@ async fn render_created_unit_with_optional_network(
     Ok(CreateUnitWithAutoNetworkRsp { unit, network_id })
 }
 
-async fn insert_unit_with_changelog<'a, 'async_trait, C>(
+pub(crate) async fn insert_unit_with_changelog<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,
     req: &CreateUnitReq,
@@ -1458,6 +1574,12 @@ where
         army: Set(req.army.clone()),
         military_district: Set(req.military_district.clone()),
         army_region: Set(req.army_region.clone()),
+        combat_type_id: Set(combat_type::validate_id(
+            dbx,
+            req.combat_type_id.as_deref(),
+        )
+        .await
+        .c(h!())?),
         active: Set(req.active),
         is_deduplicate_candidate: Set(req.is_deduplicate_candidate),
         created_at: NotSet,
@@ -1496,6 +1618,9 @@ where
     .await
     .context(h!())?;
     unit_after_insert_update(dbx, unit.id).await.context(h!())?;
+    crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+        .await
+        .c(h!())?;
 
     Ok(unit)
 }
@@ -1619,17 +1744,30 @@ async fn fanout_created_network(
     network: sigint_network::Model,
 ) -> Result<(), AppError> {
     fanout_network_changed_data(env).await.c(h!())?;
+    enqueue_created_network_recalculations(&env.dbx, &network)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn enqueue_created_network_recalculations<C>(
+    db: &C,
+    network: &sigint_network::Model,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     crate::sigint::network::etalon_calc::invalidate_network_inbox(
         network.clone(),
         vec![],
-        &env.dbx,
+        db,
         format!("created cyber network {}", network.id),
     )
     .await
     .c(h!())?;
-    if !crate::sigint::unit_tag::sigint_network_unit_mask(&network).is_empty() {
+    if !crate::sigint::unit_tag::sigint_network_unit_mask(network).is_empty() {
         crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-            &env.dbx,
+            db,
         )
         .await
         .c(h!())?;
@@ -1777,6 +1915,14 @@ async fn update_unit_for_login(
     unit.army = Set(req.army.clone());
     unit.military_district = Set(military_district.clone());
     unit.army_region = Set(army_region.clone());
+    if let Some(combat_type_id) = &req.combat_type_id {
+        unit.combat_type_id = Set(combat_type::validate_id(
+            &transaction,
+            combat_type_id.as_deref(),
+        )
+        .await
+        .c(h!())?);
+    }
     unit.active = Set(req.active);
     unit.updated_at = Set(chrono::Utc::now().naive_utc());
     unit.name = Set(if req.name.trim().is_empty() {
@@ -1820,6 +1966,11 @@ async fn update_unit_for_login(
         }
     }
     let unit = unit.update(&transaction).await.context(h!())?;
+    if previous_unit.active != unit.active {
+        crate::iggy::unit_refresh::enqueue(&transaction, unit.id)
+            .await
+            .c(h!())?;
+    }
     let unit_json_new = unit_json(&transaction, req.id).await?;
     insert_unit_update_changelog(
         &transaction,
@@ -1947,6 +2098,9 @@ where
     let mut unit = unit.clone().into_active_model();
     unit.active = Set(active);
     let unit = unit.update(dbx).await.context(h!())?;
+    crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+        .await
+        .c(h!())?;
     let new_value = unit_json(dbx, unit.id).await?;
     insert_unit_update_changelog(dbx, login, unit.id, old_value, new_value)
         .await?;
@@ -2062,6 +2216,9 @@ pub async fn delete_unit(
     if !orbit::can_view_orbit_data(&env.dbx, &login).await? {
         redact_unit_orbit_data(&mut unit);
     }
+    combat_type::populate_names(&env.dbx, std::slice::from_mut(&mut unit))
+        .await
+        .c(h!())?;
     Ok(Json(unit))
 }
 
@@ -2112,6 +2269,11 @@ where
     let mut unit = unit.into_active_model();
     unit.deleted = Set(true);
     let unit = unit.update(dbx).await.context(h!())?;
+    if !previous_unit.deleted {
+        crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
     let unit_json_new = unit_json(dbx, unit.id).await.context(h!())?;
     sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -2437,6 +2599,9 @@ where
     unit.deleted = Set(true);
     unit.is_deduplicate_candidate = Set(Some(false));
     unit.update(dbx).await.context(h!())?;
+    crate::iggy::unit_refresh::enqueue(dbx, unit_to_delete_id)
+        .await
+        .c(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
         id: NotSet,
@@ -2539,6 +2704,8 @@ pub fn render_unit(unit: &sigint_unit::Model) -> Result<Unit, AppError> {
         army: unit.army.clone(),
         military_district: unit.military_district.clone(),
         army_region: unit.army_region.clone(),
+        combat_type_id: unit.combat_type_id.map(|id| id.to_string()),
+        combat_type_name: None,
         active: unit.active,
         is_deduplicate_candidate: unit.is_deduplicate_candidate,
         comment: unit.comment.clone(),
@@ -2577,6 +2744,9 @@ pub(crate) async fn apply_unit_orbit_visibility(
     unit: &mut Unit,
     can_view_orbit: bool,
 ) -> Result<(), AppError> {
+    combat_type::populate_names(dbx, std::slice::from_mut(unit))
+        .await
+        .c(h!())?;
     if !can_view_orbit {
         redact_unit_orbit_data(unit);
         return Ok(());
@@ -2606,20 +2776,24 @@ enum UnitReferenceStep {
     NetworkCallsigns,
     Attachments,
     Labels,
+    RerReportMetadata,
     InboxLinks,
+    InboxSelections,
     OrbitLinks,
     Devices,
 }
 
 impl UnitReferenceStep {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 11] = [
         Self::Callsigns,
         Self::Signals,
         Self::NetworkUnits,
         Self::NetworkCallsigns,
         Self::Attachments,
         Self::Labels,
+        Self::RerReportMetadata,
         Self::InboxLinks,
+        Self::InboxSelections,
         Self::OrbitLinks,
         Self::Devices,
     ];
@@ -2632,7 +2806,9 @@ impl UnitReferenceStep {
             Self::NetworkCallsigns => "Позивні мереж",
             Self::Attachments => "Файли",
             Self::Labels => "Мітки",
+            Self::RerReportMetadata => "Метадані звіту РЕР",
             Self::InboxLinks => "Прив’язки повідомлень",
+            Self::InboxSelections => "Вибрані підрозділи повідомлень",
             Self::OrbitLinks => "Прив’язки ORBIT",
             Self::Devices => "Пристрої",
         }
@@ -2709,6 +2885,15 @@ where
                 .await
                 .c(h!())?
         }
+        UnitReferenceStep::RerReportMetadata => {
+            crate::rer_report_admin::merge_unit_metadata(
+                dbx,
+                old_unit_id,
+                new_unit_id,
+            )
+            .await
+            .c(h!())?
+        }
         UnitReferenceStep::InboxLinks => move_inbox_item_unit_links(
             old_unit_id,
             new_unit_id,
@@ -2718,6 +2903,11 @@ where
         )
         .await
         .c(h!())?,
+        UnitReferenceStep::InboxSelections => {
+            move_inbox_unit_selections(old_unit_id, new_unit_id, dbx, limit)
+                .await
+                .c(h!())?
+        }
         UnitReferenceStep::OrbitLinks => {
             move_orbit_unit_links(old_unit_id, new_unit_id, dbx, limit)
                 .await
@@ -2730,6 +2920,45 @@ where
         }
     };
     Ok(moved)
+}
+
+async fn move_inbox_unit_selections<C>(
+    old_unit_id: i64,
+    new_unit_id: i64,
+    db: &C,
+    limit: Option<u64>,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    let mut selections = sigint_inbox_item_unit_selection::Entity::find()
+        .filter(
+            sigint_inbox_item_unit_selection::Column::UnitId.eq(old_unit_id),
+        )
+        .order_by_asc(sigint_inbox_item_unit_selection::Column::ItemId);
+    if let Some(limit) = limit {
+        selections = selections.limit(limit);
+    }
+    let ids = selections
+        .select_only()
+        .column(sigint_inbox_item_unit_selection::Column::ItemId)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?;
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sigint_inbox_item_unit_selection::Entity::update_many()
+        .col_expr(
+            sigint_inbox_item_unit_selection::Column::UnitId,
+            Expr::value(new_unit_id),
+        )
+        .filter(sigint_inbox_item_unit_selection::Column::ItemId.is_in(ids))
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(result.rows_affected)
 }
 
 async fn move_unit_callsigns<C>(
@@ -3187,6 +3416,7 @@ where
         unit_to_merge,
         name_policy,
     );
+    let visibility_changed = unit_original.deleted != projected.deleted;
     let mut unit = unit_original.into_active_model();
     unit.name.set_if_not_equals(projected.name);
     unit.other.set_if_not_equals(projected.other);
@@ -3209,6 +3439,11 @@ where
     unit.deleted.set_if_not_equals(projected.deleted);
 
     let unit = unit.update(dbx).await.context(h!())?;
+    if visibility_changed {
+        crate::iggy::unit_refresh::enqueue(dbx, unit.id)
+            .await
+            .c(h!())?;
+    }
     unit_after_insert_update(dbx, unit.id).await.context(h!())?;
     Ok(unit)
 }
@@ -3418,43 +3653,120 @@ pub async fn units_search(
     env: actix_web::web::Data<Env>,
     req: Json<UnitSearchReq>,
 ) -> Result<Json<ListUnitsByIdRsp>, AppError> {
-    let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber"])
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED])
         .await
         .c(h!())?;
-    let can_view_orbit = orbit::can_view_orbit_data(&env.dbx, &login).await?;
+    let can_view_orbit =
+        orbit::can_view_orbit_data(&env.dbx, &login).await.c(h!())?;
 
+    let units = find_search_units(&env.dbx, &req).await.c(h!())?;
+    let mut res = vec![];
+    for unit in units {
+        let mut unit = render_unit(&unit).c(h!())?;
+        if !can_view_orbit {
+            redact_unit_orbit_data(&mut unit);
+        }
+        res.push(unit);
+    }
+    combat_type::populate_names(&env.dbx, &mut res)
+        .await
+        .c(h!())?;
+    Ok(Json(ListUnitsByIdRsp { units: res }))
+}
+
+pub(crate) async fn find_search_units<C>(
+    db: &C,
+    req: &UnitSearchReq,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
     let search_phrase = req.search.trim();
-    let mut q = available_units_query(false);
+    let mut q = available_units_query(req.include_inactive.unwrap_or(false));
 
-    if !search_phrase.is_empty() {
-        q = q.filter(Expr::cust_with_values(
-            "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
-            vec![
-                search_phrase.to_string(),
-                format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
-            ],
-        ));
+    if let Some(names) = &req.names {
+        let normalized_name = Expr::cust(
+            "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g'))",
+        );
+        q = q
+            .filter(Expr::expr(normalized_name.clone()).is_in(
+                names.iter().map(|name| {
+                    crate::inbox::unit_resolution::normalize_unit_label(name)
+                }),
+            ))
+            .order_by_asc(normalized_name);
+    } else {
+        if !search_phrase.is_empty() {
+            q = q.filter(Expr::cust_with_values(
+                "search_tsv::tsvector @@ websearch_to_tsquery('russian', $1) OR lower(\"sigint_unit\".\"name\") LIKE lower($2) ESCAPE '\\'",
+                vec![
+                    search_phrase.to_string(),
+                    format!("%{}%", search_phrase.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")),
+                ],
+            )).order_by_asc(Expr::cust(unit_echelon_sort_rank_sql()));
+        }
+        q = q.order_by_asc(sigint_unit::Column::Name);
     }
 
-    q = q.order_by_asc(sigint_unit::Column::Name).limit(50);
+    let limit = if req.include_inactive == Some(true)
+        && (!search_phrase.is_empty() || req.names.is_some())
+    {
+        crate::config::SIGINT_UNIT_SEARCH_INACTIVE_LIMIT
+    } else {
+        crate::config::SIGINT_UNIT_SEARCH_DEFAULT_LIMIT
+    };
+    q = q.order_by_asc(sigint_unit::Column::Id).limit(limit);
 
     // debug!(
     //     ">find units query: {}",
     //     q.build(DbBackend::Postgres).to_string()
     // );
 
-    let units = q.all(&env.dbx).await.context(h!())?;
-
-    let mut res = vec![];
-    for unit in units {
-        let mut unit = render_unit(&unit)?;
-        if !can_view_orbit {
-            redact_unit_orbit_data(&mut unit);
-        }
-        res.push(unit);
+    let mut units = search_units_with_exact_matches(db, req, q, limit)
+        .await
+        .c(h!())?;
+    if req.names.is_none() {
+        units.sort_by_key(unit_echelon_sort_rank);
     }
-    Ok(Json(ListUnitsByIdRsp { units: res }))
+    Ok(units)
+}
+
+async fn search_units_with_exact_matches<C>(
+    db: &C,
+    req: &UnitSearchReq,
+    mut query: sea_orm::Select<sigint_unit::Entity>,
+    limit: u64,
+) -> anyhow::Result<Vec<sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let mut units = if req.include_inactive == Some(true)
+        && req.names.is_none()
+        && !req.search.trim().is_empty()
+    {
+        available_units_query(true)
+            .filter(Expr::cust_with_values(
+                "lower(regexp_replace(btrim(name), '[[:space:]]+', ' ', 'g')) = $1",
+                [crate::inbox::unit_resolution::normalize_unit_label(&req.search)],
+            ))
+            .order_by_asc(sigint_unit::Column::Id)
+            .limit(limit)
+            .all(db).await.c(h!())?
+    } else {
+        Vec::new()
+    };
+    let remaining = limit - units.len() as u64;
+    if remaining == 0 {
+        return Ok(units);
+    }
+    if !units.is_empty() {
+        query = query.filter(
+            sigint_unit::Column::Id.is_not_in(units.iter().map(|unit| unit.id)),
+        );
+    }
+    units.extend(query.limit(remaining).all(db).await.c(h!())?);
+    Ok(units)
 }
 
 #[cfg(test)]
@@ -3701,6 +4013,7 @@ mod tests {
 
     fn unit_req() -> CreateUnitReq {
         CreateUnitReq {
+            combat_type_id: None,
             name: None,
             other: String::new(),
             team_or_crew: String::new(),
@@ -3725,6 +4038,73 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn issue_3535_unit_creation_preserved_write_role_boundaries() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        for (roles, allowed) in [
+            (vec!["Rer"], true),
+            (vec!["Cyber"], true),
+            (vec!["Full"], true),
+            (vec!["Admin"], true),
+            (vec!["CyberViewer", "UnitsEditor"], true),
+            (vec!["CyberViewer"], false),
+            (vec!["Basic"], false),
+            (vec!["UnitsEditor"], false),
+            (vec!["Api"], false),
+            (vec!["ApiAgent"], false),
+        ] {
+            let login = crate::functest::tests::mk_login(
+                &env.dbx,
+                login::ActiveModel {
+                    roles: Set(serde_json::json!(roles)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let base_access =
+                crate::users::ensure_base_role_by_id(&env.dbx, &login.id).await;
+            let create_access =
+                ensure_unit_creation(&env.dbx, &login.id, &unit_req()).await;
+            if allowed {
+                base_access.unwrap();
+                create_access.unwrap();
+                let mut req = unit_req();
+                req.name = Some(format!("3535 {}", roles.join(" ")));
+                let (unit, _) =
+                    create_unit_for_login(&login.id, &env, req.clone())
+                        .await
+                        .unwrap();
+                let saved = sigint_unit::Entity::find_by_id(unit.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(Some(saved.name), req.name);
+                assert_eq!(saved.battalion, req.battalion);
+                assert_eq!(saved.comment, req.comment);
+                req.duplicate_unit_ids = vec![saved.id];
+                let merge_access =
+                    ensure_unit_creation(&env.dbx, &login.id, &req).await;
+                if roles.contains(&"Admin") || roles.contains(&"UnitsEditor") {
+                    merge_access.unwrap();
+                } else {
+                    assert!(matches!(
+                        merge_access,
+                        Err(AppError::Forbidden(_))
+                    ));
+                }
+            } else {
+                assert!(
+                    matches!(base_access, Err(AppError::Forbidden(_)))
+                        || matches!(create_access, Err(AppError::Forbidden(_))),
+                    "{roles:?}"
+                );
+            }
+        }
+    }
+
     fn auto_req(
         skip_network_creation: bool,
         locations: Vec<&str>,
@@ -3738,7 +4118,10 @@ mod tests {
         }
     }
 
-    async fn insert_settings(dbx: &DatabaseConnection, enabled: bool) {
+    pub(super) async fn insert_settings(
+        dbx: &DatabaseConnection,
+        enabled: bool,
+    ) {
         let now = Utc::now().naive_utc();
         system_settings::ActiveModel {
             id: NotSet,
@@ -3780,8 +4163,12 @@ mod tests {
             show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
             disable_bot_tags: Set(None),
+            hide_networks: Set(None),
+            api_rate_limit_replenish_interval_ms: Set(None),
+            api_rate_limit_burst_size: Set(None),
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
+            ai_position_highlights_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),
@@ -4018,6 +4405,7 @@ mod tests {
         let active_units = read_units(
             &env.dbx,
             &ListUnitsReq {
+                filter_combat_type: None,
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
@@ -4071,6 +4459,7 @@ mod tests {
         let all_units = read_units(
             &env.dbx,
             &ListUnitsReq {
+                filter_combat_type: None,
                 sort_by: None,
                 after_unit_id: None,
                 before_unit_id: None,
@@ -4442,6 +4831,39 @@ mod tests {
         );
         assert!(!final_page.show_load_more);
 
+        for (after_unit_id, expected) in [
+            (None, vec![regiment.id, first_battalion.id]),
+            (
+                Some(first_battalion.id),
+                vec![second_battalion.id, prefixed_number.id],
+            ),
+            (Some(prefixed_number.id), vec![suffixed_number.id]),
+        ] {
+            let req = ListUnitsReq {
+                after_unit_id,
+                filter_text: Some("123 мсп".to_string()),
+                search_mode: Some(ListUnitsSearchMode::Relaxed),
+                ..Default::default()
+            };
+            let units = apply_unit_list_filters(
+                available_units_query(true).left_join(login::Entity),
+                &req,
+                true,
+            );
+            let units = apply_unit_search_cursor(&env.dbx, units, &req, true)
+                .await
+                .unwrap();
+            let units = apply_unit_search_order(units, &req, true)
+                .limit(2)
+                .all(&env.dbx)
+                .await
+                .unwrap();
+            assert_eq!(
+                units.into_iter().map(|unit| unit.id).collect::<Vec<_>>(),
+                expected
+            );
+        }
+
         let misleading_division = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
@@ -4481,6 +4903,77 @@ mod tests {
             &[matching_prefix.id, misleading_division.id],
         )
         .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn regression_3535_unlinked_units_seek_past_duplicate_names() {
+        let env = cleanup().await.unwrap();
+        let mut units = Vec::new();
+        for active in [true, false, true] {
+            units.push(
+                crate::functest::tests::mk_sigint_unit(
+                    &env.dbx,
+                    sigint_unit::ActiveModel {
+                        name: Set("3535 same name".to_string()),
+                        comment: Set("3535 same comment".to_string()),
+                        active: Set(active),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let request = ListUnitsReq {
+            include_inactive: true,
+            filter_has_orbit: Some(false),
+            limit: Some(1),
+            ..Default::default()
+        };
+        for sort_by in [
+            ListUnitsSortBy::UnitNameAsc,
+            ListUnitsSortBy::UnitNameDesc,
+            ListUnitsSortBy::UnitCommentAsc,
+            ListUnitsSortBy::UnitCommentDesc,
+        ] {
+            let descending = matches!(
+                sort_by,
+                ListUnitsSortBy::UnitNameDesc
+                    | ListUnitsSortBy::UnitCommentDesc
+            );
+            let expected = if descending { [2, 1, 0] } else { [0, 1, 2] };
+            let mut request = ListUnitsReq {
+                sort_by: Some(sort_by),
+                ..request.clone()
+            };
+            for (index, expected) in expected.into_iter().enumerate() {
+                let page = read_units(&env.dbx, &request).await.unwrap();
+                assert_eq!(page.units.len(), 1);
+                assert_eq!(page.units[0].id, units[expected].id);
+                assert_eq!(page.total_count, 3);
+                assert_eq!(page.show_load_more, index < 2);
+                if descending {
+                    request.before_unit_id = Some(page.units[0].id);
+                } else {
+                    request.after_unit_id = Some(page.units[0].id);
+                }
+            }
+        }
+        link_current_duplicate_candidate(&env.dbx, units[1].id).await;
+        let page = read_units(
+            &env.dbx,
+            &ListUnitsReq {
+                sort_by: Some(ListUnitsSortBy::UnitNameAsc),
+                after_unit_id: Some(units[1].id),
+                ..request
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.total_count, 2);
+        assert_eq!(page.units[0].id, units[2].id);
+        assert!(!page.show_load_more);
     }
 
     #[tokio::test]
@@ -5543,7 +6036,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn skips_unsupported_orbit_units_and_imports_later_units() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -6186,6 +6679,84 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn unit_writes_enqueue_durable_visibility_refreshes_3858() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        api_integration::ActiveModel {
+            api_user_login_id: Set(login_id),
+            has_iggy_connection: Set(true),
+            iggy_url: Set(Some("tcp://localhost:8090".to_string())),
+            iggy_login: Set(Some("test".to_string())),
+            iggy_password: Set(Some("test".to_string())),
+            iggy_inbox_topic: Set(Some("test-inbox".to_string())),
+            iggy_analytics_topic: Set(Some("test-analytics".to_string())),
+            sync_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let (unit, _) = create_unit_for_login(
+            &login_id,
+            &env,
+            CreateUnitReq {
+                name: Some("Queued unit".to_string()),
+                active: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            api_integration_iggy_unit_refresh::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        let mut req = UpdateUnitReq::from(render_unit(&unit).unwrap());
+        req.active = false;
+        update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            api_integration_iggy_unit_refresh::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            2
+        );
+        req.comment = "Comment only".to_string();
+        update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+        assert_eq!(
+            api_integration_iggy_unit_refresh::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            2
+        );
+        delete_unit_for_login(&env.dbx, &login_id, unit.id)
+            .await
+            .unwrap();
+        let jobs = api_integration_iggy_unit_refresh::Entity::find()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(jobs.len(), 3);
+        assert!(jobs.iter().all(|job| job.sigint_unit_id == unit.id));
+        assert_eq!(
+            api_integration_iggy_event::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn merge_units_reconciles_enriched_survivor_hierarchy() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
@@ -6564,6 +7135,8 @@ mod tests {
     #[test]
     fn redact_unit_orbit_data_hides_orbit_fields() {
         let mut unit = Unit {
+            combat_type_id: None,
+            combat_type_name: None,
             id: 1,
             other: String::new(),
             team_or_crew: String::new(),

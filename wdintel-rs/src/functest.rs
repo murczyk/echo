@@ -59,10 +59,31 @@ pub mod tests {
         MIGRATE
             .get_or_init(|| async {
                 crate::migration::run_migration_1(Mode::Test).await.unwrap();
+                let config = crate::config::read_config(Mode::Test).unwrap();
+                crate::file_registry::run_migrations(&config, Mode::Test)
+                    .await
+                    .unwrap();
             })
             .await;
         let guard = CLEANUP.lock().await;
         let env = crate::server::new_env(Mode::Test).await.context(h!())?;
+        let env = if env.file_registry_db.is_none() {
+            let mut env = env.as_ref().clone();
+            env.file_registry_db =
+                crate::file_registry::connect_runtime(&env.config, Mode::Test)
+                    .await
+                    .context(h!())?;
+            env.device_audio = crate::devices::audio::build_runtime(
+                &env.config,
+                &env.dbx,
+                env.file_registry_db.as_ref(),
+                env.s3.as_ref(),
+                env.metrics.clone(),
+            );
+            Arc::new(env)
+        } else {
+            env
+        };
         ensure_test_database(&env.dbx, &env.config).await?;
         if let Some(file_registry_db) = &env.file_registry_db {
             file_registry_db
@@ -70,6 +91,9 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.file_archive,
+                        public.device_audio_forwarding_outbox,
+                        public.device_audio_asr_setting,
                         public.device_audio,
                         public.device_audio_ingest,
                         public.file_analysis_run_item,
@@ -84,6 +108,7 @@ pub mod tests {
                         public.file_document_job,
                         public.file_document_generation,
                         public.file_document,
+                        public.file_preview,
                         public.file_content,
                         public.file_content_upload,
                         public.file_revision,
@@ -285,6 +310,38 @@ pub mod tests {
         )
         .await
         .context(h!())?;
+
+        // Cleanup keeps the system login, but a fresh database or a
+        // restored dump may not have it.
+        match login::Entity::find()
+            .filter(login::Column::Login.eq(crate::config::SYSTEM_LOGIN_NAME))
+            .one(dbx)
+            .await
+            .context(h!())?
+        {
+            Some(system) => {
+                let mut system = system.into_active_model();
+                system.sigint_zone_id = Set(Some(sigint_zone.id));
+                system.organism_id = Set(Some(organism.id));
+                system.update(dbx).await.context(h!())?;
+            }
+            None => {
+                mk_login(
+                    dbx,
+                    login::ActiveModel {
+                        id: NotSet,
+                        login: Set(crate::config::SYSTEM_LOGIN_NAME.to_string()),
+                        roles: Set(json!(["Admin", "NoAutoLogout"])),
+                        sigint_zone_id: Set(Some(sigint_zone.id)),
+                        organism_id: Set(Some(organism.id)),
+                        created_at: Set(now),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .context(h!())?;
+            }
+        }
 
         mk_datasource_group(
             dbx,

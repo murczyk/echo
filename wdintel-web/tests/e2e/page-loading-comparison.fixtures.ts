@@ -1,5 +1,10 @@
 import type { Page, Route } from '@playwright/test';
-import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
+import {
+  emptyNetworksListResponse,
+  emptyUnitsListResponse,
+  networkSettingsResponse,
+  systemSettingsCurrentResponse,
+} from './fixture-responses';
 
 export type RouteLoadSuite = 'callsigns' | 'palitra' | 'messenger' | 'duty';
 
@@ -35,6 +40,7 @@ function emptyUserResponse() {
     goi_host: null,
     goi_integrations: [],
     last_release_seen: null,
+    rer_report_eligible: false,
   };
 }
 
@@ -256,6 +262,16 @@ async function routeMessengerApi(
 }
 
 async function routeDutyApi(route: Route, pathname: string, delayMs: number): Promise<boolean> {
+  if (pathname === '/api/sigint/units') {
+    await fulfillJson(route, emptyUnitsListResponse());
+    return true;
+  }
+
+  if (pathname === '/api/sigint/network-list') {
+    await fulfillJson(route, emptyNetworksListResponse());
+    return true;
+  }
+
   if (pathname === '/api/user') {
     await fulfillJson(route, emptyUserResponse());
     return true;

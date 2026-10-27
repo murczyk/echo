@@ -1,35 +1,47 @@
+import type { AiAgentFileCitation } from '../../../../../Bindings';
 import { DeviceDocumentDetails } from './DeviceDocumentPreview';
 import FolderZipOutlinedIcon from '@mui/icons-material/FolderZipOutlined';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import PendingActionsOutlinedIcon from '@mui/icons-material/PendingActionsOutlined';
 import { CircularProgress } from '@mui/material';
-import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 
-import type { DeviceFileTreeEntry } from '../../../../../Bindings';
+import { isDeviceArchive, type DeviceFileSelection } from '../device-file-archive';
+import { DeviceArchiveTree } from './DeviceArchiveTree';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
-import { PowerSnackbarProvider, usePowerSnackbar } from '../../../components/PowerSnackbar';
-import { isAbortError } from '../../../services/api/client';
-import { deviceFileContentUrl, getDeviceFileContentSize } from '../../../services/api/devices';
-import { toDeviceFileLoadError } from '../helpers';
-import { DeviceFileContentHeader } from './DeviceFileContentHeader';
+import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
+import { useDeviceFilePreview } from '../use-device-file-preview';
+import { DeviceFileContentActions, DeviceFileContentHeader } from './DeviceFileContentHeader';
 
-type PreviewFormat = 'txt' | 'pdf' | 'docx';
+import { getDocumentFileKind } from '../../shared/message-card/document-file-kind';
+import { getDocumentPreviewCapabilities } from '../../shared/message-card/document-preview-capabilities';
+import { getFilePreviewKind } from '../../shared/message-card/file-preview-kind';
+import { FilePreviewDialog } from '../../shared/message-card/attachment-preview/FilePreviewDialog';
 
-const TxtDocumentPreview = lazy(() =>
-  import('../../shared/message-card/text-document-preview').then((module) => ({
-    default: module.TxtDocumentPreview,
+const DocumentFilePreview = lazy(() =>
+  import('../../shared/message-card/renderers/DocumentFilePreview').then((module) => ({
+    default: module.DocumentFilePreview,
   })),
 );
-const PdfDocumentPreview = lazy(() =>
-  import('../../shared/message-card/renderers/PdfDocumentPreview').then((module) => ({
-    default: module.PdfDocumentPreview,
+const DeviceFileImagePreview = lazy(() =>
+  import('./DeviceFileImagePreview').then((module) => ({ default: module.DeviceFileImagePreview })),
+);
+
+const MapFilePreview = lazy(() =>
+  import('../../shared/message-card/renderers/MapFilePreview').then((module) => ({
+    default: module.MapFilePreview,
   })),
 );
-const DocxDocumentPreview = lazy(() =>
-  import('../../shared/message-card/renderers/DocxDocumentPreview').then((module) => ({
-    default: module.DocxDocumentPreview,
+
+const DeviceFileGeodataPreview = lazy(() =>
+  import('./DeviceFileGeodataPreview').then((module) => ({
+    default: module.DeviceFileGeodataPreview,
   })),
+);
+
+const DeviceFileMediaPreview = lazy(() =>
+  import('./DeviceFileMediaPreview').then((module) => ({ default: module.DeviceFileMediaPreview })),
 );
 
 function ContentLoading() {
@@ -40,83 +52,48 @@ function ContentLoading() {
   );
 }
 
-function useContentSize(href: string) {
-  const { notify } = usePowerSnackbar();
-  const [sizeBytes, setSizeBytes] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    void getDeviceFileContentSize(href, { signal: controller.signal })
-      .then((size) => {
-        if (!controller.signal.aborted) setSizeBytes(size);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || isAbortError(error)) return;
-        const message = toDeviceFileLoadError(error, 'Помилка завантаження вмісту файлу').message;
-        setError(message);
-        notify({ severity: 'error', message });
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [href, attempt, notify]);
-  return { sizeBytes, loading, error, retry: () => setAttempt((value) => value + 1) };
-}
-
 function FilePreview({
-  format,
-  href,
-  sizeBytes,
+  preview,
+  zoom,
 }: {
-  format: PreviewFormat;
-  href: string;
-  sizeBytes: number | null;
+  preview: ReturnType<typeof useDeviceFilePreview>;
+  zoom: number;
 }) {
-  const { notify } = usePowerSnackbar();
-  const onError = useCallback(
-    (error: unknown) => {
-      if (isAbortError(error)) return;
-      notify({
-        severity: 'error',
-        message: toDeviceFileLoadError(error, 'Помилка перегляду файлу').message,
-      });
-    },
-    [notify],
-  );
-  const props = { href, sizeBytes, onError };
-  if (format === 'txt') return <TxtDocumentPreview {...props} />;
-  if (format === 'pdf') return <PdfDocumentPreview {...props} zoom={100} />;
-  return <DocxDocumentPreview {...props} zoom={100} />;
-}
-
-function FileContent({ format, href }: { format: PreviewFormat; href: string }) {
-  const { sizeBytes, loading, error, retry } = useContentSize(href);
-  return (
-    <div className="relative h-full min-h-0 min-w-0 overflow-auto">
-      {loading ? (
-        <ContentLoading />
-      ) : error !== null ? (
-        <div className="p-echo-md">
-          <PowerAlert
-            severity="error"
-            autoHideDuration={null}
-            action={<PowerButton onClick={retry}>Повторити</PowerButton>}
-          >
-            {error}
-          </PowerAlert>
-        </div>
-      ) : (
-        <Suspense fallback={<ContentLoading />}>
-          <FilePreview format={format} href={href} sizeBytes={sizeBytes} />
-        </Suspense>
-      )}
-    </div>
-  );
+  if (!preview.source || !preview.signal) return null;
+  const lifecycle = {
+    signal: preview.signal,
+    onError: preview.onError,
+    registerCleanup: preview.registerCleanup,
+    isCurrent: preview.isCurrent,
+  };
+  const kind = getFilePreviewKind(preview.source);
+  if (kind === 'audio' || kind === 'video')
+    return (
+      <DeviceFileMediaPreview
+        source={preview.source}
+        kind={kind}
+        lifecycle={lifecycle}
+        checkAccess={preview.checkAccess}
+        onRetry={preview.retry}
+      />
+    );
+  if (kind === 'converted-map')
+    return <DeviceFileGeodataPreview source={preview.source} lifecycle={lifecycle} />;
+  if (kind === 'map')
+    return (
+      <MapFilePreview
+        source={preview.source}
+        format={
+          preview.source.extension === 'kml' || preview.source.contentType.includes('kml')
+            ? 'kml'
+            : 'kmz'
+        }
+        lifecycle={lifecycle}
+      />
+    );
+  if (kind === 'image')
+    return <DeviceFileImagePreview source={preview.source} lifecycle={lifecycle} />;
+  return <DocumentFilePreview source={preview.source} lifecycle={lifecycle} zoom={zoom} />;
 }
 
 function FilePreviewState({
@@ -139,8 +116,14 @@ function FilePreviewState({
   );
 }
 
-function SelectedFileContent({ file, href }: { file: DeviceFileTreeEntry; href: string | null }) {
-  if (href === null) {
+function SelectedFileContent({
+  preview,
+  zoom,
+}: {
+  preview: ReturnType<typeof useDeviceFilePreview>;
+  zoom: number;
+}) {
+  if (preview.state === 'idle') {
     return (
       <FilePreviewState icon={<PendingActionsOutlinedIcon />} title="Контент файлу відсутній">
         Вміст цього файлу ще не завантажено в Echo.
@@ -149,13 +132,47 @@ function SelectedFileContent({ file, href }: { file: DeviceFileTreeEntry; href: 
       </FilePreviewState>
     );
   }
-  const extension = (
-    file.extension?.trim().replace(/^\./, '') ||
-    (file.name.includes('.') ? file.name.split('.').pop() : '') ||
-    ''
-  ).toLowerCase();
-  if (extension === 'txt' || extension === 'pdf' || extension === 'docx') {
-    return <FileContent format={extension} href={href} />;
+  if (preview.state === 'loading') return <ContentLoading />;
+  if (preview.state === 'denied' || preview.state === 'transient-error') {
+    return (
+      <div className="p-echo-md">
+        <PowerAlert
+          severity="error"
+          autoHideDuration={null}
+          action={
+            preview.state === 'transient-error' && preview.errorRetryable ? (
+              <PowerButton onClick={preview.retry}>Повторити</PowerButton>
+            ) : undefined
+          }
+        >
+          {preview.error}
+        </PowerAlert>
+      </div>
+    );
+  }
+  if (preview.state === 'empty') {
+    return (
+      <FilePreviewState icon={<InsertDriveFileOutlinedIcon />} title="Файл порожній">
+        Файл не містить даних.
+      </FilePreviewState>
+    );
+  }
+  const extension = preview.source?.extension ?? '';
+  const kind = preview.source ? getFilePreviewKind(preview.source) : 'unsupported';
+  if (
+    kind === 'document' ||
+    kind === 'image' ||
+    kind === 'zip' ||
+    kind === 'map' ||
+    kind === 'converted-map' ||
+    kind === 'audio' ||
+    kind === 'video'
+  ) {
+    return (
+      <Suspense fallback={<ContentLoading />}>
+        <FilePreview key={preview.epoch} preview={preview} zoom={zoom} />
+      </Suspense>
+    );
   }
   return (
     <FilePreviewState
@@ -173,49 +190,157 @@ function SelectedFileContent({ file, href }: { file: DeviceFileTreeEntry; href: 
   );
 }
 
+function SelectedFilePane({
+  deviceId,
+  file,
+  sessionScoped,
+  revisionPinned = false,
+  citation,
+  mobile,
+  onSelectFile,
+}: {
+  deviceId: string;
+  file: DeviceFileSelection;
+  sessionScoped: boolean;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
+  mobile: boolean;
+  onSelectFile: (file: DeviceFileSelection) => void;
+}) {
+  const preview = useDeviceFilePreview({ deviceId, file });
+  const [zoom, setZoom] = useState(100);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    setZoom(100);
+    setFullscreen(false);
+  }, [preview.epoch]);
+  useEffect(() => {
+    if (preview.state !== 'ready') setFullscreen(false);
+  }, [preview.state]);
+  const zoomable =
+    preview.source &&
+    getFilePreviewKind(preview.source) === 'document' &&
+    getDocumentPreviewCapabilities(getDocumentFileKind(preview.source)).zoomable;
+  const archive = isDeviceArchive(file);
+  const content = archive ? (
+    <ul className="m-0 list-none p-echo-sm">
+      <DeviceArchiveTree
+        key={`${deviceId}/${file.fileId}/${file.revision}`}
+        deviceId={deviceId}
+        file={file}
+        depth={0}
+        initialExpanded
+        showStatus
+        onSelectFile={onSelectFile}
+      />
+    </ul>
+  ) : (
+    <SelectedFileContent preview={preview} zoom={zoom} />
+  );
+  return (
+    <>
+      <DeviceFileContentHeader
+        file={file}
+        preview={preview}
+        sessionScoped={sessionScoped}
+        revisionPinned={revisionPinned}
+        mobile={mobile}
+        zoom={zoomable ? zoom : undefined}
+        onZoomChange={setZoom}
+        onFullscreen={() => setFullscreen(true)}
+      />
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-echo-background/50">
+        {(preview.state === 'ready' || preview.state === 'empty') &&
+          !archive &&
+          !file.archiveOrigin &&
+          file.kind === 'file' &&
+          file.fileId &&
+          file.revision != null && (
+            <DeviceDocumentDetails
+              key={`${deviceId}/${file.fileId}/${file.revision}/${preview.epoch}`}
+              lifecycle={
+                preview.signal
+                  ? {
+                      signal: preview.signal,
+                      onError: preview.onError,
+                      registerCleanup: preview.registerCleanup,
+                      isCurrent: preview.isCurrent,
+                    }
+                  : undefined
+              }
+              source={
+                citation ?? {
+                  deviceId,
+                  fileId: file.fileId,
+                  revision: file.revision,
+                  extractionRevision: null,
+                  section: null,
+                }
+              }
+            />
+          )}
+        {!fullscreen && content}
+      </div>
+      <FilePreviewDialog
+        open={fullscreen}
+        title={file.name}
+        onClose={() => setFullscreen(false)}
+        fullScreen={mobile}
+        actions={
+          <DeviceFileContentActions
+            preview={preview}
+            mobile={mobile}
+            zoom={zoomable ? zoom : undefined}
+            onZoomChange={setZoom}
+          />
+        }
+      >
+        {content}
+      </FilePreviewDialog>
+    </>
+  );
+}
+
 export function DeviceFileContentPane({
   deviceId,
   file,
+  onSelectFile,
   sessionScoped = false,
+  revisionPinned = false,
+  citation,
   mobile = false,
 }: {
   deviceId: string;
-  file: DeviceFileTreeEntry | null;
+  file: DeviceFileSelection | null;
+  onSelectFile?: (file: DeviceFileSelection) => void;
   sessionScoped?: boolean;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
   mobile?: boolean;
 }) {
-  const href =
-    file?.hasContent && file.fileId != null && file.revision != null
-      ? deviceFileContentUrl(deviceId, file.fileId, file.revision)
-      : null;
+  const key = `${deviceId}/${file?.fileId}/${file?.revision}`;
+  const [selection, setSelection] = useState<{ key: string; file: DeviceFileSelection } | null>(
+    null,
+  );
+  useEffect(() => setSelection(null), [key, file]);
+  const selected = !onSelectFile && selection?.key === key ? selection.file : file;
   return (
     <section
       aria-labelledby="device-file-content-title"
       data-testid="device-file-content-pane"
       className="flex h-full min-h-0 min-w-0 flex-col"
     >
-      {file !== null ? (
-        <PowerSnackbarProvider key={`${deviceId}/${file.entryId}/${file.revision}/${href}`}>
-          <DeviceFileContentHeader
-            file={file}
-            href={href}
+      {selected !== null ? (
+        <PowerSnackbarProvider>
+          <SelectedFilePane
+            deviceId={deviceId}
+            file={selected}
+            onSelectFile={onSelectFile ?? ((file) => setSelection({ key, file }))}
             sessionScoped={sessionScoped}
+            revisionPinned={revisionPinned}
+            citation={citation}
             mobile={mobile}
           />
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-echo-background/50">
-            {file.fileId && file.revision != null && (
-              <DeviceDocumentDetails
-                source={{
-                  deviceId,
-                  fileId: file.fileId,
-                  revision: file.revision,
-                  extractionRevision: null,
-                  section: null,
-                }}
-              />
-            )}
-            <SelectedFileContent file={file} href={href} />
-          </div>
         </PowerSnackbarProvider>
       ) : (
         <div className="flex h-full flex-col items-center justify-center gap-echo-sm p-echo-xl text-center">

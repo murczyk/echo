@@ -103,12 +103,14 @@ type alias Model =
     , rerNetworkDetailsPreferredView : RerNetworkDetailsPreferredView
     , location : Maybe LocationRes
     , serverInfo : Maybe B.ServerInfo
+    , serverInfoLoaded : Bool
     , changelogPreview : Maybe ChangelogPreview
     , changelogLastSeenLoaded : Bool
     , changelogLastSeen : Maybe String
     , masterUnits : RemoteData ApiError (Dict Int B.Unit)
     , networks : RemoteData ApiError (Dict Int B.Network)
     , systemSettings : Maybe B.SystemSettingsCurrentRsp
+    , systemSettingsLoaded : Bool
     , now : Int
     , timeZone : Zone
     , callsignsInfo : Dict String (List B.CallsignInfo)
@@ -116,7 +118,6 @@ type alias Model =
     , toasts : Shared.Components.Toast.Model
     , eventService : Core.EventTypes.EventState
     , deploymentMaintenance : Maybe B.DeploymentMaintenance
-    , pendingEvents : List B.EventMsg
     , eventSubscriptions : Core.EventTypes.EventSubscriptions
     }
 

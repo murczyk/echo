@@ -170,6 +170,7 @@ pub(in crate::devices) async fn browse(
         tag_ids,
         tag_match,
         untagged,
+        has_content,
     } = command;
     let device_id = device_query::authorize_file_registry_access(
         main_db,
@@ -216,14 +217,17 @@ pub(in crate::devices) async fn browse(
     let requested_page = KeysetPageRequest::try_new(limit, after)
         .map_err(map_read_error)
         .c(h!())?;
-    let (entries, next_cursor) = if let Some(tag_filter) = &tag_filter {
+    let filtered = tag_filter.is_some() || has_content.is_some();
+    let (entries, next_cursor) = if filtered {
         filtered_browse_page(
             file_registry_db,
             &scope,
             requested_page,
-            tag_filter,
+            tag_filter.as_ref(),
+            has_content,
         )
-        .await?
+        .await
+        .c(h!())?
     } else {
         let page =
             query::list_children(file_registry_db, &scope, requested_page)
@@ -373,7 +377,8 @@ async fn filtered_browse_page(
     file_registry_db: &FileRegistryDb,
     scope: &super::types::DirectoryScope,
     requested_page: KeysetPageRequest<EntrySortKey>,
-    tag_filter: &TagFilter,
+    tag_filter: Option<&TagFilter>,
+    has_content: Option<bool>,
 ) -> Result<(Vec<TreeEntry>, Option<String>), AppError> {
     let target_len = usize::try_from(requested_page.limit())
         .expect("validated file page limit must fit usize");
@@ -384,7 +389,7 @@ async fn filtered_browse_page(
             file_registry_db,
             scope,
             KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                Some(crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT),
                 after,
             )
             .expect("configured file page limit must be valid"),
@@ -394,20 +399,33 @@ async fn filtered_browse_page(
         .c(h!())?;
         let page_len = page.entries.len();
         let has_later_page = page.next.is_some();
-        let entry_ids =
-            page.entries.iter().map(tree_entry_id).collect::<Vec<_>>();
+        let entry_ids = page
+            .entries
+            .iter()
+            .filter(|entry| {
+                tag_filter.is_some() || matches!(entry, TreeEntry::Directory(_))
+            })
+            .map(tree_entry_id)
+            .collect::<Vec<_>>();
         let matching_entry_ids = query::find_matching_tree_entry_ids(
             file_registry_db,
             scope.device_id(),
             &entry_ids,
             tag_filter,
+            has_content,
         )
         .await
         .map_err(map_read_error)
         .c(h!())?;
         for (index, entry) in page.entries.into_iter().enumerate() {
             let entry_id = tree_entry_id(&entry);
-            if matching_entry_ids.contains(&entry_id) {
+            let matches = match &entry {
+                TreeEntry::File(file) if tag_filter.is_none() => {
+                    has_content.is_none_or(|value| file.has_content == value)
+                }
+                _ => matching_entry_ids.contains(&entry_id),
+            };
+            if matches {
                 entries.push(entry);
                 if entries.len() == target_len {
                     let has_later_candidate =
@@ -443,7 +461,7 @@ async fn filtered_search_page(
             scope,
             filters,
             KeysetPageRequest::try_new(
-                Some(crate::config::DEVICE_FILE_PAGE_MAX_LIMIT),
+                Some(crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT),
                 after,
             )
             .expect("configured file page limit must be valid"),
@@ -519,7 +537,7 @@ pub(super) fn map_read_error(error: FilesystemError) -> AppError {
     }
 }
 
-mod mapping {
+pub(super) mod mapping {
     use super::super::types::FileEntryKind as FileEntryKindDto;
     use super::super::types::{
         BrowseDeviceFilesRsp, CountDeviceFileSubtreesRsp, DeviceFile,
@@ -632,6 +650,7 @@ mod mapping {
                 .map(|entry| {
                     let tags = take_tags(&mut tags_by_file, entry.file_id);
                     DeviceFileJournalEntry {
+                        archive: None,
                         file_id: entry.file_id.hyphenated().to_string(),
                         name: entry.name,
                         absolute_path: entry.absolute_path,
@@ -673,13 +692,17 @@ mod mapping {
         }
     }
 
-    fn map_tree_entry(
+    pub(in crate::devices::files) fn map_tree_entry(
         entry: TreeEntry,
         path_components: Vec<String>,
         tags: Vec<AnalyticsTag>,
     ) -> DeviceFileTreeEntry {
         match entry {
             TreeEntry::Directory(directory) => DeviceFileTreeEntry {
+                is_archive: false,
+                archive_origin: None,
+                virtual_path: None,
+                archive: None,
                 entry_id: directory.entry_id.hyphenated().to_string(),
                 parent_entry_id: directory
                     .parent_entry_id
@@ -698,18 +721,27 @@ mod mapping {
                 created_at: format_datetime(directory.created_at),
                 updated_at: format_datetime(directory.updated_at),
                 tags: Vec::new(),
-                revision: None,
-                sync_id: None,
+                revision: directory.revision,
+                sync_id: directory.sync_id.map(|id| id.to_string()),
                 source_file_state: None,
             },
             TreeEntry::File(file) => DeviceFileTreeEntry {
+                is_archive: super::super::preview::is_archive(
+                    &file.name,
+                    file.extension.as_deref(),
+                    file.mime_type.as_deref(),
+                ),
+                archive_origin: None,
+                virtual_path: None,
+                archive: None,
                 entry_id: file.file_id.hyphenated().to_string(),
                 parent_entry_id: file.parent_entry_id.hyphenated().to_string(),
                 kind: FileEntryKindDto::File,
                 file_id: Some(file.file_id.hyphenated().to_string()),
                 name: file.name,
                 path_components,
-                absolute_path: Some(file.absolute_path),
+                absolute_path: (!file.absolute_path.is_empty())
+                    .then_some(file.absolute_path),
                 has_content: file.has_content,
                 mime_type: file.mime_type,
                 extension: file.extension,
@@ -738,11 +770,20 @@ mod mapping {
         tags: Vec<AnalyticsTag>,
     ) -> DeviceFile {
         DeviceFile {
+            is_archive: super::super::preview::is_archive(
+                &file.name,
+                file.extension.as_deref(),
+                file.mime_type.as_deref(),
+            ),
+            archive_origin: None,
+            virtual_path: None,
+            archive: None,
             file_id: file.file_id.hyphenated().to_string(),
             device_id: file.device_id.hyphenated().to_string(),
             parent_entry_id: file.parent_entry_id.hyphenated().to_string(),
             root_entry_id: root_entry_id.hyphenated().to_string(),
-            absolute_path: file.absolute_path,
+            absolute_path: (!file.absolute_path.is_empty())
+                .then_some(file.absolute_path),
             has_content: file.has_content,
             name: file.name,
             path_components,

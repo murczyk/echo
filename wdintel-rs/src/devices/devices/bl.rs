@@ -6,7 +6,7 @@ mod read {
         ListDevicesResult,
     };
     use super::validation::normalize_device_list_pagination;
-    use crate::config::DEVICE_NAME_MAX_CHARS;
+    use crate::devices::config::DEVICE_NAME_MAX_CHARS;
     use crate::entities::login;
     use crate::error::AppError;
     use crate::h;
@@ -240,6 +240,7 @@ mod write {
         if command.is_structurally_empty() {
             return Err(empty_patch_error());
         }
+        let audio_forwarding = command.audio_forwarding.clone();
         let command = normalize_update_command(command).c(h!())?;
 
         let transaction = main_db.begin().await.c(h!())?;
@@ -253,6 +254,16 @@ mod write {
             .await
             .c(h!())?;
             lock_references(transaction_db, &command).await.c(h!())?;
+            if let Some(change) = &audio_forwarding {
+                crate::devices::audio::forwarding::apply(
+                    transaction_db,
+                    login,
+                    device.id,
+                    change,
+                )
+                .await
+                .c(h!())?;
+            }
             let current_aor_ids =
                 query::load_current_aor_ids(transaction_db, device.id)
                     .await
@@ -457,6 +468,7 @@ mod mapping {
 
     pub(in crate::devices) fn map_device_details(
         device: DeviceCurrentState,
+        audio_forwarding_configured: bool,
     ) -> DeviceDetails {
         DeviceDetails {
             id: device.id.hyphenated().to_string(),
@@ -470,6 +482,7 @@ mod mapping {
             created_at: format_datetime(device.created_at),
             updated_at: format_datetime(device.updated_at),
             archived_at: device.archived_at.map(format_datetime),
+            audio_forwarding_configured,
         }
     }
 
@@ -604,7 +617,7 @@ pub(super) mod custom_fields {
 }
 
 pub(super) mod validation {
-    use crate::config::{
+    use crate::devices::config::{
         DEVICE_CUSTOM_FIELDS_MAX_COUNT, DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS,
         DEVICE_CUSTOM_FIELD_VALUE_MAX_CHARS, DEVICE_EXTERNAL_URL_MAX_CHARS,
         DEVICE_LIST_DEFAULT_LIMIT, DEVICE_LIST_MAX_LIMIT,

@@ -1,6 +1,7 @@
-import CloseIcon from '@mui/icons-material/Close';
-import { Box, Drawer, IconButton, Typography } from '@mui/material';
+import { Box, Drawer } from '@mui/material';
 import type { ReactNode } from 'react';
+
+import { AnalysisPanelHeader } from './AnalysisPanelHeader';
 
 type Props = {
   anchor: 'left' | 'right';
@@ -9,6 +10,8 @@ type Props = {
   onClose: () => void;
   children: ReactNode;
   maxPanelWidth?: number;
+  subtitle?: string;
+  closeLabel?: string;
 };
 
 export function AnalysisFullscreenPanelDrawer({
@@ -18,8 +21,11 @@ export function AnalysisFullscreenPanelDrawer({
   onClose,
   children,
   maxPanelWidth,
+  subtitle,
+  closeLabel,
 }: Props) {
-  const closeLabel = anchor === 'left' ? 'Закрити ліву панель' : 'Закрити праву панель';
+  const resolvedCloseLabel =
+    closeLabel ?? (anchor === 'left' ? 'Закрити ліву панель' : 'Закрити праву панель');
 
   return (
     <Drawer
@@ -28,7 +34,7 @@ export function AnalysisFullscreenPanelDrawer({
       onClose={onClose}
       slotProps={{
         paper: {
-          sx: {
+          sx: (theme) => ({
             width: maxPanelWidth ? { xs: '100vw', sm: maxPanelWidth } : '100vw',
             maxWidth: '100vw',
             height: '100dvh',
@@ -36,31 +42,18 @@ export function AnalysisFullscreenPanelDrawer({
             flexDirection: 'column',
             overflow: 'hidden',
             bgcolor: 'background.default',
+            '--analysis-panel-background': theme.palette.background.default,
             backgroundImage: 'none',
-          },
+          }),
         },
       }}
     >
-      <Box
-        sx={{
-          minHeight: 56,
-          px: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 1,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          flexShrink: 0,
-        }}
-      >
-        <Typography variant="h6" component="h2" sx={{ fontWeight: 600 }}>
-          {title}
-        </Typography>
-        <IconButton aria-label={closeLabel} onClick={onClose}>
-          <CloseIcon />
-        </IconButton>
-      </Box>
+      <AnalysisPanelHeader
+        title={title}
+        subtitle={subtitle}
+        closeLabel={resolvedCloseLabel}
+        onClose={onClose}
+      />
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>{children}</Box>
     </Drawer>
   );

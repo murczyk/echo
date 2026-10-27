@@ -72,6 +72,19 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditorContextControls.spec.tsx` and `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/image-editor-padded-text.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3099](https://github.com/echoua/echo/issues/3099), [#3294](https://github.com/echoua/echo/issues/3294).
 
+## Save actions and attachment replacement
+
+- **Status:** issue-backed regression
+- **Behavior ID:** `react-image-editor-save-actions-and-replacement`
+- **Affected route/component:** shared image-editor footer and save dialogs.
+- **Expected observable result:** the contained split button keeps `Зберегти` as the replacement action; its compact arrow opens `Зберегти як...` below when space permits and fully above otherwise, with a gap from the trigger. The filename dialog keeps its descriptive title and saves an additional image with `Зберегти`; replacement confirmation uses `Замінити`.
+- **Responsive and keyboard requirements:** the arrow remains a 40px touch target and is narrower than the primary button. Escape closes only the active menu/dialog layer. Closing the menu or save-as dialog returns focus to the persistent arrow; closing replacement confirmation returns focus to the primary save button.
+- **Verification boundary:** frontend and mocked-browser coverage verifies split-button labels, menu placement, focus restoration, disabled states, and replacement confirmation behavior.
+- **Known race/idempotency constraints:** save controls are unavailable while source/crop/raster/save state is locked; menu-to-dialog handoff completes after menu cleanup to avoid focus restoration into an unmounted item.
+- **Source implementation:** `routes/shared/image-editor/ImageEditorFooter.tsx` and `ImageEditorSaveDialogs.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/image-editor/__tests__/ImageEditor.spec.tsx` and `wdintel-web/tests/e2e/image-editor-drawer.spec.ts`.
+- **Original Echo issue/PR, if known:** [#3701](https://github.com/echoua/echo/issues/3701).
+
 ## Selection styles and reachable controls
 
 - **Status:** issue-backed regression

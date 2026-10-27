@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  IMPORTANT_MESSAGE_UPDATED_EVENT,
+  requestImportantMessage,
+} from '../../components/app-navbar/ImportantMessageDialog';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { InboxMessage } from '../../../../Bindings';
@@ -11,7 +15,6 @@ import {
   bookmarkAdd,
   bookmarkRemove,
   deleteMessage,
-  importantAdd,
   importantRemove,
   inboxMessageTagsAdd,
   inboxMessageTagsModelError,
@@ -19,6 +22,8 @@ import {
 } from '../../services/api/inbox';
 import { addPalitraHighlightBlacklistEntry } from '../../services/api/palitra';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
+import { notifyMessageCopySuccess } from '../shared/message-card/message-card-copy-feedback';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import {
   hasBotTag,
@@ -68,6 +73,7 @@ type Params = {
 
 export function useRerDutyMessageItemActions(params: Params) {
   const { messageFeeds, setMessageFeeds, authUserName, currentUserOrganismId, setError } = params;
+  const { notify } = useOptionalPowerSnackbar();
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteConfirmFeedId, setDeleteConfirmFeedId] = useState<string | null>(null);
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
@@ -109,17 +115,24 @@ export function useRerDutyMessageItemActions(params: Params) {
 
   const handleMessageImportant = useCallback(
     async (feedId: string, id: number, currentlyImportant: boolean) => {
+      if (!currentlyImportant) {
+        requestImportantMessage({
+          messageId: id,
+          groupMasterKey: getMessageByFeedId(messageFeeds, feedId, id)?.groupMasterKey,
+        });
+        return;
+      }
       try {
-        const important = currentlyImportant
-          ? await importantRemove({ messageId: id })
-          : await importantAdd({ messageId: id });
+        const important = await importantRemove({ messageId: id });
         setMessageFeeds((prev) =>
           prev.map((w) =>
             w.id === feedId
               ? {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
-                    msgId === id ? [msgId, { ...msg, important }] : [msgId, msg],
+                    msgId === id
+                      ? [msgId, { ...msg, important, aiImportant: false }]
+                      : [msgId, msg],
                   ),
                 }
               : w,
@@ -129,20 +142,50 @@ export function useRerDutyMessageItemActions(params: Params) {
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [setMessageFeeds, setError],
+    [messageFeeds, setMessageFeeds, setError],
   );
 
-  const handleMessageCopy = useCallback((text: string, feedbackId: string) => {
-    void copyTextToClipboard(text).catch((err) => {
-      console.error('Failed to copy text to clipboard', err);
-    });
-    if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
-    setCopiedFeedbackId(feedbackId);
-    copiedFeedbackTimeoutRef.current = setTimeout(() => {
-      setCopiedFeedbackId(null);
-      copiedFeedbackTimeoutRef.current = null;
-    }, 1000);
-  }, []);
+  useEffect(() => {
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<{ messageId: number; important: boolean }>).detail;
+      setMessageFeeds((feeds) => {
+        let changed = false;
+        const updatedFeeds = feeds.map((feed) => {
+          let feedChanged = false;
+          const items = feed.items.map((item) => {
+            const [id, message] = item;
+            if (id !== detail.messageId || message.important === detail.important) {
+              return item;
+            }
+            changed = true;
+            feedChanged = true;
+            return [id, { ...message, important: detail.important }] as [number, InboxMessage];
+          });
+          return feedChanged ? { ...feed, items } : feed;
+        });
+        return changed ? updatedFeeds : feeds;
+      });
+    };
+    window.addEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
+    return () => window.removeEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, update);
+  }, [setMessageFeeds]);
+
+  const handleMessageCopy = useCallback(
+    (text: string, feedbackId: string) => {
+      void copyTextToClipboard(text)
+        .then(() => notifyMessageCopySuccess(feedbackId, notify))
+        .catch((err) => {
+          console.error('Failed to copy text to clipboard', err);
+        });
+      if (copiedFeedbackTimeoutRef.current) clearTimeout(copiedFeedbackTimeoutRef.current);
+      setCopiedFeedbackId(feedbackId);
+      copiedFeedbackTimeoutRef.current = setTimeout(() => {
+        setCopiedFeedbackId(null);
+        copiedFeedbackTimeoutRef.current = null;
+      }, 1000);
+    },
+    [notify],
+  );
 
   const handleDeleteConfirm = useCallback(async () => {
     if (deleteConfirmId == null || deleteConfirmFeedId == null) return;

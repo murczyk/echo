@@ -35,11 +35,19 @@ pub struct SystemSettingsCurrentRsp {
     pub show_peleng_distance_to_battleline: bool,
     pub hide_orbit_data: bool,
     pub disable_bot_tags: bool,
+    #[serde(default)]
+    pub hide_networks: bool,
     pub duty_exclude_menu_enabled: bool,
     #[serde(default = "default_analysis_aor_filter_enabled")]
     pub analysis_aor_filter_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
+    pub api_rate_limit_replenish_interval_ms: i64,
+    #[serde(default = "default_api_rate_limit_burst_size")]
+    pub api_rate_limit_burst_size: i64,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
 }
@@ -82,11 +90,18 @@ pub struct SystemSettingsItem {
     pub show_classic_analysis: bool,
     pub show_peleng_distance_to_battleline: bool,
     pub disable_bot_tags: bool,
+    pub hide_networks: bool,
     pub duty_exclude_menu_enabled: bool,
     #[serde(default = "default_analysis_aor_filter_enabled")]
     pub analysis_aor_filter_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
+    pub api_rate_limit_replenish_interval_ms: i64,
+    #[serde(default = "default_api_rate_limit_burst_size")]
+    pub api_rate_limit_burst_size: i64,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
     #[serde(default)]
@@ -157,12 +172,20 @@ pub struct CreateSystemSettingsReq {
     pub show_peleng_distance_to_battleline: bool,
     #[serde(default)]
     pub disable_bot_tags: bool,
+    #[serde(default)]
+    pub hide_networks: bool,
     #[serde(default = "default_true")]
     pub duty_exclude_menu_enabled: bool,
     #[serde(default = "default_analysis_aor_filter_enabled")]
     pub analysis_aor_filter_enabled: bool,
+    #[serde(default)]
+    pub ai_position_highlights_enabled: Option<bool>,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
+    #[serde(default)]
+    pub api_rate_limit_replenish_interval_ms: Option<i64>,
+    #[serde(default)]
+    pub api_rate_limit_burst_size: Option<i64>,
     #[serde(default = "default_true")]
     pub exclude_orbit_other_units: bool,
     #[serde(default)]
@@ -173,6 +196,14 @@ pub struct CreateSystemSettingsReq {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+}
+
+fn default_api_rate_limit_replenish_interval_ms() -> i64 {
+    crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT
+}
+
+fn default_api_rate_limit_burst_size() -> i64 {
+    crate::config::API_RATE_LIMIT_BURST_SIZE_DEFAULT
 }
 
 fn default_analysis_aor_filter_enabled() -> bool {
@@ -255,6 +286,7 @@ mod tests {
         assert!(!req.enable_audio_transcription);
         assert!(!req.show_peleng_distance_to_battleline);
         assert!(!req.disable_bot_tags);
+        assert!(!req.hide_networks);
         assert!(req.analysis_aor_filter_enabled);
         assert_eq!(req.rer_duty_test_replay_interval_sec, 1);
         assert!(req.exclude_orbit_other_units);

@@ -18,10 +18,14 @@ use tokio_util::sync::CancellationToken;
 
 mod admin;
 mod analytics_health;
+mod api_rate_limit;
+#[cfg(test)]
+mod device_feature_tests;
 pub mod discord;
 mod healthcheck;
 pub mod middleware;
 pub mod monitoring;
+mod read_deadline;
 #[cfg(test)]
 mod upload_http_audit;
 pub use admin::RestartEchoRequest;
@@ -100,6 +104,16 @@ async fn new_env_with_initialization(
     initialize: bool,
 ) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
+    Ok(new_env_from_config(mode, initialize, config)
+        .await
+        .c(h!())?)
+}
+
+async fn new_env_from_config(
+    mode: Mode,
+    initialize: bool,
+    config: Config,
+) -> Result<Arc<Env>, AppError> {
     let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
@@ -109,6 +123,11 @@ async fn new_env_with_initialization(
     let (s3_config, s3) = build_runtime_storage(&config, mode);
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
+    if initialize && mode != Mode::Test {
+        crate::transcription::service::ensure_sources_registered(&dbx)
+            .await
+            .c(h!())?;
+    }
     if initialize {
         crate::ai_agent::dispatcher::import_legacy_config(
             &dbx,
@@ -125,10 +144,11 @@ async fn new_env_with_initialization(
         .await
         .c(h!())?,
     );
-    let file_registry_db = crate::file_registry::connect_runtime(&config, mode)
-        .await
-        .c(h!())?;
-    if file_registry_db.is_none() {
+    let file_registry_db =
+        crate::file_registry::connect_if_enabled(&config, mode, &dbx)
+            .await
+            .c(h!())?;
+    if config.file_registry.is_none() {
         log_missing_file_registry_configuration(&dbx, mode).await;
     }
     let device_file_content = crate::devices::files::content::build_runtime(
@@ -539,6 +559,57 @@ fn spawn_device_file_sync_expiry_worker(
     );
 }
 
+fn spawn_device_audio_workers(
+    tasks: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation: CancellationToken,
+    prepare_audio: bool,
+) {
+    if env.file_registry_db.is_none() {
+        return;
+    }
+    let sync_env = env.clone();
+    let sync_cancel = cancellation.clone();
+    spawn_named_worker("device_transcription_sync", tasks, async move {
+        crate::devices::audio::transcription::run(
+            sync_env.device_audio.clone(),
+            sync_env.echo_gpu_client.clone(),
+            sync_cancel,
+        )
+        .await;
+    });
+    if prepare_audio {
+        spawn_named_worker("device_audio_preparation", tasks, async move {
+            crate::devices::audio::run_preparation(
+                env.device_audio.clone(),
+                cancellation,
+            )
+            .await;
+        });
+    }
+}
+
+fn spawn_device_file_preview_workers(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation: CancellationToken,
+) {
+    let cleanup_env = env.as_ref().clone();
+    let cleanup_cancellation = cancellation.clone();
+    spawn_named_worker("device_file_preview_cleanup", bg_set, async move {
+        crate::devices::files::preview::cleanup_nofail(
+            cleanup_env,
+            cleanup_cancellation,
+        )
+        .await;
+    });
+    let preview_env = env.as_ref().clone();
+    spawn_named_worker("device_file_preview_conversion", bg_set, async move {
+        crate::devices::files::preview::run_nofail(preview_env, cancellation)
+            .await;
+    });
+}
+
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("palitra_conversion_worker", bg_set, async move {
         crate::palitra::conversion_worker::palitra_conversion_worker_nofail(
@@ -648,6 +719,10 @@ fn spawn_background_workers(
     spawn_named_worker("iggy_integration_worker", bg_set, async move {
         crate::iggy::worker::run_nofail(env2).await;
     });
+    let unit_refresh_env = env.clone();
+    spawn_named_worker("iggy_unit_refresh_worker", bg_set, async move {
+        crate::iggy::unit_refresh::run_nofail(unit_refresh_env).await;
+    });
     spawn_named_worker("aor_assignments_worker", bg_set, async move {
         crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10).await;
     });
@@ -668,6 +743,20 @@ fn spawn_background_workers(
         crate::messenger::worker::queue::process_queue_nofail(
             message_queue_env,
             token_2,
+        )
+        .await;
+    });
+    let reply_env = env.clone();
+    let reply_cancel = cancel_token.clone();
+    spawn_named_worker("message_reply_worker", bg_set, async move {
+        crate::message_reply::worker::run(reply_env, reply_cancel).await;
+    });
+    let messenger_alert_env = env.clone();
+    let messenger_alert_cancel = cancel_token.clone();
+    spawn_named_worker("messenger_alert_worker", bg_set, async move {
+        crate::messenger::alerts::worker::run(
+            messenger_alert_env,
+            messenger_alert_cancel,
         )
         .await;
     });
@@ -781,6 +870,15 @@ fn spawn_background_workers(
         .await;
     });
 
+    let transcript_env = env.clone();
+    let transcript_cancel = cancel_token.clone();
+    spawn_named_worker("ai_transcript_analysis_worker", bg_set, async move {
+        crate::ai_transcript_analysis::worker::run(
+            transcript_env,
+            transcript_cancel,
+        )
+        .await;
+    });
     let ai_settlement_env = env.clone();
     let ai_settlement_cancellation_token = cancel_token.clone();
     spawn_named_worker("ai_settlement_worker", bg_set, async move {
@@ -818,22 +916,25 @@ fn spawn_background_workers(
             .await;
         });
     }
-    for (name, kind) in [
-        ("device_document_worker", "extract"),
-        ("device_document_summary_worker", "summary"),
-        ("device_document_position_worker", "positions"),
-        ("device_document_inspection_worker", "inspect"),
-    ] {
-        let attachment_env = env.clone();
-        let attachment_cancel = cancel_token.clone();
-        spawn_named_worker(name, bg_set, async move {
-            crate::devices::documents::worker::run(
-                attachment_env,
-                attachment_cancel,
-                kind,
-            )
-            .await;
-        });
+
+    if env.file_registry_db.is_some() {
+        for (name, kind) in [
+            ("device_document_worker", "extract"),
+            ("device_document_summary_worker", "summary"),
+            ("device_document_position_worker", "positions"),
+            ("device_document_inspection_worker", "inspect"),
+        ] {
+            let attachment_env = env.clone();
+            let attachment_cancel = cancel_token.clone();
+            spawn_named_worker(name, bg_set, async move {
+                crate::devices::documents::worker::run(
+                    attachment_env,
+                    attachment_cancel,
+                    kind,
+                )
+                .await;
+            });
+        }
     }
 
     let ocr_env = env.clone();
@@ -907,7 +1008,39 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let ingest_upload_cleanup_storage_dir = config.storage_dir.clone();
+    let ingest_upload_cleanup_cancellation = cancel_token.clone();
+    spawn_named_worker("messenger_ingest_upload_cleanup", bg_set, async move {
+        crate::messenger_ingest::uploads::run_cleanup_nofail(
+            ingest_upload_cleanup_storage_dir,
+            ingest_upload_cleanup_cancellation,
+        )
+        .await;
+    });
     if env.file_registry_db.is_some() {
+        let forwarding_env = env.clone();
+        let forwarding_cancel = cancel_token.clone();
+        spawn_named_worker("device_audio_forwarding", bg_set, async move {
+            crate::devices::audio::forwarding::run(
+                forwarding_env,
+                forwarding_cancel,
+            )
+            .await;
+        });
+        let archive_env = env.clone();
+        let archive_cancel = cancel_token.clone();
+        spawn_named_worker("device_file_archive", bg_set, async move {
+            crate::devices::files::archive::run_nofail(
+                archive_env,
+                archive_cancel,
+            )
+            .await;
+        });
+        spawn_device_file_preview_workers(
+            bg_set,
+            env.clone(),
+            cancel_token.clone(),
+        );
         let audio_cleanup_runtime = env.device_audio.clone();
         let audio_cleanup_cancellation = cancel_token.clone();
         spawn_named_worker("device_audio_cleanup", bg_set, async move {
@@ -929,11 +1062,13 @@ fn spawn_background_workers(
         );
         if let Some(runtime) = env.device_file_content.clone() {
             let content_cleanup_cancellation = cancel_token.clone();
+            let content_cleanup_env = env.clone();
             spawn_named_worker(
                 "device_file_content_cleanup_worker",
                 bg_set,
                 async move {
                     crate::devices::files::content::worker::run_nofail(
+                        content_cleanup_env,
                         runtime,
                         content_cleanup_cancellation,
                     )
@@ -997,6 +1132,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::delta::login::handle_redirect)
             .service(crate::rer_importer::messenger_media)
             .service(crate::rer_importer::messenger_media_playback)
+            .service(crate::rer_importer::messenger_media_preview_playlist)
+            .service(crate::rer_importer::messenger_media_preview_segment)
             .service(crate::sigint::media_conversion::status)
             .service(crate::sigint::media_conversion::preview)
             .service(crate::sigint::media_conversion::retry)
@@ -1025,6 +1162,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::group::handlers::orphan_signal_groups)
             .service(crate::messenger::group::handlers::archived_signal_groups)
             .service(crate::messenger::group::handlers::signal_group_archive)
+            .service(crate::messenger::group::native::create)
+            .service(crate::messenger::group::creation::get)
+            .service(crate::messenger::group::native::get)
+            .service(crate::messenger::group::native::update)
             .service(crate::messenger::group::handlers::signal_group_unarchive)
             .service(crate::messenger::group::handlers::group_stats_timeline)
             .service(crate::rer_importer::signal_profile_info)
@@ -1052,6 +1193,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::inbox_item_context)
+            .service(crate::message_reply::message_replies)
             .service(crate::rer_importer::inbox::messages_by_id)
             .service(
                 crate::rer_importer::inbox::messages_by_id_matching_filters,
@@ -1067,13 +1209,17 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::network_stats)
             .service(crate::rer_importer::analysis::network_stats_count)
             .service(crate::rer_importer::analysis::count_stats)
+            .service(crate::rer_importer::analysis::message_stats_count)
+            .service(crate::rer_importer::analysis::unit_match_stats_count)
             .service(crate::rer_importer::analysis::location_stats)
             .service(crate::rer_importer::analysis::unit_stats)
             .service(crate::rer_importer::analysis::tag_stats)
             .service(crate::rer_importer::analysis::callsign_stats)
+            .service(crate::rer_importer::analysis::callsign_page)
             .service(crate::rer_importer::analysis::metadata_stats)
             .service(crate::rer_importer::analysis::freq_stats)
             .service(crate::rer_importer::analysis::post_stats)
+            .service(crate::rer_importer::analysis::device_name_stats)
             .service(crate::rer_importer::analysis::sender_stats)
             .service(crate::rer_importer::analysis::group_stats)
             .service(crate::rer_importer::analysis::activity_daily)
@@ -1113,12 +1259,23 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::important::important_add)
             .service(crate::rer_importer::important::importants_list)
             .service(crate::rer_importer::important::important_rm)
+            .service(crate::users::messenger_profile::search)
+            .service(crate::messenger::alerts::settings_get)
+            .service(crate::messenger::alerts::settings_put)
+            .service(crate::messenger::alerts::preference_get)
+            .service(crate::messenger::alerts::preference_put)
+            .service(crate::messenger::alerts::history)
+            .service(crate::notifications::notification_list)
+            .service(crate::notifications::notification_unread_count)
+            .service(crate::notifications::notification_read)
+            .service(crate::notifications::notification_read_all)
             .service(crate::rer_importer::callsigns::callsigns_graph)
             .service(crate::rer_importer::gdoc::rer_callsign_info)
             .service(crate::rer_importer::gdoc::rer_callsign_info_batch)
             .service(crate::rer_importer::reports::report_docx_task_launch)
             .service(crate::report_history::report_history_list)
             .service(crate::report_history::report_history_admin_list)
+            .configure(crate::kpi::configure)
             .service(crate::report_history::report_history_admin_rerun)
             .service(crate::report_history::report_history_status)
             .service(crate::report_history::report_history_download)
@@ -1160,6 +1317,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::delete_conversation)
             .service(crate::ai_agent::create_request)
             .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::work_memory::append)
+            .service(crate::ai_agent::work_memory::list)
+            .service(crate::ai_agent::work_memory::read)
             .service(crate::ai_agent::request_events)
             .service(crate::ai_agent::maps::prepare_map)
             .service(crate::ai_agent::maps::get_map)
@@ -1173,6 +1333,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(
                 crate::ai_agent::provider_gateway::chat_completions,
             )
+            .service(crate::ai_agent::provider_gateway::responses)
             .service(crate::ai_agent::admin::get_settings)
             .service(crate::ai_agent::admin::update_settings)
             .service(crate::ai_agent::admin::get_dispatcher)
@@ -1207,6 +1368,19 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
             .service(crate::ai_callsign::save_ai_callsign_worker_settings)
             .service(crate::ai_settlement::get_ai_settlement_page)
+            .service(crate::ai_transcript_analysis::page)
+            .service(crate::ai_transcript_analysis::list_queue)
+            .service(crate::ai_transcript_analysis::reset)
+            .service(crate::ai_transcript_analysis::save_message)
+            .service(crate::ai_transcript_analysis::delete_message)
+            .service(crate::ai_transcript_analysis::test)
+            .service(crate::ai_transcript_analysis::save)
+            .service(crate::ai_transcript_analysis::recalculate)
+            .service(crate::ai_transcript_analysis::save_worker)
+            .service(crate::ai_settlement::aliases::list_settlement_aliases)
+            .service(crate::ai_settlement::aliases::search_alias_settlements)
+            .service(crate::ai_settlement::aliases::save_settlement_alias)
+            .service(crate::ai_settlement::aliases::delete_settlement_alias)
             .service(crate::ai_settlement::reset_ai_settlement_prompt)
             .service(crate::ai_settlement::create_ai_settlement_test_message)
             .service(crate::ai_settlement::update_ai_settlement_test_message)
@@ -1273,6 +1447,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)
+            .service(crate::rer_report_admin::rer_report_access_list)
+            .service(crate::rer_report_admin::rer_report_access_replace)
+            .service(crate::rer_report_admin::rer_report_metadata_list)
+            .service(crate::rer_report_admin::rer_report_metadata_create)
+            .service(crate::rer_report_admin::rer_report_metadata_update)
+            .service(crate::rer_report_admin::rer_report_metadata_delete)
             .service(crate::users::user_logout)
             .service(crate::users::settings_save)
             .service(crate::users::display_name::save)
@@ -1290,6 +1470,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::file_upload::fallback_upload)
             .service(crate::devices::audio::upload_routes())
             .service(crate::devices::audio::routes())
+            .service(crate::devices::audio::forwarding::get)
+            .service(crate::devices::audio::forwarding::list)
+            .service(crate::devices::audio::forwarding::remove)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)
@@ -1329,6 +1512,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::update)
             .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
+            .service(crate::devices::files::locate::locate)
             .service(crate::devices::files::sessions::list)
             .service(crate::devices::files::sessions::get)
             .service(crate::devices::files::sessions::summaries)
@@ -1343,6 +1527,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::complete_sync_session)
             .service(crate::devices::files::sync_session_items)
             .service(crate::devices::files::content::routes())
+            .service(crate::devices::files::preview::routes())
+            .service(crate::devices::files::archive::routes())
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)
@@ -1393,10 +1579,12 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::my_admin_group_edit_reference)
             .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
+            .service(crate::sigint::unit::combat_type::list_combat_types)
             .service(crate::sigint::unit::unit_status_counts)
             .service(crate::sigint::unit::list_units_by_id)
             .service(crate::sigint::unit::create_unit)
             .service(crate::sigint::unit::create_unit_with_auto_network)
+            .service(crate::sigint::unit::message_creation::create_unit_for_message)
             .service(crate::sigint::unit::create_device_network)
             .service(crate::sigint::unit::update_unit)
             .service(crate::sigint::unit::delete_unit)
@@ -1580,6 +1768,18 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
+            .service(crate::messenger_ingest::accounts_sync)
+            .service(crate::messenger_ingest::chats_sync)
+            .service(crate::messenger_ingest::chat_members_sync)
+            .service(crate::messenger_ingest::contacts_sync)
+            .service(crate::messenger_ingest::messages_submit)
+            .service(crate::messenger_ingest::attachments_submit)
+            .service(crate::messenger_ingest::account_avatar_submit)
+            .service(crate::messenger_ingest::chat_avatar_submit)
+            .service(crate::messenger_ingest::chat_member_avatar_submit)
+            .service(crate::messenger_ingest::contact_avatar_submit)
+            .service(crate::messenger_ingest::uploads_base)
+            .service(crate::messenger_ingest::uploads_file)
             .service(crate::palitra::list_all_palitras)
             .service(crate::palitra::highlight_blacklist::resolve_palitra_names)
             .service(crate::palitra::list_all_palitras_v2)
@@ -1657,6 +1857,28 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let deployment_maintenance = web::Data::new(
+        crate::event_stream::DeploymentMaintenanceState::default(),
+    );
+    deployment_maintenance
+        .refresh(&mut env.redis.clone())
+        .await
+        .c(h!())?;
+    let deployment_state = deployment_maintenance.clone();
+    let deployment_redis = env.redis.clone();
+    let deployment_cancel_token = cancel_token.clone();
+    spawn_named_worker(
+        "deployment_maintenance_worker",
+        &mut background_tasks,
+        async move {
+            crate::event_stream::deployment_maintenance_worker(
+                deployment_redis,
+                deployment_state,
+                deployment_cancel_token,
+            )
+            .await;
+        },
+    );
     let session_env = env.clone();
     let token_session = cancel_token.clone();
     spawn_named_worker(
@@ -1727,11 +1949,15 @@ pub async fn main_server(
     };
 
     let env_for_server = env.clone();
+    let api_rate_limiter =
+        web::Data::new(api_rate_limit::ApiRateLimiter::default());
     let server_builder = HttpServer::new(move || {
         let env = env_for_server.clone();
         let cookie_secret = env.config.cookie_session_secret.clone();
         let redis_for_middleware = env.redis.clone();
         App::new()
+            .app_data(api_rate_limiter.clone())
+            .app_data(deployment_maintenance.clone())
             .wrap(actix_web::middleware::Compress::default())
             .wrap(actix_web::middleware::from_fn(
                 crate::utils::multipart_admission::limit_requests,
@@ -1743,6 +1969,12 @@ pub async fn main_server(
             // .wrap(
             //     actix_web::middleware::Logger::default()
             // )
+            .wrap(actix_web::middleware::from_fn(
+                crate::ai_agent::middleware::enforce_agent_routes,
+            ))
+            .wrap(actix_web::middleware::from_fn(
+                api_rate_limit::throttle_api_users,
+            ))
             .wrap(
                 IdentityMiddleware::builder()
                     .visit_deadline(Some(std::time::Duration::from_secs(
@@ -1753,9 +1985,6 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
             ))
-            .wrap(actix_web::middleware::from_fn(
-                crate::ai_agent::middleware::enforce_agent_routes,
-            ))
             .wrap(SessionMiddleware::new(
                 redis_session_store.clone(),
                 Key::from(cookie_secret.as_bytes()),
@@ -1763,6 +1992,11 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
             ))
+            // Deployment-only polls must bypass session and activity processing.
+            .wrap(actix_web::middleware::from_fn(
+                crate::event_stream::deployment_only_poll,
+            ))
+            .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
                 middleware::access_log_middleware,
             ))
@@ -1778,6 +2012,13 @@ pub async fn main_server(
     }
     .run();
 
+    let mut audio_tasks = JoinSet::new();
+    spawn_device_audio_workers(
+        &mut audio_tasks,
+        env.clone(),
+        cancel_token.clone(),
+        true,
+    );
     let task_completion_future = async move {
         if should_start_bgworkers && mode == Mode::Live {
             std::future::pending::<()>().await;
@@ -1816,6 +2057,7 @@ pub async fn main_server(
             },
             _ = task_completion_future => {
                 info!("[Main] All background tasks finished. Stopping actix server.");
+                cancel_token.cancel();
                 server_handle.stop(true).await;
             }
             _ = server => {
@@ -1824,6 +2066,9 @@ pub async fn main_server(
             }
         }
     }).await.c(h!());
+    while let Some(result) = audio_tasks.join_next().await {
+        result.c(h!())?;
+    }
     if let Some(metrics) = &env.metrics {
         metrics.shutdown();
     }
@@ -1850,6 +2095,12 @@ pub async fn main_bgworker(
         true,
         true,
         &mut background_tasks,
+    );
+    spawn_device_audio_workers(
+        &mut transcriber_tasks,
+        env.clone(),
+        cancel_token.clone(),
+        false,
     );
     let transcriber_worker_id = Uuid::now_v7();
     info!(

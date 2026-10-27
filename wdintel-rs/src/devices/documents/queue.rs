@@ -1,6 +1,7 @@
 use crate::{
     attachments::store::{execute, rows},
-    config::*,
+    config::OCR_MAX_ERROR_CHARS,
+    devices::config::*,
     h,
     types::{Env, ShortContext},
 };
@@ -24,9 +25,9 @@ pub(super) async fn discover(env: &Env) -> anyhow::Result<()> {
     execute(db,"with checkpoint as (select * from file_document_backfill where id=1 and not complete for update), batch as materialized (
       select c.file_id,c.revision,r.device_id from checkpoint b cross join lateral (
         select file_id,revision from file_content
-        where (file_id,revision)>(coalesce(b.cursor_file,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(b.cursor_revision,0))
+        where origin_archive_id is null and (file_id,revision)>(coalesce(b.cursor_file,'00000000-0000-0000-0000-000000000000'::uuid),coalesce(b.cursor_revision,0))
         order by file_id,revision limit $1
-      ) c join file_revision r on r.id=c.file_id and r.revision=c.revision
+      ) c join file_revision r on r.id=c.file_id and r.revision=c.revision and r.origin_archive_id is null
     ), inserted as (
       insert into file_document(file_id,revision,device_id,generation)
       select file_id,revision,device_id,uuid_generate_v7() from batch on conflict do nothing returning *

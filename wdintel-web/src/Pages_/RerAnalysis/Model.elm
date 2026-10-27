@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..))
+module Pages_.RerAnalysis.Model exposing (FilterName(..), FocusedFilterSnapshot, GroupsActivityPeriod(..), MenuTab(..), Model, ReportTemplate(..), SendersType(..), StatsCountField(..), StatsCountRequest(..))
 
 import Bindings as B
 import Core.Types exposing (ApiError)
@@ -33,6 +33,12 @@ type alias Model =
     , freqs : RemoteData ApiError (List B.AnalysisStatsFreq)
     , callsigns : RemoteData ApiError (List B.AnalysisStatsCallsign)
     , counts : RemoteData ApiError B.CountStatsRsp
+    , statsCountGeneration : Int
+    , statsCountPending : List StatsCountRequest
+    , statsCountReady : List StatsCountRequest
+    , statsCountRemaining : Int
+    , statsCountPartial : B.CountStatsRsp
+    , statsCountError : Maybe ApiError
     , profiles : Dict String (Maybe B.SignalProfileRsp)
     , aorsSelected : List String
     , groupsSelected : List String
@@ -93,6 +99,9 @@ type alias Model =
     , savedFilterEditInp : Dict Int String
     , savedFilterMenuOpen : Maybe Int
     , searchInput : String
+    , searchSuggestionsOpen : Bool
+    , searchSuggestionIndex : Maybe Int
+    , searchMode : Maybe B.AnalysisSearchMode
     , metadataCc : List String
     , metadataSender : List String
     , metadataReceiver : List String
@@ -136,6 +145,8 @@ type alias Model =
     , reportTagsOnlyThisUnit : Bool
     , reportTagsOnlyThisUnitForReport : Bool
     , report1213LinkedNetworksOnly : Bool
+    , report1217IncludeWithoutComments : Bool
+    , report1217OnlyThisUnitComments : Bool
     , reportWithoutComments : Bool
     , reportBabakNewCallsignMinMentions : Int
     , reportDigestOmitExoId : Bool
@@ -158,6 +169,7 @@ type alias Model =
         , selected : B.ReoReportFileType
         }
     , reportReoNoComments : Bool
+    , reportReoSummaryOnly : Bool
     , reportActiveNetworksAorsSelect :
         { state : Select.State
         , items : List (Select.MenuItem Int)
@@ -215,13 +227,32 @@ type alias Model =
     , audioTranscriptionEnabled : Bool
     , analysisAudioTranscriptionCollapsed : Bool
     , disableBotTags : Bool
+    , hideNetworks : Bool
     , withoutModelTags : Bool
     , editSidebar : Maybe Int
-    , eventLastId : Maybe String
 
     -- палітри
     , palitras : RemoteData ApiError (List B.PalitraReadV2)
     }
+
+
+type StatsCountField
+    = GroupsCountField
+    | SendersCountField
+    | FreqsCountField
+    | PostsCountField
+    | CallsignsCountField
+    | UnitsCountField
+    | LocationsCountField
+    | TagsCountField
+    | AorsCountField
+    | NetworksCountField
+
+
+type StatsCountRequest
+    = MessageStatsCountRequest
+    | UnitMatchStatsCountRequest
+    | StatsCountFieldRequest StatsCountField
 
 
 type MenuTab
@@ -252,6 +283,7 @@ type ReportTemplate
     | RTSummaryTable
     | RTReport125
     | RTReport1213
+    | RTReport1217
 
 
 type FilterName

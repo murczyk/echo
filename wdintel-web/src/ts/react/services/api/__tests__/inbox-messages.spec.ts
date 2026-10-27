@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { fetchMessagesByIds } from '../inbox-messages';
+import type { InboxMessagesReq } from '../../../../../Bindings';
+import { fetchInboxCount, fetchInboxMessages, fetchMessagesByIds } from '../inbox-messages';
 import {
   getIntelligenceReports,
   getParentMessages,
@@ -13,6 +14,42 @@ const apiMocks = vi.hoisted(() => ({
 vi.mock('../client', () => ({
   postJson: apiMocks.postJson,
 }));
+
+// Regression: https://github.com/echoua/echo/issues/3783
+describe('inbox device filters', () => {
+  it.each([
+    [undefined, undefined],
+    [null, null],
+    [[], []],
+    [['device-a'], null],
+    [null, ['device-b']],
+    [['device-a'], ['device-b']],
+  ])(
+    'passes included/excluded devices to messages and counts without activating unset filters (%j / %j)',
+    async (selectedDeviceNames, deniedDeviceNames) => {
+      apiMocks.postJson.mockClear();
+      apiMocks.postJson.mockResolvedValue({ inbox_items: [], quantity: 0 });
+      const request = {
+        selectedDeviceNames,
+        deniedDeviceNames,
+      } as InboxMessagesReq;
+
+      await fetchInboxMessages(request);
+      await fetchInboxCount(request);
+
+      for (const endpoint of ['get-inbox', 'get-inbox-count']) {
+        expect(apiMocks.postJson).toHaveBeenCalledWith(
+          `/api/rer-importer/${endpoint}`,
+          expect.objectContaining({
+            selected_device_names: selectedDeviceNames?.length ? selectedDeviceNames : null,
+            denied_device_names: deniedDeviceNames?.length ? deniedDeviceNames : null,
+          }),
+          undefined,
+        );
+      }
+    },
+  );
+});
 
 describe('fetchMessagesByIds', () => {
   it('normalizes by-id messages the same way as inbox loading', async () => {

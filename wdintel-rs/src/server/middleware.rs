@@ -1,4 +1,7 @@
-use crate::config::{FEATURE_ACCESS_LOG_DEFAULT, IDENTITY_SESSION_USER_ID_KEY};
+use crate::config::{
+    FEATURE_ACCESS_LOG_DEFAULT, IDENTITY_SESSION_USER_ID_KEY,
+    SERVER_ACTIVITY_CONTEXT_HEADERS,
+};
 use crate::types::*;
 use crate::utils::worker_watch;
 use actix_session::SessionExt;
@@ -9,7 +12,7 @@ use actix_web::{
     Error,
 };
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands, RedisResult};
+use redis::AsyncCommands;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
@@ -241,10 +244,18 @@ where
     let headers = Some(
         req.headers()
             .iter()
+            .filter(|(name, _)| {
+                SERVER_ACTIVITY_CONTEXT_HEADERS.contains(&name.as_str())
+            })
             .filter_map(|(name, value)| {
                 value
                     .to_str()
                     .ok()
+                    .filter(|value| {
+                        !name.as_str().starts_with("x-echo-")
+                            || value.len()
+                                <= crate::config::SERVER_ACTIVITY_DIAGNOSTIC_HEADER_MAX_BYTES
+                    })
                     .map(|v| (name.to_string(), v.to_string()))
             })
             .collect::<HashMap<String, String>>(),
@@ -352,7 +363,7 @@ where
                     .await;
             }
         }
-        Err(_) => {
+        Err(error) => {
             // Even on error, we might want to log the response
             let response_time_ms = start_time.elapsed().as_millis() as u64;
 
@@ -366,7 +377,9 @@ where
                 request_headers: None,
                 request_body: None,
                 request_content_type: None,
-                response_status: Some(500),
+                response_status: Some(
+                    error.as_response_error().status_code().as_u16(),
+                ),
                 response_time_ms: Some(response_time_ms),
                 event_type: "error".to_string(),
                 client_ip,
@@ -387,43 +400,51 @@ where
 async fn store_activity_in_redis(
     redis: &mut ConnectionManager,
     activity: &ActivityDetails,
-) -> RedisResult<()> {
+) -> anyhow::Result<()> {
     let collection_key = "echo-md-requests";
-    let activity_json = serde_json::to_string(activity).unwrap_or_default();
-    let member_key = format!("{}:{}", activity.timestamp, activity.request_id);
+    let activity_json = serde_json::to_string(activity).c(h!())?;
+    let member_key = format!(
+        "{}:{}:{}",
+        activity.timestamp, activity.request_id, activity.event_type
+    );
 
-    // Add to sorted set (using timestamp as score for ordering)
-    let _: () = redis
-        .zadd(collection_key, &member_key, activity.timestamp)
-        .await?;
-
-    // Store the actual data with TTL
     let data_key = format!("{collection_key}:{member_key}");
-    let _: () = redis.set_ex(&data_key, activity_json, 3600).await?; // 1 hour TTL
+    // Publish the member and its payload together so the exporter cannot drain an incomplete entry.
+    let _: () = redis::pipe()
+        .atomic()
+        .set_ex(&data_key, activity_json, 3600)
+        .ignore()
+        .zadd(collection_key, &member_key, activity.timestamp)
+        .ignore()
+        .query_async(redis)
+        .await
+        .c(h!())?;
 
     // Maintain cap of 10000 elements
-    let count: i64 = redis.zcard(collection_key).await?;
+    let count: i64 = redis.zcard(collection_key).await.c(h!())?;
     if count > 10000 {
         // Remove oldest elements
         let to_remove = count - 10000;
         let removed_members: Vec<String> = redis
             .zrange(collection_key, 0, (to_remove - 1) as isize)
-            .await?;
+            .await
+            .c(h!())?;
 
         // Remove from sorted set
         if !removed_members.is_empty() {
-            let _: () = redis.zrem(collection_key, &removed_members).await?;
+            let _: () =
+                redis.zrem(collection_key, &removed_members).await.c(h!())?;
 
             // Delete associated data keys
             for member in removed_members {
                 let data_key = format!("{collection_key}:{member}");
-                let _: () = redis.del(&data_key).await?;
+                let _: () = redis.del(&data_key).await.c(h!())?;
             }
         }
     }
 
     // Refresh TTL on the sorted set
-    let _: () = redis.expire(collection_key, 3600).await?;
+    let _: () = redis.expire(collection_key, 3600).await.c(h!())?;
 
     Ok(())
 }
@@ -615,7 +636,10 @@ pub async fn activity_details_worker(
 
 #[cfg(test)]
 mod tests {
-    use super::identity_requires_logout;
+    use super::{
+        identity_requires_logout, store_activity_in_redis, ActivityDetails,
+    };
+    use redis::AsyncCommands;
 
     #[test]
     fn legacy_identity_requires_logout() {
@@ -624,5 +648,219 @@ mod tests {
             "019c42d7-499d-7e83-be43-62dc838ea42a"
         )));
         assert!(!identity_requires_logout(None));
+    }
+
+    // https://github.com/echoua/echo/issues/3826
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn recorded_middleware_errors_preserve_http_status_3826() {
+        use actix_web::{
+            dev::ServiceResponse, http::StatusCode, middleware, test, App,
+        };
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let mut redis = crate::new_redis_for_db(&config, 15).await.unwrap();
+        for status in [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            let path = format!("/api/telemetry-test/{}", uuid::Uuid::new_v4());
+            let app = test::init_service(
+                App::new()
+                    .wrap_fn(move |_, _| {
+                        std::future::ready(Err::<ServiceResponse, _>(
+                            actix_web::error::InternalError::new(
+                                "rejected", status,
+                            )
+                            .into(),
+                        ))
+                    })
+                    .wrap(middleware::from_fn(super::mk_activity_middleware(
+                        Some(redis.clone()),
+                    ))),
+            )
+            .await;
+            let error = test::try_call_service(
+                &app,
+                test::TestRequest::post().uri(&path).to_request(),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.as_response_error().status_code(), status);
+            let members: Vec<String> =
+                redis.zrange("echo-md-requests", 0, -1).await.unwrap();
+            let mut recorded_status = None;
+            for member in members {
+                let key = format!("echo-md-requests:{member}");
+                let payload: Option<String> = redis.get(&key).await.unwrap();
+                let Some(payload) = payload else { continue };
+                let activity: ActivityDetails =
+                    serde_json::from_str(&payload).unwrap();
+                if activity.request_path != path {
+                    continue;
+                }
+                if activity.event_type == "error" {
+                    recorded_status = activity.response_status;
+                }
+                let _: () =
+                    redis.zrem("echo-md-requests", member).await.unwrap();
+                let _: () = redis.del(key).await.unwrap();
+            }
+            assert_eq!(recorded_status, Some(status.as_u16()));
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn retained_fast_request_context_and_response_3780() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let mut redis = crate::new_redis_for_db(&env.config, 15).await.unwrap();
+        let request = ActivityDetails {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now().timestamp(),
+            request_method: "POST".to_string(),
+            request_path: "/api/rer-importer/get-inbox-count".to_string(),
+            request_hostname: None,
+            request_query_params: None,
+            request_headers: Some(std::collections::HashMap::from([(
+                "referer".to_string(),
+                "http://echo.localhost/rer-duty-neo".to_string(),
+            )])),
+            request_body: None,
+            request_content_type: None,
+            response_status: None,
+            response_time_ms: None,
+            event_type: "request".to_string(),
+            client_ip: None,
+            user_agent: None,
+        };
+        store_activity_in_redis(&mut redis, &request).await.unwrap();
+        let response = ActivityDetails {
+            event_type: "response".to_string(),
+            request_headers: None,
+            response_status: Some(200),
+            response_time_ms: Some(1),
+            ..request.clone()
+        };
+        store_activity_in_redis(&mut redis, &response)
+            .await
+            .unwrap();
+        let members: Vec<String> =
+            redis.zrange("echo-md-requests", 0, -1).await.unwrap();
+        let mut records = Vec::new();
+        for member in members
+            .iter()
+            .filter(|member| member.contains(&request.request_id))
+        {
+            let key = format!("echo-md-requests:{member}");
+            let payload: String = redis.get(&key).await.unwrap();
+            records.push(
+                serde_json::from_str::<ActivityDetails>(&payload).unwrap(),
+            );
+            let _: () = redis.zrem("echo-md-requests", member).await.unwrap();
+            let _: () = redis.del(key).await.unwrap();
+        }
+        assert_eq!(records.len(), 2);
+        let retained = records
+            .iter()
+            .find(|record| record.event_type == "request")
+            .unwrap();
+        assert_eq!(retained.request_headers, request.request_headers);
+        let completed = records
+            .iter()
+            .find(|record| record.event_type == "response")
+            .unwrap();
+        assert_eq!(completed.response_status, Some(200));
+        assert_eq!(completed.response_time_ms, Some(1));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn attributed_requests_without_retaining_credentials_3780() {
+        use actix_web::{middleware, test, web, App, HttpResponse};
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let mut redis = crate::new_redis_for_db(&env.config, 15).await.unwrap();
+        let path = format!("/api/telemetry-test/{}", uuid::Uuid::new_v4());
+        let app = test::init_service(
+            App::new()
+                .wrap(middleware::from_fn(super::mk_activity_middleware(Some(
+                    redis.clone(),
+                ))))
+                .route(
+                    &path,
+                    web::post().to(|| async { HttpResponse::Ok().finish() }),
+                ),
+        )
+        .await;
+        let request = test::TestRequest::post()
+            .uri(&path)
+            .insert_header((
+                "referer",
+                "http://echo.localhost/rer-analysis-neo",
+            ))
+            .insert_header(("authorization", "Bearer test-secret"))
+            .insert_header(("cookie", "session=test-secret"))
+            .insert_header(("x-api-key", "test-secret"))
+            .insert_header(("x-echo-tab-id", "ephemeral-tab"))
+            .insert_header(("x-echo-page-visibility", "hidden"))
+            .insert_header(("x-echo-request-trigger", "automatic"))
+            .insert_header((
+                "x-echo-client-asset",
+                "a".repeat(
+                    crate::config::SERVER_ACTIVITY_DIAGNOSTIC_HEADER_MAX_BYTES
+                        + 1,
+                ),
+            ))
+            .to_request();
+        assert!(test::call_service(&app, request)
+            .await
+            .status()
+            .is_success());
+        let members: Vec<String> =
+            redis.zrange("echo-md-requests", 0, -1).await.unwrap();
+        let mut records = Vec::new();
+        for member in members {
+            let key = format!("echo-md-requests:{member}");
+            let payload: Option<String> = redis.get(&key).await.unwrap();
+            let Some(payload) = payload else { continue };
+            let activity: ActivityDetails =
+                serde_json::from_str(&payload).unwrap();
+            if activity.request_path != path {
+                continue;
+            }
+            records.push(activity);
+            let _: () = redis.zrem("echo-md-requests", member).await.unwrap();
+            let _: () = redis.del(key).await.unwrap();
+        }
+        let request = records
+            .iter()
+            .find(|activity| activity.event_type == "request")
+            .unwrap();
+        let headers = request.request_headers.as_ref().unwrap();
+        assert_eq!(
+            headers.get("referer").map(String::as_str),
+            Some("http://echo.localhost/rer-analysis-neo")
+        );
+        assert!(!headers.contains_key("authorization"));
+        assert!(!headers.contains_key("cookie"));
+        assert!(!headers.contains_key("x-api-key"));
+        assert_eq!(
+            headers.get("x-echo-tab-id").map(String::as_str),
+            Some("ephemeral-tab")
+        );
+        assert_eq!(
+            headers.get("x-echo-page-visibility").map(String::as_str),
+            Some("hidden")
+        );
+        assert_eq!(
+            headers.get("x-echo-request-trigger").map(String::as_str),
+            Some("automatic")
+        );
+        assert!(!headers.contains_key("x-echo-client-asset"));
+        assert!(request.request_body.is_none());
+        assert!(records
+            .iter()
+            .any(|activity| activity.response_status == Some(200)));
     }
 }

@@ -1,7 +1,7 @@
 import { Backdrop, Box, ButtonBase, CircularProgress, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Dispatch, MutableRefObject, Ref, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { FeedColumn, type FeedColumnHandle } from './FeedColumn';
 import type { FeedColumnModel } from './types';
@@ -11,17 +11,10 @@ import {
 } from './FeedColumnHeader';
 import type { MessageFeedState } from './utils';
 import { MAX_MESSAGE_FEEDS } from './utils';
-import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
-import { DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET } from '../shared/manage-message/floating-control-geometry';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { shouldUseActiveFeedLayout } from './duty-editor-layout';
-import type { AnchorSnapshot } from './windowed-feed-scroll-shared';
-
-function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
-  if (narrow) return '100%';
-  if (feedCount <= 1) return '960px';
-  return '100%';
-}
+import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
+import { MessageFeedSkeletons, type AnchorSnapshot } from '../shared/message-feed';
 
 function DutyNeoInitialLoadingSkeletonFeedHeader({
   feedCount,
@@ -174,36 +167,7 @@ function DutyNeoInitialLoadingSkeletonFeedColumn({
         canAddFeed={canAddFeed}
         canCloseFeed={canCloseFeed}
       />
-      {Array.from({ length: messageCount }).map((_, messageIndex) => (
-        <Box
-          key={messageIndex}
-          sx={{
-            display: 'flex',
-            minWidth: 0,
-            flexDirection: 'column',
-            gap: 1.25,
-            pb: messageIndex + 1 === messageCount ? 0 : 2,
-            mb: messageIndex + 1 === messageCount ? 0 : 2,
-            borderBottom:
-              messageIndex + 1 === messageCount ? 'none' : '1px solid rgba(148, 163, 184, 0.14)',
-          }}
-        >
-          <Skeleton
-            variant="rounded"
-            height={28}
-            width={`${72 - Math.min(messageIndex * 6, 18)}%`}
-          />
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-            <Skeleton variant="rounded" height={24} width={72 - messageIndex * 2} />
-            <Skeleton variant="rounded" height={24} width={92 - messageIndex * 3} />
-            <Skeleton variant="rounded" height={24} width={64 - messageIndex * 2} />
-          </Box>
-          <Skeleton variant="rounded" height={92} />
-          <Skeleton variant="rounded" height={18} width="92%" />
-          <Skeleton variant="rounded" height={18} width="84%" />
-          <Skeleton variant="rounded" height={18} width="76%" />
-        </Box>
-      ))}
+      <MessageFeedSkeletons count={messageCount} />
     </Box>
   );
 }
@@ -216,7 +180,6 @@ function DutyNeoInitialLoadingSkeleton({
   narrow: boolean;
 }) {
   const skeletonFeedCount = narrow ? 1 : Math.max(1, feedCount);
-  const skeletonMaxWidth = dutyFeedColumnMaxWidth(skeletonFeedCount, narrow);
   const skeletonMessageCount = narrow ? 4 : 5;
   return (
     <Box className="flex flex-1 min-h-0 h-full w-full overflow-hidden">
@@ -224,7 +187,7 @@ function DutyNeoInitialLoadingSkeleton({
         className="flex flex-1 min-w-0 min-h-0 h-full flex-col"
         sx={{
           width: '100%',
-          maxWidth: skeletonMaxWidth,
+          maxWidth: skeletonFeedCount === 1 ? DUTY_SINGLE_FEED_MAX_WIDTH_PX : '100%',
           mx: 'auto',
         }}
       >
@@ -264,8 +227,7 @@ type RerDutyNeoWorkspaceProps = {
   buildFeedColumnModel: (feed: MessageFeedState) => FeedColumnModel;
   columnRefsRef: MutableRefObject<Record<string, FeedColumnHandle | null>>;
   createMessageFeed: () => void;
-  createMessageFabRef?: Ref<HTMLButtonElement>;
-  openCreateMessageComposer: () => void;
+  openCreateMessageComposer: (feedId: string, focusTarget?: HTMLElement) => void;
   isInitialLoading: boolean;
   messageFeeds: MessageFeedState[];
   narrowScreen: boolean;
@@ -280,7 +242,6 @@ export function RerDutyNeoWorkspace({
   buildFeedColumnModel,
   columnRefsRef,
   createMessageFeed,
-  createMessageFabRef,
   openCreateMessageComposer,
   isInitialLoading,
   messageFeeds,
@@ -291,9 +252,6 @@ export function RerDutyNeoWorkspace({
   editorEmbeddedOpen = false,
 }: RerDutyNeoWorkspaceProps) {
   const { ref: workspaceRef, width: availableWidth } = useObservedWidth<HTMLDivElement>();
-  const [feedsWithOpenPanels, setFeedsWithOpenPanels] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const feedScrollAnchorsRef = useRef(new Map<string, AnchorSnapshot>());
   const handleScrollAnchorSnapshotChange = useCallback(
     (feedId: string, snapshot: AnchorSnapshot | null) => {
@@ -308,15 +266,6 @@ export function RerDutyNeoWorkspace({
       if (!activeFeedIds.has(feedId)) feedScrollAnchorsRef.current.delete(feedId);
     }
   }, [messageFeeds]);
-  const handlePanelOpenChange = useCallback((feedId: string, panelOpen: boolean) => {
-    setFeedsWithOpenPanels((current) => {
-      if (current.has(feedId) === panelOpen) return current;
-      const next = new Set(current);
-      if (panelOpen) next.add(feedId);
-      else next.delete(feedId);
-      return next;
-    });
-  }, []);
   const activeFeedOnly = shouldUseActiveFeedLayout({
     narrowScreen,
     editorEmbeddedOpen,
@@ -348,6 +297,9 @@ export function RerDutyNeoWorkspace({
           actions: {
             ...column.actions,
             onCreateFeed: showAddButton ? createMessageFeed : undefined,
+            onCreateMessage: editorOpen
+              ? undefined
+              : (focusTarget) => openCreateMessageComposer(activeOnlyFeed.id, focusTarget),
           },
         };
       })()
@@ -473,13 +425,14 @@ export function RerDutyNeoWorkspace({
                       aria-hidden
                       sx={{
                         position: 'absolute',
-                        left: `calc(${activeFeedIndex} * (100% / ${messageFeeds.length}))`,
+                        left: 0,
                         bottom: 0,
                         width: `calc(100% / ${messageFeeds.length})`,
                         height: 4,
                         borderRadius: 999,
                         backgroundColor: 'primary.main',
-                        transition: 'left 0.2s ease, width 0.2s ease',
+                        transform: `translateX(${activeFeedIndex * 100}%)`,
+                        transition: 'transform 0.2s ease',
                       }}
                     />
                   )}
@@ -505,7 +458,6 @@ export function RerDutyNeoWorkspace({
                         columnRefsRef.current[activeOnlyFeed.id] = el;
                       }}
                       column={activeOnlyColumn}
-                      onPanelOpenChange={handlePanelOpenChange}
                     />
                   </Box>
                 ) : null
@@ -528,12 +480,7 @@ export function RerDutyNeoWorkspace({
                     const columnView: FeedColumnModel['view'] = {
                       ...column.view,
                       scrollTrackingEnabled: true,
-                      // A lone desktop feed owns its scroll action; only multi-feed layouts need
-                      // to reserve horizontal space for the workspace-level create action.
-                      workspaceFabAvoidance:
-                        !editorOpen && messageFeeds.length > 1 && index === messageFeeds.length - 1
-                          ? 'left'
-                          : 'none',
+                      workspaceFabAvoidance: 'none',
                       initialScrollAnchorSnapshot:
                         feedScrollAnchorsRef.current.get(feed.id) ?? null,
                       onScrollAnchorSnapshotChange: handleScrollAnchorSnapshotChange,
@@ -553,9 +500,11 @@ export function RerDutyNeoWorkspace({
                               index === messageFeeds.length - 1 && showAddButton
                                 ? createMessageFeed
                                 : undefined,
+                            onCreateMessage: editorOpen
+                              ? undefined
+                              : (focusTarget) => openCreateMessageComposer(feed.id, focusTarget),
                           },
                         }}
-                        onPanelOpenChange={handlePanelOpenChange}
                       />
                     );
                   })}
@@ -565,14 +514,6 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      {!editorOpen && feedsWithOpenPanels.size === 0 ? (
-        <CreateMessageFab
-          ref={createMessageFabRef}
-          onClick={openCreateMessageComposer}
-          rightInset={DUTY_WORKSPACE_CREATE_MESSAGE_RIGHT_INSET}
-        />
-      ) : null}
-
       <Backdrop
         open={showLoadingBackdrop}
         sx={{

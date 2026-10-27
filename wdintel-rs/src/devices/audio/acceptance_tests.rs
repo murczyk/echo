@@ -21,7 +21,7 @@ mod text_tests;
 #[path = "processing_tests.rs"]
 mod processing_tests;
 
-pub(super) async fn native_audio_bytes() -> web::Bytes {
+pub(crate) async fn native_audio_bytes() -> web::Bytes {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("original.wav");
     let output = tokio::process::Command::new("ffmpeg")
@@ -51,7 +51,7 @@ pub(super) async fn native_audio_bytes() -> web::Bytes {
     tokio::fs::read(path).await.unwrap().into()
 }
 
-pub(super) async fn receive_command(
+pub(crate) async fn receive_command(
     runtime: &DeviceAudioRuntime,
     actor: Uuid,
     device: Uuid,
@@ -82,7 +82,7 @@ pub(super) async fn receive_command(
     }
 }
 
-pub(super) async fn enabled_audio_device(
+pub(crate) async fn enabled_audio_device(
     env: &crate::types::Env,
 ) -> (Uuid, Uuid) {
     system_settings::ActiveModel {
@@ -998,11 +998,7 @@ async fn audio_receive_cancellation_retains_source_and_admission() {
         _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => panic!("publication barrier not reached"),
     }
     drop(client);
-    assert_eq!(
-        env.device_audio.receive_permits.available_permits(),
-        1,
-        "cancelled HTTP must retain owned receive admission"
-    );
+    let available = env.device_audio.receive_permits.available_permits();
     let busy = upload::open_completed(
         &env.device_audio,
         actor,
@@ -1010,10 +1006,8 @@ async fn audio_receive_cancellation_retains_source_and_admission() {
         &command.upload_url,
     )
     .await;
-    assert!(
-        busy.is_err(),
-        "owned finalization keeps the original source guard"
-    );
+    let source_guard_retained = busy.is_err();
+    drop(busy);
     release.notify_one();
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
@@ -1036,6 +1030,15 @@ async fn audio_receive_cancellation_retains_source_and_admission() {
     })
     .await
     .unwrap();
+    assert_eq!(
+        available,
+        DEVICE_AUDIO_RECEIVE_CONCURRENCY - 1,
+        "cancelled HTTP must retain owned receive admission"
+    );
+    assert!(
+        source_guard_retained,
+        "owned finalization keeps the original source guard"
+    );
     assert_eq!(
         device_audio::Entity::find()
             .count(env.device_audio.file_database().unwrap())
@@ -1296,13 +1299,13 @@ async fn audio_receive_waits_for_internal_slots_after_admission() {
         .device_audio
         .probe_permits
         .clone()
-        .try_acquire_owned()
+        .try_acquire_many_owned(DEVICE_AUDIO_PROBE_CONCURRENCY as u32)
         .unwrap();
     let decrypt = env
         .device_audio
         .decrypt_permits
         .clone()
-        .try_acquire_owned()
+        .try_acquire_many_owned(DEVICE_AUDIO_DECRYPT_CONCURRENCY as u32)
         .unwrap();
     let runtime = env.device_audio.clone();
     let first =
@@ -1316,7 +1319,9 @@ async fn audio_receive_waits_for_internal_slots_after_admission() {
         );
     let admitted =
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            while env.device_audio.receive_permits.available_permits() != 0 {
+            while env.device_audio.receive_permits.available_permits()
+                != DEVICE_AUDIO_RECEIVE_CONCURRENCY - 2
+            {
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             }
         })
@@ -1351,7 +1356,7 @@ async fn audio_receive_waits_for_internal_slots_after_admission() {
         waiting_for_probe,
         "admitted receives must wait for internal decoder slots"
     );
-    assert_eq!(receive_slots, 0);
+    assert_eq!(receive_slots, DEVICE_AUDIO_RECEIVE_CONCURRENCY - 2);
     storing.unwrap();
     assert!(
         waiting_for_decrypt,
@@ -1623,14 +1628,23 @@ async fn audio_storage_upload_uses_authenticated_readback() {
         source
     );
     assert_ne!(store.operator.read(&key).await.unwrap().to_vec(), source);
-    let busy = runtime.decrypt_permits.clone().try_acquire_owned().unwrap();
-    super::tests::assert_status(
-        storage::verified_content(runtime.clone(), key.clone(), expected).await,
-        StatusCode::SERVICE_UNAVAILABLE,
+    let busy = runtime
+        .decrypt_permits
+        .clone()
+        .try_acquire_many_owned(DEVICE_AUDIO_DECRYPT_CONCURRENCY as u32)
+        .unwrap();
+    assert_eq!(
+        storage::verified_content(runtime.clone(), key.clone(), expected)
+            .await
+            .unwrap(),
+        source
     );
     drop(busy);
     store.operator.delete(&key).await.unwrap();
-    assert_eq!(runtime.receive_permits.available_permits(), 1);
+    assert_eq!(
+        runtime.receive_permits.available_permits(),
+        DEVICE_AUDIO_RECEIVE_CONCURRENCY - 1
+    );
     drop(admission);
     assert_eq!(
         runtime.receive_permits.available_permits(),

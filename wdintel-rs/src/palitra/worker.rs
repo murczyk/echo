@@ -18,6 +18,22 @@ const PALITRA_WORKER_MESSAGES_PER_BATCH: usize = 50;
 const PALITRA_WORKER_ERROR_COOLDOWN_SEC: u64 = 3;
 const PALITRA_WORKER_SLEEP_INTERVAL_SEC: u64 = 1;
 
+pub(crate) async fn enqueue_highlight<C: ConnectionTrait>(
+    txn: &C,
+    inbox_id: i64,
+) -> anyhow::Result<()> {
+    palitra_highlight_worker_job::Entity::insert(
+        palitra_highlight_worker_job::ActiveModel {
+            sigint_inbox_item_id: Set(inbox_id),
+        },
+    )
+    .on_conflict_do_nothing()
+    .exec(txn)
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 #[derive(Default)]
 pub struct PalitraPatternCache {
     data: HashMap<i64, PalitraPattern>,

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "unit-search",
+  "revision": "2026-10-10.1",
+  "category": "unit-search",
+  "skills": [
+    "current_user",
+    "inbox_messages",
+    "unit_lookup",
+    "messages_by_id",
+    "interception_context"
+  ],
+  "caseFiles": [
+    "cases.json",
+    "raw/cases-v1.json"
+  ],
+  "artifacts": {
+    "cases.json": "4d0586aae1fe04b7cf02c1d6024e3c2126129f932b6c0e74d544f1a0b8808281",
+    "raw/cases-v1.json": "cc5e6f347e2905e8b4b3aac8fb9cefa26e4b7ec09731c226975b2f3663a75da8"
+  }
+}

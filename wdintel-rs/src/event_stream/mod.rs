@@ -5,8 +5,14 @@ use crate::users::{ensure_basic_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::Json;
 use actix_web::HttpRequest;
+use actix_web::{
+    body::{EitherBody, MessageBody},
+    dev::{ServiceRequest, ServiceResponse},
+    middleware::Next,
+    web, Error, HttpMessage, HttpResponse,
+};
 use chrono::prelude::*;
-use redis::aio::ConnectionManager;
+use redis::aio::{ConnectionManager, MultiplexedConnection};
 use redis::streams::{
     StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply,
 };
@@ -14,10 +20,117 @@ use redis::AsyncCommands;
 
 pub mod types;
 
-/// Sets the maximum number of elements to return per stream
-const REDIS_READ_STREAM_ELEMENTS_MAX: usize = 1000;
-/// Sets the block time in milliseconds
-const REDIS_READ_STREAM_BLOCK_MS: usize = 50000;
+#[derive(Default)]
+pub struct DeploymentMaintenanceState {
+    snapshot: std::sync::RwLock<Option<DeploymentMaintenanceSnapshot>>,
+}
+
+struct DeploymentMaintenanceSnapshot {
+    id: String,
+    expires_at: std::time::Instant,
+}
+
+impl DeploymentMaintenanceState {
+    fn current(&self) -> Option<DeploymentMaintenance> {
+        let snapshot = self.snapshot.read().expect("deployment state lock");
+        let snapshot = snapshot.as_ref()?;
+        let remaining = snapshot
+            .expires_at
+            .checked_duration_since(std::time::Instant::now())?;
+        Some(DeploymentMaintenance {
+            id: snapshot.id.clone(),
+            remaining_ms: remaining.as_millis() as i64,
+        })
+    }
+
+    pub async fn refresh(
+        &self,
+        redis: &mut ConnectionManager,
+    ) -> anyhow::Result<()> {
+        let requested_at = std::time::Instant::now();
+        let maintenance = get_deployment_maintenance(redis).await.c(h!())?;
+        *self.snapshot.write().expect("deployment state lock") = maintenance
+            .map(|maintenance| DeploymentMaintenanceSnapshot {
+                id: maintenance.id,
+                expires_at: requested_at
+                    + std::time::Duration::from_millis(
+                        maintenance.remaining_ms as u64,
+                    ),
+            });
+        Ok(())
+    }
+}
+
+pub async fn deployment_maintenance_worker(
+    mut redis: ConnectionManager,
+    state: web::Data<DeploymentMaintenanceState>,
+    cancel_token: tokio_util::sync::CancellationToken,
+) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_millis(
+        DEPLOYMENT_MAINTENANCE_POLL_INTERVAL_MS,
+    ));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            _ = cancel_token.cancelled() => break,
+            _ = interval.tick() => {
+                if let Err(error) = state.refresh(&mut redis).await {
+                    warn!("failed to refresh deployment state: {error:#?}");
+                }
+            }
+        }
+    }
+}
+
+pub async fn deployment_only_poll<B: MessageBody>(
+    mut req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<EitherBody<B>>, Error> {
+    if req.method() != actix_web::http::Method::POST
+        || req.path() != "/api/event-stream/long-poll"
+    {
+        return next
+            .call(req)
+            .await
+            .map(|response| response.map_into_left_body())
+            .map_err(|error| middleware_error_context(error, h!()));
+    }
+    let poll = req
+        .extract::<Json<LongPollReq>>()
+        .await
+        .map_err(|error| middleware_error_context(error, h!()))?
+        .into_inner();
+    if poll.flavor != LongPollFlavor::LpfGeneric {
+        req.extensions_mut().insert(poll);
+        return next
+            .call(req)
+            .await
+            .map(|response| response.map_into_left_body())
+            .map_err(|error| middleware_error_context(error, h!()));
+    }
+    let state = req
+        .app_data::<web::Data<DeploymentMaintenanceState>>()
+        .c(h!())
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let response = LongPollRsp {
+        events: vec![],
+        last_event_id: poll.last_event_id,
+        deployment_maintenance: state.current(),
+    };
+    Ok(req
+        .into_response(HttpResponse::Ok().json(response))
+        .map_into_right_body())
+}
+
+fn middleware_error_context(error: Error, location: &'static str) -> Error {
+    let response = error.error_response();
+    let error = anyhow::anyhow!(error.to_string()).context(location);
+    actix_web::error::InternalError::from_response(
+        format!("{error:#}"),
+        response,
+    )
+    .into()
+}
 
 pub fn session_stream_id(session_id: Uuid) -> String {
     format!("echo-stream:{session_id}")
@@ -58,10 +171,10 @@ async fn long_poll(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     session: actix_session::Session,
-    req: Json<LongPollReq>,
+    req: web::ReqData<LongPollReq>,
 ) -> Result<Json<LongPollRsp>, AppError> {
     ensure_basic_role(&env.dbx, &user).await.c(h!())?;
-    let user_id = login_id_from_identity(&user)?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
     let account_id = user_id;
     let Some(session_id) = get_session_id(&session).c(h!())? else {
         tokio::time::sleep(tokio::time::Duration::from_millis(
@@ -114,19 +227,15 @@ async fn long_poll(
         get_deployment_maintenance(&mut env.redis.clone())
             .await
             .c(h!())?;
-    if deployment_maintenance_changed(&req, deployment_maintenance.as_ref()) {
+    if req.flavor == LongPollFlavor::LpfGenericFull
+        || deployment_maintenance_changed(&req, deployment_maintenance.as_ref())
+    {
         return Ok(Json(LongPollRsp {
             events: vec![],
             last_event_id: req.last_event_id,
             deployment_maintenance,
         }));
     }
-    let m_last_event_id = req.last_event_id;
-    let srr_key = session_stream_id(session_id);
-    let mut last_stream_id = "$".to_string();
-    if let Some(last_event_id) = m_last_event_id {
-        last_stream_id = last_event_id.to_string();
-    };
     let redis_con_config =
         redis::AsyncConnectionConfig::new().set_response_timeout(None);
     let mut redis_con = env
@@ -134,124 +243,116 @@ async fn long_poll(
         .get_multiplexed_async_connection_with_config(&redis_con_config)
         .await
         .c(h!())?;
-    // Start a window to accumulate events for a minimum time
-    let start_time = std::time::Instant::now();
-    let mut res = vec![];
-
-    // First read: keep existing long block to capture new events if none exist
-    {
-        let srr: Option<StreamReadReply> = redis_con
-            .xread_options(
-                std::slice::from_ref(&srr_key),
-                &[last_stream_id.clone()],
-                &StreamReadOptions::default()
-                    .count(REDIS_READ_STREAM_ELEMENTS_MAX)
-                    .block(REDIS_READ_STREAM_BLOCK_MS),
-            )
-            .await
-            .c(h!())?;
-
-        if let Some(srr) = srr {
-            for StreamKey { key, ids } in srr.keys {
-                if key == srr_key {
-                    for StreamId { id, map, .. } in ids {
-                        last_stream_id = id.to_string();
-                        if let Some(v) = map.get("v") {
-                            if let redis::Value::BulkString(bytes) = v {
-                                let mut event =
-                                    serde_json::from_slice::<EventMsg>(
-                                        &bytes[..],
-                                    )
-                                    .c(h!())?;
-                                event.id = id.clone();
-                                res.push(event);
-                            } else {
-                                warn!(
-                                    "Error: Impossible! Error: Weird non-byte data"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // If the read returned quickly (due to existing backlog or fast events),
-    // keep accumulating until the minimum response time has elapsed.
-    loop {
-        let elapsed_ms = start_time.elapsed().as_millis() as u64;
-        if elapsed_ms >= LONG_POLL_MIN_RESPONSE_TIME_MS {
-            break;
-        }
-        let remaining = (LONG_POLL_MIN_RESPONSE_TIME_MS - elapsed_ms) as usize;
-        // Block only up to the remaining window (but never exceed our max block)
-        let block_ms = remaining.clamp(1, REDIS_READ_STREAM_BLOCK_MS);
-
-        let srr: Option<StreamReadReply> = redis_con
-            .xread_options(
-                std::slice::from_ref(&srr_key),
-                &[last_stream_id.clone()],
-                &StreamReadOptions::default()
-                    .count(REDIS_READ_STREAM_ELEMENTS_MAX)
-                    .block(block_ms),
-            )
-            .await
-            .c(h!())?;
-
-        if let Some(srr) = srr {
-            for StreamKey { key, ids } in srr.keys {
-                if key == srr_key {
-                    for StreamId { id, map, .. } in ids {
-                        last_stream_id = id.to_string();
-                        if let Some(v) = map.get("v") {
-                            if let redis::Value::BulkString(bytes) = v {
-                                let mut event =
-                                    serde_json::from_slice::<EventMsg>(
-                                        &bytes[..],
-                                    )
-                                    .c(h!())?;
-                                event.id = id.clone();
-                                res.push(event);
-                            } else {
-                                warn!(
-                                    "Error: Impossible! Error: Weird non-byte data"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let (events, last_event_id) = read_stream_events(
+        &mut redis_con,
+        &session_stream_id(session_id),
+        &req,
+    )
+    .await
+    .c(h!())?;
     let deployment_maintenance =
         get_deployment_maintenance(&mut env.redis.clone())
             .await
             .c(h!())?;
     Ok(Json(LongPollRsp {
-        events: res,
-        last_event_id: if last_stream_id == "$" {
-            None
-        } else {
-            Some(last_stream_id)
-        },
+        events,
+        last_event_id,
         deployment_maintenance,
     }))
 }
 
+async fn read_stream_events(
+    redis: &mut MultiplexedConnection,
+    stream_key: &str,
+    req: &LongPollReq,
+) -> anyhow::Result<(Vec<EventMsg>, Option<String>)> {
+    let started = std::time::Instant::now();
+    let mut last_stream_id =
+        req.last_event_id.clone().unwrap_or_else(|| "$".to_string());
+    let mut events = vec![];
+    loop {
+        let response_time_ms = if events.is_empty() {
+            LONG_POLL_READ_STREAM_BLOCK_MS as u64
+        } else {
+            LONG_POLL_MIN_RESPONSE_TIME_MS
+        };
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        if elapsed_ms >= response_time_ms {
+            break;
+        }
+        let reply: Option<StreamReadReply> = redis
+            .xread_options(
+                &[stream_key],
+                &[&last_stream_id],
+                &StreamReadOptions::default()
+                    .count(LONG_POLL_READ_STREAM_ELEMENTS_MAX)
+                    .block((response_time_ms - elapsed_ms) as usize),
+            )
+            .await
+            .c(h!())?;
+        append_stream_events(
+            reply,
+            stream_key,
+            &req.flavor,
+            &mut last_stream_id,
+            &mut events,
+        )
+        .c(h!())?;
+    }
+    let last_event_id = (last_stream_id != "$").then_some(last_stream_id);
+    Ok((events, last_event_id))
+}
+
+fn append_stream_events(
+    reply: Option<StreamReadReply>,
+    stream_key: &str,
+    flavor: &LongPollFlavor,
+    last_stream_id: &mut String,
+    events: &mut Vec<EventMsg>,
+) -> anyhow::Result<()> {
+    let Some(reply) = reply else {
+        return Ok(());
+    };
+    for StreamKey { key, ids } in reply.keys {
+        if key != stream_key {
+            continue;
+        }
+        for StreamId { id, map, .. } in ids {
+            *last_stream_id = id.clone();
+            if let Some(redis::Value::BulkString(bytes)) = map.get("v") {
+                let mut event: EventMsg =
+                    serde_json::from_slice(bytes).c(h!())?;
+                let relevant = match event.event_type {
+                    EventType::ETGeneric => true,
+                    EventType::ETInboxChanged(_) => matches!(
+                        flavor,
+                        LongPollFlavor::LpfRer | LongPollFlavor::LpfAnalysisNeo
+                    ),
+                    _ => false,
+                };
+                if relevant {
+                    event.id = id;
+                    events.push(event);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn get_deployment_maintenance(
     redis: &mut ConnectionManager,
-) -> Result<Option<DeploymentMaintenance>, AppError> {
-    let id: Option<String> =
-        redis.get(DEPLOYMENT_MAINTENANCE_REDIS_KEY).await.c(h!())?;
-    let Some(id) = id else {
-        return Ok(None);
-    };
-    let remaining_ms: i64 = redis::cmd("PTTL")
-        .arg(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
+) -> anyhow::Result<Option<DeploymentMaintenance>> {
+    let (id, remaining_ms): (Option<String>, i64) = redis::pipe()
+        .atomic()
+        .get(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
+        .pttl(DEPLOYMENT_MAINTENANCE_REDIS_KEY)
         .query_async(redis)
         .await
         .c(h!())?;
+    let Some(id) = id else {
+        return Ok(None);
+    };
     if remaining_ms <= 0 {
         return Ok(None);
     }
@@ -411,6 +512,7 @@ mod tests {
     #[test]
     fn deserializes_long_poll_requests_without_maintenance_protocol() {
         let req: LongPollReq = serde_json::from_value(serde_json::json!({
+            "flavor": "generic",
             "session_id": "current",
             "last_event_id": null
         }))
@@ -420,6 +522,309 @@ mod tests {
         assert_eq!(req.known_deployment_maintenance_id, None);
     }
 
+    #[actix_web::test]
+    async fn issue_3866_only_generic_bypasses_auth_and_activity() {
+        use actix_web::dev::Service;
+        use actix_web::{test, App};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let state = web::Data::new(DeploymentMaintenanceState::default());
+        *state.snapshot.write().unwrap() =
+            Some(DeploymentMaintenanceSnapshot {
+                id: "deploy-3866".to_string(),
+                expires_at: std::time::Instant::now()
+                    + std::time::Duration::from_secs(120),
+            });
+        let calls = Arc::new(AtomicUsize::new(0));
+        let inner_calls = calls.clone();
+        let app = test::init_service(
+            App::new()
+                .app_data(state.clone())
+                .wrap_fn(move |req, next| {
+                    inner_calls.fetch_add(1, Ordering::SeqCst);
+                    next.call(req)
+                })
+                .wrap(actix_web::middleware::from_fn(deployment_only_poll))
+                .route(
+                    "/api/event-stream/long-poll",
+                    web::post().to(
+                        |req: web::ReqData<LongPollReq>| async move {
+                            HttpResponse::Unauthorized().json(&req.flavor)
+                        },
+                    ),
+                ),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/event-stream/long-poll")
+                .set_json(serde_json::json!({
+                    "flavor": "generic",
+                    "session_id": "current",
+                    "last_event_id": "123-0"
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), actix_web::http::StatusCode::OK);
+        assert!(!response.headers().contains_key("set-cookie"));
+        let response: LongPollRsp = test::read_body_json(response).await;
+        assert!(response.events.is_empty());
+        assert_eq!(response.last_event_id.as_deref(), Some("123-0"));
+        assert_eq!(response.deployment_maintenance.unwrap().id, "deploy-3866");
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        for flavor in ["rer", "analysis-neo", "generic-full"] {
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/event-stream/long-poll")
+                    .set_json(serde_json::json!({
+                        "flavor": flavor,
+                        "session_id": "current",
+                        "last_event_id": null
+                    }))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(
+                response.status(),
+                actix_web::http::StatusCode::UNAUTHORIZED
+            );
+            let received: String = test::read_body_json(response).await;
+            assert_eq!(received, flavor);
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+
+        state.snapshot.write().unwrap().as_mut().unwrap().expires_at =
+            std::time::Instant::now() - std::time::Duration::from_millis(1);
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/event-stream/long-poll")
+                .set_json(serde_json::json!({
+                    "flavor": "generic",
+                    "session_id": "current",
+                    "last_event_id": null
+                }))
+                .to_request(),
+        )
+        .await;
+        let response: LongPollRsp = test::read_body_json(response).await;
+        assert!(response.deployment_maintenance.is_none());
+    }
+
+    #[actix_web::test]
+    async fn issue_3866_forwarding_preserves_context_and_compressed_requests() {
+        use actix_web::dev::Service;
+        use actix_web::{test, App};
+
+        let app = test::init_service(
+            App::new()
+                .wrap_fn(|req, next| {
+                    let error = if req.path() == "/forwarding-error" {
+                        Some(actix_web::error::ErrorForbidden("forbidden"))
+                    } else if req
+                        .extensions()
+                        .get::<LongPollReq>()
+                        .is_some_and(|poll| poll.session_id == "expired")
+                    {
+                        Some(actix_web::error::ErrorUnauthorized(
+                            "expired session",
+                        ))
+                    } else {
+                        None
+                    };
+                    match error {
+                        Some(error) => futures::future::Either::Left(
+                            std::future::ready(Err(error)),
+                        ),
+                        None => futures::future::Either::Right(next.call(req)),
+                    }
+                })
+                .wrap(actix_web::middleware::from_fn(deployment_only_poll))
+                .route(
+                    "/api/event-stream/long-poll",
+                    web::post().to(
+                        |req: web::ReqData<LongPollReq>| async move {
+                            HttpResponse::Unauthorized().json(&req.flavor)
+                        },
+                    ),
+                ),
+        )
+        .await;
+
+        use std::io::Write;
+        let mut compressed = flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::default(),
+        );
+        compressed
+            .write_all(
+                br#"{"flavor":"generic-full","session_id":"current","last_event_id":null}"#,
+            )
+            .unwrap();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/event-stream/long-poll")
+                .insert_header(("content-type", "application/json"))
+                .insert_header(("content-encoding", "gzip"))
+                .set_payload(compressed.finish().unwrap())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::UNAUTHORIZED
+        );
+        let received: String = test::read_body_json(response).await;
+        assert_eq!(received, "generic-full");
+
+        let malformed = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .insert_header(("content-type", "application/json"))
+            .set_payload("{")
+            .to_request();
+        let unauthenticated = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "flavor": "generic-full",
+                "session_id": "expired",
+                "last_event_id": null
+            }))
+            .to_request();
+        let forbidden = test::TestRequest::get()
+            .uri("/forwarding-error")
+            .to_request();
+        let unsupported = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "flavor": "unknown",
+                "session_id": "current",
+                "last_event_id": null
+            }))
+            .to_request();
+        let missing_flavor = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "session_id": "current",
+                "last_event_id": null
+            }))
+            .to_request();
+        let missing_state = test::TestRequest::post()
+            .uri("/api/event-stream/long-poll")
+            .set_json(serde_json::json!({
+                "flavor": "generic",
+                "session_id": "current",
+                "last_event_id": null
+            }))
+            .to_request();
+        for (request, status) in [
+            (malformed, actix_web::http::StatusCode::BAD_REQUEST),
+            (unsupported, actix_web::http::StatusCode::BAD_REQUEST),
+            (missing_flavor, actix_web::http::StatusCode::BAD_REQUEST),
+            (unauthenticated, actix_web::http::StatusCode::UNAUTHORIZED),
+            (forbidden, actix_web::http::StatusCode::FORBIDDEN),
+            (
+                missing_state,
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        ] {
+            let error =
+                test::try_call_service(&app, request).await.unwrap_err();
+            assert_eq!(error.as_response_error().status_code(), status);
+            assert!(format!("{error:?}").contains("event_stream/mod.rs"));
+            if status == actix_web::http::StatusCode::UNAUTHORIZED {
+                assert!(error.to_string().contains("expired session"));
+            }
+        }
+    }
+
+    #[actix_web::test]
+    async fn issue_3866_only_relevant_events_complete_a_poll() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let client = crate::new_redisb(&config).await.unwrap();
+        let options =
+            redis::AsyncConnectionConfig::new().set_response_timeout(None);
+        let mut producer = client
+            .get_multiplexed_async_connection_with_config(&options)
+            .await
+            .unwrap();
+        let stream = format!("echo-test-stream:{}", Uuid::now_v7());
+        let event = EventMsg::new(EventType::ETNetworkChanged);
+        let _: String = producer
+            .xadd(
+                &stream,
+                "*",
+                &[("v", serde_json::to_string(&event).unwrap())],
+            )
+            .await
+            .unwrap();
+        let _: bool = producer.expire(&stream, 15).await.unwrap();
+
+        let mut connections = vec![];
+        let mut requests = vec![];
+        for flavor in [LongPollFlavor::LpfRer, LongPollFlavor::LpfAnalysisNeo] {
+            connections.push(
+                client
+                    .get_multiplexed_async_connection_with_config(&options)
+                    .await
+                    .unwrap(),
+            );
+            requests.push(LongPollReq {
+                flavor,
+                session_id: "current".to_string(),
+                last_event_id: Some("0-0".to_string()),
+                deployment_maintenance_protocol: None,
+                known_deployment_maintenance_id: None,
+            });
+        }
+        let mut polls: Vec<_> = connections
+            .iter_mut()
+            .zip(&requests)
+            .map(|(redis, req)| {
+                Box::pin(read_stream_events(redis, &stream, req))
+            })
+            .collect();
+        let wait = std::time::Duration::from_millis(2100);
+        for result in futures::future::join_all(
+            polls
+                .iter_mut()
+                .map(|poll| tokio::time::timeout(wait, poll)),
+        )
+        .await
+        {
+            assert!(result.is_err(), "catalog events must not complete a poll");
+        }
+
+        let event = EventMsg::new(EventType::ETInboxChanged(7))
+            .with_origin(Some("other-tab".to_string()))
+            .with_intelligence_report();
+        let inbox_id: String = producer
+            .xadd(
+                &stream,
+                "*",
+                &[("v", serde_json::to_string(&event).unwrap())],
+            )
+            .await
+            .unwrap();
+        for poll in &mut polls {
+            let (events, cursor) =
+                tokio::time::timeout(std::time::Duration::from_secs(1), poll)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(cursor.as_ref(), Some(&inbox_id));
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].event_type, EventType::ETInboxChanged(7));
+            assert_eq!(events[0].origin, event.origin);
+            assert!(events[0].intelligence_report);
+        }
+        let _: usize = producer.del(&stream).await.unwrap();
+    }
+
     #[test]
     fn returns_maintenance_changes_immediately_only_for_supported_clients() {
         let maintenance = DeploymentMaintenance {
@@ -427,6 +832,7 @@ mod tests {
             remaining_ms: 120_000,
         };
         let mut req = LongPollReq {
+            flavor: LongPollFlavor::LpfGeneric,
             session_id: "current".to_string(),
             last_event_id: None,
             deployment_maintenance_protocol: None,

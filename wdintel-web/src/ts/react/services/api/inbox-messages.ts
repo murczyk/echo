@@ -16,6 +16,7 @@ import type {
   MessageMediaInfo,
   MessageIdsRsp,
   SignalGroupEntry,
+  SignalGroupColor,
   SignalGroupStats,
   SignalProfilesRsp,
 } from '../../../../Bindings';
@@ -98,6 +99,7 @@ export type MessageMediaInfoRaw = Partial<MessageMediaInfo> & {
   file_name?: string | null;
   size_bytes?: number;
   kmz_conversion_status?: string | null;
+  coordinate_status?: MessageMediaInfo['coordinateStatus'];
 };
 
 export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaInfo {
@@ -111,6 +113,7 @@ export function normalizeMessageMediaInfo(m: MessageMediaInfoRaw): MessageMediaI
     transcription: (m.transcription ?? raw.transcription ?? null) as string | null,
     ocr: m.ocr ?? null,
     summary: m.summary ?? null,
+    coordinateStatus: m.coordinateStatus ?? m.coordinate_status ?? null,
     positions: transformSnakeToCamel<MessageMediaInfo['positions']>(m.positions ?? []),
     kmzConversionStatus: (m.kmzConversionStatus ?? raw.kmz_conversion_status ?? null) as
       string | null,
@@ -277,6 +280,7 @@ function normalizeInboxMessage(
   const raw = m as Record<string, unknown>;
   const messageUuid = (m.messageUuid ?? raw.message_uuid ?? null) as string | null;
   const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
+  const groupMasterKeys = (m.groupMasterKeys ?? raw.group_master_keys ?? null) as string[] | null;
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const networkName = (m.networkName ?? raw.network_name ?? null) as string | null;
   const deviceName = (m.deviceName ?? raw.device_name ?? null) as string | null;
@@ -315,6 +319,7 @@ function normalizeInboxMessage(
     messageUuid,
     isTimeNull: m.isTimeNull ?? null,
     groupMasterKey,
+    groupMasterKeys,
     networkIds,
     networkName,
     deviceName,
@@ -357,12 +362,17 @@ function normalizeSignalGroupEntry(
   return {
     masterKey: (g.masterKey ?? g.master_key ?? '') as string,
     name: (g.name ?? '') as string,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
     ignoreOperativny: (raw.ignoreOperativny ?? raw.ignore_operativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(raw),
     disableNetworkAssignment: (raw.disableNetworkAssignment ??
       raw.disable_network_assignment ??
       false) as boolean,
     isAviationGroup: (raw.isAviationGroup ?? raw.is_aviation_group ?? false) as boolean,
+    aiTranscriptAnalysisEnabled: (raw.aiTranscriptAnalysisEnabled ??
+      raw.ai_transcript_analysis_enabled ??
+      false) as boolean,
+    fetchNewMessages: (raw.fetchNewMessages ?? raw.fetch_new_messages ?? true) as boolean,
     groupStats:
       groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
     adminData: (raw.adminData ?? raw.admin_data ?? null) as GroupAdminData | null,
@@ -417,6 +427,8 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     selected_unit_ids: emptyArrToNull(req.selectedUnitIds),
     denied_units: emptyArrToNull(req.deniedUnits),
     denied_unit_ids: emptyArrToNull(req.deniedUnitIds),
+    selected_device_names: emptyArrToNull(req.selectedDeviceNames),
+    denied_device_names: emptyArrToNull(req.deniedDeviceNames),
     selected_locations: emptyArrToNull(req.selectedLocations),
     denied_locations: emptyArrToNull(req.deniedLocations),
     nolimit: req.nolimit,
@@ -428,6 +440,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
     or_with_coords: req.orWithCoords,
     newest_first: req.newestFirst,
     search: req.search,
+    search_mode: req.searchMode,
     highlight_callsigns: req.highlightCallsigns,
     highlight_keywords: req.highlightKeywords,
     highlight_keyword_set_id: req.highlightKeywordSetId,

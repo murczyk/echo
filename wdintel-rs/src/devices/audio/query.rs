@@ -26,6 +26,7 @@ pub(super) struct VisibleDevice {
 pub(super) struct AudioRow {
     pub id: Uuid,
     pub device_id: Uuid,
+    pub name: String,
     pub recording_started_at: chrono::DateTime<chrono::FixedOffset>,
     pub recording_ended_at: chrono::DateTime<chrono::FixedOffset>,
     pub duration_us: i64,
@@ -38,6 +39,7 @@ impl AudioRow {
         DeviceAudio {
             id: self.id.to_string(),
             device_id: self.device_id.to_string(),
+            name: self.name,
             recording_started_at: self
                 .recording_started_at
                 .with_timezone(&Utc)
@@ -65,6 +67,7 @@ pub(super) fn page_query(
         .columns([
             C::Id,
             C::DeviceId,
+            C::Name,
             C::RecordingStartedAt,
             C::RecordingEndedAt,
             C::DurationUs,
@@ -93,6 +96,7 @@ pub(super) fn page_query(
 pub(super) struct AudioDetailRow {
     id: Uuid,
     device_id: Uuid,
+    name: String,
     recording_started_at: chrono::DateTime<chrono::FixedOffset>,
     recording_ended_at: chrono::DateTime<chrono::FixedOffset>,
     duration_us: i64,
@@ -103,10 +107,15 @@ pub(super) struct AudioDetailRow {
 }
 
 impl AudioDetailRow {
-    pub fn details(self, can_edit: bool) -> DeviceAudioDetails {
+    pub fn details(
+        self,
+        automatic_transcription: super::types::DeviceAudioAutomaticTranscriptionSnapshot,
+        transcription_availability: super::types::DeviceAudioTranscriptionAvailability,
+    ) -> DeviceAudioDetails {
         let audio = AudioRow {
             id: self.id,
             device_id: self.device_id,
+            name: self.name,
             recording_started_at: self.recording_started_at,
             recording_ended_at: self.recording_ended_at,
             duration_us: self.duration_us,
@@ -120,7 +129,9 @@ impl AudioDetailRow {
                 text: self.transcription,
                 text_version: self.text_version.to_string(),
             },
-            can_edit,
+            can_edit: transcription_availability.can_edit_manual,
+            automatic_transcription,
+            transcription_availability,
         }
     }
 }
@@ -136,6 +147,7 @@ pub(super) async fn audio_detail<C: ConnectionTrait>(
         .columns([
             C::Id,
             C::DeviceId,
+            C::Name,
             C::RecordingStartedAt,
             C::RecordingEndedAt,
             C::DurationUs,
@@ -488,7 +500,24 @@ pub(super) async fn publish(
     attempt: &device_audio_ingest::Model,
     media: &ProbedAudio,
 ) -> anyhow::Result<ReceiveDeviceAudioOutcome> {
+    let policy = Some(
+        super::transcription::publication_guard(runtime, attempt.device_id)
+            .await
+            .c(h!())?,
+    );
+    let forwarding = policy
+        .as_ref()
+        .c(h!())?
+        .forwarding_snapshot()
+        .await
+        .c(h!())?;
     let transaction = runtime.file_database().c(h!())?.begin().await.c(h!())?;
+    let enabled = super::transcription::publication_setting(
+        &transaction,
+        attempt.device_id,
+    )
+    .await
+    .c(h!())?;
     let current = locked_attempt(&transaction, attempt.id).await.c(h!())?;
     if current.status != "storing" || current.lease_token != attempt.lease_token
     {
@@ -521,9 +550,30 @@ pub(super) async fn publish(
             .c(h!())?
             .ok_or_else(|| anyhow::anyhow!("published audio is missing"))
             .c(h!())?;
+        super::transcription::publish(
+            &transaction,
+            audio.device_id,
+            audio.id,
+            enabled,
+            policy.as_ref(),
+        )
+        .await
+        .c(h!())?;
+        super::forwarding::publish(
+            &transaction,
+            &audio,
+            current.actor_id,
+            &forwarding,
+        )
+        .await
+        .c(h!())?;
         accepted(&audio)
     };
-    transaction.commit().await.c(h!())?;
+    if let Some(policy) = policy {
+        policy.commit_files(transaction).await.c(h!())?;
+    } else {
+        transaction.commit().await.c(h!())?;
+    }
     Ok(outcome)
 }
 
@@ -556,6 +606,9 @@ fn ready_audio(
         text_version: Set(Uuid::new_v4()),
         processed: Set(false),
         processing_version: Set(Uuid::new_v4()),
+        automatic_transcription: Set(None),
+        automatic_transcribed_at: Set(None),
+        automatic_transcription_pending: Set(None),
     })
 }
 
@@ -571,6 +624,7 @@ pub(super) fn audio_summary(audio: &device_audio::Model) -> DeviceAudio {
     DeviceAudio {
         id: audio.id.to_string(),
         device_id: audio.device_id.to_string(),
+        name: audio.name.clone(),
         recording_started_at: audio
             .recording_started_at
             .with_timezone(&Utc)

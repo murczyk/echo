@@ -18,9 +18,7 @@ type Msg
     | InitGotTime Posix
     | GotCurrentUser (Result ApiError B.User)
     | DateRangePickerMsg Shared.Components.DateRangePicker.Msg
-    | EventPollTrigger (Maybe String)
-    | EventPollReceived (Result ApiError B.LongPollRsp)
-    | InboxEvents (List B.EventMsg)
+    | InboxEvents (List Int)
     | InboxMessagesUpdated (Result ApiError B.MessageIdsRsp)
     | GotInbox (Result ApiError B.InboxMessagesRsp)
     | GotInboxMore (Result ApiError B.InboxMessagesRsp)
@@ -97,6 +95,7 @@ type Msg
     | SavedFilterDeleteDone (Result ApiError ())
     | SavedFilterSelect Int
     | SearchInput String
+    | SearchFocusChanged Bool
     | SelMetadataCcMsg (Select.Msg String)
     | SelMetadataSenderMsg (Select.Msg String)
     | SelMetadataReceiverMsg (Select.Msg String)
@@ -104,6 +103,7 @@ type Msg
     | OnlyWithMetadataChanged Bool
     | WithoutMetadataChanged Bool
     | WithoutNetworkChanged Bool
+    | SearchModeChanged B.AnalysisSearchMode
     | SearchDo
     | SearchInputKeyDown Int
     | SearchReset
@@ -134,6 +134,8 @@ type Msg
     | ReportTagsOnlyThisUnitToggle
     | ReportTagsOnlyThisUnitForReportToggle
     | Report1213LinkedNetworksOnlyToggle
+    | Report1217IncludeWithoutCommentsToggle
+    | Report1217OnlyThisUnitCommentsToggle
     | ReportWithoutCommentsToggle
     | ReportBabakNewCallsignMinMentionsInput String
     | ReportDigestOmitExoIdToggle
@@ -141,11 +143,14 @@ type Msg
     | ReportTagsWithoutBotTagsToggle
     | ReportAdvancedSendersToggle
     | ReportReoNoCommentsToggle
+    | ReportReoSummaryOnlyToggle
     | ReportSposobUnitNameInput String
     | DeleteMessageConfirm
     | DeleteMessageCancel
     | DeleteMessageDone Int (Result ApiError ())
-    | GotStatsCount (Result ApiError B.CountStatsRsp)
+    | GotStatsCount Int B.AnalysisStatsReq StatsCountField (Result ApiError Int)
+    | GotMessageStatsCount Int B.AnalysisStatsReq (Result ApiError B.MessageStatsCountRsp)
+    | GotUnitMatchStatsCount Int B.AnalysisStatsReq (Result ApiError B.UnitMatchStatsCountRsp)
     | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)
     | GotUserDutySettings (Result ApiError B.UserDutySettingsDto)
     | GotStatsAors (Result ApiError B.AreaOfResponsibilityStatsRsp)

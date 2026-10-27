@@ -50,9 +50,24 @@ pub struct Section {
 }
 
 pub async fn run(env: Arc<Env>, cancel: CancellationToken, kind: &'static str) {
+    let mut next_search_cleanup = std::time::Instant::now();
     loop {
         if cancel.is_cancelled() {
             break;
+        }
+        if kind == "extract" && std::time::Instant::now() >= next_search_cleanup
+        {
+            if let Err(error) =
+                super::analytics::reconcile_search_changes(&env.dbx).await
+            {
+                crate::types::error!(
+                    "attachment search change reconciliation: {error:#}"
+                );
+            }
+            next_search_cleanup = std::time::Instant::now()
+                + Duration::from_secs(
+                    ATTACHMENT_SEARCH_CHANGE_CLEANUP_INTERVAL_SECS,
+                );
         }
         match step(&env, kind).await {
             Ok(true) => continue,
@@ -83,23 +98,44 @@ async fn step(env: &Env, kind: &str) -> anyhow::Result<bool> {
     if kind == "extract" && !settings.backfill_complete {
         discover(env).await.c(h!())?;
     }
+    let Some(job) = claim_job(&env.dbx, kind).await.c(h!())? else {
+        return Ok(false);
+    };
+    process_job(env, kind, &settings, job).await.c(h!())?;
+    Ok(true)
+}
+
+async fn claim_job<C>(db: &C, kind: &str) -> anyhow::Result<Option<Job>>
+where
+    C: sea_orm::ConnectionTrait,
+{
     let lease = Uuid::now_v7();
-    let job = rows::<Job,_>(&env.dbx, "with selected as (
+    rows::<Job,_>(db, "with selected as (
       select job.id from attachment_job job
-      join attachment_document doc on doc.media_id=job.media_id and doc.generation=job.generation
-      join signal_message_media media on media.id=job.media_id
-      join signal_message message on message.id=media.signal_message_id and not message.deleted
       where job.kind=$1 and job.next_attempt_at <= now() at time zone 'utc'
+      and job.state in ('queued','retry_wait','running')
       and (job.state in ('queued','retry_wait') or job.state='running' and job.lease_until < now() at time zone 'utc')
+      and exists (
+        select 1 from attachment_document doc
+        join signal_message_media media on media.id=doc.media_id
+        join signal_message message on message.id=media.signal_message_id and not message.deleted
+        where doc.media_id=job.media_id and doc.generation=job.generation
+        offset 0
+      )
       order by job.created_at desc,job.id limit 1 for update of job skip locked
     ) update attachment_job job set state='running',lease=$2,
        lease_until=(now() at time zone 'utc') + make_interval(secs=>$3),
        attempts=attempts+1,updated_at=now() at time zone 'utc'
       from selected where job.id=selected.id returning job.*",
-      vec![kind.into(),lease.into(),(ATTACHMENT_LEASE_SECS as f64).into()]).await.c(h!())?.pop();
-    let Some(job) = job else {
-        return Ok(false);
-    };
+      vec![kind.into(),lease.into(),(ATTACHMENT_LEASE_SECS as f64).into()]).await.c(h!()).map(|mut jobs| jobs.pop())
+}
+
+async fn process_job(
+    env: &Env,
+    kind: &str,
+    settings: &attachment_settings::Model,
+    job: Job,
+) -> anyhow::Result<()> {
     let outcome = match kind {
         "extract" => extract(env, &job).await,
         "summary" => {
@@ -118,7 +154,7 @@ async fn step(env: &Env, kind: &str) -> anyhow::Result<bool> {
               attempts=case when $3='queued' then greatest(attempts-1,0) else attempts end,
               next_attempt_at=(now() at time zone 'utc') + interval '10 seconds',
               updated_at=now() at time zone 'utc' where id=$1 and lease=$2",
-              vec![job.id.into(),lease.into(),(if done { "completed" } else { "queued" }).into()]).await.c(h!())?;
+              vec![job.id.into(),job.lease.into(),(if done { "completed" } else { "queued" }).into()]).await.c(h!())?;
         }
         Err(error) => {
             let error: String = format!("{error:#}")
@@ -129,10 +165,10 @@ async fn step(env: &Env, kind: &str) -> anyhow::Result<bool> {
             let changed = execute(&env.dbx, "update attachment_job set state=$3,last_error=$4,lease=null,lease_until=null,
               next_attempt_at=(now() at time zone 'utc') + make_interval(secs=>$5),
               updated_at=now() at time zone 'utc' where id=$1 and lease=$2",
-              vec![job.id.into(),lease.into(),(if terminal { "failed" } else { "retry_wait" }).into(),
+              vec![job.id.into(),job.lease.into(),(if terminal { "failed" } else { "retry_wait" }).into(),
                 error.clone().into(),(10.0*2f64.powi(job.attempts.min(6))).into()]).await.c(h!())?;
             if changed == 0 {
-                return Ok(true);
+                return Ok(());
             }
             execute(&env.dbx, "update attachment_document set last_error=$3,updated_at=now() at time zone 'utc',
               state=case when $4='extract' and $5 then 'failed' else state end,
@@ -142,7 +178,7 @@ async fn step(env: &Env, kind: &str) -> anyhow::Result<bool> {
               vec![job.media_id.into(),job.generation.into(),error.into(),kind.into(),terminal.into()]).await.c(h!())?;
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 async fn discover(env: &Env) -> anyhow::Result<()> {
@@ -548,8 +584,13 @@ pub async fn publish(
     let result = publish_chunks(env, job, &key, revision, &mut package).await;
     match result {
         Ok(previous) => {
-            if let Some(previous) = previous {
-                super::store::delete_artifact(env, &previous).await;
+            if let Some(published) = previous {
+                if let Some(previous) = published.previous_artifact {
+                    super::store::delete_artifact(env, &previous).await;
+                }
+                crate::media_summary::publish_inbox_change(env, job.media_id)
+                    .await
+                    .c(h!())?;
             }
             Ok(())
         }
@@ -560,13 +601,17 @@ pub async fn publish(
     }
 }
 
+struct PublishedRevision {
+    previous_artifact: Option<String>,
+}
+
 async fn publish_chunks(
     env: &Env,
     job: &Job,
     key: &str,
     revision: Uuid,
     package: &mut Package,
-) -> anyhow::Result<Option<String>> {
+) -> anyhow::Result<Option<PublishedRevision>> {
     if !package.images.is_empty() {
         package.complete = false;
         package.warnings.push(format!(
@@ -634,5 +679,167 @@ async fn publish_chunks(
         .await
         .c(h!())?;
     tx.commit().await.c(h!())?;
-    Ok(previous.artifact_key)
+    Ok(Some(PublishedRevision {
+        previous_artifact: previous.artifact_key,
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::attachments::tests::{attachment, fixture};
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn attachment_claim_preserves_eligibility_and_newest_first_3780() {
+        let (env, _, message) = fixture().await;
+        let mut jobs = Vec::new();
+        for name in ["old", "new", "future", "leased", "stale", "done"] {
+            jobs.push(attachment(&env, message, name).await);
+        }
+        execute(&env.dbx, "update attachment_job set state='queued',lease=null,lease_until=null,next_attempt_at=now() at time zone 'utc'-interval '1 minute',created_at=(now() at time zone 'utc')+make_interval(secs=>array_position($1::uuid[],id)) where id=any($1::uuid[])", vec![jobs.iter().map(|job| job.id).collect::<Vec<_>>().into()]).await.unwrap();
+        execute(&env.dbx, "update attachment_job set next_attempt_at=(now() at time zone 'utc')+interval '1 hour' where id=$1", vec![jobs[2].id.into()]).await.unwrap();
+        execute(&env.dbx, "update attachment_job set state='running',lease=gen_random_uuid(),lease_until=(now() at time zone 'utc')+interval '1 hour' where id=$1", vec![jobs[3].id.into()]).await.unwrap();
+        execute(&env.dbx, "update attachment_job set generation=gen_random_uuid() where id=$1", vec![jobs[4].id.into()]).await.unwrap();
+        execute(
+            &env.dbx,
+            "update attachment_job set state='completed' where id=$1",
+            vec![jobs[5].id.into()],
+        )
+        .await
+        .unwrap();
+        assert!(claim_job(&env.dbx, "summary").await.unwrap().is_none());
+        let newest = claim_job(&env.dbx, "extract").await.unwrap().unwrap();
+        assert_eq!(newest.id, jobs[1].id);
+        assert_eq!(
+            claim_job(&env.dbx, "extract").await.unwrap().unwrap().id,
+            jobs[0].id
+        );
+        assert!(claim_job(&env.dbx, "extract").await.unwrap().is_none());
+        execute(&env.dbx, "update attachment_job set lease_until=(now() at time zone 'utc')-interval '1 second' where id=$1", vec![newest.id.into()]).await.unwrap();
+        let reclaimed = claim_job(&env.dbx, "extract").await.unwrap().unwrap();
+        assert_eq!(reclaimed.id, newest.id);
+        assert_ne!(reclaimed.lease, newest.lease);
+        assert_eq!(reclaimed.attempts, newest.attempts + 1);
+        execute(
+            &env.dbx,
+            "update signal_message set deleted=true where id=$1",
+            vec![message.into()],
+        )
+        .await
+        .unwrap();
+        execute(&env.dbx, "update attachment_job set state='queued',next_attempt_at=now() at time zone 'utc' where id=$1", vec![jobs[0].id.into()]).await.unwrap();
+        assert!(claim_job(&env.dbx, "extract").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn attachment_claim_skips_locks_and_never_leases_twice_3780() {
+        let (env, _, message) = fixture().await;
+        let first = attachment(&env, message, "first").await;
+        let second = attachment(&env, message, "second").await;
+        let third = attachment(&env, message, "third").await;
+        let ids = vec![first.id, second.id, third.id];
+        execute(&env.dbx, "update attachment_job set state='retry_wait',lease=null,lease_until=null,next_attempt_at=(now() at time zone 'utc')-interval '1 minute',created_at='2026-10-01'::timestamp where id=any($1::uuid[])", vec![ids.clone().into()]).await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        txn.query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select id from attachment_job where id=$1 for update",
+            [first.id.into()],
+        ))
+        .await
+        .unwrap();
+        let (a, b) = tokio::join!(
+            claim_job(&env.dbx, "extract"),
+            claim_job(&env.dbx, "extract")
+        );
+        let a = a.unwrap().unwrap();
+        let b = b.unwrap().unwrap();
+        assert_ne!(a.id, b.id);
+        assert_ne!(a.id, first.id);
+        assert_ne!(b.id, first.id);
+        assert!(claim_job(&env.dbx, "extract").await.unwrap().is_none());
+        txn.rollback().await.unwrap();
+        assert_eq!(
+            claim_job(&env.dbx, "extract").await.unwrap().unwrap().id,
+            first.id
+        );
+    }
+    #[tokio::test]
+    #[serial_test::serial]
+    #[ignore = "250k-row local claim benchmark"]
+    async fn attachment_claim_scale_benchmark_3780() {
+        let (env, _, _) = fixture().await;
+        let txn = env.dbx.begin().await.unwrap();
+        txn.execute_unprepared(r#"
+            set local statement_timeout='15s';
+            set local jit=off;
+            create temporary table signal_message (id bigint primary key, deleted boolean) on commit drop;
+            create temporary table signal_message_media (id uuid primary key, signal_message_id bigint) on commit drop;
+            create temporary table attachment_document (media_id uuid primary key, generation uuid) on commit drop;
+            create temporary table attachment_job (
+                id uuid primary key, media_id uuid, generation uuid, kind text,
+                created_at timestamp, state text, next_attempt_at timestamp,
+                lease uuid, lease_until timestamp, attempts integer default 0,
+                updated_at timestamp, payload jsonb default '{}'
+            ) on commit drop;
+            insert into signal_message select id,false from generate_series(1,250000) id;
+            insert into signal_message_media select md5(id::text)::uuid,id from signal_message;
+            insert into attachment_document select id,md5('generation:'||signal_message_id)::uuid from signal_message_media;
+            insert into attachment_job (id,media_id,generation,kind,created_at,state,next_attempt_at)
+            select md5('job:'||media.signal_message_id)::uuid,media.id,doc.generation,'extract',
+                   '2026-10-01'::timestamp+media.signal_message_id*interval '1 millisecond',
+                   case when media.signal_message_id<100000 then 'completed' else 'queued' end,
+                   '2020-01-01'::timestamp
+            from signal_message_media media join attachment_document doc on doc.media_id=media.id;
+            create index attachment_job_due_idx on attachment_job(kind,next_attempt_at,created_at,id)
+                where state in ('queued','retry_wait','running');
+            analyze signal_message; analyze signal_message_media;
+            analyze attachment_document; analyze attachment_job;
+        "#).await.unwrap();
+        let original = r#"with selected as (
+      select job.id from attachment_job job
+      join attachment_document doc on doc.media_id=job.media_id and doc.generation=job.generation
+      join signal_message_media media on media.id=job.media_id
+      join signal_message message on message.id=media.signal_message_id and not message.deleted
+      where job.kind=$1 and job.next_attempt_at <= now() at time zone 'utc'
+      and (job.state in ('queued','retry_wait') or job.state='running' and job.lease_until < now() at time zone 'utc')
+      order by job.created_at desc,job.id limit 1 for update of job skip locked
+    ) update attachment_job job set state='running',lease=$2,
+       lease_until=(now() at time zone 'utc') + make_interval(secs=>$3),
+       attempts=attempts+1,updated_at=now() at time zone 'utc'
+      from selected where job.id=selected.id returning job.*"#;
+        let mut timings = Vec::new();
+        for _ in 0..3 {
+            let started = std::time::Instant::now();
+            let old = rows::<Job, _>(
+                &txn,
+                original,
+                vec![
+                    "extract".into(),
+                    Uuid::now_v7().into(),
+                    (ATTACHMENT_LEASE_SECS as f64).into(),
+                ],
+            )
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+            let old_ms = started.elapsed().as_secs_f64() * 1000.0;
+            txn.execute_unprepared("create index attachment_job_claim_idx on attachment_job(kind,created_at desc,id) where state in ('queued','retry_wait','running')").await.unwrap();
+            execute(&txn,"update attachment_job set state='queued',lease=null,lease_until=null where id=$1",vec![old.id.into()]).await.unwrap();
+            let started = std::time::Instant::now();
+            let new = claim_job(&txn, "extract").await.unwrap().unwrap();
+            let new_ms = started.elapsed().as_secs_f64() * 1000.0;
+            assert_eq!(old.id, new.id);
+            execute(&txn,"update attachment_job set state='queued',lease=null,lease_until=null where id=$1",vec![new.id.into()]).await.unwrap();
+            timings.push((old_ms, new_ms));
+            txn.execute_unprepared("drop index attachment_job_claim_idx")
+                .await
+                .unwrap();
+        }
+        println!("250k attachment claims: old/new milliseconds {timings:?}");
+        txn.rollback().await.unwrap();
+    }
 }

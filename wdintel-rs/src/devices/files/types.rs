@@ -39,6 +39,8 @@ pub(in crate::devices) struct SubtreeFileCount {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::devices) struct DirectoryEntry {
+    pub(in crate::devices) revision: Option<i64>,
+    pub(in crate::devices) sync_id: Option<Uuid>,
     pub(in crate::devices) entry_id: Uuid,
     pub(in crate::devices) device_id: Uuid,
     pub(in crate::devices) parent_entry_id: Uuid,
@@ -197,15 +199,17 @@ impl<K> KeysetPageRequest<K> {
         limit: Option<u64>,
         after: Option<K>,
     ) -> Result<Self, FilesystemError> {
-        let limit =
-            limit.unwrap_or(crate::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
-        if !(1..=crate::config::DEVICE_FILE_PAGE_MAX_LIMIT).contains(&limit) {
+        let limit = limit
+            .unwrap_or(crate::devices::config::DEVICE_FILE_PAGE_DEFAULT_LIMIT);
+        if !(1..=crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT)
+            .contains(&limit)
+        {
             return Err(FilesystemError::Validation(vec![
                 FilesystemFieldError {
                     path: "limit".to_string(),
                     message: format!(
                         "must be between 1 and {}",
-                        crate::config::DEVICE_FILE_PAGE_MAX_LIMIT
+                        crate::devices::config::DEVICE_FILE_PAGE_MAX_LIMIT
                     ),
                 },
             ]));
@@ -248,6 +252,7 @@ pub(in crate::devices) struct BrowseFilesCommand {
     pub(in crate::devices) tag_ids: Vec<String>,
     pub(in crate::devices) tag_match: Option<TagMatch>,
     pub(in crate::devices) untagged: bool,
+    pub(in crate::devices) has_content: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -590,6 +595,15 @@ pub struct FileBreadcrumb {
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceFileTreeEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<super::archive::types::DeviceArchiveSummary>,
+    #[serde(default)]
+    pub is_archive: bool,
+    #[serde(default)]
+    pub archive_origin: Option<super::archive::types::DeviceArchiveOrigin>,
+    #[serde(default)]
+    pub virtual_path: Option<String>,
+
     pub entry_id: String,
     pub parent_entry_id: String,
     pub kind: FileEntryKind,
@@ -623,11 +637,20 @@ pub struct DeviceFileTreeEntry {
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceFile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<super::archive::types::DeviceArchiveSummary>,
+    #[serde(default)]
+    pub is_archive: bool,
+    #[serde(default)]
+    pub archive_origin: Option<super::archive::types::DeviceArchiveOrigin>,
+    #[serde(default)]
+    pub virtual_path: Option<String>,
+
     pub file_id: String,
     pub device_id: String,
     pub parent_entry_id: String,
     pub root_entry_id: String,
-    pub absolute_path: String,
+    pub absolute_path: Option<String>,
     pub has_content: bool,
     pub name: String,
     pub path_components: Vec<String>,
@@ -746,6 +769,8 @@ pub struct CountDeviceFileSubtreesRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct BrowseDeviceFilesReq {
+    #[serde(default)]
+    pub archive_revision: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_nullable_canonical_uuid")]
     pub sync_id: Option<String>,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
@@ -758,6 +783,7 @@ pub struct BrowseDeviceFilesReq {
     pub tag_ids: Option<Vec<String>>,
     pub tag_match: Option<TagMatch>,
     pub untagged: Option<bool>,
+    pub has_content: Option<bool>,
 }
 
 #[derive(
@@ -842,6 +868,8 @@ pub struct SearchDeviceFilesRsp {
 )]
 #[serde(deny_unknown_fields)]
 pub struct DeviceFileJournalEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<super::archive::types::DeviceArchiveSummary>,
     pub file_id: String,
     pub name: String,
     pub absolute_path: String,

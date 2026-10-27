@@ -58,15 +58,20 @@ pub struct InboxMessage {
     pub callsigns_alg2: Vec<String>,
     pub checked: bool,
     pub important: bool,
+    #[serde(default)]
+    pub ai_important: bool,
     pub bookmarked: bool,
     pub timestamp: Option<i64>,
     #[serde(default)]
     pub created_at: Option<i64>,
     #[serde(default)]
     pub created_at_order: Option<i64>,
+    pub is_own: Option<bool>,
     #[serde(default)]
     pub has_date_in_header: bool,
     pub group_master_key: Option<String>,
+    #[serde(default)]
+    pub group_master_keys: Option<Vec<String>>,
     pub sender: Option<String>,
     pub extended_form: Option<String>,
     #[serde(default)]
@@ -196,12 +201,15 @@ impl From<InboxInsertPayload> for InboxMessage {
             callsigns_alg2: payload.callsigns_alg2,
             checked: payload.checked,
             important: payload.important,
+            ai_important: false,
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
             created_at: None,
             created_at_order: None,
+            is_own: None,
             has_date_in_header: false,
             group_master_key: payload.group_master_key,
+            group_master_keys: None,
             sender: payload.sender,
             extended_form: payload.extended_form,
             message_comments: vec![],
@@ -244,6 +252,9 @@ pub struct MessageMediaInfo {
     pub ocr: Option<crate::ocr::types::OcrMediaSummary>,
     #[serde(default)]
     pub summary: Option<crate::media_summary::types::MediaSummaryStatus>,
+    #[serde(default)]
+    pub coordinate_status:
+        Option<crate::attachments::types::AttachmentCoordinateStatus>,
     #[serde(default)]
     pub kmz_conversion_status: Option<String>,
     #[serde(default)]
@@ -453,6 +464,25 @@ pub struct MessageUuidsReq {
     Deserialize,
     PartialEq,
     Clone,
+    Copy,
+    Default,
+)]
+pub enum AnalysisSearchMode {
+    #[default]
+    Fuzzy,
+    Exact,
+    Substring,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
     Default,
 )]
 pub struct InboxMessagesReq {
@@ -495,6 +525,8 @@ pub struct InboxMessagesReq {
     pub or_without_coords: Option<bool>,
     pub newest_first: Option<bool>,
     pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub highlight_callsigns: Option<bool>,
     pub highlight_keywords: Option<bool>,
     pub highlight_searchres: Option<bool>,
@@ -706,7 +738,9 @@ pub struct GeoCoordinates {
     pub lon: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitNetwork {
     #[serde(default)]
@@ -717,7 +751,9 @@ pub struct SubmitNetwork {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 #[serde(deny_unknown_fields)]
 pub struct SubmitDmrMetadata {
     #[serde(deserialize_with = "deserialize_rfc3339_string")]
@@ -953,6 +989,8 @@ pub struct AnalysisStatsReq {
     pub or_with_coords: Option<bool>,
     pub or_without_coords: Option<bool>,
     pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub selected_tags: Option<Vec<i64>>,
     pub denied_tags: Option<Vec<i64>>,
     pub tag_presence: Option<TagPresenceFilter>,
@@ -1024,6 +1062,8 @@ pub struct CallsignsGraphReq {
     pub or_without_coords: Option<bool>,
     pub nolimit: Option<bool>,
     pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub selected_tags: Option<Vec<i64>>,
     pub denied_tags: Option<Vec<i64>>,
     pub tag_presence: Option<TagPresenceFilter>,
@@ -1095,6 +1135,22 @@ pub struct AnalysisStatsFreq {
 )]
 pub struct AnalysisStatsPost {
     pub post: String,
+    pub count: i64,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    sea_orm::FromQueryResult,
+)]
+pub struct AnalysisStatsDeviceName {
+    pub name: String,
     pub count: i64,
 }
 
@@ -1174,6 +1230,45 @@ pub struct PostStatsRsp {
 )]
 pub struct CallsignStatsRsp {
     pub callsigns: Vec<AnalysisStatsCallsign>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AnalysisCallsignPageOrder {
+    CountDesc,
+    MatchThenName,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageReq {
+    pub req: AnalysisStatsReq,
+    pub query: String,
+    pub page_size: Option<u64>,
+    pub cursor: Option<String>,
+    pub order: AnalysisCallsignPageOrder,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageEntry {
+    pub value: String,
+    pub label: String,
+    pub values: Vec<String>,
+    pub count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct AnalysisCallsignPageRsp {
+    pub entries: Vec<AnalysisCallsignPageEntry>,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(
@@ -1273,6 +1368,22 @@ pub struct CountStatsRsp {
     pub tags_count: i64,
     pub aors_count: i64,
     pub networks_count: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessageStatsCountRsp {
+    pub count_overall: i64,
+    pub count_selected: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitMatchStatsCountRsp {
+    pub exact_matches_count: i64,
+    pub non_exact_matches_count: i64,
 }
 
 #[derive(
@@ -1449,6 +1560,8 @@ pub struct RerAnalysisQueryState {
     pub or_with_coords: bool,
     pub or_without_coords: bool,
     pub search: String,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub metadata_cc: Vec<String>,
     pub metadata_sender: Vec<String>,
     pub metadata_receiver: Vec<String>,
@@ -1523,6 +1636,8 @@ pub struct SavedFilterRenameReq {
 )]
 pub struct RerDutyQueryState {
     pub waterfalls: Option<Vec<(String, RerDutyQueryStateWf)>>,
+    #[serde(default)]
+    pub group_scopes: Option<Vec<(String, String)>>,
 }
 
 #[derive(
@@ -1818,8 +1933,11 @@ mod tests {
         };
 
         let message = InboxMessage::from(payload.clone());
+        assert!(!message.ai_important);
         assert_eq!(message.created_at, None);
         assert_eq!(message.created_at_order, None);
+        assert_eq!(message.is_own, None);
+        assert_eq!(message.group_master_keys, None);
         assert!(!message.has_date_in_header);
         let payload_json = serde_json::to_value(payload).unwrap();
         let message_json = serde_json::to_value(message).unwrap();
@@ -1843,13 +1961,16 @@ mod tests {
             .cloned()
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
+            "ai_important".to_string(),
             "callsign_tokens".to_string(),
             "created_at".to_string(),
             "created_at_order".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
+            "group_master_keys".to_string(),
             "intelligence_reports".to_string(),
             "has_date_in_header".to_string(),
+            "is_own".to_string(),
             "is_time_null".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),

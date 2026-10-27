@@ -1,6 +1,7 @@
 module Pages_.RerAnalysis.MainBody exposing (view)
 
 import Bindings as B
+import Core.Auth
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -10,6 +11,7 @@ import Html.Styled
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
+import Pages_.RerAnalysis.Counts as Counts
 import Pages_.RerAnalysis.Date
 import Pages_.RerAnalysis.Filters
 import Pages_.RerAnalysis.Graphs
@@ -63,7 +65,7 @@ mainBody user model shared route =
             List.length model.messages
 
         messagesCountOverall =
-            extractMRecordField (\r -> r.countOverall) 0 (RD.toMaybe model.counts)
+            Counts.get MessageStatsCountRequest .countOverall model |> Maybe.withDefault 0
 
         deleteConfirmationModal =
             modalDialog
@@ -128,6 +130,7 @@ mainBody user model shared route =
                         , audioTranscriptionEnabled = model.audioTranscriptionEnabled
                         , audioTranscriptionCollapsed = model.analysisAudioTranscriptionCollapsed
                         , disableBotTags = model.disableBotTags
+                        , hideNetworks = model.hideNetworks
                         }
 
                     renderPs =
@@ -177,7 +180,7 @@ mainBody user model shared route =
                         [ i [ class "bi bi-inboxes-fill" ] []
                         , text <|
                             " показати всі "
-                                ++ String.fromInt (extractMRecordField (\r -> r.countSelected) 0 (RD.toMaybe model.counts))
+                                ++ Counts.label MessageStatsCountRequest .countSelected model
                         ]
                     ]
             , div [ class "mr-4" ]
@@ -351,14 +354,11 @@ view user model shared route =
 
         headerControls =
             div [ class "flex items-center ml-4", style "gap" "8px" ]
-                [ case model.counts of
-                    Success data ->
+                [ case Counts.get MessageStatsCountRequest identity model of
+                    Just data ->
                         headerCountsPill data False
 
-                    NeedsReload data ->
-                        headerCountsPill data True
-
-                    _ ->
+                    Nothing ->
                         div [ class "mr-3 inline-block", style "min-width" "60px" ] []
                 , div
                     [ class "inline-flex items-stretch border border-border"
@@ -413,6 +413,9 @@ view user model shared route =
 
         reportConstructorBlockBody =
             let
+                hasAdvancedReportAccess =
+                    List.any (\role -> Core.Auth.hasRole role user) [ "UnitsEditor", "CallsignsEditor", "AdvancedReports" ]
+
                 templateCard active toMsg title description =
                     div
                         [ class "border rounded-lg p-6 cursor-pointer transition-all duration-200 hover:shadow-md min-h-[140px] flex flex-col justify-between relative"
@@ -631,6 +634,12 @@ view user model shared route =
                     (ReportTemplateSelect RTReport1213)
                     "Звіт 1.2.13"
                     "Стислий звіт по радіомережах з частотою, часом, позивним вузла та координатами"
+                , HtmlX.viewIf (model.radioFeaturesAllowed && hasAdvancedReportAccess) <|
+                  templateCard
+                    (model.reportTemplate == RTReport1217)
+                    (ReportTemplateSelect RTReport1217)
+                    "Звіт 1.2.17"
+                    "Перехоплення за радіомережами з коментарями"
                 ]
 
             , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTTags) <|
@@ -681,6 +690,40 @@ view user model shared route =
                                 "не обрано"
                                 options2
                         )
+                    ]
+
+            , HtmlX.viewIf (model.radioFeaturesAllowed && model.reportTemplate == RTReport1217) <|
+                div [ class "p-3 bg-gray-100 text-gray-900 mb-4" ]
+                    [ div [ class "form-check" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1217IncludeWithoutComments
+                            , id "report-1217-include-without-comments"
+                            , onClick Report1217IncludeWithoutCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1217-include-without-comments"
+                            ]
+                            [ text "Включати перехоплення без коментарів" ]
+                        ]
+                    , div [ class "form-check mt-2" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.report1217OnlyThisUnitComments
+                            , id "report-1217-only-this-unit-comments"
+                            , onClick Report1217OnlyThisUnitCommentsToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-1217-only-this-unit-comments"
+                            ]
+                            [ text "Лише коментарі мого підрозділу" ]
+                        ]
                     ]
 
             , HtmlX.viewIf (model.reportTemplate == RTSposob) <|
@@ -801,6 +844,21 @@ view user model shared route =
                             , for "report-reo-no-comments"
                             ]
                             [ text "Без коментарів" ]
+                        ]
+                    , div [ class "form-check mt-2" ]
+                        [ input
+                            [ class "form-check-input"
+                            , type_ "checkbox"
+                            , checked model.reportReoSummaryOnly
+                            , id "report-reo-summary-only"
+                            , onClick ReportReoSummaryOnlyToggle
+                            ]
+                            []
+                        , label
+                            [ class "form-check-label"
+                            , for "report-reo-summary-only"
+                            ]
+                            [ text "Лише підсумкова активність" ]
                         ]
                     ]
             , HtmlX.viewIf (model.reportTemplate == ActiveNetworks) <|

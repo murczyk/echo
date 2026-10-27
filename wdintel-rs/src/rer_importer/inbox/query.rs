@@ -1,5 +1,6 @@
 use crate::config::{
     ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE,
+    ANALYTICS_INBOX_LATEST_PROBE_BUCKET_MS, ANALYTICS_INBOX_LATEST_PROBE_DAYS,
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES,
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_TTL_MS,
     ANALYTICS_INBOX_POSTGRES_BOUNDS_MAX_DAYS, INBOX_COUNT_INDEXED_MAX_DAYS,
@@ -9,7 +10,7 @@ use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::analytics_unit::{
     apply_resolved_analytics_unit_filters_with_ids,
-    resolve_analytics_unit_filters,
+    resolve_analytics_unit_filters, ResolvedAnalyticsUnitFilters,
 };
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
@@ -19,6 +20,7 @@ use crate::sigint::sender::{
 use crate::types::*;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
+use futures::{stream, StreamExt, TryStreamExt};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
 use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
@@ -73,39 +75,24 @@ fn message_has_media_exists(
             signal_message_media::Column::SignalMessageId,
         )));
     }
-    Expr::exists(media_query)
-}
-
-fn message_is_accessible_exists(
-    sigint_groups: Vec<String>,
-    scope: Option<&AnalyticsMessageIdScope>,
-    force_nested_loop: bool,
-) -> SimpleExpr {
-    let mut access_query = Query::select();
-    access_query
+    let mut audio_query = Query::select()
         .expr(Expr::value(1))
-        .from(signal_message_group::Entity)
+        .from(Alias::new("signal_message_audio_ref"))
         .and_where(
             Expr::col((
-                signal_message_group::Entity,
-                signal_message_group::Column::SignalMessageId,
+                Alias::new("signal_message_audio_ref"),
+                Alias::new("signal_message_id"),
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .and_where(
-            signal_message_group::Column::GroupMasterKey.eq_any(sigint_groups),
-        );
+        .to_owned();
     if let Some(scope) = scope {
-        access_query.and_where(scope.condition((
-            signal_message_group::Entity,
-            signal_message_group::Column::SignalMessageId,
+        audio_query.and_where(scope.condition((
+            Alias::new("signal_message_audio_ref"),
+            Alias::new("signal_message_id"),
         )));
     }
-    if force_nested_loop {
-        access_query.offset(0);
-    }
-
-    Expr::exists(access_query.to_owned())
+    Expr::exists(media_query).or(Expr::exists(audio_query))
 }
 
 fn message_source_group_is_not_ignored_exists() -> SimpleExpr {
@@ -248,6 +235,8 @@ where
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum InboxQueryPurpose {
     Messages,
+    Candidates,
+    Hydration,
     Map,
     Digest,
     IndexedDigest,
@@ -315,10 +304,17 @@ fn build_inbox_query_base(
     }
 
     let mut query = SignalMessage::find().join(
-        JoinType::LeftJoin,
+        if purpose == InboxQueryPurpose::Analytics {
+            JoinType::InnerJoin
+        } else {
+            JoinType::LeftJoin
+        },
         signal_message::Relation::SigintInboxItem.def(),
     );
-    if purpose == InboxQueryPurpose::Messages {
+    if matches!(
+        purpose,
+        InboxQueryPurpose::Messages | InboxQueryPurpose::Hydration
+    ) {
         return query
             .join(
                 JoinType::LeftJoin,
@@ -451,11 +447,17 @@ fn apply_flat_analytics_group_filters(
                 .is_in(selected_senders.clone()),
         );
     }
-    QueryTrait::query(&mut query).join_as(
-        JoinType::InnerJoin,
-        signal_message_group::Entity,
-        access_alias,
-        access_condition,
+    let membership = Query::select()
+        .column((
+            access_alias.clone(),
+            signal_message_group::Column::SignalMessageId,
+        ))
+        .from_as(signal_message_group::Entity, access_alias)
+        .cond_where(access_condition)
+        .to_owned();
+    query = query.filter(
+        Expr::col((signal_message::Entity, signal_message::Column::Id))
+            .in_subquery(membership),
     );
 
     let denied_groups = req
@@ -520,21 +522,9 @@ fn analytics_message_group_join_condition(
         Expr::col((alias.clone(), signal_message_group::Column::GroupMasterKey))
             .is_in(groups.to_vec())
     };
-    Condition::all()
-        .add(
-            Expr::col((
-                alias.clone(),
-                signal_message_group::Column::SignalMessageId,
-            ))
-            .equals((signal_message::Entity, signal_message::Column::Id)),
-        )
-        .add(group_condition)
-        .add(
-            scope.condition((
-                alias,
-                signal_message_group::Column::SignalMessageId,
-            )),
-        )
+    Condition::all().add(group_condition).add(
+        scope.condition((alias, signal_message_group::Column::SignalMessageId)),
+    )
 }
 
 fn left_join_denied_analytics_message_groups(
@@ -612,7 +602,7 @@ where
             scope.context(h!())?,
         );
     } else {
-        q = q.filter(message_is_accessible_exists(
+        q = q.filter(message_in_groups_exists_with_correlation(
             sigint_groups.clone(),
             scope,
             purpose == InboxQueryPurpose::IndexedDigest,
@@ -632,13 +622,14 @@ where
 
     if req.ignore_imported_coords.unwrap_or(false) {
         q = match purpose {
-            InboxQueryPurpose::Messages => {
+            InboxQueryPurpose::Messages | InboxQueryPurpose::Hydration => {
                 q.filter(signal_group::Column::IgnoreOperativny.eq(Some(false)))
             }
             InboxQueryPurpose::Analytics => {
                 apply_flat_analytics_imported_coords_filter(q)
             }
             InboxQueryPurpose::Map
+            | InboxQueryPurpose::Candidates
             | InboxQueryPurpose::Digest
             | InboxQueryPurpose::IndexedDigest => {
                 q.filter(message_source_group_is_not_ignored_exists())
@@ -675,7 +666,22 @@ where
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_denied_posts(q, &req.denied_posts)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
-    let q = filter_search(q, &req.search)?;
+    let q = filter_search_with_scope(
+        q,
+        &req.search,
+        req.search_mode,
+        matches!(
+            purpose,
+            InboxQueryPurpose::Analytics | InboxQueryPurpose::Hydration
+        ) || search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
+            == InboxMessagesSortBy::IMSDatetime
+            && (req.since_date_inclusive_ms.is_some()
+                || req.till_date_inclusive_ms.is_some()
+                || internal_lower_bound.is_some()),
+    )
+    .c(h!())?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let q = filter_denied_device_names(q, &req.denied_device_names).c(h!())?;
     let q = match unit_lookup_strategy {
@@ -833,6 +839,9 @@ async fn build_unit_filtered_inbox_digest_query(
             let mut candidate_req = req.clone();
             candidate_req.selected_units = None;
             candidate_req.denied_units = None;
+            if created_at_lower_bound.is_some() {
+                candidate_req.search = None;
+            }
             let candidates = build_filtered_inbox_query_with_scope(
                 &env.dbx,
                 login,
@@ -845,6 +854,12 @@ async fn build_unit_filtered_inbox_digest_query(
             )
             .await
             .context(h!())?;
+            let candidates = apply_fresh_tail_inbox_search(
+                candidates,
+                req,
+                created_at_lower_bound,
+            )
+            .c(h!())?;
             let candidates = apply_inbox_created_at_bounds(
                 candidates,
                 created_at_lower_bound,
@@ -855,11 +870,18 @@ async fn build_unit_filtered_inbox_digest_query(
             );
         }
     }
+    let mut candidate_req = req.clone();
+    candidate_req.selected_units = None;
+    candidate_req.denied_units = None;
+    candidate_req.selected_unit_ids = None;
+    if created_at_lower_bound.is_some() {
+        candidate_req.search = None;
+    }
     let query = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
         env,
-        req,
+        &candidate_req,
         None,
         None,
         purpose,
@@ -867,6 +889,15 @@ async fn build_unit_filtered_inbox_digest_query(
     )
     .await
     .context(h!())?;
+    let query =
+        apply_fresh_tail_inbox_search(query, req, created_at_lower_bound)
+            .c(h!())?;
+    let query = filter_inbox_units_with_materialized_networks(
+        query,
+        req,
+        unit_lookup_strategy == InboxUnitLookupStrategy::Correlated,
+    )
+    .c(h!())?;
     let query = apply_inbox_created_at_bounds(
         query,
         created_at_lower_bound,
@@ -896,6 +927,23 @@ fn apply_inbox_created_at_bounds(
     query
 }
 
+fn apply_fresh_tail_inbox_search(
+    query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+    created_at_lower_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Select<signal_message::Entity>> {
+    if created_at_lower_bound.is_none() {
+        return Ok(query);
+    }
+    filter_search_with_correlated_terms(
+        query,
+        &req.search,
+        req.search_mode,
+        true,
+    )
+    .c(h!())
+}
+
 async fn build_inbox_digest_query_with_created_at_bounds(
     login: &uuid::Uuid,
     env: &Env,
@@ -921,11 +969,15 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     } else {
         InboxQueryPurpose::Digest
     };
+    let mut candidate_req = req.clone();
+    if created_at_lower_bound.is_some() {
+        candidate_req.search = None;
+    }
     let q = build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
         env,
-        req,
+        &candidate_req,
         None,
         None,
         purpose,
@@ -933,6 +985,8 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     )
     .await
     .context(h!())?;
+    let q = apply_fresh_tail_inbox_search(q, req, created_at_lower_bound)
+        .c(h!())?;
     let q = apply_inbox_created_at_bounds(
         q,
         created_at_lower_bound,
@@ -1021,28 +1075,6 @@ pub(crate) async fn build_analytics_inbox_digest_query(
     )
 }
 
-pub(crate) async fn build_historical_analytics_inbox_digest_query(
-    login: &uuid::Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    db: &DatabaseConnection,
-    freshness_max_age_ms: u64,
-    created_at_upper_bound: NaiveDateTime,
-) -> Result<Option<String>, AppError> {
-    Ok(
-        build_analytics_inbox_digest_query_with_created_at_upper_bound(
-            login,
-            env,
-            req,
-            db,
-            freshness_max_age_ms,
-            Some(created_at_upper_bound),
-        )
-        .await
-        .context(h!())?,
-    )
-}
-
 async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
     login: &uuid::Uuid,
     env: &Env,
@@ -1077,6 +1109,95 @@ async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
     Ok(Some(render_inbox_digest_query(q)))
 }
 
+pub(crate) async fn load_analytics_inbox_digest(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+    created_at_upper_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Option<super::InboxDigest>> {
+    ensure_inbox_analytics_search_coverage(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
+    let Some(scope) = resolve_analytics_inbox_message_id_scope(
+        req,
+        &env.dbx,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(None);
+    };
+    let chunks = analytics_message_id_chunks(
+        &env.dbx,
+        scope,
+        crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .c(h!())?;
+    let (resolved_units, resolved_aors) =
+        resolve_analytics_inbox_filters(&env.dbx, req)
+            .await
+            .c(h!())?;
+    let digests = stream::iter(chunks)
+        .map(|scope| {
+            let resolved_units = &resolved_units;
+            let resolved_aors = &resolved_aors;
+            async move {
+                let (query, _) =
+                    build_analytics_filtered_inbox_query_with_filters(
+                        login,
+                        env,
+                        req,
+                        scope,
+                        resolved_units,
+                        resolved_aors,
+                    )
+                    .await
+                    .c(h!())?;
+                let query = apply_inbox_created_at_bounds(
+                    query,
+                    None,
+                    created_at_upper_bound,
+                )
+                .select_only()
+                .column_as(
+                    Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+                    "count",
+                )
+                .column_as(
+                    Expr::cust(r#"MIN("signal_message"."timestamp")"#),
+                    "first_element_ts",
+                );
+                super::query_inbox_digest(
+                    db.clone(),
+                    render_inbox_digest_query(query),
+                )
+                .await
+                .c(h!())
+            }
+        })
+        .buffered(crate::config::ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await
+        .c(h!())?;
+    Ok(Some(
+        digests
+            .into_iter()
+            .try_fold((0, None), super::merge_inbox_digests)
+            .c(h!())?,
+    ))
+}
+
 pub(crate) async fn load_analytics_inbox_candidates(
     login: &uuid::Uuid,
     env: &Env,
@@ -1084,10 +1205,78 @@ pub(crate) async fn load_analytics_inbox_candidates(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<Vec<i64>>, AppError> {
-    let Some((query, _)) = build_analytics_filtered_inbox_query(
+    if inbox_request_is_unbounded_latest(req) && req.nolimit != Some(true) {
+        let mut recent_req = req.clone();
+        recent_req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+        let since = (Utc::now()
+            - Duration::days(ANALYTICS_INBOX_LATEST_PROBE_DAYS))
+        .timestamp_millis();
+        recent_req.since_date_inclusive_ms = Some(
+            since - since.rem_euclid(ANALYTICS_INBOX_LATEST_PROBE_BUCKET_MS),
+        );
+        if let Some(ids) = load_scoped_analytics_inbox_candidates(
+            login,
+            env,
+            &recent_req,
+            db,
+            freshness_max_age_ms,
+        )
+        .await
+        .context(h!())?
+        {
+            if ids.len() == INBOX_MESSAGES_PAGE_LIMIT {
+                return Ok(Some(ids));
+            }
+        }
+    }
+    Ok(load_scoped_analytics_inbox_candidates(
         login,
         env,
         req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn load_scoped_analytics_inbox_candidates(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> Result<Option<Vec<i64>>, AppError> {
+    Ok(load_chunked_analytics_inbox_candidates(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn load_chunked_analytics_inbox_candidates(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> anyhow::Result<Option<Vec<i64>>> {
+    ensure_inbox_analytics_search_coverage(
+        login,
+        env,
+        req,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?;
+    let Some(scope) = resolve_analytics_inbox_message_id_scope(
+        req,
+        &env.dbx,
         db,
         freshness_max_age_ms,
     )
@@ -1096,11 +1285,60 @@ pub(crate) async fn load_analytics_inbox_candidates(
     else {
         return Ok(None);
     };
-    Ok(Some(
-        scan_inbox_candidate_pages(db, query, req)
+    let chunks = analytics_message_id_chunks(
+        &env.dbx,
+        scope,
+        crate::config::ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE,
+    )
+    .await
+    .context(h!())?;
+    let (resolved_units, resolved_aors) =
+        resolve_analytics_inbox_filters(&env.dbx, req)
             .await
-            .context(h!())?,
-    ))
+            .context(h!())?;
+    let rows = stream::iter(chunks)
+        .map(|scope| {
+            let resolved_units = &resolved_units;
+            let resolved_aors = &resolved_aors;
+            async move {
+                let (query, _) =
+                    build_analytics_filtered_inbox_query_with_filters(
+                        login,
+                        env,
+                        req,
+                        scope,
+                        resolved_units,
+                        resolved_aors,
+                    )
+                    .await
+                    .context(h!())?;
+                scan_inbox_candidate_rows(db, query, req)
+                    .await
+                    .context(h!())
+            }
+        })
+        .buffered(crate::config::ANALYTICS_MESSAGE_ID_CHUNK_CONCURRENCY)
+        .try_collect::<Vec<_>>()
+        .await
+        .context(h!())?;
+    Ok(Some(merge_chunked_inbox_candidates(rows, req)))
+}
+
+fn merge_chunked_inbox_candidates(
+    rows: Vec<Vec<InboxCandidate>>,
+    req: &InboxMessagesReq,
+) -> Vec<i64> {
+    let mut rows = rows.into_iter().flatten().collect::<Vec<_>>();
+    rows.sort_by_key(|row| {
+        (row.ordering_value.is_none(), row.ordering_value, row.id)
+    });
+    if analytics_inbox_order_is_descending(req) {
+        rows.reverse();
+    }
+    if req.nolimit != Some(true) {
+        rows.truncate(INBOX_MESSAGES_PAGE_LIMIT);
+    }
+    rows.into_iter().map(|row| row.id).collect()
 }
 
 pub(crate) async fn scan_analytics_inbox_candidate_ids(
@@ -1226,7 +1464,20 @@ async fn scan_inbox_candidate_pages(
     query: Select<signal_message::Entity>,
     req: &InboxMessagesReq,
 ) -> Result<Vec<i64>, AppError> {
-    let mut ids = Vec::new();
+    Ok(scan_inbox_candidate_rows(db, query, req)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|row| row.id)
+        .collect())
+}
+
+async fn scan_inbox_candidate_rows(
+    db: &DatabaseConnection,
+    query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+) -> anyhow::Result<Vec<InboxCandidate>> {
+    let mut candidates = Vec::new();
     let mut cursor = None;
     loop {
         let mut page = query.clone();
@@ -1240,12 +1491,12 @@ async fn scan_inbox_candidate_pages(
             .context(h!())?;
         let exhausted = rows.len() < inbox_candidate_page_size(req);
         cursor = rows.last().map(|row| (row.ordering_value, row.id));
-        ids.extend(rows.into_iter().map(|row| row.id));
+        candidates.extend(rows);
         if req.nolimit != Some(true) || exhausted {
             break;
         }
     }
-    Ok(ids)
+    Ok(candidates)
 }
 
 fn inbox_candidate_seek_condition(
@@ -1362,6 +1613,62 @@ struct ResolvedAnalyticsAorFilter {
     present: bool,
 }
 
+async fn ensure_inbox_analytics_search_coverage(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+) -> anyhow::Result<()> {
+    if req
+        .search
+        .as_deref()
+        .is_some_and(|search| !search.trim().is_empty())
+    {
+        use crate::attachments::analytics::{
+            SearchCoverageScope, SearchTimeBasis,
+        };
+        let groups = crate::messenger::group::get_identity_sigint_groups(
+            &env.dbx, login,
+        )
+        .await
+        .c(h!())?;
+        let time_basis = match req
+            .sort_by
+            .unwrap_or(InboxMessagesSortBy::IMSDatetime)
+        {
+            InboxMessagesSortBy::IMSDatetime => SearchTimeBasis::Interception,
+            InboxMessagesSortBy::IMSTimestamp => SearchTimeBasis::Timestamp,
+            InboxMessagesSortBy::IMSCreatedAt => SearchTimeBasis::Creation,
+        };
+        crate::attachments::analytics::ensure_search_coverage_scoped(
+            &env.dbx,
+            analytics_db,
+            &req.search,
+            req.search_mode,
+            freshness_max_age_ms,
+            SearchCoverageScope {
+                since: req
+                    .since_date_inclusive_ms
+                    .map(dt_from_millis)
+                    .transpose()
+                    .c(h!())?,
+                till: req
+                    .till_date_inclusive_ms
+                    .map(dt_from_millis)
+                    .transpose()
+                    .c(h!())?,
+                till_inclusive: true,
+                time_basis,
+                groups: &groups,
+            },
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
 async fn build_analytics_filtered_inbox_query(
     login: &uuid::Uuid,
     env: &Env,
@@ -1369,6 +1676,15 @@ async fn build_analytics_filtered_inbox_query(
     analytics_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<Option<(Select<signal_message::Entity>, bool)>, AppError> {
+    ensure_inbox_analytics_search_coverage(
+        login,
+        env,
+        req,
+        analytics_db,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
     let Some(scope) = resolve_analytics_inbox_message_id_scope(
         req,
         &env.dbx,
@@ -1379,15 +1695,62 @@ async fn build_analytics_filtered_inbox_query(
     else {
         return Ok(None);
     };
+    Ok(Some(
+        build_analytics_filtered_inbox_query_with_scope(login, env, req, scope)
+            .await
+            .context(h!())?,
+    ))
+}
+
+async fn build_analytics_filtered_inbox_query_with_scope(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    scope: AnalyticsMessageIdScope,
+) -> anyhow::Result<(Select<signal_message::Entity>, bool)> {
+    let (resolved_units, resolved_aors) =
+        resolve_analytics_inbox_filters(&env.dbx, req)
+            .await
+            .context(h!())?;
+    build_analytics_filtered_inbox_query_with_filters(
+        login,
+        env,
+        req,
+        scope,
+        &resolved_units,
+        &resolved_aors,
+    )
+    .await
+    .context(h!())
+}
+
+async fn resolve_analytics_inbox_filters(
+    source_db: &DatabaseConnection,
+    req: &InboxMessagesReq,
+) -> anyhow::Result<(ResolvedAnalyticsUnitFilters, ResolvedAnalyticsAorFilter)>
+{
     let resolved_units = resolve_analytics_unit_filters(
-        &env.dbx,
+        source_db,
         &req.selected_units,
         &req.denied_units,
         req.units_exact_match_only,
     )
     .await
     .context(h!())?;
-    let resolved_aors = resolve_analytics_aor_filter(&env.dbx, req).await?;
+    let resolved_aors = resolve_analytics_aor_filter(source_db, req)
+        .await
+        .context(h!())?;
+    Ok((resolved_units, resolved_aors))
+}
+
+async fn build_analytics_filtered_inbox_query_with_filters(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    scope: AnalyticsMessageIdScope,
+    resolved_units: &ResolvedAnalyticsUnitFilters,
+    resolved_aors: &ResolvedAnalyticsAorFilter,
+) -> anyhow::Result<(Select<signal_message::Entity>, bool)> {
     let mut analytics_req = req.clone();
     analytics_req.selected_units = None;
     analytics_req.selected_unit_ids = None;
@@ -1408,14 +1771,24 @@ async fn build_analytics_filtered_inbox_query(
     let has_unit_filters = resolved_units.has_filters();
     let query = apply_resolved_analytics_unit_filters_with_ids(
         query,
-        &resolved_units,
+        resolved_units,
         &scope,
         req.units_exact_match_only.unwrap_or(false),
         &req.selected_unit_ids,
     );
+    let query = if !resolved_units.selected.present {
+        query.apply_if(
+            req.selected_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
+            |query, ids| {
+                query.filter(analytics_message_has_linked_unit_ids(ids, &scope))
+            },
+        )
+    } else {
+        query
+    };
     let query =
-        apply_resolved_analytics_aor_filter(query, &resolved_aors, &scope);
-    Ok(Some((query, has_unit_filters)))
+        apply_resolved_analytics_aor_filter(query, resolved_aors, &scope);
+    Ok((query, has_unit_filters))
 }
 
 async fn resolve_analytics_aor_filter(
@@ -1499,7 +1872,7 @@ fn analytics_aor_bounds_overlap(lhs: (f64, f64), rhs: (f64, f64)) -> bool {
 }
 
 fn apply_resolved_analytics_aor_filter(
-    mut query: Select<signal_message::Entity>,
+    query: Select<signal_message::Entity>,
     resolved: &ResolvedAnalyticsAorFilter,
     scope: &AnalyticsMessageIdScope,
 ) -> Select<signal_message::Entity> {
@@ -1508,75 +1881,34 @@ fn apply_resolved_analytics_aor_filter(
     }
     let mut matches = Condition::any();
     if !resolved.group_keys.is_empty() {
-        let alias = Alias::new("analytics_selected_aor_group");
-        QueryTrait::query(&mut query).join_as(
-            JoinType::LeftJoin,
-            signal_message_group::Entity,
-            alias.clone(),
-            Condition::all()
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        signal_message_group::Column::SignalMessageId,
-                    ))
-                    .equals((
-                        signal_message::Entity,
-                        signal_message::Column::Id,
-                    )),
-                )
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        signal_message_group::Column::GroupMasterKey,
-                    ))
+        let groups = signal_message_group::Entity::find()
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .filter(
+                signal_message_group::Column::GroupMasterKey
                     .is_in(resolved.group_keys.clone()),
-                )
-                .add(scope.condition((
-                    alias.clone(),
-                    signal_message_group::Column::SignalMessageId,
-                ))),
-        );
-        matches = matches.add(
-            Expr::col((alias, signal_message_group::Column::SignalMessageId))
-                .is_not_null(),
-        );
+            )
+            .filter(scope.condition((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            )))
+            .into_query();
+        matches = matches.add(signal_message::Column::Id.in_subquery(groups));
     }
     if !resolved.network_ids.is_empty() {
-        let alias = Alias::new("analytics_selected_aor_network");
-        QueryTrait::query(&mut query).join_as(
-            JoinType::LeftJoin,
-            sigint_inbox_item_network::Entity,
-            alias.clone(),
-            Condition::all()
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        sigint_inbox_item_network::Column::SigintInboxItemId,
-                    ))
-                    .equals((
-                        sigint_inbox_item::Entity,
-                        sigint_inbox_item::Column::Id,
-                    )),
-                )
-                .add(
-                    Expr::col((
-                        alias.clone(),
-                        sigint_inbox_item_network::Column::SigintNetworkId,
-                    ))
+        let networks = sigint_inbox_item_network::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+            .filter(
+                sigint_inbox_item_network::Column::SigintNetworkId
                     .is_in(resolved.network_ids.clone()),
-                )
-                .add(scope.condition((
-                    alias.clone(),
-                    sigint_inbox_item_network::Column::SigintInboxItemId,
-                ))),
-        );
-        matches = matches.add(
-            Expr::col((
-                alias,
+            )
+            .filter(scope.condition((
+                sigint_inbox_item_network::Entity,
                 sigint_inbox_item_network::Column::SigintInboxItemId,
-            ))
-            .is_not_null(),
-        );
+            )))
+            .into_query();
+        matches = matches.add(signal_message::Column::Id.in_subquery(networks));
     }
     if resolved.group_keys.is_empty() && resolved.network_ids.is_empty() {
         return query.filter(Expr::value(false));
@@ -2052,6 +2384,54 @@ where
     finish_inbox_query(dbx, login, req, q, true).await
 }
 
+pub(crate) async fn load_postgres_inbox_page_ids<C: ConnectionTrait>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    internal_lower_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Vec<i64>> {
+    let query = build_filtered_inbox_query_with_scope(
+        dbx,
+        login,
+        env,
+        req,
+        None,
+        internal_lower_bound,
+        InboxQueryPurpose::Candidates,
+        InboxUnitLookupStrategy::Default,
+    )
+    .await
+    .c(h!())?;
+    let query = get_bl_ordering_select(
+        req,
+        query.select_only().column(signal_message::Column::Id),
+    )
+    .await
+    .c(h!())?
+    .limit(INBOX_MESSAGES_PAGE_LIMIT as u64);
+    query.into_tuple::<i64>().all(dbx).await.c(h!())
+}
+
+pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    ids: &[i64],
+) -> anyhow::Result<String> {
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(dbx, login)
+            .await
+            .c(h!())?;
+    let query = build_inbox_query_base(req, InboxQueryPurpose::Messages)
+        .filter(signal_message::Column::Id.is_in(ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(message_in_groups_exists(groups));
+    finish_inbox_query(dbx, login, req, query, false)
+        .await
+        .c(h!())
+}
+
 pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
@@ -2059,19 +2439,24 @@ pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     req: &InboxMessagesReq,
     created_at_lower_bound: NaiveDateTime,
 ) -> Result<Vec<i64>, AppError> {
+    let mut candidate_req = req.clone();
+    candidate_req.search = None;
     let query = build_filtered_inbox_query_with_scope(
         dbx,
         login,
         env,
-        req,
+        &candidate_req,
         None,
         None,
-        InboxQueryPurpose::Messages,
+        InboxQueryPurpose::Candidates,
         InboxUnitLookupStrategy::Default,
     )
     .await
     .context(h!())?
     .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound));
+    let query =
+        apply_fresh_tail_inbox_search(query, req, Some(created_at_lower_bound))
+            .c(h!())?;
     Ok(scan_inbox_candidate_pages(dbx, query, req)
         .await
         .context(h!())?)
@@ -2092,7 +2477,7 @@ pub(crate) async fn build_inbox_query_for_candidate_ids(
         req,
         None,
         None,
-        InboxQueryPurpose::Messages,
+        InboxQueryPurpose::Hydration,
         InboxUnitLookupStrategy::Default,
     )
     .await
@@ -2784,6 +3169,7 @@ where
         .select_only()
         .column_as(signal_message::Column::Id, "id")
         .column_as(signal_message::Column::IdUuid, "id_uuid")
+        .column_as(signal_message::Column::LoginId, "login_id")
         .column_as(signal_message::Column::Body, "body")
         .column_as(signal_message::Column::MessageUid, "message_uid")
         .column_as(signal_message::Column::CreatedAt, "created_at")
@@ -2928,6 +3314,124 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn analytics_membership_keeps_access_sender_and_duplicate_semantics_3780(
+    ) {
+        use crate::functest::tests::{
+            cleanup, mk_sigint_inbox_item, mk_signal_group,
+            mk_signal_message_group,
+        };
+        let env = cleanup().await.unwrap();
+        let allowed = mk_signal_group(&env.dbx, Default::default())
+            .await
+            .unwrap()
+            .master_key;
+        let other = mk_signal_group(&env.dbx, Default::default())
+            .await
+            .unwrap()
+            .master_key;
+        let mut ids = Vec::new();
+        for links in [
+            vec![
+                (allowed.clone(), "first"),
+                (allowed.clone(), "first"),
+                (other.clone(), "second"),
+            ],
+            vec![(allowed.clone(), "second")],
+            vec![(other.clone(), "first")],
+        ] {
+            let item = mk_sigint_inbox_item(&env.dbx, Default::default())
+                .await
+                .unwrap();
+            for (key, sender) in links {
+                mk_signal_message_group(
+                    &env.dbx,
+                    signal_message_group::ActiveModel {
+                        signal_message_id: Set(item.id),
+                        group_master_key: Set(Some(key)),
+                        datasource_group_id: Set(None),
+                        sender: Set(Some(sender.into())),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            ids.push(item.id);
+        }
+        for (keys, request, scope, expected) in [
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[0], ids[1]],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq {
+                    selected_senders: Some(vec!["second".into()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone(), other.clone()],
+                InboxMessagesReq {
+                    selected_groups: Some(vec![other.clone()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[0], ids[2]],
+            ),
+            (
+                vec![allowed.clone(), other.clone()],
+                InboxMessagesReq {
+                    denied_groups: Some(vec![other.clone()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::Inclusive {
+                    min_id: ids[1],
+                    max_id: ids[1],
+                },
+                vec![ids[1]],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::Empty,
+                vec![],
+            ),
+            (
+                vec![],
+                InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![],
+            ),
+        ] {
+            let query =
+                build_inbox_query_base(&request, InboxQueryPurpose::Analytics);
+            let actual = apply_flat_analytics_group_filters(
+                query, &request, &keys, &scope,
+            )
+            .select_only()
+            .column(signal_message::Column::Id)
+            .order_by_asc(signal_message::Column::Id)
+            .into_tuple::<i64>()
+            .all(&env.dbx)
+            .await
+            .unwrap();
+            assert_eq!(actual, expected);
+        }
+    }
 
     #[tokio::test]
     async fn analytics_inbox_bounds_cache_coalesces_and_reuses_success() {

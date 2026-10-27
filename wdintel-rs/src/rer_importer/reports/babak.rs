@@ -99,6 +99,7 @@ pub async fn collect_babak_report_data(
         or_with_coords: inbox_req.or_with_coords,
         or_without_coords: inbox_req.or_without_coords,
         search: inbox_req.search,
+        search_mode: inbox_req.search_mode,
         selected_tags: inbox_req.selected_tags,
         denied_tags: inbox_req.denied_tags,
         tag_presence: inbox_req.tag_presence,
@@ -1575,9 +1576,9 @@ async fn load_babak_candidate_page_for_groups(
     let linked_message_ids = intel_product::Entity::find()
         .select_only()
         .column(intel_product::Column::IntelMessageId)
-        .filter(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ]))
         .into_query();
     query = query
@@ -1630,7 +1631,8 @@ async fn load_babak_candidate_page_for_groups(
     }
     .context(h!())?;
     query = filter_selected_metadata_for_inbox_messages(query, req)?;
-    query = filter_search(query, &req.search)?;
+    query =
+        filter_search_with_mode(query, &req.search, req.search_mode).c(h!())?;
     query = filter_selected_units_or_ids(
         query,
         &req.selected_units,
@@ -1832,9 +1834,9 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
         Query::select()
             .expr(Expr::value(1))
             .from(intel_product::Entity)
-            .and_where(intel_product::relation_kind_is_in([
-                intel_product::RELATION_KIND_COMMENT,
-                intel_product::RELATION_KIND_REPORT,
+            .and_where(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+                crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
+                crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
             ]))
             .and_where(
                 Expr::col((
@@ -2939,6 +2941,7 @@ mod tests {
             report_tags_only_this_unit: Some(false),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: Some(true),
             babak_new_callsign_min_mentions: Some(1),
             interception_keep_full_message: None,
@@ -3041,6 +3044,7 @@ mod tests {
             report_tags_only_this_unit: Some(false),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: Some(true),
             babak_new_callsign_min_mentions: Some(2),
             interception_keep_full_message: None,
@@ -3162,7 +3166,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(linked_comment),
             source_message_id: Set(creation_inside),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3413,7 +3417,7 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(linked_comment.id),
             source_message_id: Set(message.id),
-            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            relation_kind: Set(crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3434,7 +3438,9 @@ mod tests {
         intel_product::ActiveModel {
             intel_message_id: Set(linked_report.id),
             source_message_id: Set(message.id),
-            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            relation_kind: Set(
+                crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            ),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3464,6 +3470,7 @@ mod tests {
             report_tags_only_this_unit: Some(true),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: Some(false),
             babak_new_callsign_min_mentions: Some(2),
             interception_keep_full_message: None,

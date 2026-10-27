@@ -5,6 +5,11 @@ use crate::{
         worker::Package,
     },
     config::*,
+    devices::config::{
+        DEVICE_DOCUMENT_PARSER_VERSION,
+        DEVICE_FILE_CONTENT_DOWNLOAD_MAX_ENCRYPTED_BYTES,
+        DEVICE_FILE_CONTENT_DOWNLOAD_TIMEOUT_SECS,
+    },
     h,
     types::{Env, ShortContext},
 };
@@ -24,7 +29,7 @@ pub(super) struct Source {
 }
 
 pub(super) async fn source(env: &Env, job: &Job) -> anyhow::Result<Source> {
-    rows(env.file_registry_db().c(h!())?.connection(),"select r.name,r.extension,r.mime_type,c.object_key,c.source_size_bytes,c.is_encrypted from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$1 and r.revision=$2",vec![job.file_id.into(),job.revision.into()]).await.c(h!())?.pop().c(h!())
+    rows(env.file_registry_db().c(h!())?.connection(),"select r.name,r.extension,r.mime_type,c.object_key,c.source_size_bytes,c.is_encrypted from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$1 and r.revision=$2 and r.origin_archive_id is null",vec![job.file_id.into(),job.revision.into()]).await.c(h!())?.pop().c(h!())
 }
 
 async fn source_bytes(env: &Env, source: &Source) -> anyhow::Result<Vec<u8>> {
@@ -33,6 +38,17 @@ async fn source_bytes(env: &Env, source: &Source) -> anyhow::Result<Vec<u8>> {
         size <= OCR_MAX_SOURCE_BYTES,
         "file exceeds extraction input limit"
     );
+    if let Some(bytes) =
+        crate::devices::files::content::local_cache::read_bytes(
+            env,
+            &source.object_key,
+            size,
+            source.is_encrypted,
+        )
+        .await
+    {
+        return Ok(bytes);
+    }
     let mut config = env.s3_config.clone().c(h!())?;
     config.prefix.clear();
     let bytes = if source.is_encrypted {
@@ -148,7 +164,7 @@ pub(super) async fn package(
         .c(h!())
 }
 
-async fn submit_extractor(
+pub(super) async fn submit_extractor(
     env: &Env,
     job: &Job,
     source: &Source,
@@ -187,6 +203,7 @@ async fn submit_extractor(
         response.status(),
         reqwest::StatusCode::TOO_MANY_REQUESTS
             | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | reqwest::StatusCode::INSUFFICIENT_STORAGE
     ) {
         return Ok(None);
     }
@@ -286,7 +303,7 @@ async fn reuse(env: &Env, job: &Job) -> anyhow::Result<bool> {
         published_generation: Uuid,
     }
     let db = env.file_registry_db().c(h!())?.connection();
-    let found=rows::<Reuse,_>(db,"select d.published_generation from file_content c join file_content prior on prior.file_id=c.file_id and prior.upload_id=c.upload_id and prior.revision<>c.revision join file_revision r on r.id=c.file_id and r.revision=c.revision join file_revision p on p.id=prior.file_id and p.revision=prior.revision join file_document d on d.file_id=prior.file_id and d.revision=prior.revision join file_document_generation g on g.id=d.published_generation where c.file_id=$1 and c.revision=$2 and lower(coalesce(r.extension,substring(r.name from '[^.]+$'))) = lower(coalesce(p.extension,substring(p.name from '[^.]+$'))) and g.parser_version=$3 and g.complete and g.summary_state='completed' and g.position_state='completed' order by d.revision desc limit 1",vec![job.file_id.into(),job.revision.into(),DEVICE_DOCUMENT_PARSER_VERSION.into()]).await.c(h!())?.pop();
+    let found=rows::<Reuse,_>(db,"select d.published_generation from file_content c join file_content prior on prior.file_id=c.file_id and prior.upload_id=c.upload_id and prior.revision<>c.revision join file_revision r on r.id=c.file_id and r.revision=c.revision join file_revision p on p.id=prior.file_id and p.revision=prior.revision join file_document d on d.file_id=prior.file_id and d.revision=prior.revision join file_document_generation g on g.id=d.published_generation where c.file_id=$1 and c.revision=$2 and r.origin_archive_id is null and p.origin_archive_id is null and lower(coalesce(r.extension,substring(r.name from '[^.]+$'))) = lower(coalesce(p.extension,substring(p.name from '[^.]+$'))) and g.parser_version=$3 and g.complete and g.summary_state='completed' and g.position_state='completed' order by d.revision desc limit 1",vec![job.file_id.into(),job.revision.into(),DEVICE_DOCUMENT_PARSER_VERSION.into()]).await.c(h!())?.pop();
     let Some(found) = found else {
         return Ok(false);
     };
@@ -366,4 +383,31 @@ pub(super) async fn published(
         published: bool,
     }
     Ok(rows::<Published,_>(env.file_registry_db().c(h!())?.connection(),"select exists(select 1 from file_document_revision_generation where file_id=$1 and revision=$2 and generation=$3) as published",vec![job.file_id.into(),job.revision.into(),generation.into()]).await.c(h!())?.pop().c(h!())?.published)
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn extraction_reads_retained_original_without_s3() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let mut env = env.as_ref().clone();
+        let directory = tempfile::tempdir().unwrap();
+        let bytes = b"document retained after upload";
+        crate::devices::files::content::local_cache::test_support::retain_without_storage(
+            &mut env, directory.path(), "devices/extraction-source", bytes, true,
+        ).await;
+        let source = Source {
+            name: "report.txt".to_owned(),
+            extension: Some("txt".to_owned()),
+            mime_type: Some("text/plain".to_owned()),
+            object_key: "devices/extraction-source".to_owned(),
+            source_size_bytes: bytes.len() as i64,
+            is_encrypted: true,
+        };
+        assert_eq!(source_bytes(&env, &source).await.unwrap(), bytes);
+    }
 }

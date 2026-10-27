@@ -18,10 +18,13 @@ python3 -m unittest scripts/ci/test_check_analytics_migrations.py
 python3 scripts/ci/check_analytics_migrations.py
 bash deploy/clickhouse/tests/test-resnapshot-table.sh
 bash deploy/clickhouse/tests/test-resnapshot-batch.sh
+bash deploy/clickhouse/tests/test-analytics-health-probe-timeout.sh
 bash deploy/clickhouse/tests/test-source-resnapshot-table.sh
 bash deploy/clickhouse/tests/test-manage-system-logs.sh
 bash deploy/clickhouse/tests/test-source-verify-deploy.sh
 bash deploy/clickhouse/tests/test-control-bundle.sh
+bash deploy/clickhouse/tests/test-cdc-only-table-selection.sh
+bash deploy/clickhouse/tests/test-attachment-history.sh
 bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
 bash deploy/clickhouse/tests/test-clickhouse-memory-limit.sh
 bash deploy/clickhouse/tests/test-reconcile-if-needed.sh

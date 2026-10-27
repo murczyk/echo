@@ -292,6 +292,7 @@ mod tests {
     #[test]
     fn parse_callsigns_works() {
         let units = vec![sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             other: Default::default(),
             team_or_crew: Default::default(),
@@ -343,6 +344,7 @@ mod tests {
     #[test]
     fn parse_signals_works() {
         let units = vec![sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             other: Default::default(),
             team_or_crew: Default::default(),

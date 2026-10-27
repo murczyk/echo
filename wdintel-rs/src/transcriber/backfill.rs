@@ -74,6 +74,9 @@ async fn scan_confirmed(
     if !dry_run && !confirmed {
         return Ok(None);
     }
+    crate::transcription::service::ensure_sources_registered(dbx)
+        .await
+        .context(h!())?;
     Ok(Some(scan(dbx, since, dry_run).await.context(h!())?))
 }
 
@@ -134,19 +137,31 @@ async fn scan(
             }
             counts.eligible += 1;
             let outcome = if dry_run {
-                match echo_gpu_client::lookup(dbx, media.id)
-                    .await
-                    .context(h!())?
+                match match crate::transcription::service::source_id(
+                    dbx,
+                    &super::media_queue::source_key(&media),
+                )
+                .await
+                .context(h!())?
                 {
+                    Some(source) => echo_gpu_client::lookup(dbx, source)
+                        .await
+                        .context(h!())?,
+                    None => None,
+                } {
                     Some(item) => echo_gpu_client::EnqueueOutcome::Existing(
                         item.state().context(h!())?,
                     ),
                     None => echo_gpu_client::EnqueueOutcome::Queued,
                 }
             } else {
-                echo_gpu_client::enqueue(dbx, media.id)
-                    .await
-                    .context(h!())?
+                crate::transcription::service::enqueue(
+                    dbx,
+                    &super::media_queue::source_key(&media),
+                )
+                .await
+                .context(h!())?
+                .1
             };
             record_outcome(&mut counts, outcome, !dry_run);
         }
@@ -203,14 +218,10 @@ pub async fn requeue_terminal(
         return Ok(());
     }
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let updated = echo_gpu_client::requeue_terminal(
-        &dbx,
-        ps.source_id,
-        &ps.reason,
-        &ps.requester,
-    )
-    .await
-    .context(h!())?;
+    let config = crate::config::read_config(mode).c(h!())?;
+    let updated = reprocess_source(&dbx, &config, mode, &ps, "terminal")
+        .await
+        .c(h!())?;
     println!("requeued={updated} source_id={}", ps.source_id);
     Ok(())
 }
@@ -224,16 +235,45 @@ pub async fn retranscribe_completed(
         return Ok(());
     }
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let updated = echo_gpu_client::retranscribe_completed(
-        &dbx,
-        ps.source_id,
-        &ps.reason,
-        &ps.requester,
-    )
-    .await
-    .context(h!())?;
+    let config = crate::config::read_config(mode).c(h!())?;
+    let updated = reprocess_source(&dbx, &config, mode, &ps, "completed")
+        .await
+        .c(h!())?;
     println!("retranscribed={updated} source_id={}", ps.source_id);
     Ok(())
+}
+
+async fn reprocess_source(
+    dbx: &sea_orm::DatabaseConnection,
+    config: &crate::config::Config,
+    mode: Mode,
+    ps: &crate::OneoffReprocessAudioTranscriberPs,
+    expected_state: &str,
+) -> anyhow::Result<bool> {
+    let key = crate::transcription::service::source_key(dbx, ps.source_id)
+        .await
+        .context(h!())?
+        .context("transcription source missing")
+        .context(h!())?;
+    let files = if key.starts_with(
+        crate::config::ECHO_AUDIO_TRANSCRIPTION_DEVICE_SOURCE_PREFIX,
+    ) {
+        crate::file_registry::connect_runtime(config, mode)
+            .await
+            .c(h!())?
+    } else {
+        None
+    };
+    super::reprocess::request_if_state(
+        dbx,
+        files.as_ref().map(|files| files.connection()),
+        ps.source_id,
+        expected_state,
+        &ps.reason,
+        Some(&ps.requester),
+    )
+    .await
+    .context(h!())
 }
 
 #[cfg(test)]
@@ -241,6 +281,78 @@ mod tests {
     use super::*;
     use crate::entities::signal_message_media;
     use sea_orm::{ActiveValue::Set, EntityTrait};
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn non_device_reprocess_does_not_require_file_registry() {
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+        // Regression for https://github.com/echoua/echo/pull/3844.
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        env.dbx
+            .execute_unprepared(
+                "update system_settings set devices_section_enabled = false",
+            )
+            .await
+            .unwrap();
+        let mut config = env.config.clone();
+        config.file_registry.as_mut().unwrap().pg_dbname =
+            Some(format!("missing_{}", Uuid::new_v4().simple()));
+        assert!(crate::file_registry::connect_runtime(&config, Mode::Debug)
+            .await
+            .is_err());
+
+        for key in [
+            "message-media/ordinary",
+            "legacy/audio",
+            "device-audio-other/audio",
+        ] {
+            let (source, _) =
+                crate::transcription::service::enqueue(&env.dbx, key)
+                    .await
+                    .unwrap();
+            for (index, state) in
+                ["terminal", "completed"].into_iter().enumerate()
+            {
+                env.dbx.execute_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "update echo_gpu_transcription_queue set state=$2 where source_id=$1",
+                    [source.into(), state.into()],
+                )).await.unwrap();
+                let ps = crate::OneoffReprocessAudioTranscriberPs {
+                    source_id: source,
+                    requester: "test".into(),
+                    reason: "non-device reprocess regression".into(),
+                    yes: true,
+                };
+                assert!(reprocess_source(
+                    &env.dbx,
+                    &config,
+                    Mode::Debug,
+                    &ps,
+                    state
+                )
+                .await
+                .unwrap());
+                let task = echo_gpu_client::lookup(&env.dbx, source)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .0;
+                assert_eq!(task.state, "queued");
+                assert_eq!(task.reprocess_count, index as i32 + 1);
+                assert_eq!(
+                    task.reprocess_reason.as_deref(),
+                    Some(ps.reason.as_str())
+                );
+                assert_eq!(
+                    task.reprocess_requested_by.as_deref(),
+                    Some(ps.requester.as_str())
+                );
+            }
+        }
+    }
 
     #[test]
     fn parses_utc_timestamp_without_an_implicit_timezone() {
@@ -293,6 +405,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn database_scan_is_inclusive_batched_and_confirmation_safe() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
@@ -408,6 +521,21 @@ mod tests {
                 .unwrap()
                 .queued,
             201
+        );
+
+        echo_gpu_client::enqueue(&env.dbx, exact_id).await.unwrap();
+        for dry_run in [true, false] {
+            let error = scan_confirmed(&env.dbx, since, dry_run, true)
+                .await
+                .unwrap_err();
+            assert!(format!("{error:#}").contains("Run database migrations"));
+        }
+        assert_eq!(
+            echo_gpu_client::queue_status(&env.dbx)
+                .await
+                .unwrap()
+                .queued,
+            202
         );
     }
 }

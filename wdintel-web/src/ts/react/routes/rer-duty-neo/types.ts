@@ -15,8 +15,13 @@ import type { MessageCardBotTagAction } from '../shared/message-card/message-car
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
-import type { AnchorSnapshot, ReachedBottomContext } from './windowed-feed-scroll-shared';
+import type {
+  AnchorSnapshot,
+  MessageFeedFocus,
+  ReachedBottomContext,
+} from '../shared/message-feed';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
+import type { GroupScope } from '../shared/group-navigation';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
@@ -36,6 +41,10 @@ export type FeedColumnModel = {
     initialPositioningReady?: boolean;
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
+    editorHighlightedMessageId?: number | null;
+    linkedMessageFocus?: MessageFeedFocus | null;
+    unreadBoundaryMessageId?: number | null;
+    explicitNavigationLoading?: boolean;
     arrowResultMessage?: string | null;
     bottomUnreadCount?: number;
     physicallyAtBottom?: boolean;
@@ -50,6 +59,12 @@ export type FeedColumnModel = {
     onScrollAnchorSnapshotChange?: (feedId: string, snapshot: AnchorSnapshot | null) => void;
   };
   filterPanel: FeedFilterPanelModel;
+  groupNavigation?: {
+    scope: GroupScope;
+    groupName: string;
+    onSelect: (scope: GroupScope) => void;
+    onError: (error: unknown) => void;
+  };
   keywordsPanel: {
     keywordSets: OrganismKeywordSetDto[];
     onFilterChange: (feedId: string, nextFilter: RerDutyFeedFilterState) => void;
@@ -70,6 +85,7 @@ export type FeedColumnModel = {
     featureStrictNetworks: boolean;
     tagsLayout: TagsLayoutVariant;
     hideBotTags: boolean;
+    hideNetworks: boolean;
     /** When true, Duty cards hide heavy media behind reveal banners until opened. */
     collapseMediaPreviews?: boolean;
     mediaSummaryEnabled?: boolean;
@@ -100,11 +116,12 @@ export type FeedColumnModel = {
       etalonDisplayModel: MessageCardEtalonDisplayModel,
       focusTarget: HTMLElement,
     ) => void;
-    onMessageEditReport: (reportId: number) => void;
+    onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
     onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
     onCreateFeed?: () => void;
+    onCreateMessage?: (focusTarget?: HTMLElement) => void;
     onScrollToTop?: () => void;
     /** Called at the physical bottom. Return false to preserve the current anchor instead of following an unread pending tail. */
     onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
@@ -118,5 +135,6 @@ export type FeedColumnModel = {
     onArrowClick?: () => void;
     /** Called when the visible range changes; pass message IDs in view so parent can add them to readIds. When user reaches bottom, called with all IDs and atBottom: true so badge clears. */
     onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
+    onVisibleMessages?: (ids: readonly number[]) => void;
   };
 };

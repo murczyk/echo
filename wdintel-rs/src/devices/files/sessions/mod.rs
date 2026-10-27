@@ -1,4 +1,4 @@
-mod cursor;
+pub(in crate::devices::files) mod cursor;
 pub(in crate::devices::files) mod listing;
 mod query;
 pub(in crate::devices) mod read;

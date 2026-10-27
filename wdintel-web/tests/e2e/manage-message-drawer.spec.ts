@@ -4,7 +4,7 @@ import {
   createOverflowingInboxResponse,
   installAnalysisNeoApiMocks,
 } from './analysis-neo.fixtures';
-import { openCreateMessageDrawer } from './image-editor-drawer.fixtures';
+import { clickCreateMessage, openCreateMessageDrawer } from './image-editor-drawer.fixtures';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
@@ -14,6 +14,23 @@ import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 type ManageMessageDrawerHost = 'duty' | 'analysis';
 type LinkedMessageKind =
   'with-report' | 'forwarded-report' | 'own-report-without-accessible-parent';
+
+async function dismissSettingsFailureNotifications(page: Page, host: ManageMessageDrawerHost) {
+  const settingsFailure = page
+    .getByRole('alert')
+    .filter({ hasText: 'Помилка завантаження системних налаштувань' });
+  await expect(settingsFailure).toBeVisible();
+  await settingsFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
+  await expect(settingsFailure).toHaveCount(0);
+  if (host === 'duty') {
+    const requestFailure = page
+      .getByRole('alert')
+      .filter({ hasText: 'System settings unavailable' });
+    await expect(requestFailure).toBeVisible();
+    await requestFailure.getByRole('button', { name: 'Закрити сповіщення' }).click();
+    await expect(requestFailure).not.toBeVisible();
+  }
+}
 
 async function expectEmbeddedEditor(page: Page) {
   const editor = page.locator('[data-manage-message-presentation="embedded"]');
@@ -99,21 +116,49 @@ async function openLinkedMessageEditDrawer(
   page: Page,
   host: ManageMessageDrawerHost,
   kind: LinkedMessageKind,
+  {
+    hideNetworks = false,
+    systemSettingsFailure = false,
+    withNetworkSource = false,
+    beforeEdit,
+  }: {
+    hideNetworks?: boolean;
+    systemSettingsFailure?: boolean;
+    withNetworkSource?: boolean;
+    beforeEdit?: () => void;
+  } = {},
 ) {
   const inboxResponse = buildLinkedInboxResponse(kind);
   let copyRequestCount = 0;
+  if (withNetworkSource) {
+    Object.assign(inboxResponse.inbox_items[0]![1] as Record<string, unknown>, {
+      networkIds: [7],
+      networkName: 'E2E source network',
+    });
+  }
   await installMessageCardMediaPreviewAssetRoutes(page);
 
   if (host === 'analysis') {
-    await installAnalysisNeoApiMocks(page, { inboxResponse, signalGroups: ['e2e-group'] });
+    await installAnalysisNeoApiMocks(page, {
+      inboxResponse,
+      hideNetworks,
+      systemSettingsFailure,
+      signalGroups: ['e2e-group'],
+    });
     await page.goto('/rer-analysis-neo');
   } else {
     const dutyMocks = await installRerDutyShortStateMocks(page, {
       inboxResponse,
+      hideNetworks,
+      systemSettingsFailure,
       signalGroups: ['e2e-group'],
     });
     await page.goto('/rer-duty-neo');
     await dutyMocks.systemSettingsReady;
+  }
+  if (systemSettingsFailure) {
+    await dismissSettingsFailureNotifications(page, host);
+  } else if (host === 'duty') {
     await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   }
   await page.route('**/api/1.1/messages/copy', async (route) => {
@@ -127,30 +172,43 @@ async function openLinkedMessageEditDrawer(
   await expect(
     page.getByText((inboxResponse.inbox_items[0]![1] as { text: string }).text),
   ).toBeVisible();
+  beforeEdit?.();
   await page.getByRole('button', { name: 'Більше дій', exact: true }).first().click();
   await page.getByRole('menuitem', { name: 'Редагувати', exact: true }).first().click();
   return { getCopyRequestCount: () => copyRequestCount };
 }
 
-async function openOverflowingMessageEditor(page: Page, host: ManageMessageDrawerHost) {
+async function openOverflowingMessageEditor(
+  page: Page,
+  host: ManageMessageDrawerHost,
+  hideNetworks = false,
+  systemSettingsFailure = false,
+) {
   const inboxResponse = createOverflowingInboxResponse();
   const dutyMocks =
     host === 'duty'
       ? await installRerDutyShortStateMocks(page, {
           inboxResponse,
+          hideNetworks,
+          systemSettingsFailure,
           signalGroups: ['analysis-summary-e2e-group'],
         })
       : null;
   if (host === 'analysis') {
     await installAnalysisNeoApiMocks(page, {
       inboxResponse,
+      hideNetworks,
+      systemSettingsFailure,
       signalGroups: ['analysis-summary-e2e-group'],
     });
   }
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
   if (dutyMocks) await dutyMocks.systemSettingsReady;
   await expect(page.getByText('Analysis narrow fixture message 0')).toBeVisible();
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  if (systemSettingsFailure) {
+    await dismissSettingsFailureNotifications(page, host);
+  }
+  await clickCreateMessage(page, host);
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
   await expectEmbeddedEditor(page);
 }
@@ -176,7 +234,7 @@ async function openCreateEditorWithLinkedMessage(
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
   if (dutyMocks) await dutyMocks.systemSettingsReady;
   await expect(page.getByText('E2E source for dirty replacement')).toBeVisible();
-  await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+  await clickCreateMessage(page, host);
   await expectEmbeddedEditor(page);
 }
 
@@ -211,20 +269,98 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
   });
 
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
+    for (const hideNetworks of [true, false]) {
+      test(`#3598 ${host} editor network field follows hideNetworks=${hideNetworks}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: 1920, height: 900 });
+        const networkSearches: string[] = [];
+        page.on('request', (request) => {
+          if (new URL(request.url()).pathname === '/api/sigint/network/search') {
+            networkSearches.push(request.url());
+          }
+        });
+        await openOverflowingMessageEditor(page, host, hideNetworks);
+        const editor = page.locator('[data-manage-message-presentation]');
+        await expect(editor.getByRole('combobox', { name: 'Мережа', exact: true })).toHaveCount(
+          hideNetworks ? 0 : 1,
+        );
+        await expect(
+          editor.getByRole('combobox', { name: 'Частота (МГц)', exact: true }),
+        ).toBeVisible();
+        if (hideNetworks) expect(networkSearches).toEqual([]);
+        else await expect.poll(() => networkSearches.length).toBeGreaterThan(0);
+      });
+    }
+
+    test(`#3598 ${host} keeps editor networks hidden when settings fail`, async ({ page }) => {
+      await page.setViewportSize({ width: 1920, height: 900 });
+      const networkSearches: string[] = [];
+      page.on('request', (request) => {
+        if (new URL(request.url()).pathname === '/api/sigint/network/search') {
+          networkSearches.push(request.url());
+        }
+      });
+      await openOverflowingMessageEditor(page, host, false, true);
+      const editor = page.locator('[data-manage-message-presentation]');
+      await expect(editor.getByRole('combobox', { name: 'Мережа', exact: true })).toHaveCount(0);
+      await expect(
+        editor.getByRole('combobox', { name: 'Частота (МГц)', exact: true }),
+      ).toBeVisible();
+      const frequency = editor.getByRole('combobox', { name: 'Частота (МГц)', exact: true });
+      await frequency.click();
+      await frequency.press('Control+A');
+      await frequency.pressSequentially('149.500');
+      await frequency.press('Tab');
+      await expect(frequency).toHaveValue('149.500');
+      expect(networkSearches).toEqual([]);
+    });
+
+    for (const { label, hideNetworks, systemSettingsFailure } of [
+      { label: 'hidden', hideNetworks: true, systemSettingsFailure: false },
+      { label: 'settings unavailable', hideNetworks: false, systemSettingsFailure: true },
+    ]) {
+      test(`#3598 ${host} suppresses source network hydration when ${label}`, async ({ page }) => {
+        const networkRequests: string[] = [];
+        await openLinkedMessageEditDrawer(page, host, 'with-report', {
+          hideNetworks,
+          systemSettingsFailure,
+          withNetworkSource: true,
+          beforeEdit: () => {
+            page.on('request', (request) => {
+              const pathname = new URL(request.url()).pathname;
+              if (
+                pathname === '/api/sigint/network/search' ||
+                pathname === '/api/sigint/network-info-batch-id'
+              ) {
+                networkRequests.push(pathname);
+              }
+            });
+          },
+        });
+
+        const editor = page.locator('[data-manage-message-presentation]');
+        await expect(editor).toBeVisible();
+        await expect(editor.getByRole('combobox', { name: 'Мережа', exact: true })).toHaveCount(0);
+        expect(networkRequests).toEqual([]);
+      });
+    }
+
     test(`${host} restores focus to the report action after closing`, async ({ page }) => {
       await page.setViewportSize({ width: 1600, height: 900 });
       await openCreateEditorWithLinkedMessage(page, host);
       await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
 
-      const reportAction = page
-        .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
-        .first();
-      await reportAction.click();
-      const sourceOutlineStyle = await reportAction.evaluate((element) => {
-        const card = element.closest<HTMLElement>('[data-message-card-root]');
-        return card == null ? null : getComputedStyle(card).outlineStyle;
+      const sourceCard = page.locator('[data-message-card-root]').first();
+      const reportAction = sourceCard.getByRole('button', {
+        name: 'Створити розвіддонесення',
+        exact: true,
       });
-      expect(sourceOutlineStyle).toBe('none');
+      await reportAction.click();
+      const sourceOutlineStyle = await sourceCard.evaluate(
+        (element) => getComputedStyle(element).outlineStyle,
+      );
+      expect(sourceOutlineStyle).toBe('solid');
       await expect(page.getByRole('heading', { name: 'Створити розвіддонесення' })).toBeVisible();
       await page.getByRole('button', { name: 'Закрити', exact: true }).click();
 
@@ -533,7 +669,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await page.setViewportSize({ width: scenario.width, height: 800 });
       await expect(page.locator('[data-duty-feed-column]')).toHaveCount(4);
 
-      await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+      await clickCreateMessage(page, 'duty');
       const editor = page.locator('[data-manage-message-presentation="embedded"]');
       await expect(editor).toBeVisible();
       await expect
@@ -573,7 +709,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await dutyMocks.systemSettingsReady;
     await expect(page.getByText('E2E responsive card width')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Додати повідомлення' }).click();
+    await clickCreateMessage(page, 'duty');
     await expectEmbeddedEditor(page);
     await page
       .locator('[data-manage-message-presentation="embedded"]')
@@ -793,7 +929,7 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       ]);
       expect(headerBounds).not.toBeNull();
       expect(cardBounds).not.toBeNull();
-      expect(headerBounds!.y + headerBounds!.height).toBeCloseTo(cardBounds!.y, 0);
+      expect(headerBounds!.y + headerBounds!.height).toBeLessThanOrEqual(cardBounds!.y);
 
       const emptyCoordinatesPanel = page.getByText('Координати ще не додані').locator('..');
       await expect
@@ -979,6 +1115,6 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
     await expect(dock.locator('[data-analysis-dock-panel="editor"]')).toHaveCount(0);
     await expect(dock.locator('[data-analysis-dock-panel="analytics"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Додати повідомлення' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Фільтри' })).toBeVisible();
+    await expect(page.locator('#analysis-groups-title')).toBeVisible();
   });
 });

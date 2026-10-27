@@ -1,19 +1,19 @@
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
-import { CircularProgress, Tooltip } from '@mui/material';
+import { Tooltip } from '@mui/material';
 import { useState } from 'react';
 
 import type { DeviceFileTreeEntry } from '../../../../../Bindings';
-import { PowerAlert } from '../../../components/PowerAlert';
-import { PowerButton } from '../../../components/PowerButton';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { DeviceAnalyticsTagFilter } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
 import type { DeviceFilesState } from '../use-device-files';
+import { DeviceFileFiltersMenu } from './DeviceFileFiltersMenu';
 import { DeviceFileSearchControls } from './DeviceFileSearchControls';
 import { DeviceFileSearchResults } from './DeviceFileSearchResults';
 import { DeviceFileTree } from './DeviceFileTree';
+import { DeviceArchiveActivityContext } from '../use-device-archive';
 
 const EXPLORER_PANEL_ID = 'device-files-explorer-panel';
 const SEARCH_PANEL_ID = 'device-files-search-panel';
@@ -37,8 +37,10 @@ export function DeviceFilesSidebar({
   tagFilter,
   onTagFilterChange,
   fullHeight = false,
+  active = true,
 }: {
   fullHeight?: boolean;
+  active?: boolean;
   files: DeviceFilesState;
   tagsState: DeviceAnalyticsTagsState;
   tagFilter: DeviceAnalyticsTagFilter;
@@ -54,12 +56,6 @@ export function DeviceFilesSidebar({
   const nestedSearchScope =
     files.searchScope !== null && files.searchScope.entryId !== files.searchScope.rootEntryId;
   const showModeBody = !files.rootsLoading && files.roots.length > 0;
-  const showStatus =
-    files.rootsLoading ||
-    files.rootsError !== null ||
-    files.scopeNotice !== null ||
-    (files.roots.length === 0 && !files.rootsLoading);
-
   const openSearchDirectory = (entryId: string) => {
     if (files.searchScope?.entryId === entryId) {
       files.clearSearchResults();
@@ -135,6 +131,12 @@ export function DeviceFilesSidebar({
               </PowerIconButton>
             </Tooltip>
           </div>
+          {mode === DeviceFilesSidebarMode.Explorer ? (
+            <DeviceFileFiltersMenu
+              contentFilter={files.contentFilter}
+              setContentFilter={files.setContentFilter}
+            />
+          ) : null}
           <Tooltip title="Оновити файлові дані">
             <span>
               <PowerIconButton
@@ -150,44 +152,7 @@ export function DeviceFilesSidebar({
         </div>
       </header>
 
-      {showStatus ? (
-        <div className="shrink-0 space-y-echo-sm border-b border-echo-border p-echo-sm">
-          {files.rootsLoading ? (
-            <div
-              className="flex min-h-20 items-center justify-center gap-echo-sm text-echo-sm text-echo-text-muted"
-              role="status"
-            >
-              <CircularProgress size={24} aria-label="Завантаження файлових даних" />
-              <span>Завантаження файлових даних…</span>
-            </div>
-          ) : null}
-          {files.rootsError ? (
-            <PowerAlert
-              severity="error"
-              autoHideDuration={null}
-              action={
-                <PowerButton size="small" onClick={() => void files.reloadRoots()}>
-                  Повторити
-                </PowerButton>
-              }
-            >
-              {files.rootsError.message}
-            </PowerAlert>
-          ) : null}
-          {!files.rootsLoading && files.roots.length === 0 && files.rootsError === null ? (
-            <PowerAlert severity="info" autoHideDuration={null}>
-              Для пристрою ще немає синхронізованих файлів.
-            </PowerAlert>
-          ) : null}
-          {files.scopeNotice ? (
-            <PowerAlert severity="warning" autoHideDuration={null}>
-              {files.scopeNotice}
-            </PowerAlert>
-          ) : null}
-        </div>
-      ) : null}
-
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-echo-sm">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-echo-xs py-echo-sm">
         {showModeBody ? (
           <>
             <div
@@ -197,14 +162,18 @@ export function DeviceFilesSidebar({
               hidden={mode !== DeviceFilesSidebarMode.Explorer}
               className="min-w-0"
             >
-              <DeviceFileTree files={files} />
+              <DeviceArchiveActivityContext.Provider
+                value={active && mode === DeviceFilesSidebarMode.Explorer}
+              >
+                <DeviceFileTree files={files} />
+              </DeviceArchiveActivityContext.Provider>
             </div>
             <div
               id={SEARCH_PANEL_ID}
               role="region"
               aria-labelledby={SEARCH_BUTTON_ID}
               hidden={mode !== DeviceFilesSidebarMode.Search}
-              className="min-w-0 space-y-echo-md"
+              className="min-w-0 space-y-echo-md px-echo-xs"
             >
               <DeviceFileSearchControls
                 draft={files.searchDraft}

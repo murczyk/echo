@@ -533,7 +533,7 @@ rer_important_add toMsg req =
 
 rer_important_rm :
     (Result ApiError () -> msg)
-    -> ImportantAddReq
+    -> ImportantRmReq
     -> Cmd msg
 rer_important_rm toMsg req =
     Http.post

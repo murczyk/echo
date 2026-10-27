@@ -857,11 +857,6 @@ where
         }
         result.insert(rec.id, new_id);
     }
-    if has_active_battle_line && (num_created > 0 || num_updated > 0) {
-        crate::battle_line::requeue_settlement_links(txn)
-            .await
-            .context(h!())?;
-    }
     Ok(ImportResult {
         ids_map: result,
         num_created,
@@ -1100,6 +1095,7 @@ where
             is_inconsistent: NotSet,
             updated_at: Set(rec.updated_at),
             present_in_orbit: NotSet,
+            combat_type_id: NotSet,
         };
 
         let new_rec = if new_record {
@@ -1112,6 +1108,9 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
+        crate::iggy::unit_refresh::enqueue(txn, new_id)
+            .await
+            .c(h!())?;
         result.insert(rec.id, new_id);
     }
     Ok(ImportResult {

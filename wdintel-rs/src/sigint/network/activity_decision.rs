@@ -1,3 +1,4 @@
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::config::SIGINT_NETWORK_ACTIVITY_DECISION_LIST_LIMIT;
 use crate::entities::{
     sigint_activity_decision_changelog, sigint_network, sigint_network_freq,
@@ -234,7 +235,7 @@ pub async fn list_network_activity_decisions(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user).context(h!())?,
-        vec!["Rer", "Cyber", "Api", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "ApiAgent"],
     )
     .await
     .c(h!())?;

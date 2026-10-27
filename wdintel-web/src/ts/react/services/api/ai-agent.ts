@@ -2,6 +2,8 @@ import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { getJson, postBytes, postJson, postVoid } from './client';
 import type {
   AiAgentActivityPresentation,
+  AiAgentReasoningPreset,
+  AiAgentCompletionMetadata,
   AiAgentAdminRequestDetail,
   AiAgentAdminRequestItem,
   AiAgentAdminRequestListReq,
@@ -53,12 +55,14 @@ export type AiAgentRequestState = 'queued' | 'running' | 'completed' | 'failed' 
 export type AiAgentReviewState = 'pending' | 'safe' | 'suspicious' | 'failed';
 export type AiAgentSeverity = 'low' | 'medium' | 'high' | 'critical';
 
-export type AiAgentProvider = AiAgentProviderItem & {
-  enabled: boolean;
-  isDefault: boolean;
-};
+export type AiAgentProvider = Omit<AiAgentProviderItem, 'reasoningAvailable' | 'reasoningPresets'> &
+  Partial<Pick<AiAgentProviderItem, 'reasoningAvailable' | 'reasoningPresets'>> & {
+    enabled: boolean;
+    isDefault: boolean;
+  };
 
 export type AiAgentConfiguration = {
+  reasoningPresetsEnabled?: boolean;
   enabled: boolean;
   providers: AiAgentProvider[];
   defaultProviderId: string | null;
@@ -68,11 +72,25 @@ export type AiAgentConversation = Omit<AiAgentConversationSummary, 'aiEngineId'>
   providerId: string | null;
 };
 
-export type AiAgentMessage = Omit<AiAgentMessageItem, 'requestState' | 'role'> & {
-  id: string;
-  requestState: AiAgentRequestState;
-  role: 'user' | 'assistant';
-};
+export type AiAgentMessage = Omit<
+  AiAgentMessageItem,
+  | 'requestState'
+  | 'role'
+  | 'reasoningPreset'
+  | 'maxRuntimeSeconds'
+  | 'startedAt'
+  | 'completionMetadata'
+> &
+  Partial<
+    Pick<
+      AiAgentMessageItem,
+      'reasoningPreset' | 'maxRuntimeSeconds' | 'startedAt' | 'completionMetadata'
+    >
+  > & {
+    id: string;
+    requestState: AiAgentRequestState;
+    role: 'user' | 'assistant';
+  };
 
 export type AiAgentConversationDetail = AiAgentConversation & {
   messages: AiAgentMessage[];
@@ -90,11 +108,13 @@ export type AiAgentEventType =
   | 'message_citations'
   | 'file_citations'
   | 'map_artifact'
+  | 'completion_metadata'
   | 'completion'
   | 'cancellation'
   | 'error';
 
 export type AiAgentEvent = {
+  completionMetadata?: AiAgentCompletionMetadata | null;
   sequence: number;
   requestId: string;
   type: AiAgentEventType;
@@ -380,6 +400,12 @@ export function normalizeAiAgentEvent(
     sequence: value.sequence,
     requestId,
     type: value.eventType as AiAgentEventType,
+    completionMetadata:
+      value.eventType === 'completion_metadata' &&
+      payload.coverageLimited === true &&
+      typeof payload.reason === 'string'
+        ? { coverageLimited: true, reason: payload.reason }
+        : null,
     createdAt: value.createdAt,
     text: payloadString(
       payloadValue(payload, 'errorSummary', 'error_summary') ??
@@ -542,6 +568,7 @@ export async function getAiAgentConfiguration(): Promise<AiAgentConfiguration> {
   const response = await getJson<AiAgentConfigurationRsp>('/api/ai-agent/configuration');
   return {
     enabled: response.featureEnabled,
+    reasoningPresetsEnabled: response.reasoningPresetsEnabled ?? false,
     providers: response.providers.map((provider) =>
       normalizeProvider(provider, response.defaultAiEngineId),
     ),
@@ -600,12 +627,14 @@ export async function submitAiAgentRequest(input: {
   conversationId: string | null;
   providerId: string;
   message: string;
+  reasoningPreset?: AiAgentReasoningPreset | null;
   mapEdit?: AiAgentMapEditTarget | null;
 }): Promise<AiAgentRequestCreated> {
   const req: AiAgentRequestCreateReq = {
     conversationId: input.conversationId,
     aiEngineId: input.providerId,
     prompt: input.message,
+    reasoningPreset: input.reasoningPreset ?? null,
     mapEdit: input.mapEdit ?? null,
   };
   const response = await postJson<AiAgentRequestCreateRsp>('/api/ai-agent/requests/create', req);
@@ -804,13 +833,15 @@ function normalizeUserStatus(value: AiAgentAdminUserItem): AiAgentUserStatus {
   };
 }
 
-export async function listAiAgentAuditRequests(): Promise<AiAgentAuditRequest[]> {
-  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, limit: 200 };
+export async function listAiAgentAuditRequests(
+  pageStartId: string | null = null,
+): Promise<Omit<AiAgentAdminRequestListRsp, 'items'> & { items: AiAgentAuditRequest[] }> {
+  const req: AiAgentAdminRequestListReq = { state: null, suspicious: null, pageStartId };
   const response = await postJson<AiAgentAdminRequestListRsp>(
     '/api/admin/ai-agent/requests/list',
     req,
   );
-  return response.items.map((request) => normalizeAuditRequest(request));
+  return { ...response, items: response.items.map((request) => normalizeAuditRequest(request)) };
 }
 
 export async function listAiAgentEchoProxies(): Promise<AiAgentEchoProxy[]> {

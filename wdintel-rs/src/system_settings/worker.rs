@@ -335,9 +335,12 @@ fn marked_replay_comments(
     system_login_id: uuid::Uuid,
 ) -> Select<sigint_comment::Entity> {
     sigint_comment::Entity::find()
-        .join(
+        .join_rev(
             JoinType::InnerJoin,
-            sigint_comment::Relation::SignalMessage.def(),
+            signal_message::Entity::belongs_to(sigint_comment::Entity)
+                .from(signal_message::Column::Id)
+                .to(sigint_comment::Column::SignalMessageId)
+                .into(),
         )
         .filter(sigint_comment::Column::LoginId.eq(system_login_id))
         .filter(
@@ -571,7 +574,7 @@ async fn replay_source_message<C>(
     replay_ts: NaiveDateTime,
 ) -> Result<signal_message::Model, AppError>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
     let body = build_replay_body(source.message.body.as_deref(), replay_ts);
     let (date, time) = format_date_time_fields(replay_ts);

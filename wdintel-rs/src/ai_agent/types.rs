@@ -2,6 +2,46 @@ use crate::types::{Deserialize, Serialize};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 
 #[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum AiAgentReasoningPreset {
+    Fast,
+    #[default]
+    Balanced,
+    Deep,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAgentReasoningPresetItem {
+    pub preset: AiAgentReasoningPreset,
+    pub max_runtime_seconds: i32,
+    pub reasoning_effort: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAgentCompletionMetadata {
+    pub coverage_limited: bool,
+    pub reason: String,
+}
+
+#[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
@@ -16,6 +56,10 @@ pub struct AiAgentActivityPresentation {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentProviderItem {
+    #[serde(default)]
+    pub reasoning_available: bool,
+    #[serde(default)]
+    pub reasoning_presets: Vec<AiAgentReasoningPresetItem>,
     pub id: String,
     pub name: String,
     pub model_name: String,
@@ -26,6 +70,8 @@ pub struct AiAgentProviderItem {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentConfigurationRsp {
+    #[serde(default)]
+    pub reasoning_presets_enabled: bool,
     pub feature_enabled: bool,
     pub default_ai_engine_id: Option<String>,
     pub providers: Vec<AiAgentProviderItem>,
@@ -91,6 +137,14 @@ pub struct AiAgentMessageCitation {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentMessageItem {
+    #[serde(default)]
+    pub reasoning_preset: Option<AiAgentReasoningPreset>,
+    #[serde(default)]
+    pub max_runtime_seconds: Option<i32>,
+    #[serde(default)]
+    pub started_at: Option<i64>,
+    #[serde(default)]
+    pub completion_metadata: Option<AiAgentCompletionMetadata>,
     pub request_id: String,
     pub request_state: String,
     pub role: String,
@@ -123,6 +177,8 @@ pub struct AiAgentConversationDetail {
 )]
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentRequestCreateReq {
+    #[serde(default)]
+    pub reasoning_preset: Option<AiAgentReasoningPreset>,
     pub conversation_id: Option<String>,
     pub ai_engine_id: Option<String>,
     pub prompt: String,
@@ -322,7 +378,7 @@ pub struct AiAgentContainerListRsp {
 pub struct AiAgentAdminRequestListReq {
     pub state: Option<String>,
     pub suspicious: Option<bool>,
-    pub limit: Option<i32>,
+    pub page_start_id: Option<String>,
 }
 
 #[derive(
@@ -369,6 +425,9 @@ pub struct AiAgentAdminRequestItem {
 #[serde(rename_all = "camelCase")]
 pub struct AiAgentAdminRequestListRsp {
     pub items: Vec<AiAgentAdminRequestItem>,
+    pub page_size: i32,
+    pub total: Option<i64>,
+    pub page_start_ids: Option<Vec<String>>,
 }
 
 #[derive(

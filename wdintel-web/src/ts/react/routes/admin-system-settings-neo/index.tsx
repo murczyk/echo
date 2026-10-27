@@ -1,7 +1,6 @@
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Box,
-  ButtonBase,
   Card,
   CardContent,
   CircularProgress,
@@ -23,7 +22,7 @@ import {
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+import type { FormEvent, ReactNode } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { PowerDateTimePicker } from '../../components/PowerDateTimePicker';
@@ -57,8 +56,12 @@ type SystemSettingsForm = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -98,8 +101,12 @@ type SystemSettingsPayload = {
   showClassicAnalysis: boolean;
   showPelengDistanceToBattleline: boolean;
   disableBotTags: boolean;
+  hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
+  aiPositionHighlightsEnabled: boolean;
+  apiRateLimitReplenishIntervalMs: number;
+  apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
   excludeOrbitOtherUnits: boolean;
   messengerMediaCacheMinFreeGib: SystemSettingsItem['messengerMediaCacheMinFreeGib'];
@@ -139,8 +146,12 @@ const EMPTY_FORM: SystemSettingsForm = {
   showClassicAnalysis: true,
   showPelengDistanceToBattleline: false,
   disableBotTags: false,
+  hideNetworks: false,
   dutyExcludeMenuEnabled: true,
   analysisAorFilterEnabled: true,
+  aiPositionHighlightsEnabled: false,
+  apiRateLimitReplenishIntervalMs: 500,
+  apiRateLimitBurstSize: 5,
   twoFactorAuthEnabled: true,
   excludeOrbitOtherUnits: true,
   messengerMediaCacheEnabled: false,
@@ -230,8 +241,12 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     showClassicAnalysis: item?.showClassicAnalysis ?? true,
     showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     disableBotTags: item?.disableBotTags ?? false,
+    hideNetworks: item?.hideNetworks ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
+    aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
+    apiRateLimitReplenishIntervalMs: item?.apiRateLimitReplenishIntervalMs ?? 500,
+    apiRateLimitBurstSize: item?.apiRateLimitBurstSize ?? 5,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
     excludeOrbitOtherUnits: item?.excludeOrbitOtherUnits ?? true,
     messengerMediaCacheMinFreeGib: item?.messengerMediaCacheMinFreeGib ?? 10,
@@ -274,8 +289,12 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.showClassicAnalysis === b.showClassicAnalysis &&
     a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.disableBotTags === b.disableBotTags &&
+    a.hideNetworks === b.hideNetworks &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
+    a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
+    a.apiRateLimitReplenishIntervalMs === b.apiRateLimitReplenishIntervalMs &&
+    a.apiRateLimitBurstSize === b.apiRateLimitBurstSize &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
     a.excludeOrbitOtherUnits === b.excludeOrbitOtherUnits &&
     a.messengerMediaCacheMinFreeGib === b.messengerMediaCacheMinFreeGib &&
@@ -374,8 +393,12 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     showClassicAnalysis: form.showClassicAnalysis,
     showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     disableBotTags: form.disableBotTags,
+    hideNetworks: form.hideNetworks,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
+    aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
+    apiRateLimitReplenishIntervalMs: form.apiRateLimitReplenishIntervalMs,
+    apiRateLimitBurstSize: form.apiRateLimitBurstSize,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
     excludeOrbitOtherUnits: form.excludeOrbitOtherUnits,
     messengerMediaCacheMinFreeGib: form.messengerMediaCacheMinFreeGib,
@@ -458,6 +481,106 @@ function CoordinateField({ disabled, label, onBlur, onChange, value }: Coordinat
   );
 }
 
+const mainSettingsGroupSx = {
+  border: 1,
+  borderColor: 'divider',
+  borderRadius: 2,
+  bgcolor: 'background.paper',
+  p: { xs: 2, sm: 2.5 },
+};
+
+const mainSettingsRowSx = {
+  alignItems: 'center',
+  margin: 0,
+  gap: 1.5,
+  '& .MuiFormControlLabel-label': { width: '100%' },
+};
+
+function MainSettingsGroup({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <Box component="section" sx={mainSettingsGroupSx}>
+      <Stack spacing={1.5}>
+        <Typography
+          component="h2"
+          variant="overline"
+          sx={{ color: 'text.secondary', letterSpacing: 0.8 }}
+        >
+          {title}
+        </Typography>
+        {children}
+      </Stack>
+    </Box>
+  );
+}
+
+function MainSettingsSwitchRow({
+  checked,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  label: ReactNode;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <FormControlLabel
+      sx={mainSettingsRowSx}
+      control={<Switch checked={checked} onChange={(_, nextChecked) => onChange(nextChecked)} />}
+      label={
+        <Typography variant="body1" sx={{ fontWeight: 400, lineHeight: 1.35 }}>
+          {label}
+        </Typography>
+      }
+    />
+  );
+}
+
+function ApiSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <Stack spacing={2}>
+      <Typography>Обмеження запитів для кожного користувача з роллю Api.</Typography>
+      <TextField
+        type="number"
+        label="Інтервал поповнення одного запиту, мс"
+        value={form.apiRateLimitReplenishIntervalMs}
+        onChange={(event) =>
+          patchForm({ apiRateLimitReplenishIntervalMs: Number(event.target.value) })
+        }
+        helperText="500 мс відповідає 2 запитам на секунду."
+        slotProps={{ htmlInput: { min: 1, max: 2147483647, step: 1 } }}
+      />
+      <TextField
+        type="number"
+        label="Максимальний запас запитів"
+        value={form.apiRateLimitBurstSize}
+        onChange={(event) => patchForm({ apiRateLimitBurstSize: Number(event.target.value) })}
+        helperText="Кількість запитів, які можна виконати поспіль без очікування."
+        slotProps={{ htmlInput: { min: 1, max: 2147483647, step: 1 } }}
+      />
+    </Stack>
+  );
+}
+
+function validateApiRateLimitSettings(form: SystemSettingsForm): string | null {
+  if (
+    ![form.apiRateLimitReplenishIntervalMs, form.apiRateLimitBurstSize].every(
+      (value) => Number.isInteger(value) && value >= 1 && value <= 2147483647,
+    )
+  ) {
+    return 'API: інтервал поповнення та запас запитів мають бути додатними цілими числами в межах 2147483647.';
+  }
+  if (form.apiRateLimitReplenishIntervalMs * form.apiRateLimitBurstSize > 9223372036854) {
+    return 'API: поєднання інтервалу поповнення та запасу запитів завелике.';
+  }
+  return null;
+}
+
 function MainSettingsSection({
   form,
   patchForm,
@@ -468,180 +591,123 @@ function MainSettingsSection({
   audioTranscriptionSaved: boolean;
 }) {
   return (
-    <>
-      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
-        Активні значення за замовчуванням
-      </Typography>
-
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Switch
-          sx={{ m: 0 }}
+    <Stack spacing={3}>
+      <MainSettingsGroup title="Інтерфейс і значення за замовчуванням">
+        <MainSettingsSwitchRow
           checked={form.exactMatchOnlyDefault}
-          onChange={(_, checked) => {
-            patchForm({ exactMatchOnlyDefault: checked });
-          }}
+          label="Прапорець «точний збіг за еталонкою» на Аналізі увімкнений"
+          onChange={(checked) => patchForm({ exactMatchOnlyDefault: checked })}
         />
-        <ButtonBase
-          component="button"
-          type="button"
-          onClick={() => {
-            patchForm({ exactMatchOnlyDefault: !form.exactMatchOnlyDefault });
+        <MainSettingsSwitchRow
+          checked={form.defaultNeoAnalysis}
+          label="Використовувати новий Аналіз за замовчуванням"
+          onChange={(checked) => patchForm({ defaultNeoAnalysis: checked })}
+        />
+        <MainSettingsSwitchRow
+          checked={form.hideNetworks}
+          label={
+            <InfoLabel
+              label="Приховати мережі"
+              tooltip="Приховує мережі в картках повідомлень і фільтр «Мережі» в оперативному та аналізі, у класичному й новому інтерфейсах. Сторінка «База даних → Мережі» залишається без змін."
+            />
+          }
+          onChange={(checked) => patchForm({ hideNetworks: checked })}
+        />
+        <MainSettingsSwitchRow
+          checked={form.aiPositionHighlightsEnabled}
+          label={
+            <InfoLabel
+              label="Показувати ШІ-позиції всім користувачам (Оперативний та Аналіз)"
+              tooltip="Коли вимкнено, користувачі можуть увімкнути показ у своїх налаштуваннях. Розпізнавання позицій продовжує працювати."
+            />
+          }
+          onChange={(checked) => patchForm({ aiPositionHighlightsEnabled: checked })}
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Безпека">
+        <MainSettingsSwitchRow
+          checked={form.twoFactorAuthEnabled}
+          label="Двофакторна автентифікація (2FA)"
+          onChange={(checked) => patchForm({ twoFactorAuthEnabled: checked })}
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Обробка повідомлень">
+        <MainSettingsSwitchRow
+          checked={form.disableBotTags}
+          label={<InfoLabel label="Вимкнути теги бота" tooltip={DISABLE_BOT_TAGS_TOOLTIP} />}
+          onChange={(checked) => patchForm({ disableBotTags: checked })}
+        />
+        <MainSettingsSwitchRow
+          checked={form.enableAudioTranscription}
+          label="Увімкнути транскрибування аудіо"
+          onChange={(checked) => patchForm({ enableAudioTranscription: checked })}
+        />
+        {form.enableAudioTranscription && !audioTranscriptionSaved ? (
+          <PowerAlert severity="info">
+            Збережіть налаштування, щоб відкрити «Транскрибація» в меню «Адмін».
+          </PowerAlert>
+        ) : null}
+        <MainSettingsSwitchRow
+          checked={form.sigintCommentParsingEnabled}
+          label="Парсити коментарі"
+          onChange={(checked) => patchForm({ sigintCommentParsingEnabled: checked })}
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Можливості системи">
+        <MainSettingsSwitchRow
+          checked={form.supportNonRerInterceptions}
+          label={
+            <InfoLabel
+              label="Підтримка альтернативних перехоплень"
+              tooltip={SUPPORT_NON_RER_TOOLTIP}
+            />
+          }
+          onChange={(checked) => patchForm({ supportNonRerInterceptions: checked })}
+        />
+        <MainSettingsSwitchRow
+          checked={form.devicesSectionEnabled}
+          label="Увімкнути розділ «Пристрої»"
+          onChange={(checked) => patchForm({ devicesSectionEnabled: checked })}
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Службова обробка">
+        <MainSettingsSwitchRow
+          checked={form.doNotStoreDuplicateEchoimFailures}
+          label="Не зберігати дублікати помилок Echo IM"
+          onChange={(checked) => patchForm({ doNotStoreDuplicateEchoimFailures: checked })}
+        />
+        <MainSettingsSwitchRow
+          checked={form.goiAssociationMessageUidWorkerEnabled}
+          label="Заповнювати UID повідомлень висновків ГОІ"
+          onChange={(checked) => patchForm({ goiAssociationMessageUidWorkerEnabled: checked })}
+        />
+      </MainSettingsGroup>
+
+      <MainSettingsGroup title="Звіти">
+        <TextField
+          label={
+            <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
+          }
+          type="number"
+          value={form.reportChunkingHours}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
           }}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            textAlign: 'left',
-            borderRadius: 0.5,
-            typography: 'body1',
-            fontWeight: 400,
-            color: 'text.primary',
-          }}
-        >
-          Прапорець «точний збіг за еталонкою» на аналізі увімкнений
-        </ButtonBase>
-      </Box>
+          inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
+        />
 
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.twoFactorAuthEnabled}
-            onChange={(_, checked) => patchForm({ twoFactorAuthEnabled: checked })}
-          />
-        }
-        label="Двофакторна автентифікація (2FA)"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.disableBotTags}
-            onChange={(_, checked) => {
-              patchForm({ disableBotTags: checked });
-            }}
-          />
-        }
-        label={<InfoLabel label="Вимкнути теги бота" tooltip={DISABLE_BOT_TAGS_TOOLTIP} />}
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.enableAudioTranscription}
-            onChange={(_, checked) => {
-              patchForm({ enableAudioTranscription: checked });
-            }}
-          />
-        }
-        label="Увімкнути транскрибування аудіо"
-      />
-      {form.enableAudioTranscription && !audioTranscriptionSaved ? (
-        <PowerAlert severity="info">
-          Збережіть налаштування, щоб відкрити «Транскрибація» в меню «Адмін».
-        </PowerAlert>
-      ) : null}
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.supportNonRerInterceptions}
-            onChange={(_, checked) => {
-              patchForm({ supportNonRerInterceptions: checked });
-            }}
-          />
-        }
-        label={
-          <InfoLabel
-            label="Підтримка альтернативних перехоплень"
-            tooltip={SUPPORT_NON_RER_TOOLTIP}
-          />
-        }
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.defaultNeoAnalysis}
-            onChange={(_, checked) => {
-              patchForm({ defaultNeoAnalysis: checked });
-            }}
-          />
-        }
-        label="Використовувати новий аналіз за замовчуванням"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.devicesSectionEnabled}
-            onChange={(_, checked) => {
-              patchForm({ devicesSectionEnabled: checked });
-            }}
-          />
-        }
-        label="Увімкнути розділ Пристрої"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.sigintCommentParsingEnabled}
-            onChange={(_, checked) => {
-              patchForm({ sigintCommentParsingEnabled: checked });
-            }}
-          />
-        }
-        label="Парсити коментарі"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.doNotStoreDuplicateEchoimFailures}
-            onChange={(_, checked) => {
-              patchForm({ doNotStoreDuplicateEchoimFailures: checked });
-            }}
-          />
-        }
-        label="Не зберігати дублікати помилок Echo IM"
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.goiAssociationMessageUidWorkerEnabled}
-            onChange={(_, checked) => {
-              patchForm({ goiAssociationMessageUidWorkerEnabled: checked });
-            }}
-          />
-        }
-        label="Заповнювати UID повідомлень висновків GOI"
-      />
-
-      <TextField
-        label={
-          <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
-        }
-        type="number"
-        value={form.reportChunkingHours}
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
-        }}
-        inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
-      />
-
-      <FormControlLabel
-        control={
-          <Switch
-            checked={form.limitBigReports}
-            onChange={(_, checked) => {
-              patchForm({ limitBigReports: checked });
-            }}
-          />
-        }
-        label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
-      />
-    </>
+        <MainSettingsSwitchRow
+          checked={form.limitBigReports}
+          label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
+          onChange={(checked) => patchForm({ limitBigReports: checked })}
+        />
+      </MainSettingsGroup>
+    </Stack>
   );
 }
 
@@ -1238,8 +1304,12 @@ export function AdminSystemSettingsNeoPage() {
       showClassicAnalysis: payload.showClassicAnalysis,
       showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
       disableBotTags: payload.disableBotTags,
+      hideNetworks: payload.hideNetworks,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
+      aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
+      apiRateLimitReplenishIntervalMs: payload.apiRateLimitReplenishIntervalMs,
+      apiRateLimitBurstSize: payload.apiRateLimitBurstSize,
       twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
       excludeOrbitOtherUnits: payload.excludeOrbitOtherUnits,
       messengerMediaCacheMinFreeGib: payload.messengerMediaCacheMinFreeGib,
@@ -1295,7 +1365,10 @@ export function AdminSystemSettingsNeoPage() {
     if (!isDirty) return;
 
     const nextForm = normalizeForm(form);
-    const validationError = validateMediaCacheSettings(nextForm) ?? validatePelengBounds(nextForm);
+    const validationError =
+      validateApiRateLimitSettings(nextForm) ??
+      validateMediaCacheSettings(nextForm) ??
+      validatePelengBounds(nextForm);
     if (validationError) {
       setForm(nextForm);
       setSaveError(validationError);
@@ -1315,7 +1388,9 @@ export function AdminSystemSettingsNeoPage() {
       });
       window.dispatchEvent(new Event('system-settings-saved'));
     } catch (error) {
-      setSaveError(`Помилка збереження: ${formatErrorMessage(error)}`);
+      const message = `Помилка збереження: ${formatErrorMessage(error)}`;
+      setSaveError(message);
+      notify({ severity: 'error', message });
     } finally {
       setSaveInProgress(false);
     }
@@ -1377,6 +1452,12 @@ export function AdminSystemSettingsNeoPage() {
                 label="Пеленги"
                 id="system-settings-neo-tab-pelengs"
                 aria-controls="system-settings-neo-panel-pelengs"
+              />
+              <Tab
+                value="api"
+                label="API"
+                id="system-settings-neo-tab-api"
+                aria-controls="system-settings-neo-panel-api"
               />
               <Tab
                 value="notifications"
@@ -1495,6 +1576,17 @@ export function AdminSystemSettingsNeoPage() {
                   </Box>
 
                   <Box
+                    id="system-settings-neo-panel-api"
+                    role="tabpanel"
+                    hidden={activeTab !== 'api'}
+                    aria-labelledby="system-settings-neo-tab-api"
+                  >
+                    {activeTab === 'api' ? (
+                      <ApiSettingsSection form={form} patchForm={patchForm} />
+                    ) : null}
+                  </Box>
+
+                  <Box
                     id="system-settings-neo-panel-notifications"
                     role="tabpanel"
                     hidden={activeTab !== 'notifications'}
@@ -1569,9 +1661,9 @@ function MediaCacheSettingsSection({
     <Stack spacing={2}>
       <Typography variant="h6">Локальний кеш медіа</Typography>
       <Typography variant="body2" color="text.secondary">
-        Зберігає свіжі вкладення локально та готує відео для відтворення на телефоні. Зміни
-        застосовуються після збереження без перезапуску. Відновлення наявних вкладень починається
-        протягом 30 секунд.
+        Зберігає нові вкладення повідомлень і файли пристроїв локально та готує відеовкладення
+        повідомлень для відтворення на телефоні. Зміни застосовуються після збереження без
+        перезапуску. Відновлення наявних вкладень повідомлень починається протягом 30 секунд.
       </Typography>
       <FormControlLabel
         control={

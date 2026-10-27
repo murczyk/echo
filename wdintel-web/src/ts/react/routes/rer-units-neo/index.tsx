@@ -51,6 +51,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   army: true,
   militaryDistrict: false,
   armyRegion: false,
+  combatTypeName: true,
   createdAt: true,
   comment: true,
   hasOrbit: true,
@@ -75,6 +76,7 @@ const DEFAULT_COLUMN_ORDER = [
   'army',
   'militaryDistrict',
   'armyRegion',
+  'combatTypeName',
   'createdAt',
   'comment',
   'hasOrbit',
@@ -417,7 +419,17 @@ function RerUnitsNeoPageBody({
         />
 
         {page.status ? (
-          <PowerAlert severity={page.status.severity}>{page.status.text}</PowerAlert>
+          <PowerAlert
+            severity={page.status.severity}
+            autoHideDuration={page.settingsError ? null : undefined}
+            action={
+              page.settingsError ? (
+                <PowerButton onClick={page.retrySettings}>Повторити</PowerButton>
+              ) : undefined
+            }
+          >
+            {page.status.text}
+          </PowerAlert>
         ) : null}
         {page.kmzTask ? <KmzTaskStatus task={page.kmzTask} /> : null}
 
@@ -453,6 +465,7 @@ function RerUnitsNeoPageBody({
         open={page.createOpen}
         unit={null}
         devicesSectionEnabled={page.devicesSectionEnabled}
+        hideNetworks={page.hideNetworks}
         submitting={page.submitting}
         error={page.dialogError}
         orbitUnits={[]}

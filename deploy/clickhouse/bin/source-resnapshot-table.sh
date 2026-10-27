@@ -78,6 +78,23 @@ print(next(iter(strategies)))
 PY
 }
 
+published_resnapshot_entries() {
+  local entries=$1 published_tables strategy source_table
+  published_tables=$(source_local_psql -Atq -v ON_ERROR_STOP=1 \
+    -v publication="$SOURCE_PUBLICATION" <<'SQL'
+SELECT schemaname || '.' || tablename
+FROM pg_catalog.pg_publication_tables
+WHERE pubname = :'publication';
+SQL
+  ) || return $?
+  while IFS=$'\t' read -r strategy source_table; do
+    [[ -n "$source_table" ]] || continue
+    if grep -Fxq -- "$source_table" <<<"$published_tables"; then
+      printf '%s\t%s\n' "$strategy" "$source_table"
+    fi
+  done <<<"$entries"
+}
+
 run_remote_resnapshot() {
   local strategy=$1 source_table=$2
   local cdc_timeout=${ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}
@@ -107,13 +124,14 @@ run_remote_batch() {
 
 main() {
   local mode=${1:-} source_table=${2:-} strategy entries
+  local published_only=false
   local -a source_tables=()
   declare -A strategies_by_table=()
 
   case $mode in
     --table)
       [[ -n "$source_table" && $# -eq 2 ]] \
-        || die "usage: $0 --table SCHEMA.TABLE|--manifest"
+        || die "usage: $0 --table SCHEMA.TABLE|--manifest [--published-only]"
       validate_source_table "$source_table"
       source_tables+=("$source_table")
       strategy=$(manifest_resnapshot_strategy "$source_table") \
@@ -121,10 +139,14 @@ main() {
       strategies_by_table["$source_table"]=$strategy
       ;;
     --manifest)
-      [[ $# -eq 1 ]] || die "usage: $0 --table SCHEMA.TABLE|--manifest"
+      if [[ $# -eq 2 && $source_table == --published-only ]]; then
+        published_only=true
+      else
+        [[ $# -eq 1 ]] || die "usage: $0 --table SCHEMA.TABLE|--manifest [--published-only]"
+      fi
       ;;
     *)
-      die "usage: $0 --table SCHEMA.TABLE|--manifest"
+      die "usage: $0 --table SCHEMA.TABLE|--manifest [--published-only]"
       ;;
   esac
 
@@ -143,7 +165,11 @@ main() {
   acquire_source_reconcile_lock
 
   if [[ "$mode" == --manifest ]]; then
-    entries=$(manifest_resnapshot_entries)
+    entries=$(manifest_resnapshot_entries) || return $?
+    if [[ "$published_only" == true ]]; then
+      require_cmd grep
+      entries=$(published_resnapshot_entries "$entries") || return $?
+    fi
     run_remote_batch <<<"$entries"
     return 0
   fi

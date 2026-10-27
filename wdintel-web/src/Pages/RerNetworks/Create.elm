@@ -336,6 +336,7 @@ init _ shared () =
             , filterArmy = Nothing
             , filterMilitaryDistrict = Nothing
             , filterArmyRegion = Nothing
+            , filterCombatType = Nothing
             , filterComment = Nothing
             , filterOrbitNote = Nothing
             , filterIsDeduplicateCandidate = Nothing

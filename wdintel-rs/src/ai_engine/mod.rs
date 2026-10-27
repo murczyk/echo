@@ -1,4 +1,5 @@
 pub mod client;
+mod cooldown;
 pub mod gov;
 pub mod types;
 pub use client::AiEngineClient;
@@ -6,9 +7,10 @@ pub use client::AiEngineClient;
 use crate::config::{
     AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,
     AI_CHAT_TITLE_MAX_CHARS, AI_ENGINE_ERROR_BODY_MAX_CHARS,
-    AI_ENGINE_MODEL_NAME_MAX_CHARS, AI_ENGINE_NAME_MAX_CHARS,
-    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_ENGINE_TOKEN_MAX_CHARS,
-    AI_ENGINE_URL_MAX_CHARS,
+    AI_ENGINE_GLM_5_3_OUTPUT_TOKENS, AI_ENGINE_MODEL_NAME_MAX_CHARS,
+    AI_ENGINE_NAME_MAX_CHARS, AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES,
+    AI_ENGINE_OPENAI_REASONING_NONE_MODELS, AI_ENGINE_REQUEST_TIMEOUT_SEC,
+    AI_ENGINE_TOKEN_MAX_CHARS, AI_ENGINE_URL_MAX_CHARS,
 };
 use crate::entities::{
     ai_callsign_settings, ai_chat, ai_chat_message, ai_engine,
@@ -59,6 +61,10 @@ struct OpenAiChatCompletionReq {
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<serde_json::Value>,
 }
@@ -857,6 +863,17 @@ fn ocr_prompt() -> &'static str {
     "Transcribe the complete crop as bounded semantic HTML using only article, section, h1-h6, p, ul, ol, li, table, caption, thead, tbody, tr, th, td, br, and figure. Preserve empty cells and exact text. Represent visible images with data-image=\"present\". Never translate, correct, summarize, infer, add, or repeat content. End exactly with <!-- ECHO_EXTRACTION_END -->"
 }
 
+pub(crate) fn extraction_output_tokens(
+    ai_engine: &ai_engine::Model,
+    max_tokens: u32,
+) -> u32 {
+    if client::is_government_glm(ai_engine) {
+        max_tokens.max(AI_ENGINE_GLM_5_3_OUTPUT_TOKENS)
+    } else {
+        max_tokens
+    }
+}
+
 pub async fn request_structured_ai_response(
     client: &AiEngineClient,
     ai_engine: &ai_engine::Model,
@@ -884,11 +901,19 @@ async fn request_ai_response_with_options(
     max_tokens: Option<u32>,
     response_format: Option<serde_json::Value>,
 ) -> Result<AiEngineResponse, AppError> {
+    let structured_output = response_format.is_some();
+    let openai_reasoning = AI_ENGINE_OPENAI_REASONING_MODEL_PREFIXES
+        .iter()
+        .any(|prefix| ai_engine.model_name.starts_with(prefix));
     let body = serde_json::to_value(OpenAiChatCompletionReq {
         model_name: ai_engine.model_name.clone(),
         messages,
-        temperature,
-        max_tokens,
+        temperature: if openai_reasoning { None } else { temperature },
+        max_tokens: if openai_reasoning { None } else { max_tokens },
+        max_completion_tokens: if openai_reasoning { max_tokens } else { None },
+        reasoning_effort: structured_output
+            .then(|| structured_reasoning_effort(&ai_engine.model_name))
+            .flatten(),
         response_format,
     })
     .c(h!())?;
@@ -916,22 +941,34 @@ async fn request_ai_response_with_options(
                 .content
                 .as_deref()
                 .is_some_and(|content| !content.trim().is_empty())
+                || (structured_output
+                    && choice.finish_reason.as_deref() == Some("length"))
         })
         .ok_or_else(|| AppError::BL {
             msg: "ШІ API повернув порожню відповідь".to_string(),
         })?;
-    let content = choice
-        .message
-        .content
-        .ok_or_else(|| AppError::BL {
-            msg: "ШІ API повернув порожню відповідь".to_string(),
-        })
-        .c(h!())?;
+    let content = choice.message.content.unwrap_or_default();
     Ok(AiEngineResponse {
         content,
         finish_reason: choice.finish_reason,
         model_name: response.model,
     })
+}
+
+fn structured_reasoning_effort(name: &str) -> Option<&'static str> {
+    AI_ENGINE_OPENAI_REASONING_NONE_MODELS
+        .iter()
+        .any(|alias| {
+            name == *alias
+                || name
+                    .strip_prefix(alias)
+                    .and_then(|suffix| suffix.strip_prefix('-'))
+                    .is_some_and(|date| {
+                        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                            .is_ok()
+                    })
+        })
+        .then_some("none")
 }
 
 fn chat_completions_url(base_url: &str) -> Result<Url, AppError> {

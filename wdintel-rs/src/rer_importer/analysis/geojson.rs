@@ -396,7 +396,8 @@ async fn load_geojson_report_items(
     .context(h!())?;
     let items = filter_selected_metadata_for_analysis_stats(items, req)
         .context(h!())?;
-    let items = filter_search(items, &req.search).context(h!())?;
+    let items = filter_search_with_mode(items, &req.search, req.search_mode)
+        .context(h!())?;
     let items = filter_selected_device_names(items, &req.selected_device_names)
         .context(h!())?;
     let items = filter_selected_locations(

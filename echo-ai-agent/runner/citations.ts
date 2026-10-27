@@ -227,7 +227,9 @@ export function answerUsesCitation(
 export function canonicalizeAnswer(
   text: string,
   citations: MessageCitation[],
+  sourceLinks: Iterable<string> = [],
 ): string {
+  const retainedLinks = new Set(sourceLinks);
   const markdownLink = /\[([^\]\n]*)\]\(([^)\n]+)\)/g;
   const bareAnalysisUrl =
     /(?<!\]\()(?:https?:\/\/[^\s/)]+)?\/rer-analysis-neo\?[^\s)]+/g;
@@ -235,6 +237,7 @@ export function canonicalizeAnswer(
     markdownLink,
     (match, label: string, target: string) => {
       const normalizedTarget = target.trim();
+      if (retainedLinks.has(normalizedTarget)) return match;
       if (normalizedTarget.includes(ANALYSIS_PATH)) {
         const citation = registeredCitation(normalizedTarget, citations);
         if (!citation)
@@ -314,11 +317,13 @@ export function chooseCitedAnswer(
   repair: string | null,
   citations: MessageCitation[],
   canonicalCitations: MessageCitation[] = citations,
+  sourceLinks: Iterable<string> = [],
 ): string {
-  const canonicalDraft = canonicalizeAnswer(draft, canonicalCitations);
+  const retainedLinks = [...sourceLinks];
+  const canonicalDraft = canonicalizeAnswer(draft, canonicalCitations, retainedLinks);
   if (!needsCitationRepair(draft, citations) || repair === null)
     return canonicalDraft;
-  const canonicalRepair = canonicalizeAnswer(repair, canonicalCitations);
+  const canonicalRepair = canonicalizeAnswer(repair, canonicalCitations, retainedLinks);
   return answerUsesCitation(canonicalRepair, citations)
     ? canonicalRepair
     : canonicalDraft;

@@ -90,6 +90,13 @@ pub async fn summarize(
         )
         .await
         .c(h!())?;
+        execute(
+            &tx,
+            "update attachment_document set updated_at=now() at time zone 'utc' where media_id=$1 and generation=$2",
+            vec![job.media_id.into(), job.generation.into()],
+        )
+        .await
+        .c(h!())?;
         tx.commit().await.c(h!())?;
         return Ok(false);
     }
@@ -211,8 +218,38 @@ pub async fn coordinates(
     let parsed =
         milgeo_rs::coordinates::parser_v2::collect_coords(text).c(h!())?;
     let mut seen = std::collections::HashSet::new();
-    let coords=parsed.mgrs_coords.into_iter().chain(parsed.decimal_coords).chain(parsed.usk2000_coords)
-        .filter(|c|seen.insert(c.mgrs.clone())).map(|c|serde_json::json!({"title":locator,"description":c.capture,"plannedMeans":null,"coordinateSystem":"mgrs","value":c.mgrs})).collect::<Vec<_>>();
+    let coords = parsed
+        .decimal_coords
+        .into_iter()
+        .map(|coordinate| {
+            let value = crate::media_summary::worker::normalize_decimal_wgs84(
+                &coordinate.capture,
+            )
+            .unwrap_or(coordinate.text);
+            (coordinate.mgrs, coordinate.capture, "wgs84", value)
+        })
+        .chain(
+            parsed
+                .mgrs_coords
+                .into_iter()
+                .chain(parsed.usk2000_coords)
+                .map(|coordinate| {
+                    (
+                        coordinate.mgrs.clone(),
+                        coordinate.capture,
+                        "mgrs",
+                        coordinate.mgrs,
+                    )
+                }),
+        )
+        .filter(|(key, _, _, _)| seen.insert(key.clone()))
+        .map(|(_, capture, system, value)| {
+            serde_json::json!({
+                "title": locator, "description": capture, "plannedMeans": null,
+                "coordinateSystem": system, "value": value
+            })
+        })
+        .collect::<Vec<_>>();
     Ok(serde_json::json!(coords))
 }
 

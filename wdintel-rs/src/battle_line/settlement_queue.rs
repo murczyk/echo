@@ -1,8 +1,12 @@
+use super::settlement_clusters::{
+    resolve_cluster, resolve_cluster_with_fixed, SettlementAnchor,
+};
 use crate::battle_line::types::BattleLineLocationResult;
 use crate::battle_line::{
-    active_battle_line_id, ensure_active_battle_line, lock_updates,
-    normalize_settlement_name, resolve_inbox_item_aors,
-    resolve_locations_to_settlements_with_db,
+    active_battle_line_id, ensure_active_battle_line,
+    load_location_resolution_drafts, location_result_from_draft, lock_updates,
+    resolve_inbox_item_aors, LocationResolutionDraft,
+    SettlementCandidateSource,
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
@@ -16,7 +20,11 @@ use crate::entities::{
     sigint_inbox_item, sigint_inbox_item_settlement, signal_message,
 };
 use crate::error::AppError;
+use crate::iggy::settlement_events::{
+    persist_settlement_resolution, SettlementLinkEvents,
+};
 use crate::location::utils::to_location_list;
+use crate::settlement::normalize_name;
 use crate::types::{info, warn, Env, Mode, ShortContext};
 use crate::utils::parse_local_datetime;
 use crate::{
@@ -29,9 +37,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, FromQueryResult)]
-struct PendingItemClaim {
-    item_id: i64,
-    first_row_id: i64,
+pub(super) struct PendingSettlementClaim {
+    pub(super) owner_id: i64,
+    pub(super) first_row_id: i64,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -54,9 +62,11 @@ struct SettlementResolutionCacheKey {
 }
 
 #[derive(Default)]
-struct SettlementResolutionCache {
-    resolutions:
-        BTreeMap<SettlementResolutionCacheKey, BattleLineLocationResult>,
+pub(super) struct SettlementResolutionCache {
+    database_resolutions:
+        BTreeMap<SettlementResolutionCacheKey, LocationResolutionDraft>,
+    catalog_resolutions:
+        BTreeMap<SettlementResolutionCacheKey, LocationResolutionDraft>,
 }
 
 impl SettlementResolutionCache {
@@ -71,19 +81,24 @@ impl SettlementResolutionCache {
         SettlementResolutionCacheKey {
             active_battle_line_version_id,
             aor_ids,
-            settlement_text: normalize_settlement_name(settlement_text),
+            settlement_text: normalize_name(settlement_text),
         }
     }
 
     fn get(
         &self,
+        source: &SettlementCandidateSource,
         active_battle_line_version_id: i64,
         aor_ids: &[i64],
         settlement_text: &str,
-    ) -> Option<BattleLineLocationResult> {
+    ) -> Option<LocationResolutionDraft> {
         let key =
             Self::key(active_battle_line_version_id, aor_ids, settlement_text);
-        self.resolutions.get(&key).cloned().map(|mut result| {
+        let resolutions = match source {
+            SettlementCandidateSource::Database => &self.database_resolutions,
+            SettlementCandidateSource::Catalog(_) => &self.catalog_resolutions,
+        };
+        resolutions.get(&key).cloned().map(|mut result| {
             result.location = settlement_text.to_string();
             result
         })
@@ -91,13 +106,22 @@ impl SettlementResolutionCache {
 
     fn insert(
         &mut self,
+        source: &SettlementCandidateSource,
         active_battle_line_version_id: i64,
         aor_ids: &[i64],
-        result: BattleLineLocationResult,
+        result: LocationResolutionDraft,
     ) {
         let key =
             Self::key(active_battle_line_version_id, aor_ids, &result.location);
-        self.resolutions.insert(key, result);
+        let resolutions = match source {
+            SettlementCandidateSource::Database => {
+                &mut self.database_resolutions
+            }
+            SettlementCandidateSource::Catalog(_) => {
+                &mut self.catalog_resolutions
+            }
+        };
+        resolutions.insert(key, result);
     }
 }
 
@@ -129,20 +153,22 @@ pub async fn reconcile_item_locations<C>(
     location_v2: Option<&str>,
 ) -> anyhow::Result<()>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionTrait,
 {
-    if reconcile_item_location_rows(dbx, item_id, item_uuid, location_v2)
+    let txn = dbx.begin().await.c(h!())?;
+    if reconcile_item_location_rows(&txn, item_id, item_uuid, location_v2, true)
         .await
         .c(h!())?
     {
         crate::stats::enqueue_group_stats_recalculation_for_message(
-            dbx,
+            &txn,
             item_id,
-            format!("removed settlements from inbox message {item_id}"),
+            format!("reconciled settlements for inbox message {item_id}"),
         )
         .await
         .c(h!())?;
     }
+    txn.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -151,24 +177,38 @@ async fn reconcile_item_location_rows<C>(
     item_id: i64,
     item_uuid: Option<uuid::Uuid>,
     location_v2: Option<&str>,
+    capture_iggy_events: bool,
 ) -> anyhow::Result<bool>
 where
-    C: ConnectionTrait,
+    C: ConnectionTrait + TransactionSession,
 {
     let desired = location_texts(location_v2);
     let existing = sigint_inbox_item_settlement::Entity::find()
         .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+        .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+        .lock(LockType::Update)
         .all(dbx)
         .await
         .c(h!())?;
+    let existing_texts = existing
+        .iter()
+        .map(|row| row.settlement_text.clone())
+        .collect::<BTreeSet<_>>();
+    if desired == existing_texts {
+        return Ok(false);
+    }
+    let events = if capture_iggy_events {
+        Some(SettlementLinkEvents::capture(dbx, item_id).await.c(h!())?)
+    } else {
+        None
+    };
     let obsolete_ids = existing
         .iter()
         .filter(|row| !desired.contains(&row.settlement_text))
         .map(|row| row.id)
         .collect::<Vec<_>>();
-    let removes_linked_settlement = existing.iter().any(|row| {
-        !desired.contains(&row.settlement_text) && row.settlement_id.is_some()
-    });
+    let clears_linked_settlement =
+        existing.iter().any(|row| row.settlement_id.is_some());
     if !obsolete_ids.is_empty() {
         sigint_inbox_item_settlement::Entity::delete_many()
             .filter(
@@ -178,10 +218,12 @@ where
             .await
             .c(h!())?;
     }
-    let existing_texts = existing
-        .into_iter()
-        .map(|row| row.settlement_text)
-        .collect::<BTreeSet<_>>();
+    if existing.iter().any(|row| {
+        desired.contains(&row.settlement_text)
+            && (row.settlement_id.is_some() || row.is_undefined.is_some())
+    }) {
+        reset_item_settlements(dbx, item_id).await.c(h!())?;
+    }
     for settlement_text in desired.difference(&existing_texts) {
         sigint_inbox_item_settlement::Entity::insert(
             sigint_inbox_item_settlement::ActiveModel {
@@ -206,13 +248,42 @@ where
         .await
         .c(h!())?;
     }
-    Ok(removes_linked_settlement)
+    if let Some(events) = events {
+        events.enqueue_changes(dbx).await.c(h!())?;
+    }
+    Ok(clears_linked_settlement)
 }
 
 pub async fn requeue_item_settlements<C>(
     dbx: &C,
     item_id: i64,
 ) -> anyhow::Result<()>
+where
+    C: ConnectionTrait + TransactionTrait,
+{
+    let txn = dbx.begin().await.c(h!())?;
+    let events = SettlementLinkEvents::capture(&txn, item_id).await.c(h!())?;
+    reset_item_settlements(&txn, item_id).await.c(h!())?;
+    events.enqueue_changes(&txn).await.c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn requeue_unresolved_item_settlements<C: ConnectionTrait>(
+    dbx: &C,
+    item_ids: &[i64],
+) -> anyhow::Result<()> {
+    if item_ids.is_empty() {
+        return Ok(());
+    }
+    dbx.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres, r#"
+update sigint_inbox_item_settlement set is_undefined = null
+where item_id = any($1::bigint[]) and settlement_id is null and is_undefined is true
+    "#, [item_ids.to_vec().into()])).await.c(h!())?;
+    Ok(())
+}
+
+async fn reset_item_settlements<C>(dbx: &C, item_id: i64) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
@@ -240,8 +311,14 @@ fn location_texts(location_v2: Option<&str>) -> BTreeSet<String> {
         .collect()
 }
 
+#[derive(Default)]
+pub struct SettlementWorkerCursor {
+    inbox_item: Option<i64>,
+    network: Option<i64>,
+}
+
 pub async fn inbox_settlement_worker_nofail(env: Arc<Env>) {
-    let mut cursor = None;
+    let mut cursor = SettlementWorkerCursor::default();
     loop {
         let _loop_guard =
             crate::utils::worker_watch::loop_guard("inbox_settlement_worker");
@@ -266,42 +343,43 @@ pub async fn inbox_settlement_worker_nofail(env: Arc<Env>) {
 
 pub async fn run_inbox_settlement_worker_once(
     env: &Env,
-    cursor: &mut Option<i64>,
+    cursor: &mut SettlementWorkerCursor,
 ) -> anyhow::Result<bool> {
     if active_battle_line_id(&env.dbx).await.c(h!())?.is_none() {
-        *cursor = None;
+        *cursor = SettlementWorkerCursor::default();
         return Ok(false);
     }
+    let network_processed =
+        super::network_settlements::process_pending_networks(
+            env,
+            &mut cursor.network,
+        )
+        .await
+        .c(h!())?;
     if !has_pending_rows(&env.dbx).await.c(h!())? {
-        *cursor = None;
-        return Ok(false);
+        cursor.inbox_item = None;
+        return Ok(network_processed);
     }
     let active_battle_line_version_id =
-        refresh_settlement_catalog(env).await.c(h!())?;
+        refresh_battle_line_version(env).await.c(h!())?;
     let mut resolution_cache = SettlementResolutionCache::default();
     let processed = process_pending_rows(
         env,
-        cursor,
+        &mut cursor.inbox_item,
         active_battle_line_version_id,
         &mut resolution_cache,
     )
     .await
     .c(h!())?;
-    Ok(processed)
+    Ok(processed || network_processed)
 }
 
-async fn refresh_settlement_catalog(env: &Env) -> anyhow::Result<i64> {
-    let catalog_txn = env.dbx.begin().await.c(h!())?;
-    lock_updates(&catalog_txn).await.c(h!())?;
+async fn refresh_battle_line_version(env: &Env) -> anyhow::Result<i64> {
+    let version_txn = env.dbx.begin().await.c(h!())?;
+    lock_updates(&version_txn).await.c(h!())?;
     let active_battle_line_version_id =
-        ensure_active_battle_line(&catalog_txn).await.c(h!())?;
-    crate::location::aor_config::refresh_settlements_aor_map(
-        &catalog_txn,
-        env.settlements.clone(),
-    )
-    .await
-    .c(h!())?;
-    catalog_txn.commit().await.c(h!())?;
+        ensure_active_battle_line(&version_txn).await.c(h!())?;
+    version_txn.commit().await.c(h!())?;
     Ok(active_battle_line_version_id)
 }
 
@@ -335,9 +413,8 @@ async fn process_pending_rows(
         };
         *cursor = Some(claim.first_row_id);
         let affected_item_id = match resolve_claimed_item(
-            env,
             &txn,
-            claim.item_id,
+            claim.owner_id,
             active_battle_line_version_id,
             resolution_cache,
         )
@@ -348,7 +425,7 @@ async fn process_pending_rows(
                 txn.rollback().await.c(h!())?;
                 warn!(
                     "Inbox settlement resolution error for item {}: {error:#?}",
-                    claim.item_id
+                    claim.owner_id
                 );
                 continue;
             }
@@ -370,38 +447,63 @@ async fn process_pending_rows(
 async fn claim_pending_item<C>(
     dbx: &C,
     after_id: Option<i64>,
-) -> anyhow::Result<Option<PendingItemClaim>>
+) -> anyhow::Result<Option<PendingSettlementClaim>>
 where
     C: ConnectionTrait,
 {
-    let candidates =
-        PendingItemClaim::find_by_statement(Statement::from_sql_and_values(
+    claim_pending_set(dbx, after_id, SettlementQueue::InboxItem)
+        .await
+        .c(h!())
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum SettlementQueue {
+    InboxItem,
+    Network,
+}
+
+pub(super) async fn claim_pending_set<C: ConnectionTrait>(
+    dbx: &C,
+    after_id: Option<i64>,
+    queue: SettlementQueue,
+) -> anyhow::Result<Option<PendingSettlementClaim>> {
+    let (table, owner_column) = match queue {
+        SettlementQueue::InboxItem => {
+            ("sigint_inbox_item_settlement", "item_id")
+        }
+        SettlementQueue::Network => ("sigint_network_settlement", "network_id"),
+    };
+    let candidates = PendingSettlementClaim::find_by_statement(
+        Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"
+            format!(
+                r#"
 with pending_rows as materialized (
-    select id, item_id
-    from sigint_inbox_item_settlement
+    select id, {owner_column} as item_id
+    from {table}
     where settlement_id is null
       and is_undefined is null
       and ($1::bigint is null or id > $1)
     order by id
     limit $2
 )
-select item_id, min(id) as first_row_id
+select item_id as owner_id, min(id) as first_row_id
 from pending_rows
 group by item_id
 order by first_row_id
-            "#,
+            "#
+            ),
             [
                 after_id.into(),
                 (INBOX_SETTLEMENT_WORKER_CLAIM_CANDIDATE_SIZE as i64).into(),
             ],
-        ))
-        .all(dbx)
-        .await
-        .c(h!())?;
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
     for candidate in candidates {
-        if try_lock_pending_item(dbx, candidate.item_id)
+        if try_lock_pending_set(dbx, candidate.owner_id, queue)
             .await
             .c(h!())?
         {
@@ -411,10 +513,29 @@ order by first_row_id
     Ok(None)
 }
 
+#[cfg(test)]
 async fn try_lock_pending_item<C>(dbx: &C, item_id: i64) -> anyhow::Result<bool>
 where
     C: ConnectionTrait,
 {
+    try_lock_pending_set(dbx, item_id, SettlementQueue::InboxItem)
+        .await
+        .c(h!())
+}
+
+async fn try_lock_pending_set<C: ConnectionTrait>(
+    dbx: &C,
+    item_id: i64,
+    queue: SettlementQueue,
+) -> anyhow::Result<bool> {
+    let namespace = match queue {
+        SettlementQueue::InboxItem => {
+            INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE
+        }
+        SettlementQueue::Network => {
+            crate::config::NETWORK_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE
+        }
+    };
     PendingItemLock::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -422,10 +543,7 @@ select pg_try_advisory_xact_lock(
     hashtextextended($1::text || $2::text, 0)
 ) as acquired
         "#,
-        [
-            INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE.into(),
-            item_id.into(),
-        ],
+        [namespace.into(), item_id.into()],
     ))
     .one(dbx)
     .await
@@ -435,7 +553,6 @@ select pg_try_advisory_xact_lock(
 }
 
 async fn resolve_claimed_item(
-    env: &Env,
     txn: &DatabaseTransaction,
     item_id: i64,
     active_battle_line_version_id: i64,
@@ -448,18 +565,29 @@ async fn resolve_claimed_item(
         .all(txn)
         .await
         .c(h!())?;
-    if rows.is_empty() {
+    if !rows
+        .iter()
+        .any(|row| row.settlement_id.is_none() && row.is_undefined.is_none())
+    {
         return Ok(None);
     }
+    let anchors =
+        super::network_settlements::load_item_network_anchors(txn, item_id)
+            .await
+            .c(h!())?;
+    let rows = rows
+        .into_iter()
+        .filter(|row| anchors.is_empty() || row.settlement_id.is_none())
+        .collect::<Vec<_>>();
     let aor_context =
         resolve_inbox_item_aors(txn, item_id, None).await.c(h!())?;
     let locations = rows
         .iter()
         .map(|row| row.settlement_text.clone())
         .collect::<Vec<_>>();
-    let results = resolve_locations_with_cache(
+    let mut drafts = load_location_drafts_with_cache(
         txn,
-        env.settlements.clone(),
+        SettlementCandidateSource::Database,
         locations,
         &aor_context.aor_ids,
         active_battle_line_version_id,
@@ -467,9 +595,11 @@ async fn resolve_claimed_item(
     )
     .await
     .c(h!())?;
+    resolve_inbox_cluster(&mut drafts, &rows, &anchors);
+    let results = drafts.into_iter().map(location_result_from_draft);
     let mut affected_item_id = None;
     for (row, result) in rows.into_iter().zip(results) {
-        if row.settlement_id.is_some() || row.is_undefined.is_some() {
+        if row.settlement_id.is_some() {
             continue;
         }
         affected_item_id = Some(
@@ -485,21 +615,64 @@ async fn resolve_claimed_item(
     Ok(affected_item_id)
 }
 
-async fn resolve_locations_with_cache<C>(
+fn resolve_inbox_cluster(
+    drafts: &mut [LocationResolutionDraft],
+    rows: &[sigint_inbox_item_settlement::Model],
+    anchors: &[SettlementAnchor],
+) {
+    if !anchors.is_empty() {
+        resolve_cluster(drafts, anchors);
+        return;
+    }
+    let fixed = rows
+        .iter()
+        .filter_map(|row| {
+            row.settlement_id.map(|settlement_id| {
+                (normalize_name(&row.settlement_text), settlement_id)
+            })
+        })
+        .collect();
+    resolve_cluster_with_fixed(drafts, &fixed);
+}
+
+pub(super) async fn resolve_settlement_names<C: ConnectionTrait>(
     dbx: &C,
     settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     locations: Vec<String>,
     aor_ids: &[i64],
+    version: i64,
+    cache: &mut SettlementResolutionCache,
+    anchors: &[SettlementAnchor],
+) -> anyhow::Result<Vec<BattleLineLocationResult>> {
+    let mut drafts = load_location_drafts_with_cache(
+        dbx,
+        SettlementCandidateSource::Catalog(settlements),
+        locations,
+        aor_ids,
+        version,
+        cache,
+    )
+    .await
+    .c(h!())?;
+    resolve_cluster(&mut drafts, anchors);
+    Ok(drafts.into_iter().map(location_result_from_draft).collect())
+}
+
+async fn load_location_drafts_with_cache<C>(
+    dbx: &C,
+    source: SettlementCandidateSource,
+    locations: Vec<String>,
+    aor_ids: &[i64],
     active_battle_line_version_id: i64,
     resolution_cache: &mut SettlementResolutionCache,
-) -> anyhow::Result<Vec<BattleLineLocationResult>>
+) -> anyhow::Result<Vec<LocationResolutionDraft>>
 where
     C: ConnectionTrait,
 {
     let mut missing_locations = BTreeMap::new();
     for location in &locations {
         if resolution_cache
-            .get(active_battle_line_version_id, aor_ids, location)
+            .get(&source, active_battle_line_version_id, aor_ids, location)
             .is_none()
         {
             missing_locations
@@ -512,42 +685,30 @@ where
         }
     }
     let missing_locations = missing_locations.into_values().collect();
-    let missing_results = resolve_locations_to_settlements_with_db(
+    let missing_results = load_location_resolution_drafts(
         dbx,
-        settlements,
+        source.clone(),
         missing_locations,
         aor_ids,
     )
     .await
     .c(h!())?;
     for result in missing_results {
-        resolution_cache.insert(active_battle_line_version_id, aor_ids, result);
+        resolution_cache.insert(
+            &source,
+            active_battle_line_version_id,
+            aor_ids,
+            result,
+        );
     }
     locations
         .into_iter()
         .map(|location| {
             resolution_cache
-                .get(active_battle_line_version_id, aor_ids, &location)
+                .get(&source, active_battle_line_version_id, aor_ids, &location)
                 .c(h!())
         })
         .collect()
-}
-
-async fn persist_settlement_resolution<C>(
-    dbx: &C,
-    row: sigint_inbox_item_settlement::Model,
-    settlement_id: Option<i32>,
-) -> anyhow::Result<i64>
-where
-    C: ConnectionTrait,
-{
-    let item_id = row.item_id;
-    let matched = settlement_id.is_some();
-    let mut row = row.into_active_model();
-    row.settlement_id = Set(settlement_id);
-    row.is_undefined = Set((!matched).then_some(true));
-    row.update(dbx).await.c(h!())?;
-    Ok(item_id)
 }
 
 pub async fn oneoff_link_inbox_settlements(
@@ -601,7 +762,7 @@ async fn process_oneoff_batch(
     items: &[(NaiveDateTime, i64)],
 ) -> anyhow::Result<OneoffLinkInboxSettlementsStats> {
     let active_battle_line_version_id =
-        refresh_settlement_catalog(env).await.c(h!())?;
+        refresh_battle_line_version(env).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     let item_locations =
         lock_oneoff_item_locations(&txn, items).await.c(h!())?;
@@ -615,7 +776,6 @@ async fn process_oneoff_batch(
     };
     let mut resolution_cache = SettlementResolutionCache::default();
     let affected_item_ids = process_oneoff_request_groups(
-        env,
         &txn,
         request_groups,
         active_battle_line_version_id,
@@ -668,7 +828,6 @@ async fn group_oneoff_resolution_requests(
 }
 
 async fn process_oneoff_request_groups(
-    env: &Env,
     txn: &DatabaseTransaction,
     request_groups: BTreeMap<Vec<i64>, Vec<OneoffItemResolutionRequest>>,
     active_battle_line_version_id: i64,
@@ -685,9 +844,9 @@ async fn process_oneoff_request_groups(
             .iter()
             .flat_map(|request| request.settlement_texts.clone())
             .collect::<Vec<_>>();
-        let resolutions = resolve_locations_with_cache(
+        let drafts = load_location_drafts_with_cache(
             txn,
-            env.settlements.clone(),
+            SettlementCandidateSource::Database,
             locations,
             &aor_ids,
             active_battle_line_version_id,
@@ -695,10 +854,22 @@ async fn process_oneoff_request_groups(
         )
         .await
         .c(h!())?;
-        let mut resolutions = resolutions.into_iter();
+        let mut drafts = drafts.into_iter();
         for (request, group_length) in requests.into_iter().zip(group_lengths) {
-            let request_resolutions =
-                resolutions.by_ref().take(group_length).collect();
+            let mut request_drafts =
+                drafts.by_ref().take(group_length).collect::<Vec<_>>();
+            let anchors =
+                super::network_settlements::load_item_network_anchors(
+                    txn,
+                    request.item_id,
+                )
+                .await
+                .c(h!())?;
+            resolve_cluster(&mut request_drafts, &anchors);
+            let request_resolutions = request_drafts
+                .into_iter()
+                .map(location_result_from_draft)
+                .collect();
             let affected_item_id = process_oneoff_item_in_transaction(
                 txn,
                 request,
@@ -758,29 +929,19 @@ async fn process_oneoff_item_in_transaction(
     resolutions: Vec<BattleLineLocationResult>,
     stats: &mut OneoffLinkInboxSettlementsStats,
 ) -> anyhow::Result<i64> {
+    let events = SettlementLinkEvents::capture(txn, request.item_id)
+        .await
+        .c(h!())?;
     reconcile_item_location_rows(
         txn,
         request.item_id,
         request.item_uuid,
         request.location_v2.as_deref(),
+        false,
     )
     .await
     .c(h!())?;
-    sigint_inbox_item_settlement::Entity::update_many()
-        .col_expr(
-            sigint_inbox_item_settlement::Column::SettlementId,
-            Expr::value(Option::<i32>::None),
-        )
-        .col_expr(
-            sigint_inbox_item_settlement::Column::IsUndefined,
-            Expr::value(Option::<bool>::None),
-        )
-        .filter(
-            sigint_inbox_item_settlement::Column::ItemId.eq(request.item_id),
-        )
-        .exec(txn)
-        .await
-        .c(h!())?;
+    reset_item_settlements(txn, request.item_id).await.c(h!())?;
     for result in resolutions {
         let settlement_id = result.chosen_settlement_id;
         let matched = settlement_id.is_some();
@@ -791,7 +952,7 @@ async fn process_oneoff_item_in_transaction(
             )
             .col_expr(
                 sigint_inbox_item_settlement::Column::IsUndefined,
-                Expr::value((!matched).then_some(true)),
+                Expr::value(Some(!matched)),
             )
             .filter(
                 sigint_inbox_item_settlement::Column::ItemId
@@ -810,6 +971,7 @@ async fn process_oneoff_item_in_transaction(
             stats.unmatched += 1;
         }
     }
+    events.enqueue_changes(txn).await.c(h!())?;
     stats.processed += 1;
     Ok(request.item_id)
 }
@@ -1093,6 +1255,1354 @@ fn oneoff_bounds_at(
 mod tests {
     use super::*;
 
+    async fn insert_cluster_test_item(
+        txn: &DatabaseTransaction,
+        names: &[(&str, Option<i32>, Option<bool>)],
+    ) -> anyhow::Result<OneoffItemResolutionRequest> {
+        let message = crate::functest::tests::mk_signal_message(
+            txn,
+            signal_message::ActiveModel {
+                body: Set(Some("#2133 settlement cluster".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        let settlement_texts = names
+            .iter()
+            .map(|&(name, _, _)| name.to_string())
+            .collect::<Vec<_>>();
+        let location_v2 = Some(format!("|{}|", settlement_texts.join("|")));
+        let item = sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            parsed_unit_v2: Set(false),
+            location_v2: Set(location_v2.clone()),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        for &(name, settlement_id, is_undefined) in names {
+            sigint_inbox_item_settlement::ActiveModel {
+                item_uuid: Set(item.id_uuid),
+                item_id: Set(item.id),
+                settlement_text: Set(name.to_string()),
+                settlement_id: Set(settlement_id),
+                is_undefined: Set(is_undefined),
+                ..Default::default()
+            }
+            .insert(txn)
+            .await
+            .c(h!())?;
+        }
+        Ok(OneoffItemResolutionRequest {
+            item_id: item.id,
+            item_uuid: item.id_uuid,
+            location_v2,
+            settlement_texts,
+        })
+    }
+
+    async fn setup_cluster_test_catalog(
+        env: &Env,
+        txn: &DatabaseTransaction,
+    ) -> i64 {
+        use crate::entities::settlement;
+        use crate::location::types::SettlementDetails;
+
+        let version = insert_active_test_battle_line(txn).await.unwrap();
+        txn.execute_unprepared(
+            "update battle_line_version set geometry = ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326) where retired_at is null",
+        ).await.unwrap();
+        let mut by_name: BTreeMap<String, Vec<SettlementDetails>> =
+            BTreeMap::new();
+        let mut by_id = BTreeMap::new();
+        for (id, name, lat, lon) in [
+            (2_133_101, "#2133 A", 0.1, 1.0),
+            (2_133_102, "#2133 B", 0.1, 9.0),
+            (2_133_103, "#2133 SHARED", 0.02, 1.01),
+            (2_133_104, "#2133 SHARED", 0.01, 9.01),
+        ] {
+            insert_relink_test_settlement(txn, id, name).await.unwrap();
+            let mut settlement = settlement::Entity::find_by_id(id)
+                .one(txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+            settlement.lat = Set(Some(lat));
+            settlement.lon = Set(Some(lon));
+            settlement.update(txn).await.unwrap();
+            let details = SettlementDetails {
+                id: Some(id),
+                name: name.to_string(),
+                coords: Some((lat, lon)),
+                ..Default::default()
+            };
+            by_id.insert(id, details.clone());
+            by_name.entry(name.to_string()).or_default().push(details);
+        }
+        env.settlements.write().unwrap().default_settlements_data = Arc::new((
+            vec![],
+            vec![],
+            crate::location::trie::Trie::new(),
+            by_id,
+            by_name,
+        ));
+        version
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn migration_enqueues_all_non_deleted_network_location_names_2133() {
+        use crate::entities::sigint_network;
+        use sea_orm_migration::MigratorTrait;
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let mut networks = Vec::new();
+        for (deleted, active_from, active_to, location) in [
+            (false, None, None, "|#2133 A|#2133 B|#2133 a|"),
+            (false, Some(now - Duration::days(1)), None, "|#2133 C|"),
+            (false, None, Some(now), "|#2133 ARCHIVED|"),
+            (true, None, None, "|#2133 DELETED|"),
+            (false, Some(now + Duration::days(1)), None, "|#2133 FUTURE|"),
+            (false, None, None, ""),
+        ] {
+            networks.push(
+                crate::functest::tests::mk_sigint_network(
+                    &txn,
+                    sigint_network::ActiveModel {
+                        deleted: Set(deleted),
+                        active_from: Set(active_from),
+                        active_to: Set(active_to),
+                        location: Set(location.to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let migration = echo_migration::Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name() == "m20261022_080838_sigint_network_settlement"
+            })
+            .unwrap();
+        let manager = echo_migration::SchemaManager::new(&txn);
+        migration.down(&manager).await.unwrap();
+        migration.up(&manager).await.unwrap();
+        for (index, expected) in [2, 1, 1, 0, 1, 0].into_iter().enumerate() {
+            let rows = network_settlement_rows(&txn, networks[index].id).await;
+            assert_eq!(rows.len(), expected);
+            assert!(rows
+                .iter()
+                .all(|row| row.settlement_id.is_none()
+                    && row.is_undefined.is_none()));
+        }
+        for index in [2, 4] {
+            let mut network = networks[index].clone().into_active_model();
+            network.active_from = Set(None);
+            network.active_to = Set(None);
+            let network = network.update(&txn).await.unwrap();
+            let rows = network_settlement_rows(&txn, network.id).await;
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].settlement_id, None);
+            assert_eq!(rows[0].is_undefined, None);
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn shared_worker_resolves_network_anchors_before_inbox_names_2133() {
+        use crate::entities::{
+            sigint_inbox_item_network, sigint_network,
+            sigint_network_settlement,
+        };
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        setup_cluster_test_catalog(&env, &setup).await;
+        let network = crate::functest::tests::mk_sigint_network(
+            &setup,
+            sigint_network::ActiveModel {
+                location: Set("|#2133 A|".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let item =
+            insert_cluster_test_item(&setup, &[("#2133 SHARED", None, None)])
+                .await
+                .unwrap();
+        sigint_inbox_item_network::ActiveModel {
+            sigint_inbox_item_id: Set(item.item_id),
+            sigint_network_id: Set(network.id),
+            ..Default::default()
+        }
+        .insert(&setup)
+        .await
+        .unwrap();
+        setup.commit().await.unwrap();
+        let mut cursor = SettlementWorkerCursor::default();
+        assert!(run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let network_link = sigint_network_settlement::Entity::find()
+            .filter(sigint_network_settlement::Column::NetworkId.eq(network.id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(network_link.settlement_id, Some(2_133_101));
+        let item_link = sigint_inbox_item_settlement::Entity::find()
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId.eq(item.item_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(item_link.settlement_id, Some(2_133_103));
+        assert!(!run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        sigint_network::Entity::delete_by_id(network.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        sigint_inbox_item::Entity::delete_by_id(item.item_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message::Entity::delete_by_id(item.item_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        crate::entities::settlement::Entity::delete_many()
+            .filter(
+                crate::entities::settlement::Column::Id
+                    .is_in([2_133_101, 2_133_102, 2_133_103, 2_133_104]),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_claims_skip_locked_sets_and_use_a_separate_namespace_2133()
+    {
+        use crate::entities::sigint_network;
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let mut networks = Vec::new();
+        for name in ["#2133 CLAIM A", "#2133 CLAIM B"] {
+            networks.push(
+                crate::functest::tests::mk_sigint_network(
+                    &env.dbx,
+                    sigint_network::ActiveModel {
+                        location: Set(format!("|{name}|")),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let first_worker = env.dbx.begin().await.unwrap();
+        let first =
+            claim_pending_set(&first_worker, None, SettlementQueue::Network)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(first.owner_id, networks[0].id);
+        let second_worker = env.dbx.begin().await.unwrap();
+        assert!(try_lock_pending_set(
+            &second_worker,
+            first.owner_id,
+            SettlementQueue::InboxItem
+        )
+        .await
+        .unwrap());
+        let second =
+            claim_pending_set(&second_worker, None, SettlementQueue::Network)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(second.owner_id, networks[1].id);
+        second_worker.rollback().await.unwrap();
+        first_worker.rollback().await.unwrap();
+    }
+
+    async fn network_settlement_rows(
+        txn: &DatabaseTransaction,
+        network_id: i64,
+    ) -> Vec<crate::entities::sigint_network_settlement::Model> {
+        use crate::entities::sigint_network_settlement;
+        sigint_network_settlement::Entity::find()
+            .filter(sigint_network_settlement::Column::NetworkId.eq(network_id))
+            .order_by_asc(sigint_network_settlement::Column::SettlementText)
+            .all(txn)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_aor_changes_requeue_only_affected_settlement_sets_2133() {
+        use crate::entities::sigint_network;
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        setup_cluster_test_catalog(&env, &txn).await;
+        let mut network_ids = Vec::new();
+        let mut aor_ids = Vec::new();
+        for name in ["#2133 A", "#2133 B"] {
+            let network = crate::functest::tests::mk_sigint_network(
+                &txn,
+                sigint_network::ActiveModel {
+                    location: Set(format!(
+                        "|{name}|#2133 SHARED|#2133 FOREST|"
+                    )),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            network_ids.push(network.id);
+            let aor = crate::functest::tests::mk_aor(&txn, Default::default())
+                .await
+                .unwrap();
+            aor_ids.push(aor.id);
+        }
+        for (sql, values, pending_networks) in [
+            (
+                r"insert into sigint_network_aor (network_id, aor_id) values ($1, $2)",
+                vec![network_ids[0], aor_ids[0]],
+                vec![0],
+            ),
+            (
+                r"update sigint_network_aor set aor_id = aor_id where network_id = $1",
+                vec![network_ids[0]],
+                vec![],
+            ),
+            (
+                r"update sigint_network_aor set aor_id = $2 where network_id = $1",
+                vec![network_ids[0], aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"update sigint_network_aor set network_id = $2 where network_id = $1",
+                vec![network_ids[0], network_ids[1]],
+                vec![0, 1],
+            ),
+            (
+                r"update area_of_responsibility set deleted = true where id = $1",
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"update area_of_responsibility set deleted = true where id = $1",
+                vec![aor_ids[1]],
+                vec![],
+            ),
+            (
+                r"update area_of_responsibility set deleted = false where id = $1",
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r#"insert into aor_location_config (aor_id, settlements_configs) values ($1, '["first"]')"#,
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"update aor_location_config set settlements_configs = settlements_configs where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![],
+            ),
+            (
+                r"update aor_location_config set updated_at = now() where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![],
+            ),
+            (
+                r#"update aor_location_config set settlements_configs = '["second"]' where aor_id = $1"#,
+                vec![aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"update aor_location_config set aor_id = $2 where aor_id = $1",
+                vec![aor_ids[1], aor_ids[0]],
+                vec![1],
+            ),
+            (
+                r"update aor_location_config set aor_id = $2 where aor_id = $1",
+                vec![aor_ids[0], aor_ids[1]],
+                vec![1],
+            ),
+            (
+                r"insert into sigint_network_aor (network_id, aor_id) values ($1, $2)",
+                vec![network_ids[0], aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"update aor_location_config set settlements_configs = '[]' where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![0, 1],
+            ),
+            (
+                r"delete from aor_location_config where aor_id = $1",
+                vec![aor_ids[1]],
+                vec![0, 1],
+            ),
+            (
+                r"delete from sigint_network_aor where network_id = $1",
+                vec![network_ids[0]],
+                vec![0],
+            ),
+            (
+                r"delete from sigint_network_aor where network_id = $1",
+                vec![network_ids[1]],
+                vec![1],
+            ),
+            (
+                r"insert into sigint_network_aor (network_id, aor_id) values ($1, $2)",
+                vec![network_ids[0], aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"delete from area_of_responsibility where id = $1",
+                vec![aor_ids[1]],
+                vec![0],
+            ),
+            (
+                r"delete from area_of_responsibility where id = $1",
+                vec![aor_ids[0]],
+                vec![],
+            ),
+        ] {
+            txn.execute_unprepared(
+                r#"
+update sigint_network_settlement
+set settlement_id = case settlement_text
+        when '#2133 A' then 2133101
+        when '#2133 B' then 2133102
+        when '#2133 SHARED' then 2133103
+        else null end,
+    is_undefined = settlement_text = '#2133 FOREST';
+            "#,
+            )
+            .await
+            .unwrap();
+            let before = [
+                network_settlement_rows(&txn, network_ids[0]).await,
+                network_settlement_rows(&txn, network_ids[1]).await,
+            ];
+            txn.execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                values
+                    .into_iter()
+                    .map(sea_orm::Value::from)
+                    .collect::<Vec<_>>(),
+            ))
+            .await
+            .unwrap();
+            for (index, network_id) in network_ids.iter().enumerate() {
+                let rows = network_settlement_rows(&txn, *network_id).await;
+                if pending_networks.contains(&index) {
+                    assert_eq!(rows.len(), 3, "{sql}");
+                    assert!(
+                        rows.iter().all(|row| row.settlement_id.is_none()
+                            && row.is_undefined.is_none()),
+                        "{sql}"
+                    );
+                } else {
+                    assert_eq!(rows, before[index], "{sql}");
+                }
+            }
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    async fn insert_network_catalog_test_config(
+        env: &Env,
+        txn: &DatabaseTransaction,
+        version: i64,
+    ) -> crate::entities::aor_location_config::Model {
+        use crate::entities::aor_location_config;
+        let aor = crate::functest::tests::mk_aor(txn, Default::default())
+            .await
+            .unwrap();
+        txn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+insert into battle_line_aor_geometry
+    (version_id, aor_id, geometry, snapped_start, snapped_end)
+select id, $1, geometry, ST_SetSRID(ST_MakePoint(0, 0), 4326),
+    ST_SetSRID(ST_MakePoint(10, 0), 4326)
+from battle_line_version where id = $2
+            "#,
+            [aor.id.into(), version.into()],
+        ))
+        .await
+        .unwrap();
+        {
+            let mut settlements = env.settlements.write().unwrap();
+            for (name, id) in [("first", 2_133_103), ("second", 2_133_104)] {
+                let details =
+                    settlements.default_settlements_data.3[&id].clone();
+                let data = Arc::new((
+                    vec![],
+                    vec![],
+                    crate::location::trie::Trie::new(),
+                    BTreeMap::from([(id, details.clone())]),
+                    BTreeMap::from([(details.name.clone(), vec![details])]),
+                ));
+                settlements.available_settlements_configs.push(name.into());
+                settlements
+                    .settlements_data_by_config
+                    .insert(name.into(), data);
+            }
+        }
+        aor_location_config::ActiveModel {
+            aor_id: Set(aor.id),
+            settlements_configs: Set(serde_json::json!(["first"])),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_resolution_reloads_catalog_between_claims_2133() {
+        use crate::battle_line::network_settlements::resolve_claimed_network;
+        use crate::entities::{
+            area_of_responsibility, settlement, sigint_network,
+            sigint_network_aor,
+        };
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &setup).await;
+        let config =
+            insert_network_catalog_test_config(&env, &setup, version).await;
+        let mut networks = Vec::new();
+        for _ in 0..2 {
+            let network = crate::functest::tests::mk_sigint_network(
+                &setup,
+                crate::entities::sigint_network::ActiveModel {
+                    location: Set("|#2133 SHARED|".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            sigint_network_aor::ActiveModel {
+                network_id: Set(network.id),
+                aor_id: Set(config.aor_id),
+                ..Default::default()
+            }
+            .insert(&setup)
+            .await
+            .unwrap();
+            networks.push(network);
+        }
+        setup.commit().await.unwrap();
+        crate::location::aor_config::refresh_settlements_aor_map(
+            &env.dbx,
+            env.settlements.clone(),
+        )
+        .await
+        .unwrap();
+        for (network, expected) in networks.iter().zip([2_133_103, 2_133_104]) {
+            let txn = env.dbx.begin().await.unwrap();
+            resolve_claimed_network(&env, &txn, network.id, version)
+                .await
+                .unwrap();
+            let rows = network_settlement_rows(&txn, network.id).await;
+            assert_eq!(rows[0].settlement_id, Some(expected));
+            assert_eq!(rows[0].is_undefined, Some(false));
+            txn.commit().await.unwrap();
+            if expected == 2_133_103 {
+                let mut config = config.clone().into_active_model();
+                config.settlements_configs = Set(serde_json::json!(["second"]));
+                config.update(&env.dbx).await.unwrap();
+            }
+        }
+        sigint_network::Entity::delete_many()
+            .filter(
+                sigint_network::Column::Id
+                    .is_in(networks.iter().map(|network| network.id)),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        area_of_responsibility::Entity::delete_by_id(config.aor_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        settlement::Entity::delete_many()
+            .filter(
+                settlement::Column::Id
+                    .is_in([2_133_101, 2_133_102, 2_133_103, 2_133_104]),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_location_edits_reconcile_and_resolve_the_whole_set_2133() {
+        use crate::battle_line::network_settlements::resolve_claimed_network;
+        use crate::entities::{
+            network_invalidation_task, sigint_network, sigint_network_freq,
+        };
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let network =
+            crate::functest::tests::mk_sigint_network(
+                &txn,
+                sigint_network::ActiveModel {
+                    location: Set(
+                        "|#2133 A|#2133 SHARED|#2133 FOREST|".to_string()
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let frequency = crate::functest::tests::mk_sigint_network_freq(
+            &txn,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("213.3".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let rows = network_settlement_rows(&txn, network.id).await;
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(
+            |row| row.settlement_id.is_none() && row.is_undefined.is_none()
+        ));
+        let (map_settlements, settlements_pending) =
+            crate::sigint::network::bl::get_network_settlements(
+                &txn, network.id,
+            )
+            .await
+            .unwrap();
+        assert!(map_settlements.is_empty());
+        assert!(settlements_pending);
+        resolve_claimed_network(&env, &txn, network.id, version)
+            .await
+            .unwrap();
+        let frequency_task = network_invalidation_task::Entity::find()
+            .filter(
+                network_invalidation_task::Column::Frequency
+                    .eq(&frequency.freq),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(frequency_task.sigint_network_id, None);
+        assert_eq!(frequency_task.since_ts, frequency.active_from);
+        let (map_settlements, settlements_pending) =
+            crate::sigint::network::bl::get_network_settlements(
+                &txn, network.id,
+            )
+            .await
+            .unwrap();
+        assert!(!settlements_pending);
+        assert_eq!(
+            map_settlements
+                .iter()
+                .map(|settlement| settlement.id)
+                .collect::<Vec<_>>(),
+            vec![2_133_101, 2_133_103]
+        );
+        let rows = network_settlement_rows(&txn, network.id).await;
+        assert_eq!(
+            rows.iter().map(|row| row.settlement_id).collect::<Vec<_>>(),
+            vec![Some(2_133_101), None, Some(2_133_103)]
+        );
+        let mut network = network.into_active_model();
+        network.location =
+            Set("| #2133 shared |#2133 forest|#2133 a|#2133 A|".to_string());
+        let network = network.update(&txn).await.unwrap();
+        assert_eq!(network_settlement_rows(&txn, network.id).await, rows);
+        let mut network = network.into_active_model();
+        network.location = Set("|#2133 B|#2133 SHARED|".to_string());
+        let network = network.update(&txn).await.unwrap();
+        let rows = network_settlement_rows(&txn, network.id).await;
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(
+            |row| row.settlement_id.is_none() && row.is_undefined.is_none()
+        ));
+        resolve_claimed_network(&env, &txn, network.id, version)
+            .await
+            .unwrap();
+        let rows = network_settlement_rows(&txn, network.id).await;
+        assert_eq!(
+            rows.iter().map(|row| row.settlement_id).collect::<Vec<_>>(),
+            vec![Some(2_133_102), Some(2_133_104)]
+        );
+        let mut network = network.into_active_model();
+        network.location = Set("|#2133 SHARED|".to_string());
+        let network = network.update(&txn).await.unwrap();
+        resolve_claimed_network(&env, &txn, network.id, version)
+            .await
+            .unwrap();
+        let rows = network_settlement_rows(&txn, network.id).await;
+        assert_eq!(rows[0].settlement_id, None);
+        assert_eq!(rows[0].is_undefined, Some(true));
+        let mut network = network.into_active_model();
+        network.location = Set(String::new());
+        network.update(&txn).await.unwrap();
+        assert!(network_settlement_rows(&txn, rows[0].network_id)
+            .await
+            .is_empty());
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolved_network_locations_anchor_and_requeue_inbox_names_2133() {
+        use crate::battle_line::network_settlements::resolve_claimed_network;
+        use crate::entities::{sigint_inbox_item_network, sigint_network};
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                location: Set("|#2133 A|".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let request =
+            insert_cluster_test_item(&txn, &[("#2133 SHARED", None, None)])
+                .await
+                .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+            .await
+            .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[0]
+                .is_undefined,
+            Some(true)
+        );
+        sigint_inbox_item_network::ActiveModel {
+            sigint_inbox_item_id: Set(request.item_id),
+            sigint_network_id: Set(network.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        resolve_claimed_network(&env, &txn, network.id, version)
+            .await
+            .unwrap();
+        crate::entities::settlement::Entity::update_many()
+            .col_expr(
+                crate::entities::settlement::Column::Lon,
+                Expr::value(Some(181.0)),
+            )
+            .filter(crate::entities::settlement::Column::Id.eq(2_133_101))
+            .exec(&txn)
+            .await
+            .unwrap();
+        assert!(
+            super::super::network_settlements::load_item_network_anchors(
+                &txn,
+                request.item_id,
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        crate::entities::settlement::Entity::update_many()
+            .col_expr(
+                crate::entities::settlement::Column::Lon,
+                Expr::value(Some(1.0)),
+            )
+            .filter(crate::entities::settlement::Column::Id.eq(2_133_101))
+            .exec(&txn)
+            .await
+            .unwrap();
+        requeue_unresolved_item_settlements(&txn, &[request.item_id])
+            .await
+            .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[0]
+                .is_undefined,
+            None
+        );
+        resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+            .await
+            .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[0]
+                .settlement_id,
+            Some(2_133_103)
+        );
+        sigint_network::Entity::delete_by_id(network.id)
+            .exec(&txn)
+            .await
+            .unwrap();
+        sigint_inbox_item_settlement::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_settlement::Column::SettlementId,
+                Expr::value(Option::<i32>::None),
+            )
+            .col_expr(
+                sigint_inbox_item_settlement::Column::IsUndefined,
+                Expr::value(Some(true)),
+            )
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId
+                    .eq(request.item_id),
+            )
+            .exec(&txn)
+            .await
+            .unwrap();
+        requeue_unresolved_item_settlements(&txn, &[request.item_id])
+            .await
+            .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[0]
+                .is_undefined,
+            None
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_settlement_deletion_requeues_and_network_restoration_rebuilds_2133(
+    ) {
+        use crate::battle_line::network_settlements::resolve_claimed_network;
+        use crate::entities::{settlement, sigint_network};
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                location: Set("|#2133 A|".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        resolve_claimed_network(&env, &txn, network.id, version)
+            .await
+            .unwrap();
+        settlement::Entity::delete_by_id(2_133_101)
+            .exec(&txn)
+            .await
+            .unwrap();
+        let rows = network_settlement_rows(&txn, network.id).await;
+        assert_eq!(rows[0].settlement_id, None);
+        assert_eq!(rows[0].is_undefined, None);
+        crate::entities::network_invalidation_task::Entity::delete_many()
+            .exec(&txn)
+            .await
+            .unwrap();
+        resolve_claimed_network(&env, &txn, network.id, version)
+            .await
+            .unwrap();
+        assert!(crate::entities::network_invalidation_task::Entity::find()
+            .filter(
+                crate::entities::network_invalidation_task::Column::SigintNetworkId
+                    .eq(network.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .is_some());
+        let mut network = network.into_active_model();
+        network.deleted = Set(true);
+        let network = network.update(&txn).await.unwrap();
+        assert!(network_settlement_rows(&txn, network.id).await.is_empty());
+        let mut network = network.into_active_model();
+        network.deleted = Set(false);
+        let network = network.update(&txn).await.unwrap();
+        assert_eq!(network_settlement_rows(&txn, network.id).await.len(), 1);
+        sigint_network::Entity::delete_by_id(network.id)
+            .exec(&txn)
+            .await
+            .unwrap();
+        assert!(network_settlement_rows(&txn, network.id).await.is_empty());
+        txn.rollback().await.unwrap();
+    }
+
+    fn assert_cluster_test_links(
+        rows: &[sigint_inbox_item_settlement::Model],
+        first_id: i64,
+        second_id: i64,
+    ) {
+        for (item_id, name, expected) in [
+            (first_id, "#2133 A", Some(2_133_101)),
+            (first_id, "#2133 SHARED", Some(2_133_103)),
+            (first_id, "#2133 FOREST", None),
+            (second_id, "#2133 B", Some(2_133_102)),
+            (second_id, "#2133 SHARED", Some(2_133_104)),
+            (second_id, "#2133 UNDEFINED", None),
+        ] {
+            let row = rows
+                .iter()
+                .find(|row| {
+                    row.item_id == item_id && row.settlement_text == name
+                })
+                .unwrap();
+            assert_eq!(row.settlement_id, expected, "{name} in {item_id}");
+            assert_eq!(row.is_undefined, Some(expected.is_none()));
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn retries_preserve_the_majority_and_reject_distant_outliers_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let request = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 A", None, None),
+                ("#2133 SHARED", None, None),
+                ("#2133 B", None, None),
+            ],
+        )
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        for _ in 0..3 {
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap();
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(
+                rows.iter().map(|row| row.settlement_id).collect::<Vec<_>>(),
+                vec![Some(2_133_101), Some(2_133_103), None]
+            );
+            assert_eq!(rows[2].is_undefined, Some(true));
+            requeue_unresolved_item_settlements(&txn, &[request.item_id])
+                .await
+                .unwrap();
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    async fn insert_kharkiv_resolution_test_item(
+        env: &Env,
+        txn: &DatabaseTransaction,
+    ) -> (i64, OneoffItemResolutionRequest) {
+        let version = insert_active_test_battle_line(txn).await.unwrap();
+        txn.execute_unprepared(
+            r#"update battle_line_version set geometry = ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(37.8 49,37.8 51))', 4326) where retired_at is null"#,
+        ).await.unwrap();
+        env.settlements.write().unwrap().default_settlements_data = Arc::new(
+            crate::location::load_from_file(
+                vec!["settlements_json/kharkivska_oblast.json".to_string()],
+                Mode::Test,
+            )
+            .unwrap(),
+        );
+        let request = insert_cluster_test_item(
+            txn,
+            &[
+                ("БОЛОГІВКА", None, None),
+                ("ДВОРІЧАНСЬКЕ", None, None),
+                ("КАМ’ЯНКА", None, None),
+            ],
+        )
+        .await
+        .unwrap();
+        (version, request)
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn kharkiv_inbox_resolution_uses_database_candidates_and_isolates_catalog_cache_2133(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let (version, request) =
+            insert_kharkiv_resolution_test_item(&env, &txn).await;
+        let mut cache = SettlementResolutionCache::default();
+        let network_results = resolve_settlement_names(
+            &txn,
+            env.settlements.clone(),
+            request.settlement_texts.clone(),
+            &[],
+            version,
+            &mut cache,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            network_results
+                .iter()
+                .map(|result| result.chosen_settlement_id)
+                .collect::<Vec<_>>(),
+            vec![Some(45210), Some(18487), None]
+        );
+        for _ in 0..3 {
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap();
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(
+                rows.iter().map(|row| row.settlement_id).collect::<Vec<_>>(),
+                vec![Some(45210), Some(18487), Some(94886)]
+            );
+            assert_eq!(rows[2].is_undefined, Some(false));
+            requeue_unresolved_item_settlements(&txn, &[request.item_id])
+                .await
+                .unwrap();
+        }
+        let row =
+            cluster_test_rows(&txn, request.item_id).await.unwrap()[2].clone();
+        persist_settlement_resolution(&txn, row, Some(95309))
+            .await
+            .unwrap();
+        *env.settlements.write().unwrap() =
+            crate::location::SettlementsDataConfig::default();
+        let item_id = request.item_id;
+        process_oneoff_request_groups(
+            &txn,
+            BTreeMap::from([(vec![], vec![request])]),
+            version,
+            &mut SettlementResolutionCache::default(),
+            &mut OneoffLinkInboxSettlementsStats::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            cluster_test_rows(&txn, item_id)
+                .await
+                .unwrap()
+                .iter()
+                .map(|row| row.settlement_id)
+                .collect::<Vec<_>>(),
+            vec![Some(45210), Some(18487), Some(94886)]
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn inbox_uses_database_aliases_and_rejects_dictionary_only_names_and_invalid_coordinates_2133(
+    ) {
+        use crate::entities::{settlement, settlement_alias};
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let mut dictionary_alias =
+            env.settlements.read().unwrap().default_settlements_data.3
+                [&2_133_102]
+                .clone();
+        dictionary_alias.name = "#2133 JSON ONLY".to_string();
+        env.settlements.write().unwrap().default_settlements_data = Arc::new((
+            vec![],
+            vec![],
+            crate::location::trie::Trie::new(),
+            BTreeMap::from([(2_133_102, dictionary_alias.clone())]),
+            BTreeMap::from([(
+                dictionary_alias.name.clone(),
+                vec![dictionary_alias],
+            )]),
+        ));
+        settlement_alias::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            settlement_id: Set(2_133_101),
+            text: Set("#2133 DB’ONLY".to_string()),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        settlement::ActiveModel {
+            id: Set(2_133_105),
+            kind: Set(
+                crate::entities::sea_orm_active_enums::SettlementKind::Village,
+            ),
+            name: Set("#2133 INVALID".to_string()),
+            lat: Set(Some(91.0)),
+            lon: Set(Some(1.0)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        for (name, expected) in [
+            ("#2133 db'only", Some(2_133_101)),
+            ("#2133 JSON ONLY", None),
+            ("#2133 INVALID", None),
+        ] {
+            let request = insert_cluster_test_item(&txn, &[(name, None, None)])
+                .await
+                .unwrap();
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap();
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(rows[0].settlement_id, expected, "{name}");
+            assert_eq!(rows[0].is_undefined, Some(expected.is_none()));
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn isolates_cached_clusters_and_preserves_fixed_links_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let first = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 A", None, None),
+                ("#2133 SHARED", None, None),
+                ("#2133 FOREST", None, None),
+            ],
+        )
+        .await
+        .unwrap();
+        let second = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 B", Some(2_133_102), Some(false)),
+                ("#2133 SHARED", None, None),
+                ("#2133 UNDEFINED", None, Some(true)),
+            ],
+        )
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        for request in [&first, &second] {
+            assert_eq!(
+                resolve_claimed_item(
+                    &txn,
+                    request.item_id,
+                    version,
+                    &mut cache
+                )
+                .await
+                .unwrap(),
+                Some(request.item_id)
+            );
+        }
+        let rows = sigint_inbox_item_settlement::Entity::find()
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId
+                    .is_in([first.item_id, second.item_id]),
+            )
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_cluster_test_links(&rows, first.item_id, second.item_id);
+        assert!(cache
+            .get(
+                &SettlementCandidateSource::Database,
+                version,
+                &[],
+                "#2133 UNDEFINED"
+            )
+            .is_some());
+        let cached = cache
+            .get(
+                &SettlementCandidateSource::Database,
+                version,
+                &[],
+                "#2133 SHARED",
+            )
+            .unwrap();
+        assert_eq!(cached.candidates.len(), 2);
+        assert_eq!(
+            location_result_from_draft(cached).chosen_settlement_id,
+            Some(2_133_104)
+        );
+
+        let mut stats = OneoffLinkInboxSettlementsStats::default();
+        let affected = process_oneoff_request_groups(
+            &txn,
+            BTreeMap::from([(vec![], vec![first, second])]),
+            version,
+            &mut cache,
+            &mut stats,
+        )
+        .await
+        .unwrap();
+        assert_eq!(affected.len(), 2);
+        assert_eq!(stats.matched, 4);
+        let relinked = sigint_inbox_item_settlement::Entity::find()
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId.is_in(affected),
+            )
+            .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+            .all(&txn)
+            .await
+            .unwrap();
+        let mut rows = rows;
+        rows.sort_by_key(|row| row.id);
+        assert_eq!(relinked, rows);
+        txn.rollback().await.unwrap();
+    }
+
+    async fn cluster_test_rows(
+        txn: &DatabaseTransaction,
+        item_id: i64,
+    ) -> anyhow::Result<Vec<sigint_inbox_item_settlement::Model>> {
+        sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .order_by_asc(sigint_inbox_item_settlement::Column::Id)
+            .all(txn)
+            .await
+            .c(h!())
+    }
+
+    async fn change_cluster_test_locations(
+        txn: &DatabaseTransaction,
+        request: &OneoffItemResolutionRequest,
+        locations: &str,
+    ) -> anyhow::Result<Vec<sigint_inbox_item_settlement::Model>> {
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::LocationV2,
+                Expr::value(Some(locations)),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(request.item_id))
+            .exec(txn)
+            .await
+            .c(h!())?;
+        reconcile_item_locations(
+            txn,
+            request.item_id,
+            request.item_uuid,
+            Some(locations),
+        )
+        .await
+        .c(h!())?;
+        cluster_test_rows(txn, request.item_id).await.c(h!())
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconsiders_cluster_after_location_edits_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let request = insert_cluster_test_item(
+            &txn,
+            &[("#2133 SHARED", None, None), ("#2133 FOREST", None, None)],
+        )
+        .await
+        .unwrap();
+        let mut cache = SettlementResolutionCache::default();
+        resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+            .await
+            .unwrap();
+        for (locations, expected) in [
+            (
+                "|#2133 A|#2133 SHARED|#2133 FOREST|",
+                vec![Some(2_133_101), Some(2_133_103), None],
+            ),
+            ("|#2133 SHARED|#2133 FOREST|", vec![None, None]),
+            (
+                "|#2133 A|#2133 B|#2133 SHARED|#2133 FOREST|",
+                vec![None, None, None, None],
+            ),
+            (
+                "|#2133 A|#2133 SHARED|#2133 FOREST|",
+                vec![Some(2_133_101), Some(2_133_103), None],
+            ),
+        ] {
+            let rows = change_cluster_test_locations(&txn, &request, locations)
+                .await
+                .unwrap();
+            assert!(
+                rows.iter().all(|row| {
+                    row.settlement_id.is_none() && row.is_undefined.is_none()
+                }),
+                "all joint decisions must be pending after {locations}"
+            );
+            assert_eq!(
+                resolve_claimed_item(
+                    &txn,
+                    request.item_id,
+                    version,
+                    &mut cache,
+                )
+                .await
+                .unwrap(),
+                Some(request.item_id)
+            );
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            for (name, expected) in
+                to_location_list(locations).into_iter().zip(expected)
+            {
+                let row = rows
+                    .iter()
+                    .find(|row| row.settlement_text == name)
+                    .unwrap();
+                assert_eq!(row.settlement_id, expected, "{locations}: {name}");
+                assert_eq!(row.is_undefined, Some(expected.is_none()));
+            }
+            reconcile_item_locations(
+                &txn,
+                request.item_id,
+                request.item_uuid,
+                Some(&format!("{locations}{locations}")),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                cluster_test_rows(&txn, request.item_id).await.unwrap(),
+                rows,
+            );
+            assert_eq!(
+                resolve_claimed_item(
+                    &txn,
+                    request.item_id,
+                    version,
+                    &mut cache,
+                )
+                .await
+                .unwrap(),
+                None,
+                "unchanged names must preserve linked and undefined rows"
+            );
+        }
+        txn.rollback().await.unwrap();
+    }
+
     async fn insert_relink_test_settlement(
         txn: &DatabaseTransaction,
         id: i32,
@@ -1252,6 +2762,216 @@ returning id
         row.try_get("", "id").c(h!())
     }
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolves_renamed_links_and_preserves_undefined_forests_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        *env.settlements.write().unwrap() =
+            crate::location::SettlementsDataConfig::default();
+        let setup = env.dbx.begin().await.unwrap();
+        insert_active_test_battle_line(&setup).await.unwrap();
+        setup.execute_unprepared(
+            "update battle_line_version set geometry = ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(37 49,37 51))', 4326) where retired_at is null",
+        ).await.unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &setup,
+            signal_message::ActiveModel {
+                body: Set(Some("#3383 settlement links".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (settlement_id, text) in
+            [(79948, "Село_3383_перевірка"), (65447, "Рибалкіне")]
+        {
+            crate::entities::settlement_alias::ActiveModel {
+                id: Set(uuid::Uuid::now_v7()),
+                settlement_id: Set(settlement_id),
+                text: Set(text.to_string()),
+            }
+            .insert(&setup)
+            .await
+            .unwrap();
+        }
+        let location_v2 =
+            "|АНИЩИНЕ|ІВАЩИНЕ|РИБАЛКІНЕ|ВЕРХНЄ ГОРІХОВЕ|ЗАЛИВНИЙ|СЕЛО_3383_ПЕРЕВІРКА|";
+        let item = sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            location_v2: Set(Some(location_v2.to_string())),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&setup)
+        .await
+        .unwrap();
+        reconcile_item_locations(
+            &setup,
+            item.id,
+            item.id_uuid,
+            Some(location_v2),
+        )
+        .await
+        .unwrap();
+        setup.commit().await.unwrap();
+        let mut cursor = SettlementWorkerCursor::default();
+        assert!(run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let rows = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item.id))
+            .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 6);
+        for (text, settlement_id) in [
+            ("ІВАЩИНЕ", Some(2_000_000_002)),
+            ("АНИЩИНЕ", Some(2_000_000_001)),
+            ("СЕЛО_3383_ПЕРЕВІРКА", Some(79948)),
+            ("ВЕРХНЄ ГОРІХОВЕ", None),
+            ("ЗАЛИВНИЙ", None),
+            ("РИБАЛКІНЕ", Some(65447)),
+        ] {
+            let row =
+                rows.iter().find(|row| row.settlement_text == text).unwrap();
+            assert_eq!(row.settlement_id, settlement_id);
+            assert_eq!(row.is_undefined, Some(settlement_id.is_none()));
+        }
+        reconcile_item_locations(
+            &env.dbx,
+            item.id,
+            item.id_uuid,
+            Some(location_v2),
+        )
+        .await
+        .unwrap();
+        assert!(!run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let retained = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item.id))
+            .order_by_asc(sigint_inbox_item_settlement::Column::SettlementText)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(retained, rows);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn requeues_deleted_settlement_links_3383() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let (row, _, settlement_id) =
+            insert_settlement_stats_test_fixture(&txn).await.unwrap();
+        insert_active_test_battle_line(&txn).await.unwrap();
+        persist_settlement_resolution(&txn, row.clone(), Some(settlement_id))
+            .await
+            .unwrap();
+        let linked = sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(linked.is_undefined, Some(false));
+        persist_settlement_resolution(&txn, linked, None)
+            .await
+            .unwrap();
+        let unresolved =
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(unresolved.is_undefined, Some(true));
+        persist_settlement_resolution(&txn, unresolved, Some(settlement_id))
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+
+        crate::entities::settlement::Entity::delete_by_id(settlement_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let pending = sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pending.settlement_id, None);
+        assert_eq!(pending.is_undefined, None);
+
+        let mut cursor = SettlementWorkerCursor::default();
+        assert!(run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+        let unresolved =
+            sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(unresolved.settlement_id, None);
+        assert_eq!(unresolved.is_undefined, Some(true));
+        assert!(!run_inbox_settlement_worker_once(&env, &mut cursor)
+            .await
+            .unwrap());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn processed_settlement_flag_migration_roundtrips_3383() {
+        use echo_migration::MigratorTrait;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let (row, _, settlement_id) =
+            insert_settlement_stats_test_fixture(&txn).await.unwrap();
+        persist_settlement_resolution(&txn, row.clone(), Some(settlement_id))
+            .await
+            .unwrap();
+        let migration = echo_migration::Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name()
+                    == "m20261010_073418_inbox_settlement_processed_flag"
+            })
+            .unwrap();
+        let manager = echo_migration::SchemaManager::new(&txn);
+        migration.down(&manager).await.unwrap();
+        let restored = sigint_inbox_item_settlement::Entity::find_by_id(row.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(restored.settlement_id, Some(settlement_id));
+        assert_eq!(restored.is_undefined, None);
+        let rejected = txn.begin().await.unwrap();
+        assert!(persist_settlement_resolution(
+            &rejected,
+            restored.clone(),
+            Some(settlement_id)
+        )
+        .await
+        .is_err());
+        rejected.rollback().await.unwrap();
+        migration.up(&manager).await.unwrap();
+        persist_settlement_resolution(&txn, restored, Some(settlement_id))
+            .await
+            .unwrap();
+        let rejected = txn.begin().await.unwrap();
+        let mut invalid = row.into_active_model();
+        invalid.settlement_id = Set(Some(settlement_id));
+        invalid.is_undefined = Set(Some(true));
+        assert!(invalid.update(&rejected).await.is_err());
+        rejected.rollback().await.unwrap();
+        txn.rollback().await.unwrap();
+    }
+
     #[test]
     fn oneoff_bounds_are_local_half_open_and_reject_inversion() {
         let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 18).unwrap();
@@ -1310,28 +3030,48 @@ returning id
 
     #[test]
     fn resolution_cache_reuses_normalized_text_only_within_snapshot_scope() {
-        let result = BattleLineLocationResult {
+        let result = LocationResolutionDraft {
             location: "КУП'ЯНСЬК".to_string(),
             candidates: vec![],
-            chosen_settlement_id: Some(2_133),
-            distance_m: Some(1.0),
+            chosen_candidate_index: Some(0),
+            battle_line_distances: BTreeMap::new(),
             invalid_aor_ids: vec![],
         };
+        let source = SettlementCandidateSource::Database;
         let mut resolution_cache = SettlementResolutionCache::default();
-        resolution_cache.insert(7, &[3, 2], result);
+        resolution_cache.insert(&source, 7, &[3, 2], result);
 
         let cached = resolution_cache
-            .get(7, &[2, 3], " купʼянськ ")
+            .get(&source, 7, &[2, 3], " купʼянськ ")
             .expect("same battle line and AOR scope must reuse resolution");
         assert_eq!(cached.location, " купʼянськ ");
-        assert_eq!(cached.chosen_settlement_id, Some(2_133));
-        assert!(resolution_cache.get(8, &[2, 3], "КУП’ЯНСЬК").is_none());
-        assert!(resolution_cache.get(7, &[2], "КУП’ЯНСЬК").is_none());
+        assert_eq!(cached.chosen_candidate_index, Some(0));
+        assert!(resolution_cache
+            .get(&source, 8, &[2, 3], "КУП’ЯНСЬК")
+            .is_none());
+        assert!(resolution_cache
+            .get(&source, 7, &[2], "КУП’ЯНСЬК")
+            .is_none());
+        let cached = resolution_cache
+            .get(&source, 7, &[2, 3], "КУП’ЯНСЬК")
+            .unwrap();
+        resolution_cache.insert(
+            &source,
+            7,
+            &[2, 3],
+            LocationResolutionDraft {
+                location: "#3383 Straße".to_string(),
+                ..cached
+            },
+        );
+        assert!(resolution_cache
+            .get(&source, 7, &[2, 3], "#3383 STRASSE")
+            .is_none());
     }
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn reconciles_removed_new_and_unchanged_location_texts() {
+    async fn reconciles_removed_new_and_unchanged_location_texts_2133() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -1386,7 +3126,8 @@ returning id
             .unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, preserved_id);
-        assert_eq!(rows[0].is_undefined, Some(true));
+        assert_eq!(rows[0].settlement_id, None);
+        assert_eq!(rows[0].is_undefined, None);
         assert_eq!(rows[1].settlement_text, "C");
         assert_eq!(rows[1].settlement_id, None);
         assert_eq!(rows[1].is_undefined, None);
@@ -1504,6 +3245,22 @@ returning id
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
+        let integration = crate::entities::api_integration::ActiveModel {
+            api_user_login_id: Set(crate::users::system_login_id(&txn)
+                .await
+                .unwrap()),
+            sync_enabled: Set(true),
+            has_iggy_connection: Set(true),
+            iggy_url: Set(Some("tcp://localhost:8090".to_string())),
+            iggy_login: Set(Some("test".to_string())),
+            iggy_password: Set(Some("test".to_string())),
+            iggy_inbox_topic: Set(Some("test-inbox".to_string())),
+            iggy_analytics_topic: Set(Some("test-analytics".to_string())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
         let old_settlement_id = 2_287_214;
         let new_settlement_id = 2_287_215;
         for (id, name) in [
@@ -1519,29 +3276,32 @@ returning id
         )
         .await
         .unwrap();
-        let request = OneoffItemResolutionRequest {
-            item_id,
-            item_uuid,
-            location_v2: Some("|AMBIGUOUS|".to_string()),
-            settlement_texts: vec!["AMBIGUOUS".to_string()],
-        };
-        let resolutions = vec![BattleLineLocationResult {
-            location: "AMBIGUOUS".to_string(),
-            candidates: vec![],
-            chosen_settlement_id: Some(new_settlement_id),
-            distance_m: Some(1.0),
-            invalid_aor_ids: vec![],
-        }];
         let mut stats = OneoffLinkInboxSettlementsStats::default();
-
-        process_oneoff_item_in_transaction(
-            &txn,
-            request,
-            resolutions,
-            &mut stats,
-        )
-        .await
-        .unwrap();
+        for settlement_id in
+            [old_settlement_id, new_settlement_id, new_settlement_id]
+        {
+            let request = OneoffItemResolutionRequest {
+                item_id,
+                item_uuid,
+                location_v2: Some("|RENAMED|".to_string()),
+                settlement_texts: vec!["RENAMED".to_string()],
+            };
+            let resolutions = vec![BattleLineLocationResult {
+                location: "RENAMED".to_string(),
+                candidates: vec![],
+                chosen_settlement_id: Some(settlement_id),
+                distance_m: Some(1.0),
+                invalid_aor_ids: vec![],
+            }];
+            process_oneoff_item_in_transaction(
+                &txn,
+                request,
+                resolutions,
+                &mut stats,
+            )
+            .await
+            .unwrap();
+        }
 
         let row = sigint_inbox_item_settlement::Entity::find()
             .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
@@ -1550,15 +3310,89 @@ returning id
             .unwrap()
             .unwrap();
         assert_eq!(row.settlement_id, Some(new_settlement_id));
-        assert_eq!(row.is_undefined, None);
+        assert_eq!(row.is_undefined, Some(false));
+        let events = crate::entities::api_integration_iggy_event::Entity::find()
+            .filter(
+                crate::entities::api_integration_iggy_event::Column::ApiIntegrationId
+                    .eq(integration.id),
+            )
+            .filter(
+                crate::entities::api_integration_iggy_event::Column::SigintInboxItemId
+                    .eq(item_id),
+            )
+            .order_by_asc(crate::entities::api_integration_iggy_event::Column::Id)
+            .all(&txn)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| {
+                event.payload["event_type"].as_str().is_some_and(|kind| {
+                    kind.starts_with("sigint_inbox_item_settlement_")
+                })
+            })
+            .map(|event| event.payload)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events,
+            vec![
+                serde_json::json!({
+                    "event_type": "sigint_inbox_item_settlement_unlinked",
+                    "settlement_id": old_settlement_id,
+                }),
+                serde_json::json!({
+                    "event_type": "sigint_inbox_item_settlement_linked",
+                    "settlement_id": new_settlement_id,
+                }),
+            ]
+        );
         assert_eq!(
             stats,
             OneoffLinkInboxSettlementsStats {
-                processed: 1,
-                matched: 1,
+                processed: 3,
+                matched: 3,
                 ..Default::default()
             }
         );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn iggy_settlement_trigger_removal_roundtrips() {
+        use echo_migration::MigratorTrait;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let migration = echo_migration::Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name()
+                    == "m20261021_091705_remove_iggy_settlement_trigger"
+            })
+            .unwrap();
+        let manager = echo_migration::SchemaManager::new(&txn);
+        for (step, restored) in [false, true, false].into_iter().enumerate() {
+            if restored {
+                migration.down(&manager).await.unwrap();
+            } else if step > 0 {
+                migration.up(&manager).await.unwrap();
+            }
+            let installed = txn
+                .query_one_raw(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    r#"select exists (
+                        select 1 from pg_trigger
+                        where tgname = 'sigint_inbox_item_settlement_capture_iggy_link'
+                    ) as installed"#,
+                ))
+                .await
+                .unwrap()
+                .unwrap()
+                .try_get::<bool>("", "installed")
+                .unwrap();
+            assert_eq!(installed, restored);
+        }
         txn.rollback().await.unwrap();
     }
 
@@ -1606,10 +3440,11 @@ returning id
             .await
             .unwrap();
         let removal = env.dbx.begin().await.unwrap();
-        let requires_invalidation =
-            reconcile_item_location_rows(&removal, item_id, item_uuid, None)
-                .await
-                .unwrap();
+        let requires_invalidation = reconcile_item_location_rows(
+            &removal, item_id, item_uuid, None, true,
+        )
+        .await
+        .unwrap();
         assert!(requires_invalidation);
         assert!(group_stats_recalculation_task::Entity::find()
             .one(&removal)
@@ -1632,7 +3467,7 @@ returning id
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn reconciliation_enqueues_stats_for_removed_linked_settlement() {
+    async fn reconciliation_enqueues_stats_for_cleared_cluster_links_2133() {
         use crate::entities::group_stats_recalculation_task;
 
         let (env, _guard) =
@@ -1647,17 +3482,103 @@ returning id
         row.update(&setup).await.unwrap();
         setup.commit().await.unwrap();
 
-        let removal = env.dbx.begin().await.unwrap();
-        reconcile_item_locations(&removal, item_id, item_uuid, None)
+        for location_v2 in [
+            None,
+            Some("|STATS INVALIDATION|EXTRA|"),
+            Some("|STATS INVALIDATION|"),
+        ] {
+            let txn = env.dbx.begin().await.unwrap();
+            reconcile_item_locations(&txn, item_id, item_uuid, location_v2)
+                .await
+                .unwrap();
+            let task = group_stats_recalculation_task::Entity::find()
+                .one(&txn)
+                .await
+                .unwrap();
+            if location_v2 == Some("|STATS INVALIDATION|") {
+                assert!(task.is_none());
+            } else {
+                assert_eq!(task.unwrap().group_master_key, group_master_key);
+            }
+            txn.rollback().await.unwrap();
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconciliation_invalidates_concurrently_resolved_removals_3383() {
+        use crate::entities::group_stats_recalculation_task;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        let (row, group_master_key, settlement_id) =
+            insert_settlement_stats_test_fixture(&setup).await.unwrap();
+        let item_id = row.item_id;
+        let item_uuid = row.item_uuid;
+        setup.commit().await.unwrap();
+        let resolver = env.dbx.begin().await.unwrap();
+        persist_settlement_resolution(&resolver, row, Some(settlement_id))
             .await
             .unwrap();
+        let (backend_pid_tx, backend_pid_rx) = tokio::sync::oneshot::channel();
+        let reconciliation_env = env.clone();
+        let reconciliation = tokio::spawn(async move {
+            let transaction = reconciliation_env.dbx.begin().await.unwrap();
+            let backend = transaction
+                .query_one_raw(Statement::from_string(
+                    DatabaseBackend::Postgres,
+                    "select pg_backend_pid() as pid",
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            let backend_pid: i32 = backend.try_get("", "pid").unwrap();
+            backend_pid_tx.send(backend_pid).unwrap();
+            reconcile_item_locations(&transaction, item_id, item_uuid, None)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+        });
+        wait_for_reconciliation_row_lock(&env, backend_pid_rx.await.unwrap())
+            .await;
+        resolver.commit().await.unwrap();
+        reconciliation.await.unwrap();
+        assert!(sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
         let task = group_stats_recalculation_task::Entity::find()
-            .one(&removal)
+            .one(&env.dbx)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(task.group_master_key, group_master_key);
-        removal.rollback().await.unwrap();
+    }
+
+    async fn wait_for_reconciliation_row_lock(env: &Env, backend_pid: i32) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let row = env.dbx
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Postgres,
+                        "select exists(select 1 from pg_stat_activity where pid = $1 and wait_event_type = 'Lock') as blocked",
+                        [backend_pid.into()],
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let blocked: bool = row.try_get("", "blocked").unwrap();
+                if blocked {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("reconciliation must wait for the resolver's row lock");
     }
 
     #[tokio::test]
@@ -1729,7 +3650,7 @@ returning id
 
         let worker_env = env.clone();
         let worker = tokio::spawn(async move {
-            let mut cursor = None;
+            let mut cursor = SettlementWorkerCursor::default();
             run_inbox_settlement_worker_once(&worker_env, &mut cursor).await
         });
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -1953,7 +3874,7 @@ returning id
             .await
             .unwrap()
             .expect("second pending item");
-        assert_eq!(second.item_id, item_ids[1]);
+        assert_eq!(second.owner_id, item_ids[1]);
         second_worker.rollback().await.unwrap();
         first_worker.rollback().await.unwrap();
 

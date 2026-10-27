@@ -11,9 +11,12 @@ export type UserRole =
   | 'NetworkEditor'
   | 'CallsignsEditor'
   | 'Cyber'
+  | 'CyberViewer'
+  | 'CyberViewerRestricted'
   | 'AdvancedReports'
   | 'NoAutoLogout'
-  | 'No2FA';
+  | 'No2FA'
+  | 'MessengerIngest';
 
 export function hasRole(roles: readonly string[] | null | undefined, role: UserRole): boolean {
   const has = (target: UserRole) => Boolean(roles?.includes(target));
@@ -35,7 +38,14 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('Full') || has('Bpla');
     case 'Basic':
       return (
-        has('Admin') || has('Full') || has('Bpla') || has('Rer') || has('Cyber') || has('Basic')
+        has('Admin') ||
+        has('Full') ||
+        has('Bpla') ||
+        has('Rer') ||
+        has('Cyber') ||
+        has('CyberViewer') ||
+        has('CyberViewerRestricted') ||
+        has('Basic')
       );
     case 'UnitsEditor':
       return has('Admin') || has('UnitsEditor');
@@ -45,12 +55,18 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
       return has('Admin') || has('CallsignsEditor');
     case 'Cyber':
       return has('Admin') || has('Cyber');
+    case 'CyberViewer':
+      return has('Admin') || has('Cyber') || has('CyberViewer');
+    case 'CyberViewerRestricted':
+      return hasRole(roles, 'CyberViewer') || has('CyberViewerRestricted');
     case 'AdvancedReports':
       return has('Admin') || has('AdvancedReports');
     case 'NoAutoLogout':
       return has('NoAutoLogout');
     case 'No2FA':
       return has('No2FA');
+    case 'MessengerIngest':
+      return has('MessengerIngest');
   }
 }
 
@@ -59,18 +75,18 @@ export function canUseRadioFeatures(roles: readonly string[] | null | undefined)
 }
 
 export function hasRerOrCyber(roles: readonly string[] | null | undefined): boolean {
-  return hasAnyRole(roles, ['Rer', 'Cyber']);
+  return hasAnyRole(roles, ['Rer', 'CyberViewerRestricted']);
 }
 
 export function canReadDevices(roles: readonly string[] | null | undefined): boolean {
-  return hasRole(roles, 'Cyber');
+  return hasRole(roles, 'CyberViewer');
 }
 
 export function canUseMessageDevices(
   roles: readonly string[] | null | undefined,
   devicesSectionEnabled: boolean,
 ): boolean {
-  return devicesSectionEnabled && hasRole(roles, 'Cyber');
+  return devicesSectionEnabled && hasRole(roles, 'CyberViewer');
 }
 
 export type DevicesCapabilities = {
@@ -89,7 +105,7 @@ export function resolveDevicesCapabilities(
     canRead: hasDeviceAccess,
     canCreate: hasDeviceAccess,
     canWriteSourceData: hasDeviceAccess,
-    canWriteAnalyticalData: hasDeviceAccess,
+    canWriteAnalyticalData: hasRole(roles, 'Cyber'),
   };
 }
 

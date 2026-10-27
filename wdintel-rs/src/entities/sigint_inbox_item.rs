@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i64,
-    pub id_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub date: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -51,13 +50,24 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub network: Option<String>,
     pub datetime: Option<DateTime>,
+    pub id_uuid: Option<Uuid>,
     pub is_time_null: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_many = "super::ai_callsign_action::Entity")]
+    AiCallsignAction,
+    #[sea_orm(has_many = "super::ai_callsign_feedback::Entity")]
+    AiCallsignFeedback,
+    #[sea_orm(has_many = "super::ai_callsign_override::Entity")]
+    AiCallsignOverride,
     #[sea_orm(has_one = "super::ai_callsign_worker_job::Entity")]
     AiCallsignWorkerJob,
+    #[sea_orm(has_many = "super::ai_position_mention::Entity")]
+    AiPositionMention,
+    #[sea_orm(has_many = "super::ai_position_worker_job::Entity")]
+    AiPositionWorkerJob,
     #[sea_orm(has_one = "super::ai_settlement_worker_job::Entity")]
     AiSettlementWorkerJob,
     #[sea_orm(
@@ -76,6 +86,8 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     Nominatimres,
+    #[sea_orm(has_one = "super::sigint_chat_message::Entity")]
+    SigintChatMessage,
     #[sea_orm(has_many = "super::sigint_inbox_item_callsign::Entity")]
     SigintInboxItemCallsign,
     #[sea_orm(has_many = "super::sigint_inbox_item_failed_unit_label::Entity")]
@@ -92,6 +104,8 @@ pub enum Relation {
     SigintInboxItemTag,
     #[sea_orm(has_many = "super::sigint_inbox_item_unit::Entity")]
     SigintInboxItemUnit,
+    #[sea_orm(has_one = "super::sigint_inbox_item_unit_selection::Entity")]
+    SigintInboxItemUnitSelection,
     #[sea_orm(has_one = "super::sigint_inbox_item_unit_tag_queue::Entity")]
     SigintInboxItemUnitTagQueue,
     #[sea_orm(has_many = "super::sigint_inbox_tag_model_error::Entity")]
@@ -118,9 +132,39 @@ pub enum Relation {
     SignalMessage,
 }
 
+impl Related<super::ai_callsign_action::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignAction.def()
+    }
+}
+
+impl Related<super::ai_callsign_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignFeedback.def()
+    }
+}
+
+impl Related<super::ai_callsign_override::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignOverride.def()
+    }
+}
+
 impl Related<super::ai_callsign_worker_job::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiCallsignWorkerJob.def()
+    }
+}
+
+impl Related<super::ai_position_mention::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionMention.def()
+    }
+}
+
+impl Related<super::ai_position_worker_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionWorkerJob.def()
     }
 }
 
@@ -139,6 +183,12 @@ impl Related<super::device_name::Entity> for Entity {
 impl Related<super::nominatimres::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Nominatimres.def()
+    }
+}
+
+impl Related<super::sigint_chat_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintChatMessage.def()
     }
 }
 
@@ -190,6 +240,12 @@ impl Related<super::sigint_inbox_item_unit::Entity> for Entity {
     }
 }
 
+impl Related<super::sigint_inbox_item_unit_selection::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemUnitSelection.def()
+    }
+}
+
 impl Related<super::sigint_inbox_item_unit_tag_queue::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemUnitTagQueue.def()
@@ -223,6 +279,19 @@ impl Related<super::sigint_search::Entity> for Entity {
 impl Related<super::signal_message::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalMessage.def()
+    }
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::ai_callsign_override::Relation::Login.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::ai_callsign_override::Relation::SigintInboxItem
+                .def()
+                .rev(),
+        )
     }
 }
 

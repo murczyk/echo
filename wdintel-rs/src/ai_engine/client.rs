@@ -1,8 +1,8 @@
-use super::gov;
+use super::{cooldown::GlmCooldown, gov};
 use crate::config::{
     AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
-    AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE, AI_GOV_UA_API_HOST,
-    AI_GOV_UA_AUTH_BASE, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
+    AI_ENGINE_GLM_5_3_MODEL, AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE,
+    AI_GOV_UA_API_HOST, AI_GOV_UA_AUTH_BASE, AI_GOV_UA_TOKEN_REFRESH_SKEW_SEC,
     AI_GOV_UA_TOKEN_REQUEST_TIMEOUT_SEC,
 };
 use crate::entities::{ai_engine, ai_gov_ua_settings};
@@ -10,6 +10,7 @@ use crate::h;
 use crate::types::{info, Deserialize, ShortContext};
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use url::Url;
@@ -19,6 +20,7 @@ pub struct AiEngineClient {
     dbx: DatabaseConnection,
     secret_key: Option<String>,
     token: Mutex<Option<CachedToken>>,
+    glm_cooldown: Arc<GlmCooldown>,
     preview_settings: Option<ai_gov_ua_settings::Model>,
     #[cfg(test)]
     token_endpoint: Option<Url>,
@@ -50,6 +52,7 @@ impl AiEngineClient {
             dbx,
             secret_key,
             token: Mutex::new(None),
+            glm_cooldown: Arc::default(),
             preview_settings: None,
             #[cfg(test)]
             token_endpoint: None,
@@ -62,6 +65,7 @@ impl AiEngineClient {
             dbx: self.dbx.clone(),
             secret_key: self.secret_key.clone(),
             token: Mutex::new(None),
+            glm_cooldown: self.glm_cooldown.clone(),
             preview_settings: Some(settings),
             #[cfg(test)]
             token_endpoint: self.token_endpoint.clone(),
@@ -71,12 +75,78 @@ impl AiEngineClient {
     pub async fn send(
         &self,
         engine: &ai_engine::Model,
-        mut body: Value,
+        body: Value,
         timeout: Duration,
     ) -> anyhow::Result<reqwest::Response> {
-        let endpoint = super::chat_completions_url(&engine.url).c(h!())?;
+        self.send_agent_request(engine, body, timeout, false)
+            .await
+            .c(h!())
+    }
+
+    pub async fn send_responses(
+        &self,
+        engine: &ai_engine::Model,
+        body: Value,
+        timeout: Duration,
+    ) -> anyhow::Result<reqwest::Response> {
+        self.send_agent_request(engine, body, timeout, true)
+            .await
+            .c(h!())
+    }
+
+    async fn send_agent_request(
+        &self,
+        engine: &ai_engine::Model,
+        body: Value,
+        timeout: Duration,
+        responses: bool,
+    ) -> anyhow::Result<reqwest::Response> {
+        if !is_government_glm(engine) {
+            return self
+                .send_agent_request_inner(engine, body, timeout, responses)
+                .await
+                .c(h!());
+        }
+        let deadline = tokio::time::Instant::now() + timeout;
+        tokio::time::timeout_at(deadline, async {
+            self.glm_cooldown.wait().await;
+            let timeout =
+                deadline.saturating_duration_since(tokio::time::Instant::now());
+            anyhow::ensure!(
+                !timeout.is_zero(),
+                "GLM request deadline elapsed during provider cooldown"
+            );
+            let response = self
+                .send_agent_request_inner(engine, body, timeout, responses)
+                .await
+                .c(h!())?;
+            self.glm_cooldown
+                .observe(response.status(), response.headers())
+                .await
+                .c(h!())?;
+            Ok(response)
+        })
+        .await
+        .c(h!())?
+    }
+
+    async fn send_agent_request_inner(
+        &self,
+        engine: &ai_engine::Model,
+        mut body: Value,
+        timeout: Duration,
+        responses: bool,
+    ) -> anyhow::Result<reqwest::Response> {
+        let mut endpoint = super::chat_completions_url(&engine.url).c(h!())?;
+        if responses {
+            let prefix =
+                endpoint.path().strip_suffix("/chat/completions").c(h!())?;
+            endpoint.set_path(&format!("{prefix}/responses"));
+        }
         if is_government_url(&engine.url) {
-            adapt_government_request(&engine.model_name, &mut body);
+            if !responses {
+                adapt_government_request(&engine.model_name, &mut body);
+            }
             let settings = self.government_settings().await.c(h!())?;
             return self
                 .send_government(endpoint, Some(body), timeout, settings)
@@ -293,6 +363,11 @@ fn response_content_type(body: Option<&Value>) -> &'static str {
     } else {
         "application/json"
     }
+}
+
+pub(super) fn is_government_glm(engine: &ai_engine::Model) -> bool {
+    engine.model_name == AI_ENGINE_GLM_5_3_MODEL
+        && is_government_url(&engine.url)
 }
 
 pub fn is_government_url(value: &str) -> bool {

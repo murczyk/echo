@@ -1,0 +1,3914 @@
+{
+  "issue": 3780,
+  "inspection_date_utc": "2026-10-26",
+  "application_versions": {
+    "echo-skhid": "0.1.1~rc.202610252223-1",
+    "echo-pivnich": "0.1.1~rc.202610252223-1",
+    "echo-cbr": "0.1.1~rc.202610230946-1"
+  },
+  "http_windows_utc": {
+    "previous15": [
+      "2026-10-26T07:35:00Z",
+      "2026-10-26T07:50:00Z"
+    ],
+    "latest15": [
+      "2026-10-26T07:50:00Z",
+      "2026-10-26T08:05:00Z"
+    ]
+  },
+  "http": {
+    "skhid": {
+      "host": "ct-echo-skhid",
+      "hostnames": [
+        "echo-skhid.serengeti-porbeagle.ts.net",
+        "skhid.echoua.info",
+        "100.74.47.7:8081"
+      ],
+      "windows": {
+        "previous15": {
+          "all": {
+            "n": 66200,
+            "5xx": 23,
+            "503": 6,
+            "gt2s": 33735,
+            "p50_ms": 2003,
+            "p95_ms": 2874,
+            "max_ms": 50017
+          },
+          "paths": {
+            "/api/rer-importer/get-inbox-count": {
+              "n": 8777,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 555,
+              "p50_ms": 59,
+              "p95_ms": 2279,
+              "max_ms": 26976
+            },
+            "/api/rer-importer/get-inbox": {
+              "n": 1423,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 117,
+              "p50_ms": 114,
+              "p95_ms": 2880,
+              "max_ms": 27943
+            },
+            "/api/rer/analysis/stats/groups/count": {
+              "n": 35,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 13,
+              "p50_ms": 1395,
+              "p95_ms": 12322,
+              "max_ms": 12504
+            },
+            "/api/rer/analysis/stats/senders/count": {
+              "n": 35,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 14,
+              "p50_ms": 1398,
+              "p95_ms": 11333,
+              "max_ms": 23832
+            },
+            "/api/rer/analysis/stats/tags": {
+              "n": 72,
+              "5xx": 5,
+              "503": 5,
+              "gt2s": 43,
+              "p50_ms": 2637,
+              "p95_ms": 50012,
+              "max_ms": 50017
+            },
+            "/api/rer/analysis/stats/messages/count": {
+              "n": 32,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 15,
+              "p50_ms": 1579,
+              "p95_ms": 11937,
+              "max_ms": 34030
+            },
+            "/api/rer/analysis/stats/aors/count": {
+              "n": 32,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 8,
+              "p50_ms": 236,
+              "p95_ms": 4796,
+              "max_ms": 7139
+            },
+            "/api/rer/analysis/stats/callsigns/count": {
+              "n": 33,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 8,
+              "p50_ms": 451,
+              "p95_ms": 3110,
+              "max_ms": 13026
+            },
+            "/api/rer/analysis/stats/networks/count": {
+              "n": 31,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 11,
+              "p50_ms": 343,
+              "p95_ms": 4254,
+              "max_ms": 4786
+            },
+            "/api/rer/analysis/stats/units/matches/count": {
+              "n": 6,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 5,
+              "p50_ms": 2790,
+              "p95_ms": 3439,
+              "max_ms": 3439
+            },
+            "/api/rer/analysis/stats/groups": {
+              "n": 4,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 1,
+              "p50_ms": 366,
+              "p95_ms": 5847,
+              "max_ms": 5847
+            },
+            "/api/rer/analysis/stats/posts": {
+              "n": 19,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 514,
+              "p95_ms": 680,
+              "max_ms": 680
+            },
+            "/api/rer/analysis/stats/freqs/count": {
+              "n": 36,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 10,
+              "p50_ms": 1356,
+              "p95_ms": 9483,
+              "max_ms": 32574
+            },
+            "/api/rer/analysis/stats/units/count": {
+              "n": 33,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 30,
+              "p50_ms": 2520,
+              "p95_ms": 4970,
+              "max_ms": 7237
+            },
+            "/api/rer/analysis/stats/posts/count": {
+              "n": 36,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 8,
+              "p50_ms": 338,
+              "p95_ms": 3763,
+              "max_ms": 23079
+            },
+            "/api/rer/analysis/stats/freqs": {
+              "n": 14,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 11,
+              "p50_ms": 3455,
+              "p95_ms": 4847,
+              "max_ms": 4847
+            },
+            "/api/rer/analysis/stats/tags/count": {
+              "n": 32,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 360,
+              "p95_ms": 4072,
+              "max_ms": 7177
+            },
+            "/api/sigint/freqs": {
+              "n": 23,
+              "5xx": 17,
+              "503": 0,
+              "gt2s": 23,
+              "p50_ms": 50009,
+              "p95_ms": 50012,
+              "max_ms": 50012
+            },
+            "/api/rer/analysis/stats/locations/count": {
+              "n": 32,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 222,
+              "p95_ms": 4080,
+              "max_ms": 7161
+            },
+            "/api/rer/analysis/stats/aors": {
+              "n": 1,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 930,
+              "p95_ms": 930,
+              "max_ms": 930
+            },
+            "/api/rer/analysis/stats/units": {
+              "n": 2,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 1,
+              "p50_ms": 63,
+              "p95_ms": 2721,
+              "max_ms": 2721
+            },
+            "/api/rer/analysis/stats/networks": {
+              "n": 1,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 1,
+              "p50_ms": 2362,
+              "p95_ms": 2362,
+              "max_ms": 2362
+            },
+            "/api/rer/analysis/stats/senders": {
+              "n": 3,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 124,
+              "p95_ms": 189,
+              "max_ms": 189
+            },
+            "/api/rer/analysis/stats/callsigns": {
+              "n": 2,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 141,
+              "p95_ms": 199,
+              "max_ms": 199
+            }
+          }
+        },
+        "latest15": {
+          "all": {
+            "n": 67726,
+            "5xx": 5,
+            "503": 5,
+            "gt2s": 34823,
+            "p50_ms": 2004,
+            "p95_ms": 3061,
+            "max_ms": 55564
+          },
+          "paths": {
+            "/api/rer-importer/get-inbox-count": {
+              "n": 9119,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 565,
+              "p50_ms": 56,
+              "p95_ms": 2253,
+              "max_ms": 20828
+            },
+            "/api/rer/analysis/stats/posts": {
+              "n": 5,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 546,
+              "p95_ms": 594,
+              "max_ms": 594
+            },
+            "/api/rer/analysis/stats/callsigns/count": {
+              "n": 26,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 193,
+              "p95_ms": 3538,
+              "max_ms": 5627
+            },
+            "/api/rer-importer/get-inbox": {
+              "n": 1247,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 62,
+              "p50_ms": 123,
+              "p95_ms": 1991,
+              "max_ms": 8980
+            },
+            "/api/rer/analysis/stats/tags": {
+              "n": 51,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 22,
+              "p50_ms": 1224,
+              "p95_ms": 6584,
+              "max_ms": 13675
+            },
+            "/api/rer/analysis/stats/freqs/count": {
+              "n": 33,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 10,
+              "p50_ms": 1243,
+              "p95_ms": 8299,
+              "max_ms": 50010
+            },
+            "/api/rer/analysis/stats/groups/count": {
+              "n": 33,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 10,
+              "p50_ms": 1233,
+              "p95_ms": 7177,
+              "max_ms": 54645
+            },
+            "/api/rer/analysis/stats/senders/count": {
+              "n": 33,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 11,
+              "p50_ms": 1227,
+              "p95_ms": 7795,
+              "max_ms": 8187
+            },
+            "/api/rer/analysis/stats/posts/count": {
+              "n": 30,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 8,
+              "p50_ms": 144,
+              "p95_ms": 4654,
+              "max_ms": 5649
+            },
+            "/api/rer/analysis/stats/aors/count": {
+              "n": 25,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 4,
+              "p50_ms": 207,
+              "p95_ms": 3557,
+              "max_ms": 3775
+            },
+            "/api/rer/analysis/stats/tags/count": {
+              "n": 25,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 7,
+              "p50_ms": 154,
+              "p95_ms": 4310,
+              "max_ms": 55564
+            },
+            "/api/rer/analysis/stats/locations/count": {
+              "n": 25,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 128,
+              "p95_ms": 3823,
+              "max_ms": 3887
+            },
+            "/api/rer/analysis/stats/networks/count": {
+              "n": 26,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 8,
+              "p50_ms": 284,
+              "p95_ms": 5802,
+              "max_ms": 5909
+            },
+            "/api/rer/analysis/stats/freqs": {
+              "n": 15,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 14,
+              "p50_ms": 3793,
+              "p95_ms": 11807,
+              "max_ms": 11807
+            },
+            "/api/rer/analysis/stats/messages/count": {
+              "n": 24,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 8,
+              "p50_ms": 1305,
+              "p95_ms": 6430,
+              "max_ms": 8416
+            },
+            "/api/rer/analysis/stats/units/matches/count": {
+              "n": 3,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 3,
+              "p50_ms": 2444,
+              "p95_ms": 5063,
+              "max_ms": 5063
+            },
+            "/api/rer/analysis/stats/units/count": {
+              "n": 26,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 24,
+              "p50_ms": 2552,
+              "p95_ms": 7905,
+              "max_ms": 8650
+            },
+            "/api/rer/analysis/stats/groups": {
+              "n": 13,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 5,
+              "p50_ms": 547,
+              "p95_ms": 54437,
+              "max_ms": 54437
+            },
+            "/api/rer/analysis/stats/senders": {
+              "n": 13,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 5,
+              "p50_ms": 95,
+              "p95_ms": 12481,
+              "max_ms": 12481
+            },
+            "/api/rer/analysis/stats/networks": {
+              "n": 6,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 4,
+              "p50_ms": 4654,
+              "p95_ms": 6704,
+              "max_ms": 6704
+            },
+            "/api/rer/analysis/stats/aors": {
+              "n": 3,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 2985,
+              "p95_ms": 4118,
+              "max_ms": 4118
+            },
+            "/api/rer/analysis/summary-table-freq": {
+              "n": 2,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 2,
+              "p50_ms": 4144,
+              "p95_ms": 55286,
+              "max_ms": 55286
+            },
+            "/api/rer/analysis/stats/units": {
+              "n": 1,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 1650,
+              "p95_ms": 1650,
+              "max_ms": 1650
+            }
+          }
+        }
+      }
+    },
+    "pivnich": {
+      "host": "ct-echo-pivnich",
+      "hostnames": [
+        "echo-pivnich.hyakutake-chromatic.ts.net",
+        "pivnich.echoua.info",
+        "100.72.89.60:8081"
+      ],
+      "windows": {
+        "previous15": {
+          "all": {
+            "n": 62012,
+            "5xx": 1,
+            "503": 1,
+            "gt2s": 27218,
+            "p50_ms": 115,
+            "p95_ms": 2709,
+            "max_ms": 51982
+          },
+          "paths": {
+            "/api/rer-importer/get-inbox-count": {
+              "n": 9755,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 227,
+              "p50_ms": 51,
+              "p95_ms": 285,
+              "max_ms": 10887
+            },
+            "/api/rer-importer/get-inbox": {
+              "n": 1347,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 66,
+              "p50_ms": 121,
+              "p95_ms": 1534,
+              "max_ms": 10082
+            },
+            "/api/rer/analysis/stats/aors/count": {
+              "n": 45,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 89,
+              "p95_ms": 705,
+              "max_ms": 51806
+            },
+            "/api/rer/analysis/stats/locations/count": {
+              "n": 45,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 48,
+              "p95_ms": 1248,
+              "max_ms": 51042
+            },
+            "/api/rer/analysis/stats/networks/count": {
+              "n": 44,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 1,
+              "p50_ms": 172,
+              "p95_ms": 429,
+              "max_ms": 41266
+            },
+            "/api/rer/analysis/stats/callsigns/count": {
+              "n": 45,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 65,
+              "p95_ms": 1280,
+              "max_ms": 38783
+            },
+            "/api/rer/analysis/stats/units/count": {
+              "n": 45,
+              "5xx": 1,
+              "503": 1,
+              "gt2s": 45,
+              "p50_ms": 5704,
+              "p95_ms": 7900,
+              "max_ms": 50809
+            },
+            "/api/rer/analysis/stats/tags/count": {
+              "n": 45,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 72,
+              "p95_ms": 1233,
+              "max_ms": 51982
+            },
+            "/api/rer/analysis/stats/freqs/count": {
+              "n": 46,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 397,
+              "p95_ms": 1974,
+              "max_ms": 38242
+            },
+            "/api/rer/analysis/stats/groups/count": {
+              "n": 46,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 3,
+              "p50_ms": 400,
+              "p95_ms": 2047,
+              "max_ms": 18719
+            },
+            "/api/rer/analysis/stats/senders/count": {
+              "n": 46,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 399,
+              "p95_ms": 1985,
+              "max_ms": 9417
+            },
+            "/api/rer/analysis/stats/posts/count": {
+              "n": 45,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 2,
+              "p50_ms": 46,
+              "p95_ms": 1255,
+              "max_ms": 37983
+            },
+            "/api/rer/analysis/stats/tags": {
+              "n": 52,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 4,
+              "p50_ms": 424,
+              "p95_ms": 2391,
+              "max_ms": 9513
+            },
+            "/api/rer/analysis/stats/messages/count": {
+              "n": 45,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 3,
+              "p50_ms": 436,
+              "p95_ms": 2033,
+              "max_ms": 27988
+            },
+            "/api/rer/analysis/stats/groups": {
+              "n": 2,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 701,
+              "p95_ms": 922,
+              "max_ms": 922
+            },
+            "/api/rer/analysis/stats/callsigns": {
+              "n": 2,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 56,
+              "p95_ms": 56,
+              "max_ms": 56
+            },
+            "/api/rer/analysis/stats/posts": {
+              "n": 5,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 444,
+              "p95_ms": 520,
+              "max_ms": 520
+            },
+            "/api/rer/analysis/stats/freqs": {
+              "n": 3,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 1,
+              "p50_ms": 1258,
+              "p95_ms": 2565,
+              "max_ms": 2565
+            },
+            "/api/rer/analysis/stats/networks": {
+              "n": 1,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 415,
+              "p95_ms": 415,
+              "max_ms": 415
+            },
+            "/api/rer/analysis/stats/senders": {
+              "n": 2,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 495,
+              "p95_ms": 708,
+              "max_ms": 708
+            }
+          }
+        },
+        "latest15": {
+          "all": {
+            "n": 65261,
+            "5xx": 4,
+            "503": 4,
+            "gt2s": 28703,
+            "p50_ms": 113,
+            "p95_ms": 2770,
+            "max_ms": 30018
+          },
+          "paths": {
+            "/api/rer-importer/get-inbox-count": {
+              "n": 10002,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 189,
+              "p50_ms": 50,
+              "p95_ms": 272,
+              "max_ms": 9432
+            },
+            "/api/rer/analysis/stats/posts/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 47,
+              "p95_ms": 3639,
+              "max_ms": 5394
+            },
+            "/api/rer-importer/get-inbox": {
+              "n": 1367,
+              "5xx": 2,
+              "503": 2,
+              "gt2s": 69,
+              "p50_ms": 120,
+              "p95_ms": 2006,
+              "max_ms": 30018
+            },
+            "/api/rer/analysis/stats/senders/count": {
+              "n": 77,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 388,
+              "p95_ms": 5886,
+              "max_ms": 10775
+            },
+            "/api/rer/analysis/stats/tags/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 74,
+              "p95_ms": 4112,
+              "max_ms": 14488
+            },
+            "/api/rer/analysis/stats/messages/count": {
+              "n": 77,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 415,
+              "p95_ms": 5475,
+              "max_ms": 10749
+            },
+            "/api/rer/analysis/stats/aors/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 94,
+              "p95_ms": 3767,
+              "max_ms": 14678
+            },
+            "/api/rer/analysis/stats/groups/count": {
+              "n": 77,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 388,
+              "p95_ms": 6036,
+              "max_ms": 9949
+            },
+            "/api/rer/analysis/stats/tags": {
+              "n": 90,
+              "5xx": 2,
+              "503": 2,
+              "gt2s": 9,
+              "p50_ms": 406,
+              "p95_ms": 5182,
+              "max_ms": 30015
+            },
+            "/api/rer/analysis/stats/freqs/count": {
+              "n": 77,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 7,
+              "p50_ms": 387,
+              "p95_ms": 5399,
+              "max_ms": 9264
+            },
+            "/api/rer/analysis/stats/locations/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 54,
+              "p95_ms": 4058,
+              "max_ms": 14566
+            },
+            "/api/rer/analysis/stats/callsigns/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 62,
+              "p95_ms": 3785,
+              "max_ms": 5445
+            },
+            "/api/rer/analysis/stats/units/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 75,
+              "p50_ms": 5818,
+              "p95_ms": 9558,
+              "max_ms": 10025
+            },
+            "/api/rer/analysis/stats/networks/count": {
+              "n": 76,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 6,
+              "p50_ms": 179,
+              "p95_ms": 6280,
+              "max_ms": 14158
+            },
+            "/api/rer/analysis/stats/locations": {
+              "n": 2,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 105,
+              "p95_ms": 1185,
+              "max_ms": 1185
+            },
+            "/api/rer/analysis/stats/posts": {
+              "n": 8,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 427,
+              "p95_ms": 478,
+              "max_ms": 478
+            },
+            "/api/rer/analysis/stats/aors": {
+              "n": 3,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 0,
+              "p50_ms": 61,
+              "p95_ms": 1100,
+              "max_ms": 1100
+            },
+            "/api/rer/analysis/stats/freqs": {
+              "n": 4,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 3,
+              "p50_ms": 2079,
+              "p95_ms": 2626,
+              "max_ms": 2626
+            },
+            "/api/rer/analysis/stats/callsigns": {
+              "n": 5,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 1,
+              "p50_ms": 1235,
+              "p95_ms": 2032,
+              "max_ms": 2032
+            },
+            "/api/rer/analysis/stats/units/matches/count": {
+              "n": 3,
+              "5xx": 0,
+              "503": 0,
+              "gt2s": 3,
+              "p50_ms": 10062,
+              "p95_ms": 10901,
+              "max_ms": 10901
+            }
+          }
+        }
+      }
+    }
+  },
+  "native_windows_utc": {
+    "previous15": [
+      "2026-10-26T07:25:00Z",
+      "2026-10-26T07:40:00Z"
+    ],
+    "latest15": [
+      "2026-10-26T07:40:00Z",
+      "2026-10-26T07:55:00Z"
+    ]
+  },
+  "native": {
+    "skhid": [
+      {
+        "checked_at": "2026-10-26T07:58:17.019268+00:00",
+        "healthy": true,
+        "detail": "source heartbeat visible through ClickHouse gateway",
+        "age_seconds": 1.461537
+      },
+      {
+        "singleton": true,
+        "started_at": "2026-10-15T12:16:13.256939",
+        "history_complete": true
+      },
+      {
+        "window": "latest15",
+        "type": "QueryStart",
+        "exception_code": 0,
+        "n": 7082,
+        "mean_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 0,
+        "peak_memory_bytes": 0,
+        "max_read_rows": 0
+      },
+      {
+        "window": "latest15",
+        "type": "QueryFinish",
+        "exception_code": 0,
+        "n": 7078,
+        "mean_ms": 335,
+        "p95_ms": 2135,
+        "max_ms": 4782,
+        "peak_memory_bytes": 2082695678,
+        "max_read_rows": 183789563
+      },
+      {
+        "window": "latest15",
+        "type": "ExceptionWhileProcessing",
+        "exception_code": 241,
+        "n": 2,
+        "mean_ms": 2462,
+        "p95_ms": 3417,
+        "max_ms": 3417,
+        "peak_memory_bytes": 2273089939,
+        "max_read_rows": 19535721
+      },
+      {
+        "window": "previous15",
+        "type": "QueryStart",
+        "exception_code": 0,
+        "n": 6790,
+        "mean_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 0,
+        "peak_memory_bytes": 0,
+        "max_read_rows": 0
+      },
+      {
+        "window": "previous15",
+        "type": "QueryFinish",
+        "exception_code": 0,
+        "n": 6776,
+        "mean_ms": 324,
+        "p95_ms": 2130,
+        "max_ms": 5968,
+        "peak_memory_bytes": 1530316982,
+        "max_read_rows": 183779888
+      },
+      {
+        "window": "previous15",
+        "type": "ExceptionWhileProcessing",
+        "exception_code": 241,
+        "n": 13,
+        "mean_ms": 2633,
+        "p95_ms": 5947,
+        "max_ms": 5947,
+        "peak_memory_bytes": 2362105604,
+        "max_read_rows": 134208977
+      },
+      {
+        "exception_code": 241,
+        "n": 27,
+        "first": "2026-10-26 06:55:56",
+        "last": "2026-10-26 07:55:50"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_memory_usage",
+        "value": "2362232012",
+        "min": "1",
+        "max": "2362232012"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_memory_usage_for_user",
+        "value": "9448928051",
+        "min": "1",
+        "max": "9448928051"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_threads",
+        "value": "4",
+        "min": "1",
+        "max": "4"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_concurrent_queries_for_user",
+        "value": "32",
+        "min": "1",
+        "max": "32"
+      }
+    ],
+    "pivnich": [
+      {
+        "checked_at": "2026-10-26T07:58:04.603908+00:00",
+        "healthy": true,
+        "detail": "source heartbeat visible through ClickHouse gateway",
+        "age_seconds": 13.751334
+      },
+      {
+        "singleton": true,
+        "started_at": "2026-10-15T12:25:11.529815",
+        "history_complete": true
+      },
+      {
+        "window": "latest15",
+        "type": "QueryStart",
+        "exception_code": 0,
+        "n": 8412,
+        "mean_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 0,
+        "peak_memory_bytes": 0,
+        "max_read_rows": 0
+      },
+      {
+        "window": "latest15",
+        "type": "QueryFinish",
+        "exception_code": 0,
+        "n": 8405,
+        "mean_ms": 259,
+        "p95_ms": 1532,
+        "max_ms": 11675,
+        "peak_memory_bytes": 1131617284,
+        "max_read_rows": 293423473
+      },
+      {
+        "window": "latest15",
+        "type": "ExceptionWhileProcessing",
+        "exception_code": 241,
+        "n": 11,
+        "mean_ms": 2406,
+        "p95_ms": 7614,
+        "max_ms": 7614,
+        "peak_memory_bytes": 2361879915,
+        "max_read_rows": 136874126
+      },
+      {
+        "window": "previous15",
+        "type": "QueryStart",
+        "exception_code": 0,
+        "n": 8111,
+        "mean_ms": 0,
+        "p95_ms": 0,
+        "max_ms": 0,
+        "peak_memory_bytes": 0,
+        "max_read_rows": 0
+      },
+      {
+        "window": "previous15",
+        "type": "QueryFinish",
+        "exception_code": 0,
+        "n": 8104,
+        "mean_ms": 207,
+        "p95_ms": 830,
+        "max_ms": 6917,
+        "peak_memory_bytes": 1543060837,
+        "max_read_rows": 310417853
+      },
+      {
+        "window": "previous15",
+        "type": "ExceptionWhileProcessing",
+        "exception_code": 241,
+        "n": 12,
+        "mean_ms": 584,
+        "p95_ms": 630,
+        "max_ms": 630,
+        "peak_memory_bytes": 2362134748,
+        "max_read_rows": 8159672
+      },
+      {
+        "exception_code": 241,
+        "n": 128,
+        "first": "2026-10-26 07:00:30",
+        "last": "2026-10-26 07:58:06"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_memory_usage",
+        "value": "2362232012",
+        "min": "1",
+        "max": "2362232012"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_memory_usage_for_user",
+        "value": "9448928051",
+        "min": "1",
+        "max": "9448928051"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_threads",
+        "value": "4",
+        "min": "1",
+        "max": "4"
+      },
+      {
+        "user_name": "echo_gateway",
+        "setting_name": "max_concurrent_queries_for_user",
+        "value": "32",
+        "min": "1",
+        "max": "32"
+      }
+    ]
+  },
+  "source_pg_deltas": {
+    "skhid": {
+      "start": "2026-10-26T07:56:51.68585+00:00",
+      "end": "2026-10-26T07:59:56.364276+00:00",
+      "info_before": {
+        "dealloc": 3945,
+        "stats_reset": "2026-09-05T11:51:43.166019+00:00"
+      },
+      "info_after": {
+        "dealloc": 3945,
+        "stats_reset": "2026-09-05T11:51:43.166019+00:00"
+      },
+      "queries": [
+        {
+          "calls": 30.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 1822449.0,
+          "shared_blks_read": 713121.0,
+          "temp_blks_written": 0.0,
+          "rows": 30.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -3006641519005965593,
+          "mean_ms": 3746.762,
+          "exec_s": 112.403,
+          "shape": "SELECT COUNT(*) AS \"count\", MIN(\"signal_message\".\"timestamp\") AS \"first_element_ts\" FROM \"sigint_inbox_item\" INNER JOIN LATERAL (SELECT \"signal_message\".\"id\", \"signal_message\".\"timestamp\", \"signal_message\".\"created_at\", \"signal_message\".\"deleted\", \"signal_message\".\"datasource_group_id\", \"signal_mess"
+        },
+        {
+          "calls": 85.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 31633966.0,
+          "shared_blks_read": 646946.0,
+          "temp_blks_written": 0.0,
+          "rows": 1497510.0,
+          "wal_bytes": 168.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -5224916840765240675,
+          "mean_ms": 933.571,
+          "exec_s": 79.354,
+          "shape": "SELECT \"signal_message\".\"id\", \"signal_message\".\"created_at\", \"signal_message\".\"timestamp\", \"sigint_inbox_item\".\"datetime\", \"signal_message_group\".\"group_master_key\", \"sigint_inbox_item\".\"freq\", $5::jsonb AS \"callsigns\", \"sigint_inbox_item_network\".\"sigint_network_id\" AS \"network_id\" FROM \"signal_mes"
+        },
+        {
+          "calls": 13360.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 132875806.0,
+          "shared_blks_read": 661.0,
+          "temp_blks_written": 0.0,
+          "rows": 13323.0,
+          "wal_bytes": 8550650.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 1977593751657462662,
+          "mean_ms": 5.321,
+          "exec_s": 71.082,
+          "shape": "with selected as ( select job.id from attachment_job job where job.kind=$1 and job.next_attempt_at <= now() at time zone $2 and job.state in ($3 /*, ... */) and (job.state in ($4 /*, ... */) or job.state=$5 and job.lease_until < now() at time zone $6) and exists ( select $7 from attachment_document "
+        },
+        {
+          "calls": 67.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 32683865.0,
+          "shared_blks_read": 326761.0,
+          "temp_blks_written": 0.0,
+          "rows": 67.0,
+          "wal_bytes": 2852.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -6219122520671404125,
+          "mean_ms": 795.318,
+          "exec_s": 53.286,
+          "shape": "SELECT COUNT(*) AS \"count\", MIN(\"signal_message\".\"timestamp\") AS \"first_element_ts\" FROM \"sigint_inbox_item\" INNER JOIN LATERAL (SELECT \"signal_message\".\"id\", \"signal_message\".\"timestamp\", \"signal_message\".\"created_at\", \"signal_message\".\"deleted\", \"signal_message\".\"datasource_group_id\", \"signal_mess"
+        },
+        {
+          "calls": 501.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 17103827.0,
+          "shared_blks_read": 340794.0,
+          "temp_blks_written": 0.0,
+          "rows": 501.0,
+          "wal_bytes": 5188.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 3572258331169442282,
+          "mean_ms": 104.708,
+          "exec_s": 52.459,
+          "shape": "SELECT MIN(id) AS min_id, MAX(id) AS max_id FROM (SELECT id FROM signal_message WHERE \"created_at\" >= $1 OFFSET $2) scoped"
+        },
+        {
+          "calls": 571.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 9317325.0,
+          "shared_blks_read": 16349.0,
+          "temp_blks_written": 0.0,
+          "rows": 545.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 4677182215929232706,
+          "mean_ms": 82.569,
+          "exec_s": 47.147,
+          "shape": "SELECT \"comp_freq_callsign\".\"id\", \"comp_freq_callsign\".\"zone_id\", \"comp_freq_callsign\".\"freq\", \"comp_freq_callsign\".\"callsign\", \"comp_freq_callsign\".\"first_seen\", \"comp_freq_callsign\".\"updated_at\" FROM \"comp_freq_callsign\" WHERE \"comp_freq_callsign\".\"zone_id\" = $1 AND \"comp_freq_callsign\".\"freq\" = $"
+        },
+        {
+          "calls": 84.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 11228938.0,
+          "shared_blks_read": 653071.0,
+          "temp_blks_written": 0.0,
+          "rows": 0.0,
+          "wal_bytes": 1198.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -5592199830080776284,
+          "mean_ms": 531.722,
+          "exec_s": 44.665,
+          "shape": "SELECT \"signal_message\".\"id\", \"signal_message\".\"created_at\", \"signal_message\".\"timestamp\", \"sigint_inbox_item\".\"datetime\", \"signal_message_group\".\"group_master_key\", \"sigint_inbox_item\".\"freq\", $7::jsonb AS \"callsigns\", \"sigint_inbox_item_network\".\"sigint_network_id\" AS \"network_id\" FROM \"signal_mes"
+        },
+        {
+          "calls": 61.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 5142823.0,
+          "shared_blks_read": 89075.0,
+          "temp_blks_written": 0.0,
+          "rows": 35.0,
+          "wal_bytes": 4684.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 6548822120911682254,
+          "mean_ms": 501.522,
+          "exec_s": 30.593,
+          "shape": "SELECT \"sigint_inbox_item_settlement\".\"id\", \"sigint_inbox_item_settlement\".\"created_at\", \"sigint_inbox_item_settlement\".\"item_id\", \"sigint_inbox_item_settlement\".\"item_uuid\", \"sigint_inbox_item_settlement\".\"settlement_text\", \"sigint_inbox_item_settlement\".\"settlement_id\", \"sigint_inbox_item_settleme"
+        },
+        {
+          "calls": 35.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 17208081.0,
+          "shared_blks_read": 11684.0,
+          "temp_blks_written": 0.0,
+          "rows": 35.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 2603863203959117462,
+          "mean_ms": 809.397,
+          "exec_s": 28.329,
+          "shape": "SELECT COUNT(DISTINCT \"signal_message\".\"id\") AS \"count\", MIN(\"signal_message\".\"timestamp\") AS \"first_element_ts\" FROM \"signal_message\" LEFT JOIN \"sigint_inbox_item\" ON \"signal_message\".\"id\" = \"sigint_inbox_item\".\"id\" INNER JOIN \"datasource_group\" ON \"signal_message\".\"datasource_group_id\" = \"datasour"
+        },
+        {
+          "calls": 18.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 13587243.0,
+          "shared_blks_read": 456770.0,
+          "temp_blks_written": 0.0,
+          "rows": 30.0,
+          "wal_bytes": 56.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 5570651390955154692,
+          "mean_ms": 1332.243,
+          "exec_s": 23.98,
+          "shape": "with active as ( select job.media_id, $1 as priority, job.submitted_at, $2::timestamp without time zone as next_attempt_at, $3::timestamp without time zone as discovered_at, $4::timestamp without time zone as pending_created_at from ocr_job job join signal_message_media media on media.id = job.media"
+        },
+        {
+          "calls": 7761.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 41653287.0,
+          "shared_blks_read": 0.0,
+          "temp_blks_written": 0.0,
+          "rows": 266940.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -8775946595035416805,
+          "mean_ms": 2.981,
+          "exec_s": 23.133,
+          "shape": "SELECT \"echo_group\".\"id\", \"echo_group\".\"group_id\", \"echo_group\".\"internal_id\", \"echo_group\".\"name\", \"echo_group\".\"account_id\", \"echo_group\".\"created_at\", \"echo_group\".\"updated_at\", \"echo_group\".\"deleted_by_messanger\" FROM \"echo_group\" WHERE \"echo_group\".\"account_id\" IN ($1)"
+        },
+        {
+          "calls": 12.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 334246.0,
+          "shared_blks_read": 6390099.0,
+          "temp_blks_written": 0.0,
+          "rows": 247550.0,
+          "wal_bytes": 70.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -6079895006490093408,
+          "mean_ms": 1423.102,
+          "exec_s": 17.077,
+          "shape": "SELECT \"sigint_inbox_item_callsign\".\"id\", \"sigint_inbox_item_callsign\".\"sigint_inbox_item_id\", \"sigint_inbox_item_callsign\".\"sigint_inbox_item_uuid\", \"sigint_inbox_item_callsign\".\"callsign\", CAST(\"sigint_inbox_item_callsign\".\"source\" AS \"text\"), \"sigint_inbox_item_callsign\".\"ordering\", \"sigint_inbox"
+        }
+      ]
+    },
+    "pivnich": {
+      "start": "2026-10-26T07:56:51.602672+00:00",
+      "end": "2026-10-26T07:59:56.316254+00:00",
+      "info_before": {
+        "dealloc": 6017,
+        "stats_reset": "2026-09-05T11:51:51.272077+00:00"
+      },
+      "info_after": {
+        "dealloc": 6018,
+        "stats_reset": "2026-09-05T11:51:51.272077+00:00"
+      },
+      "queries": [
+        {
+          "calls": 62.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 17526938.0,
+          "shared_blks_read": 4364446.0,
+          "temp_blks_written": 0.0,
+          "rows": 0.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 8300488106286013415,
+          "mean_ms": 1819.695,
+          "exec_s": 112.821,
+          "shape": "SELECT \"signal_message\".\"id\", \"signal_message\".\"created_at\", \"signal_message\".\"timestamp\", \"sigint_inbox_item\".\"datetime\", \"signal_message_group\".\"group_master_key\", \"sigint_inbox_item\".\"freq\", $7::jsonb AS \"callsigns\", \"sigint_inbox_item_network\".\"sigint_network_id\" AS \"network_id\" FROM \"signal_mes"
+        },
+        {
+          "calls": 18345.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 155246897.0,
+          "shared_blks_read": 3755.0,
+          "temp_blks_written": 0.0,
+          "rows": 18309.0,
+          "wal_bytes": 11325411.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 8785928722647208956,
+          "mean_ms": 4.149,
+          "exec_s": 76.107,
+          "shape": "with selected as ( select job.id from attachment_job job where job.kind=$1 and job.next_attempt_at <= now() at time zone $2 and job.state in ($3 /*, ... */) and (job.state in ($4 /*, ... */) or job.state=$5 and job.lease_until < now() at time zone $6) and exists ( select $7 from attachment_document "
+        },
+        {
+          "calls": 333.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 23412737.0,
+          "shared_blks_read": 186731.0,
+          "temp_blks_written": 0.0,
+          "rows": 5987.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 311144201116218771,
+          "mean_ms": 212.104,
+          "exec_s": 70.631,
+          "shape": "SELECT \"signal_message\".\"id\", \"signal_message\".\"timestamp\", \"signal_message\".\"body\", \"sigint_inbox_item\".\"body_noheader\" AS \"body_noheader\", \"signal_message\".\"message_uid\" FROM \"signal_message\" LEFT JOIN \"sigint_inbox_item\" ON \"signal_message\".\"id\" = \"sigint_inbox_item\".\"id\" WHERE \"signal_message\".\""
+        },
+        {
+          "calls": 333.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 25931146.0,
+          "shared_blks_read": 32917.0,
+          "temp_blks_written": 0.0,
+          "rows": 6160.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 3735437045196031626,
+          "mean_ms": 194.817,
+          "exec_s": 64.874,
+          "shape": "SELECT DISTINCT \"signal_message\".\"id\", \"signal_message\".\"timestamp\", \"signal_message\".\"body\", \"sigint_inbox_item\".\"body_noheader\" AS \"body_noheader\", \"signal_message\".\"message_uid\" FROM \"signal_message\" LEFT JOIN \"sigint_inbox_item\" ON \"signal_message\".\"id\" = \"sigint_inbox_item\".\"id\" INNER JOIN \"sig"
+        },
+        {
+          "calls": 62.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 37519889.0,
+          "shared_blks_read": 1707968.0,
+          "temp_blks_written": 0.0,
+          "rows": 3192412.0,
+          "wal_bytes": 6928.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 6492623752933455025,
+          "mean_ms": 972.016,
+          "exec_s": 60.265,
+          "shape": "SELECT \"signal_message\".\"id\", \"signal_message\".\"created_at\", \"signal_message\".\"timestamp\", \"sigint_inbox_item\".\"datetime\", \"signal_message_group\".\"group_master_key\", \"sigint_inbox_item\".\"freq\", $5::jsonb AS \"callsigns\", \"sigint_inbox_item_network\".\"sigint_network_id\" AS \"network_id\" FROM \"signal_mes"
+        },
+        {
+          "calls": 25.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 23999419.0,
+          "shared_blks_read": 1145355.0,
+          "temp_blks_written": 0.0,
+          "rows": 25.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -3134113743207521896,
+          "mean_ms": 2060.043,
+          "exec_s": 51.501,
+          "shape": "SELECT COUNT(*) AS \"count\", MIN(\"signal_message\".\"timestamp\") AS \"first_element_ts\" FROM \"sigint_inbox_item\" INNER JOIN LATERAL (SELECT \"signal_message\".\"id\", \"signal_message\".\"timestamp\", \"signal_message\".\"created_at\", \"signal_message\".\"deleted\", \"signal_message\".\"datasource_group_id\", \"signal_mess"
+        },
+        {
+          "calls": 62.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 4782463.0,
+          "shared_blks_read": 87943.0,
+          "temp_blks_written": 0.0,
+          "rows": 31.0,
+          "wal_bytes": 2170.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 6548822120911682254,
+          "mean_ms": 424.523,
+          "exec_s": 26.32,
+          "shape": "SELECT \"sigint_inbox_item_settlement\".\"id\", \"sigint_inbox_item_settlement\".\"created_at\", \"sigint_inbox_item_settlement\".\"item_id\", \"sigint_inbox_item_settlement\".\"item_uuid\", \"sigint_inbox_item_settlement\".\"settlement_text\", \"sigint_inbox_item_settlement\".\"settlement_id\", \"sigint_inbox_item_settleme"
+        },
+        {
+          "calls": 12.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 8351259.0,
+          "shared_blks_read": 1230941.0,
+          "temp_blks_written": 0.0,
+          "rows": 19651.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 5194874968035407280,
+          "mean_ms": 2177.639,
+          "exec_s": 26.132,
+          "shape": "SELECT DISTINCT \"signal_message\".\"id\" FROM \"signal_message\" LEFT JOIN \"signal_message_group\" ON \"signal_message\".\"id\" = \"signal_message_group\".\"signal_message_id\" LEFT JOIN \"datasource_group\" ON \"signal_message\".\"datasource_group_id\" = \"datasource_group\".\"id\" WHERE \"signal_message\".\"deleted\" = $1 AN"
+        },
+        {
+          "calls": 4.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 362047.0,
+          "shared_blks_read": 179050.0,
+          "temp_blks_written": 5841.0,
+          "rows": 19415.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -6320551184707256450,
+          "mean_ms": 6483.41,
+          "exec_s": 25.934,
+          "shape": "SELECT \"signal_message\".\"id\" AS \"id\", \"signal_message\".\"id_uuid\" AS \"id_uuid\", \"signal_message\".\"login_id\" AS \"login_id\", \"signal_message\".\"body\" AS \"body\", \"signal_message\".\"message_uid\" AS \"message_uid\", \"signal_message\".\"created_at\" AS \"created_at\", \"signal_message\".\"timestamp\" AS \"timestamp\", co"
+        },
+        {
+          "calls": 54.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 32137226.0,
+          "shared_blks_read": 43472.0,
+          "temp_blks_written": 0.0,
+          "rows": 76.0,
+          "wal_bytes": 672.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": 836814126893126045,
+          "mean_ms": 306.912,
+          "exec_s": 16.573,
+          "shape": "with active as ( select job.media_id, $1 as priority, job.submitted_at, $2::timestamp without time zone as next_attempt_at, $3::timestamp without time zone as discovered_at, $4::timestamp without time zone as pending_created_at from ocr_job job join signal_message_media media on media.id = job.media"
+        },
+        {
+          "calls": 20.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 11296662.0,
+          "shared_blks_read": 215404.0,
+          "temp_blks_written": 29911.0,
+          "rows": 769790.0,
+          "wal_bytes": 58.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -2980236990166464747,
+          "mean_ms": 767.855,
+          "exec_s": 15.357,
+          "shape": "SELECT \"signal_message\".\"id\", \"signal_message\".\"created_at\", \"sigint_inbox_item\".\"datetime\", \"signal_message_group\".\"group_master_key\", \"sigint_inbox_item\".\"freq\", $5::jsonb AS \"callsigns\", \"sigint_inbox_item\".\"location_v2\", \"sigint_inbox_item\".\"unit_v2\", $6::bigint[] AS \"linked_unit_ids\", $7::bigin"
+        },
+        {
+          "calls": 75.0,
+          "total_plan_time": 0.0,
+          "plans": 0.0,
+          "shared_blks_hit": 2056302.0,
+          "shared_blks_read": 432.0,
+          "temp_blks_written": 0.0,
+          "rows": 72014.0,
+          "wal_bytes": 0.0,
+          "userid": "16385",
+          "toplevel": true,
+          "queryid": -7632155729565156483,
+          "mean_ms": 177.856,
+          "exec_s": 13.339,
+          "shape": "SELECT DISTINCT \"signal_message\".\"id\", \"signal_message\".\"timestamp\", \"signal_message\".\"body\", \"sigint_inbox_item\".\"body_noheader\" AS \"body_noheader\", \"signal_message\".\"message_uid\" FROM \"signal_message\" LEFT JOIN \"sigint_inbox_item\" ON \"signal_message\".\"id\" = \"sigint_inbox_item\".\"id\" INNER JOIN \"sig"
+        }
+      ]
+    }
+  },
+  "journals": {
+    "skhid": {
+      "earlier": {
+        "lines": 402345,
+        "mentions": {
+          "analytics_resource_limit": 12,
+          "lock timeout": 4,
+          "failed to process message queue item": 4,
+          "media summary job superseded": 8,
+          "postgres_runtime_timeout": 21,
+          "request_deadline": 7,
+          "statement timeout": 9
+        },
+        "coverage": {
+          "recent_message_change": 66
+        },
+        "routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7862,
+            "p95_ms": 3210,
+            "max_ms": 19293
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 3269,
+            "p95_ms": 138,
+            "max_ms": 8836
+          },
+          {
+            "operation": "group activity enrichment",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 494,
+            "p95_ms": 0,
+            "max_ms": 515
+          },
+          {
+            "operation": "report history dashboard",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 299,
+            "p95_ms": 37,
+            "max_ms": 151
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 63,
+            "p95_ms": 11323,
+            "max_ms": 15556
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 60,
+            "p95_ms": 3389,
+            "max_ms": 4846
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 60,
+            "p95_ms": 3381,
+            "max_ms": 4774
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 59,
+            "p95_ms": 3261,
+            "max_ms": 3840
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 59,
+            "p95_ms": 2937,
+            "max_ms": 3354
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 55,
+            "p95_ms": 2203,
+            "max_ms": 2919
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 55,
+            "p95_ms": 4500,
+            "max_ms": 10358
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 2319,
+            "max_ms": 3585
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 2285,
+            "max_ms": 3564
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 2324,
+            "max_ms": 3405
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 52,
+            "p95_ms": 3451,
+            "max_ms": 4814
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 52,
+            "p95_ms": 2668,
+            "max_ms": 4147
+          },
+          {
+            "operation": "inbox messages count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 45,
+            "p95_ms": 22790,
+            "max_ms": 32848
+          },
+          {
+            "operation": "network callsigns activity",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 24,
+            "p95_ms": 3324,
+            "max_ms": 3338
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 23,
+            "p95_ms": 239,
+            "max_ms": 242
+          },
+          {
+            "operation": "network callsigns list",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 22,
+            "p95_ms": 3228,
+            "max_ms": 3265
+          },
+          {
+            "operation": "network group activity",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 22,
+            "p95_ms": 2736,
+            "max_ms": 2942
+          },
+          {
+            "operation": "network callsigns assigned list",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 3123,
+            "max_ms": 3259
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 17,
+            "p95_ms": 45508,
+            "max_ms": 45508
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 14,
+            "p95_ms": 10137,
+            "max_ms": 10137
+          },
+          {
+            "operation": "analysis stats unit matches count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 11,
+            "p95_ms": 4788,
+            "max_ms": 4788
+          },
+          {
+            "operation": "analysis stats posts",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 604,
+            "max_ms": 604
+          },
+          {
+            "operation": "analysis stats senders",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 3715,
+            "max_ms": 3715
+          },
+          {
+            "operation": "analysis stats groups",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 4089,
+            "max_ms": 4089
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "error",
+            "n": 6,
+            "p95_ms": 50003,
+            "max_ms": 50003
+          },
+          {
+            "operation": "analysis stats aors",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 6,
+            "p95_ms": 3198,
+            "max_ms": 3198
+          },
+          {
+            "operation": "analysis stats groups",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "error",
+            "n": 5,
+            "p95_ms": 50112,
+            "max_ms": 50112
+          },
+          {
+            "operation": "analysis stats senders",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "error",
+            "n": 5,
+            "p95_ms": 50283,
+            "max_ms": 50283
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 2839,
+            "max_ms": 2839
+          },
+          {
+            "operation": "analysis stats callsigns",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 6894,
+            "max_ms": 6894
+          },
+          {
+            "operation": "analysis stats units",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 6709,
+            "max_ms": 6709
+          },
+          {
+            "operation": "analysis stats networks",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 1409,
+            "max_ms": 1409
+          },
+          {
+            "operation": "analysis stats callsigns",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 2819,
+            "max_ms": 2819
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats groups",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 49404,
+            "max_ms": 49404
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 2884,
+            "max_ms": 2884
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 579,
+            "max_ms": 579
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 2554,
+            "max_ms": 2554
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 1902,
+            "max_ms": 1902
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 648,
+            "max_ms": 648
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 684,
+            "max_ms": 684
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 1676,
+            "max_ms": 1676
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 853,
+            "max_ms": 853
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 859,
+            "max_ms": 859
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 315,
+            "max_ms": 315
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 1661,
+            "max_ms": 1661
+          },
+          {
+            "operation": "analysis summary table freq",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 111,
+            "max_ms": 111
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats units",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 49,
+            "max_ms": 49
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "error",
+            "n": 2,
+            "p95_ms": 53220,
+            "max_ms": 53220
+          },
+          {
+            "operation": "analysis stats senders",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 49140,
+            "max_ms": 49140
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "error",
+            "n": 1,
+            "p95_ms": 50002,
+            "max_ms": 50002
+          },
+          {
+            "operation": "network points",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 2,
+            "max_ms": 2
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 129,
+            "max_ms": 129
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 71,
+            "max_ms": 71
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 67,
+            "max_ms": 67
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 106,
+            "max_ms": 106
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 61,
+            "max_ms": 61
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 72,
+            "max_ms": 72
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 124,
+            "max_ms": 124
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 60,
+            "max_ms": 60
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 60,
+            "max_ms": 60
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 105,
+            "max_ms": 105
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 1701,
+            "max_ms": 1701
+          },
+          {
+            "operation": "analysis stats locations",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 605,
+            "max_ms": 605
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 4008,
+            "max_ms": 4008
+          }
+        ]
+      },
+      "previous15": {
+        "lines": 172488,
+        "mentions": {
+          "media summary job superseded": 2,
+          "analytics_resource_limit": 17,
+          "lock timeout": 1,
+          "failed to process message queue item": 1,
+          "request_deadline": 2,
+          "statement timeout": 2,
+          "postgres_runtime_timeout": 3
+        },
+        "coverage": {
+          "recent_message_change": 83
+        },
+        "routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 4069,
+            "p95_ms": 3431,
+            "max_ms": 20387
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1513,
+            "p95_ms": 1094,
+            "max_ms": 13128
+          },
+          {
+            "operation": "group activity enrichment",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 247,
+            "p95_ms": 1,
+            "max_ms": 11
+          },
+          {
+            "operation": "report history dashboard",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 150,
+            "p95_ms": 41,
+            "max_ms": 236
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 40,
+            "p95_ms": 7007,
+            "max_ms": 7335
+          },
+          {
+            "operation": "inbox messages count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 20351,
+            "max_ms": 26966
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 2480,
+            "max_ms": 2775
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 3500,
+            "max_ms": 4469
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 3475,
+            "max_ms": 4387
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 3521,
+            "max_ms": 5738
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 2355,
+            "max_ms": 2735
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 2376,
+            "max_ms": 2793
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 226,
+            "max_ms": 240
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 1915,
+            "max_ms": 2476
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 1901,
+            "max_ms": 2458
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 2001,
+            "max_ms": 4785
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 4777,
+            "max_ms": 5406
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 20,
+            "p95_ms": 3891,
+            "max_ms": 4613
+          },
+          {
+            "operation": "analysis stats posts",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 13,
+            "p95_ms": 695,
+            "max_ms": 695
+          },
+          {
+            "operation": "analysis summary table freq",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 11,
+            "p95_ms": 3135,
+            "max_ms": 3135
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1027,
+            "max_ms": 1027
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 9,
+            "p95_ms": 6204,
+            "max_ms": 6204
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 8,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "network callsigns assigned list",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 592,
+            "max_ms": 592
+          },
+          {
+            "operation": "network callsigns list",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 618,
+            "max_ms": 618
+          },
+          {
+            "operation": "network callsigns activity",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 691,
+            "max_ms": 691
+          },
+          {
+            "operation": "network group activity",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 4172,
+            "max_ms": 4172
+          },
+          {
+            "operation": "analysis stats unit matches count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 4404,
+            "max_ms": 4404
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 6,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 8826,
+            "max_ms": 8826
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 12917,
+            "max_ms": 12917
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 7401,
+            "max_ms": 7401
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 12871,
+            "max_ms": 12871
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 10083,
+            "max_ms": 10083
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 8153,
+            "max_ms": 8153
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 8044,
+            "max_ms": 8044
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 15709,
+            "max_ms": 15709
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 8445,
+            "max_ms": 8445
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 8490,
+            "max_ms": 8490
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 8517,
+            "max_ms": 8517
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 10467,
+            "max_ms": 10467
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 122,
+            "max_ms": 122
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "error",
+            "n": 3,
+            "p95_ms": 50004,
+            "max_ms": 50004
+          },
+          {
+            "operation": "analysis stats aors",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 920,
+            "max_ms": 920
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 4834,
+            "max_ms": 4834
+          },
+          {
+            "operation": "analysis summary table freq",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 91,
+            "max_ms": 91
+          },
+          {
+            "operation": "analysis stats units",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 2711,
+            "max_ms": 2711
+          },
+          {
+            "operation": "analysis stats units",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 55,
+            "max_ms": 55
+          },
+          {
+            "operation": "network points",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 336,
+            "max_ms": 336
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 3888,
+            "max_ms": 3888
+          },
+          {
+            "operation": "analysis stats groups",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 5835,
+            "max_ms": 5835
+          }
+        ]
+      },
+      "latest15": {
+        "lines": 177449,
+        "mentions": {
+          "postgres_runtime_timeout": 2,
+          "media summary job superseded": 3,
+          "statement timeout": 34,
+          "media summary attempt failed": 1,
+          "analytics_resource_limit": 2,
+          "lock timeout": 1,
+          "failed to process message queue item": 1
+        },
+        "coverage": {
+          "recent_message_change": 153
+        },
+        "routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 4165,
+            "p95_ms": 3194,
+            "max_ms": 24715
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1297,
+            "p95_ms": 2156,
+            "max_ms": 8099
+          },
+          {
+            "operation": "group activity enrichment",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 250,
+            "p95_ms": 1,
+            "max_ms": 495
+          },
+          {
+            "operation": "report history dashboard",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 206,
+            "p95_ms": 39,
+            "max_ms": 65
+          },
+          {
+            "operation": "analysis summary table freq",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 61,
+            "p95_ms": 3083,
+            "max_ms": 3588
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 26,
+            "p95_ms": 4501,
+            "max_ms": 4737
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 26,
+            "p95_ms": 3119,
+            "max_ms": 3645
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 26,
+            "p95_ms": 2955,
+            "max_ms": 3528
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 26,
+            "p95_ms": 3121,
+            "max_ms": 3597
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 25,
+            "p95_ms": 2853,
+            "max_ms": 3295
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 21,
+            "p95_ms": 317,
+            "max_ms": 364
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 19,
+            "p95_ms": 5577,
+            "max_ms": 5577
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 19,
+            "p95_ms": 3814,
+            "max_ms": 3814
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 19,
+            "p95_ms": 1503,
+            "max_ms": 1503
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 19,
+            "p95_ms": 3673,
+            "max_ms": 3673
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 19,
+            "p95_ms": 7889,
+            "max_ms": 7889
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 18,
+            "p95_ms": 3137,
+            "max_ms": 3137
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 18,
+            "p95_ms": 2038,
+            "max_ms": 2038
+          },
+          {
+            "operation": "analysis stats posts",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 17,
+            "p95_ms": 604,
+            "max_ms": 604
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 13,
+            "p95_ms": 244,
+            "max_ms": 244
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 12310,
+            "max_ms": 12310
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 11509,
+            "max_ms": 11509
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 12307,
+            "max_ms": 12307
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1456,
+            "max_ms": 1456
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 9467,
+            "max_ms": 9467
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1421,
+            "max_ms": 1421
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1458,
+            "max_ms": 1458
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 2952,
+            "max_ms": 2952
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1381,
+            "max_ms": 1381
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1435,
+            "max_ms": 1435
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1422,
+            "max_ms": 1422
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 10,
+            "p95_ms": 1614,
+            "max_ms": 1614
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 3878,
+            "max_ms": 3878
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 6,
+            "p95_ms": 4839,
+            "max_ms": 4839
+          },
+          {
+            "operation": "analysis stats groups",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 70,
+            "max_ms": 70
+          },
+          {
+            "operation": "analysis stats senders",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 180,
+            "max_ms": 180
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "error",
+            "n": 2,
+            "p95_ms": 50001,
+            "max_ms": 50001
+          },
+          {
+            "operation": "analysis stats unit matches count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 3076,
+            "max_ms": 3076
+          },
+          {
+            "operation": "analysis stats callsigns",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 191,
+            "max_ms": 191
+          },
+          {
+            "operation": "analysis stats groups",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 4384,
+            "max_ms": 4384
+          },
+          {
+            "operation": "analysis stats senders",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 4327,
+            "max_ms": 4327
+          },
+          {
+            "operation": "analysis stats networks",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 2353,
+            "max_ms": 2353
+          },
+          {
+            "operation": "analysis stats units",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 1464,
+            "max_ms": 1464
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats unit matches count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 718,
+            "max_ms": 718
+          },
+          {
+            "operation": "analysis stats networks",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 4640,
+            "max_ms": 4640
+          },
+          {
+            "operation": "analysis stats aors",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 1471,
+            "max_ms": 1471
+          }
+        ]
+      }
+    },
+    "pivnich": {
+      "earlier": {
+        "lines": 0,
+        "mentions": {},
+        "coverage": {},
+        "routes": []
+      },
+      "previous15": {
+        "lines": 0,
+        "mentions": {},
+        "coverage": {},
+        "routes": []
+      },
+      "latest15": {
+        "lines": 43117,
+        "mentions": {
+          "postgres_runtime_timeout": 5,
+          "analytics_resource_limit": 10,
+          "media summary job superseded": 1
+        },
+        "coverage": {
+          "recent_message_change": 63
+        },
+        "routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 2695,
+            "p95_ms": 787,
+            "max_ms": 10872
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 747,
+            "p95_ms": 1586,
+            "max_ms": 9566
+          },
+          {
+            "operation": "group activity enrichment",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 210,
+            "p95_ms": 348,
+            "max_ms": 395
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 4825,
+            "max_ms": 5877
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 4108,
+            "max_ms": 5390
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 5115,
+            "max_ms": 6027
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 4948,
+            "max_ms": 6100
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 3975,
+            "max_ms": 5386
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 3961,
+            "max_ms": 5436
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 3094,
+            "max_ms": 4049
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 3055,
+            "max_ms": 4115
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 2941,
+            "max_ms": 4090
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 5787,
+            "max_ms": 6323
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 54,
+            "p95_ms": 9656,
+            "max_ms": 10017
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 50,
+            "p95_ms": 4853,
+            "max_ms": 6034
+          },
+          {
+            "operation": "network group activity",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 26,
+            "p95_ms": 1732,
+            "max_ms": 1834
+          },
+          {
+            "operation": "inbox messages count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 16,
+            "p95_ms": 251,
+            "max_ms": 251
+          },
+          {
+            "operation": "network frequency callsigns",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 9,
+            "p95_ms": 5709,
+            "max_ms": 5709
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 9,
+            "p95_ms": 185,
+            "max_ms": 185
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 7,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats posts",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 512,
+            "max_ms": 512
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 9403,
+            "max_ms": 9403
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 9500,
+            "max_ms": 9500
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 9302,
+            "max_ms": 9302
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 11746,
+            "max_ms": 11746
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 9269,
+            "max_ms": 9269
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 10150,
+            "max_ms": 10150
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 9929,
+            "max_ms": 9929
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 5,
+            "p95_ms": 10253,
+            "max_ms": 10253
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 9209,
+            "max_ms": 9209
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 10100,
+            "max_ms": 10100
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 21302,
+            "max_ms": 21302
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 10757,
+            "max_ms": 10757
+          },
+          {
+            "operation": "inbox message candidates",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 4,
+            "p95_ms": 0,
+            "max_ms": 0
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 2557,
+            "max_ms": 2557
+          },
+          {
+            "operation": "analysis stats unit matches count",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 3,
+            "p95_ms": 10892,
+            "max_ms": 10892
+          },
+          {
+            "operation": "analysis stats aors",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 52,
+            "max_ms": 52
+          },
+          {
+            "operation": "analysis stats tags",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "error",
+            "n": 2,
+            "p95_ms": 30002,
+            "max_ms": 30002
+          },
+          {
+            "operation": "network callsigns activity",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 7202,
+            "max_ms": 7202
+          },
+          {
+            "operation": "analysis stats callsigns",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 2,
+            "p95_ms": 1464,
+            "max_ms": 1464
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "error",
+            "n": 1,
+            "p95_ms": 30001,
+            "max_ms": 30001
+          },
+          {
+            "operation": "analysis stats freqs",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 2619,
+            "max_ms": 2619
+          },
+          {
+            "operation": "analysis summary table freq",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 1717,
+            "max_ms": 1717
+          },
+          {
+            "operation": "analysis stats senders count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 47,
+            "max_ms": 47
+          },
+          {
+            "operation": "analysis stats freqs count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 13,
+            "max_ms": 13
+          },
+          {
+            "operation": "analysis stats groups count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 10,
+            "max_ms": 10
+          },
+          {
+            "operation": "analysis stats messages count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 24,
+            "max_ms": 24
+          },
+          {
+            "operation": "analysis stats posts count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 9,
+            "max_ms": 9
+          },
+          {
+            "operation": "analysis stats callsigns count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 9,
+            "max_ms": 9
+          },
+          {
+            "operation": "analysis stats units count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 21,
+            "max_ms": 21
+          },
+          {
+            "operation": "analysis stats locations count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 14,
+            "max_ms": 14
+          },
+          {
+            "operation": "analysis stats tags count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 11,
+            "max_ms": 11
+          },
+          {
+            "operation": "analysis stats aors count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 10,
+            "max_ms": 10
+          },
+          {
+            "operation": "analysis stats networks count",
+            "route": "postgres",
+            "reason": "query_policy",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 166,
+            "max_ms": 166
+          },
+          {
+            "operation": "analysis stats locations",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 97,
+            "max_ms": 97
+          },
+          {
+            "operation": "network callsigns assigned list",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 2814,
+            "max_ms": 2814
+          },
+          {
+            "operation": "network callsigns list",
+            "route": "postgres",
+            "reason": "analytics_resource_limit",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 12968,
+            "max_ms": 12968
+          },
+          {
+            "operation": "network callsigns assigned list",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 5766,
+            "max_ms": 5766
+          },
+          {
+            "operation": "network callsigns list",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 5863,
+            "max_ms": 5863
+          },
+          {
+            "operation": "network points",
+            "route": "analytics",
+            "reason": null,
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 11680,
+            "max_ms": 11680
+          },
+          {
+            "operation": "analysis stats callsigns",
+            "route": "postgres",
+            "reason": "attachment_history_incomplete",
+            "outcome": "success",
+            "n": 1,
+            "p95_ms": 2022,
+            "max_ms": 2022
+          }
+        ]
+      }
+    }
+  },
+  "body_index": {
+    "skhid": {
+      "valid": true,
+      "ready": true,
+      "size_mb": 6954,
+      "scans_first": 18,
+      "scans_second": 18,
+      "sampled_insert_mean_ms": 1.605,
+      "sampled_insert_calls": 319
+    },
+    "pivnich": {
+      "valid": true,
+      "ready": true,
+      "size_mb": 4974,
+      "scans_first": 480,
+      "scans_second": 486,
+      "sampled_insert_mean_ms": 2.155,
+      "sampled_insert_calls": 170
+    },
+    "cbr": {
+      "valid": true,
+      "ready": true,
+      "size_kb": 9720,
+      "scans": 0,
+      "migration_20261025_recorded": false
+    }
+  },
+  "replication_final": {
+    "sampled_at_utc": "2026-10-26T08:08:38Z",
+    "skhid": {
+      "active": true,
+      "lag_bytes": 7467728,
+      "active_queue": 3,
+      "retried": 0,
+      "oldest_s": 2
+    },
+    "pivnich": {
+      "active": true,
+      "lag_bytes": 1302912,
+      "active_queue": 2,
+      "retried": 0,
+      "oldest_s": 2
+    }
+  },
+  "remote_mutation": {
+    "explicit_user_approval": true,
+    "host": "echo-cbr",
+    "database": "wd",
+    "table": "public.device_document_settings",
+    "row_id": 1,
+    "changed": {
+      "summaries_enabled": false,
+      "positions_enabled": false
+    },
+    "unchanged_enabled": true,
+    "update_rows": 1,
+    "commit_succeeded": true,
+    "verified_flags_at_utc": "2026-10-26T08:14:10.311750Z",
+    "verification": {
+      "first_sample_utc": "2026-10-26T08:14:11.064192Z",
+      "last_sample_utc": "2026-10-26T08:16:28.990551Z",
+      "positions_attempts_both_samples": 14776,
+      "summary_attempts_both_samples": 18848,
+      "running_ai_jobs_both_samples": 0,
+      "document_ai_errors_after_081415": 0,
+      "rate_limit_terminal_failed_jobs": 882,
+      "rate_limit_retry_wait_jobs": 357,
+      "new_archive_cleanup_warnings": 155
+    }
+  },
+  "cbr_spike": {
+    "minutes": {
+      "2026-10-26T07:55": {
+        "archive_s3": 54,
+        "worker_busy_loop": 1,
+        "document_ai_429": 253,
+        "audio_cleanup": 3
+      },
+      "2026-10-26T07:56": {
+        "document_ai_429": 256,
+        "archive_s3": 82,
+        "worker_busy_loop": 3,
+        "audio_cleanup": 1
+      },
+      "2026-10-26T07:57": {
+        "document_ai_429": 266,
+        "archive_s3": 55,
+        "worker_busy_loop": 2,
+        "audio_cleanup": 3
+      },
+      "2026-10-26T07:58": {
+        "document_ai_429": 265,
+        "archive_s3": 77,
+        "worker_busy_loop": 1,
+        "audio_cleanup": 3
+      },
+      "2026-10-26T07:59": {
+        "archive_s3": 60,
+        "document_ai_429": 260,
+        "worker_busy_loop": 2,
+        "audio_cleanup": 3
+      },
+      "2026-10-26T08:00": {
+        "document_ai_429": 329,
+        "archive_s3": 74,
+        "worker_busy_loop": 1,
+        "audio_cleanup": 2
+      },
+      "2026-10-26T08:01": {
+        "archive_s3": 65,
+        "document_ai_429": 262,
+        "worker_busy_loop": 3,
+        "audio_cleanup": 3
+      },
+      "2026-10-26T08:02": {
+        "document_ai_429": 243,
+        "archive_s3": 67,
+        "worker_busy_loop": 1,
+        "audio_cleanup": 2
+      },
+      "2026-10-26T08:03": {
+        "archive_s3": 72,
+        "document_ai_429": 266,
+        "worker_busy_loop": 2,
+        "audio_cleanup": 2
+      },
+      "2026-10-26T08:04": {
+        "document_ai_429": 262,
+        "archive_s3": 64,
+        "worker_busy_loop": 1,
+        "audio_cleanup": 1
+      },
+      "2026-10-26T08:05": {
+        "document_ai_429": 274,
+        "archive_s3": 75,
+        "worker_busy_loop": 2,
+        "audio_cleanup": 1
+      },
+      "2026-10-26T08:06": {
+        "document_ai_429": 311,
+        "archive_s3": 62,
+        "worker_busy_loop": 2,
+        "audio_cleanup": 1
+      },
+      "2026-10-26T08:07": {
+        "document_ai_429": 289,
+        "archive_s3": 77,
+        "worker_busy_loop": 2,
+        "audio_cleanup": 1
+      },
+      "2026-10-26T08:08": {
+        "document_ai_429": 199,
+        "worker_busy_loop": 1,
+        "archive_s3": 33,
+        "audio_cleanup": 1
+      }
+    },
+    "codes": {
+      "archive_s3:400": 917,
+      "document_ai_429:429": 3735,
+      "document_ai_429:1015": 3735
+    },
+    "first": {
+      "archive_s3": "2026-10-26T07:55:00",
+      "worker_busy_loop": "2026-10-26T07:55:08",
+      "document_ai_429": "2026-10-26T07:55:11",
+      "audio_cleanup": "2026-10-26T07:55:23"
+    },
+    "last": {
+      "archive_s3": "2026-10-26T08:08:40",
+      "worker_busy_loop": "2026-10-26T08:08:08",
+      "document_ai_429": "2026-10-26T08:08:40",
+      "audio_cleanup": "2026-10-26T08:08:30"
+    },
+    "busy_workers": {
+      "iggy_unit_refresh_worker": 14,
+      "network_last_activity_worker": 3,
+      "network_maintenance_worker": 7
+    }
+  },
+  "cbr_ai": {
+    "provider": "inference.ai.mod.gov.ua",
+    "model_name": "glm-5.3",
+    "document_summary_enabled_before_pause": true,
+    "document_positions_enabled_before_pause": true,
+    "error_status": 429,
+    "error_code": 1015,
+    "snapshot_at_utc": "2026-10-26T08:08:38.542558Z",
+    "failed_jobs": 558,
+    "retry_wait_jobs": 324,
+    "note": "Counts reflect jobs whose stored last error contains error code 1015, not all historical failed jobs.",
+    "after_pause": {
+      "sampled_at_utc": "2026-10-26T08:16:28.990551Z",
+      "terminal_failures": {
+        "positions": 56,
+        "summary": 826
+      },
+      "retry_wait_jobs": {
+        "summary": 357
+      }
+    }
+  },
+  "cbr_s3_readonly_probe": [
+    {
+      "variant": "current",
+      "status": 400,
+      "Code": "InvalidArgument",
+      "Message": "The specified upload does not exist. The upload ID may be invalid, or the upload may have been aborted or completed.",
+      "root": "Error"
+    },
+    {
+      "variant": "without_empty_markers",
+      "status": 200,
+      "root": "ListMultipartUploadsResult"
+    }
+  ],
+  "caveats": [
+    "No controlled pre/post index workload or access/result equivalence matrix was executed.",
+    "Insert timing excludes failed/cancelled statements and is an observation, not a write-latency SLA.",
+    "Pivnich pg_stat_statements deallocation counter increased by one; matched-entry deltas are incomplete.",
+    "Pivnich earlier journal window was not retained; an empty journal result is not evidence of zero errors.",
+    "CBR has no configured Greptime activity exporter and no matching response rows were found; HTTP rates are unavailable.",
+    "Load averages and pressure metrics may reflect the shared container host; load average alone is not a local CPU attribution.",
+    "Only the explicitly approved CBR document-AI pause was applied; schema, releases, service state and retries were not modified."
+  ]
+}

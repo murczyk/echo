@@ -14,6 +14,7 @@ import {
   GroupEntryF1,
   GroupUpdateReq,
   InterseptionKind,
+  SignalGroupColor,
   QrCodeReq,
   QrCodeRsp,
 } from '../../../../Bindings';
@@ -37,6 +38,8 @@ type AccountStatusReqBody = {
   account_id: number;
   aor_id: number | null;
   is_active: boolean;
+  can_read_messages: AccountStatusReq['canReadMessages'];
+  can_send_messages: AccountStatusReq['canSendMessages'];
   display_name: string;
   description: string | null;
   api_login: string | null;
@@ -77,6 +80,7 @@ type LinkEchoOperatorReqBody = {
 
 type GroupUpdateReqBody = {
   master_key: string;
+  color_key: GroupUpdateReq['colorKey'];
   short_note: string | null;
   long_note: string | null;
   area_of_responsibility_id: number | null;
@@ -84,6 +88,8 @@ type GroupUpdateReqBody = {
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
   is_aviation_group: boolean | null;
+  ai_transcript_analysis_enabled: boolean | null;
+  fetch_new_messages: boolean | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -199,6 +205,8 @@ type GroupEntryF1Like = {
         created_at?: number;
       }[]
     | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 function toQrCodeReqBody(req: QrCodeReq): QrCodeReqBody {
   return { account_id: req.accountId };
@@ -220,6 +228,8 @@ function toAccountStatusReqBody(req: AccountStatusReq): AccountStatusReqBody {
     account_id: req.accountId,
     aor_id: req.aorId,
     is_active: req.isActive,
+    can_read_messages: req.canReadMessages,
+    can_send_messages: req.canSendMessages,
     display_name: req.displayName,
     description: req.description,
     api_login: req.apiLogin,
@@ -279,6 +289,7 @@ function toLinkEchoOperatorReqBody(req: LinkEchoOperatorReq): LinkEchoOperatorRe
 function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
   return {
     master_key: req.masterKey,
+    color_key: req.colorKey,
     short_note: req.shortNote ?? null,
     long_note: req.longNote ?? null,
     area_of_responsibility_id: req.areaOfResponsibilityId ?? null,
@@ -286,6 +297,8 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     is_aviation_group: req.isAviationGroup ?? null,
+    ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
+    fetch_new_messages: req.fetchNewMessages ?? null,
   };
 }
 
@@ -340,6 +353,7 @@ function normalizeGroupEntry(raw: GroupEntryF1Like): GroupEntryF1 {
         rightCoordinates: normalizeCoordinates(aor.rightCoordinates ?? aor.right_coordinates),
         createdAt: aor.createdAt ?? aor.created_at ?? 0,
       })) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 

@@ -68,6 +68,7 @@ export function buildAnalysisActionsParams({
     reconcileTagMutation,
     registerLocalInboxChangeOrigin,
     refreshTagFacet,
+    refreshMessageCounts: messageList.refreshMessageCounts,
     reload: (options?: AnalysisReloadOptions) => reloadRef.current(options),
     setMapOpenMessages: mapData.setMapOpenMessages,
     setMessages: messageList.setMessages,
@@ -91,7 +92,6 @@ export function buildAnalysisActionsParams({
     setNetworks: referenceState.setNetworks,
     setNewCallsigns: sidebarData.setNewCallsigns,
     setNoMoreToLoad: messageList.setNoMoreToLoad,
-    setNolimitShown: messageList.setNolimitShown,
     setOptions: referenceState.setOptions,
     setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
@@ -114,9 +114,9 @@ export function buildAnalysisActionsParams({
 type BuildReloadParamsInput = {
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
+  hideNetworks: boolean;
   focusedWindow: InboxWindowRsp | null;
   focusedMessageActive: boolean;
-  leftPanelOpen: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
@@ -152,6 +152,7 @@ type BuildReloadParamsInput = {
   ) => Promise<void>;
   invalidateMessagePaging: () => void;
   invalidateMessagePageRequests: () => void;
+  currentMessagePageIndex: number;
   getCurrentMessagePageCursor: MessageList['getCurrentMessagePageCursor'];
   replaceCurrentMessagePage: MessageList['replaceCurrentMessagePage'];
   refreshMessageCounts: MessageList['refreshMessageCounts'];
@@ -177,7 +178,6 @@ type BuildReloadParamsInput = {
   newCallsignsLoadedKeyRef: SidebarData['newCallsignsLoadedKeyRef'];
   newCallsignsPendingKeyRef: SidebarData['newCallsignsPendingKeyRef'];
   setNoMoreToLoad: MessageList['setNoMoreToLoad'];
-  setNolimitShown: MessageList['setNolimitShown'];
   setOptions: ReferenceState['setOptions'];
   setProfiles: ReferenceState['setProfiles'];
   setSummaryCallsignsInfo: ReferenceState['setSummaryCallsignsInfo'];
@@ -195,9 +195,9 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
   return {
     centerTab: input.centerTab,
     deferInitialLoad: input.deferInitialLoad,
+    hideNetworks: input.hideNetworks,
     focusedWindow: input.focusedWindow,
     focusedMessageActive: input.focusedMessageActive,
-    leftPanelOpen: input.leftPanelOpen,
     newestFirst: input.newestFirst,
     onError: input.onError,
     onUnauthorized: input.onUnauthorized,
@@ -223,6 +223,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     loadMessageComments: input.loadMessageComments,
     invalidateMessagePaging: input.invalidateMessagePaging,
     invalidateMessagePageRequests: input.invalidateMessagePageRequests,
+    currentMessagePageIndex: input.currentMessagePageIndex,
     getCurrentMessagePageCursor: input.getCurrentMessagePageCursor,
     replaceCurrentMessagePage: input.replaceCurrentMessagePage,
     refreshMessageCounts: input.refreshMessageCounts,
@@ -248,7 +249,6 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
     newCallsignsLoadedKeyRef: input.newCallsignsLoadedKeyRef,
     newCallsignsPendingKeyRef: input.newCallsignsPendingKeyRef,
     setNoMoreToLoad: input.setNoMoreToLoad,
-    setNolimitShown: input.setNolimitShown,
     setOptions: input.setOptions,
     setProfiles: input.setProfiles,
     setSummaryCallsignsInfo: input.setSummaryCallsignsInfo,

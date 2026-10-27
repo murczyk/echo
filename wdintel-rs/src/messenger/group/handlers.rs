@@ -124,12 +124,20 @@ async fn collect_orphan_signal_groups(
                 interseption_kind: g.interseption_kind.into(),
                 disable_network_assignment: g.disable_network_assignment,
                 is_aviation_group: g.is_aviation_group.unwrap_or(false),
+                ai_transcript_analysis_enabled: g
+                    .ai_transcript_analysis_enabled
+                    .unwrap_or(false),
+                fetch_new_messages: g.fetch_new_messages.unwrap_or(true),
                 is_archived: g.is_archived,
                 datasource_id: Some(dsid),
                 created_at: g.created_at.and_utc().timestamp_millis(),
                 group_stats: stats,
                 group_admin_data,
                 areas_of_responsibility: aors,
+                color_key: SignalGroupColor::from_optional_db_value(
+                    g.color_key.as_deref(),
+                )
+                .unwrap_or(SignalGroupColor::BlueGrey),
             })
         })
         .collect();

@@ -14,6 +14,7 @@ import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-message
 import {
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
   messageOrderCursor,
+  compareMessageTuple,
   windowInitialMessageItems,
 } from './utils';
 import type { DutyFeedFilterOptions, MessageFeedState } from './utils';
@@ -26,7 +27,10 @@ export function createEmptyFeedState(
 ): MessageFeedState {
   return {
     id,
-    filter,
+    filter: options.groupScopeMasterKey
+      ? { ...filter, groupsSelected: [options.groupScopeMasterKey], groupsDenied: null }
+      : filter,
+    groupScopeMasterKey: null,
     items: [],
     loading: true,
     loadingOlder: false,
@@ -66,6 +70,7 @@ type Params = {
   clearFeedUnreadBaselines: (feedId: string) => void;
   completeFeedReload: (feedId: string) => void;
   setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
+  getFeedUnreadCursor?: (feedId: string) => MessageCursor | null;
   feedInitialTargetByFeedIdRef?: MutableRefObject<
     Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
   >;
@@ -82,6 +87,7 @@ type Params = {
 function preserveUnreadState(
   feed: MessageFeedState,
   items: Array<[number, InboxMessage]>,
+  readThrough: MessageCursor | null,
 ): Pick<
   MessageFeedState,
   | 'readIds'
@@ -98,6 +104,15 @@ function preserveUnreadState(
     ...feed.items.filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
     ...(feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
   ]);
+  if (readThrough) {
+    items.forEach(([id, message]) => {
+      if (
+        !knownUnreadIds.has(id) &&
+        compareMessageTuple(messageOrderCursor(id, message), readThrough) <= 0
+      )
+        readIds.add(id);
+    });
+  }
   const unresolvedUnreadIds = new Set([...knownUnreadIds].filter((id) => !itemIds.has(id)));
   const previousUnresolvedUnreadCount = Math.max(
     feed.unresolvedUnreadCount ?? 0,
@@ -191,17 +206,24 @@ export function useRerDutyInitialLoad(params: Params) {
           beforeIdNoninclusive: effectiveBeforeId,
         });
         let responses: InboxMessagesRsp[];
+        let historicalReadThrough: MessageCursor | null = null;
         if (initialTarget) {
           const newerReq = current.buildReqForFeed(effectiveFeed, {
             loadLatest: false,
             sinceIdNoninclusive: initialTarget.beforeIdNoninclusive,
           });
-          const [olderResponse, newerResponse, targetResponse] = await Promise.all([
+          const latestReq = current.buildReqForFeed(effectiveFeed, { loadLatest: true });
+          const [olderResponse, newerResponse, targetResponse, latestResponse] = await Promise.all([
             fetchInboxMessages(inboxReq),
             fetchInboxMessages(newerReq),
             fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq),
+            fetchInboxMessages(latestReq),
           ]);
           responses = [olderResponse, newerResponse, targetResponse];
+          const newestItem = latestResponse.inboxItems.at(-1);
+          historicalReadThrough = newestItem
+            ? messageOrderCursor(newestItem[0], newestItem[1])
+            : null;
         } else {
           responses = [await fetchInboxMessages(inboxReq)];
         }
@@ -218,15 +240,17 @@ export function useRerDutyInitialLoad(params: Params) {
         );
         const pollCursor =
           response.pollCursorId == null ? null : { id: response.pollCursorId, timestamp: null };
+        const readThrough =
+          preserveUnread && initialTarget ? (current.getFeedUnreadCursor?.(feedId) ?? null) : null;
         if (preserveUnread) {
-          current.setFeedUnreadCursor(feedId, items.length === 0 ? pollCursor : null);
+          current.setFeedUnreadCursor(feedId, items.length === 0 ? pollCursor : readThrough);
         } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
           if (tail) {
             current.installFeedUnreadCursorAndBaseline(
               effectiveFeed,
-              messageOrderCursor(tail[0], tail[1]),
+              historicalReadThrough ?? messageOrderCursor(tail[0], tail[1]),
             );
           } else if (pollCursor) {
             current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
@@ -244,8 +268,14 @@ export function useRerDutyInitialLoad(params: Params) {
                   referenceTimeMs: Date.now(),
                   pendingNewerItems: [],
                   evictedNewerTailId: null,
+                  historicalReadThrough:
+                    preserveUnread && initialTarget
+                      ? candidate.historicalReadThrough
+                      : initialTarget
+                        ? historicalReadThrough
+                        : null,
                   ...(preserveUnread && previousFeed
-                    ? preserveUnreadState(previousFeed, items)
+                    ? preserveUnreadState(previousFeed, items, readThrough)
                     : {
                         readIds: new Set<number>(items.map(([id]) => id)),
                         windowedUnreadItems: new Map<number, number>(),

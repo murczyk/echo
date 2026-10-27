@@ -5,6 +5,7 @@ import type {
   InterseptionKind,
   PostStatsRsp,
   SignalGroupEntry,
+  SignalGroupColor,
   SignalGroupStats,
   SignalProfilesRsp,
   Tag,
@@ -125,6 +126,7 @@ export function emptyAnalysisStatsReq(sinceMs: number, tillMs: number): Analysis
     orWithCoords: null,
     orWithoutCoords: null,
     search: null,
+    searchMode: null,
     selectedTags: null,
     deniedTags: null,
     tagPresence: null,
@@ -189,12 +191,17 @@ export async function getGroupInfosBatch(
   return arr.map((r: Record<string, unknown>) => ({
     masterKey: (r.master_key ?? r.masterKey) as string,
     name: (r.name ?? '') as string,
+    colorKey: (r.color_key ?? r.colorKey ?? '') as SignalGroupColor,
     ignoreOperativny: (r.ignore_operativny ?? r.ignoreOperativny ?? false) as boolean,
     interseptionKind: normalizeInterseptionKind(r),
     disableNetworkAssignment: (r.disable_network_assignment ??
       r.disableNetworkAssignment ??
       false) as boolean,
     isAviationGroup: (r.is_aviation_group ?? r.isAviationGroup ?? false) as boolean,
+    aiTranscriptAnalysisEnabled: (r.ai_transcript_analysis_enabled ??
+      r.aiTranscriptAnalysisEnabled ??
+      false) as boolean,
+    fetchNewMessages: (r.fetch_new_messages ?? r.fetchNewMessages ?? true) as boolean,
     groupStats: (r.group_stats ?? r.groupStats) as SignalGroupStats,
     adminData: (r.admin_data ?? r.adminData ?? null) as GroupAdminData | null,
     areasOfResponsibility: (r.areas_of_responsibility ?? r.areasOfResponsibility ?? null) as

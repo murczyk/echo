@@ -666,6 +666,8 @@ test('@regression #3064 failed chat retries preserve the prompt, provider and dr
       conversationId,
       aiEngineId: 'engine',
       prompt: originalPrompt,
+      mapEdit: null,
+      reasoningPreset: null,
     });
     await expect(retry).toBeDisabled();
     await expect(input).toHaveValue(draft);
@@ -696,6 +698,8 @@ test('@regression #3064 failed chat retries preserve the prompt, provider and dr
       conversationId,
       aiEngineId: 'engine',
       prompt: originalPrompt,
+      mapEdit: null,
+      reasoningPreset: null,
     });
     await expect(chat.getByTestId('live-request-request-retry-3')).toContainText(
       'Повторний запит завершено.',
@@ -860,3 +864,60 @@ test.describe('mobile history', () => {
     await expect(page).toHaveURL(/\/$/);
   });
 });
+
+for (const width of [1280, 320]) {
+  test(`@regression #3724 explicitly selects Deep and resets the composer at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const state = await installChat(page);
+    await page.route('**/api/ai-agent/configuration', (route) =>
+      route.fulfill({
+        json: {
+          featureEnabled: true,
+          reasoningPresetsEnabled: true,
+          defaultAiEngineId: 'engine',
+          providers: [
+            {
+              id: 'engine',
+              name: 'Sol',
+              modelName: 'gpt-6-sol',
+              reasoningAvailable: true,
+              reasoningPresets: [
+                { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'none' },
+                { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'medium' },
+                { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const submitted: string[] = [];
+    await page.route('**/api/ai-agent/requests/create', (route) => {
+      submitted.push(route.request().postDataJSON().reasoningPreset);
+      if (!state.conversations.length) state.conversations.push(conversation);
+      return route.fulfill({
+        json: { requestId: `reasoning-${submitted.length}`, conversationId, state: 'queued' },
+      });
+    });
+    await page.goto('/');
+    const selector = page.getByRole('combobox', { name: 'Глибина аналізу' });
+    await expect(selector).toHaveText('Збалансований');
+    await selector.hover();
+    await page.waitForTimeout(800);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await selector.click();
+    await expect(page.getByRole('option')).toHaveText(['Швидкий', 'Збалансований', 'Глибокий']);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+    await page.getByRole('option', { name: 'Глибокий', exact: true }).click();
+    await page.getByPlaceholder('Повідомлення').fill('Докладне дослідження');
+    await page.getByRole('button', { name: 'Надіслати', exact: true }).click();
+    await expect.poll(() => submitted).toEqual(['deep']);
+    await expect(selector).toContainText('Збалансований');
+    await expect(selector).toBeEnabled();
+    await page.getByPlaceholder('Повідомлення').fill('Коротке уточнення');
+    await page.getByRole('button', { name: 'Надіслати', exact: true }).click();
+    await expect.poll(() => submitted).toEqual(['deep', 'balanced']);
+  });
+}

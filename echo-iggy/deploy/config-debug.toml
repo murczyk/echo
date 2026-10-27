@@ -1,7 +1,14 @@
 whitelist = ["192.168.1.50", "203.0.113.19"]
 
+[data_maintenance.messages]
+cleaner_enabled = false
+interval = "1 m"
+
 [system]
 database_path = "/etc/iggy/data"
+
+[system.topic]
+message_expiry = "30 days"
 
 [enterprise]
 workers_count = 0

@@ -9,8 +9,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
-  type RefObject,
 } from 'react';
 import type { ProfilerOnRenderCallback } from 'react';
 import { flushSync } from 'react-dom';
@@ -25,10 +23,11 @@ import type {
   Tag,
   Unit,
 } from '../../../../Bindings';
-import { ELLIPSIS, isNullOrUndefined, isPresent } from '../../utils/misc';
+import { isNullOrUndefined, isPresent } from '../../utils/misc';
 import type { FeedColumnModel } from './types';
 import { resolveDutyScrollFabPosition } from './duty-scroll-fab-position';
 import { PowerChip } from '../../components/PowerChip';
+import { UnreadMessagesDivider } from '../shared/group-navigation/UnreadMessagesDivider';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
@@ -42,25 +41,44 @@ import {
   type MessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
-import { feedListRenderStateEqual } from './utils';
+import { feedHasUnrenderedHistoricalNewer, feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
-import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import {
+  MessageFeed,
+  MessageFeedItem,
+  MessageFeedRows,
   ScrollNavigationIntent,
+  shouldShowNewestNavigation,
   type AnchorSnapshot,
   type ExplicitScrollNavigation,
-} from './windowed-feed-scroll-shared';
+  type MessageFeedHandle,
+  type MessageFeedPolicy,
+} from '../shared/message-feed';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
-import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
+import {
+  recordDutyScrollDebugEvent,
+  recordDutyScrollDebugMetrics,
+  recordDutyScrollDebugTiming,
+  useDutyScrollDebugEnabled,
+} from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../hooks/duty-settings-defaults';
 
-/** Start loading older messages when the user scrolls close to the top of the DOM list. */
+/** Fallback top-edge threshold when no older-page skeleton is present. */
 const LOAD_OLDER_BUFFER_PX = 160;
-/** Fetch the next tail window early enough to render it before the reader reaches the bottom. */
+/** Near-bottom threshold for unread prefetch and pending tail handling. */
 const LOAD_NEWER_BUFFER_PX = 640;
 /** Consider "at bottom" when within this many pixels of the scroll end (watch mode / read-state). */
 const DUTY_FEED_AT_BOTTOM_THRESHOLD_PX = 25;
+const DUTY_FEED_POLICY: MessageFeedPolicy = {
+  initialPosition: 'end',
+  followAtBottom: true,
+  aboveLoadBufferPx: LOAD_OLDER_BUFFER_PX,
+  belowLoadBufferPx: LOAD_NEWER_BUFFER_PX,
+  atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
+  underfilledEdgeLoading: true,
+};
+const getMessageId = ([id]: [number, InboxMessage]) => id;
 // Hoisted stable empty array: passing `[]` inline as a prop would allocate a fresh reference
 // every render, defeating React.memo / useMemo bailouts downstream in MessageCard.
 const EMPTY_MESSAGE_COMMENTS: MessageComment[] = [];
@@ -86,6 +104,7 @@ export type FeedColumnContentScrollOptions = {
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
   scrollToMessage: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
+  highlightLinkedMessage: (id: number) => boolean;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -105,10 +124,11 @@ type FeedColumnContentProps = {
 type DutyMessageCardItemProps = {
   id: number;
   msg: InboxMessage;
+  hideGroupName: boolean;
   feedId: string;
-  feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -139,7 +159,7 @@ type DutyMessageCardItemProps = {
     etalonDisplayModel: MessageCardEtalonDisplayModel,
     focusTarget: HTMLElement,
   ) => void;
-  onMessageEditReport: (reportId: number) => void;
+  onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
@@ -150,10 +170,11 @@ type DutyMessageCardItemProps = {
 const DutyMessageCardItem = memo(function DutyMessageCardItem({
   id,
   msg,
+  hideGroupName,
   feedId,
-  feedCount,
   tagsLayout,
   hideBotTags,
+  hideNetworks,
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
@@ -204,9 +225,9 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       id={id}
       msg={msg}
       analysisDestination="neo"
-      feedCount={feedCount}
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
+      hideNetworks={hideNetworks}
       collapseMediaPreviews={collapseMediaPreviews}
       mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
@@ -218,6 +239,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       authUserName={authUserName}
       tagContributionsOrganismId={tagContributionsOrganismId}
       groupName={labels.groupName}
+      hideGroupName={hideGroupName}
       reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
@@ -235,7 +257,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
       onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
       onCopyMessageLink={() =>
-        onMessageCopy(buildMessageLinkFullUrl(msg, 'analysis', id), `link-${id}`)
+        onMessageCopy(buildMessageLinkFullUrl(msg, 'duty', id), `link-${id}`)
       }
       onCopyTextWithNetwork={
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
@@ -267,26 +289,17 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
               )
           : undefined
       }
-      onCopyEtalon={
-        etalonDisplayModel.copyEtalonValue == null
-          ? undefined
-          : () => onMessageCopy(etalonDisplayModel.copyEtalonValue ?? '', `etalon-${id}`)
+      onCopyEtalon={(value) => onMessageCopy(value, `etalon-${id}`)}
+      onCopyLocation={(value) => onMessageCopy(value, `location-${id}`)}
+      onCreateReport={(visibleEtalonDisplayModel, focusTarget) =>
+        onMessageCreateReport(id, msg, visibleEtalonDisplayModel, focusTarget)
       }
-      onCopyLocation={
-        etalonDisplayModel.copyLocationValue == null
-          ? undefined
-          : () => onMessageCopy(etalonDisplayModel.copyLocationValue ?? '', `location-${id}`)
-      }
-      onCreateReport={(focusTarget) =>
-        onMessageCreateReport(id, msg, etalonDisplayModel, focusTarget)
-      }
-      onEditReport={onMessageEditReport}
+      onEditReport={(reportId) => onMessageEditReport(reportId, id)}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
       onEditDetails={(focusTarget) => onMessageEdit(id, msg, focusTarget)}
       onOpenPointsOnMap={onOpenPointsOnMap}
       onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
-      rightHeaderInsetPx={0}
       filterState={filterState}
     />
   );
@@ -296,10 +309,12 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
 // See ./AGENTS.md before adding structural component abstractions.
 type DutyMessageListProps = {
   items: [number, InboxMessage][];
+  hideGroupName: boolean;
+  unreadBoundaryMessageId?: number | null;
   feedId: string;
-  feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
+  hideNetworks: boolean;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -330,14 +345,12 @@ type DutyMessageListProps = {
     etalonDisplayModel: MessageCardEtalonDisplayModel,
     focusTarget: HTMLElement,
   ) => void;
-  onMessageEditReport: (reportId: number) => void;
+  onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
-  setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
-  listRef: RefObject<HTMLDivElement>;
   /** When non-null, only these ids mount MessageCards; others use height placeholders. */
   mountedItemIds: Set<number> | null;
   placeholderHeightPx: (id: number) => number;
@@ -346,10 +359,12 @@ type DutyMessageListProps = {
 const DutyMessageList = memo(
   function DutyMessageList({
     items,
+    hideGroupName,
+    unreadBoundaryMessageId,
     feedId,
-    feedCount,
     tagsLayout,
     hideBotTags,
+    hideNetworks,
     collapseMediaPreviews = false,
     mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
     messageTextPreviewLines,
@@ -381,31 +396,27 @@ const DutyMessageList = memo(
     onMessageEdit,
     onOpenPointsOnMap,
     onAddPointHighlightBlacklist,
-    setItemRef,
-    listRef,
     mountedItemIds,
     placeholderHeightPx,
   }: DutyMessageListProps) {
     return (
-      <div
-        ref={listRef}
-        data-duty-feed-list="true"
-        data-duty-idle-offload={mountedItemIds != null ? 'true' : undefined}
-        className="m-0 list-none rer-duty pt-2 px-echo-md"
-        style={{ boxSizing: 'border-box' }}
-      >
-        {items.map(([id, msg]) => {
+      <MessageFeedRows
+        items={items}
+        getMessageId={getMessageId}
+        renderMessage={([id, msg]) => {
           const mountCard = mountedItemIds == null || mountedItemIds.has(id);
           return (
-            <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+            <MessageFeedItem id={id} data-duty-message-id={id}>
+              {mountCard && id === unreadBoundaryMessageId ? <UnreadMessagesDivider duty /> : null}
               {mountCard ? (
                 <DutyMessageCardItem
                   id={id}
                   msg={msg}
+                  hideGroupName={hideGroupName}
                   feedId={feedId}
-                  feedCount={feedCount}
                   tagsLayout={tagsLayout}
                   hideBotTags={hideBotTags}
+                  hideNetworks={hideNetworks}
                   collapseMediaPreviews={collapseMediaPreviews}
                   mediaSummaryEnabled={mediaSummaryEnabled}
                   messageTextPreviewLines={messageTextPreviewLines}
@@ -445,18 +456,20 @@ const DutyMessageList = memo(
                   style={{ height: placeholderHeightPx(id) }}
                 />
               )}
-            </div>
+            </MessageFeedItem>
           );
-        })}
-      </div>
+        }}
+      />
     );
   },
   (prev, next) =>
     prev.items === next.items &&
+    prev.hideGroupName === next.hideGroupName &&
+    prev.unreadBoundaryMessageId === next.unreadBoundaryMessageId &&
     prev.feedId === next.feedId &&
-    prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
     prev.hideBotTags === next.hideBotTags &&
+    prev.hideNetworks === next.hideNetworks &&
     prev.collapseMediaPreviews === next.collapseMediaPreviews &&
     prev.messageTextPreviewLines === next.messageTextPreviewLines &&
     prev.botTagAction === next.botTagAction &&
@@ -487,8 +500,6 @@ const DutyMessageList = memo(
     prev.onMessageEdit === next.onMessageEdit &&
     prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
     prev.onAddPointHighlightBlacklist === next.onAddPointHighlightBlacklist &&
-    prev.setItemRef === next.setItemRef &&
-    prev.listRef === next.listRef &&
     prev.mountedItemIds === next.mountedItemIds &&
     prev.placeholderHeightPx === next.placeholderHeightPx,
 );
@@ -497,7 +508,7 @@ type FeedColumnScrollFabProps = {
   feedId: string;
   loadingNewer: boolean;
   isWatchMode: boolean;
-  isPhysicallyAtBottom: boolean;
+  atNewestEdge: boolean;
   hasItems: boolean;
   bottom: number | string;
   right: number | string;
@@ -508,17 +519,25 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   feedId,
   loadingNewer,
   isWatchMode,
-  isPhysicallyAtBottom,
+  atNewestEdge,
   hasItems,
   bottom,
   right,
   onArrowClick,
 }: FeedColumnScrollFabProps) {
-  const { bottomUnreadCount, arrowResultMessage, tailAvailability } = useFeedColumnFab(feedId);
+  const {
+    bottomUnreadCount,
+    arrowResultMessage,
+    tailAvailability,
+    hasUnrenderedNewerMessages,
+    explicitNavigationLoading,
+  } = useFeedColumnFab(feedId);
+  const newestLoaded =
+    tailAvailability === 'exhausted' && !hasUnrenderedNewerMessages && !loadingNewer;
   if (
     !hasItems ||
     !isPresent(onArrowClick) ||
-    !(!isPhysicallyAtBottom || tailAvailability === 'available')
+    !shouldShowNewestNavigation(atNewestEdge, newestLoaded)
   ) {
     return null;
   }
@@ -537,6 +556,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
         alignItems: 'center',
         gap: 1,
         zIndex: 1,
+        transition: 'transform 180ms cubic-bezier(0.16, 1, 0.3, 1)',
       }}
     >
       {!loadingNewer && isPresent(arrowResultMessage) && (
@@ -570,7 +590,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
           onClick={onArrowClick}
           disabled={loadingNewer}
         >
-          {loadingNewer ? (
+          {loadingNewer && explicitNavigationLoading ? (
             <CircularProgress
               size={20}
               sx={{ color: 'primary.main' }}
@@ -634,7 +654,6 @@ export const FeedColumnContent = memo(
       feedCount,
       scrollTrackingEnabled = true,
       loadingNewer = false,
-      physicallyAtBottom = true,
       isWatchMode = false,
       autoScrollAllowed = false,
       initialPositioningReady = true,
@@ -657,6 +676,7 @@ export const FeedColumnContent = memo(
       featureStrictNetworks,
       tagsLayout,
       hideBotTags,
+      hideNetworks,
       collapseMediaPreviews = false,
       mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
       messageTextPreviewLines,
@@ -688,11 +708,8 @@ export const FeedColumnContent = memo(
       onPhysicalBottomChange,
       onArrowClick,
       onVisibleMessageIds,
+      onVisibleMessages,
     } = actions;
-    const [isPhysicallyAtBottom, setIsPhysicallyAtBottom] = useState(physicallyAtBottom);
-    useLayoutEffect(() => {
-      setIsPhysicallyAtBottom(physicallyAtBottom);
-    }, [physicallyAtBottom]);
     const networks = useMemo(
       () => (networkMap ? Object.values(networkMap) : undefined),
       [networkMap],
@@ -704,8 +721,16 @@ export const FeedColumnContent = memo(
       },
       [feed.id, onScrollAnchorSnapshotChange],
     );
-    const scroll = useWindowedFeedScroll({
-      itemIds,
+    const feedRef = useRef<MessageFeedHandle>(null);
+    const scrollerRef = useRef<HTMLDivElement>(null);
+    const scrollOptions = {
+      focus: view.linkedMessageFocus,
+      policy: DUTY_FEED_POLICY,
+      diagnostics: {
+        enabled: debugEnabled,
+        event: recordDutyScrollDebugEvent,
+        metrics: recordDutyScrollDebugMetrics,
+      },
       initialAnchorSnapshot: initialScrollAnchorSnapshot,
       onAnchorSnapshotChange: handleAnchorSnapshotChange,
       debugFeedId: feed.id,
@@ -713,8 +738,6 @@ export const FeedColumnContent = memo(
       autoScrollAllowed,
       initialPositioningReady,
       enabled: scrollTrackingEnabled,
-      loadingOlder: feed.loadingOlder,
-      loadingNewer,
       hasReachedStart: feed.hasReachedStart,
       onLoadOlder,
       onLoadNewer,
@@ -724,22 +747,17 @@ export const FeedColumnContent = memo(
       onLeftBottom,
       onNearBottomChange,
       onAtBottomChange,
-      onPhysicalBottomChange: (atBottom) => {
-        setIsPhysicallyAtBottom(atBottom);
-        onPhysicalBottomChange?.(atBottom);
-      },
+      onPhysicalBottomChange,
       onVisibleMessageIds,
-      topLoadBufferPx: LOAD_OLDER_BUFFER_PX,
-      bottomLoadBufferPx: LOAD_NEWER_BUFFER_PX,
-      atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
+      onVisibleMessages,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
       pendingNewerFlushNeeded,
-    });
+    };
     const idleOffload = useFeedIdleViewportOffload({
       // Multi-feed only: single-column Duty already fits; idle offload is for sibling columns.
       enabled: scrollTrackingEnabled && (feedCount ?? 1) >= 2,
-      scrollerRef: scroll.scrollerRef,
+      scrollerRef,
       itemIds,
     });
 
@@ -770,38 +788,34 @@ export const FeedColumnContent = memo(
               idleOffload.wakeFromOffload();
             });
           }
-          scroll.scrollToBottom(behavior, options?.intent, options?.navigation);
+          feedRef.current?.scrollToBottom(behavior, options?.intent, options?.navigation);
         },
         scrollToMessage: (id: number, behavior: ScrollBehavior = 'auto') => {
           flushSync(() => {
             idleOffload.wakeFromOffload();
           });
-          return scroll.scrollToItem(id, behavior);
+          return feedRef.current?.scrollToMessage(id, behavior) ?? null;
         },
+        highlightLinkedMessage: (id: number) =>
+          feedRef.current?.highlightLinkedMessage(id) ?? false,
       }),
-      [idleOffload.wakeFromOffload, scroll.scrollToBottom, scroll.scrollToItem],
+      [idleOffload.wakeFromOffload],
     );
 
-    if (feed.loading && feed.items.length === 0) {
-      return (
-        <Box className="flex-1 flex justify-center items-center min-h-0">
-          <CircularProgress />
-        </Box>
-      );
-    }
-
     const messageList =
-      feed.items.length === 0 ? (
+      feed.items.length === 0 && !feed.loading ? (
         <Typography color="text.secondary" className="p-4">
           Немає повідомлень
         </Typography>
       ) : (
         <DutyMessageList
           items={feed.items}
+          hideGroupName={feed.filter.groupsSelected?.length === 1}
+          unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
-          feedCount={feedCount}
           tagsLayout={tagsLayout}
           hideBotTags={hideBotTags}
+          hideNetworks={hideNetworks}
           collapseMediaPreviews={collapseMediaPreviews}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
@@ -835,8 +849,6 @@ export const FeedColumnContent = memo(
           onAddPointHighlightBlacklist={
             onAddPointHighlightBlacklist ? stableOnAddPointHighlightBlacklist : undefined
           }
-          setItemRef={scroll.setItemRef}
-          listRef={scroll.listRef}
           mountedItemIds={idleOffload.mountedItemIds}
           placeholderHeightPx={idleOffload.placeholderHeightPx}
         />
@@ -866,57 +878,63 @@ export const FeedColumnContent = memo(
           isolation: 'isolate',
         }}
       >
-        <Box
-          ref={scroll.scrollerRef}
-          data-duty-feed-scroller="true"
-          component="div"
-          className="rer-duty-feed-scroll"
-          tabIndex={0}
-          onScroll={scroll.handleScroll}
-          sx={{
-            flex: 1,
-            minHeight: narrowScreen ? 0 : 400,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            scrollbarGutter: 'stable',
-            boxSizing: 'border-box',
+        <MessageFeed
+          ref={feedRef}
+          scrollerRef={scrollerRef}
+          scrollOptions={scrollOptions}
+          newestNavigation={{
+            edge: 'bottom',
+            renderControl: (atNewestEdge) => (
+              <FeedColumnScrollFab
+                feedId={feed.id}
+                loadingNewer={loadingNewer}
+                isWatchMode={isWatchMode}
+                atNewestEdge={atNewestEdge}
+                hasItems={feed.items.length > 0}
+                bottom={scrollFabPosition.bottom}
+                right={scrollFabPosition.right}
+                onArrowClick={onArrowClick}
+              />
+            ),
           }}
+          items={feed.items}
+          getMessageId={getMessageId}
+          editorHighlightedMessageId={view.editorHighlightedMessageId}
+          isLoading={feed.loading}
+          loadingAbove={feed.loadingOlder}
+          loadingBelow={loadingNewer}
+          hasMoreAbove={!feed.hasReachedStart}
+          hasMoreBelow={
+            (feed.evictedNewerTailId != null &&
+              feed.items.every(([id]) => id !== feed.evictedNewerTailId)) ||
+            feedHasUnrenderedHistoricalNewer(feed)
+          }
+          itemSelector="[data-duty-message-id]"
+          scrollerProps={{
+            'data-duty-feed-scroller': 'true',
+            className: 'rer-duty-feed-scroll',
+            tabIndex: 0,
+            style: { flex: 1, minHeight: narrowScreen ? 0 : 400, scrollbarGutter: 'stable' },
+          }}
+          listProps={{
+            'data-duty-feed-list': 'true',
+            'data-duty-idle-offload': idleOffload.mountedItemIds != null ? 'true' : undefined,
+            className: 'm-0 list-none rer-duty pt-2 pl-3',
+          }}
+          beforeList={
+            !feed.loadingOlder && feed.hasReachedStart ? (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ textAlign: 'center', py: 1.5 }}
+              >
+                Немає старіших повідомлень
+              </Typography>
+            ) : null
+          }
         >
-          {feed.loadingOlder ? (
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 1,
-                py: 1.5,
-                color: 'text.secondary',
-              }}
-            >
-              <CircularProgress size={18} />
-              <Typography variant="body2">{`Завантаження старіших${ELLIPSIS}`}</Typography>
-            </Box>
-          ) : feed.hasReachedStart ? (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ textAlign: 'center', py: 1.5 }}
-            >
-              Немає старіших повідомлень
-            </Typography>
-          ) : null}
           {profiledMessageList}
-        </Box>
-        <FeedColumnScrollFab
-          feedId={feed.id}
-          loadingNewer={loadingNewer}
-          isWatchMode={isWatchMode}
-          isPhysicallyAtBottom={isPhysicallyAtBottom}
-          hasItems={feed.items.length > 0}
-          bottom={scrollFabPosition.bottom}
-          right={scrollFabPosition.right}
-          onArrowClick={onArrowClick}
-        />
+        </MessageFeed>
       </Paper>
     );
   }),
@@ -939,6 +957,9 @@ export const FeedColumnContent = memo(
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
+      prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
+      prevView.linkedMessageFocus !== nextView.linkedMessageFocus ||
+      prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
@@ -958,6 +979,7 @@ export const FeedColumnContent = memo(
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
       prevCard.hideBotTags !== nextCard.hideBotTags ||
+      prevCard.hideNetworks !== nextCard.hideNetworks ||
       prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
       prevCard.messageTextPreviewLines !== nextCard.messageTextPreviewLines ||
       prevCard.tagsMap !== nextCard.tagsMap ||
@@ -992,7 +1014,8 @@ export const FeedColumnContent = memo(
       prevActions.onAtBottomChange !== nextActions.onAtBottomChange ||
       prevActions.onPhysicalBottomChange !== nextActions.onPhysicalBottomChange ||
       prevActions.onArrowClick !== nextActions.onArrowClick ||
-      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds
+      prevActions.onVisibleMessageIds !== nextActions.onVisibleMessageIds ||
+      prevActions.onVisibleMessages !== nextActions.onVisibleMessages
     ) {
       return false;
     }

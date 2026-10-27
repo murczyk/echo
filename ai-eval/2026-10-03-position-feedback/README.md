@@ -78,7 +78,7 @@ They come from reviewers marking mentions and locations in Admin → ШІ → П
 | `wrong_name` | the wrong name is gone and the expected one (if given) is found |
 | `wrong_coordinates` | the reviewed coordinates are no longer tied to it, and the expected ones (if given) are, within 50 m |
 | `missed` | every listed name is found |
-| `wrong_kind` | the name is found with the expected kind |
+| `wrong_kind` | the name is found with the expected kind; for `callsign`, also when it is left out and the text holds no coordinates |
 
 Location feedback, cases without text and `other` are reported as skipped.
 Review them by hand.

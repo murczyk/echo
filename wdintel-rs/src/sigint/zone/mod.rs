@@ -1,5 +1,6 @@
 use self::bl::*;
 use super::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::entities::sigint_zone_datasource;
 use crate::entities::*;
 use crate::sigint::aor::bl::collect_group_aors;
@@ -22,7 +23,7 @@ pub async fn zones_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api", "Admin"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api", "Admin"],
     )
     .await?;
     let zones = sigint_zone::Entity::find()
@@ -52,7 +53,7 @@ pub async fn zones_datasources_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let zone_id: i64 = req.into_inner();
@@ -112,6 +113,12 @@ pub async fn zones_datasources_group_update(
         .c(h!())?
         .c(h!())?;
 
+    crate::messenger::group::native::require_external_group(
+        &txn,
+        &szd.group_master_key,
+    )
+    .await
+    .c(h!())?;
     let rsp = bl_szd_group_update(&req, &szd, &txn).await.c(h!())?;
     log_sigint_zone_datasource_event(
         &szd,
@@ -128,6 +135,8 @@ pub async fn zones_datasources_group_update(
         interseption_kind: rsp.interseption_kind,
         disable_network_assignment: rsp.disable_network_assignment,
         is_aviation_group: rsp.is_aviation_group,
+        ai_transcript_analysis_enabled: rsp.ai_transcript_analysis_enabled,
+        fetch_new_messages: rsp.fetch_new_messages,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -138,6 +147,7 @@ pub async fn zones_datasources_group_update(
         admin_login_details: rsp.admin_login_details,
         short_note: rsp.short_note,
         long_note: rsp.long_note,
+        color_key: rsp.color_key,
     }))
 }
 
@@ -152,6 +162,19 @@ pub async fn zones_datasources_group_add(
     let req = req.into_inner();
 
     let txn = env.dbx.begin().await.c(h!())?;
+    crate::messenger::group::native::require_external_group(
+        &txn,
+        &req.master_key,
+    )
+    .await
+    .c(h!())?;
+    crate::datasource::native::ensure_group_datasource_compatible(
+        &txn,
+        &req.master_key,
+        req.datasource_id,
+    )
+    .await
+    .c(h!())?;
     signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
@@ -221,17 +244,21 @@ pub async fn zones_datasources_group_add(
     let group_master_key = szd.group_master_key.clone();
 
     // Fetch the group name and notes
-    let group_name = signal_group::Entity::find()
+    let (group_name, color_key) = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
         .filter(signal_group::Column::MasterKey.eq(&szd.group_master_key))
         .select_only()
-        .column(signal_group::Column::Name)
-        .into_tuple::<Option<String>>()
+        .columns([signal_group::Column::Name, signal_group::Column::ColorKey])
+        .into_tuple::<(Option<String>, Option<String>)>()
         .one(&txn)
         .await
         .c(h!())?
-        .flatten();
+        .c(h!())?;
+    let color_key = crate::messenger::group::types::SignalGroupColor::from_optional_db_value(
+        color_key.as_deref(),
+    )
+    .c(h!())?;
     bl::update_group_interseption_kind_if_enabled(
         req.interseption_kind,
         &group_master_key,
@@ -262,6 +289,22 @@ pub async fn zones_datasources_group_add(
             .c(h!())?
             .flatten()
             .unwrap_or(false);
+
+    let ai_transcript_analysis_enabled =
+        crate::ai_transcript_analysis::settings::set_group(
+            &txn,
+            &group_master_key,
+            req.ai_transcript_analysis_enabled,
+        )
+        .await
+        .c(h!())?;
+    let fetch_new_messages = bl::update_group_fetch_new_messages_if_present(
+        None,
+        &group_master_key,
+        &txn,
+    )
+    .await
+    .c(h!())?;
 
     let (short_note, long_note) = group_admin_data::Entity::find()
         .filter(
@@ -298,6 +341,8 @@ pub async fn zones_datasources_group_add(
             interseption_kind,
             disable_network_assignment,
             is_aviation_group,
+            ai_transcript_analysis_enabled,
+            fetch_new_messages,
             areas_of_responsibility,
             group_master_key,
             allowed_user_details: bl::render_group_logins(
@@ -313,6 +358,7 @@ pub async fn zones_datasources_group_add(
             admin_logins,
             short_note,
             long_note,
+            color_key,
         },
     }))
 }
@@ -333,6 +379,12 @@ pub async fn zones_datasources_group_delete(
         .await
         .c(h!())?
     {
+        crate::messenger::group::native::lock_for_edit_if_native(
+            &txn,
+            &szd.group_master_key,
+        )
+        .await
+        .c(h!())?;
         szd.clone().delete(&txn).await.c(h!())?;
         txn.commit().await.c(h!())?;
         log_sigint_zone_datasource_event(
@@ -537,6 +589,34 @@ pub async fn my_admin_group_update(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.c(h!())?;
 
+    let is_native = crate::messenger::group::native::lock_for_edit_if_native(
+        &txn,
+        &req.master_key,
+    )
+    .await
+    .c(h!())?;
+    if is_native
+        && req
+            .area_of_responsibility_ids
+            .as_ref()
+            .is_none_or(Vec::is_empty)
+    {
+        let has_zones = sigint_zone_datasource::Entity::find()
+            .filter(
+                sigint_zone_datasource::Column::GroupMasterKey
+                    .eq(&req.master_key),
+            )
+            .count(&txn)
+            .await
+            .c(h!())?
+            > 0;
+        if has_zones {
+            return Err(AppError::BL {
+                msg: "Для групи в напрямку виберіть хоча б одну смугу."
+                    .to_string(),
+            });
+        }
+    }
     ensure_my_admin_group_access(&txn, &login, &req.master_key)
         .await
         .c(h!())?;

@@ -105,4 +105,20 @@ run_remote_resnapshot() { exit 99; }
 main --manifest
 [[ $(cat "$case_dir/batch") == "$expected" ]]
 
+SOURCE_PUBLICATION=test_publication
+source_local_psql() {
+  cat >/dev/null
+  printf '%s\n' public.messages public.nonempty
+}
+main --manifest --published-only
+[[ $(cat "$case_dir/batch") == $'cdc_additive\tpublic.messages\nreplicated_snapshot\tpublic.nonempty' ]]
+
+rm "$case_dir/batch"
+source_local_psql() { cat >/dev/null; return 3; }
+if (main --manifest --published-only); then
+  printf 'publication query failure unexpectedly started pre-migration repairs\n' >&2
+  exit 1
+fi
+[[ ! -e "$case_dir/batch" ]]
+
 printf 'Source table resnapshot authorization tests passed\n'

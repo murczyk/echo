@@ -1,6 +1,15 @@
-module Pages_.RerAnalysis.Constants exposing (correlatedFreqsLimit, mouseReportMessageLimitErrorCode, mouseReportMessageLimitMessage, reportPermissionDeniedErrorCode, reportPermissionDeniedMessage, reportTemplateToString)
+module Pages_.RerAnalysis.Constants exposing (analysisSearchModes, correlatedFreqsLimit, mouseReportMessageLimitErrorCode, mouseReportMessageLimitMessage, reportPermissionDeniedErrorCode, reportPermissionDeniedMessage, reportTemplateToString)
 
+import Bindings as B
 import Pages_.RerAnalysis.Model exposing (..)
+
+
+analysisSearchModes : List ( B.AnalysisSearchMode, String )
+analysisSearchModes =
+    [ ( B.Fuzzy, "Гнучкий пошук" )
+    , ( B.Exact, "Точний збіг" )
+    , ( B.Substring, "Збіг за входженням" )
+    ]
 
 
 correlatedFreqsLimit : number
@@ -85,3 +94,6 @@ reportTemplateToString x =
 
         RTReport1213 ->
             "report_1213"
+
+        RTReport1217 ->
+            "report_1217"

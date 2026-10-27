@@ -27,6 +27,8 @@ pub struct User {
     pub goi_host: Option<String>,
     pub goi_integrations: Vec<crate::organism::goi::types::GoiUserIntegration>,
     pub last_release_seen: Option<String>,
+    #[serde(default)]
+    pub rer_report_eligible: bool,
 }
 
 #[derive(
@@ -85,6 +87,7 @@ pub struct UserInfoReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct Login {
+    pub signal_profile_id: Option<String>,
     pub id: String,
     pub login: String,
     pub roles: Vec<String>,
@@ -100,6 +103,7 @@ pub struct Login {
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
     pub password_auth_enabled: bool,
+    pub has_password: bool,
     pub totp_enabled: bool,
 }
 
@@ -130,18 +134,25 @@ pub struct ListLoginsRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateLoginReq {
+    pub signal_profile_id: Option<String>,
     pub login: String,
-    pub password: String,
+    #[serde(default)]
+    pub password: Option<String>,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
     pub organism_id: i64,
     pub description: Option<String>,
+    #[serde(default)]
+    pub delta_login: Option<String>,
+    #[serde(default)]
+    pub password_auth_enabled: Option<bool>,
 }
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct CreateDeltaLoginReq {
+    pub signal_profile_id: Option<String>,
     pub login: String,
     pub roles: Vec<String>,
     pub sigint_zone_id: Option<i64>,
@@ -153,6 +164,7 @@ pub struct CreateDeltaLoginReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct UpdateLoginReq {
+    pub signal_profile_id: Option<String>,
     pub id: String,
     pub login: String,
     pub roles: Option<Vec<String>>,

@@ -13,6 +13,7 @@ import {
   OrphanSignalGroupEntry,
   SigintZone,
   SignalGroupArchiveReq,
+  SignalGroupColor,
   SignalGroupEntry,
   SignalGroupStats,
   SignalGroupStatsTimelineReq,
@@ -83,13 +84,19 @@ type SignalGroupEntryLike = {
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
+  aiTranscriptAnalysisEnabled?: boolean;
   is_aviation_group?: boolean;
+  ai_transcript_analysis_enabled?: boolean;
+  fetchNewMessages?: boolean | null;
+  fetch_new_messages?: boolean | null;
   groupStats?: SignalGroupStatsLike | null;
   group_stats?: SignalGroupStatsLike | null;
   adminData?: GroupAdminDataLike | null;
   admin_data?: GroupAdminDataLike | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 
 type OrphanSignalGroupEntryLike = {
@@ -105,7 +112,11 @@ type OrphanSignalGroupEntryLike = {
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
+  aiTranscriptAnalysisEnabled?: boolean;
   is_aviation_group?: boolean;
+  ai_transcript_analysis_enabled?: boolean;
+  fetchNewMessages?: boolean | null;
+  fetch_new_messages?: boolean | null;
   isArchived?: boolean;
   is_archived?: boolean;
   datasourceId?: number | null;
@@ -118,6 +129,8 @@ type OrphanSignalGroupEntryLike = {
   group_admin_data?: GroupAdminDataLike | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 
 type AreaOfResponsibilityLike = {
@@ -160,7 +173,11 @@ type ZoneDatasourceGroupLike = {
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
+  aiTranscriptAnalysisEnabled?: boolean;
   is_aviation_group?: boolean;
+  ai_transcript_analysis_enabled?: boolean;
+  fetchNewMessages?: boolean | null;
+  fetch_new_messages?: boolean | null;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
   allowedUserDetails?: SignalGroupLoginLike[] | null;
@@ -177,6 +194,8 @@ type ZoneDatasourceGroupLike = {
   long_note?: string | null;
   areasOfResponsibility?: AreaOfResponsibilityLike[] | null;
   areas_of_responsibility?: AreaOfResponsibilityLike[] | null;
+  colorKey?: SignalGroupColor | string;
+  color_key?: SignalGroupColor | string;
 };
 
 type ZoneDatasourceGroupListRspLike = {
@@ -256,6 +275,7 @@ type ZonePair = [number, SigintZone];
 
 type ZoneDatasourceGroupAddReqBody = {
   zone_id: number;
+  ai_transcript_analysis_enabled: boolean | null;
   datasource_id: number;
   is_secret: boolean;
   interseption_kind: InterseptionKind | null;
@@ -269,10 +289,13 @@ type ZoneDatasourceGroupAddReqBody = {
 
 type ZoneDatasourceGroupUpdateReqBody = {
   id: number;
+  color_key: ZoneDatasourceGroupUpdateReq['colorKey'];
   is_secret: boolean;
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
   is_aviation_group: boolean | null;
+  ai_transcript_analysis_enabled: boolean | null;
+  fetch_new_messages: boolean | null;
   user_logins: string[];
   organism_ids: number[];
   admin_logins: string[];
@@ -399,10 +422,14 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    aiTranscriptAnalysisEnabled:
+      raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
+    fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 
@@ -415,6 +442,9 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    aiTranscriptAnalysisEnabled:
+      raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
+    fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
     createdAt: raw.createdAt ?? raw.created_at ?? 0,
@@ -422,6 +452,7 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     groupAdminData: normalizeGroupAdminData(raw.groupAdminData ?? raw.group_admin_data),
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 
@@ -436,6 +467,9 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    aiTranscriptAnalysisEnabled:
+      raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
+    fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     allowedUsers,
     allowedUserDetails: (raw.allowedUserDetails ?? raw.allowed_user_details ?? []).map(
       normalizeSignalGroupLogin,
@@ -449,6 +483,7 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     longNote: raw.longNote ?? raw.long_note ?? null,
     areasOfResponsibility:
       (raw.areasOfResponsibility ?? raw.areas_of_responsibility ?? null)?.map(normalizeAor) ?? null,
+    colorKey: (raw.colorKey ?? raw.color_key ?? '') as SignalGroupColor,
   };
 }
 
@@ -522,6 +557,7 @@ function toZoneDatasourceGroupAddReqBody(
 ): ZoneDatasourceGroupAddReqBody {
   return {
     zone_id: req.zoneId,
+    ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
     datasource_id: req.datasourceId,
     is_secret: req.isSecret,
     interseption_kind: req.interseptionKind ?? null,
@@ -539,10 +575,13 @@ function toZoneDatasourceGroupUpdateReqBody(
 ): ZoneDatasourceGroupUpdateReqBody {
   return {
     id: req.id,
+    color_key: req.colorKey,
     is_secret: req.isSecret,
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     is_aviation_group: req.isAviationGroup ?? null,
+    ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
+    fetch_new_messages: req.fetchNewMessages ?? null,
     user_logins: req.userLogins,
     organism_ids: req.organismIds,
     admin_logins: req.adminLogins,

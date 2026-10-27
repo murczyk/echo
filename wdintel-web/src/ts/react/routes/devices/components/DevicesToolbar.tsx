@@ -3,6 +3,7 @@ import type { MRT_TableInstance } from 'material-react-table';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
+import { TableToolbarLayout } from '../../../components/TableToolbarLayout';
 import { GlobalFilterTextField } from '../../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import type { ActiveFilterDescriptor } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
@@ -71,56 +72,55 @@ export function DevicesToolbar({
   table,
 }: Props) {
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        minWidth: 0,
-        flexWrap: 'wrap',
-      }}
-    >
-      <GlobalFilterTextField
-        globalFilter={globalFilter}
-        setGlobalFilter={onChangeGlobalFilter}
-        disabled={loading}
-      />
-      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
-        <PowerChip
-          selected={filters.archivedFilter === 'all'}
-          onClick={() => setStatus(setFilters, 'all')}
-          label="Всі"
-          interactive
-          fontWeight={700}
-        />
-        <PowerChip
-          selected={filters.archivedFilter === 'active'}
-          onClick={() => setStatus(setFilters, 'active')}
-          label={
-            <StatusChipLabel
-              color="#54c06c"
-              label="Активні"
-              counter={statusCounts?.active ?? '—'}
+    <TableToolbarLayout
+      leading={
+        <>
+          <div className="w-full min-w-56 max-w-[360px] flex-1">
+            <GlobalFilterTextField
+              className="!min-w-0 !w-full"
+              globalFilter={globalFilter}
+              setGlobalFilter={onChangeGlobalFilter}
+              disabled={loading}
             />
-          }
-          interactive
-          fontWeight={700}
-        />
-        <PowerChip
-          selected={filters.archivedFilter === 'archived'}
-          onClick={() => setStatus(setFilters, 'archived')}
-          label={
-            <StatusChipLabel
-              color="#6b6b6b"
-              label="Архівні"
-              counter={statusCounts?.archived ?? '—'}
+          </div>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+            <PowerChip
+              selected={filters.archivedFilter === 'all'}
+              onClick={() => setStatus(setFilters, 'all')}
+              label="Всі"
+              interactive
+              fontWeight={700}
             />
-          }
-          interactive
-          fontWeight={700}
-        />
-      </Stack>
-      <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+            <PowerChip
+              selected={filters.archivedFilter === 'active'}
+              onClick={() => setStatus(setFilters, 'active')}
+              label={
+                <StatusChipLabel
+                  color="#54c06c"
+                  label="Активні"
+                  counter={statusCounts?.active ?? '—'}
+                />
+              }
+              interactive
+              fontWeight={700}
+            />
+            <PowerChip
+              selected={filters.archivedFilter === 'archived'}
+              onClick={() => setStatus(setFilters, 'archived')}
+              label={
+                <StatusChipLabel
+                  color="#6b6b6b"
+                  label="Архівні"
+                  counter={statusCounts?.archived ?? '—'}
+                />
+              }
+              interactive
+              fontWeight={700}
+            />
+          </Stack>
+        </>
+      }
+      trailing={
         <InternalTableActions
           table={table}
           columnsVisibilityDisabled={loading}
@@ -132,7 +132,7 @@ export function DevicesToolbar({
           fullScreenEnabled={false}
           fullScreenDisabled={loading}
         />
-      </Box>
-    </Box>
+      }
+    />
   );
 }

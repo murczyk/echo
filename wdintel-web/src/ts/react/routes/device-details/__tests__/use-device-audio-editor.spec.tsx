@@ -34,6 +34,7 @@ function detail(text = 'base', version = 'v1', id = 'one'): DeviceAudioDetails {
     audio: {
       id,
       deviceId: 'device',
+      name: 'recording.wav',
       recordingStartedAt: '2026-10-03T00:00:00Z',
       recordingEndedAt: '2026-10-03T00:00:01Z',
       durationSeconds: 1,
@@ -41,6 +42,21 @@ function detail(text = 'base', version = 'v1', id = 'one'): DeviceAudioDetails {
       processingVersion: 'processing',
     },
     transcription: { text, textVersion: version },
+    automaticTranscription: {
+      version: 'auto-empty',
+      text: null,
+      state: 'not_requested',
+      retryAt: null,
+      message: null,
+    },
+    transcriptionAvailability: {
+      deviceEnabled: true,
+      globalEnabled: true,
+      canEditManual: true,
+      canManageSetting: true,
+      canRetry: false,
+      blockedReason: null,
+    },
     canEdit: true,
   };
 }
@@ -257,3 +273,255 @@ it('clean authorized reread adopts current text without inventing an unsaved dra
   expect(state.draft).toBe('current external text');
   expect(state.dirty).toBe(false);
 });
+
+function withAutomatic(text = '', automatic: string | null = 'automatic', version = 'v1') {
+  return {
+    ...detail(text, version),
+    automaticTranscription: {
+      version: 'automatic-v1',
+      text: automatic,
+      state: automatic === null ? ('not_requested' as const) : ('succeeded' as const),
+      retryAt: null,
+      message: null,
+    },
+    transcriptionAvailability: {
+      deviceEnabled: true,
+      globalEnabled: true,
+      canEditManual: true,
+      canManageSetting: true,
+      canRetry: false,
+      blockedReason: null,
+    },
+  };
+}
+
+it.each([
+  ['manual', null, 'manual'],
+  ['', 'automatic', 'automatic'],
+  ['manual', 'automatic', 'manual'],
+  ['', null, ''],
+  [' \n', 'automatic', ' \n'],
+])('ASR display preserves literal manual priority (%j, %j)', async (manual, automatic, display) => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic(manual!, automatic));
+  await act(async () => root.render(<Harness />));
+  expect(state.confirmed?.text).toBe(manual);
+  expect(state.confirmed?.textVersion).toBe('v1');
+  expect(state.draft).toBe(display);
+  expect(state.dirty).toBe(false);
+  expect(saveDeviceAudioTranscription).not.toHaveBeenCalled();
+});
+
+it('editing automatic fallback saves only manual with the original manual CAS token', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic());
+  vi.mocked(saveDeviceAudioTranscription).mockResolvedValue({
+    audioId: 'one',
+    transcription: { text: 'corrected', textVersion: 'v2' },
+  });
+  await act(async () => root.render(<Harness />));
+  expect(state.draft).toBe('automatic');
+  await act(async () => state.setDraft('corrected'));
+  await act(async () => state.save());
+  expect(saveDeviceAudioTranscription).toHaveBeenCalledWith({
+    deviceId: 'device',
+    audioId: 'one',
+    text: 'corrected',
+    expectedTextVersion: 'v1',
+  });
+  expect(state.confirmed).toEqual({ text: 'corrected', textVersion: 'v2' });
+  expect(state.dirty).toBe(false);
+});
+
+it('clearing saved manual restores automatic fallback after acknowledgement', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual'));
+  vi.mocked(saveDeviceAudioTranscription).mockResolvedValue({
+    audioId: 'one',
+    transcription: { text: '', textVersion: 'v2' },
+  });
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft(''));
+  await act(async () => state.save());
+  expect(state.confirmed?.text).toBe('');
+  expect(state.draft).toBe('automatic');
+  expect(state.dirty).toBe(false);
+});
+
+it('a new automatic fallback read preserves dirty manual input and its CAS version', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('', null));
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft('typing'));
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic());
+  await act(async () => state.reload());
+  expect(state.draft).toBe('typing');
+  expect(state.confirmed).toEqual({ text: '', textVersion: 'v1' });
+  expect(state.dirty).toBe(true);
+});
+
+function arrive(automatic = 'arrived') {
+  const response = withAutomatic('', automatic);
+  state.mergeAutomatic(response.automaticTranscription, response.transcriptionAvailability);
+}
+
+it('automatic arrivals update a clean fallback without changing manual CAS or dirty state', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('', null));
+  await act(async () => root.render(<Harness />));
+  await act(async () => arrive());
+  expect(state.draft).toBe('arrived');
+  expect(state.confirmed).toEqual({ text: '', textVersion: 'v1' });
+  expect(state.dirty).toBe(false);
+  expect(saveDeviceAudioTranscription).not.toHaveBeenCalled();
+});
+
+it('automatic arrivals preserve typing and report availability separately', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('', null));
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft('typing'));
+  await act(async () => arrive());
+  expect(state.draft).toBe('typing');
+  expect(state.confirmed).toEqual({ text: '', textVersion: 'v1' });
+  expect(state.automaticNotice).toBe(true);
+  expect(state.dirty).toBe(true);
+});
+
+it('readonly automatic view preserves the manual draft and resets on reopen', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual'));
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft('draft'));
+  await act(async () => state.setAutomaticView(true));
+  expect(state.automaticView).toBe(true);
+  expect(state.canEdit).toBe(true);
+  await act(async () => state.setDraft('must not edit original'));
+  expect(state.draft).toBe('draft');
+  await act(async () => state.setAutomaticView(false));
+  expect(state.draft).toBe('draft');
+  expect(state.dirty).toBe(true);
+  await act(async () => state.setAutomaticView(true));
+  await act(async () => root.render(<Harness id="two" />));
+  expect(state.automaticView).toBe(false);
+});
+
+it('a clear acknowledgement retains newer typing when automatic text arrives during save', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual', null));
+  const write = deferred<SaveDeviceAudioTranscriptionRsp>();
+  vi.mocked(saveDeviceAudioTranscription).mockReturnValue(write.promise);
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft(''));
+  await act(async () => {
+    void state.save();
+  });
+  await act(async () => arrive());
+  expect(state.saving).toBe(true);
+  expect(state.draft).toBe('');
+  await act(async () => state.setDraft('newer'));
+  await act(async () =>
+    write.resolve({ audioId: 'one', transcription: { text: '', textVersion: 'v2' } }),
+  );
+  expect(state.draft).toBe('newer');
+  expect(state.confirmed?.text).toBe('');
+  expect(state.dirty).toBe(true);
+  await act(async () => state.discard());
+  expect(state.draft).toBe('arrived');
+  expect(state.dirty).toBe(false);
+});
+
+it.each(['conflict', 'unknownOutcome'] as const)(
+  'automatic arrivals cannot resolve %s',
+  async (phase) => {
+    vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual', null));
+    await act(async () => root.render(<Harness />));
+    await act(async () => state.setDraft('mine'));
+    vi.mocked(saveDeviceAudioTranscription).mockRejectedValue(
+      new HttpRequestError(phase === 'conflict' ? 409 : 0, 'failed'),
+    );
+    if (phase === 'conflict')
+      vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('theirs', null, 'v2'));
+    else vi.mocked(getDeviceAudioDetail).mockRejectedValue(new HttpRequestError(503, 'offline'));
+    await act(async () => {
+      await state.save();
+    });
+    expect(state.phase).toBe(phase);
+    const confirmed = state.confirmed;
+    const conflict = state.conflict;
+    await act(async () => arrive());
+    expect(state.phase).toBe(phase);
+    expect(state.draft).toBe('mine');
+    expect(state.confirmed).toEqual(confirmed);
+    expect(state.conflict).toEqual(conflict);
+    expect(state.automaticNotice).toBe(true);
+  },
+);
+
+it('an automatic response from a previous audio session is discarded', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual'));
+  await act(async () => root.render(<Harness />));
+  const merge = state.mergeAutomatic;
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('second', null));
+  await act(async () => root.render(<Harness id="two" />));
+  const old = withAutomatic('', 'stale');
+  await act(async () => merge(old.automaticTranscription, old.transcriptionAvailability));
+  expect(state.draft).toBe('second');
+  expect(state.detail?.automaticTranscription.text).toBeNull();
+});
+
+it('clear acknowledgement restores editable fallback after switching to automatic during save', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual'));
+  const write = deferred<SaveDeviceAudioTranscriptionRsp>();
+  vi.mocked(saveDeviceAudioTranscription).mockReturnValue(write.promise);
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft(''));
+  await act(async () => {
+    void state.save();
+  });
+  await act(async () => state.setAutomaticView(true));
+  await act(async () =>
+    write.resolve({ audioId: 'one', transcription: { text: '', textVersion: 'v2' } }),
+  );
+  expect(state.automaticView).toBe(false);
+  expect(state.canEdit).toBe(true);
+  expect(state.draft).toBe('automatic');
+});
+
+it('an automatic result equal to the dirty draft does not turn a detail reload into a manual save', async () => {
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('', null));
+  await act(async () => root.render(<Harness />));
+  await act(async () => state.setDraft('same words'));
+  vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('', 'same words'));
+  await act(async () => state.reload());
+  expect(state.dirty).toBe(true);
+  expect(state.hasUnsavedChanges()).toBe(true);
+  expect(state.confirmed?.text).toBe('');
+});
+
+it.each(['keep draft', 'use current', 'discard'] as const)(
+  '#3645 resolving a cleared manual conflict restores editing from automatic view: %s',
+  async (choice) => {
+    vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('manual'));
+    await act(async () => root.render(<Harness />));
+    await act(async () => state.setDraft('my draft'));
+    await act(async () => state.setAutomaticView(true));
+    vi.mocked(getDeviceAudioDetail).mockResolvedValue(withAutomatic('', 'automatic', 'v2'));
+    await act(async () => state.reload());
+    expect(state.phase).toBe('conflict');
+    await act(async () => {
+      if (choice === 'discard') state.discard();
+      else state.acceptCurrent(choice === 'use current');
+    });
+    expect(state.automaticView).toBe(false);
+    expect(state.canEdit).toBe(true);
+    expect(state.draft).toBe(choice === 'keep draft' ? 'my draft' : 'automatic');
+    expect(state.confirmed).toEqual({ text: '', textVersion: 'v2' });
+    expect(saveDeviceAudioTranscription).not.toHaveBeenCalled();
+    await act(async () => state.setDraft('corrected'));
+    vi.mocked(saveDeviceAudioTranscription).mockResolvedValue({
+      audioId: 'one',
+      transcription: { text: 'corrected', textVersion: 'v3' },
+    });
+    await act(async () => state.save());
+    expect(saveDeviceAudioTranscription).toHaveBeenCalledWith({
+      deviceId: 'device',
+      audioId: 'one',
+      text: 'corrected',
+      expectedTextVersion: 'v2',
+    });
+    expect(state.detail?.automaticTranscription.text).toBe('automatic');
+  },
+);

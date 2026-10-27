@@ -27,6 +27,7 @@ import type {
   UnitActivityRsp,
   UnitDetailsRsp,
   UnitStatusCountsRsp,
+  UnitCombatTypesRsp,
   UpdateUnitAttachmentReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
@@ -64,6 +65,7 @@ export const DEFAULT_LIST_UNITS_REQ: ListUnitsReq = {
   filterArmy: null,
   filterMilitaryDistrict: null,
   filterArmyRegion: null,
+  filterCombatType: null,
   filterComment: null,
   filterOrbitNote: null,
   filterIsDeduplicateCandidate: null,
@@ -184,8 +186,21 @@ export async function getInconsistentUnits(options?: RequestOptions): Promise<In
   return transformSnakeToCamel<ListInconsistentUnitsRsp>(raw).units;
 }
 
+export async function getUnitCombatTypes(options?: RequestOptions): Promise<UnitCombatTypesRsp> {
+  const raw = await postJson<unknown>('/api/sigint/unit/combat-types', null, options);
+  return transformSnakeToCamel<UnitCombatTypesRsp>(raw);
+}
+
 export async function createUnit(unit: CreateUnitReq): Promise<Unit> {
   const raw = await postJson<unknown>('/api/sigint/unit/create', transformCamelToSnake(unit));
+  return transformSnakeToCamel<Unit>(raw);
+}
+
+export async function createUnitForMessage(req: CreateUnitWithAutoNetworkReq): Promise<Unit> {
+  const raw = await postJson<unknown>(
+    '/api/sigint/unit/create-for-message',
+    transformCamelToSnake(req),
+  );
   return transformSnakeToCamel<Unit>(raw);
 }
 

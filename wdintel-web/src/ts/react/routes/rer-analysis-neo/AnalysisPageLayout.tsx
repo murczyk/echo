@@ -1,4 +1,9 @@
 import {
+  MessageRepliesProvider,
+  ReplyMessageEditor,
+  type ReplyTarget,
+} from '../shared/message-replies/MessageRepliesProvider';
+import {
   MessageDeleteAccessContext,
   MessageWriteAccessContext,
 } from '../shared/message-card/MessageWriteAccess';
@@ -20,10 +25,8 @@ import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
 import { CreateMessageFab } from '../shared/manage-message/CreateMessageFab';
-import {
-  ManageMessageDrawer,
-  type ManageMessageEditorHandle,
-} from '../shared/manage-message/ManageMessageDrawer';
+import type { ManageMessageEditorHandle } from '../shared/manage-message/ManageMessageDrawer';
+import { focusAfterEditorSurfacesClose } from '../shared/manage-message/focus-restoration';
 import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_EASING,
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
@@ -31,6 +34,10 @@ import {
 } from '../shared/manage-message/ManageMessageEditorSurface';
 import { getAnalysisCenterTabs } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
+import {
+  parseAnalysisPanelQueryStateFromWindow,
+  replaceAnalysisPanelQueryStateInUrl,
+} from './helpers';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 import { MessageDeviceAccessProvider } from '../shared/message-card/MessageDeviceAccess';
@@ -38,6 +45,11 @@ import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { AnalysisRightDock } from './AnalysisRightDock';
 import { analysisWorkspaceColumns, shouldInlineAnalysisLeftPanel } from './analysis-editor-layout';
+import {
+  recordAnalysisDebugPageSnapshot,
+  summarizeAnalysisDebugFilters,
+  useAnalysisDebugEnabled,
+} from './analysis-debug';
 
 export type RerAnalysisNeoPageProps = {
   authUserName?: string | null;
@@ -49,8 +61,19 @@ export function RerAnalysisNeoPage({
   authUserRoles = [],
 }: RerAnalysisNeoPageProps = {}) {
   const page = useRerAnalysisNeoPage(authUserName, authUserRoles);
+  const analysisDebugEnabled = useAnalysisDebugEnabled();
   const theme = useTheme();
+  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
+  const [createMessageGroupMasterKey, setCreateMessageGroupMasterKey] = useState<string | null>(
+    null,
+  );
+  const [initialFilterPanelOpen] = useState(
+    () => parseAnalysisPanelQueryStateFromWindow().filterPanelOpen,
+  );
+  const [filterPanelOpen, setFilterPanelOpen] = useState(initialFilterPanelOpen ?? false);
+  const filterPanelTouchedRef = useRef(initialFilterPanelOpen != null);
+  const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
   const { ref: layoutRef, width: layoutWidth } = useObservedWidth<HTMLDivElement>();
@@ -73,6 +96,7 @@ export function RerAnalysisNeoPage({
   const messagesPanelId = `${centerTabsId}-messages-panel`;
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
+  const filtersPanelId = `${centerTabsId}-filters-panel`;
   const keepDirectMessageVisible =
     page.directMessageNavigation != null &&
     page.messages.some(
@@ -83,23 +107,56 @@ export function RerAnalysisNeoPage({
     page.error == null &&
     !keepDirectMessageVisible &&
     !keepMessageViewportVisible &&
-    (page.messagesLoading ||
-      page.directMessageLoading ||
-      (!page.hasLoadedInitialMessages && page.messages.length === 0));
+    !page.hasLoadedInitialMessages &&
+    (page.messagesLoading || page.directMessageLoading || page.messages.length === 0);
   const leftPanelVisible = page.leftPanelOpen;
   const requestedRightPanelVisible = page.rightPanelOpen;
-  const editorIntentKey = createMessageOpen
-    ? 'create-message'
-    : page.reportSource
-      ? `create-report:${page.reportSource.id}`
-      : page.editorMessage
-        ? `${page.editorEditAsReport ? 'edit-report' : 'edit-message'}:${page.editorMessage.id}`
-        : page.editTargetLoadState.status !== 'idle'
-          ? `edit-report:${page.editTargetLoadState.reportId}`
-          : null;
+  const editorIntentKey = replyTarget
+    ? `reply:${replyTarget.id}`
+    : createMessageOpen
+      ? `create-message:${createMessageGroupMasterKey ?? 'all'}`
+      : page.reportSource
+        ? `create-report:${page.reportSource.id}`
+        : page.editorMessage
+          ? `${page.editorEditAsReport ? 'edit-report' : 'edit-message'}:${page.editorMessage.id}`
+          : page.editTargetLoadState.status !== 'idle'
+            ? `edit-report:${page.editTargetLoadState.reportId}`
+            : null;
   const editorOpen = editorIntentKey !== null;
+  const editorHighlightedMessageId = editorOpen
+    ? (editorSourceMessageId ??
+      page.reportSource?.id ??
+      page.editorMessage?.id ??
+      (page.editTargetLoadState.status !== 'idle' ? page.editTargetLoadState.reportId : null))
+    : null;
   const rightPanelVisible = requestedRightPanelVisible && !editorOpen;
   const modalEditorOpen = editorOpen && editorPresentation === 'modal';
+  const toggleFilterPanel = useCallback(() => {
+    filterPanelTouchedRef.current = true;
+    const next = !filterPanelOpen;
+    setFilterPanelOpen(next);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [filterPanelOpen]);
+  const closeFilterPanel = useCallback(() => {
+    filterPanelTouchedRef.current = true;
+    setFilterPanelOpen(false);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: false });
+  }, []);
+  useEffect(() => {
+    if (!page.networkVisibilityReady || filterPanelTouchedRef.current) return;
+    filterPanelTouchedRef.current = true;
+    const next = !page.hideNetworks;
+    setFilterPanelOpen(editorOpen ? false : next);
+    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [editorOpen, page.hideNetworks, page.networkVisibilityReady]);
+  useEffect(() => {
+    if (!filterPanelOpen) return;
+    const sections = ['tags', 'groups', 'senders'] as const;
+    void Promise.all(sections.map((section) => page.loadFilterSection(section)));
+  }, [filterPanelOpen, page.loadFilterSection]);
+  useEffect(() => {
+    if (editorOpen) setFilterPanelOpen(false);
+  }, [editorOpen]);
   const viewportWidth = typeof window === 'undefined' ? 0 : window.innerWidth;
   const inlineLeftPanelVisible = shouldInlineAnalysisLeftPanel({
     layoutWidth,
@@ -110,12 +167,55 @@ export function RerAnalysisNeoPage({
   });
   const inlineRightDockVisible =
     editorPresentation === 'embedded' && (editorOpen || (!isNarrowLayout && rightPanelVisible));
-  const centerTabs = getAnalysisCenterTabs(page.analysisMapInSidebar, page.radioFeaturesAllowed);
+  const centerTabs = getAnalysisCenterTabs(
+    page.threadMode ? false : page.analysisMapInSidebar,
+    page.radioFeaturesAllowed,
+  );
   const centerTab =
     page.analysisMapInSidebar && page.centerTab === 'map' ? 'messages' : page.centerTab;
   const analysisMapVisible =
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
+  useEffect(() => {
+    if (!analysisDebugEnabled) return;
+    recordAnalysisDebugPageSnapshot({
+      centerTab,
+      centerTabPending: page.centerTabPending,
+      leftPanelOpen: leftPanelVisible,
+      rightPanelOpen: rightPanelVisible,
+      rightSidebarTab: page.rightSidebarTab,
+      messagesLoading: page.messagesLoading,
+      messagesPaging: page.messagesPaging,
+      messagesTotalLoading: page.messagesTotalLoading,
+      messagesTotalCount: page.messagesTotalCount,
+      messagesOverallCount: page.messagesOverallCount,
+      messageIds: page.messages.map(([messageId]) => messageId),
+      pageIndex: page.pageIndex,
+      visiblePageIndex: page.visibleMessagesPageIndex,
+      newestFirst: page.newestFirst,
+      hasLoadedInitialMessages: page.hasLoadedInitialMessages,
+      noMoreToLoad: page.noMoreToLoad,
+      directMessageActive: page.directMessageNavigation != null,
+      directMessageLoading: page.directMessageLoading,
+      messageViewportPreserving: page.messageViewportPreserving,
+      filtersLoading: page.filtersLoading,
+      countsLoading: page.countsLoading,
+      summaryLoading: page.summaryLoading,
+      ...summarizeAnalysisDebugFilters(page.queryState),
+      hasError: page.error != null,
+      hasValidationError: page.validationError != null,
+      editorOpen,
+      skeletonVisible: showLoadingSkeletons,
+    });
+  }, [
+    analysisDebugEnabled,
+    centerTab,
+    editorOpen,
+    leftPanelVisible,
+    page,
+    rightPanelVisible,
+    showLoadingSkeletons,
+  ]);
   const openReport = useCallback(
     (focusTarget: HTMLElement) => {
       reportFocusTargetRef.current = focusTarget;
@@ -124,15 +224,17 @@ export function RerAnalysisNeoPage({
     [page.openReport],
   );
   const requestEditorIntent = useCallback(
-    (key: string, commit: () => void, invokingControl?: HTMLElement) => {
+    (key: string, commit: () => void, invokingControl?: HTMLElement, sourceMessageId?: number) => {
       if (!canWriteMessages(page.currentUser?.roles)) return;
       const focusTarget =
         invokingControl ??
         (document.activeElement instanceof HTMLElement ? document.activeElement : null);
       editorInitialFocusTargetRef.current = focusTarget;
       const applyIntent = () => {
+        setEditorSourceMessageId(sourceMessageId ?? null);
+        setReplyTarget(null);
         if (page.rightPanelOpen) page.toggleRightPanel();
-        if (key === 'create-message') {
+        if (key.startsWith('create-message:')) {
           if (
             isPresent(page.editorMessage) ||
             isPresent(page.reportSource) ||
@@ -161,9 +263,39 @@ export function RerAnalysisNeoPage({
       page.toggleRightPanel,
     ],
   );
-  const openCreateMessageComposer = useCallback(() => {
-    requestEditorIntent('create-message', () => setCreateMessageOpen(true));
-  }, [requestEditorIntent]);
+  const openReplyComposer = useCallback(
+    (target: ReplyTarget) => {
+      requestEditorIntent(
+        `reply:${target.id}`,
+        () => {
+          page.closeEditor();
+          setReplyTarget(target);
+        },
+        target.focus ?? undefined,
+        target.id,
+      );
+    },
+    [requestEditorIntent, page.closeEditor],
+  );
+  const openCreateMessageComposer = useCallback(
+    (focusTarget?: HTMLElement) => {
+      const scopeKey =
+        page.groupNavigation.scope.kind === 'group' ? page.groupNavigation.scope.masterKey : 'all';
+      requestEditorIntent(
+        `create-message:${scopeKey}`,
+        () => {
+          setCreateMessageGroupMasterKey(
+            page.groupNavigation.scope.kind === 'group'
+              ? page.groupNavigation.scope.masterKey
+              : null,
+          );
+          setCreateMessageOpen(true);
+        },
+        focusTarget,
+      );
+    },
+    [page.groupNavigation.scope, requestEditorIntent],
+  );
   const openMessageEditor = useCallback(
     (messageId: number, invokingControl?: HTMLElement) => {
       const message = page.messages.find(([id]) => id === messageId)?.[1];
@@ -175,6 +307,7 @@ export function RerAnalysisNeoPage({
           page.openEditor(messageId);
         },
         invokingControl,
+        messageId,
       );
     },
     [page.messages, page.openEditor, page.setCenterTab, requestEditorIntent],
@@ -192,16 +325,22 @@ export function RerAnalysisNeoPage({
           page.openReportCreator(messageId, etalonDisplayModel);
         },
         invokingControl,
+        messageId,
       );
     },
     [page.openReportCreator, page.setCenterTab, requestEditorIntent],
   );
   const openReportEditor = useCallback(
-    (messageId: number) => {
-      requestEditorIntent(`edit-report:${messageId}`, () => {
-        page.setCenterTab('messages');
-        page.openReportEditor(messageId);
-      });
+    (messageId: number, sourceMessageId?: number) => {
+      requestEditorIntent(
+        `edit-report:${messageId}`,
+        () => {
+          page.setCenterTab('messages');
+          page.openReportEditor(messageId);
+        },
+        undefined,
+        sourceMessageId,
+      );
     },
     [page.openReportEditor, page.setCenterTab, requestEditorIntent],
   );
@@ -212,6 +351,7 @@ export function RerAnalysisNeoPage({
     openReportEditor,
   };
   const closeMessageEditor = useCallback(() => {
+    setReplyTarget(null);
     if (
       isPresent(page.editorMessage) ||
       isPresent(page.reportSource) ||
@@ -222,6 +362,20 @@ export function RerAnalysisNeoPage({
       setCreateMessageOpen(false);
     }
   }, [page.closeEditor, page.editTargetLoadState.status, page.editorMessage, page.reportSource]);
+
+  useEffect(() => {
+    if (editorOpen || editorSourceMessageId == null) return;
+    return focusAfterEditorSurfacesClose(() => {
+      const sourceItem = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-message-id]'),
+      ).find((item) => item.dataset.messageId === String(editorSourceMessageId));
+      const returnLabel = editorInitialFocusTargetRef.current?.getAttribute('aria-label');
+      const returnControl = Array.from(
+        sourceItem?.querySelectorAll<HTMLElement>('button') ?? [],
+      ).find((button) => button.getAttribute('aria-label') === returnLabel);
+      return returnControl ?? null;
+    });
+  }, [editorOpen, editorSourceMessageId]);
 
   const toggleRightPanel = useCallback(() => {
     if (!editorOpen) {
@@ -266,6 +420,12 @@ export function RerAnalysisNeoPage({
   const content = (
     <RadioFeaturesProvider allowed={page.radioFeaturesAllowed}>
       <Box
+        className={
+          page.largeMediaPreviews && !page.collapseMediaPreviews
+            ? 'message-card-previews-large'
+            : undefined
+        }
+        data-message-card-text-size={page.largeMessageCardText ? 'large' : 'compact'}
         sx={{
           height: '100%',
           minHeight: 0,
@@ -344,13 +504,7 @@ export function RerAnalysisNeoPage({
             }}
           >
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-              {inlineLeftPanelVisible ? (
-                <AnalysisLeftPanel
-                  page={page}
-                  leftPanelVisible
-                  isCompactLayout={isAnalysisCompactLayout}
-                />
-              ) : null}
+              {inlineLeftPanelVisible ? <AnalysisLeftPanel page={page} leftPanelVisible /> : null}
             </Box>
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
               <PointBlacklistPaletteNamesCacheProvider>
@@ -366,6 +520,7 @@ export function RerAnalysisNeoPage({
                     >
                       <AnalysisCenterPanel
                         page={centerPage}
+                        editorHighlightedMessageId={editorHighlightedMessageId}
                         centerTab={centerTab}
                         centerTabs={centerTabs}
                         isCompactLayout={isAnalysisCompactLayout}
@@ -377,6 +532,10 @@ export function RerAnalysisNeoPage({
                         summaryTabId={summaryTabId}
                         mapPanelId={mapPanelId}
                         mapTabId={mapTabId}
+                        filtersPanelId={filtersPanelId}
+                        filterPanelOpen={filterPanelOpen}
+                        onToggleFilterPanel={toggleFilterPanel}
+                        onCloseFilterPanel={closeFilterPanel}
                       />
                     </AudioTranscriptionPreferencesProvider>
                   )}
@@ -389,8 +548,11 @@ export function RerAnalysisNeoPage({
                 editorOpen={editorOpen}
                 analyticsOpen={rightPanelVisible}
                 editor={
-                  <ManageMessageDrawer
+                  <ReplyMessageEditor
+                    replyTarget={replyTarget}
+                    timeBasis={page.queryState.messageTimeBasis ?? 'interception'}
                     ref={editorRef}
+                    hideNetworks={page.hideNetworks || !page.networkVisibilityReady}
                     open={editorOpen}
                     intentKey={editorIntentKey ?? 'closed'}
                     presentation={editorPresentation}
@@ -401,6 +563,10 @@ export function RerAnalysisNeoPage({
                     focusFallbackRef={createMessageFabRef}
                     cyberEchoEnabled={page.cyberEchoEnabled}
                     currentUser={page.currentUser}
+                    initialGroupMasterKey={
+                      replyTarget?.message.groupMasterKey ??
+                      (createMessageOpen ? createMessageGroupMasterKey : null)
+                    }
                     editTarget={page.editorMessage}
                     editAsReport={page.editorEditAsReport}
                     editTargetLoadState={page.editTargetLoadState}
@@ -426,7 +592,7 @@ export function RerAnalysisNeoPage({
                       });
                     }}
                     onCreated={async () => {
-                      page.reload({ preserveMessagePage: true });
+                      page.reload({ preserveMessagePage: true, showMessagesLoading: false });
                       notify({
                         message: page.reportSource
                           ? 'Розвіддонесення успішно створено.'
@@ -474,12 +640,12 @@ export function RerAnalysisNeoPage({
 
         <AnalysisFullscreenPanelDrawer
           anchor="left"
-          title="Фільтри"
-          open={!inlineLeftPanelVisible && leftPanelVisible && !modalEditorOpen}
+          title="Групи"
+          open={!inlineLeftPanelVisible && leftPanelVisible && !editorOpen}
           onClose={page.toggleLeftPanel}
-          maxPanelWidth={400}
+          maxPanelWidth={320}
         >
-          <AnalysisLeftPanel page={page} leftPanelVisible isCompactLayout={false} fullHeight />
+          <AnalysisLeftPanel page={page} leftPanelVisible fullHeight />
         </AnalysisFullscreenPanelDrawer>
 
         <AnalysisReportDialog
@@ -512,7 +678,20 @@ export function RerAnalysisNeoPage({
   return (
     <MessageWriteAccessContext.Provider value={canWriteMessages(page.currentUser?.roles)}>
       <MessageDeleteAccessContext.Provider value={hasRole(page.currentUser?.roles, 'DeleteMsg')}>
-        {content}
+        <MessageRepliesProvider
+          screen="Analysis"
+          newestFirst={page.newestFirst}
+          onReply={openReplyComposer}
+          onNavigate={page.navigateReply}
+          filterRequests={
+            page.inboxReq
+              ? { analysis: { ...page.inboxReq, onlyWithMedia: page.queryState.onlyWithMedia } }
+              : {}
+          }
+          currentUser={page.currentUser}
+        >
+          {content}
+        </MessageRepliesProvider>
       </MessageDeleteAccessContext.Provider>
     </MessageWriteAccessContext.Provider>
   );

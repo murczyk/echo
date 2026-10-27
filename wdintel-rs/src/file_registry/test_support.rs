@@ -13,6 +13,68 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
+pub(crate) const ARCHIVE_SOURCE_SQL: &str = r#"do $fixture$
+declare
+    device uuid := gen_random_uuid();
+    root uuid := gen_random_uuid();
+    source uuid := gen_random_uuid();
+    session uuid := gen_random_uuid();
+    upload uuid := gen_random_uuid();
+    object_key text;
+begin
+    object_key := 'device-file-content/' || device || '/' || source || '/1/' || upload;
+    insert into file_sync_session (id,device_id,mode,status,next_batch_index,received_count,accepted_count,created_count,updated_count,rejected_count,created_at,updated_at)
+    values (session,device,'automatic','open',0,0,0,0,0,0,now(),now());
+    insert into file_entry (id,device_id,kind,name,hierarchy_path,created_at,updated_at)
+    values (root,device,'directory','C:\',file_entry_uuid_label(root),now(),now());
+    insert into file_entry (id,device_id,parent_id,kind,name,absolute_path,hierarchy_path,revision,sync_id,analysis_input_revision,created_at,updated_at)
+    values (source,device,root,'file','archive.zip','C:\archive.zip',file_entry_uuid_label(root)||file_entry_uuid_label(source),2,session,1,now(),now());
+    insert into file_revision (id,revision,device_id,sync_id,name,absolute_path,mime_type,extension,created_at,source_sequence,analysis_input_revision)
+    values (source,1,device,session,'archive.zip','C:\archive.zip','application/zip','zip',now(),1,1),
+           (source,2,device,session,'archive.zip','C:\archive.zip','application/zip','zip',now(),2,1);
+    insert into file_content_upload (id,device_id,file_id,revision,created_by_login_id,upload_length,expected_sha256,object_key,status,created_at,last_activity_at,expires_at,hard_expires_at,next_cleanup_at)
+    values (upload,device,source,1,gen_random_uuid(),1,decode(repeat('01',32),'hex'),object_key,'open',now(),now(),now()+interval '1 hour',now()+interval '1 day',now()+interval '1 hour');
+    update file_content_upload set status='completed',next_cleanup_at=now() where id=upload;
+    insert into file_content (file_id,revision,upload_id,object_key,source_size_bytes,source_sha256,is_encrypted,created_at)
+    values (source,1,upload,object_key,1,decode(repeat('01',32),'hex'),true,now());
+    insert into file_content (file_id,revision,upload_id,object_key,source_size_bytes,source_sha256,is_encrypted,created_at)
+    values (source,2,upload,object_key,1,decode(repeat('01',32),'hex'),true,now());
+    update file_entry set content_path=object_key where id=source;
+end
+$fixture$;
+"#;
+
+pub(crate) const ARCHIVE_PUBLICATION_SQL: &str = r#"do $fixture$
+declare
+    archive uuid := '00000000-0000-0000-0000-000000000101';
+    job file_archive;
+    source file_revision;
+    path ltree;
+    child uuid;
+    member_name text;
+    ordinal bigint := 0;
+begin
+    select * into strict job from file_archive where id=archive;
+    select * into strict source from file_revision where id=job.source_file_id and revision=job.source_revision;
+    select hierarchy_path into strict path from file_entry where id=job.source_file_id;
+    update file_archive set state='running',attempts=1,run_id=gen_random_uuid(),heartbeat_at=now(),first_started_at=now(),deadline=now()+interval '1 day',declared_nodes=2 where id=archive;
+    foreach member_name in array array['Report.txt','report.txt'] loop
+        child := gen_random_uuid();
+        insert into file_entry(id,device_id,parent_id,kind,name,hierarchy_path,archive_file_id,archive_relative_path,revision,sync_id,is_archive,created_at,updated_at)
+        values(child,job.device_id,job.source_file_id,'file',member_name,path||file_entry_uuid_label(child),job.source_file_id,member_name,job.source_revision,source.sync_id,lower(member_name) like '%.zip',now(),now()) on conflict(archive_file_id,archive_relative_path,kind) do nothing;
+        select id into strict child from file_entry where archive_file_id=job.source_file_id and archive_relative_path=member_name and kind='file';
+        insert into file_revision(id,revision,device_id,sync_id,name,origin_archive_id,archive_member_index,is_archive,created_at)
+        values(child,job.source_revision,job.device_id,source.sync_id,member_name,archive,ordinal,lower(member_name) like '%.zip',now());
+        insert into file_content(file_id,revision,origin_archive_id,object_key,source_size_bytes,source_sha256,is_encrypted,created_at)
+        values(child,job.source_revision,archive,'archive-test/'||archive||'/'||child,1,decode(repeat('01',32),'hex'),false,now());
+        update file_entry set revision=job.source_revision,sync_id=source.sync_id,content_path='archive-test/'||archive||'/'||child,updated_at=now() where id=child and revision<=job.source_revision;
+        ordinal:=ordinal+1;
+    end loop;
+    update file_archive set state='ready',heartbeat_at=null where id=archive;
+end
+$fixture$;
+"#;
+
 pub(crate) async fn insert_entry(
     db: &DatabaseConnection,
     mut entry: file_entry::ActiveModel,
@@ -85,14 +147,17 @@ pub(crate) async fn insert_entry(
     entry.current_analysis_run_id = Set(None);
     let file = entry.insert(&transaction).await.unwrap();
     file_revision::ActiveModel {
+        is_archive: sea_orm::ActiveValue::NotSet,
+        archive_member_index: sea_orm::ActiveValue::NotSet,
+        origin_archive_id: sea_orm::ActiveValue::NotSet,
         id: Set(file.id),
         revision: Set(1),
         device_id: Set(file.device_id),
         sync_id: Set(sync_id),
-        source_sequence: Set(source_sequence),
-        analysis_input_revision: Set(1),
+        source_sequence: Set(Some(source_sequence)),
+        analysis_input_revision: Set(Some(1)),
         name: Set(file.name.clone()),
-        absolute_path: Set(file.absolute_path.clone().unwrap()),
+        absolute_path: Set(file.absolute_path.clone()),
         mime_type: Set(file.mime_type.clone()),
         extension: Set(file.extension.clone()),
         file_metadata_created_at: Set(file
@@ -156,22 +221,27 @@ where
     upload.status = Set(FileContentUploadStatus::Completed);
     upload.next_cleanup_at = Set(Some(now));
     upload.update(db).await.unwrap();
-    file_content::ActiveModel {
+    file_content::Entity::insert(file_content::ActiveModel {
+        origin_archive_id: sea_orm::ActiveValue::NotSet,
         file_id: Set(file.id),
         revision: Set(revision),
-        upload_id: Set(upload_id),
+        upload_id: Set(Some(upload_id)),
         object_key: Set(object_key.clone()),
         source_size_bytes: Set(1),
         source_sha256: Set(source_sha256),
         is_encrypted: Set(true),
         created_at: Set(now),
-    }
-    .insert(db)
+    })
+    .exec_without_returning(db)
     .await
     .unwrap();
-    let mut file = file.clone().into_active_model();
-    file.content_path = Set(Some(object_key.clone()));
-    file.update(db).await.unwrap();
+    db.execute_raw(sea_orm::Statement::from_sql_and_values(
+        sea_orm::DbBackend::Postgres,
+        "update file_entry set content_path=$2 where id=$1",
+        [file.id.into(), object_key.clone().into()],
+    ))
+    .await
+    .unwrap();
 
     object_key
 }

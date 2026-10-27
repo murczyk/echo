@@ -1,3 +1,4 @@
+mod m20261023_071318_device_audio_forwarding;
 pub use sea_orm_migration::prelude::*;
 
 mod m20260719_174625_create_file_registry_device_file;
@@ -26,6 +27,19 @@ mod m20260921_122222_device_sync_session_history;
 mod m20261003_152726_create_device_audio;
 mod m20261006_082251_device_documents;
 mod m20261006_082252_file_history_search;
+mod m20261007_162050_file_preview;
+mod m20261008_124822_device_audio_preparation;
+mod m20261008_183827_file_preview_archive_members;
+
+mod m20261010_130006_device_audio_asr;
+mod m20261012_094502_device_audio_asr_scan_indexes;
+
+mod m20261016_165725_device_audio_transcription_pending;
+
+mod m20261016_172538_retire_device_audio_asr_executor;
+
+mod m20261017_101924_drop_device_audio_transcription_backfill;
+mod m20261019_101619_file_archive_registry;
 
 pub struct Migrator;
 
@@ -74,6 +88,16 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_152726_create_device_audio::Migration),
             Box::new(m20261006_082251_device_documents::Migration),
             Box::new(m20261006_082252_file_history_search::Migration),
+            Box::new(m20261007_162050_file_preview::Migration),
+            Box::new(m20261008_124822_device_audio_preparation::Migration),
+            Box::new(m20261008_183827_file_preview_archive_members::Migration),
+            Box::new(m20261010_130006_device_audio_asr::Migration),
+            Box::new(m20261012_094502_device_audio_asr_scan_indexes::Migration),
+            Box::new(m20261016_165725_device_audio_transcription_pending::Migration),
+            Box::new(m20261016_172538_retire_device_audio_asr_executor::Migration),
+            Box::new(m20261017_101924_drop_device_audio_transcription_backfill::Migration),
+            Box::new(m20261019_101619_file_archive_registry::Migration),
+            Box::new(m20261023_071318_device_audio_forwarding::Migration),
         ]
     }
 }

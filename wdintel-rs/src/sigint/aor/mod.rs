@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::entities::*;
 use crate::types::*;
 use crate::users::{ensure_admin, has_any_role, login_id_from_identity};
@@ -23,7 +24,13 @@ pub async fn aor_list(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Admin", "UnitsEditor", "Rer", "Cyber", "Api"],
+        vec![
+            "Admin",
+            "UnitsEditor",
+            "Rer",
+            ROLE_CYBER_VIEWER_RESTRICTED,
+            "Api",
+        ],
     )
     .await?;
 
@@ -87,9 +94,6 @@ pub async fn update_aor(
     crate::battle_line::lock_updates(&txn).await.c(h!())?;
     let aor = model.update(&txn).await.c(h!())?;
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
-        .await
-        .c(h!())?;
-    crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
@@ -196,11 +200,6 @@ pub async fn update_aor_battle_line_boundaries(
         save_battle_line_boundaries(&txn, resolved, battle_line_active)
             .await
             .c(h!())?;
-    if battle_line_active && !updated.is_empty() {
-        crate::battle_line::requeue_settlement_links(&txn)
-            .await
-            .c(h!())?;
-    }
     if battle_line_active {
         for aor in &updated {
             crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
@@ -239,9 +238,6 @@ pub async fn delete_aor(
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
         .await
         .c(h!())?;
-    crate::battle_line::requeue_settlement_links(&txn)
-        .await
-        .c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
         &txn,
         &aor,
@@ -262,7 +258,7 @@ pub async fn update_aor_report_order(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Admin", "Rer", "Cyber"],
+        vec!["Admin", "Rer", ROLE_CYBER_VIEWER_RESTRICTED],
     )
     .await
     .c(h!())?;

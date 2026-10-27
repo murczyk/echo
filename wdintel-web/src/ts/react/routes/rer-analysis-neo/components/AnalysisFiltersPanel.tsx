@@ -6,7 +6,10 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
-import { buildAnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
+import {
+  buildAnalysisFiltersPanelDerivedData,
+  buildCallsignFilterOptions,
+} from './analysis-filters-panel-derived';
 import { AnalysisFiltersPanelSections } from './analysis-filters-panel-sections';
 import {
   getInitialExpandedSections,
@@ -26,7 +29,7 @@ export const analysisCompactFiltersContentSx = {
 export const analysisFiltersPaperSx = {
   px: { xs: 1, lg: 1.5 },
   pb: { xs: 0, lg: 1.5 },
-  pt: 0,
+  pt: { xs: 0, lg: 1 },
   overflow: { xs: 'visible', md: 'auto' },
   minHeight: 0,
   height: { xs: 'auto', md: '50dvh', lg: '100%' },
@@ -38,6 +41,7 @@ export function AnalysisFiltersPanel({
   page,
   isCompactLayout = false,
   fullHeight = false,
+  hideGroupSelection = false,
 }: AnalysisFiltersPanelProps) {
   const {
     isDirty,
@@ -45,7 +49,6 @@ export function AnalysisFiltersPanel({
     canResetFilters,
     cyberEchoEnabled,
     aorEntries,
-    countsLoading,
     filtersLoading,
     isFilterSectionEmptyLoading,
     isFilterSectionLoading,
@@ -60,7 +63,8 @@ export function AnalysisFiltersPanel({
     queryState,
     unitsExactMatchOnlyDefault,
     analysisAorFilterEnabled,
-    rerReportEnabled,
+    hideNetworks,
+    rerReportFilterEnabled,
     saveInFlight,
     savedFilterName,
     savedFilters,
@@ -80,10 +84,15 @@ export function AnalysisFiltersPanel({
   } = page;
   const [expandedSections, setExpandedSections] = useState(() => getInitialExpandedSections());
   const [mobileExpanded, setMobileExpanded] = useState(false);
+  const callsignsOptions = useMemo(
+    () => buildCallsignFilterOptions(options.callsigns),
+    [options.callsigns],
+  );
   const derived = useMemo(
     () =>
       buildAnalysisFiltersPanelDerivedData({
         aorEntries,
+        callsignsOptions,
         counts,
         groupInfos,
         options,
@@ -92,7 +101,17 @@ export function AnalysisFiltersPanel({
         tagsOrder,
         unitsMap,
       }),
-    [aorEntries, counts, groupInfos, options, queryState, tagsMap, tagsOrder, unitsMap],
+    [
+      aorEntries,
+      callsignsOptions,
+      counts,
+      groupInfos,
+      options,
+      queryState,
+      tagsMap,
+      tagsOrder,
+      unitsMap,
+    ],
   );
 
   const toggleSection = (section: FilterSectionId) => {
@@ -195,8 +214,8 @@ export function AnalysisFiltersPanel({
             >
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
+                  threadOnly={page.threadMode != null}
                   counts={counts}
-                  countsLoading={countsLoading}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
@@ -210,7 +229,9 @@ export function AnalysisFiltersPanel({
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   analysisAorFilterEnabled={analysisAorFilterEnabled}
-                  rerReportEnabled={rerReportEnabled}
+                  hideNetworks={hideNetworks}
+                  hideGroupSelection={hideGroupSelection}
+                  rerReportFilterEnabled={rerReportFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
                   updateQueryState={updateQueryState}
@@ -258,8 +279,8 @@ export function AnalysisFiltersPanel({
             <>
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
+                  threadOnly={page.threadMode != null}
                   counts={counts}
-                  countsLoading={countsLoading}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derived}
                   expandedSections={expandedSections}
@@ -273,7 +294,9 @@ export function AnalysisFiltersPanel({
                   queryState={queryState}
                   unitsExactMatchOnlyDefault={unitsExactMatchOnlyDefault}
                   analysisAorFilterEnabled={analysisAorFilterEnabled}
-                  rerReportEnabled={rerReportEnabled}
+                  hideNetworks={hideNetworks}
+                  hideGroupSelection={hideGroupSelection}
+                  rerReportFilterEnabled={rerReportFilterEnabled}
                   setIncludeOnlyNewFreqs={setIncludeOnlyNewFreqs}
                   toggleSection={toggleSection}
                   updateQueryState={updateQueryState}

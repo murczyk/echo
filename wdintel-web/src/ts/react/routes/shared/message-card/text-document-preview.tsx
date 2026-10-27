@@ -21,10 +21,12 @@ type TextDocumentPreviewProps = {
   kindLabel: 'TXT' | 'Markdown';
   renderText: (text: string) => ReactNode;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 };
 
-function formatTextPreviewErrorMessage(
+export function formatTextPreviewErrorMessage(
   kindLabel: 'TXT' | 'Markdown',
   error: string | null,
 ): string {
@@ -263,7 +265,9 @@ export function TextDocumentPreview({
   kindLabel,
   renderText,
   sizeBytes,
+  maxBytes = MAX_TEXT_PREVIEW_BYTES,
   onError,
+  signal,
 }: TextDocumentPreviewProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [text, setText] = useState('');
@@ -271,30 +275,34 @@ export function TextDocumentPreview({
 
   useEffect(() => {
     const abortController = new AbortController();
+    const abort = () => abortController.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     let disposed = false;
 
     const load = async () => {
       setStatus('loading');
       setText('');
       setError(null);
+      if (abortController.signal.aborted) return;
 
       try {
-        if (sizeBytes != null && sizeBytes > MAX_TEXT_PREVIEW_BYTES) {
+        if (sizeBytes != null && sizeBytes > maxBytes) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
         const { buffer, contentLength, contentType } = await fetchCachedDocumentResponse(
           href,
-          MAX_TEXT_PREVIEW_BYTES,
+          maxBytes,
           'TEXT_FILE_TOO_LARGE',
           abortController.signal,
         );
 
-        if (contentLength != null && contentLength > MAX_TEXT_PREVIEW_BYTES) {
+        if (contentLength != null && contentLength > maxBytes) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
-        if (buffer.byteLength > MAX_TEXT_PREVIEW_BYTES) {
+        if (buffer.byteLength > maxBytes) {
           throw new Error('TEXT_FILE_TOO_LARGE');
         }
 
@@ -305,7 +313,7 @@ export function TextDocumentPreview({
         }
         const decoded = decoder.decode(bytes.subarray(bomLength));
         const nextText = decoded.startsWith(UTF8_BOM) ? decoded.slice(1) : decoded;
-        if (disposed) return;
+        if (disposed || abortController.signal.aborted) return;
         setText(nextText);
         setStatus('ready');
       } catch (loadError) {
@@ -320,9 +328,10 @@ export function TextDocumentPreview({
 
     return () => {
       disposed = true;
+      signal?.removeEventListener('abort', abort);
       abortController.abort();
     };
-  }, [href, sizeBytes, onError]);
+  }, [href, sizeBytes, maxBytes, onError, signal]);
 
   if (status === 'error') {
     return (
@@ -370,17 +379,23 @@ export function TextDocumentPreview({
 export function TxtDocumentPreview({
   href,
   sizeBytes,
+  maxBytes,
   onError,
+  signal,
 }: {
   href: string;
   sizeBytes?: number | null;
+  maxBytes?: number;
   onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 }) {
   return (
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
+      maxBytes={maxBytes}
       onError={onError}
+      signal={signal}
       kindLabel="TXT"
       renderText={(text) => (
         <Box
@@ -407,14 +422,23 @@ export function TxtDocumentPreview({
 export function MarkdownDocumentPreview({
   href,
   sizeBytes,
+  maxBytes,
+  onError,
+  signal,
 }: {
   href: string;
   sizeBytes?: number | null;
+  maxBytes?: number;
+  onError?: (error: unknown) => void;
+  signal?: AbortSignal;
 }) {
   return (
     <TextDocumentPreview
       href={href}
       sizeBytes={sizeBytes}
+      maxBytes={maxBytes}
+      onError={onError}
+      signal={signal}
       kindLabel="Markdown"
       renderText={(text) => (
         <Box sx={{ px: 3, py: 2.5, color: 'text.primary', '& > *:first-of-type': { mt: 0 } }}>

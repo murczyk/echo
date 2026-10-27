@@ -81,6 +81,100 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
   });
 
+  it('persists independent group scopes without changing aggregate group filters', async () => {
+    const { apiRef } = await mountLoadedFeed();
+
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((current) => [
+        {
+          ...current[0],
+          groupScopeMasterKey: 'group-a',
+          filter: { ...current[0].filter, groupsSelected: ['group-a', 'group-b'] },
+        },
+        {
+          ...current[0],
+          id: 'mf-1',
+          groupScopeMasterKey: 'group-b',
+        },
+      ]);
+      await flushMicrotasks();
+    });
+
+    expect(readPersistedDutyFilterState()).toMatchObject({
+      messageFeeds: [
+        [
+          'mf-0',
+          expect.objectContaining({ groupsSelected: ['group-a', 'group-b'] }),
+          expect.objectContaining({ groupScopeMasterKey: 'group-a' }),
+        ],
+        ['mf-1', expect.any(Object), expect.objectContaining({ groupScopeMasterKey: 'group-b' })],
+      ],
+    });
+  });
+
+  it('#3727 migrates a persisted group scope into the legacy filter before the initial request', async () => {
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-stored',
+          { ...emptyFilter(), groupsSelected: ['aggregate-group'] },
+          {
+            adjacentFreqsRange: 0,
+            highlightSignalsEnabled: false,
+            onlyMyUnitTagsEnabled: false,
+            groupScopeMasterKey: 'scoped-group',
+          },
+        ],
+      ],
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current?.messageFeeds[0]).toMatchObject({
+      groupScopeMasterKey: null,
+      filter: expect.objectContaining({ groupsSelected: ['scoped-group'] }),
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedGroups: ['scoped-group'], deniedGroups: null }),
+    );
+  });
+
+  it('#3727 updates the legacy group filter and clears it when all groups is selected', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((current) =>
+        current.map((feed) => ({
+          ...feed,
+          filter: { ...feed.filter, groupsSelected: ['group-a', 'group-b'] },
+        })),
+      );
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      apiRef.current!.setGroupScope('mf-0', 'group-a');
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: ['group-a'], deniedGroups: null }),
+    );
+    expect(apiRef.current?.messageFeeds[0]?.filter.groupsSelected).toEqual(['group-a']);
+
+    await act(async () => {
+      apiRef.current!.setGroupScope('mf-0', null);
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: null }),
+    );
+  });
+
   it('restores every persisted filter option before the initial request', async () => {
     persistDutyFilterState({
       messageFeeds: [
@@ -467,6 +561,43 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages.mock.calls[0][0].reportTagsOnlyThisUnit).toBeNull();
   });
 
+  it('#3612 keeps off-window unread identities when navigating to a historical reply', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(62, 78));
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: rangeRsp(62, 81).inboxItems,
+          readIds: new Set(Array.from({ length: 17 }, (_, index) => index + 62)),
+          pendingNewerItems: rangeRsp(82, 82).inboxItems,
+          windowedUnreadItems: new Map([
+            [79, 7900],
+            [80, 8000],
+            [81, 8100],
+          ]),
+          unreadCount: 4,
+        })),
+      );
+    });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(22, 41));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(63, 82));
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(rangeRsp(21, 21));
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', { beforeIdNoninclusive: 21, messageIds: [21] });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      await flushMicrotasks();
+    });
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.some(([id]) => id === 21)).toBe(true);
+    expect(feed.unreadCount).toBe(4);
+    expect(feed.unresolvedUnreadIds).toEqual(new Set([79, 80, 81, 82]));
+    expect(feed.readIds.has(21)).toBe(true);
+  });
+
   it('loads a direct-link target with an exact pagination cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockClear();
@@ -501,6 +632,71 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(loadedIds.at(0)).toBe(21);
     expect(loadedIds.indexOf(41)).toBe(20);
     expect(loadedIds.at(-1)).toBe(60);
+  });
+
+  it('does not count pre-existing newer messages as unread after opening a direct link', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchInboxMessages.mockImplementation(async (request) => {
+      if (request.loadLatest) return rangeRsp(62, 81);
+      if (request.beforeIdNoninclusive === 41) return rangeRsp(1, 40);
+      if (request.sinceIdNoninclusive === 41) return rangeRsp(42, 61);
+      if (request.sinceIdNoninclusive === 60) return rangeRsp(61, 80);
+      if (request.sinceIdNoninclusive === 80)
+        return inboxRsp([[82, minimalInboxMessage({ createdAtOrder: 8200 })]]);
+      return inboxRsp([]);
+    });
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(
+      inboxRsp([[41, minimalInboxMessage({ createdAtOrder: 4100 })]]),
+    );
+    hoisted.fetchInboxCount.mockImplementation(async (request) => ({
+      quantity: Math.max(0, 81 - (request.sinceIdNoninclusive ?? 0)),
+      firstElementTs: null,
+    }));
+
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 41,
+        messageIds: [41],
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true);
+      await flushMicrotasks();
+    });
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+      await flushMicrotasks();
+    });
+
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await act(async () => {
+      apiRef.current!.flushPendingNewerMessages('mf-0', { allowWindowTrim: true, urgent: true });
+      await flushMicrotasks();
+    });
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(0);
+
+    await act(async () => {
+      apiRef.current!.catchUpFeedUnreadToTail('mf-0', { id: 80, timestamp: 8000 });
+      await flushMicrotasks();
+      await apiRef.current!.requestValidatedInboxCount('mf-0');
+    });
+    expect(hoisted.fetchInboxCount).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 81 }),
+      expect.anything(),
+    );
+
+    await act(async () => {
+      await apiRef.current!.loadFeedNewerMessages('mf-0', { showLoading: false });
+      await flushMicrotasks();
+    });
+    expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(1);
   });
 
   it('merges reference metadata loaded exclusively for a direct-link target', async () => {

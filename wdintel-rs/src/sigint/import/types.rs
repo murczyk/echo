@@ -74,6 +74,7 @@ mod tests {
     #[test]
     fn legacy_etalon_units_default_extended_hierarchy_fields() {
         let unit = sigint_unit::Model {
+            combat_type_id: None,
             id: 1,
             other: String::new(),
             team_or_crew: String::new(),

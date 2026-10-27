@@ -25,7 +25,7 @@ type Props = {
   onOpen?: (index: number) => void;
 };
 
-const PREVIEW_ROOT_MARGIN = '160px 0px';
+const PREVIEW_ROOT_MARGIN = '1000px 0px';
 const EMPTY_TAGS_MAP: Record<number, Tag> = {};
 const EMPTY_POINTS: CoordinatePreviewPoint[] = [];
 
@@ -36,7 +36,8 @@ function coordinatePreviewInputKey(message: InboxMessage, tagsMap: Record<number
     etalons: collectCoordinatePreviewEtalons(message, tagsMap),
     media: (message.media ?? []).map((media) => ({
       id: media.id,
-      summary: media.summary,
+      coordinateStatus: media.coordinateStatus,
+      summary: media.coordinateStatus == null ? media.summary : null,
       positions: media.positions,
     })),
     text: message.text,
@@ -83,7 +84,11 @@ export function MessageCardCoordinateAttachment({ msg, tagsMap, onPointsChange, 
           setIsNearViewport(true);
         }
       },
-      { rootMargin: PREVIEW_ROOT_MARGIN, threshold: 0.01 },
+      {
+        root: host.closest('[data-message-feed-scroller]'),
+        rootMargin: PREVIEW_ROOT_MARGIN,
+        threshold: 0.01,
+      },
     );
     observer.observe(host);
     return () => observer.disconnect();

@@ -1,5 +1,10 @@
 import type {
+  DeviceArchiveStatus,
+  DeviceAudioForwardingSettings,
+  DeviceFileContentRef,
   DeviceAnalyticsSummaryReq,
+  LocateDeviceFileReq,
+  LocateDeviceFileRsp,
   ListDeviceSyncSessionsReq,
   ListDeviceSyncSessionsRsp,
   GetDeviceSyncSessionReq,
@@ -44,7 +49,7 @@ import type {
   UpdateDeviceReq,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
-import { getBytes, headResponse, postJson } from './client';
+import { getBytes, getJson, headResponse, postJson } from './client';
 import type { JsonBody, RequestOptions } from './client';
 
 export type CreateDeviceInput = {
@@ -60,6 +65,7 @@ export type DeviceUpdatePatchInput = {
   name?: NonNullable<UpdateDeviceReq['name']>;
   aorIds?: NonNullable<UpdateDeviceReq['aorIds']>;
   unitId?: UpdateDeviceReq['unitId'];
+  audioForwarding?: NonNullable<UpdateDeviceReq['audioForwarding']>;
 };
 
 export type DeviceSettingsInput = Partial<DeviceSettingsReq>;
@@ -74,6 +80,7 @@ function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatc
   if (input.name !== undefined) req.name = input.name;
   if (input.aorIds !== undefined) req.aorIds = input.aorIds;
   if (input.unitId !== undefined) req.unitId = input.unitId;
+  if (input.audioForwarding !== undefined) req.audioForwarding = input.audioForwarding;
 
   return req;
 }
@@ -231,7 +238,7 @@ export function getDeviceFileContent(href: string, options?: RequestOptions) {
 export async function getDeviceFileContentSize(href: string, options?: RequestOptions) {
   const response = await headResponse(href, options);
   const length = response.headers.get('content-length');
-  const size = length === null ? null : Number(length);
+  const size = length === null || !/^\d+$/.test(length) ? null : Number(length);
   return size !== null && Number.isSafeInteger(size) && size >= 0 ? size : null;
 }
 
@@ -346,4 +353,44 @@ export async function getDeviceSyncSessionSummaries(
     options,
   );
   return transformSnakeToCamel<DeviceSyncSessionSummariesRsp>(data);
+}
+
+export async function locateDeviceFile(req: LocateDeviceFileReq, options?: RequestOptions) {
+  const data = await postJson('/api/device/files/locate', req, options);
+  return transformSnakeToCamel<LocateDeviceFileRsp>(data);
+}
+
+function deviceArchiveUrl(deviceId: string, fileId: string, revision: number) {
+  if (!Number.isSafeInteger(revision) || revision <= 0) throw new Error('Некоректна ревізія файлу');
+  return `/api/device/files/${encodeURIComponent(deviceId)}/${encodeURIComponent(fileId)}/revisions/${revision}/archive`;
+}
+
+export async function getDeviceArchive(
+  deviceId: string,
+  fileId: string,
+  revision: number,
+  options?: RequestOptions,
+): Promise<DeviceArchiveStatus> {
+  return transformSnakeToCamel(
+    await getJson(deviceArchiveUrl(deviceId, fileId, revision), options),
+  );
+}
+
+export async function ensureDeviceArchive(
+  deviceId: string,
+  fileId: string,
+  revision: number,
+  options?: RequestOptions,
+): Promise<DeviceArchiveStatus> {
+  return transformSnakeToCamel(
+    await postJson(deviceArchiveUrl(deviceId, fileId, revision), undefined, options),
+  );
+}
+
+export async function getDeviceAudioForwarding(
+  deviceId: string,
+  options?: RequestOptions,
+): Promise<DeviceAudioForwardingSettings> {
+  const data = await postJson('/api/device/audio/forwarding', { device_id: deviceId }, options);
+  return transformSnakeToCamel<DeviceAudioForwardingSettings>(data);
 }

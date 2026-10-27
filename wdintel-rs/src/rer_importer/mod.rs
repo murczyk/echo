@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::delta::bgtask_log;
 use crate::entities::signal_profile::Model;
 use crate::entities::*;
@@ -42,6 +43,7 @@ pub mod import_csv;
 pub mod import_kmz;
 pub mod important;
 pub mod inbox;
+pub mod intel_product_filter;
 pub mod location;
 pub mod meow_format;
 pub mod multimessage;
@@ -172,6 +174,22 @@ async fn messenger_media(
         .await
         .c(h!())?;
 
+    if crate::messenger::audio_ref::is_reference(&media)
+        && req
+            .query_string()
+            .split('&')
+            .any(|part| part == "playback=1")
+    {
+        return crate::devices::audio::message_representation(
+            &env,
+            login_id_from_identity(&user).c(h!())?,
+            media.id,
+            crate::devices::audio::types::DeviceAudioRepresentation::Content,
+            Some(&req),
+        )
+        .await;
+    }
+
     Ok(serve_messenger_media(&req, env.as_ref(), &media)
         .await
         .c(h!())?)
@@ -184,21 +202,7 @@ async fn load_authorized_messenger_media(
 ) -> Result<signal_message_media::Model, AppError> {
     ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
-    let media = signal_message_media::Entity::find_by_id(media_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?;
-    crate::messenger::media::ensure_media_access(
-        &env.dbx,
-        &login,
-        media.signal_message_id,
-    )
-    .await
-    .c(h!())?;
-
-    Ok(media)
+    crate::messenger::audio_ref::authorized(env, &login, media_id).await
 }
 
 #[get("/api/messenger/media/{media_id}/playback")]
@@ -212,6 +216,47 @@ async fn messenger_media_playback(
     let media = load_authorized_messenger_media(env.as_ref(), &user, path.0)
         .await
         .c(h!())?;
+    if crate::messenger::audio_ref::is_reference(&media) {
+        return crate::devices::audio::message_representation(
+            &env,
+            login_id_from_identity(&user).c(h!())?,
+            media.id,
+            crate::devices::audio::types::DeviceAudioRepresentation::Content,
+            Some(&req),
+        )
+        .await;
+    }
+    match crate::messenger::media_preview::recommended(&env, &media).await {
+        Ok(true) => {
+            return Ok(HttpResponse::TemporaryRedirect()
+                .insert_header((
+                    header::LOCATION,
+                    format!(
+                        "/api/messenger/media/{}/playback/preview.m3u8",
+                        media.id
+                    ),
+                ))
+                .insert_header((header::CACHE_CONTROL, "private, no-store"))
+                .finish());
+        }
+        Ok(false) => {}
+        Err(error)
+            if error
+                .downcast_ref::<crate::messenger::media_preview::Busy>()
+                .is_some() =>
+        {
+            return Err(AppError::ServiceUnavailable {
+                msg: "video preview is being prepared".to_string(),
+                retry_after_secs: 1,
+            });
+        }
+        Err(error) => {
+            warn!(
+                "video preview inspection failed media_id={}: {error:#}",
+                media.id
+            );
+        }
+    }
     match crate::messenger::media_local_cache::playback_status(
         env.into_inner(),
         &media,
@@ -247,6 +292,62 @@ async fn messenger_media_playback(
     }
 }
 
+#[get("/api/messenger/media/{media_id}/playback/preview.m3u8")]
+async fn messenger_media_preview_playlist(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    let media = load_authorized_messenger_media(&env, &user, path.0)
+        .await
+        .c(h!())?;
+    if !crate::messenger::media_preview::eligible(&media) {
+        return Err(AppError::NotFound);
+    }
+    let playlist = crate::messenger::media_preview::playlist(&env, &media)
+        .await
+        .c(h!())?;
+    Ok(HttpResponse::Ok()
+        .insert_header((header::CONTENT_TYPE, "application/vnd.apple.mpegurl"))
+        .insert_header((header::CACHE_CONTROL, "private, no-store"))
+        .body(playlist))
+}
+
+#[get("/api/messenger/media/{media_id}/playback/segments/{segment}.ts")]
+async fn messenger_media_preview_segment(
+    user: actix_identity::Identity,
+    req: HttpRequest,
+    env: actix_web::web::Data<Env>,
+    path: actix_web::web::Path<(Uuid, u32)>,
+) -> Result<HttpResponse, AppError> {
+    let media = load_authorized_messenger_media(&env, &user, path.0)
+        .await
+        .c(h!())?;
+    if !crate::messenger::media_preview::eligible(&media) {
+        return Err(AppError::NotFound);
+    }
+    match crate::messenger::media_preview::segment(&env, &media, path.1).await {
+        Ok(Some(file)) => Ok(local_messenger_media_response(
+            &req,
+            &media,
+            file,
+            "video/mp2t",
+        )),
+        Ok(None) => Err(AppError::NotFound),
+        Err(error)
+            if error
+                .downcast_ref::<crate::messenger::media_preview::Busy>()
+                .is_some() =>
+        {
+            Err(AppError::ServiceUnavailable {
+                msg: "video preview is being prepared".to_string(),
+                retry_after_secs: 1,
+            })
+        }
+        Err(error) => Err(error).c(h!())?,
+    }
+}
+
 fn local_messenger_media_response(
     req: &HttpRequest,
     media: &signal_message_media::Model,
@@ -279,6 +380,9 @@ pub(crate) async fn serve_messenger_media(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> Result<HttpResponse, AppError> {
+    if crate::messenger::audio_ref::is_reference(media) {
+        return serve_small_messenger_media(req, env, media).await;
+    }
     let cache_config =
         crate::messenger::media_local_cache::configured_config_best_effort(
             &env.config,
@@ -748,12 +852,13 @@ async fn rer_message_attachments_zip(
     // endpoint must not grant access merely because a message URL is known.
     crate::messenger::media::ensure_media_access(&env.dbx, &login, message_id)
         .await?;
-    let media = signal_message_media::Entity::find()
-        .filter(signal_message_media::Column::SignalMessageId.eq(message_id))
-        .order_by_asc(signal_message_media::Column::CreatedAt)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let media = crate::messenger::audio_ref::for_messages(
+        &env,
+        &env.dbx,
+        &[message_id],
+    )
+    .await
+    .c(h!())?;
     if media.len() > crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES {
         return Err(AppError::BL {
             msg: format!(
@@ -1250,7 +1355,7 @@ pub async fn signal_group_info_batch(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await?;
     let is_admin = has_role(&env.dbx, &login_id_from_identity(&user)?, "Admin")
@@ -1279,7 +1384,7 @@ pub async fn signal_groups(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await
     .c(h!())?;
@@ -1398,6 +1503,9 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                         sii.lat IS NOT NULL
                         AND sii.lng IS NOT NULL
                         AND sg.name = $1
+                        AND (sg.datasource_id IS NULL OR sg.datasource_id NOT IN (
+                            SELECT id FROM datasource WHERE kind = $2
+                        ))
                         AND sg.deleted = false
                         AND sii.freq <> TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999')
                 ), invalidated AS (
@@ -1424,7 +1532,10 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                 WHERE
                   sii.id = updated.id
             "#,
-        [group.clone().into()],
+        [
+            group.clone().into(),
+            crate::config::DATASOURCE_ECHO_NATIVE_KIND.into(),
+        ],
     );
 
     // println!("Query: {}", q);
@@ -1434,6 +1545,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     println!("> rounded {} freqs", res.rows_affected());
     if res.rows_affected() > 0 {
         let master_keys = signal_group::Entity::find()
+            .filter(crate::datasource::native::external_group_condition())
             .filter(signal_group::Column::Name.eq(group))
             .filter(signal_group::Column::Deleted.eq(false))
             .select_only()
@@ -1753,6 +1865,9 @@ pub async fn oneoff_reprocess_unit_names(
                 .await
                 .c(h!())?;
                 reset_inbox_pelengs(id, &txn).await.c(h!())?;
+                crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+                    vec![item], &txn,
+                ).await.c(h!())?;
                 txn.commit().await.c(h!())?;
             }
         }
@@ -1857,7 +1972,7 @@ pub async fn senders(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "Api"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "Api"],
     )
     .await
     .c(h!())?;

@@ -224,6 +224,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
             .await
             .unwrap();
     crate::sigint::direct_submit::query::copy_signal_message_media(
+        &env,
         &env.dbx,
         copy_message.id,
         copy_message.id_uuid,
@@ -299,6 +300,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
         .unwrap();
     assert!(unreferenced.is_empty());
     crate::messenger::media::delete_stored_media_files(
+        &env.dbx,
         &unreferenced,
         &[],
         &env.config,
@@ -319,6 +321,7 @@ async fn copied_references_extend_retention_and_serve_ranges_during_origin_outag
         .unwrap();
     assert_eq!(unreferenced.len(), 1);
     crate::messenger::media::delete_stored_media_files(
+        &env.dbx,
         &unreferenced,
         &[],
         &env.config,
@@ -393,6 +396,22 @@ async fn normalized_playback_is_fast_start_and_preserves_original_bytes() {
         data
     );
     assert_eq!(fs::read(original).await.unwrap(), data);
+}
+
+#[tokio::test]
+#[serial]
+async fn cold_plaintext_video_never_waits_for_local_cache_population() {
+    let (env, _guard) = crate::functest::tests::cleanup_locked().await.unwrap();
+    let mut env = env.as_ref().clone();
+    let directory = tempfile::tempdir().unwrap();
+    env.config = config(directory.path());
+    enable_cache(&env).await;
+    let env = std::sync::Arc::new(env);
+    for size in [40 << 30, 20 << 20] {
+        let media = media("cold-video", size);
+        let status = playback_status(env.clone(), &media).await.unwrap();
+        assert!(matches!(status, playback::PlaybackStatus::Original));
+    }
 }
 
 async fn enable_cache(env: &Env) {

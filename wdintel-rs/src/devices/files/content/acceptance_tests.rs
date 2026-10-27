@@ -5,14 +5,14 @@ use actix_identity::{Identity, IdentityMiddleware};
 use actix_session::storage::RedisSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::{Cookie, Key};
-use actix_web::http::{Method, StatusCode};
+use actix_web::http::{header, Method, StatusCode};
 use actix_web::{test, web, App, HttpMessage, HttpRequest, HttpResponse};
 use base64::Engine;
 use chrono::{Duration, Utc};
 use futures_util::stream;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ConnectionTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel,
+    EntityTrait, IntoActiveModel, TransactionTrait,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -23,6 +23,10 @@ use super::{
     finalizer, protocol, repository, runtime_for_test, worker,
     DeviceFileContentRuntime,
 };
+use crate::devices::config::{
+    DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING,
+    DEVICE_FILE_PREVIEW_GEODATA_CONVERTER_VERSION,
+};
 use crate::devices::ROLE_CYBER;
 use crate::entities::{device, login, organism, system_settings};
 use crate::file_registry::entities::{
@@ -31,6 +35,9 @@ use crate::file_registry::entities::{
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
+
+#[path = "archive_access_tests.rs"]
+mod archive_access_tests;
 
 async fn finalize(
     env: &Env,
@@ -144,11 +151,21 @@ impl Fixture {
     }
 
     async fn file(&self, name: &str) -> file_entry::Model {
+        self.file_with_metadata(name, "video/mp4", "mp4").await
+    }
+
+    async fn file_with_metadata(
+        &self,
+        name: &str,
+        mime_type: &str,
+        extension: &str,
+    ) -> file_entry::Model {
         let id = Uuid::new_v4();
         let now = Utc::now().naive_utc();
         crate::file_registry::test_support::insert_entry(
             self.db(),
             file_entry::ActiveModel {
+                archive_file_id: sea_orm::ActiveValue::NotSet,
                 id: Set(id),
                 device_id: Set(self.device.id),
                 parent_id: Set(Some(self.root.id)),
@@ -160,8 +177,8 @@ impl Fixture {
                     self.root.hierarchy_path,
                     id.simple()
                 )),
-                mime_type: Set(Some("video/mp4".to_owned())),
-                extension: Set(Some("mp4".to_owned())),
+                mime_type: Set(Some(mime_type.to_owned())),
+                extension: Set(Some(extension.to_owned())),
                 created_at: Set(now),
                 updated_at: Set(now),
                 ..Default::default()
@@ -262,8 +279,17 @@ macro_rules! cookie {
     }};
 }
 
+#[path = "../archive/access_tests.rs"]
+mod archive_http_access_tests;
+
 #[path = "reuse/acceptance_tests.rs"]
 mod reuse_tests;
+
+#[path = "preview_tests.rs"]
+mod preview_tests;
+
+#[path = "local_cache_tests.rs"]
+mod local_cache_tests;
 
 async fn assert_error(
     error: protocol::ContentError,
@@ -292,10 +318,6 @@ async fn acceptance_legacy_file_sync_survives_unavailable_content_upload_startup
     let fixture = Fixture::new(&env).await;
     let mut config = env.config.clone();
     config.storage_dir = fixture.spool.path().display().to_string();
-    config.device_file_content.upload_max_bytes = 16;
-    config.device_file_content.max_reserved_per_login = 16;
-    config.device_file_content.max_reserved_bytes = 32;
-    config.device_file_content.spool_min_free_bytes = 1;
     config.s3_config = Some(crate::config::S3Config {
         s3_access_key_id: "startup-test-access".to_owned(),
         s3_secret_access_key: "startup-test-secret".to_owned(),
@@ -319,24 +341,7 @@ async fn acceptance_legacy_file_sync_survives_unavailable_content_upload_startup
         )
         .await
         .is_some());
-        for failure in [
-            "missing-s3",
-            "invalid-key",
-            "empty-bucket",
-            "capacity-overflow",
-            "semaphore-overflow",
-            "lifetime-duration-overflow",
-            "lifetime-date-overflow",
-            "idle-duration-overflow",
-            "cleanup-retry-overflow",
-            "cleanup-poll-overflow",
-            "cleanup-batch-overflow",
-        ] {
-            if failure == "cleanup-batch-overflow"
-                && i64::try_from(usize::MAX).is_ok()
-            {
-                continue;
-            }
+        for failure in ["missing-s3", "invalid-key", "empty-bucket"] {
             assert_legacy_sync_after_content_startup_failure(
                 legacy_env.clone(),
                 &fixture,
@@ -368,38 +373,6 @@ async fn assert_legacy_sync_after_content_startup_failure(
             let error = format!("{error:#?}");
             assert!(!error.contains("startup-test-access"));
             assert!(!error.contains("startup-test-secret"));
-        }
-        "capacity-overflow" => {
-            env.config.device_file_content.max_reserved_bytes = u64::MAX;
-        }
-        "semaphore-overflow" => {
-            env.config.device_file_content.finalization_max_concurrent =
-                tokio::sync::Semaphore::MAX_PERMITS + 1;
-        }
-        "lifetime-duration-overflow" => {
-            env.config.device_file_content.upload_max_lifetime_secs =
-                i64::MAX as u64;
-        }
-        "lifetime-date-overflow" => {
-            env.config.device_file_content.upload_max_lifetime_secs =
-                10_000_000_000_000;
-        }
-        "idle-duration-overflow" => {
-            env.config.device_file_content.upload_idle_ttl_secs =
-                i64::MAX as u64;
-            env.config.device_file_content.upload_max_lifetime_secs =
-                i64::MAX as u64;
-        }
-        "cleanup-retry-overflow" => {
-            env.config.device_file_content.cleanup_retry_delay_secs =
-                i64::MAX as u64;
-        }
-        "cleanup-poll-overflow" => {
-            env.config.device_file_content.cleanup_poll_interval_secs =
-                u64::MAX;
-        }
-        "cleanup-batch-overflow" => {
-            env.config.device_file_content.cleanup_batch_size = usize::MAX;
         }
         _ => unreachable!(),
     }
@@ -523,7 +496,7 @@ async fn acceptance_concurrent_creation_enforces_all_reservation_limits() {
             )
             .await
             .unwrap();
-            worker::cleanup_one_for_test(&fixture.runtime, upload.id)
+            worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
                 .await
                 .unwrap();
         }
@@ -698,7 +671,7 @@ async fn acceptance_finalization_digest_retry_capacity_and_immutable_metadata()
         .stat(&upload.object_key)
         .await
         .is_ok());
-    worker::cleanup_one_for_test(&fixture.runtime, upload.id)
+    worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
         .await
         .unwrap();
     assert!(fixture
@@ -1003,7 +976,7 @@ async fn acceptance_cleanup_releases_bytes_but_retains_count_until_object_delete
     std::fs::write(&unavailable_root, b"not a directory").unwrap();
     let mut broken = (*fixture.runtime).clone();
     broken.storage = broken_storage;
-    assert!(worker::cleanup_one_for_test(&broken, upload.id)
+    assert!(worker::cleanup_one_for_test(&env, &broken, upload.id)
         .await
         .is_err());
     let persisted = fixture.persisted(&upload).await;
@@ -1063,7 +1036,7 @@ async fn acceptance_cleanup_releases_bytes_but_retains_count_until_object_delete
     )
     .await
     .unwrap();
-    worker::cleanup_one_for_test(&fixture.runtime, next_upload.id)
+    worker::cleanup_one_for_test(&env, &fixture.runtime, next_upload.id)
         .await
         .unwrap();
     assert!(repository::load_upload(fixture.db(), next_upload.id)
@@ -1074,10 +1047,10 @@ async fn acceptance_cleanup_releases_bytes_but_retains_count_until_object_delete
         .await
         .unwrap()
         .is_some());
-    worker::cleanup_one_for_test(&fixture.runtime, upload.id)
+    worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
         .await
         .unwrap();
-    worker::cleanup_one_for_test(&fixture.runtime, upload.id)
+    worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
         .await
         .unwrap();
     assert!(repository::load_upload(fixture.db(), upload.id)
@@ -2096,9 +2069,10 @@ async fn acceptance_terminal_metrics_count_only_committed_transitions() {
                     .unwrap()
                     .unwrap()
                     .into_active_model();
-            let source_sequence = *revision.source_sequence.as_ref() + 1;
+            let source_sequence =
+                revision.source_sequence.as_ref().unwrap() + 1;
             revision.revision = Set(upload.revision + 1);
-            revision.source_sequence = Set(source_sequence);
+            revision.source_sequence = Set(Some(source_sequence));
             revision.insert(fixture.db()).await.unwrap();
             file_device_source_state::ActiveModel {
                 id: Set(file.device_id),
@@ -2108,6 +2082,7 @@ async fn acceptance_terminal_metrics_count_only_committed_transitions() {
             .await
             .unwrap();
             file_entry::ActiveModel {
+                archive_file_id: sea_orm::ActiveValue::NotSet,
                 id: Set(file.id),
                 revision: Set(Some(upload.revision + 1)),
                 ..Default::default()
@@ -2391,6 +2366,7 @@ async fn acceptance_autonomous_cleanup_skips_busy_poison_and_takes_over_lease()
     let _first_cancel_guard = first_cancel.clone().drop_guard();
     let started = Instant::now();
     let first = tokio::spawn(worker::run_nofail(
+        env.clone(),
         fixture.runtime.clone(),
         first_cancel.clone(),
     ));
@@ -2419,6 +2395,7 @@ async fn acceptance_autonomous_cleanup_skips_busy_poison_and_takes_over_lease()
     let second_cancel = tokio_util::sync::CancellationToken::new();
     let _second_cancel_guard = second_cancel.clone().drop_guard();
     let second = tokio::spawn(worker::run_nofail(
+        env.clone(),
         fixture.runtime.clone(),
         second_cancel.clone(),
     ));
@@ -2475,7 +2452,7 @@ async fn acceptance_autonomous_cleanup_skips_busy_poison_and_takes_over_lease()
 async fn wait_for_finalization_queue(runtime: &DeviceFileContentRuntime) {
     tokio::time::timeout(std::time::Duration::from_millis(500), async {
         while runtime.finalization_waiters.available_permits()
-            == crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
+            == DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
         {
             tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
@@ -2573,7 +2550,7 @@ async fn acceptance_queued_finalization_releases_spool_and_rechecks_authorizatio
         );
         assert_eq!(
             fixture.runtime.finalization_waiters.available_permits(),
-            crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
+            DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
         );
         assert_eq!(
             fixture.runtime.finalization_permits.available_permits(),
@@ -2630,7 +2607,7 @@ async fn acceptance_finalization_timeout_does_not_refresh_revoked_upload() {
     assert_eq!(after.last_activity_at, before.last_activity_at);
     assert_eq!(
         fixture.runtime.finalization_waiters.available_permits(),
-        crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
+        DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
     );
 }
 
@@ -2657,15 +2634,13 @@ async fn acceptance_finalization_queue_is_bounded_and_cancellation_releases_slot
     drop(waiting);
     assert_eq!(
         fixture.runtime.finalization_waiters.available_permits(),
-        crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
+        DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING
     );
     let full = fixture
         .runtime
         .finalization_waiters
         .clone()
-        .acquire_many_owned(
-            crate::config::DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING as u32,
-        )
+        .acquire_many_owned(DEVICE_FILE_CONTENT_FINALIZATION_MAX_WAITING as u32)
         .await
         .unwrap();
     let error = tokio::time::timeout(
@@ -2830,28 +2805,10 @@ async fn acceptance_database_lock_wait_counts_toward_upload_expiry() {
 
 #[actix_web::test]
 async fn acceptance_duration_boundaries_fail_closed_without_panicking() {
-    let config = crate::config::DeviceFileContentConfig::default();
-    assert!(config.validate().is_ok());
     let now = Utc::now().fixed_offset();
     for seconds in [u64::MAX, i64::MAX as u64, 10_000_000_000_000] {
         assert!(repository::deadline_after(now, seconds).is_err());
-        for field in ["idle", "lifetime", "retry"] {
-            let mut config = config.clone();
-            match field {
-                "idle" => {
-                    config.upload_idle_ttl_secs = seconds;
-                    config.upload_max_lifetime_secs = seconds;
-                }
-                "lifetime" => config.upload_max_lifetime_secs = seconds,
-                "retry" => config.cleanup_retry_delay_secs = seconds,
-                _ => unreachable!(),
-            }
-            assert!(config.validate().is_err(), "{field}: {seconds}");
-        }
     }
-    let mut config = config.clone();
-    config.cleanup_poll_interval_secs = u64::MAX;
-    assert!(config.validate().is_err());
     assert!(repository::deadline_after(
         chrono::DateTime::<Utc>::MAX_UTC.fixed_offset(),
         1,
@@ -2865,8 +2822,8 @@ async fn acceptance_duration_boundaries_fail_closed_without_panicking() {
 
 #[actix_web::test]
 #[serial_test::serial]
-async fn acceptance_content_read_requires_visible_device_and_current_publication(
-) {
+async fn acceptance_content_read_requires_visible_device_and_exact_publication()
+{
     let (mut env, _guard) = cleanup_locked().await.unwrap();
     let fixture = Fixture::new(&env).await;
     let bytes = "Текст для перегляду\n<script>read only</script>".as_bytes();
@@ -2933,6 +2890,7 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
     });
     let app = app!(env);
     let reader_cookie: Cookie<'static> = cookie!(app, reader.id);
+    let expired_cookie: Cookie<'static> = cookie!(app, Uuid::new_v4());
     let basic_cookie: Cookie<'static> = cookie!(app, basic.id);
     let outsider_cookie: Cookie<'static> = cookie!(app, outsider.id);
     let path = format!(
@@ -2942,6 +2900,7 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
     for method in [Method::GET, Method::HEAD] {
         for (cookie, status) in [
             (None, StatusCode::UNAUTHORIZED),
+            (Some(expired_cookie.clone()), StatusCode::UNAUTHORIZED),
             (Some(basic_cookie.clone()), StatusCode::FORBIDDEN),
             (Some(outsider_cookie.clone()), StatusCode::NOT_FOUND),
         ] {
@@ -2967,6 +2926,14 @@ async fn acceptance_content_read_requires_visible_device_and_current_publication
         assert_eq!(
             response.headers().get("content-length").unwrap(),
             bytes.len().to_string().as_str()
+        );
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/octet-stream"
+        );
+        assert_eq!(
+            response.headers().get("content-encoding").unwrap(),
+            "identity"
         );
         if method == Method::HEAD {
             use actix_web::body::{BodySize, MessageBody};
@@ -3096,5 +3063,386 @@ async fn acceptance_content_read_streams_plaintext_without_upload_runtime() {
         .await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(test::read_body(response).await.as_ref(), bytes);
+    }
+}
+
+async fn publish_historical_revisions(
+    env: &Env,
+    fixture: &Fixture,
+) -> file_entry::Model {
+    let file = fixture
+        .file_with_metadata(
+            "historical \"report\"\r\n.txt",
+            "text/plain",
+            "txt",
+        )
+        .await;
+    let absolute_path = format!("C:\\{}-historical.txt", file.id);
+    let mut file = file.into_active_model();
+    file.absolute_path = Set(Some(absolute_path));
+    let file = file.update(fixture.db()).await.unwrap();
+    let original = b"selected historical bytes";
+    let upload = fixture.upload(&file, original).await;
+    let locked = fixture.seed_bytes(&upload, original).await;
+    finalize(env, &fixture.runtime, fixture.login.id, upload, &locked)
+        .await
+        .unwrap();
+    drop(locked);
+    let mut resync_source = file.clone();
+    resync_source.mime_type = Some("video/mp4".to_owned());
+    resync_source.extension = Some("mp4".to_owned());
+    resync_file(env, fixture, &resync_source).await;
+    let current = file_entry::Entity::find_by_id(file.id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut current = current.into_active_model();
+    current.name = Set("current.mp4".to_owned());
+    current.mime_type = Set(Some("video/mp4".to_owned()));
+    current.extension = Set(Some("mp4".to_owned()));
+    let current = current.update(fixture.db()).await.unwrap();
+    let current_bytes = b"different current revision bytes";
+    let upload = fixture.upload(&current, current_bytes).await;
+    let locked = fixture.seed_bytes(&upload, current_bytes).await;
+    finalize(env, &fixture.runtime, fixture.login.id, upload, &locked)
+        .await
+        .unwrap();
+    drop(locked);
+    file
+}
+
+async fn assert_historical_snapshot(
+    env: &Env,
+    fixture: &Fixture,
+    file_id: Uuid,
+) {
+    let published = super::read::load_published_content(
+        env,
+        &fixture.login,
+        fixture.device.id,
+        file_id,
+        1,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        published.name,
+        format!("{}-historical \"report\"\r\n.txt", file_id)
+    );
+    assert_eq!(published.extension.as_deref(), Some("txt"));
+    assert_eq!(published.mime_type.as_deref(), Some("text/plain"));
+    assert_eq!(
+        published.source_sha256,
+        Sha256::digest(b"selected historical bytes").to_vec()
+    );
+    assert_eq!(published.source_size_bytes, 25);
+    assert!(published.is_encrypted);
+    let current = super::read::load_published_content(
+        env,
+        &fixture.login,
+        fixture.device.id,
+        file_id,
+        2,
+    )
+    .await
+    .unwrap();
+    assert_ne!(published.object_key, current.object_key);
+    assert_eq!(current.extension.as_deref(), Some("mp4"));
+    assert_eq!(current.mime_type.as_deref(), Some("video/mp4"));
+}
+
+fn assert_historical_download_headers(
+    headers: &header::HeaderMap,
+    file_id: Uuid,
+) {
+    assert_eq!(
+        headers.get("content-type").unwrap(),
+        "application/octet-stream"
+    );
+    assert_eq!(headers.get("content-encoding").unwrap(), "identity");
+    assert_eq!(headers.get("content-length").unwrap(), "25");
+    assert_eq!(headers.get("cache-control").unwrap(), "private, no-store");
+    assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+    let disposition = header::ContentDisposition::from_raw(
+        headers.get("content-disposition").unwrap(),
+    )
+    .unwrap();
+    assert_eq!(disposition.disposition, header::DispositionType::Attachment);
+    assert_eq!(
+        disposition.get_filename(),
+        Some(format!("{}-historical \"report\"%0D%0A.txt", file_id).as_str())
+    );
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn acceptance_content_read_preserves_historical_identity_on_archived_device(
+) {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let file = publish_historical_revisions(&env, &fixture).await;
+    let original = b"selected historical bytes";
+    let mut archived = fixture.device.clone().into_active_model();
+    archived.archived = Set(true);
+    archived.archived_at = Set(Some(Utc::now().naive_utc()));
+    archived.update(&env.dbx).await.unwrap();
+    assert_historical_snapshot(&env, &fixture, file.id).await;
+    assert!(matches!(
+        crate::devices::devices::query::authorize_file_registry_access(
+            &env.dbx,
+            &fixture.login,
+            fixture.device.id,
+            crate::devices::devices::query::FileRegistryDeviceAccess::FileSync,
+        )
+        .await,
+        Err(crate::error::AppError::Form(_))
+    ));
+    let mut other_device = fixture.device.clone().into_active_model();
+    other_device.id = Set(Uuid::new_v4());
+    let other_device = other_device.insert(&env.dbx).await.unwrap();
+    let env_mut = Arc::get_mut(&mut env).unwrap();
+    env_mut.s3 = Some(fixture.runtime.storage.clone());
+    env_mut.s3_config = Some(fixture.runtime.storage_config.clone());
+    env_mut.config.s3_config = Some(crate::config::S3Config {
+        s3_access_key_id: String::new(),
+        s3_secret_access_key: String::new(),
+        s3_endpoint: String::new(),
+        s3_region: String::new(),
+        s3_bucket: fixture.runtime.storage_config.bucket.clone(),
+        strongbox_key: fixture.runtime.strongbox_key.clone(),
+    });
+    assert!(env_mut.device_file_content.is_none());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    for method in [Method::GET, Method::HEAD] {
+        let path = format!(
+            "/api/device/files/{}/{}/revisions/1/content",
+            fixture.device.id, file.id
+        );
+        let response = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(method.clone())
+                .uri(&path)
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_historical_download_headers(response.headers(), file.id);
+        let body = test::read_body(response).await;
+        if method == Method::GET {
+            assert_eq!(body.as_ref(), original);
+        } else {
+            assert!(body.is_empty());
+        }
+        let path = path.replace(
+            &fixture.device.id.to_string(),
+            &other_device.id.to_string(),
+        );
+        let response = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(method)
+                .uri(&path)
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn acceptance_historical_endpoint_matrix_rechecks_access_and_source() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let geodata = fixture
+        .file_with_metadata("history.gpx", "application/gpx+xml", "gpx")
+        .await;
+    let media = fixture
+        .file_with_metadata("history.wav", "audio/wav", "wav")
+        .await;
+    let original = b"immutable selected revision";
+    for file in [&geodata, &media] {
+        let upload = fixture.upload(file, original).await;
+        let spool = fixture.seed_bytes(&upload, original).await;
+        finalize(&env, &fixture.runtime, fixture.login.id, upload, &spool)
+            .await
+            .unwrap();
+        drop(spool);
+        resync_file(&env, &fixture, file).await;
+    }
+    let generation = Uuid::new_v4();
+    let output_key = format!("device-file-preview/{generation}");
+    let result = b"exact derivative bytes";
+    let result_hash = Sha256::digest(result).to_vec();
+    fixture.db().execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DatabaseBackend::Postgres,
+        "insert into file_preview (generation,device_id,file_id,revision,source_file_id,source_revision,kind,converter_version,is_current,state,run_id,attempt,source_object_key,source_sha256,source_size_bytes,source_is_encrypted,source_name,source_extension,not_before,output_object_key,retryable,created_at,updated_at,result_size_bytes,result_sha256,result_encrypted,expires_at,cleanup_after) select $1,r.device_id,r.id,r.revision,c.file_id,c.revision,'geodata_kmz',$6,true,'ready',$1,1,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,r.name,r.extension,now(),$2,false,now(),now(),$3,$4,true,now()+interval '1 day',now()+interval '1 day' from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.id=$5 and r.revision=1",
+        [generation.into(), output_key.clone().into(), (result.len() as i64).into(), result_hash.into(), geodata.id.into(), DEVICE_FILE_PREVIEW_GEODATA_CONVERTER_VERSION.into()])).await.unwrap();
+    crate::storage::upload_device_content_encrypted(
+        &fixture.runtime.storage,
+        &fixture.runtime.storage_config,
+        &fixture.runtime.strongbox_key,
+        &output_key,
+        result.to_vec().into(),
+        None,
+    )
+    .await
+    .unwrap();
+    let env_mut = Arc::get_mut(&mut env).unwrap();
+    env_mut.s3 = Some(fixture.runtime.storage.clone());
+    env_mut.s3_config = Some(fixture.runtime.storage_config.clone());
+    env_mut.config.s3_config = Some(crate::config::S3Config {
+        s3_access_key_id: String::new(),
+        s3_secret_access_key: String::new(),
+        s3_endpoint: String::new(),
+        s3_region: String::new(),
+        s3_bucket: fixture.runtime.storage_config.bucket.clone(),
+        strongbox_key: fixture.runtime.strongbox_key.clone(),
+    });
+    let session =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(session, Key::generate()))
+            .route("/test/login/{login}", web::post().to(sign_in))
+            .service(super::routes())
+            .service(crate::devices::files::preview::routes()),
+    )
+    .await;
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let base = format!(
+        "/api/device/files/{}/{}/revisions/1",
+        fixture.device.id, geodata.id
+    );
+    let map = format!("{base}/preview/geodata");
+    let result_path = format!("{map}/{generation}/content");
+    let media_path = format!(
+        "/api/device/files/{}/{}/revisions/1/preview/media",
+        fixture.device.id, media.id
+    );
+    let endpoints = [
+        (Method::GET, format!("{base}/content"), StatusCode::OK),
+        (Method::HEAD, format!("{base}/content"), StatusCode::OK),
+        (Method::GET, media_path.clone(), StatusCode::OK),
+        (Method::HEAD, media_path, StatusCode::OK),
+        (Method::GET, map.clone(), StatusCode::OK),
+        (Method::POST, map.clone(), StatusCode::OK),
+        (Method::POST, format!("{map}/retry"), StatusCode::CONFLICT),
+        (Method::GET, result_path.clone(), StatusCode::OK),
+        (Method::HEAD, result_path, StatusCode::OK),
+    ];
+    let mut other_device = fixture.device.clone().into_active_model();
+    other_device.id = Set(Uuid::new_v4());
+    let other_device = other_device.insert(&env.dbx).await.unwrap();
+    let other_organism =
+        mk_organism(&env.dbx, Default::default()).await.unwrap();
+    for (phase, expected) in [
+        ("archived", None),
+        ("unauthenticated", Some(StatusCode::UNAUTHORIZED)),
+        ("other_device", Some(StatusCode::NOT_FOUND)),
+        ("other_scope", Some(StatusCode::NOT_FOUND)),
+        ("revoked", Some(StatusCode::FORBIDDEN)),
+        ("deleted_source", Some(StatusCode::NOT_FOUND)),
+    ] {
+        match phase {
+            "archived" => {
+                env.dbx.execute_unprepared(&format!("update device set archived=true,archived_at=now() where id='{}'",fixture.device.id)).await.unwrap();
+            }
+            "revoked" => {
+                env.dbx
+                    .execute_unprepared(&format!(
+                        "update login set roles='[]'::jsonb where id='{}'",
+                        fixture.login.id
+                    ))
+                    .await
+                    .unwrap();
+            }
+            "other_scope" => {
+                env.dbx
+                    .execute_unprepared(&format!(
+                        "update login set organism_id={} where id='{}'",
+                        other_organism.id, fixture.login.id
+                    ))
+                    .await
+                    .unwrap();
+            }
+            "deleted_source" => {
+                env.dbx.execute_unprepared(&format!("update login set roles='[\"{ROLE_CYBER}\"]'::jsonb,organism_id={} where id='{}'",fixture.login.organism_id.unwrap(),fixture.login.id)).await.unwrap();
+                let transaction = fixture.db().begin().await.unwrap();
+                transaction.execute_unprepared(&format!("update file_entry set content_path=null where id in ('{}','{}'); alter table file_content disable trigger file_content_immutable_trg; delete from file_content where file_id in ('{}','{}'); alter table file_content enable trigger file_content_immutable_trg",geodata.id,media.id,geodata.id,media.id)).await.unwrap();
+                transaction.commit().await.unwrap();
+            }
+            _ => {}
+        }
+        for (method, uri, allowed) in &endpoints {
+            let uri = if phase == "other_device" {
+                uri.replace(
+                    &fixture.device.id.to_string(),
+                    &other_device.id.to_string(),
+                )
+            } else {
+                uri.clone()
+            };
+            let mut request = test::TestRequest::default()
+                .method(method.clone())
+                .uri(&uri);
+            if phase != "unauthenticated" {
+                request = request.cookie(cookie.clone());
+            }
+            if uri.ends_with("/retry") {
+                request =
+                    request.set_json(json!({"expected_generation":generation}));
+            }
+            let response = test::call_service(&app, request.to_request()).await;
+            assert_eq!(
+                response.status(),
+                expected.unwrap_or(*allowed),
+                "phase={phase}, method={method}, uri={uri}"
+            );
+            if uri.contains("/preview/") || expected.is_none() {
+                assert_eq!(
+                    response.headers().get(header::CACHE_CONTROL).unwrap(),
+                    "private, no-store"
+                );
+            }
+            let body = test::read_body(response).await;
+            if expected.is_some() {
+                assert!(!body
+                    .windows(original.len())
+                    .any(|window| window == original));
+            } else if method == Method::GET
+                && (uri.ends_with("/content") || uri.ends_with("/media"))
+            {
+                assert_eq!(
+                    body.as_ref(),
+                    if uri.contains("/preview/geodata/") {
+                        result.as_slice()
+                    } else {
+                        original.as_slice()
+                    }
+                );
+            }
+        }
+        if phase != "deleted_source" {
+            for file in [&geodata, &media] {
+                let content = file_content::Entity::find_by_id((file.id, 1))
+                    .one(fixture.db())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    content.source_sha256,
+                    Sha256::digest(original).to_vec()
+                );
+            }
+        }
     }
 }

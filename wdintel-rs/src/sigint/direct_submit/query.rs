@@ -140,8 +140,8 @@ where
 {
     Ok(intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .order_by_asc(intel_product::Column::CreatedAt)
         .all(dbx)
@@ -198,8 +198,8 @@ where
             intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
-        .and_where(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .and_where(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .to_owned();
     let recursive = Query::select()
@@ -237,8 +237,8 @@ where
             ))
             .equals((ancestors.clone(), source_message_id.clone())),
         )
-        .and_where(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .and_where(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .and_where(Expr::col((ancestors.clone(), depth.clone())).lt(100))
         .and_where(Expr::cust_with_exprs(
@@ -779,8 +779,8 @@ where
             intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .count(dbx)
         .await
@@ -916,6 +916,9 @@ where
 {
     let mut unreferenced = Vec::new();
     for media in media {
+        if crate::messenger::audio_ref::is_reference(media) {
+            continue;
+        }
         let Some(storage_key) = media.storage_key.as_deref() else {
             unreferenced.push(media.clone());
             continue;
@@ -938,6 +941,7 @@ where
 }
 
 pub async fn copy_signal_message_media<C>(
+    env: &crate::types::Env,
     dbx: &C,
     signal_message_id: i64,
     signal_message_uuid: Option<Uuid>,
@@ -946,8 +950,17 @@ pub async fn copy_signal_message_media<C>(
 where
     C: ConnectionTrait,
 {
+    crate::messenger::audio_ref::copy(
+        env,
+        dbx,
+        signal_message_id,
+        source_media,
+    )
+    .await
+    .c(h!())?;
     let media_models = source_media
         .iter()
+        .filter(|media| !crate::messenger::audio_ref::is_reference(media))
         .map(|media| {
             let storage_key = media.storage_key.clone().unwrap_or_else(|| {
                 crate::messenger::media::media_object_key(media)
@@ -1221,7 +1234,7 @@ where
                     .copied()
                     .flatten()),
                 relation_kind: Set(
-                    crate::entities::intel_product::RELATION_KIND_REPORT,
+                    crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
                 ),
                 created_at: NotSet,
             }
@@ -1817,13 +1830,20 @@ where
         .c(h!())?
     {
         None => {
-            signal_profile::ActiveModel {
+            signal_profile::Entity::insert(signal_profile::ActiveModel {
                 uuid: Set(sender.clone()),
                 given_name: Set(Some(login_name)),
                 family_name: Set(None),
                 created_at: NotSet,
-            }
-            .insert(dbx)
+            })
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(
+                    signal_profile::Column::Uuid,
+                )
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(dbx)
             .await
             .c(h!())?;
         }

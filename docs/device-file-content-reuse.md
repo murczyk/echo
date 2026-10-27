@@ -11,7 +11,7 @@ and establish the same byte identity for the new metadata revision.
 ## Authentication and capability
 
 Use the normal authenticated Echo session cookie. The login must be active,
-belong to an organism, and have `Cyber` or `Admin`; Devices must
+belong to an organism, and have `Cyber`, `CyberViewer`, or `Admin`; Devices must
 be enabled. A reuse request also checks current FileSync access to its device.
 
 `OPTIONS /api/device/file-content-reuse` returns `204` and

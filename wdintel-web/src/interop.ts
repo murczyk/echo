@@ -46,6 +46,7 @@ import './ts/react/messenger-neo-element';
 import './ts/react/organisms-neo-element';
 import './ts/react/organisms-neo-edit-element';
 import './ts/react/admin-all-reports-element';
+import './ts/react/admin-kpi-element';
 import './ts/react/admin-report-details-element';
 import './ts/react/admin-unit-duplicates-element';
 import './ts/react/admin-unit-inconsistent-element';
@@ -54,6 +55,7 @@ import './ts/react/admin-unparsed-units-element';
 import './ts/react/admin-units-element';
 import './ts/react/admin-ai-callsigns-element';
 import './ts/react/admin-device-analytics-element';
+import './ts/react/transcription-forwarding-element';
 import './ts/react/admin-ai-agent-element';
 import './ts/react/ai-agent-chat-element';
 import './ts/react/my-reports-element';
@@ -87,6 +89,10 @@ import './ts/react/unit-edit-dialog-element';
 import './ts/react/unit-admin-tab-element';
 import './ts/react/importer-beta-element';
 import './ts/react/updates-neo-element';
+import {
+  initializeBrowserDebugRecorder,
+  mountDebugRecorderPanelIfNeeded,
+} from './ts/debug-recorder';
 import { saveLegacyRerAnalysisQueryState } from './ts/rer-analysis-query-state-legacy';
 import { setupCommentDraftTracker } from './ts/comment-draft-tracker';
 import './ts/logo-coin';
@@ -435,6 +441,7 @@ import('../static/js-search').then((module) => {
 // into your `Shared.init` function.
 export const flags = ({ env }) => {
   installNavigationGuard();
+  initializeBrowserDebugRecorder();
   const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const now = dayjs().tz('Europe/Kiev').valueOf();
   return {
@@ -449,6 +456,7 @@ export const flags = ({ env }) => {
 // to your Elm application, or subscribe to incoming
 // messages from Elm
 export const onReady = ({ app, env }) => {
+  mountDebugRecorderPanelIfNeeded();
   app.ports?.shared_requestNavigation?.subscribe(
     (intent: { kind: string; url: string; forced: boolean }) => {
       if (intent.kind === 'back') void requestTraversal(-1);
@@ -843,6 +851,8 @@ export const onReady = ({ app, env }) => {
           intelligenceReport: boolean;
         }>,
       ) => {
+        app.ports.rer_analysis_inboxChanged?.send(events.map(({ messageId }) => messageId));
+        app.ports.rer_duty_inboxChanged?.send(events.map(({ messageId }) => messageId));
         window.dispatchEvent(
           new CustomEvent('echo-inbox-changed', {
             detail: { events },

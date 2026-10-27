@@ -3,6 +3,7 @@ import type {
   InboxMessage,
   LocalityDetails,
   MediaSummaryCoordinate,
+  MessageMediaInfo,
   PalitraReadV2,
   Tag,
 } from '../../../../../Bindings';
@@ -401,12 +402,16 @@ export function resolveDirectMessageCoordinatePreviewPoints(
   return resolveDirectCoordinatesFromCoordinateText(message.coords ?? '');
 }
 
+function mediaHasCoordinates(media: MessageMediaInfo): boolean {
+  return media.coordinateStatus != null
+    ? media.coordinateStatus.hasCoordinates
+    : media.summary?.state === 'completed' && media.summary.hasCoordinates;
+}
+
 function resolveCoordinateSummaryMediaCount(message: InboxMessage): number {
   return new Set(
     (message.media ?? []).flatMap((media) =>
-      media.id != null && media.summary?.state === 'completed' && media.summary.hasCoordinates
-        ? [String(media.id)]
-        : [],
+      media.id != null && mediaHasCoordinates(media) ? [String(media.id)] : [],
     ),
   ).size;
 }
@@ -424,7 +429,8 @@ export function resolveMessageCoordinatePreviewSummaryCount(
       resolveCoordinateSummaryMediaCount(message)
     );
   }
-  if (directPoints.length > 0) return directPoints.length;
+  if (directPoints.length > 0)
+    return directPoints.length + resolveCoordinateSummaryMediaCount(message);
 
   const summaryMediaCount = resolveCoordinateSummaryMediaCount(message);
   if (summaryMediaCount > 0) return summaryMediaCount;
@@ -458,12 +464,7 @@ export function hasCoordinatePreviewCandidate(
     return true;
   }
 
-  if (
-    (message.media ?? []).some(
-      (media) =>
-        media.id != null && media.summary?.state === 'completed' && media.summary.hasCoordinates,
-    )
-  ) {
+  if ((message.media ?? []).some((media) => media.id != null && mediaHasCoordinates(media))) {
     return true;
   }
 
@@ -652,9 +653,7 @@ async function resolveDocumentCoordinatePoints(message: InboxMessage): Promise<{
   const mediaIds = Array.from(
     new Set(
       (message.media ?? []).flatMap((media) =>
-        media.id != null && media.summary?.state === 'completed' && media.summary.hasCoordinates
-          ? [media.id]
-          : [],
+        media.id != null && mediaHasCoordinates(media) ? [media.id] : [],
       ),
     ),
   );
@@ -742,7 +741,7 @@ function mergeCoordinateSources(
   return Array.from(
     new Map(
       [...(previous.coordinateSources ?? []), ...(point.coordinateSources ?? [])].map((source) => [
-        source.messageUuid,
+        `${source.messageUuid}\u0000${source.evidence}`,
         source,
       ]),
     ).values(),

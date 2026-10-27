@@ -1,5 +1,6 @@
 use super::*;
 use crate::functest::tests::*;
+use crate::messenger::group::types::SignalGroupColor;
 
 #[test]
 fn test_normalize_my_admin_group_admin_logins_rejects_empty() {
@@ -73,6 +74,7 @@ fn test_group_requests_default_missing_organism_ids() {
     let update_req: ZoneDatasourceGroupUpdateReq =
         serde_json::from_value(serde_json::json!({
             "id": 1,
+            "color_key": "blue",
             "is_secret": true,
             "interseption_kind": null,
             "disable_network_assignment": null,
@@ -112,6 +114,54 @@ fn test_group_requests_default_missing_organism_ids() {
         }))
         .unwrap();
     assert!(my_admin_req.organism_ids.is_empty());
+}
+
+#[serial]
+#[tokio::test]
+async fn new_signal_group_receives_allowed_color_key() {
+    let env = cleanup().await.unwrap();
+    let txn = env.dbx.begin().await.unwrap();
+    let group = mk_signal_group(
+        &txn,
+        signal_group::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        group.color_key.as_deref(),
+        Some(
+            "red"
+                | "pink"
+                | "purple"
+                | "deep_purple"
+                | "indigo"
+                | "blue"
+                | "light_blue"
+                | "cyan"
+                | "teal"
+                | "green"
+                | "light_green"
+                | "lime"
+                | "amber"
+                | "orange"
+                | "deep_orange"
+                | "blue_grey"
+        )
+    ));
+
+    let invalid_update = txn
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "update signal_group set color_key = $1 where master_key = $2",
+            vec!["invalid".into(), group.master_key.into()],
+        ))
+        .await;
+    assert!(invalid_update.is_err());
+
+    txn.rollback().await.unwrap();
 }
 
 #[serial]
@@ -237,10 +287,13 @@ async fn test_bl_szd_group_update_01() {
     .unwrap();
     let req = ZoneDatasourceGroupUpdateReq {
         id: szd.id,
+        color_key: Some(SignalGroupColor::Blue),
         is_secret: false,
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: Some(true),
+        ai_transcript_analysis_enabled: None,
+        fetch_new_messages: Some(false),
         user_logins: vec![],
         organism_ids: vec![],
         admin_logins: vec![],
@@ -253,6 +306,21 @@ async fn test_bl_szd_group_update_01() {
 
     assert!(res.aor.is_some());
     assert!(res.is_aviation_group);
+    assert_eq!(res.color_key, SignalGroupColor::Blue);
+    assert!(!res.fetch_new_messages);
+    assert!(
+        !bl_szd_group_update(
+            &ZoneDatasourceGroupUpdateReq {
+                fetch_new_messages: None,
+                ..req.clone()
+            },
+            &szd,
+            &txn,
+        )
+        .await
+        .unwrap()
+        .fetch_new_messages
+    );
     let signal_group_aors = signal_group_aor::Entity::find()
         .filter(
             signal_group_aor::Column::MasterKey.eq(group_master_key.clone()),
@@ -273,6 +341,30 @@ async fn test_bl_szd_group_update_01() {
             .unwrap(),
         1
     );
+
+    for omit_color in [true, false] {
+        let mut payload = serde_json::to_value(&req).unwrap();
+        if omit_color {
+            payload.as_object_mut().unwrap().remove("color_key");
+        } else {
+            payload["color_key"] = serde_json::Value::Null;
+        }
+        payload["short_note"] = serde_json::json!("Legacy client edit");
+        let legacy_req: ZoneDatasourceGroupUpdateReq =
+            serde_json::from_value(payload)
+                .expect("legacy zone group edits must not require color_key");
+        let updated =
+            bl_szd_group_update(&legacy_req, &szd, &txn).await.unwrap();
+        assert_eq!(updated.color_key, SignalGroupColor::Blue);
+        assert_eq!(updated.short_note.as_deref(), Some("Legacy client edit"));
+        let group =
+            signal_group::Entity::find_by_id(szd.group_master_key.clone())
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(group.color_key.as_deref(), Some("blue"));
+    }
 
     txn.rollback().await.unwrap();
 }
@@ -346,10 +438,13 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
 
     let req = ZoneDatasourceGroupUpdateReq {
         id: szd.id,
+        color_key: Some(SignalGroupColor::DeepPurple),
         is_secret: true,
         interseption_kind: None,
         disable_network_assignment: None,
         is_aviation_group: None,
+        ai_transcript_analysis_enabled: None,
+        fetch_new_messages: None,
         user_logins: vec![human.id.to_string()],
         organism_ids: vec![],
         admin_logins: vec![],

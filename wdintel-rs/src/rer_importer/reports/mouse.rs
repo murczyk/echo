@@ -1751,6 +1751,8 @@ fn message_full_text(
     if datasource.kind == "signal"
         || datasource.kind == "whatsapp"
         || datasource.kind == "echo_operator"
+        || datasource.kind == crate::config::MESSENGER_INGEST_DATASOURCE_KIND
+        || datasource.kind == crate::config::DATASOURCE_ECHO_NATIVE_KIND
     {
         let extended_form = m_comment.map(|x| x.comment.as_str());
         Ok(format!(
@@ -2081,6 +2083,7 @@ mod tests {
             report_tags_only_this_unit: Some(false),
             tag_report_sort_by: None,
             report_1213_linked_networks_only: None,
+            report_1217_include_without_comments: None,
             without_comments: Some(false),
             babak_new_callsign_min_mentions: None,
             interception_keep_full_message: None,

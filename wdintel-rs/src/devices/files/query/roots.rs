@@ -21,6 +21,7 @@ pub(in crate::devices::files) async fn list_roots(
 pub(super) fn roots_query(device_id: Uuid) -> Select<file_entry::Entity> {
     core::apply_root_order(
         file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.is_null())
             .filter(file_entry::Column::DeviceId.eq(device_id))
             .filter(file_entry::Column::ParentId.is_null())
             .filter(

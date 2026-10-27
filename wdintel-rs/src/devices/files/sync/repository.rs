@@ -8,10 +8,10 @@ use super::super::types::{
 use super::super::{map_transaction_body_error, FilesystemError};
 use super::prepare::prepare_items;
 use super::{StartSessionResult, DEVICE_FILE_SYNC_SESSION_TTL_SECS};
-use crate::config::{
+use crate::devices::analytics::{ensure_sync_run, hydrate_active_tags};
+use crate::devices::config::{
     DEVICE_FILE_PAGE_DEFAULT_LIMIT, DEVICE_FILE_PAGE_MAX_LIMIT,
 };
-use crate::devices::analytics::{ensure_sync_run, hydrate_active_tags};
 use crate::file_registry::entities::{
     file_analysis_run, file_entry, file_revision, file_sync_batch,
     file_sync_item, file_sync_session,
@@ -716,6 +716,7 @@ async fn hydrate_results(
         Vec::new()
     } else {
         file_entry::Entity::find()
+            .filter(file_entry::Column::ArchiveFileId.is_null())
             .filter(file_entry::Column::Id.is_in(file_ids.clone()))
             .all(file_db)
             .await
@@ -735,6 +736,7 @@ async fn hydrate_results(
         Vec::new()
     } else {
         file_revision::Entity::find()
+            .filter(file_revision::Column::OriginArchiveId.is_null())
             .filter(
                 Expr::tuple([
                     Expr::col(file_revision::Column::Id),
@@ -788,7 +790,7 @@ async fn hydrate_results(
                     ))?;
                 let file = file_from_revision(current, revision)?;
                 let path_components = super::super::parse_source_path(
-                    revision.absolute_path.clone(),
+                    file.absolute_path.clone(),
                     "absolute_path",
                 )?
                 .components;
@@ -917,7 +919,9 @@ fn file_from_revision(
         device_id: revision.device_id,
         parent_entry_id,
         name: revision.name.clone(),
-        absolute_path: revision.absolute_path.clone(),
+        absolute_path: revision.absolute_path.clone().ok_or(
+            FilesystemError::Invariant("source_revision_path_missing"),
+        )?,
         hierarchy_path: current.hierarchy_path.clone(),
         has_content: current.content_path.is_some(),
         mime_type: revision.mime_type.clone(),

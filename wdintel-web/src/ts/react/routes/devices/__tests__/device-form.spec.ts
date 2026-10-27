@@ -18,6 +18,7 @@ const ANALYTICAL_FIELDS: DeviceFieldPermissions = { sourceData: false, analytica
 
 function buildDevice(overrides: Partial<DeviceDetails> = {}): DeviceDetails {
   return {
+    audioForwardingConfigured: false,
     id: DEVICE_ID,
     name: 'Device Alpha',
     aors: [{ id: 4, name: 'AOR' }],

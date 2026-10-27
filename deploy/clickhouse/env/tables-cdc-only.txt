@@ -1,0 +1,3 @@
+# Existing rows are copied only by the explicit attachment-history oneoff.
+public.attachment_document
+public.attachment_chunk

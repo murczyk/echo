@@ -1,4 +1,5 @@
 use self::types::*;
+use crate::config::ROLE_CYBER_VIEWER_RESTRICTED;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::event_stream::fanout;
@@ -457,7 +458,7 @@ pub async fn signal_name_search(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED],
     )
     .await
     .c(h!())?;

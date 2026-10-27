@@ -7,6 +7,7 @@ import type { AnalysisPageActions, AnalysisPageState } from '../types';
 
 export type AnalysisFiltersPanelPage = Pick<
   AnalysisPageState,
+  | 'threadMode'
   | 'isDirty'
   | 'counts'
   | 'canResetFilters'
@@ -30,7 +31,8 @@ export type AnalysisFiltersPanelPage = Pick<
   | 'queryState'
   | 'unitsExactMatchOnlyDefault'
   | 'analysisAorFilterEnabled'
-  | 'rerReportEnabled'
+  | 'hideNetworks'
+  | 'rerReportFilterEnabled'
   | 'saveInFlight'
   | 'savedFilterName'
   | 'savedFilters'
@@ -56,6 +58,7 @@ export type AnalysisFiltersPanelProps = {
   page: AnalysisFiltersPanelPage;
   isCompactLayout?: boolean;
   fullHeight?: boolean;
+  hideGroupSelection?: boolean;
 };
 
 export type FilterSectionId =

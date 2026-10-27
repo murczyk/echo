@@ -4,6 +4,7 @@ import type { Dispatch, ReactNode, SetStateAction } from 'react';
 import { GlobalFilterTextField } from '../../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { PowerChip } from '../../../components/PowerChip';
+import { TableToolbarLayout } from '../../../components/TableToolbarLayout';
 import type { NetworksFilterState } from '../helpers';
 
 function StatusChipLabel({
@@ -68,69 +69,68 @@ export function NetworksToolbar({
   table,
 }: Props) {
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1.5,
-        minWidth: 0,
-        flexWrap: 'wrap',
-      }}
-    >
-      <GlobalFilterTextField
-        globalFilter={globalFilter}
-        setGlobalFilter={onChangeGlobalFilter}
-        disabled={loading}
-      />
-      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
-        <PowerChip
-          selected={filters.status === 'all'}
-          onClick={() => setFilters((current) => ({ ...current, status: 'all' }))}
-          label="Всі"
-          interactive
-          fontWeight={700}
-        />
-        <PowerChip
-          selected={filters.status === 'active'}
-          onClick={() => setFilters((current) => ({ ...current, status: 'active' }))}
-          label={
-            <StatusChipLabel
-              color="#54c06c"
-              label="Активні"
-              counter={statusCounts?.active ?? '—'}
+    <TableToolbarLayout
+      leading={
+        <>
+          <div className="w-full min-w-56 max-w-[360px] flex-1">
+            <GlobalFilterTextField
+              className="!min-w-0 !w-full"
+              globalFilter={globalFilter}
+              setGlobalFilter={onChangeGlobalFilter}
+              disabled={loading}
             />
-          }
-          interactive
-          fontWeight={700}
-        />
-        <PowerChip
-          selected={filters.status === 'inactive'}
-          onClick={() => setFilters((current) => ({ ...current, status: 'inactive' }))}
-          label={
-            <StatusChipLabel
-              color="#bfbfbf"
-              label="Неактивні"
-              counter={statusCounts?.inactive ?? '—'}
+          </div>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
+            <PowerChip
+              selected={filters.status === 'all'}
+              onClick={() => setFilters((current) => ({ ...current, status: 'all' }))}
+              label="Всі"
+              interactive
+              fontWeight={700}
             />
-          }
-          interactive
-          fontWeight={700}
-        />
-        <PowerChip
-          selected={filters.status === 'deleted'}
-          onClick={() => setFilters((current) => ({ ...current, status: 'deleted' }))}
-          label={
-            <StatusChipLabel
-              color="#6b6b6b"
-              label="Архівні"
-              counter={statusCounts?.archived ?? '—'}
+            <PowerChip
+              selected={filters.status === 'active'}
+              onClick={() => setFilters((current) => ({ ...current, status: 'active' }))}
+              label={
+                <StatusChipLabel
+                  color="#54c06c"
+                  label="Активні"
+                  counter={statusCounts?.active ?? '—'}
+                />
+              }
+              interactive
+              fontWeight={700}
             />
-          }
-          interactive
-          fontWeight={700}
-        />
-      </Stack>
-      <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+            <PowerChip
+              selected={filters.status === 'inactive'}
+              onClick={() => setFilters((current) => ({ ...current, status: 'inactive' }))}
+              label={
+                <StatusChipLabel
+                  color="#bfbfbf"
+                  label="Неактивні"
+                  counter={statusCounts?.inactive ?? '—'}
+                />
+              }
+              interactive
+              fontWeight={700}
+            />
+            <PowerChip
+              selected={filters.status === 'deleted'}
+              onClick={() => setFilters((current) => ({ ...current, status: 'deleted' }))}
+              label={
+                <StatusChipLabel
+                  color="#6b6b6b"
+                  label="Архівні"
+                  counter={statusCounts?.archived ?? '—'}
+                />
+              }
+              interactive
+              fontWeight={700}
+            />
+          </Stack>
+        </>
+      }
+      trailing={
         <InternalTableActions
           table={table}
           columnsVisibilityDisabled={loading}
@@ -141,7 +141,7 @@ export function NetworksToolbar({
           fullScreenEnabled={false}
           fullScreenDisabled={loading}
         />
-      </Box>
-    </Box>
+      }
+    />
   );
 }

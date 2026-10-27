@@ -82,6 +82,7 @@ function unitInterceptionsRequest(
     orWithoutCoords: null,
     newestFirst: true,
     search: null,
+    searchMode: null,
     highlightCallsigns: null,
     highlightKeywords: null,
     highlightSearchres: null,

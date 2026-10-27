@@ -11,10 +11,203 @@ use crate::{
     functest::tests::{cleanup, mk_signal_message},
     types::Env,
 };
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QuerySelect, Set,
+};
 use uuid::Uuid;
 
-async fn fixture() -> (Env, String, i64) {
+mod scoped;
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_correlated_terms_preserve_mixed_source_matches_3780()
+{
+    let (env, _, message) = fixture().await;
+    crate::functest::tests::mk_sigint_inbox_item(
+        &env.dbx,
+        crate::entities::sigint_inbox_item::ActiveModel {
+            id: Set(message),
+            body_noheader: Set(Some(
+                serde_json::json!({"body": "звичайне повідомлення"}),
+            )),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    execute(&env.dbx, "INSERT INTO sigint_search(id,search_tsv) VALUES($1,to_tsvector('russian','звичайне повідомлення'))", vec![message.into()]).await.unwrap();
+    let first = attachment(&env, message, "Бойовий звіт.txt").await;
+    let second = attachment(&env, message, "Другий файл.txt").await;
+    publish(&env, &first, package("Береза зміна позиції"), vec![1])
+        .await
+        .unwrap();
+    publish(&env, &second, package("чергування Вільха"), vec![2])
+        .await
+        .unwrap();
+    for query in [
+        "Берез",
+        "звичайне Береза",
+        "Береза Вільха",
+        "\"зміна позиції\"",
+        "Бойовий",
+        "Береза or Вільха",
+        "звичайне -Береза",
+        "звичайне -Невідомий",
+        "-\"зміна позиції\"",
+        "звичайне -\"немає тексту\"",
+        "и",
+        "9",
+        "Береза or и",
+        "Береза -и",
+    ] {
+        let expected = signal_message::Entity::find()
+            .filter(super::search::message_filter(query, "all").unwrap())
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        let actual = signal_message::Entity::find()
+            .filter(super::search::correlated_message_filter(query).unwrap())
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|message| message.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(actual, expected, "{query}");
+        for (correlated, inline_tsquery) in
+            [(false, false), (true, false), (true, true)]
+        {
+            let actual = signal_message::Entity::find()
+                .join(
+                    sea_orm::JoinType::LeftJoin,
+                    sea_orm::RelationTrait::def(
+                        &signal_message::Relation::SigintInboxItem,
+                    ),
+                )
+                .filter(
+                    super::search::analysis_message_filter(
+                        query,
+                        None,
+                        correlated,
+                        inline_tsquery,
+                        true,
+                    )
+                    .unwrap(),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|message| message.id)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(actual, expected, "{query}, correlated={correlated}, inline_tsquery={inline_tsquery}");
+        }
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_modes_respect_word_boundaries_and_case_3780() {
+    use crate::entities::sigint_inbox_item;
+    use crate::rer_importer::types::AnalysisSearchMode;
+    use sea_orm::{JoinType, QuerySelect, RelationTrait};
+
+    let (env, _, message) = fixture().await;
+    crate::functest::tests::mk_sigint_inbox_item(
+        &env.dbx,
+        sigint_inbox_item::ActiveModel {
+            id: Set(message),
+            body_noheader: Set(Some(
+                serde_json::json!({"body": "звичайне повідомлення"}),
+            )),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let document = attachment(&env, message, "схема.txt").await;
+    publish(&env, &document, package("норма ПАНОРАМА"), vec![1])
+        .await
+        .unwrap();
+    for (mode, query, matches) in [
+        (AnalysisSearchMode::Fuzzy, "НоРа", true),
+        (AnalysisSearchMode::Exact, "НоРа", false),
+        (AnalysisSearchMode::Substring, "НоРа", true),
+        (AnalysisSearchMode::Exact, "-нора", true),
+        (AnalysisSearchMode::Substring, "-нора", false),
+        (AnalysisSearchMode::Exact, "звичайне", true),
+        (AnalysisSearchMode::Exact, "звичайн", false),
+        (AnalysisSearchMode::Substring, "звичайн", true),
+        (AnalysisSearchMode::Fuzzy, "\"звичайне\"", true),
+        (AnalysisSearchMode::Substring, "\"%\"", true),
+    ] {
+        for correlated in [false, true] {
+            for predicate in [
+                super::search::message_filter_with_mode(
+                    query,
+                    "all",
+                    Some(mode),
+                    correlated,
+                )
+                .unwrap(),
+                super::search::analysis_message_filter(
+                    query,
+                    Some(mode),
+                    correlated,
+                    false,
+                    true,
+                )
+                .unwrap(),
+            ] {
+                let actual = sigint_inbox_item::Entity::find()
+                    .join(
+                        JoinType::InnerJoin,
+                        sigint_inbox_item::Relation::SignalMessage.def(),
+                    )
+                    .filter(sigint_inbox_item::Column::Id.eq(message))
+                    .filter(predicate)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .is_some();
+                assert_eq!(
+                    actual, matches,
+                    "{mode:?}: {query}, correlated={correlated}"
+                );
+            }
+        }
+    }
+    execute(
+        &env.dbx,
+        "UPDATE signal_message_media SET file_name='НОРА.txt' WHERE id=$1",
+        vec![document.media_id.into()],
+    )
+    .await
+    .unwrap();
+    let predicate = super::search::message_filter_with_mode(
+        "нора",
+        "all",
+        Some(AnalysisSearchMode::Exact),
+        false,
+    )
+    .unwrap();
+    assert!(sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def()
+        )
+        .filter(sigint_inbox_item::Column::Id.eq(message))
+        .filter(predicate)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_some());
+}
+
+pub(super) async fn fixture() -> (Env, String, i64) {
     let env = cleanup().await.unwrap();
     let mut env = env.as_ref().clone();
     let config = crate::config::S3Config {
@@ -52,7 +245,7 @@ async fn fixture() -> (Env, String, i64) {
     (env, group.master_key, message.id)
 }
 
-async fn attachment(env: &Env, message: i64, name: &str) -> Job {
+pub(super) async fn attachment(env: &Env, message: i64, name: &str) -> Job {
     let media = signal_message_media::ActiveModel {
         id: Set(Uuid::now_v7()),
         signal_message_id: Set(message),
@@ -243,4 +436,470 @@ async fn attachment_search_visibility_and_revision_3064() {
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_preserves_cdc_only_history_and_recent_changes_3780()
+{
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "history.txt").await;
+    publish(&env, &job, package("Береза зміна позиції"), vec![1])
+        .await
+        .unwrap();
+    let source = &env.dbx;
+    execute(source, "CREATE TABLE IF NOT EXISTS public.echo_analytics_attachment_search(singleton boolean PRIMARY KEY CHECK(singleton), started_at timestamp NOT NULL, history_complete boolean NOT NULL DEFAULT false)", vec![]).await.unwrap();
+    execute(source, "INSERT INTO public.echo_analytics_attachment_search VALUES(true, now() AT TIME ZONE 'UTC', false) ON CONFLICT(singleton) DO UPDATE SET started_at=EXCLUDED.started_at,history_complete=false", vec![]).await.unwrap();
+    execute(source, "UPDATE attachment_document SET created_at=(now() AT TIME ZONE 'UTC')-interval '1 day',updated_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    for query in [
+        "Береза",
+        "-Береза",
+        "\"зміна позиції\"",
+        "-\"зміна позиції\"",
+    ] {
+        let error = super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000,
+        )
+        .await
+        .unwrap_err();
+        assert!(error
+            .chain()
+            .any(|error| error
+                .is::<super::analytics::AttachmentSearchCoverageError>()));
+    }
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("НевідомийПозивний".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    execute(source, "UPDATE public.echo_analytics_attachment_search SET history_complete=true", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("Береза".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    execute(source, "UPDATE attachment_document SET updated_at=now() AT TIME ZONE 'UTC' WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    assert!(super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("Береза".into()),
+        90_000
+    )
+    .await
+    .is_err());
+    execute(source, "UPDATE attachment_chunk SET text='Вільха',summary=NULL WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
+    for query in ["Береза", "-Береза", "\"зміна позиції\""]
+    {
+        assert!(super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000
+        )
+        .await
+        .is_err());
+    }
+    assert!(super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("-Вільха".into()),
+        90_000
+    )
+    .await
+    .is_err());
+    assert_media_mutations_require_source(source, job.media_id).await;
+    assert_media_insert_requires_source(&env, message).await;
+    execute(
+        source,
+        "DROP TABLE public.echo_analytics_attachment_search",
+        vec![],
+    )
+    .await
+    .unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("155.275".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    assert!(super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("Береза".into()),
+        90_000
+    )
+    .await
+    .is_err());
+}
+
+async fn assert_media_mutations_require_source(
+    source: &sea_orm::DatabaseConnection,
+    media_id: Uuid,
+) {
+    execute(source, "UPDATE attachment_document SET updated_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE media_id=$1", vec![media_id.into()]).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(media_id)
+        .one(source)
+        .await
+        .unwrap()
+        .unwrap();
+    signal_message_media::ActiveModel {
+        id: Set(media_id),
+        file_name: Set(Some("renamed.txt".into())),
+        ..Default::default()
+    }
+    .update(source)
+    .await
+    .unwrap();
+    assert_eq!(
+        attachment_document::Entity::find_by_id(media_id)
+            .one(source)
+            .await
+            .unwrap()
+            .unwrap()
+            .updated_at,
+        document.updated_at
+    );
+    assert_mutation_search_falls_back(source).await;
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("renamed".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    signal_message_media::Entity::delete_by_id(media_id)
+        .exec(source)
+        .await
+        .unwrap();
+    assert!(attachment_document::Entity::find_by_id(media_id)
+        .one(source)
+        .await
+        .unwrap()
+        .is_none());
+    assert_mutation_search_falls_back(source).await;
+}
+
+async fn assert_mutation_search_falls_back(
+    source: &sea_orm::DatabaseConnection,
+) {
+    for query in [
+        "history",
+        "inserted",
+        "renamed",
+        "-renamed",
+        "Береза",
+        "-Вільха",
+        "\"зміна позиції\"",
+    ] {
+        let error = super::analytics::ensure_search_coverage(
+            source,
+            source,
+            &Some(query.into()),
+            90_000,
+        )
+        .await
+        .unwrap_err();
+        assert!(error
+            .chain()
+            .any(|error| error
+                .is::<super::analytics::AttachmentSearchCoverageError>()));
+    }
+}
+
+async fn assert_media_insert_requires_source(env: &Env, message: i64) {
+    let source = &env.dbx;
+    execute(source, "UPDATE signal_message SET created_at=(now() AT TIME ZONE 'UTC')-interval '1 day' WHERE id=$1", vec![message.into()]).await.unwrap();
+    execute(source, "UPDATE attachment_search_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour' WHERE singleton", vec![]).await.unwrap();
+    super::analytics::ensure_search_coverage(
+        source,
+        source,
+        &Some("inserted".into()),
+        90_000,
+    )
+    .await
+    .unwrap();
+    attachment(env, message, "inserted.txt").await;
+    assert_mutation_search_falls_back(source).await;
+}
+
+#[tokio::test]
+async fn ocr_coordinate_boundaries_and_precision_3714() {
+    let package = super::worker::html_package("scan.pdf",
+        "<section><p>X=5291456 Y=6662340<br>48.469429° <span>N</span> 37.315640° E</p><div>48.46942912345, <b>37.31564012345</b></div><table><tr><td>Grid</td><td>52-91456 66-62340<br>48.469429° N 37.315640° E</td></tr></table></section>").unwrap();
+    let text = &package.sections[0].text;
+    assert!(text.contains("6662340\n48.469429"), "{text}");
+    assert!(text.contains("48.46942912345, 37.31564012345"), "{text}");
+    assert!(text.contains("| Grid |"), "{text}");
+    let fragments = crate::media_summary::plain_text_from_sanitized_html(
+        "<span>48.</span><b>469429° N</b> <span>37.315640° E</span><div>52-91456 66-62340</div><div>48.469429° N 37.315640° E</div>").unwrap();
+    assert!(
+        fragments.contains("48.469429° N 37.315640° E"),
+        "{fragments}"
+    );
+    assert!(fragments.contains("66-62340\n48.469429"), "{fragments}");
+
+    let coordinates = super::enrich::coordinates(text, "page 1").await.unwrap();
+    assert!(
+        coordinates
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|coordinate| coordinate["coordinateSystem"] == "wgs84"
+                && coordinate["value"] == "48.469429, 37.315640"),
+        "{coordinates}"
+    );
+    let coordinates =
+        super::enrich::coordinates("48.46942912345, 37.31564012345", "page 1")
+            .await
+            .unwrap();
+    assert_eq!(coordinates[0]["value"], "48.46942912345, 37.31564012345");
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_coordinates_without_summary_and_revisions_3714() {
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "coordinates.txt").await;
+    execute(
+        &env.dbx,
+        r#"
+with engine as (
+    insert into ai_engine(id,name,url,model_name,enabled,created_at,updated_at)
+    values(gen_random_uuid(),'3780 publication ' || gen_random_uuid(),
+        'https://example.invalid','legacy',true,now(),now())
+    returning id
+)
+insert into media_summary(
+    media_id,source_kind,source_digest,source_char_count,state,
+    lease_expires_at,source_text,ai_engine_name,model_name,ai_engine_id
+)
+select $1,'ocr_text',$2,11,'running',now()+interval '5 minutes',
+    'legacy text','legacy','legacy',id from engine
+        "#,
+        vec![job.media_id.into(), "a".repeat(64).into()],
+    )
+    .await
+    .unwrap();
+    publish(&env, &job, package("48.469429° N 37.315640° E"), vec![1])
+        .await
+        .unwrap();
+    assert!(
+        crate::entities::media_summary::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let media = signal_message_media::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let login = crate::functest::tests::find_test_login(&env.dbx)
+        .await
+        .unwrap();
+    crate::messenger::media::ensure_media_access(&env.dbx, &login.id, message)
+        .await
+        .unwrap();
+    let initial = super::coordinates::load_statuses(
+        &env.dbx,
+        std::slice::from_ref(&media),
+    )
+    .await
+    .unwrap();
+    assert!(initial[&job.media_id].has_coordinates);
+    for (state, enabled) in
+        [("queued", true), ("queued", false), ("failed", true)]
+    {
+        execute(
+            &env.dbx,
+            "update attachment_settings set summaries_enabled=$1 where id=1",
+            vec![enabled.into()],
+        )
+        .await
+        .unwrap();
+        execute(
+            &env.dbx,
+            "update attachment_document set summary_state=$2 where media_id=$1",
+            vec![job.media_id.into(), state.into()],
+        )
+        .await
+        .unwrap();
+        let coordinates =
+            crate::media_summary::coordinates_for_media(&env.dbx, job.media_id)
+                .await
+                .unwrap();
+        assert_eq!(coordinates[0].coordinate_system, "wgs84");
+        assert_eq!(coordinates[0].value, "48.469429, 37.315640");
+    }
+    publish(&env, &job, package("48.479429, 37.325640"), vec![2])
+        .await
+        .unwrap();
+    let updated = super::coordinates::load_statuses(
+        &env.dbx,
+        std::slice::from_ref(&media),
+    )
+    .await
+    .unwrap();
+    assert_ne!(
+        initial[&job.media_id].revision,
+        updated[&job.media_id].revision
+    );
+    assert_eq!(
+        crate::media_summary::coordinates_for_media(&env.dbx, job.media_id)
+            .await
+            .unwrap()[0]
+            .value,
+        "48.479429, 37.325640"
+    );
+    publish(&env, &job, Package::default(), vec![3])
+        .await
+        .unwrap();
+    execute(&env.dbx,"insert into media_summary(media_id,source_kind,source_digest,source_char_count,state,coordinates,ai_engine_name,model_name,summary) values($1,'ocr_text',$2,10,'completed',$3,'legacy','legacy','legacy summary')",vec![job.media_id.into(),"a".repeat(64).into(),serde_json::json!([{"title":"legacy","coordinateSystem":"wgs84","value":"48.469429, 37.315640"}]).into()]).await.unwrap();
+    assert!(crate::media_summary::coordinates_for_media(
+        &env.dbx,
+        job.media_id
+    )
+    .await
+    .unwrap()
+    .is_empty());
+    let empty = super::coordinates::load_statuses(
+        &env.dbx,
+        std::slice::from_ref(&media),
+    )
+    .await
+    .unwrap();
+    assert!(!empty[&job.media_id].has_coordinates);
+    execute(
+        &env.dbx,
+        "update attachment_document set revision=null where media_id=$1",
+        vec![job.media_id.into()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        crate::media_summary::coordinates_for_media(&env.dbx, job.media_id)
+            .await
+            .unwrap()[0]
+            .title,
+        "legacy"
+    );
+    execute(
+        &env.dbx,
+        "delete from signal_message_group where signal_message_id=$1",
+        vec![message.into()],
+    )
+    .await
+    .unwrap();
+    assert!(matches!(
+        crate::messenger::media::ensure_media_access(
+            &env.dbx, &login.id, message
+        )
+        .await,
+        Err(crate::error::AppError::Forbidden(_))
+    ));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn stored_ocr_recovery_is_scoped_and_dry_by_default_3714() {
+    let (env, _, message) = fixture().await;
+    let job = attachment(&env, message, "scan.pdf").await;
+    let other = attachment(&env, message, "untouched.txt").await;
+    execute(&env.dbx, "update signal_message_media set content_type='application/pdf',file_ext='pdf' where id=$1", vec![job.media_id.into()]).await.unwrap();
+    let html = "<p>X=5291456 Y=6662340<br>48.469429° N 37.315640° E</p>";
+    crate::storage::upload_encrypted_to_s3_with_operator(
+        &env.s3,
+        env.s3_config.as_ref().unwrap(),
+        &env.config.s3_config.as_ref().unwrap().strongbox_key,
+        "stored-ocr",
+        html.as_bytes().to_vec().into(),
+    )
+    .await
+    .unwrap();
+    execute(&env.dbx,"insert into ocr_job(media_id,state,quality_status,html_s3_key) values($1,'completed','accepted','stored-ocr')",vec![job.media_id.into()]).await.unwrap();
+    let original_generation =
+        attachment_document::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation;
+    let mut params = crate::OneoffReindexStoredOcrPs {
+        media_id: job.media_id,
+        dry_run: false,
+        yes: false,
+    };
+    super::recovery::reindex(&env, &params).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(document.generation, original_generation);
+    params.yes = true;
+    params.dry_run = true;
+    super::recovery::reindex(&env, &params).await.unwrap();
+    assert_eq!(
+        attachment_document::Entity::find_by_id(job.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation,
+        original_generation
+    );
+    params.dry_run = false;
+    super::recovery::reindex(&env, &params).await.unwrap();
+    let document = attachment_document::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_ne!(document.generation, original_generation);
+    execute(&env.dbx,"update attachment_job set state='running',lease=gen_random_uuid(),lease_until=now()+interval '15 minutes' where media_id=$1 and generation=$2",vec![job.media_id.into(),document.generation.into()]).await.unwrap();
+    let replacement: Job = rows(&env.dbx,"select * from attachment_job where media_id=$1 and generation=$2 and kind='extract'",vec![job.media_id.into(),document.generation.into()]).await.unwrap().pop().unwrap();
+    assert!(super::worker::extract_ocr(&env, &replacement, "scan.pdf")
+        .await
+        .unwrap());
+    assert!(crate::media_summary::coordinates_for_media(
+        &env.dbx,
+        job.media_id
+    )
+    .await
+    .unwrap()
+    .iter()
+    .any(|coordinate| coordinate.value == "48.469429, 37.315640"));
+    let ocr = crate::entities::ocr_job::Entity::find_by_id(job.media_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(ocr.state, "completed");
+    assert_eq!(ocr.html_s3_key.as_deref(), Some("stored-ocr"));
+    assert_eq!(
+        attachment_document::Entity::find_by_id(other.media_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .generation,
+        other.generation
+    );
+    params.media_id = other.media_id;
+    assert!(super::recovery::reindex(&env, &params).await.is_err());
 }

@@ -9,18 +9,23 @@ export function useRerDutyFeedCrud(
   messageFeeds: MessageFeedState[],
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>,
   persistStateToUrl: (next: MessageFeedState[]) => void,
-  markFeedReloadRequested: (feedId: string) => void,
+  markFeedReloadRequested: (feedId: string, preserveUnread?: boolean) => void,
   onFeedRemoved?: (feedId: string) => void,
 ) {
   const applyFilter = useCallback(
-    (feedId: string, f: RerDutyFeedFilterState, forceReload = false) => {
+    (
+      feedId: string,
+      f: RerDutyFeedFilterState,
+      forceReload = false,
+      options: { preserveUnread?: boolean } = {},
+    ) => {
       const currentFeed = messageFeeds.find((feed) => feed.id === feedId);
       if (!currentFeed) return;
       if (!forceReload && filtersEqual(currentFeed.filter, f)) {
         persistStateToUrl(messageFeeds);
         return;
       }
-      markFeedReloadRequested(feedId);
+      markFeedReloadRequested(feedId, options.preserveUnread);
       setMessageFeeds((prev) => {
         const w = prev.find((feed) => feed.id === feedId);
         if (!w || (!forceReload && filtersEqual(w.filter, f))) return prev;
@@ -32,11 +37,13 @@ export function useRerDutyFeedCrud(
                 loading: true,
                 loadingOlder: false,
                 hasReachedStart: false,
-                windowedUnreadItems: new Map<number, number>(),
+                windowedUnreadItems: options.preserveUnread
+                  ? feed.windowedUnreadItems
+                  : new Map<number, number>(),
                 adjacentFreqsRange: feed.adjacentFreqsRange,
                 highlightSignalsEnabled: feed.highlightSignalsEnabled,
                 onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
-                pendingNewerItems: [],
+                pendingNewerItems: options.preserveUnread ? feed.pendingNewerItems : [],
               }
             : feed,
         );
@@ -69,11 +76,25 @@ export function useRerDutyFeedCrud(
     [messageFeeds, applyFilter],
   );
 
+  const setGroupScope = useCallback(
+    (feedId: string, groupMasterKey: string | null) => {
+      const feed = messageFeeds.find((candidate) => candidate.id === feedId);
+      if (!feed) return;
+      applyFilter(feedId, {
+        ...feed.filter,
+        groupsSelected: groupMasterKey ? [groupMasterKey] : null,
+        groupsDenied: null,
+      });
+    },
+    [applyFilter, messageFeeds],
+  );
+
   const createMessageFeed = useCallback(() => {
     const id = generateMessageFeedId();
     const newFeed: MessageFeedState = {
       id,
       filter: emptyFilter(),
+      groupScopeMasterKey: null,
       items: [],
       loading: true,
       loadingOlder: false,
@@ -108,5 +129,12 @@ export function useRerDutyFeedCrud(
     [messageFeeds, onFeedRemoved, setMessageFeeds, persistStateToUrl],
   );
 
-  return { applyFilter, toggleGroup, selectAllGroups, createMessageFeed, removeMessageFeed };
+  return {
+    applyFilter,
+    toggleGroup,
+    selectAllGroups,
+    setGroupScope,
+    createMessageFeed,
+    removeMessageFeed,
+  };
 }

@@ -2,6 +2,58 @@ import { expect, test, type Page } from '@playwright/test';
 import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 import { toLegacyRerAnalysisQueryState } from '../../src/ts/rer-analysis-query-state-legacy';
+import type { InboxMessage, Network } from '../../src/Bindings';
+import { transformCamelToSnake } from '../../src/ts/snake-to-camel';
+import { systemSettingsCurrentResponse } from './fixture-responses';
+
+const dutyNetwork: Network = {
+  id: 7,
+  name: 'Duty recovery network',
+  freqs: [],
+  unitIds: null,
+  aorIds: [],
+  location: '',
+  radioStation: null,
+  createdAt: 0,
+  purpose: null,
+  operationMode: null,
+  operationType: null,
+  operationPeriod: null,
+  lastActivityAt: null,
+  lastUpdatedAt: 0,
+  lastUpdatedBy: null,
+  activeFrom: null,
+  activeTo: null,
+  postIds: [],
+  descriptions: [],
+  deleted: false,
+  doNotArchive: false,
+  unitMask: [],
+  status: 'NetworkActive',
+};
+
+function createClassicDutyNetworkInbox(networkIds = [7]) {
+  const inbox = createLoadedInboxResponse();
+  const message: InboxMessage = {
+    ...inbox.inbox_items[0][1],
+    messageUuid: null,
+    coordsWithLocality: [],
+    createdAt: null,
+    createdAtOrder: null,
+    hasDateInHeader: false,
+    unitIds: [],
+    networkIds,
+    networkName: null,
+    deviceName: null,
+    parentMessages: [],
+    intelligenceReports: [],
+  };
+  return transformCamelToSnake<typeof inbox>({
+    ...inbox,
+    poll_cursor_id: null,
+    inbox_items: [[101, message]],
+  });
+}
 
 async function useRoles(page: Page, roles: string[], ready: Promise<void> = Promise.resolve()) {
   await page.route('**/api/user', async (route) => {
@@ -19,6 +71,7 @@ async function useRoles(page: Page, roles: string[], ready: Promise<void> = Prom
         goi_host: null,
         goi_integrations: [],
         last_release_seen: null,
+        rer_report_eligible: false,
       },
     });
   });
@@ -54,7 +107,15 @@ function classicDutyState() {
 
 // Regression: https://github.com/echoua/echo/issues/3568
 test.describe('Cyber radio visibility @regression #3568', () => {
-  for (const roles of [['Rer'], ['Rer', 'Cyber'], ['Admin'], ['Full'], ['Cyber']]) {
+  for (const roles of [
+    ['Rer'],
+    ['Rer', 'Cyber'],
+    ['Admin'],
+    ['Full'],
+    ['Cyber'],
+    ['CyberViewer'],
+    ['CyberViewerRestricted'],
+  ]) {
     test(`@smoke #3568 classic Duty saved filters wait for ${roles.join('+')} permissions`, async ({
       page,
     }) => {
@@ -87,7 +148,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
       expect(JSON.parse(new URL(page.url()).searchParams.get('state')!)).toEqual(state);
       releaseUser();
 
-      const radioAllowed = roles[0] !== 'Cyber';
+      const radioAllowed = roles.some((role) => ['Rer', 'Full', 'Admin'].includes(role));
       const settings = page.locator('button').filter({ has: page.locator('i.bi-gear') });
       await expect(settings).toHaveCount(2);
       await settings.nth(0).click();
@@ -208,7 +269,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
             ? 'aors=7'
             : `state=${encodeURIComponent(JSON.stringify(toLegacyRerAnalysisQueryState({ aorsSelected: ['7'] })))}`;
           const endpoint = neo
-            ? '**/api/rer/analysis/stats/count'
+            ? '**/api/rer/analysis/stats/groups/count'
             : '**/api/rer-importer/get-inbox';
           const filteredRequest = page.waitForRequest(endpoint);
           await page.goto(`/rer-analysis${neo ? '-neo' : ''}?${query}`);
@@ -316,7 +377,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await installRerDutyShortStateMocks(page);
     await installAnalysisNeoApiMocks(page);
     await useRoles(page, ['Rer']);
-    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
     await page.goto('/rer-analysis');
     const request = (await countersRequest).postDataJSON();
     expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
@@ -324,6 +385,202 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     );
     await expect(page.getByText('частоти', { exact: true })).toBeVisible();
     await expect(page.getByText('мережі', { exact: true })).toBeVisible();
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3598
+  test('#3598 ignores restored network filters without network-only requests in classic Analysis', async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { hideNetworks: true, inboxResponse: inbox });
+    await installAnalysisNeoApiMocks(page, { hideNetworks: true, inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    const networkRequests: string[] = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        path === '/api/rer/analysis/stats/networks' ||
+        path === '/api/sigint/network-info-batch-id'
+      ) {
+        networkRequests.push(path);
+      }
+    });
+    const inboxRequest = page.waitForRequest('**/api/rer-importer/get-inbox');
+    const state = toLegacyRerAnalysisQueryState({ networksSelected: ['7'], withoutNetwork: true });
+    await page.goto(`/rer-analysis?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const request = (await inboxRequest).postDataJSON();
+
+    expect(request.selected_networks).toBeNull();
+    expect(request.without_network).toBe(false);
+    await expect(page.getByText('частоти', { exact: true })).toBeVisible();
+    await expect(page.getByText('мережі', { exact: true })).toHaveCount(0);
+    await expect(page.locator('app-navbar')).toBeAttached();
+    await page.waitForTimeout(250);
+    expect(networkRequests).toEqual([]);
+  });
+
+  for (const hideNetworks of [true, false]) {
+    test(`#3598 classic Duty resumes deferred hydration only when networks are visible: ${hideNetworks}`, async ({
+      page,
+    }) => {
+      const inbox = createClassicDutyNetworkInbox();
+      await installRerDutyShortStateMocks(page, {
+        inboxResponse: inbox,
+        networkInfoResponse: [transformCamelToSnake(dutyNetwork)],
+      });
+      await useRoles(page, ['Rer']);
+      let releaseSettings!: () => void;
+      const settingsReady = new Promise<void>((resolve) => {
+        releaseSettings = resolve;
+      });
+      await page.route('**/api/system-settings/current', async (route) => {
+        await settingsReady;
+        await route.fulfill({ json: systemSettingsCurrentResponse({ hideNetworks }) });
+      });
+      const networkRequests: string[] = [];
+      page.on('request', (request) => {
+        if (new URL(request.url()).pathname === '/api/sigint/network-info-batch-id') {
+          networkRequests.push(request.url());
+        }
+      });
+      await page.goto('/rer-duty');
+      await expect(
+        page.getByText('Analysis summary fixture message', { exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText('Analysis Unit', { exact: true })).toBeVisible();
+      expect(networkRequests).toEqual([]);
+      releaseSettings();
+      if (hideNetworks) {
+        await page.waitForTimeout(1500);
+        expect(networkRequests).toEqual([]);
+        await expect(page.getByText('Analysis Unit', { exact: true })).toBeVisible();
+      } else {
+        await expect.poll(() => networkRequests.length).toBe(1);
+        await expect(page.getByText(/Duty recovery network/)).toBeVisible();
+      }
+    });
+  }
+
+  test('#3598 classic Duty retries failed network hydration after a cooldown', async ({ page }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill(
+        networkRequests === 1
+          ? { status: 503, json: {} }
+          : { json: [transformCamelToSnake(dutyNetwork)] },
+      );
+    });
+    await page.goto('/rer-duty');
+    await expect.poll(() => networkRequests).toBe(1);
+    await page.waitForTimeout(1500);
+    expect(networkRequests).toBe(1);
+    await expect(page.getByText(/Duty recovery network/)).toBeVisible({ timeout: 10000 });
+    expect(networkRequests).toBe(2);
+    await page.waitForTimeout(1500);
+    expect(networkRequests).toBe(2);
+  });
+
+  test('#3598 classic Duty stops retrying after the one automatic temporary-error retry', async ({
+    page,
+  }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    await page.route('**/api/rer-importer/signal-profile-batch', (route) =>
+      route.fulfill({ json: { data: {} } }),
+    );
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ status: 503, json: {} });
+    });
+    await page.goto('/rer-duty');
+    const errorToast = page.getByRole('alert').filter({ hasText: 'Помилка завантаження мереж' });
+    await expect(errorToast).toHaveCount(1);
+    const initialToastHeader = await errorToast.locator('.toast-header').textContent();
+    await expect.poll(() => networkRequests, { timeout: 10000 }).toBe(2);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(2);
+    await expect(errorToast).toHaveCount(1);
+    await expect(errorToast.locator('.toast-header')).toHaveText(initialToastHeader!);
+  });
+
+  test('#3598 classic Duty logs out when its automatic network retry returns 401', async ({
+    page,
+  }) => {
+    await installRerDutyShortStateMocks(page, {
+      inboxResponse: createClassicDutyNetworkInbox(),
+    });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ status: networkRequests === 1 ? 503 : 401, json: {} });
+    });
+    await page.route(/\/api\/user\/logout(?:\?.*)?$/, (route) =>
+      route.fulfill({ contentType: 'text/html', body: 'Logged out' }),
+    );
+    const logoutRequest = page.waitForRequest(/\/api\/user\/logout(?:\?.*)?$/);
+    await page.goto('/rer-duty');
+    await logoutRequest;
+    await expect(page).toHaveURL(/\/api\/user\/logout(?:\?|$)/);
+    expect(networkRequests).toBe(2);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(2);
+  });
+
+  test('#3598 classic Duty does not retry permanent network hydration failures', async ({
+    page,
+  }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ status: 403, json: {} });
+    });
+    await page.goto('/rer-duty');
+    await expect.poll(() => networkRequests).toBe(1);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(1);
+  });
+
+  test('#3598 classic Duty does not retry empty network hydration responses', async ({ page }) => {
+    const inbox = createClassicDutyNetworkInbox();
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ json: [] });
+    });
+    await page.goto('/rer-duty');
+    await expect.poll(() => networkRequests).toBe(1);
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(1);
+  });
+
+  test('#3598 classic Duty does not retry omitted IDs from a partial network response', async ({
+    page,
+  }) => {
+    const inbox = createClassicDutyNetworkInbox([7, 8]);
+    await installRerDutyShortStateMocks(page, { inboxResponse: inbox });
+    await useRoles(page, ['Rer']);
+    let networkRequests = 0;
+    await page.route('**/api/sigint/network-info-batch-id', async (route) => {
+      networkRequests += 1;
+      await route.fulfill({ json: [transformCamelToSnake(dutyNetwork)] });
+    });
+    await page.goto('/rer-duty');
+    await expect(page.getByText(/Duty recovery network/)).toBeVisible();
+    await page.waitForTimeout(6500);
+    expect(networkRequests).toBe(1);
   });
 
   for (const enabled of [true, false]) {
@@ -353,7 +610,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
     await installAnalysisNeoApiMocks(page);
     await useRoles(page, ['Rer']);
-    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
     await page.goto('/rer-analysis-neo');
     const request = (await countersRequest).postDataJSON();
     expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
@@ -372,7 +629,7 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await page.clock.setFixedTime(new Date('2026-09-23T12:00:00Z'));
     await installAnalysisNeoApiMocks(page);
     await useRoles(page, ['Cyber']);
-    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/count');
+    const countersRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
     await page.goto('/rer-analysis-neo');
     const request = (await countersRequest).postDataJSON();
     expect(request.till_date_noninclusive_ms - request.since_date_inclusive_ms).toBe(
@@ -385,4 +642,34 @@ test.describe('Cyber radio visibility @regression #3568', () => {
     await expect(page.getByRole('heading', { name: 'Мережі', exact: true })).toHaveCount(0);
     await expect(page).toHaveURL(/fromDateTime=2026-06-26T00%3A00/);
   });
+});
+
+test('@regression CyberViewerRestricted opens analysis but cannot open devices directly', async ({
+  page,
+}) => {
+  await installRerDutyShortStateMocks(page);
+  await installAnalysisNeoApiMocks(page);
+  await useRoles(page, ['CyberViewerRestricted']);
+  await page.route('**/api/system-settings/current', async (route) => {
+    await route.fulfill({ json: systemSettingsCurrentResponse({ devicesSectionEnabled: true }) });
+  });
+  const deviceRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/device/')) {
+      deviceRequests.push(request.url());
+    }
+  });
+  const analysisRequest = page.waitForRequest('**/api/rer/analysis/stats/groups/count');
+  await page.goto('/rer-analysis-neo');
+  await analysisRequest;
+  await expect(page).toHaveURL(/\/rer-analysis-neo(?:\?|$)/);
+  await expect(page.locator('#app-navbar-links-panel')).toContainText('Оперативний');
+  await expect(page.locator('#app-navbar-links-panel')).toContainText('Аналіз');
+  await expect(page.locator('a[href="/devices"]')).toHaveCount(0);
+  for (const path of ['/devices', '/devices/019fc7f7-9770-7f83-9c1a-211af29b02e6']) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator('devices-page, device-details-page')).toHaveCount(0);
+  }
+  expect(deviceRequests).toEqual([]);
 });

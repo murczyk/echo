@@ -28,10 +28,11 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
-const settings = (devicesSectionEnabled = true, disableBotTags = false) => ({
+const settings = (devicesSectionEnabled = true, disableBotTags = false, hideNetworks = false) => ({
   devicesSectionEnabled,
   enableAudioTranscription: false,
   disableBotTags,
+  hideNetworks,
 });
 let root: Root;
 let container: HTMLDivElement;
@@ -135,5 +136,26 @@ describe('useRerDutyPageSettings device access', () => {
     render();
     await flush();
     expect(latest?.hideBotTags).toBe(true);
+  });
+  it('marks network visibility ready only after applying the #3598 setting', async () => {
+    const system = deferred<ReturnType<typeof settings>>();
+    mocks.currentSystemSettings.mockReturnValue(system.promise);
+    mocks.fetchCurrentUser.mockResolvedValue({ roles: ['Rer'] } as User);
+    render();
+    await flush();
+    expect(latest?.networkVisibilityReady).toBe(false);
+    await act(async () => {
+      system.resolve(settings(true, false, true));
+      await Promise.resolve();
+    });
+    expect(latest?.hideNetworks).toBe(true);
+    expect(latest?.networkVisibilityReady).toBe(true);
+  });
+  it('keeps network visibility unavailable when system settings fail', async () => {
+    mocks.currentSystemSettings.mockRejectedValue(new Error('settings lookup failed'));
+    mocks.fetchCurrentUser.mockResolvedValue({ roles: ['Rer'] } as User);
+    render();
+    await flush();
+    expect(latest?.networkVisibilityReady).toBe(false);
   });
 });

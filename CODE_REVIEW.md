@@ -65,6 +65,11 @@ Review database access using [QUERY_PERF.md](QUERY_PERF.md). Require
 production-scale plan evidence for high-risk queries and oneoffs; ORM-generated
 SQL is not exempt.
 
+## Entity generation
+
+Treat files in wdintel-rs/src/entities as auto generated. Reject any manual code changes
+to generated entities, such as adding attributes, constants or methods.
+
 ## Replicated PostgreSQL migrations
 
 Use comparable existing migration files as examples when writing new migrations.

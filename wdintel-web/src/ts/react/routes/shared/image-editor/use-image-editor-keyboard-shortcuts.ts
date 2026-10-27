@@ -17,6 +17,7 @@ type KeyboardState = {
   saveDialogs: ReturnType<typeof useImageEditorSaveDialogState>;
   confirmCancel: boolean;
   menuOpen: boolean;
+  saveAsNewHandoff: boolean;
   setConfirmCancel: (value: boolean) => void;
   setMenuOpen: (value: boolean) => void;
   dismissMenu: () => void;
@@ -51,6 +52,7 @@ export function useImageEditorKeyboardShortcuts({
     if (target instanceof Element && target.closest('[data-image-editor-local-escape]'))
       return false;
     if (current.loading || current.applying || current.rasterPending) return true;
+    if (current.saveAsNewHandoff) return true;
     if (current.saveDialogs.activeDialog) {
       current.saveDialogs.closeDialog(current.saveDialogs.activeDialog);
       return true;

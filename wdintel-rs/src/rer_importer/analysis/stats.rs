@@ -1,6 +1,7 @@
 use crate::config::{
-    ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT, ANALYSIS_STATS_UNDEFINED_UNIT_ID,
-    ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
+    ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT,
+    ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT, ANALYSIS_CALLSIGN_PAGE_SIZE_MAX,
+    ANALYSIS_STATS_UNDEFINED_UNIT_ID, ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
     ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES,
     ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS,
 };
@@ -12,6 +13,7 @@ use crate::types::{debug, warn};
 use crate::users::login_id_from_identity;
 use actix_identity::Identity;
 use actix_web::web::Json;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{Duration, NaiveDate, Utc};
 use echo_migration::{Expr, JoinType};
 use once_cell::sync::Lazy;
@@ -19,7 +21,8 @@ use sea_orm::sea_query::{
     CommonTableExpression, Order, SelectStatement, SimpleExpr, UnionType,
     WithQuery,
 };
-use sea_orm::FromQueryResult;
+use sea_orm::{FromQueryResult, Value};
+use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::error::Error as StdError;
@@ -116,6 +119,7 @@ where
 pub(super) enum AnalysisFacet {
     Groups,
     Senders,
+    Devices,
     Frequencies,
     Posts,
     Callsigns,
@@ -155,6 +159,7 @@ pub(super) fn request_without_facet_filter(
     match facet {
         AnalysisFacet::Groups => req.selected_groups = None,
         AnalysisFacet::Senders => req.selected_senders = None,
+        AnalysisFacet::Devices => req.selected_device_names = None,
         AnalysisFacet::Frequencies => req.selected_freqs = None,
         AnalysisFacet::Posts => req.selected_posts = None,
         AnalysisFacet::Callsigns => req.selected_callsigns = None,
@@ -232,11 +237,54 @@ pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
     })
 }
 
+async fn resolve_tag_access_for_request(
+    source_db: &DatabaseConnection,
+    login_id: &uuid::Uuid,
+    req: &AnalysisStatsReq,
+) -> Result<Option<AnalyticsTagAccess>, AppError> {
+    Ok(
+        if req
+            .selected_tags
+            .as_ref()
+            .is_some_and(|tags| !tags.is_empty())
+            || req
+                .denied_tags
+                .as_ref()
+                .is_some_and(|tags| !tags.is_empty())
+            || req.tag_presence.is_some()
+            || req.report_tags_only_this_unit == Some(true)
+        {
+            Some(
+                resolve_analytics_tag_access(
+                    source_db,
+                    login_id,
+                    req.report_tags_only_this_unit.unwrap_or(false),
+                )
+                .await
+                .context(h!())?,
+            )
+        } else {
+            None
+        },
+    )
+}
+
 pub(super) async fn resolve_analytics_message_id_scope(
     req: &AnalysisStatsReq,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     freshness_max_age_ms: u64,
+    groups: &[String],
 ) -> Result<AnalyticsMessageIdScope, AppError> {
+    ensure_analytics_search_coverage(
+        source_db,
+        db,
+        req,
+        groups,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -249,7 +297,7 @@ pub(super) async fn resolve_analytics_message_id_scope(
     .await
 }
 
-pub(in crate::rer_importer) async fn resolve_analytics_message_id_scope_for_range(
+pub(crate) async fn resolve_analytics_message_id_scope_for_range(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     db: &DatabaseConnection,
@@ -444,13 +492,11 @@ async fn resolve_analytics_frequency_scopes(
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
 ) -> Result<AnalyticsFrequencyScopes, AppError> {
-    const COMPARISON_PERIOD_DAYS: u8 = 10;
-
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let comparison_period_start = dt_since
-        - Duration::try_days(COMPARISON_PERIOD_DAYS.into())
+        - Duration::try_days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS)
             .context(h!())
             .map_err(Into::<AppError>::into)?;
     let current = resolve_analytics_message_id_scope_for_range(
@@ -1137,7 +1183,15 @@ fn apply_group_stats_filters(
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, req)?;
-    let query = filter_search(query, &req.search).context(h!())?;
+    let query = filter_search_with_scope(
+        query,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let query =
         filter_selected_device_names(query, &req.selected_device_names)?;
     let query =
@@ -1176,10 +1230,81 @@ pub(super) async fn fetch_daily_group_activity_with_db(
     req: &AnalysisStatsReq,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     accessible_groups: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisDailyGroupActivity>, AppError> {
-    let login = login_id_from_identity(user)?;
+    let login = login_id_from_identity(user).context(h!())?;
+    Ok(fetch_daily_group_activity_for_login_with_db(
+        req,
+        &login,
+        db,
+        source_db,
+        accessible_groups,
+        scope,
+    )
+    .await
+    .context(h!())?)
+}
+
+pub(super) async fn fetch_daily_group_activity_for_login_with_db(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    accessible_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> anyhow::Result<Vec<AnalysisDailyGroupActivity>> {
+    let Some(scope) = scope else {
+        return query_daily_group_activity(
+            req,
+            login,
+            db,
+            accessible_groups,
+            None,
+        )
+        .await
+        .context(h!());
+    };
+    let rows = load_analytics_message_id_chunks(source_db, *scope, |scope| {
+        let accessible_groups = accessible_groups.clone();
+        async move {
+            query_daily_group_activity(
+                req,
+                login,
+                db,
+                accessible_groups,
+                Some(&scope),
+            )
+            .await
+            .context(h!())
+        }
+    })
+    .await
+    .context(h!())?;
+    let mut counts = BTreeMap::new();
+    for row in rows.into_iter().flatten() {
+        *counts.entry((row.msg_date, row.group)).or_default() += row.value;
+    }
+    let mut rows = counts
+        .into_iter()
+        .map(|((msg_date, group), value)| AnalysisDailyGroupActivity {
+            msg_date,
+            group,
+            value,
+        })
+        .collect_vec();
+    rows.sort_by_key(|row| std::cmp::Reverse(row.msg_date));
+    Ok(rows)
+}
+
+async fn query_daily_group_activity(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    accessible_groups: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> anyhow::Result<Vec<AnalysisDailyGroupActivity>> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1230,18 +1355,19 @@ pub(super) async fn fetch_daily_group_activity_with_db(
         &req.selected_groups,
         &req.selected_senders,
         req,
-        &login,
+        login,
         accessible_groups,
         dt_since,
         dt_till,
         scope,
         None,
-    )?;
-    Ok(query
+    )
+    .context(h!())?;
+    query
         .into_model::<AnalysisDailyGroupActivity>()
         .all(db)
         .await
-        .context(h!())?)
+        .context(h!())
 }
 
 #[derive(FromQueryResult)]
@@ -1408,7 +1534,6 @@ fn callsign_frequency_matches_statement(
         .query(expanded_query)
         .table_name(expanded_alias.clone())
         .to_owned();
-
     let mut matches_query = Query::select()
         .column((expanded_alias.clone(), freq_alias.clone()))
         .expr_as(
@@ -1543,9 +1668,15 @@ pub(super) async fn fetch_senders_raw_with_db(
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsSender>, AppError> {
     let login_value = login_id_from_identity(user)?;
-    let scope =
-        resolve_analytics_message_id_scope(&req.0, db, freshness_max_age_ms)
-            .await?;
+    let scope = resolve_analytics_message_id_scope(
+        &req.0,
+        db,
+        &env.dbx,
+        freshness_max_age_ms,
+        &master_keys,
+    )
+    .await
+    .c(h!())?;
     if scope.is_empty() {
         return Ok(Vec::new());
     }
@@ -1589,6 +1720,10 @@ async fn fetch_senders_for_login_with_db(
         count: i64,
     }
 
+    let tag_access =
+        resolve_tag_access_for_request(&env.dbx, login_str, &req.0)
+            .await
+            .c(h!())?;
     let instant = std::time::Instant::now();
     let breakdown_query = build_sender_breakdown_query(
         req,
@@ -1598,7 +1733,9 @@ async fn fetch_senders_for_login_with_db(
         master_keys,
         scope,
         units.as_ref(),
-    )?;
+        tag_access.as_ref(),
+    )
+    .context(h!())?;
     let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
         .into_model::<SenderBreakdownRes>()
         .all(db)
@@ -1679,6 +1816,7 @@ pub(super) fn build_sender_breakdown_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req =
         Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
@@ -1731,7 +1869,9 @@ pub(super) fn build_sender_breakdown_query(
         scope,
         units,
         true,
-    )?;
+        tag_access,
+    )
+    .context(h!())?;
     Ok(breakdown_query)
 }
 
@@ -1874,7 +2014,15 @@ fn build_senders_filtered_query(
     )
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
-    let senders_res = filter_search(senders_res, &req.search).context(h!())?;
+    let senders_res = filter_search_with_scope(
+        senders_res,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let senders_res =
         filter_selected_device_names(senders_res, &req.selected_device_names)?;
     filter_selected_aors_for_scope(senders_res, &req.selected_aors, scope)
@@ -1937,6 +2085,7 @@ fn apply_sender_filters_for_login<E>(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
     group_access_already_filtered: bool,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<E>, AppError>
 where
     E: EntityTrait,
@@ -1988,7 +2137,7 @@ where
     .context(h!())?;
     let query = filter_selected_callsigns(query, &req.selected_callsigns)
         .context(h!())?;
-    let query = filter_selected_tags_with_scope(
+    let query = filter_selected_tags_with_access(
         query,
         &req.selected_tags,
         &req.denied_tags,
@@ -2000,8 +2149,15 @@ where
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
+        match tag_access {
+            Some(access) => TagFilterAccess::Resolved {
+                user_id: login_str,
+                accessible_tag_ids: &access.accessible_tag_ids,
+                unit_login_ids: &access.unit_login_ids,
+            },
+            None => TagFilterAccess::Unresolved { user_id: login_str },
+        },
         scope,
     )
     .context(h!())?;
@@ -2014,7 +2170,15 @@ where
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
-    let query = filter_search(query, &req.search).context(h!())?;
+    let query = filter_search_with_scope(
+        query,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let query =
         filter_selected_device_names(query, &req.selected_device_names)?;
     let query =
@@ -2092,6 +2256,13 @@ async fn fetch_posts_with_db(
     )
     .await
     .context(h!())?;
+    let tag_access = if scope.is_some() {
+        resolve_tag_access_for_request(source_db, &login_value, &req.0)
+            .await
+            .c(h!())?
+    } else {
+        None
+    };
     let instant = std::time::Instant::now();
     let post_res = if scope.is_none() && req_allows_stats_aggregated(&req.0) {
         read_unfiltered_post_stats(db, master_keys, dt_since, dt_till).await?
@@ -2104,6 +2275,7 @@ async fn fetch_posts_with_db(
             dt_till,
             scope,
             units.as_ref(),
+            tag_access.as_ref(),
         )?
         .into_model::<PostsRes>()
         .all(db)
@@ -2201,6 +2373,13 @@ pub(super) async fn count_posts_with_db(
     .await
     .context(h!())?;
 
+    let tag_access = if scope.is_some() {
+        resolve_tag_access_for_request(source_db, &login_value, &req.0)
+            .await
+            .c(h!())?
+    } else {
+        None
+    };
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let posts_res = build_posts_filtered_query(
@@ -2211,6 +2390,7 @@ pub(super) async fn count_posts_with_db(
         dt_till,
         scope,
         units.as_deref(),
+        tag_access.as_ref(),
     )?;
     count_distinct_with_db(
         posts_res,
@@ -2220,7 +2400,7 @@ pub(super) async fn count_posts_with_db(
     .await
 }
 
-fn build_posts_query(
+pub(super) fn build_posts_query(
     req: &&Json<AnalysisStatsReq>,
     login_str: &uuid::Uuid,
     master_keys: Vec<String>,
@@ -2228,6 +2408,7 @@ fn build_posts_query(
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     Ok(build_posts_filtered_query(
         req,
@@ -2237,6 +2418,7 @@ fn build_posts_query(
         dt_till,
         scope,
         units,
+        tag_access,
     )?
     .select_only()
     .column_as(
@@ -2258,6 +2440,7 @@ fn build_posts_filtered_query(
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    tag_access: Option<&AnalyticsTagAccess>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = Json(request_without_facet_filter(&req.0, AnalysisFacet::Posts));
     let include_peleng_locations =
@@ -2308,7 +2491,7 @@ fn build_posts_filtered_query(
     .context(h!())?;
     let post_res = filter_selected_callsigns(post_res, &req.selected_callsigns)
         .context(h!())?;
-    let post_res = filter_selected_tags_with_scope(
+    let post_res = filter_selected_tags_with_access(
         post_res,
         &req.selected_tags,
         &req.denied_tags,
@@ -2320,8 +2503,15 @@ fn build_posts_filtered_query(
         &req.or_with_extended_form,
         &req.filter_tags_option,
         &req.without_model_tags,
-        login_str,
         req.report_tags_only_this_unit.unwrap_or(false),
+        match tag_access {
+            Some(access) => TagFilterAccess::Resolved {
+                user_id: login_str,
+                accessible_tag_ids: &access.accessible_tag_ids,
+                unit_login_ids: &access.unit_login_ids,
+            },
+            None => TagFilterAccess::Unresolved { user_id: login_str },
+        },
         scope,
     )
     .context(h!())?;
@@ -2334,7 +2524,15 @@ fn build_posts_filtered_query(
     )
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
-    let post_res = filter_search(post_res, &req.search).context(h!())?;
+    let post_res = filter_search_with_scope(
+        post_res,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let post_res =
         filter_selected_device_names(post_res, &req.selected_device_names)?;
     let post_res =
@@ -2410,10 +2608,26 @@ pub(super) async fn fetch_freqs_raw_with_db(
     master_keys: Vec<String>,
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
+    let mut coverage_req = req.0.clone();
+    coverage_req.since_date_inclusive_ms =
+        (dt_from_millis(req.since_date_inclusive_ms).c(h!())?
+            - Duration::days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS))
+        .and_utc()
+        .timestamp_millis();
+    ensure_analytics_search_coverage(
+        source_db,
+        db,
+        &coverage_req,
+        &master_keys,
+        freshness_max_age_ms,
+    )
+    .await
+    .c(h!())?;
     let scopes =
         resolve_analytics_frequency_scopes(&req.0, db, freshness_max_age_ms)
-            .await?;
+            .await
+            .context(h!())?;
     if scopes.current.is_empty() {
         return Ok(Vec::new());
     }
@@ -2521,9 +2735,8 @@ fn build_new_freqs_query(
     dt_till: NaiveDateTime,
     analytics_scopes: Option<&AnalyticsFrequencyScopes>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    const COMPARISON_PERIOD_DAYS: u8 = 10;
     let comparison_period_start = dt_since
-        - Duration::try_days(COMPARISON_PERIOD_DAYS.into())
+        - Duration::try_days(ANALYTICS_FREQUENCY_COMPARISON_PERIOD_DAYS)
             .context(h!())
             .map_err(Into::<AppError>::into)?;
     if let Some(analytics_scopes) = analytics_scopes {
@@ -2782,7 +2995,15 @@ fn build_freqs_filtered_query(
     )
     .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, &req)?;
-    let freqs_res = filter_search(freqs_res, &req.search).context(h!())?;
+    let freqs_res = filter_search_with_scope(
+        freqs_res,
+        &req.search,
+        req.search_mode,
+        scope.is_some(),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let freqs_res =
         filter_selected_device_names(freqs_res, &req.selected_device_names)?;
     let freqs_res =
@@ -3067,10 +3288,31 @@ pub(super) async fn fetch_metadata_stats_raw_with_db(
     master_keys: Vec<String>,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<MetadataStatsRsp, AppError> {
+    let login = login_id_from_identity(user).context(h!())?;
+    fetch_analytics_metadata_for_login_with_scope(
+        &req.0,
+        &login,
+        db,
+        source_db,
+        master_keys,
+        scope,
+    )
+    .await
+    .context(h!())
+    .map_err(AppError::from)
+}
+
+pub(super) async fn fetch_analytics_metadata_for_login_with_scope(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: &AnalyticsMessageIdScope,
+) -> anyhow::Result<MetadataStatsRsp> {
     if scope.is_empty() {
         return Ok(empty_metadata_stats());
     }
-    let login = login_id_from_identity(user)?;
     let units = resolve_analysis_unit_filters_for_analytics(
         source_db,
         &req.selected_units,
@@ -3079,15 +3321,64 @@ pub(super) async fn fetch_metadata_stats_raw_with_db(
     )
     .await
     .context(h!())?;
-    fetch_metadata_stats_with_units(
-        &req.0,
-        &login,
-        db,
-        master_keys,
-        Some(scope),
-        units.as_ref(),
-    )
-    .await
+    let responses =
+        load_analytics_message_id_chunks(source_db, *scope, |scope| {
+            let master_keys = master_keys.clone();
+            let units = units.as_ref();
+            async move {
+                fetch_metadata_stats_with_units(
+                    req,
+                    login,
+                    db,
+                    master_keys,
+                    Some(&scope),
+                    units,
+                    true,
+                )
+                .await
+                .context(h!())
+            }
+        })
+        .await
+        .context(h!())?;
+    let mut result = empty_metadata_stats();
+    for response in responses {
+        result.ccs.extend(response.ccs);
+        result.hashes.extend(response.hashes);
+        result.senders.extend(response.senders);
+        result.receivers.extend(response.receivers);
+    }
+    result.ccs = merge_metadata_value_counts(result.ccs, true);
+    result.hashes = merge_metadata_value_counts(result.hashes, true);
+    result.senders = merge_metadata_value_counts(result.senders, false);
+    result.receivers = merge_metadata_value_counts(result.receivers, false);
+    Ok(result)
+}
+
+fn merge_metadata_value_counts(
+    rows: Vec<AnalysisStatsMetadataValue>,
+    trim_values: bool,
+) -> Vec<AnalysisStatsMetadataValue> {
+    let mut counts = BTreeMap::new();
+    for row in rows {
+        *counts.entry(row.value).or_default() += row.count;
+    }
+    let mut rows = counts
+        .into_iter()
+        .map(|(value, count)| AnalysisStatsMetadataValue { value, count })
+        .collect_vec();
+    rows.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.value.cmp(&right.value))
+    });
+    if trim_values {
+        for row in &mut rows {
+            row.value = row.value.trim().to_string();
+        }
+    }
+    rows
 }
 
 fn empty_metadata_stats() -> MetadataStatsRsp {
@@ -3106,10 +3397,18 @@ pub(super) async fn fetch_metadata_stats_with_db(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<MetadataStatsRsp, AppError> {
-    fetch_metadata_stats_with_units(req, login, db, master_keys, scope, None)
-        .await
-        .context(h!())
-        .map_err(AppError::from)
+    fetch_metadata_stats_with_units(
+        req,
+        login,
+        db,
+        master_keys,
+        scope,
+        None,
+        false,
+    )
+    .await
+    .context(h!())
+    .map_err(AppError::from)
 }
 
 async fn fetch_metadata_stats_with_units(
@@ -3119,6 +3418,7 @@ async fn fetch_metadata_stats_with_units(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
+    raw_values: bool,
 ) -> Result<MetadataStatsRsp, AppError> {
     let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
@@ -3140,6 +3440,7 @@ async fn fetch_metadata_stats_with_units(
         messages_q.clone(),
         sigint_inbox_item_metadata::Column::ColorCode,
         scope,
+        raw_values,
     )
     .await
     .context(h!())?;
@@ -3148,6 +3449,7 @@ async fn fetch_metadata_stats_with_units(
         messages_q.clone(),
         sigint_inbox_item_metadata::Column::HashId,
         scope,
+        raw_values,
     )
     .await
     .context(h!())?;
@@ -3216,7 +3518,7 @@ fn build_metadata_messages_query_with_units(
     let messages_q =
         filter_stats_message_time_range(messages_q, req, dt_since, dt_till);
     let messages_q = apply_analytics_message_id_scope(messages_q, scope);
-    apply_sender_filters_for_login(
+    Ok(apply_sender_filters_for_login(
         messages_q,
         req,
         dt_since,
@@ -3226,7 +3528,9 @@ fn build_metadata_messages_query_with_units(
         scope,
         units,
         false,
+        None,
     )
+    .context(h!())?)
 }
 
 #[derive(FromQueryResult)]
@@ -3240,6 +3544,7 @@ async fn fetch_metadata_single_value_stats(
     messages_q: Select<sigint_inbox_item::Entity>,
     column: sigint_inbox_item_metadata::Column,
     scope: Option<&AnalyticsMessageIdScope>,
+    raw_values: bool,
 ) -> Result<Vec<AnalysisStatsMetadataValue>, AppError> {
     let messages_subquery = messages_q
         .select_only()
@@ -3286,12 +3591,15 @@ async fn fetch_metadata_single_value_stats(
         .into_iter()
         .filter_map(|row| {
             row.value.and_then(|value| {
-                let value = value.trim().to_string();
-                if value.is_empty() {
+                if value.trim().is_empty() {
                     None
                 } else {
                     Some(AnalysisStatsMetadataValue {
-                        value,
+                        value: if raw_values {
+                            value
+                        } else {
+                            value.trim().to_string()
+                        },
                         count: row.count,
                     })
                 }
@@ -3498,6 +3806,440 @@ async fn load_callsigns_with_counts(
     Ok(callsigns)
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CallsignPageCursor {
+    scope: String,
+    count: i64,
+    exact_rank: i8,
+    label: String,
+}
+
+fn callsign_page_scope(
+    req: &AnalysisCallsignPageReq,
+    page_size: u64,
+) -> Result<String, AppError> {
+    let effective_req =
+        request_without_facet_filter(&req.req, AnalysisFacet::Callsigns);
+    let bytes = serde_json::to_vec(&(
+        &effective_req,
+        &req.query,
+        &req.order,
+        page_size,
+    ))
+    .c(h!())?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn decode_callsign_page_cursor(
+    cursor: Option<&str>,
+    scope: &str,
+) -> Result<Option<CallsignPageCursor>, AppError> {
+    let Some(cursor) = cursor else {
+        return Ok(None);
+    };
+    if cursor.len() > 1024 {
+        return Err(AppError::Form(BTreeMap::from([(
+            "cursor".to_owned(),
+            "Некоректний курсор сторінки".to_owned(),
+        )])));
+    }
+    let bytes = URL_SAFE_NO_PAD
+        .decode(cursor)
+        .map_err(|_| {
+            AppError::Form(BTreeMap::from([(
+                "cursor".to_owned(),
+                "Некоректний курсор сторінки".to_owned(),
+            )]))
+        })
+        .c(h!())?;
+    let cursor: CallsignPageCursor = serde_json::from_slice(&bytes)
+        .map_err(|_| {
+            AppError::Form(BTreeMap::from([(
+                "cursor".to_owned(),
+                "Некоректний курсор сторінки".to_owned(),
+            )]))
+        })
+        .c(h!())?;
+    if cursor.scope != scope {
+        return Err(AppError::Form(BTreeMap::from([(
+            "cursor".to_owned(),
+            "Курсор належить іншому запиту; оновіть список".to_owned(),
+        )])));
+    }
+    Ok(Some(cursor))
+}
+
+pub(super) async fn fetch_callsigns_page_for_login(
+    page_req: &AnalysisCallsignPageReq,
+    login_str: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> Result<AnalysisCallsignPageRsp, AppError> {
+    let prepared = prepare_callsign_page(page_req).c(h!())?;
+    let statement = build_callsign_page_statement(
+        page_req,
+        login_str,
+        master_keys,
+        &prepared,
+    )
+    .c(h!())?;
+    let rows = execute_callsign_page_statement(db, statement)
+        .await
+        .c(h!())?;
+    Ok(callsign_page_response(page_req, prepared, rows))
+}
+
+struct PreparedCallsignPage {
+    page_size: u64,
+    scope: String,
+    cursor: Option<CallsignPageCursor>,
+    req: AnalysisStatsReq,
+    normalized_query: String,
+    substring_pattern: String,
+}
+
+#[derive(FromQueryResult)]
+struct CallsignPageRow {
+    label: String,
+    callsign_values: Vec<String>,
+    count: i64,
+}
+
+fn prepare_callsign_page(
+    page_req: &AnalysisCallsignPageReq,
+) -> Result<PreparedCallsignPage, AppError> {
+    let page_size = page_req
+        .page_size
+        .unwrap_or(ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT)
+        .clamp(1, ANALYSIS_CALLSIGN_PAGE_SIZE_MAX);
+    let scope = callsign_page_scope(page_req, page_size).c(h!())?;
+    let cursor =
+        decode_callsign_page_cursor(page_req.cursor.as_deref(), &scope)
+            .c(h!())?;
+    let req =
+        request_without_facet_filter(&page_req.req, AnalysisFacet::Callsigns);
+    let normalized_query = page_req.query.trim().to_uppercase();
+    let substring_pattern = format!(
+        "%{}%",
+        page_req
+            .query
+            .trim()
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+            .to_uppercase(),
+    );
+    Ok(PreparedCallsignPage {
+        page_size,
+        scope,
+        cursor,
+        req,
+        normalized_query,
+        substring_pattern,
+    })
+}
+
+fn build_callsign_page_statement(
+    page_req: &AnalysisCallsignPageReq,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+    prepared: &PreparedCallsignPage,
+) -> Result<Statement, AppError> {
+    let dt_since =
+        dt_from_millis(prepared.req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(prepared.req.till_date_noninclusive_ms).context(h!())?;
+    let filtered_items = build_callsign_inbox_item_ids_query(
+        &prepared.req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+    )
+    .c(h!())?
+    .build(DbBackend::Postgres);
+    let mut values = filtered_items
+        .values
+        .map(|values| values.0)
+        .unwrap_or_default();
+    let candidate_filter =
+        callsign_page_candidate_filter(page_req, prepared, &mut values);
+    let order = match page_req.order {
+        AnalysisCallsignPageOrder::CountDesc => {
+            "count DESC, label ASC".to_owned()
+        }
+        AnalysisCallsignPageOrder::MatchThenName => {
+            let exact = callsign_page_placeholder(
+                &mut values,
+                Value::String(Some(prepared.normalized_query.clone())),
+            );
+            format!(
+                "CASE WHEN label = {exact} THEN 0 ELSE 1 END ASC, label ASC"
+            )
+        }
+    };
+    let seek = prepared
+        .cursor
+        .as_ref()
+        .map(|cursor| match page_req.order {
+            AnalysisCallsignPageOrder::CountDesc => {
+                let count = callsign_page_placeholder(
+                    &mut values,
+                    Value::BigInt(Some(cursor.count)),
+                );
+                let label = callsign_page_placeholder(
+                    &mut values,
+                    Value::String(Some(cursor.label.clone())),
+                );
+                format!("AND (count < {count} OR (count = {count} AND label > {label}))")
+            }
+            AnalysisCallsignPageOrder::MatchThenName => {
+                let exact = callsign_page_placeholder(
+                    &mut values,
+                    Value::String(Some(prepared.normalized_query.clone())),
+                );
+                let rank = callsign_page_placeholder(
+                    &mut values,
+                    Value::Int(Some(i32::from(cursor.exact_rank))),
+                );
+                let label = callsign_page_placeholder(
+                    &mut values,
+                    Value::String(Some(cursor.label.clone())),
+                );
+                format!(
+                    "AND (CASE WHEN label = {exact} THEN 0 ELSE 1 END > {rank} OR (CASE WHEN label = {exact} THEN 0 ELSE 1 END = {rank} AND label > {label}))"
+                )
+            }
+        })
+        .unwrap_or_default();
+    let callsign_ctes =
+        crate::inbox::callsigns::postgres_effective_callsign_ctes(
+            &filtered_items.sql,
+        );
+    let sql = match page_req.order {
+        AnalysisCallsignPageOrder::CountDesc => {
+            build_count_desc_callsign_page_sql(
+                &callsign_ctes,
+                &candidate_filter,
+                &seek,
+                &order,
+                prepared.page_size + 1,
+            )
+        }
+        AnalysisCallsignPageOrder::MatchThenName => {
+            build_match_then_name_callsign_page_sql(
+                &callsign_ctes,
+                &candidate_filter,
+                &seek,
+                &order,
+                prepared.page_size + 1,
+            )
+        }
+    };
+    Ok(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        values,
+    ))
+}
+
+fn build_count_desc_callsign_page_sql(
+    callsign_ctes: &str,
+    candidate_filter: &str,
+    seek: &str,
+    order: &str,
+    page_limit: u64,
+) -> String {
+    format!(
+        r#"
+        {callsign_ctes}, candidate_callsigns AS (
+            SELECT * FROM all_callsigns
+            WHERE trim(callsign) <> '' {candidate_filter}
+        ), variant_counts AS (
+            SELECT upper(trim(callsign)) AS label,
+                   callsign,
+                   COUNT(*)::bigint AS variant_count
+            FROM candidate_callsigns
+            GROUP BY upper(trim(callsign)), callsign
+        ), label_results AS (
+            SELECT label,
+                   SUM(variant_count)::bigint AS count,
+                   array_agg(callsign ORDER BY callsign) AS callsign_values
+            FROM variant_counts
+            GROUP BY label
+        ), paged AS (
+            SELECT label, callsign_values, count FROM label_results
+            WHERE TRUE
+            {seek}
+            ORDER BY {order}
+            LIMIT {page_limit}
+        )
+        SELECT label, callsign_values, count
+        FROM paged
+        ORDER BY {order}
+        "#,
+    )
+}
+
+fn build_match_then_name_callsign_page_sql(
+    callsign_ctes: &str,
+    candidate_filter: &str,
+    seek: &str,
+    order: &str,
+    page_limit: u64,
+) -> String {
+    format!(
+        r#"
+        {callsign_ctes}, candidate_callsigns AS (
+            SELECT * FROM all_callsigns
+            WHERE trim(callsign) <> '' {candidate_filter}
+        ), grouped AS (
+            SELECT upper(trim(callsign)) AS label,
+                   COUNT(*)::bigint AS count
+            FROM candidate_callsigns
+            GROUP BY upper(trim(callsign))
+        ), paged AS (
+            SELECT label, count FROM grouped
+            WHERE TRUE
+            {seek}
+            ORDER BY {order}
+            LIMIT {page_limit}
+        )
+        SELECT paged.label,
+               array_agg(DISTINCT candidate_callsigns.callsign ORDER BY candidate_callsigns.callsign) AS callsign_values,
+               paged.count
+        FROM paged
+        INNER JOIN candidate_callsigns
+            ON upper(trim(candidate_callsigns.callsign)) = paged.label
+        GROUP BY paged.label, paged.count
+        ORDER BY {order}
+        "#,
+    )
+}
+
+#[cfg(test)]
+pub(super) fn callsign_page_statement_for_test(
+    page_req: &AnalysisCallsignPageReq,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+) -> Result<Statement, AppError> {
+    let prepared = prepare_callsign_page(page_req).c(h!())?;
+    Ok(build_callsign_page_statement(
+        page_req,
+        login_str,
+        master_keys,
+        &prepared,
+    )
+    .c(h!())?)
+}
+fn callsign_page_placeholder(values: &mut Vec<Value>, value: Value) -> String {
+    values.push(value);
+    format!("${}", values.len())
+}
+
+fn callsign_page_candidate_filter(
+    page_req: &AnalysisCallsignPageReq,
+    prepared: &PreparedCallsignPage,
+    values: &mut Vec<Value>,
+) -> String {
+    let mut conditions = Vec::new();
+    if !prepared.normalized_query.is_empty() {
+        let pattern = callsign_page_placeholder(
+            values,
+            Value::String(Some(prepared.substring_pattern.clone())),
+        );
+        conditions.push(format!(
+            "upper(trim(callsign)) LIKE {pattern} ESCAPE chr(92)"
+        ));
+    }
+    if page_req.order == AnalysisCallsignPageOrder::MatchThenName {
+        if let Some(cursor) = &prepared.cursor {
+            let label = callsign_page_placeholder(
+                values,
+                Value::String(Some(cursor.label.clone())),
+            );
+            let operator = if cursor.exact_rank == 0 { "<>" } else { ">" };
+            conditions
+                .push(format!("upper(trim(callsign)) {operator} {label}"));
+        }
+    }
+    conditions
+        .into_iter()
+        .map(|condition| format!("AND {condition}"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+async fn execute_callsign_page_statement(
+    db: &DatabaseConnection,
+    statement: Statement,
+) -> Result<Vec<CallsignPageRow>, AppError> {
+    Ok(CallsignPageRow::find_by_statement(statement)
+        .all(db)
+        .await
+        .context(h!())?)
+}
+
+fn callsign_page_entries(
+    rows: Vec<CallsignPageRow>,
+) -> Vec<AnalysisCallsignPageEntry> {
+    rows.into_iter()
+        .map(|row| AnalysisCallsignPageEntry {
+            value: row
+                .callsign_values
+                .first()
+                .cloned()
+                .unwrap_or_else(|| row.label.clone()),
+            label: row.label,
+            values: row.callsign_values,
+            count: row.count,
+        })
+        .collect()
+}
+
+fn callsign_page_response(
+    page_req: &AnalysisCallsignPageReq,
+    prepared: PreparedCallsignPage,
+    rows: Vec<CallsignPageRow>,
+) -> AnalysisCallsignPageRsp {
+    let has_more = rows.len() > prepared.page_size as usize;
+    let entries = callsign_page_entries(rows)
+        .into_iter()
+        .take(prepared.page_size as usize)
+        .collect::<Vec<_>>();
+    let next_cursor = has_more
+        .then(|| {
+            entries
+                .last()
+                .map(|entry| callsign_page_cursor(page_req, &prepared, entry))
+        })
+        .flatten();
+    AnalysisCallsignPageRsp {
+        entries,
+        has_more,
+        next_cursor,
+    }
+}
+
+fn callsign_page_cursor(
+    page_req: &AnalysisCallsignPageReq,
+    prepared: &PreparedCallsignPage,
+    entry: &AnalysisCallsignPageEntry,
+) -> String {
+    URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&CallsignPageCursor {
+            scope: prepared.scope.clone(),
+            count: entry.count,
+            exact_rank: i8::from(
+                page_req.order == AnalysisCallsignPageOrder::MatchThenName
+                    && entry.label != prepared.normalized_query,
+            ),
+            label: entry.label.clone(),
+        })
+        .expect("cursor serialization"),
+    )
+}
+
 fn build_callsigns_filtered_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
@@ -3576,7 +4318,15 @@ fn build_callsigns_filtered_query(
     )
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
-    let callsigns_res = filter_search(callsigns_res, &req.search)?;
+    let callsigns_res = filter_search_with_scope(
+        callsigns_res,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .c(h!())?;
     let callsigns_res = filter_selected_device_names(
         callsigns_res,
         &req.selected_device_names,
@@ -3724,10 +4474,32 @@ pub(super) async fn fetch_tags_raw_with_db(
     tag_access: &AnalyticsTagAccess,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<Vec<AnalysisStatsTag>, AppError> {
+    let login = login_id_from_identity(user).context(h!())?;
+    Ok(fetch_analytics_tags_for_login_with_scope(
+        &req.0,
+        &login,
+        db,
+        source_db,
+        master_keys,
+        tag_access,
+        scope,
+    )
+    .await
+    .context(h!())?)
+}
+
+pub(super) async fn fetch_analytics_tags_for_login_with_scope(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    tag_access: &AnalyticsTagAccess,
+    scope: &AnalyticsMessageIdScope,
+) -> anyhow::Result<Vec<AnalysisStatsTag>> {
     if scope.is_empty() {
         return Ok(Vec::new());
     }
-    let login = login_id_from_identity(user).context(h!())?;
     let units = resolve_analysis_unit_filters_for_analytics(
         source_db,
         &req.selected_units,
@@ -3736,23 +4508,62 @@ pub(super) async fn fetch_tags_raw_with_db(
     )
     .await
     .context(h!())?;
+    let rows = load_analytics_message_id_chunks(source_db, *scope, |scope| {
+        let units = units.as_ref();
+        let master_keys = &master_keys;
+        async move {
+            build_analytics_tag_counts_query(
+                req,
+                login,
+                master_keys,
+                tag_access,
+                &scope,
+                units,
+            )
+            .context(h!())?
+            .into_model::<TagsRes>()
+            .all(db)
+            .await
+            .context(h!())
+        }
+    })
+    .await
+    .context(h!())?;
+    let mut counts = BTreeMap::new();
+    for row in rows.into_iter().flatten() {
+        *counts.entry(row.tag_id).or_default() += row.count;
+    }
+    Ok(counts
+        .into_iter()
+        .map(|(tag_id, count)| AnalysisStatsTag { tag_id, count })
+        .collect())
+}
+
+fn build_analytics_tag_counts_query(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    master_keys: &[String],
+    tag_access: &AnalyticsTagAccess,
+    scope: &AnalyticsMessageIdScope,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<Select<sigint_inbox_item::Entity>> {
     let since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let till = dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let mut without_units = req.0.clone();
+    let mut without_units = req.clone();
     without_units.selected_units = None;
     without_units.selected_unit_ids = None;
     let query = build_tags_analytics_filtered_query_with_scope(
         &without_units,
-        &login,
+        login,
         &tag_access.accessible_tag_ids,
         &tag_access.unit_login_ids,
         since,
         till,
-        master_keys,
+        master_keys.to_vec(),
         Some(scope),
     )
     .context(h!())?;
-    let rows = apply_analysis_unit_filters(
+    Ok(apply_analysis_unit_filters(
         query,
         &req.selected_units,
         &req.selected_unit_ids,
@@ -3761,7 +4572,7 @@ pub(super) async fn fetch_tags_raw_with_db(
         till,
         req.message_time_basis,
         Some(scope),
-        units.as_ref(),
+        units,
     )
     .context(h!())?
     .select_only()
@@ -3770,18 +4581,7 @@ pub(super) async fn fetch_tags_raw_with_db(
         Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
         "count",
     )
-    .group_by(sigint_inbox_item_tag::Column::TagId)
-    .into_model::<TagsRes>()
-    .all(db)
-    .await
-    .context(h!())?;
-    Ok(rows
-        .into_iter()
-        .map(|row| AnalysisStatsTag {
-            tag_id: row.tag_id,
-            count: row.count,
-        })
-        .collect())
+    .group_by(sigint_inbox_item_tag::Column::TagId))
 }
 
 pub async fn count_tags(
@@ -4290,7 +5090,15 @@ fn build_tags_filtered_query_with_owner_condition(
     }
     .context(h!())?;
     let tags_res = apply_metadata_filters(tags_res, &req)?;
-    let tags_res = filter_search(tags_res, &req.search)?;
+    let tags_res = filter_search_with_scope(
+        tags_res,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .c(h!())?;
     let tags_res =
         filter_selected_device_names(tags_res, &req.selected_device_names)?;
     let tags_res =
@@ -4457,19 +5265,110 @@ pub async fn count_unit_exact_match_breakdown(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<(i64, i64), AppError> {
-    let mut exact_req = req.0.clone();
-    exact_req.units_exact_match_only = Some(true);
-    let (_, exact_matches_count) =
-        fetch_counts(&Json(exact_req), user, env, master_keys.clone())
-            .await
-            .context(h!())?;
+    let login = login_id_from_identity(user).context(h!())?;
+    Ok(count_unit_exact_match_breakdown_for_login(
+        req,
+        &login,
+        env.get_ref(),
+        master_keys,
+    )
+    .await
+    .context(h!())?)
+}
 
-    let mut combined_req = req.0.clone();
-    combined_req.units_exact_match_only = Some(false);
-    let (_, total_matches_count) =
-        fetch_counts(&Json(combined_req), user, env, master_keys)
+pub(super) async fn count_unit_exact_match_breakdown_for_login(
+    req: &Json<AnalysisStatsReq>,
+    login: &uuid::Uuid,
+    env: &Env,
+    master_keys: Vec<String>,
+) -> anyhow::Result<(i64, i64)> {
+    let since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let till = dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    if req.message_time_basis
+        != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && can_read_stats_aggregated(&env.config, since, till)
+        && is_5min_stats_bucket_range_aligned(since, till)
+        && should_read_stats_aggregated_for_config(
+            &req.0,
+            &env.config,
+            since,
+            till,
+        )
+    {
+        let (_, count) = fetch_counts_for_login(req, login, env, master_keys)
             .await
             .context(h!())?;
+        return Ok((count, 0));
+    }
+    let (db, replica_label) = env.replica_with_label();
+    match count_unit_exact_match_breakdown_with_db(
+        req,
+        login,
+        env,
+        master_keys.clone(),
+        &db,
+    )
+    .await
+    {
+        Ok(counts) => Ok(counts),
+        Err(error)
+            if replica_label.is_some()
+                && is_replica_conflict_error(error.as_ref()) =>
+        {
+            warn!(
+                "Replica {replica_label:?} hit recovery conflict for login {login}, retrying on primary"
+            );
+            count_unit_exact_match_breakdown_with_db(
+                req,
+                login,
+                env,
+                master_keys,
+                &env.dbx,
+            )
+            .await
+            .context(h!())
+        }
+        Err(error) => Err(error).context(h!()),
+    }
+}
+
+async fn count_unit_exact_match_breakdown_with_db(
+    req: &Json<AnalysisStatsReq>,
+    login: &uuid::Uuid,
+    env: &Env,
+    master_keys: Vec<String>,
+    db: &DatabaseConnection,
+) -> anyhow::Result<(i64, i64)> {
+    let mut exact_req = Json(req.0.clone());
+    exact_req.units_exact_match_only = Some(true);
+    let exact_matches_count = fetch_selected_count_for_login_with_conn(
+        &exact_req,
+        login,
+        master_keys.clone(),
+        env,
+        db,
+        None,
+        None,
+    )
+    .await
+    .context(h!())?;
+    if req.selected_units.as_ref().is_none_or(Vec::is_empty) {
+        return Ok((exact_matches_count, 0));
+    }
+
+    let mut combined_req = exact_req;
+    combined_req.units_exact_match_only = Some(false);
+    let total_matches_count = fetch_selected_count_for_login_with_conn(
+        &combined_req,
+        login,
+        master_keys,
+        env,
+        db,
+        None,
+        None,
+    )
+    .await
+    .context(h!())?;
 
     let non_exact_matches_count =
         std::cmp::max(total_matches_count - exact_matches_count, 0);
@@ -4487,17 +5386,16 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
     count_selected: i64,
     alternate_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<(i64, i64), AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
     let requested_exact_match = req.units_exact_match_only.unwrap_or(false);
     let mut alternate_req = req.0.clone();
     alternate_req.units_exact_match_only = Some(!requested_exact_match);
-    let (_, alternate_count) = fetch_counts_for_login_with_conn(
+    let alternate_count = fetch_selected_count_for_login_with_conn(
         &Json(alternate_req),
         &login_value,
         master_keys,
         env,
         db,
-        false,
         scope,
         alternate_units,
     )
@@ -4720,7 +5618,15 @@ fn build_units_filtered_query(
     )
     .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
-    let units_res = filter_search(units_res, &req.search).context(h!())?;
+    let units_res = filter_search_with_scope(
+        units_res,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let units_res =
         filter_selected_device_names(units_res, &req.selected_device_names)?;
     let units_res =
@@ -4976,7 +5882,30 @@ fn build_locations_filtered_query_for_login(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    let req = request_without_facet_filter(req, AnalysisFacet::Locations);
+    Ok(build_facet_messages_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
+        AnalysisFacet::Locations,
+    )
+    .c(h!())?)
+}
+
+fn build_facet_messages_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+    facet: AnalysisFacet,
+) -> anyhow::Result<Select<sigint_inbox_item::Entity>> {
+    let req = request_without_facet_filter(req, facet);
     let locations_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -5050,19 +5979,79 @@ fn build_locations_filtered_query_for_login(
         scope,
     )
     .context(h!())?;
-    let locations_res = apply_metadata_filters(locations_res, &req)?;
-    let locations_res =
-        filter_search(locations_res, &req.search).context(h!())?;
-    let locations_res = filter_selected_device_names(
+    let locations_res = apply_metadata_filters(locations_res, &req).c(h!())?;
+    let locations_res = filter_search_with_scope(
         locations_res,
-        &req.selected_device_names,
-    )?;
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
+    let locations_res =
+        filter_selected_device_names(locations_res, &req.selected_device_names)
+            .c(h!())?;
     let locations_res = filter_selected_aors_for_scope(
         locations_res,
         &req.selected_aors,
         scope,
-    )?;
+    )
+    .c(h!())?;
     Ok(locations_res)
+}
+
+pub(super) async fn fetch_device_names_with_db(
+    req: &AnalysisStatsReq,
+    login_id: &uuid::Uuid,
+    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> anyhow::Result<Vec<AnalysisStatsDeviceName>> {
+    if scope.is_some_and(|scope| scope.is_empty()) {
+        return Ok(Vec::new());
+    }
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        scope,
+    )
+    .await
+    .c(h!())?;
+    build_facet_messages_query(
+        req,
+        login_id,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units.as_ref(),
+        AnalysisFacet::Devices,
+    )
+    .c(h!())?
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::DeviceName.def(),
+    )
+    .filter(sigint_inbox_item::Column::DeviceNameId.is_not_null())
+    .filter(device_name::Column::Name.is_not_null())
+    .select_only()
+    .column_as(device_name::Column::Name, "name")
+    .column_as(
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id))
+            .count_distinct(),
+        "count",
+    )
+    .group_by(device_name::Column::Name)
+    .order_by_asc(device_name::Column::Name)
+    .into_model::<AnalysisStatsDeviceName>()
+    .all(db)
+    .await
+    .c(h!())
 }
 
 pub async fn fetch_aors(
@@ -5206,7 +6195,7 @@ pub(super) async fn count_aors_raw_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).context(h!())?;
     let units = resolve_or_borrow_analysis_unit_filters(
         source_db,
         &req.0,
@@ -5215,7 +6204,7 @@ pub(super) async fn count_aors_raw_with_db(
     )
     .await
     .context(h!())?;
-    let stmt = build_aors_analytics_query_with_scope(
+    let stmt = build_aors_analytics_count_query_with_scope(
         &req.0,
         &login_value,
         dt_since,
@@ -5223,13 +6212,14 @@ pub(super) async fn count_aors_raw_with_db(
         master_keys,
         scope,
         units.as_deref(),
-    )?;
-    let count = AorsRes::find_by_statement(stmt)
-        .all(db)
+    )
+    .context(h!())?;
+    let count = DistinctCountRes::find_by_statement(stmt)
+        .one(db)
         .await
         .context(h!())?
-        .len();
-    Ok(count as i64)
+        .context(h!())?;
+    Ok(count.count)
 }
 
 async fn count_aors_with_db(
@@ -5490,10 +6480,67 @@ fn build_aors_analytics_query_with_scope(
     scope: Option<&AnalyticsMessageIdScope>,
     units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Statement, AppError> {
+    let links = build_analytics_aor_links_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
+    )
+    .context(h!())?;
+    Ok(Statement::from_string(
+        DbBackend::Postgres,
+        format!(
+            "SELECT aor_id, COUNT(DISTINCT message_id) AS count \
+             FROM ({}) AS message_aors GROUP BY aor_id",
+            links.to_string(PostgresQueryBuilder),
+        ),
+    ))
+}
+
+fn build_aors_analytics_count_query_with_scope(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<Statement> {
+    let links = build_analytics_aor_links_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
+    )
+    .context(h!())?;
+    Ok(Statement::from_string(
+        DbBackend::Postgres,
+        format!(
+            "SELECT COUNT(DISTINCT aor_id) AS count FROM ({}) AS message_aors",
+            links.to_string(PostgresQueryBuilder),
+        ),
+    ))
+}
+
+fn build_analytics_aor_links_query(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<SelectStatement> {
     let req = request_without_facet_filter(req, AnalysisFacet::Aors);
     let link_alias = Alias::new("analytics_aor_message_link");
     let value_alias = Alias::new("analytics_aor_value");
-    let mut message_aors = build_aor_messages_query(
+    let messages = build_aor_messages_query(
         &req,
         login_str,
         dt_since,
@@ -5501,23 +6548,26 @@ fn build_aors_analytics_query_with_scope(
         &master_keys,
         scope,
         units,
-    )?
+    )
+    .context(h!())?
     .select_only()
-    .column_as(signal_message::Column::Id, "message_id");
-    QuerySelect::query(&mut message_aors)
+    .column(signal_message::Column::Id)
+    .into_query();
+    let mut message_aors = Query::select()
+        .expr_as(
+            Expr::col((link_alias.clone(), Alias::new("sigint_inbox_item_id"))),
+            Alias::new("message_id"),
+        )
         .expr_as(
             Expr::col((link_alias.clone(), Alias::new("aor_id"))),
             Alias::new("aor_id"),
         )
-        .join_as(
-            JoinType::InnerJoin,
+        .from_as(
             (
                 Alias::new("echo_clickhouse_derived"),
                 Alias::new("message_aor_link"),
             ),
             link_alias.clone(),
-            Expr::col((link_alias.clone(), Alias::new("sigint_inbox_item_id")))
-                .equals((signal_message::Entity, signal_message::Column::Id)),
         )
         .join_as(
             JoinType::InnerJoin,
@@ -5527,6 +6577,10 @@ fn build_aors_analytics_query_with_scope(
                 value_alias.clone(),
                 area_of_responsibility::Column::Id,
             )),
+        )
+        .and_where(
+            Expr::col((link_alias.clone(), Alias::new("sigint_inbox_item_id")))
+                .in_subquery(messages),
         )
         .and_where(
             Expr::col((
@@ -5541,22 +6595,14 @@ fn build_aors_analytics_query_with_scope(
                 area_of_responsibility::Column::IsTopLevel,
             ))
             .eq(true),
-        );
+        )
+        .to_owned();
     if let Some(scope) = scope {
-        QuerySelect::query(&mut message_aors).cond_where(
+        message_aors.cond_where(
             scope.condition((link_alias, Alias::new("sigint_inbox_item_id"))),
         );
     }
-
-    let sql = format!(
-        "SELECT aor_id, COUNT(DISTINCT message_id) AS count \
-         FROM ({message_aors}) AS message_aors \
-         GROUP BY 1",
-        message_aors =
-            message_aors.into_query().to_string(PostgresQueryBuilder),
-    );
-
-    Ok(Statement::from_string(DbBackend::Postgres, sql))
+    Ok(message_aors)
 }
 
 fn build_aor_messages_query(
@@ -5574,13 +6620,17 @@ fn build_aor_messages_query(
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .join(
-            JoinType::LeftJoin,
-            sigint_inbox_item::Relation::SigintPost.def(),
-        )
-        .join(
             JoinType::InnerJoin,
             signal_message::Relation::SignalMessageGroup.def(),
         );
+    let messages = if req.selected_posts.is_some() {
+        messages.join(
+            JoinType::LeftJoin,
+            sigint_inbox_item::Relation::SigintPost.def(),
+        )
+    } else {
+        messages
+    };
     let messages = match scope {
         Some(_) => messages,
         None => messages.filter(message_in_groups_exists(master_keys.to_vec())),
@@ -5637,11 +6687,23 @@ fn build_aor_messages_query(
         scope,
     )
     .context(h!())?;
-    let messages = filter_search(messages, &req.search).context(h!())?;
+    let messages = filter_search_with_scope(
+        messages,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let messages =
-        filter_selected_device_names(messages, &req.selected_device_names)?;
-    let messages = apply_metadata_filters(messages, req)?;
-    filter_selected_aors_for_scope(messages, &req.selected_aors, scope)
+        filter_selected_device_names(messages, &req.selected_device_names)
+            .context(h!())?;
+    let messages = apply_metadata_filters(messages, req).context(h!())?;
+    Ok(
+        filter_selected_aors_for_scope(messages, &req.selected_aors, scope)
+            .context(h!())?,
+    )
 }
 
 #[derive(FromQueryResult)]
@@ -5791,40 +6853,73 @@ pub(super) async fn fetch_networks_analytics_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<Vec<AnalysisStatsNetwork>, AppError> {
+    let login = login_id_from_identity(user).context(h!())?;
+    Ok(fetch_analytics_networks_for_login_with_scope(
+        &req.0,
+        &login,
+        db,
+        source_db,
+        master_keys,
+        tag_access,
+        scope,
+    )
+    .await
+    .context(h!())?)
+}
+
+pub(super) async fn fetch_analytics_networks_for_login_with_scope(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    tag_access: &AnalyticsTagAccess,
+    scope: &AnalyticsMessageIdScope,
+) -> anyhow::Result<Vec<AnalysisStatsNetwork>> {
     if scope.is_empty() {
         return Ok(Vec::new());
     }
-    let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let statement = build_networks_analytics_query_with_scope(
-        &req.0,
-        &login_value,
-        &tag_access.accessible_tag_ids,
-        &tag_access.unit_login_ids,
-        dt_since,
-        dt_till,
-        master_keys,
-        false,
-        Some(scope),
-        None,
-    )?;
-    Ok(NetworksRes::find_by_statement(statement)
-        .all(db)
-        .await
-        .context(h!())?
+    let rows = load_analytics_message_id_chunks(source_db, *scope, |scope| {
+        let master_keys = master_keys.clone();
+        async move {
+            let statement = build_networks_analytics_query_with_scope(
+                req,
+                login,
+                &tag_access.accessible_tag_ids,
+                &tag_access.unit_login_ids,
+                dt_since,
+                dt_till,
+                master_keys,
+                false,
+                Some(&scope),
+                None,
+            )
+            .context(h!())?;
+            NetworksRes::find_by_statement(statement)
+                .all(db)
+                .await
+                .context(h!())
+        }
+    })
+    .await
+    .context(h!())?;
+    let mut counts = BTreeMap::new();
+    for row in rows.into_iter().flatten() {
+        if let Some(network_id) = row.network_id {
+            *counts.entry(network_id).or_default() += row.msg_count;
+        }
+    }
+    Ok(counts
         .into_iter()
-        .filter_map(|row| {
-            row.network_id.map(|network_id| AnalysisStatsNetwork {
-                network_id,
-                count: row.msg_count,
-            })
-        })
+        .map(|(network_id, count)| AnalysisStatsNetwork { network_id, count })
         .collect())
 }
 
@@ -6031,7 +7126,15 @@ fn build_network_analytics_messages_query(
     )
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
-    let messages = filter_search(messages, &req.search).context(h!())?;
+    let messages = filter_search_with_scope(
+        messages,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let messages =
         filter_selected_device_names(messages, &req.selected_device_names)?;
     let report_tags_only_this_unit =
@@ -6754,7 +7857,9 @@ fn build_networks_query_for_login(
     )
     .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, &req)?;
-    let messages_q = filter_search(messages_q, &req.search).context(h!())?;
+    let messages_q =
+        filter_search_with_mode(messages_q, &req.search, req.search_mode)
+            .context(h!())?;
     let messages_q =
         filter_selected_device_names(messages_q, &req.selected_device_names)?;
     let messages_q = filter_selected_tags(
@@ -7024,17 +8129,6 @@ async fn fetch_counts_for_login_with_conn(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let units = resolve_or_borrow_analysis_unit_filters(
-        &env.dbx,
-        &req.0,
-        scope,
-        resolved_units,
-    )
-    .await
-    .context(h!())?;
-    let units = units.as_deref();
-    let include_peleng_locations =
-        req.include_peleng_locations.unwrap_or(false);
     let read_stats_aggregated = allow_stats_aggregated
         && req.message_time_basis
             != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
@@ -7068,6 +8162,43 @@ async fn fetch_counts_for_login_with_conn(
     {
         return Ok((count_overall, count_overall));
     }
+    let count_selected = fetch_selected_count_for_login_with_conn(
+        req,
+        login_str,
+        master_keys,
+        env,
+        db,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
+    Ok((count_overall, count_selected))
+}
+
+async fn fetch_selected_count_for_login_with_conn(
+    req: &Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+    env: &Env,
+    db: &DatabaseConnection,
+    scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<i64> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let dt_till =
+        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        &env.dbx,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
+    let units = units.as_deref();
+    let include_peleng_locations =
+        req.include_peleng_locations.unwrap_or(false);
     let instant = std::time::Instant::now();
 
     #[derive(FromQueryResult)]
@@ -7159,18 +8290,27 @@ async fn fetch_counts_for_login_with_conn(
     )
     .context(h!())?;
     let selected_count_res =
-        apply_metadata_filters(selected_count_res, &req.0)?;
-    let selected_count_res =
-        filter_search(selected_count_res, &req.search).context(h!())?;
+        apply_metadata_filters(selected_count_res, &req.0).context(h!())?;
+    let selected_count_res = filter_search_with_scope(
+        selected_count_res,
+        &req.search,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, scope),
+        scope,
+        true,
+    )
+    .context(h!())?;
     let selected_count_res = filter_selected_device_names(
         selected_count_res,
         &req.selected_device_names,
-    )?;
+    )
+    .context(h!())?;
     let selected_count_res = filter_selected_aors_for_scope(
         selected_count_res,
         &req.selected_aors,
         scope,
-    )?;
+    )
+    .context(h!())?;
     //println!(
     //    "> selected count res sql (login={}): {}",
     //    login_str,
@@ -7190,7 +8330,33 @@ async fn fetch_counts_for_login_with_conn(
     if instant.elapsed().as_secs() > 1 {
         debug!("count selected op took: {:?}", instant.elapsed());
     }
-    Ok((count_overall, count_selected))
+    Ok(count_selected)
+}
+
+pub(super) async fn fetch_selected_count_raw_with_db(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<i64> {
+    if scope.is_some_and(|scope| scope.is_empty()) {
+        return Ok(0);
+    }
+    let login = login_id_from_identity(user).c(h!())?;
+    fetch_selected_count_for_login_with_conn(
+        req,
+        &login,
+        master_keys,
+        env,
+        db,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())
 }
 
 pub(super) async fn fetch_counts_raw_with_db(
@@ -7288,7 +8454,7 @@ async fn fetch_count_overall(
     Ok(overall_count_res.count)
 }
 
-fn is_replica_conflict_error(err: &AppError) -> bool {
+fn is_replica_conflict_error(err: &(dyn StdError + 'static)) -> bool {
     let mut source: Option<&(dyn StdError + 'static)> = Some(err);
     while let Some(err) = source {
         if let Some(sqlx::Error::Database(db_error)) =
@@ -7916,6 +9082,7 @@ mod tests {
                     dt_since,
                     dt_till,
                     Some(&scope),
+                    None,
                     None,
                 )
                 .unwrap()

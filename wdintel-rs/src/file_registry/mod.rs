@@ -23,6 +23,34 @@ impl FileRegistryDb {
     }
 }
 
+pub(crate) async fn connect_if_enabled(
+    config: &Config,
+    mode: Mode,
+    dbx: &DatabaseConnection,
+) -> Result<Option<FileRegistryDb>, AppError> {
+    if !crate::system_settings::devices_section_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        return Ok(None);
+    }
+    Ok(connect_runtime(config, mode).await.c(h!())?)
+}
+
+pub(crate) async fn migrate_if_enabled(
+    config: &Config,
+    mode: Mode,
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    if crate::system_settings::devices_section_enabled(dbx)
+        .await
+        .c(h!())?
+    {
+        run_migrations(config, mode).await.c(h!())?;
+    }
+    Ok(())
+}
+
 pub async fn connect_runtime(
     config: &Config,
     mode: Mode,

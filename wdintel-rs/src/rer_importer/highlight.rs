@@ -1,6 +1,8 @@
 use crate::error::AppError;
 use crate::rer_importer::signals::CNSignal;
+use crate::rer_importer::types::AnalysisSearchMode;
 use crate::utils::string::*;
+use crate::{h, types::ShortContext};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 use substring::Substring;
@@ -56,6 +58,10 @@ pub struct CNPositionCoordinateSource {
     pub message_uuid: String,
     pub group_name: String,
     pub message_at: i64,
+    /// The model's quote from the source message that justified the location.
+    pub evidence: String,
+    pub certainty: String,
+    pub coordinate_text: String,
 }
 
 #[derive(
@@ -231,6 +237,7 @@ pub struct HighlightOpts {
     pub highlight_searchres: Option<bool>,
     pub highlight_points: Option<bool>,
     pub highlight_positions: Option<bool>,
+    pub search_mode: Option<AnalysisSearchMode>,
 }
 
 impl HighlightOpts {
@@ -242,6 +249,7 @@ impl HighlightOpts {
             highlight_searchres: Some(true),
             highlight_points: Some(true),
             highlight_positions: Some(true),
+            search_mode: None,
         }
     }
 }
@@ -397,11 +405,13 @@ pub fn highlight_with_positions(
     if highlight_opts.highlight_searchres == Some(true) {
         // println!("> ts_headline: {:?}", ts_headline);
         if let Some(headline) = ts_headline {
-            let keywords2 = extract_ts_headline_keywords(
-                input,
-                Some(no_header_body_start),
-                &headline,
-            )?;
+            let extract = match highlight_opts.search_mode.unwrap_or_default() {
+                AnalysisSearchMode::Fuzzy => extract_ts_headline_keywords,
+                _ => extract_ts_headline_keywords_exact,
+            };
+            let keywords2 =
+                extract(input, Some(no_header_body_start), &headline)
+                    .c(h!())?;
             specials
                 .extend(keywords2.iter().map(|x| Special::Keyword(x.clone())));
         }
@@ -1342,6 +1352,7 @@ mod tests {
                 highlight_searchres: Some(false),
                 highlight_points: Some(true),
                 highlight_positions: Some(false),
+                search_mode: None,
             },
         )
         .unwrap();

@@ -593,12 +593,13 @@ pub async fn highlight_callsigns(
 ) -> Result<Vec<CNCallsign>, AppError> {
     let mut res = vec![];
     let tokens = crate::nlp::tokenize_words(rq, body).await.c(h!())?;
+    let lexemes = crate::nlp::token_lexemes_batch(rq, callsigns.clone())
+        .await
+        .c(h!())?;
     let mut callsign_forms = BTreeMap::new();
-    for callsign in callsigns.iter() {
+    for (callsign, lexemes) in callsigns.iter().zip(lexemes) {
         callsign_forms.insert(callsign_match_key(callsign), callsign.clone());
-        for callsign_form in
-            crate::nlp::token_lexemes(rq, callsign).await.c(h!())?
-        {
+        for callsign_form in lexemes {
             callsign_forms
                 .insert(callsign_match_key(&callsign_form), callsign.clone());
         }
@@ -1912,6 +1913,7 @@ pub async fn callsigns_graph(
         or_with_coords: req.or_with_coords,
         or_without_coords: req.or_without_coords,
         search: req.search.clone(),
+        search_mode: req.search_mode,
         selected_tags: req.selected_tags.clone(),
         denied_tags: req.denied_tags.clone(),
         tag_presence: req.tag_presence,
@@ -2307,12 +2309,15 @@ mod tests {
             callsigns_alg2: vec![],
             checked: false,
             important: false,
+            ai_important: false,
             bookmarked: false,
             timestamp: None,
             created_at: None,
             created_at_order: None,
+            is_own: None,
             has_date_in_header: false,
             group_master_key: None,
+            group_master_keys: None,
             sender: None,
             extended_form: None,
             message_comments: vec![],

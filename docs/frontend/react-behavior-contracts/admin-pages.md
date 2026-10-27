@@ -1,5 +1,37 @@
 # Admin page contracts
 
+## Echo native groups
+
+- **Behavior ID:** `admin-native-groups-lifecycle`
+- **Affected route:** `/admin/directions-neo`, system administrators only.
+- **Expected observable result:** «Створити групу» creates a private Echo Native group, preselecting the creator as an administrator and directly invited user. Empty groups appear immediately. Editing, assigning directions, and removing directions use the same native form, preserving global access settings. Selecting directions requires an AOR; unassigned groups may have no AOR.
+- **Access:** successful creation and the creator's message visibility are reported separately. Group administration does not grant message-reading access. Messenger ingestion controls are absent; network/category controls retain their existing meaning. Native forms support the shared group-color picker; updates that omit the color retain the current value.
+- **Archive:** archived native groups expose read-only settings. Restoring returns the group to the unassigned list without restoring directions.
+- **Loading/error/success behavior:** API failures display a dismissible toast and preserve the form. Successful save closes the form before refreshing lists and checking access, so a follow-up failure cannot be presented as failed creation.
+- **Known race/idempotency constraints:** retries within the open creation form use the same operation UUID, including when the server saved a group but its response was lost. Forms cannot be dismissed while saving.
+- **API:** generated contracts for `/api/messenger/native-groups/create`, `/get`, `/update`; existing archive/unarchive endpoints.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/admin-directions-neo/NativeGroupDialog.tsx`, `wdintel-web/src/ts/react/routes/admin-directions-neo/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-native-groups.spec.ts`, `wdintel-web/tests/e2e/admin-group-ingestion.spec.ts`.
+- **Original Echo issue:** https://github.com/echoua/echo/issues/3646.
+
+## KPI dashboard
+
+- **Issue:** [#3826](https://github.com/echoua/echo/issues/3826).
+- **Route and access:** `/admin/kpi`, in `Адмін → KPI` (the last top-level Admin entry), requires Admin. The Elm page checks the role before mounting its React host, including while the shared identity is the anonymous placeholder. Existing `/api/logins` and `/api/admin/report-history/list` retain backend admin enforcement.
+- **Account scope:** unique current account IDs from `/api/logins`, including technical accounts but excluding the permanently deleted/managed accounts omitted by that API. Role and organism filters affect every account metric, distribution, and review row. Role membership can contribute to multiple bars; repeated identical roles contribute once. Organisms and directions are grouped by IDs.
+- **Status and recency:** account deactivation and reason take precedence over a disabled organism; otherwise the account is active. Recency uses one successful-response timestamp and elapsed UTC milliseconds: less than 30 days, 30–90 inclusive, over 90, no recorded timestamp, or invalid/future timestamp. Recency defaults to deactivated/blocked accounts, with an explicit switch to include active accounts. A recorded timestamp does not establish a login or deliberate human activity.
+- **Reports:** a separate system-wide card uses the `done` filter and `total` returned with `limit: 1`; it counts retained successful history records, independently of account filters. It does not count downloads or every generation attempt. Analytics replication can affect freshness.
+- **Loading/errors:** sources load and retry independently; failures produce Ukrainian toasts and persistent section errors. Previously loaded values retain their original update timestamps and are explicitly labelled as previous data after refresh failure. Stale or unmounted requests cannot overwrite snapshots. Shared API 401 handling preserves the login redirect.
+- **Charts and review:** existing ECharts loads lazily, follows light/dark semantic colors, resizes with its host, and is disposed on cleanup. Accessible tables expose every exact count, even if a chart fails; charts show at most ten groups. Stale accounts are shown in batches of twenty with links to existing user details; KPI provides no account mutation controls.
+- **Tabs:** ten sections follow `archive/2026-10-22-kpis/idea.md` in order. The selected section is `?tab=accounts|activity|login|onboarding|features|speed|retention|channels|referrals|quality`; invalid values select accounts. Browser Back restores the selection; account filters survive tab switches. MUI tabs scroll on narrow screens and support keyboard navigation.
+- **History APIs:** admin-only `POST /api/kpi/reports`, `/api/kpi/notifications`, `/api/kpi/activity`, and `/api/kpi/requests` accept UTC millisecond `{since, until}` with a half-open interval, an end up to `KPI_MAX_CLOCK_SKEW_SECONDS` (currently 300 seconds) ahead of server time, and a maximum of 90 days. UI presets are 7/30/90 days. History sources load only on their relevant tab and retry independently. Response periods remain visible when a failed reload retains older data; stale responses cannot overwrite a new period.
+- **Report aggregation:** PostgreSQL aggregates retained rows created in the period; counts by kind/author/day include only `done`. Retry counts do not multiply rows. Any legacy-linked history row counts once; the separate legacy journal is not added and no legacy backfill or complete reconciliation is established. Generation median/p90 use nonnegative `completed_at - started_at` only for successful worker rows with a background-task ID and no legacy-log link. Synchronous completion, file archival, and legacy timestamps do not establish generation duration and are excluded from samples while remaining in counts. Sample/exclusion counts are exposed; no samples means unavailable. Worker durations include storing the result, exclude queue time, and do not represent every retry separately.
+- **Observations and quality:** optional Greptime queries isolate the configured host and requested time interval, cap returned groups, and use timeouts. Unconfigured or empty telemetry is unavailable, never a zero engagement/error rate. Page observations include keep-alives and technical accounts, and do not claim human DAU, sessions, clicks, or adoption. Non-UUID historical identities are excluded and counted as unmapped groups. Missing days are not zero-filled. Queue counters cover this process since startup and do not prove historical completeness. API error percentage is `(4xx + 5xx) / recorded API responses`; initial request events are excluded, middleware error events are included, and duplicate request IDs within one status are counted once. Messenger notification metrics cover retained transport jobs only; `sent` is not a device-delivery/read receipt.
+- **Undefined metrics:** unsupported sections describe the missing evidence/definition without fabricated charts or numbers. Activation, onboarding, adoption, live-base, bot identity reconciliation, and other undefined work remain deferred for this iteration.
+- **Iteration scope:** [Iteration 1](../../../archive/2026-10-22-kpis/iteration1.md) and [Iteration 2](../../../archive/2026-10-22-kpis/iteration2.md) record supported definitions and deferred metrics. Estimated live base, verified never-login counts, DAU/WAU/MAU, and other historical/unsupported metrics are deferred.
+- **Source:** `wdintel-web/src/Pages/Admin/Kpi.elm`, `wdintel-web/src/ts/react/routes/admin-kpi/`.
+- **Tests:** `wdintel-web/tests/e2e/admin-kpi.spec.ts`.
+
 ## Admin Unparsed Units
 
 - **Status:** inferred characterization
@@ -18,6 +50,25 @@
 - **Expected observable result:** direct internal providers require an allowed HTTP `/v1` URL without credentials, query, or fragment; trusted gateway providers require their token and explain the difference between gateway and direct-container transport.
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-ai-agent/engine-eligibility.ts`
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-ai-agent/__tests__/engine-eligibility.spec.ts`
+
+## AI request history pagination
+
+- **Affected route:** `/admin/ai/requests` (administrators only).
+- **Expected observable result:** the server returns 20 requests per page. “SHOW MORE” appends the next page; numbered navigation replaces the entries. The final page can contain fewer than 20 entries and hides “SHOW MORE”. Refresh returns to the newest page.
+- **API:** `/api/admin/ai-agent/requests/list` fetches at most 21 requests and returns 20 items plus at most two `pageStartIds`: the current and next page boundaries. Subsequent requests pass `pageStartId`; numbered navigation discovers one additional page at a time. `total` is available only when the initial page contains the entire history. Requests use descending UUIDv7 creation order and inclusive page boundaries, so new requests do not shift previously established pages. Search, column filters, and sorting apply to the loaded entries.
+- **Loading/error behavior:** pagination is disabled while loading; failures preserve existing entries, show an error toast, and allow retry. Stale responses cannot replace current entries. Request deep links open independently of the displayed page.
+- **Source implementation:** `wdintel-rs/src/ai_agent/admin.rs`, `wdintel-web/src/ts/react/routes/admin-ai-agent/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-ai-requests.spec.ts`.
+
+## Intelligence-report settings and attempt pagination
+
+- **Affected route:** `/admin/ai/intelligence-reports` (administrators only).
+- **Expected observable result:** every configured model has an editable token budget (512 by default), with radio buttons selecting distinct primary and optional fallback engines. Unavailable engines remain visible but cannot be selected. Budgets survive model selection changes and save/reload. Primary, fallback, and total timeouts are editable (twenty seconds by default); the overall deadline includes both calls and preparation. The server validates positive integer limits, up to 32,768 tokens and 180 seconds. Older save requests preserve optional settings.
+- **Fallback behavior:** a failed primary attempt invokes the configured fallback once while time remains before the overall deadline. Failures include token exhaustion (`finish_reason=length`, including an empty response), HTTP or connection errors, attempt timeouts, malformed responses, and content validation failures. A successful primary response skips fallback; without a configured fallback the primary error is returned. Fallback uses its own token budget and attempt timeout, bounded by the remaining overall time; any fallback failure ends generation without a third attempt.
+- **Pagination:** twenty attempts per page; each request fetches at most 21 attempts and returns at most two `pageStartIds` for the current and next pages. “SHOW MORE” appends, numbered navigation replaces entries and discovers one additional page at a time, refresh returns to the newest page, and the last page hides “SHOW MORE”. `total` is available only when the initial page contains the entire history. Attempts use descending `(created_at, id)` order with inclusive server page boundaries; new attempts do not shift existing boundaries. Search, sorting, and column filters apply to loaded entries.
+- **Loading/error behavior:** pagination is disabled while loading; failed requests preserve entries and allow retry, and stale responses cannot overwrite the current page. Save failures preserve editable limits and show an error toast.
+- **Source implementation:** `wdintel-rs/src/ai_intel_report/attempts.rs`, `wdintel-web/src/ts/react/routes/admin-ai-intel-reports/index.tsx`.
+- **Existing tests:** `wdintel-web/tests/e2e/admin-ai-intel-reports.spec.ts`, `wdintel-rs/src/ai_intel_report/settings_tests.rs`, `wdintel-rs/src/ai_intel_report/retry_tests.rs`.
 
 ## API integration deletion
 

@@ -6,6 +6,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::dedupe;
+use crate::rer_importer::intel_product_filter;
 use crate::sigint::sender::preferred_message_author_expr;
 use crate::storage;
 use crate::types::{error, warn};
@@ -231,6 +232,13 @@ impl StagedMediaAttachments {
             .iter()
             .filter(|attachment| !committed_media.contains(&attachment.id))
         {
+            let key = storage::join_paths(
+                crate::config::S3_MEDIA_ROOT_PREFIX,
+                &attachment.storage_key,
+            );
+            if !crate::transcription::service::may_delete(dbx, &key).await {
+                continue;
+            }
             delete_staged_object_best_effort(config, s3, attachment).await;
             if attachment.thumbnail_source_lease.is_some() {
                 crate::messenger::media_thumbnail::remove_uncommitted_media_thumbnail_files_best_effort(
@@ -397,13 +405,18 @@ fn resolve_attachment_content_type(
     detected_content_type
 }
 
-fn content_type_describes_media(content_type: &str) -> bool {
-    let content_type = content_type
+/// The media type of a `Content-Type` value: no parameters, lowercase.
+fn media_type_essence(content_type: &str) -> String {
+    content_type
         .split(';')
         .next()
         .unwrap_or(content_type)
         .trim()
-        .to_ascii_lowercase();
+        .to_ascii_lowercase()
+}
+
+fn content_type_describes_media(content_type: &str) -> bool {
+    let content_type = media_type_essence(content_type);
     content_type.starts_with("audio/")
         || content_type.starts_with("image/")
         || content_type.starts_with("video/")
@@ -412,13 +425,7 @@ fn content_type_describes_media(content_type: &str) -> bool {
 
 fn content_type_is_generic(content_type: &str) -> bool {
     matches!(
-        content_type
-            .split(';')
-            .next()
-            .unwrap_or(content_type)
-            .trim()
-            .to_ascii_lowercase()
-            .as_str(),
+        media_type_essence(content_type).as_str(),
         "application/octet-stream"
             | "application/binary"
             | "binary/octet-stream"
@@ -426,14 +433,7 @@ fn content_type_is_generic(content_type: &str) -> bool {
 }
 
 fn replacement_image_format(content_type: &str) -> Option<&'static str> {
-    match content_type
-        .split(';')
-        .next()
-        .unwrap_or(content_type)
-        .trim()
-        .to_ascii_lowercase()
-        .as_str()
-    {
+    match media_type_essence(content_type).as_str() {
         "image/jpeg" | "image/jpg" => Some("jpeg"),
         "image/png" => Some("png"),
         "image/webp" => Some("webp"),
@@ -475,12 +475,7 @@ fn validate_replacement_image(
 }
 
 fn content_type_is_explicit_non_video_media(content_type: &str) -> bool {
-    let content_type = content_type
-        .split(';')
-        .next()
-        .unwrap_or(content_type)
-        .trim()
-        .to_ascii_lowercase();
+    let content_type = media_type_essence(content_type);
     content_type.starts_with("audio/") || content_type.starts_with("image/")
 }
 
@@ -736,6 +731,122 @@ pub async fn stage_media_attachments(
         }
     }
     Ok(staged)
+}
+
+/// A stored avatar object that is not recorded in the database yet.
+pub struct StagedAvatar {
+    pub content_type: String,
+    pub file_ext: Option<String>,
+    pub file_name: Option<String>,
+    pub size_bytes: i64,
+    pub is_encrypted: bool,
+    pub storage_key: String,
+}
+
+/// Copies an avatar upload to S3. Unlike media attachments, avatars get no
+/// thumbnails and no local cache entry. The upload must be an image or a
+/// video of at most `max_size_bytes`; nothing is stored otherwise.
+pub async fn stage_avatar(
+    upload: &MediaUploadInput,
+    config: &Config,
+    s3: &Option<Operator>,
+    max_size_bytes: i64,
+) -> Result<StagedAvatar, AppError> {
+    let s3_config = config.s3_config.as_ref().ok_or(AppError::BL {
+        msg: "S3 is not configured".to_string(),
+    })?;
+    let storage_config = storage::S3Config::from(s3_config);
+    let _source_lease = crate::sigint::file_upload::lock_uploaded_source(
+        Path::new(&upload.path),
+    )
+    .await
+    .c(h!())?;
+    // Reject an oversized file before it is read.
+    if let Ok(metadata) = fs::symlink_metadata(&upload.path).await {
+        ensure_avatar_size(
+            i64::try_from(metadata.len()).unwrap_or(i64::MAX),
+            max_size_bytes,
+        )
+        .c(h!())?;
+    }
+    let ext = guess_extension(upload.name.as_deref(), Path::new(&upload.path));
+    let force_plaintext =
+        media_upload_is_excluded_from_encryption(upload, &ext);
+    let prepared = prepare_attachment(&upload.path, force_plaintext, true)
+        .await
+        .c(h!())?
+        .ok_or_else(|| AppError::BL {
+            msg: "upload not found or incomplete".to_string(),
+        })?;
+    ensure_avatar_size(prepared.size_bytes, max_size_bytes).c(h!())?;
+    let content_type =
+        resolve_attachment_content_type(upload, prepared.probed_content_type);
+    if !content_type_is_image_or_video(&content_type) {
+        return Err(AppError::BL {
+            msg: format!("avatar content type not allowed: {content_type}"),
+        });
+    }
+    let storage_id = Uuid::now_v7();
+    let storage_key = if prepared.is_encrypted {
+        storage::nested_object_key(&storage_id)
+    } else {
+        storage::plaintext_media_object_key(&storage_id)
+    };
+    let size_bytes = prepared.size_bytes;
+    let is_encrypted = prepared.is_encrypted;
+    if let Err(err) = upload_prepared_attachment(
+        s3,
+        &storage_config,
+        &s3_config.strongbox_key,
+        &storage_key,
+        prepared.data,
+        size_bytes,
+    )
+    .await
+    {
+        delete_staged_storage_key_best_effort(config, s3, &storage_key).await;
+        return Err(err);
+    }
+    Ok(StagedAvatar {
+        content_type,
+        file_ext: (!ext.is_empty()).then_some(ext),
+        file_name: fallback_file_name(
+            upload.name.as_deref(),
+            Path::new(&upload.path),
+        ),
+        size_bytes,
+        is_encrypted,
+        storage_key,
+    })
+}
+
+fn ensure_avatar_size(
+    size_bytes: i64,
+    max_size_bytes: i64,
+) -> Result<(), AppError> {
+    if size_bytes > max_size_bytes {
+        return Err(AppError::BL {
+            msg: format!(
+                "avatar too large: {size_bytes} bytes, max {max_size_bytes}"
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Removes the stored object of an avatar that was not recorded.
+pub async fn discard_staged_avatar(
+    config: &Config,
+    s3: &Option<Operator>,
+    avatar: &StagedAvatar,
+) {
+    delete_staged_storage_key_best_effort(config, s3, &avatar.storage_key)
+        .await;
+}
+
+fn content_type_is_image_or_video(content_type: &str) -> bool {
+    let content_type = media_type_essence(content_type);
+    content_type.starts_with("image/") || content_type.starts_with("video/")
 }
 
 async fn stage_media_attachment(
@@ -1049,6 +1160,7 @@ pub async fn delete_uploaded_attachment_files(
 }
 
 pub async fn delete_stored_media_files(
+    dbx: &sea_orm::DatabaseConnection,
     media: &[signal_message_media::Model],
     ocr_result_keys: &[String],
     config: &Config,
@@ -1058,6 +1170,9 @@ pub async fn delete_stored_media_files(
         return;
     }
     for media in media {
+        if super::audio_ref::is_reference(media) {
+            continue;
+        }
         crate::messenger::media_local_cache::remove_unreferenced_best_effort(
             config, media,
         )
@@ -1074,6 +1189,9 @@ pub async fn delete_stored_media_files(
         return;
     };
     for media in media {
+        if super::audio_ref::is_reference(media) {
+            continue;
+        }
         let mut object_keys = vec![
             media_object_key(media),
             storage::nested_object_key(&media.id),
@@ -1087,6 +1205,12 @@ pub async fn delete_stored_media_files(
         }
         for object_key in object_keys {
             let remote_key = s3_config.prefixed_key(&object_key);
+            if is_audio_media(media)
+                || !crate::transcription::service::may_delete(dbx, &remote_key)
+                    .await
+            {
+                continue;
+            }
             if let Err(e) = s3.delete(&remote_key).await {
                 error!(
                     "failed to delete stored attachment file {}: {:?}",
@@ -1119,6 +1243,9 @@ pub async fn delete_local_media_files(
         return;
     }
     for media in media {
+        if super::audio_ref::is_reference(media) {
+            continue;
+        }
         crate::messenger::media_cache::remove_cached_media_file_best_effort(
             config, media.id,
         )
@@ -1148,8 +1275,8 @@ pub(crate) async fn ensure_media_access(
             intel_product::Relation::SignalMessage1.def(),
         )
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(intel_product_filter::relation_kind_eq(
+            intel_product_filter::RELATION_KIND_REPORT,
         ))
         .filter(signal_message::Column::Deleted.eq(true))
         .select_only()
@@ -1183,8 +1310,8 @@ pub(crate) async fn ensure_media_access(
 
     let parent_signal_message_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(intel_product_filter::relation_kind_eq(
+            intel_product_filter::RELATION_KIND_REPORT,
         ))
         .select_only()
         .column(intel_product::Column::SourceMessageId)
@@ -1228,8 +1355,8 @@ pub(crate) async fn ensure_media_access(
             crate::entities::intel_product::Column::IntelMessageId
                 .eq(signal_message_id),
         )
-        .filter(crate::entities::intel_product::relation_kind_eq(
-            crate::entities::intel_product::RELATION_KIND_REPORT,
+        .filter(intel_product_filter::relation_kind_eq(
+            intel_product_filter::RELATION_KIND_REPORT,
         ))
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
@@ -1288,23 +1415,36 @@ pub(crate) async fn ensure_media_access(
 }
 
 pub fn is_audio_media(media: &signal_message_media::Model) -> bool {
-    let ct = media
-        .content_type
+    is_audio_metadata(
+        &media.content_type,
+        media.file_ext.as_deref(),
+        media.file_name.as_deref(),
+    )
+}
+
+fn is_audio_metadata(
+    content_type: &str,
+    file_ext: Option<&str>,
+    file_name: Option<&str>,
+) -> bool {
+    let ct = content_type
         .split(';')
         .next()
-        .unwrap_or(&media.content_type)
+        .unwrap_or(content_type)
         .trim()
         .to_ascii_lowercase();
     if ct.starts_with("audio/") {
         return true;
     }
-    if ct.starts_with("image/") || is_video_media(media) {
+    if ct.starts_with("image/")
+        || is_video_metadata(content_type, file_ext, file_name)
+    {
         return false;
     }
     if ct.contains("mpeg") || ct.contains("mp3") {
         return true;
     }
-    if let Some(ext) = media.file_ext.as_deref() {
+    if let Some(ext) = file_ext {
         if matches!(
             ext.to_ascii_lowercase().as_str(),
             "mp3"
@@ -1322,7 +1462,7 @@ pub fn is_audio_media(media: &signal_message_media::Model) -> bool {
             return true;
         }
     }
-    if let Some(name) = media.file_name.as_deref() {
+    if let Some(name) = file_name {
         let name = name.to_ascii_lowercase();
         if name.ends_with(".mp3")
             || name.ends_with(".mpeg")
@@ -1417,6 +1557,9 @@ pub async fn fetch_media_bytes(
     env: &crate::types::Env,
     media: &signal_message_media::Model,
 ) -> Result<Vec<u8>, AppError> {
+    if super::audio_ref::is_reference(media) {
+        return Ok(super::audio_ref::bytes(env, media).await.c(h!())?);
+    }
     if !media.is_encrypted {
         return Err(AppError::BL {
             msg: format!(
@@ -1834,6 +1977,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn rollback_cleanup_removes_staged_object_and_preserves_source() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();
@@ -1872,6 +2016,94 @@ mod tests {
 
         assert!(s3.as_ref().unwrap().stat(&remote_key).await.is_err());
         assert!(path.exists());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn staged_finalization_3825_cleans_only_unregistered_audio() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        env.dbx
+            .execute_unprepared(
+                r#"
+insert into system_settings (
+    rer_analysis_units_exact_match_only_default, rer_duty_test_enabled,
+    rer_duty_test_since_ms, rer_duty_test_limit, rer_duty_poll_interval_sec,
+    messenger_media_cache_enabled, messenger_media_cache_min_free_gib
+) values (true, false, 0, 1, 5, true, 0)
+"#,
+            )
+            .await
+            .unwrap();
+        let temporary = tempfile::tempdir().unwrap();
+        let upload = temporary.path().join("recording.ogg");
+        tokio::fs::write(&upload, b"staged audio").await.unwrap();
+        let mut config = env.config.clone();
+        config.storage_dir = temporary.path().display().to_string();
+        config.messenger_media_cache =
+            Some(crate::config::MessengerMediaCacheConfig {
+                enabled: true,
+                min_free_space_bytes: 0,
+                ..Default::default()
+            });
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        for (name, content_type, registered) in [
+            ("discarded.ogg", "audio/ogg", false),
+            ("retained.ogg", "audio/ogg", true),
+            ("retained.txt", "text/plain", true),
+        ] {
+            let staged = stage_media_attachments(
+                &env.dbx,
+                &[MediaUploadInput {
+                    path: upload.display().to_string(),
+                    name: Some(name.into()),
+                    content_type: Some(content_type.into()),
+                }],
+                &config,
+                &s3,
+                UploadedAttachmentDeletion::Preserve,
+                None,
+            )
+            .await
+            .unwrap();
+            let attachment = &staged.attachments[0];
+            let key =
+                storage::S3Config::from(config.s3_config.as_ref().unwrap())
+                    .prefixed_key(&attachment.storage_key);
+            let cached = crate::messenger::media_local_cache::ready_object(
+                &config,
+                &attachment.storage_key,
+                attachment.size_bytes as u64,
+                attachment.is_encrypted,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            if registered {
+                crate::transcription::service::enqueue(&env.dbx, &key)
+                    .await
+                    .unwrap();
+            }
+            staged.finalize_after_commit(&config, &s3, &env.dbx).await;
+            let stored = s3.as_ref().unwrap().stat(&key).await;
+            if registered {
+                assert!(stored.is_ok());
+            } else {
+                assert_eq!(
+                    stored.unwrap_err().kind(),
+                    opendal::ErrorKind::NotFound
+                );
+            }
+            assert_eq!(cached.exists(), registered);
+            assert!(upload.exists());
+        }
     }
 
     #[serial]
@@ -1966,6 +2198,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn partial_missing_discard_deletes_successfully_staged_sources() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let temp = tempfile::tempdir().unwrap();

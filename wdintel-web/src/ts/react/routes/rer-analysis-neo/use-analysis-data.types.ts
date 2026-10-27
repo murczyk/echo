@@ -34,9 +34,11 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  threadMessageId?: number | null;
+  hideNetworks?: boolean;
+  canUseDevices?: boolean;
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
-  leftPanelOpen?: boolean;
   newestFirst: boolean;
   onBeforeRealtimeMessageListChange?: () => void;
   onError: (message: string) => void;
@@ -50,6 +52,8 @@ export type UseAnalysisDataProps = {
 };
 
 export type UseAnalysisDataResult = {
+  threadDeletedCount?: number;
+  threadAnchorId?: number | null;
   callsignGraph: NetworkCallsignRelationsRsp | null;
   callsignGraphLoading: boolean;
   callsignGraphLoadVersion: number;
@@ -57,7 +61,7 @@ export type UseAnalysisDataResult = {
   correlatedFreqs: CorrelatedFreq[];
   correlatedFreqsLoaded: boolean;
   correlatedFreqsLoading: boolean;
-  counts: CountStatsRsp | null;
+  counts: Partial<CountStatsRsp> | null;
   countsLoading: boolean;
   aorEntries: AnalysisAorEntry[];
   filtersLoading: boolean;
@@ -74,10 +78,10 @@ export type UseAnalysisDataResult = {
   groupsActivityLoadedPeriod: AnalysisGroupsActivityPeriod | null;
   groupsActivityLoading: boolean;
   hasLoadedInitialMessages: boolean;
+  messagesLoadedForCurrentQuery: boolean;
   inboxReq: ReturnType<typeof buildInboxReq>;
   botTagAction: MessageCardBotTagAction | null;
   loadCallsignGraph: () => Promise<void>;
-  loadAllMessages: () => Promise<void>;
   loadFilterSection: (section: AnalysisFilterSectionId) => Promise<void>;
   invalidateFilterSectionLoads: () => void;
   invalidateFilterSectionLoadsForPatch: (
@@ -87,13 +91,14 @@ export type UseAnalysisDataResult = {
   loadCorrelatedFreqs: () => Promise<void>;
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
-  loadFirstPage: () => Promise<void>;
+  loadFirstPage: () => Promise<boolean>;
   loadFocusedEarlier: () => Promise<boolean>;
   loadFocusedLater: () => Promise<boolean>;
-  loadLastPage: () => Promise<void>;
-  loadNextPage: () => Promise<void>;
+  loadLastPage: () => Promise<boolean>;
+  loadNextPage: () => Promise<boolean>;
   loadMoreMessages: () => Promise<boolean>;
-  loadPrevPage: (targetPageIndex?: number) => Promise<void>;
+  loadPreviousMessages: () => Promise<boolean>;
+  loadPrevPage: (targetPageIndex?: number) => Promise<boolean>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
     settlementId: number,
@@ -112,12 +117,16 @@ export type UseAnalysisDataResult = {
   focusedLoadingLater: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
+  firstLoadedMessageIndex: number;
+  hasMoreBeforeWindow: boolean;
+  hasMoreAfterWindow: boolean;
+  loadingBeforeWindow: boolean;
+  loadingAfterWindow: boolean;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: import('../../../../Bindings').NewCallsignsRes;
   newCallsignsLoading: boolean;
   noMoreToLoad: boolean;
-  nolimitShown: boolean;
   pageIndex: number;
   onUpdateLocalMessage: (
     messageId: number,
@@ -140,6 +149,7 @@ export type UseAnalysisDataResult = {
   summaryLoaded: boolean;
   summaryHasLoadedOnce: boolean;
   rightSidebarLoading: boolean;
+  rightSidebarOutdated?: boolean;
   summaryRows: SummaryTableFreqRow[];
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
   unitsMap: Record<number, Unit>;

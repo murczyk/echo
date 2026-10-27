@@ -215,6 +215,32 @@ update system_settings set enabled = false;
         )
         self.assertTrue(any("without ADD COLUMN" in error for error in errors))
 
+    def test_3612_new_snapshot_table_can_gain_cdc_columns_in_the_same_branch(self) -> None:
+        migrations = [
+            ("echo:m1", "create table sample (id bigint primary key);"),
+            ("echo:m2", "alter table sample add column head_id bigint; update sample set head_id = id;"),
+        ]
+        manifest = {"migrations": {
+            "echo:m1": {"changes": [{"table": "public.sample", "strategy": "replicated_snapshot"}]},
+            "echo:m2": {"changes": [{"table": "public.sample", "strategy": "cdc_additive"}]},
+        }, "dependencies": {}}
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.tsv"
+            after = Path(directory) / "after.tsv"
+            after.write_text("public.sample\tid\tbigint\tt\t\npublic.sample\thead_id\tbigint\tf\t\n")
+            with (
+                mock.patch.object(MODULE, "changed_migrations", return_value=[
+                    (key, contents, MODULE.detect_ddl(contents)) for key, contents in migrations
+                ]),
+                mock.patch.object(MODULE, "load_manifest", return_value=manifest),
+                mock.patch.object(MODULE, "validate_dependency_changes", return_value=([], [])),
+            ):
+                before.write_text("")
+                self.assertEqual(MODULE.check("base", before, after), [])
+                before.write_text("public.sample\tid\tbigint\tt\t\n")
+                after.write_text(before.read_text() + "public.sample\thead_id\tbigint\tt\t\n")
+                self.assertTrue(any("cdc_additive requires" in error for error in MODULE.check("base", before, after)))
+
     def test_empty_table_resnapshot_requires_add_on_declared_table(self) -> None:
         contents = """
 alter table sample alter column enabled type text;

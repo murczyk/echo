@@ -11,6 +11,7 @@ CLICKHOUSE_SECRETS_FILE=${ECHO_ANALYTICS_CLICKHOUSE_SECRETS_FILE:-$CONFIG_DIR/cl
 PEERDB_SECRETS_FILE=${ECHO_ANALYTICS_PEERDB_SECRETS_FILE:-$CONFIG_DIR/peerdb.env}
 SOURCE_CONFIG_FILE=${ECHO_PEERDB_SOURCE_CONFIG_FILE:-/etc/echo-peerdb/source.env}
 SOURCE_TABLE_EXCLUDE_REPO_FILE=$BUNDLE_DIR/env/tables-exclude.txt
+SOURCE_TABLE_CDC_ONLY_REPO_FILE=$BUNDLE_DIR/env/tables-cdc-only.txt
 SOURCE_RECONCILE_STATE_DIR=${ECHO_PEERDB_RECONCILE_STATE_DIR:-/var/lib/echo-peerdb}
 SOURCE_RECONCILE_FINGERPRINT_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.sha256
 SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
@@ -436,9 +437,11 @@ acquire_analytics_reconcile_lock() {
   require_cmd flock
   old_umask=$(umask)
   umask 000
-  : >>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  if [[ ! -e "$ANALYTICS_RECONCILE_LOCK_FILE" ]]; then
+    : >>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  fi
   umask "$old_umask"
-  exec 8>>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  exec 8<"$ANALYTICS_RECONCILE_LOCK_FILE"
   if ((wait_seconds > 0)); then
     if ! flock -w "$wait_seconds" 8; then
       if [[ ${ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS:-false} == true ]]; then
@@ -479,6 +482,7 @@ validate_control_bundle() {
   local -a files=(
     control-protocol-version
     env/tables-exclude.txt
+    env/tables-cdc-only.txt
     migration-impact.json
     versions.env
   )
@@ -500,6 +504,7 @@ control_bundle_file_list() {
   local -a files=(
     control-protocol-version
     env/tables-exclude.txt
+    env/tables-cdc-only.txt
     migration-impact.json
     versions.env
   )
@@ -604,7 +609,8 @@ delegate_paired_analytics_operation_if_source() {
   local operation=$1
   shift
   protected_file_exists "$SOURCE_CONFIG_FILE" || return 0
-  [[ "$operation" == resync.sh || "$operation" == finish-resync.sh ]] \
+  [[ "$operation" == resync.sh || "$operation" == finish-resync.sh \
+    || "$operation" == oneoff-replicate-attachment-history.sh ]] \
     || die "unsupported paired analytics operation: $operation"
   if (($# > 0)); then
     [[ $# -eq 1 && $1 == --yes ]] \
@@ -1056,6 +1062,67 @@ SQL
 
   ((${#SOURCE_TABLES[@]} > 0)) \
     || die "source publication has no tables: $SOURCE_PUBLICATION"
+}
+
+source_table_cdc_only() {
+  local source_table=$1 table
+  require_file "$SOURCE_TABLE_CDC_ONLY_REPO_FILE"
+  while IFS= read -r table || [[ -n "$table" ]]; do
+    table=${table%%#*}
+    table=${table//[[:space:]]/}
+    [[ -z "$table" ]] && continue
+    [[ "$table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
+      || die "invalid CDC-only table: $table"
+    [[ "$table" != "$source_table" ]] || return 0
+  done <"$SOURCE_TABLE_CDC_ONLY_REPO_FILE"
+  return 1
+}
+
+require_peerdb_cdc_only_table_additions() {
+  require_cmd python3
+  python3 - "${PEERDB_FLOW_BINARY:-/opt/peerdb/bin/peer-flow}" <<'PYTHON'
+import mmap
+import sys
+
+with open(sys.argv[1], "rb") as binary:
+    with mmap.mmap(binary.fileno(), 0, access=mmap.ACCESS_READ) as contents:
+        if contents.find(b"skipInitialSnapshotForTableAdditions") < 0:
+            raise SystemExit("PeerDB lacks CDC-only table additions; upgrade the pinned runtime before reconciling attachments")
+PYTHON
+}
+
+ensure_attachment_search_coverage_table() {
+  postgres_psql --dbname "$GATEWAY_DB" -q -v ON_ERROR_STOP=1 \
+    -v gateway_user="$GATEWAY_USER" <<'SQL'
+CREATE TABLE IF NOT EXISTS public.echo_analytics_attachment_search (
+  singleton boolean PRIMARY KEY CHECK (singleton),
+  started_at timestamp NOT NULL,
+  history_complete boolean NOT NULL DEFAULT false
+);
+REVOKE ALL ON public.echo_analytics_attachment_search FROM PUBLIC;
+SELECT format('GRANT SELECT ON public.echo_analytics_attachment_search TO %I', :'gateway_user') \gexec
+SQL
+}
+
+record_attachment_search_cutover() {
+  local started_at
+  started_at=$(source_psql -Atq -v ON_ERROR_STOP=1 \
+    -c "SELECT now() AT TIME ZONE 'UTC'")
+  ensure_attachment_search_coverage_table
+  postgres_psql --dbname "$GATEWAY_DB" -q -v ON_ERROR_STOP=1 \
+    -v started_at="$started_at" <<'SQL'
+INSERT INTO public.echo_analytics_attachment_search (singleton, started_at, history_complete)
+VALUES (true, :'started_at', false)
+ON CONFLICT (singleton) DO UPDATE
+SET started_at=EXCLUDED.started_at, history_complete=false;
+SQL
+}
+
+invalidate_attachment_search_coverage() {
+  ensure_attachment_search_coverage_table
+  postgres_psql --dbname "$GATEWAY_DB" -q -v ON_ERROR_STOP=1 <<'SQL'
+DELETE FROM public.echo_analytics_attachment_search WHERE singleton;
+SQL
 }
 
 ensure_yes() {

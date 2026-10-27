@@ -36,6 +36,11 @@ pub async fn run_operator_inbox_worker_nofail(env: Arc<Env>) {
             all_datasources = datasource::Entity::find()
                 .filter(datasource::Column::Kind.eq("echo_operator"))
                 .filter(datasource::Column::Deleted.eq(false))
+                .filter(
+                    Condition::any()
+                        .add(datasource::Column::CanReadMessages.is_null())
+                        .add(datasource::Column::CanReadMessages.eq(true)),
+                )
                 .order_by_asc(datasource::Column::Id)
                 .all(&dbx)
                 .await

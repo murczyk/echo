@@ -121,6 +121,39 @@ describe('useRerDutyFilterOptions', () => {
     expect(current?.groupCatalogLoading).toBe(false);
   });
 
+  it('#3727 clears a details error after automatic required-key hydration succeeds', async () => {
+    const details = deferred<ReturnType<typeof groupInfo>[]>();
+    api.groups.mockResolvedValue(['A']);
+    api.details
+      .mockRejectedValueOnce(new Error('details failed'))
+      .mockReturnValueOnce(details.promise);
+    mount();
+    act(() => current?.setRequiredGroupKeys(['A']));
+    await act(async () => {});
+
+    expect(current?.groupCatalogError?.kind).toBe('details');
+    expect(current?.groupCatalogLoading).toBe(true);
+
+    await act(async () => details.resolve([groupInfo('A', 'Alpha')]));
+
+    expect(current?.groupInfos.A?.name).toBe('Alpha');
+    expect(current?.groupCatalogError).toBeNull();
+    expect(current?.groupCatalogLoading).toBe(false);
+    expect(api.groups).toHaveBeenCalledTimes(1);
+  });
+
+  it('#3727 preserves a catalog error when required-key hydration succeeds', async () => {
+    api.groups.mockRejectedValue(new Error('catalog failed'));
+    api.details.mockResolvedValue([groupInfo('A', 'Alpha')]);
+    mount();
+    act(() => current?.setRequiredGroupKeys(['A']));
+    await act(async () => {});
+
+    expect(current?.groupInfos.A?.name).toBe('Alpha');
+    expect(current?.groupCatalogError?.kind).toBe('catalog');
+    expect(current?.groupCatalogLoading).toBe(false);
+  });
+
   it('merges refreshed details without replacing existing details', async () => {
     api.groups.mockResolvedValueOnce(['A']).mockResolvedValueOnce(['B']);
     api.details.mockResolvedValueOnce([groupInfo('A', 'Alpha')]);
@@ -167,6 +200,37 @@ describe('useRerDutyFilterOptions', () => {
     await act(async () => firstDetails.resolve([groupInfo('A', 'Stale Alpha')]));
 
     expect(current?.groupInfos).toEqual({ B: groupInfo('B', 'Beta') });
+  });
+
+  it('#3727 preserves newer inbox metadata when an older catalog response arrives', async () => {
+    const details = deferred<ReturnType<typeof groupInfo>[]>();
+    api.groups.mockResolvedValue(['A', 'B']);
+    api.details.mockReturnValue(details.promise);
+    mount();
+    await act(async () => {});
+    const latestAlpha = { ...groupInfo('A', 'Latest Alpha'), colorKey: 'red' as const };
+    act(() => current?.setGroupInfos((previous) => ({ ...previous, A: latestAlpha })));
+    await act(async () => details.resolve([groupInfo('A', 'Stale Alpha'), groupInfo('B', 'Beta')]));
+
+    expect(current?.groupInfos.A).toBe(latestAlpha);
+    expect(current?.groupInfos.B?.name).toBe('Beta');
+  });
+
+  it('#3727 ignores historical metadata from a superseded selection without losing its loading state', async () => {
+    const alpha = deferred<ReturnType<typeof groupInfo>[]>();
+    const beta = deferred<ReturnType<typeof groupInfo>[]>();
+    api.groups.mockResolvedValue([]);
+    api.details.mockReturnValueOnce(alpha.promise).mockReturnValueOnce(beta.promise);
+    mount();
+    await act(async () => {});
+    act(() => current?.setRequiredGroupKeys(['A']));
+    act(() => current?.setRequiredGroupKeys(['B']));
+    await act(async () => alpha.resolve([groupInfo('A', 'Obsolete Alpha')]));
+    expect(current?.groupInfos).toEqual({});
+    expect(current?.groupCatalogLoading).toBe(true);
+    await act(async () => beta.resolve([groupInfo('B', 'Beta')]));
+    expect(current?.groupInfos.B?.name).toBe('Beta');
+    expect(current?.groupCatalogLoading).toBe(false);
   });
 
   it('does not update after unmount while catalog requests are pending', async () => {

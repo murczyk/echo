@@ -418,183 +418,201 @@ subscriptions _ =
     Sub.none
 
 
+loginBrand : Bool -> Html Msg
+loginBrand isDark =
+    let
+        logoAnimationEnabled =
+            False
+    in
+    div
+        [ classList
+            [ ( "login-brand", True )
+            , ( "logo-coin-trigger", logoAnimationEnabled )
+            ]
+        ]
+        [ node "echo-logo-coin"
+            [ classList
+                [ ( "logo-coin", True )
+                , ( "logo-coin--auto", logoAnimationEnabled )
+                ]
+            ]
+            [ div
+                [ class "logo-coin__idle" ]
+                [ div
+                    [ class "logo-coin__disc" ]
+                    [ div
+                        [ class "main-image logo-coin__face logo-coin__face--front" ]
+                        [ img
+                            [ src "/img/login-echo-mark.svg"
+                            , alt "Echo"
+                            ]
+                            []
+                        ]
+                    , div
+                        [ class "hover-image logo-coin__face logo-coin__face--back" ]
+                        [ img
+                            [ src "/img/riskdept.svg"
+                            , alt "Risk Department"
+                            ]
+                            []
+                        ]
+                    ]
+                ]
+            ]
+        , img
+            [ src "/img/login-echo-wordmark.svg"
+            , class "login-wordmark"
+            , alt "ECHO"
+            ]
+            []
+        ]
+
+
+loginAttribution : Bool -> Html Msg
+loginAttribution isDark =
+    div [ class "login-attribution" ]
+        [ img
+            [ src
+                (if isDark then
+                    "/img/login-attribution-dark.svg"
+
+                 else
+                    "/img/login-attribution-light.svg"
+                )
+            , alt ""
+            ]
+            []
+        , div [ class "login-attribution__copy" ]
+            [ span [] [ text "Проєкт розробляється і підтримується" ]
+            , span [] [ text "Департаментом Активних Дій" ]
+            , span [] [ text "ГУР МО" ]
+            ]
+        ]
+
+
 totpPanel : Model -> Pending2fa -> List (Html Msg)
 totpPanel model pending =
     let
+        panelClass =
+            case pending of
+                Setup _ ->
+                    "login-panel--2fa-setup"
+
+                Verify _ ->
+                    "login-panel--2fa-verify"
+
         setupBits =
             case pending of
                 Setup { qrBase64, manualKey } ->
-                    [ div [ class "mb-3 w-100 text-start" ]
-                        [ h2 [ id "totp-setup-heading", attribute "tabindex" "-1", class "h5" ]
+                    [ div [ class "login-2fa-copy" ]
+                        [ h2 [ id "totp-setup-heading", attribute "tabindex" "-1", class "login-heading" ]
                             [ text "Налаштуйте двофакторну автентифікацію" ]
-                        , ol [ class "mb-0 ps-3" ]
+                        , ol [ class "login-2fa-steps" ]
                             [ li [] [ text "Встановіть на телефон застосунок-автентифікатор з офіційного магазину, наприклад Microsoft Authenticator, Google Authenticator, Authy або Duo Mobile." ]
                             , li [] [ text "У застосунку виберіть додавання облікового запису та відскануйте QR-код." ]
                             , li [] [ text "Введіть нижче 6-значний код, який з’явиться в застосунку." ]
                             ]
                         ]
-                    , div [ class "mb-3 w-100 text-center" ]
+                    , div [ class "login-qr-wrap" ]
                         [ img
                             [ src ("data:image/png;base64," ++ qrBase64)
                             , alt "QR-код для налаштування двофакторної автентифікації"
-                            , style "width" "180px"
-                            , style "height" "180px"
-                            , style "background" "#fff"
-                            , style "margin" "auto"
+                            , class "login-qr"
                             ]
                             []
                         ]
-                    , div [ class "mb-2 w-100 text-start small" ]
+                    , div [ class "login-helper-text" ]
                         [ text "Не вдається відсканувати QR-код? Введіть цей ключ вручну:" ]
                     , div
-                        [ class "mb-3 w-100 text-center text-info small font-monospace"
-                        , style "word-break" "break-all"
-                        ]
+                        [ class "login-manual-key" ]
                         [ text manualKey ]
-                    , div [ class "mb-3 w-100 text-start small" ]
+                    , div [ class "login-helper-text login-helper-text--warning" ]
                         [ text "Не надсилайте QR-код або ключ іншим людям." ]
                     ]
 
                 Verify _ ->
-                    [ div [ class "mb-3 w-100 text-start" ]
-                        [ h2 [ class "h5" ] [ text "Підтвердіть вхід" ]
-                        , p [ class "mb-0 small" ] [ text "Введіть 6-значний код із застосунку-автентифікатора." ]
+                    [ div [ class "login-2fa-copy" ]
+                        [ h2 [ class "login-heading" ] [ text "Підтвердіть вхід" ]
+                        , p [ class "login-description" ] [ text "Введіть 6-значний код із застосунку-автентифікатора." ]
                         ]
                     ]
     in
-    setupBits
-        ++ [ div [ class "mb-2 w-100" ]
-                ([ label [ for "totp-token", class "form-label" ] [ text "6-значний код" ]
-                 , input
-                    [ type_ "text"
-                    , class "form-control"
-                    , id "totp-token"
-                    , placeholder "000000"
-                    , value model.totpTokenInp
-                    , onInput SetTotpTokenInp
-                    , disabled model.authInFlight
-                    , attribute "autocomplete" "one-time-code"
-                    , attribute "inputmode" "numeric"
-                    , isInvalidCls "token" model.formErrors
+    [ div [ class ("login-panel login-panel--2fa " ++ panelClass) ]
+        (setupBits
+            ++ [ div [ class "login-field" ]
+                    ([ label [ for "totp-token", class "login-label" ] [ text "6-значний код" ]
+                     , input
+                        [ type_ "text"
+                        , class "form-control login-input"
+                        , id "totp-token"
+                        , placeholder "000000"
+                        , value model.totpTokenInp
+                        , onInput SetTotpTokenInp
+                        , disabled model.authInFlight
+                        , attribute "autocomplete" "one-time-code"
+                        , attribute "inputmode" "numeric"
+                        , isInvalidCls "token" model.formErrors
+                        ]
+                        []
+                     ]
+                        ++ fieldError "token" model.formErrors
+                    )
+               , div [ class "login-submit" ]
+                    [ button
+                        [ type_ "submit"
+                        , class "login-primary-action"
+                        , disabled model.authInFlight
+                        ]
+                        [ text "підтвердити" ]
                     ]
-                    []
-                 ]
-                    ++ fieldError "token" model.formErrors
-                )
-           , div [ class "mb-2 w-100 d-flex justify-content-center" ]
-                [ button
-                    [ type_ "submit"
-                    , class "btn btn-primary btn-dark w-100"
-                    , disabled model.authInFlight
+               , div [ class "login-back-action" ]
+                    [ button
+                        [ type_ "button"
+                        , class "login-secondary-action"
+                        , onClick Cancel2fa
+                        , disabled model.authInFlight
+                        ]
+                        [ text "назад" ]
                     ]
-                    [ text "підтвердити" ]
-                ]
-           , div [ class "w-100 text-center" ]
-                [ button
-                    [ type_ "button"
-                    , class "btn btn-link btn-sm text-decoration-none p-0"
-                    , style "color" "var(--bs-secondary-color)"
-                    , onClick Cancel2fa
-                    , disabled model.authInFlight
-                    ]
-                    [ text "назад" ]
-                ]
-           ]
+               ]
+        )
+    ]
 
 
-body : Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
-body _ deltaLoginFlag sharedToasts model =
+body : Bool -> Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
+body isDark serverInfoLoaded deltaLoginFlag sharedToasts model =
     let
-        formWidth =
+        isTotpSetup =
             case model.pending2fa of
                 Just (Setup _) ->
-                    style "width" "min(420px, calc(100vw - 32px))"
+                    True
 
                 _ ->
-                    style "width" "280px"
-
-        logoBlock =
-            div [ class "mb-4 pt-2" ]
-                [ div
-                    [ class "logo-coin-trigger d-flex justify-content-center align-items-center"
-                    , style "gap" "5px"
-                    ]
-                    [ node "echo-logo-coin"
-                        [ class "logo-coin logo-coin--auto d-flex align-items-center justify-content-center"
-                        , style "width" "60px"
-                        , style "height" "60px"
-                        ]
-                        [ div
-                            [ class "logo-coin__idle" ]
-                            [ div
-                                [ class "logo-coin__disc"
-                                , style "width" "60px"
-                                , style "height" "60px"
-                                ]
-                                [ div
-                                    [ class "main-image logo-coin__face logo-coin__face--front"
-                                    , style "width" "60px"
-                                    , style "height" "60px"
-                                    ]
-                                    [ img
-                                        [ src "/img/kraken-mark.png"
-                                        , style "width" "60px"
-                                        , style "height" "60px"
-                                        , alt "Echo"
-                                        ]
-                                        []
-                                    ]
-                                , div
-                                    [ class "hover-image logo-coin__face logo-coin__face--back"
-                                    , style "width" "60px"
-                                    , style "height" "60px"
-                                    , style "background-color" "#000"
-                                    , style "border-radius" "50%"
-                                    ]
-                                    [ img
-                                        [ src "/img/riskdept.svg"
-                                        , style "width" "54px"
-                                        , style "height" "54px"
-                                        , style "z-index" "1"
-                                        , alt "Risk Department"
-                                        ]
-                                        []
-                                    ]
-                                ]
-                            ]
-                        ]
-                    , div []
-                        [ img
-                            [ src "/img/echo-logo-white.svg"
-                            , class "h-[50px]"
-                            ]
-                            []
-                        ]
-                    ]
-                ]
+                    False
 
         credsFields interactive =
             let
                 fieldsEnabled =
                     interactive && not model.authInFlight
             in
-            [ div [ class "mb-2 w-100" ] <|
+            [ div [ class "login-field" ] <|
                 input
                     [ type_ "text"
-                    , class "form-control"
+                    , class "form-control login-input"
                     , id "login"
                     , placeholder "логін"
                     , value model.loginInp
                     , onInput SetLoginInp
+                    , autofocus interactive
                     , disabled (not fieldsEnabled)
                     , isInvalidCls "login" model.formErrors
                     ]
                     []
                     :: fieldError "login" model.formErrors
-            , div [ class "mb-2 w-100" ] <|
+            , div [ class "login-field" ] <|
                 input
                     [ type_ "password"
-                    , class "form-control"
+                    , class "form-control login-input"
                     , placeholder "пароль"
                     , value model.passwordInp
                     , onInput SetPasswordInp
@@ -604,11 +622,11 @@ body _ deltaLoginFlag sharedToasts model =
                     []
                     :: fieldError "password" model.formErrors
             , div
-                [ class "mb-2 w-100 d-flex justify-content-center"
+                [ class "login-submit"
                 ]
                 [ button
                     [ type_ "submit"
-                    , class "btn btn-primary btn-dark w-100"
+                    , class "login-primary-action"
                     , disabled (not fieldsEnabled)
                     ]
                     [ text "увійти" ]
@@ -618,13 +636,12 @@ body _ deltaLoginFlag sharedToasts model =
         deltaButton =
             button
                 [ type_ "button"
-                , class "btn btn-primary btn-dark text-nowrap w-100"
+                , class "login-primary-action"
                 , onClick GetDeltaRedirectUrl
                 ]
                 [ img
                     [ src "/img/delta-icon.webp"
-                    , class "me-2 inline-block"
-                    , style "height" "18px"
+                    , alt ""
                     ]
                     []
                 , span [] [ text "увійти з delta" ]
@@ -633,14 +650,13 @@ body _ deltaLoginFlag sharedToasts model =
         credsOpenLink =
             button
                 [ type_ "button"
-                , class "btn btn-link btn-sm text-decoration-none p-0"
-                , style "color" "var(--bs-secondary-color)"
+                , class "login-secondary-action"
                 , onClick ToggleCredsLogin
                 ]
                 [ text "або увійти з логіном" ]
 
         deltaFormChildren =
-            [ div [ class "mb-3 w-100" ] [ deltaButton ]
+            [ div [ class "login-action-slot" ] [ deltaButton ]
             , div
                 [ classList
                     [ ( "login-creds-link-wrap", True )
@@ -653,6 +669,8 @@ body _ deltaLoginFlag sharedToasts model =
             , div
                 ([ classList
                     [ ( "login-creds-panel", True )
+                    , ( "login-panel", True )
+                    , ( "login-panel--credentials", True )
                     , ( "is-open", model.showCredsLogin )
                     ]
                  ]
@@ -664,9 +682,7 @@ body _ deltaLoginFlag sharedToasts model =
                        )
                 )
                 [ div
-                    [ class "login-creds-panel__inner w-100 d-flex flex-column align-items-center pt-3 px-1"
-                    , style "border-top" "1px solid var(--bs-border-color)"
-                    ]
+                    [ class "login-creds-panel__inner" ]
                     (credsFields model.showCredsLogin)
                 ]
             ]
@@ -674,14 +690,17 @@ body _ deltaLoginFlag sharedToasts model =
         formChildren =
             case model.pending2fa of
                 Just pending ->
-                    logoBlock :: totpPanel model pending
+                    totpPanel model pending
 
                 Nothing ->
-                    if deltaLoginFlag then
-                        logoBlock :: deltaFormChildren
+                    if not serverInfoLoaded then
+                        []
+
+                    else if deltaLoginFlag then
+                        deltaFormChildren
 
                     else
-                        logoBlock :: credsFields True
+                        credsFields True
 
         formSubmitMsg =
             case model.pending2fa of
@@ -694,18 +713,33 @@ body _ deltaLoginFlag sharedToasts model =
     [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
     , Shared.Components.Toast.view ToastMsg model.toasts <|
         div
-            [ class "d-flex flex-column justify-content-center align-items-center py-3"
-            , style "min-height" "100vh"
-            , style "background-image" "linear-gradient(to bottom, rgba(var(--bd-coyote-rgb), 1), var(--bd-oak-barrel)"
+            [ class "login-page"
+            , attribute "data-login-theme"
+                (if isDark then
+                    "dark"
+
+                 else
+                    "light"
+                )
             ]
-            [ Html.form
-                [ class "d-flex flex-column justify-content-center align-items-center"
-                , class "border shadow-lg p-4"
-                , formWidth
-                , style "background-image" "linear-gradient(to bottom, rgba(var(--bs-body-bg-rgb), .7), rgba(var(--bs-body-bg-rgb), .9))"
-                , onSubmit formSubmitMsg
+            [ div
+                [ classList
+                    [ ( "login-main", True )
+                    , ( "login-main--expanded", isTotpSetup )
+                    ]
                 ]
-                formChildren
+                [ Html.form
+                    [ classList
+                        [ ( "login-form", True )
+                        , ( "login-form--setup", isTotpSetup )
+                        ]
+                    , onSubmit formSubmitMsg
+                    ]
+                    [ loginBrand isDark
+                    , div [ class "login-actions" ] formChildren
+                    ]
+                ]
+            , loginAttribution isDark
             ]
     ]
 
@@ -717,5 +751,11 @@ view shared model =
             isFeatureDeltaEnabled shared.serverInfo
     in
     { title = "логін"
-    , body = body (isDarkMode shared.themeMode) featureDelta shared.toasts model
+    , body =
+        body
+            (isDarkMode shared.themeMode)
+            shared.serverInfoLoaded
+            featureDelta
+            shared.toasts
+            model
     }

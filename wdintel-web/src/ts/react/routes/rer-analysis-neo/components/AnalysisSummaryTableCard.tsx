@@ -384,8 +384,6 @@ function AnalysisSummaryTableCardInner({
     <Paper variant="outlined" component="section" aria-labelledby={headingId} sx={paperSx}>
       <TableToolbarControls
         withGlobalTextFilter
-        desktopBreakpoint={sidebarMode ? 'md' : 'lg'}
-        leadingDesktopBreakpoint={sidebarMode ? 'md' : 'lg'}
         trailingActions={
           <Stack
             direction="row"

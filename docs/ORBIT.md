@@ -268,6 +268,47 @@ path. In automatic mode, guarded radio-network and location-only labels that do
 not contain a valid parsed hierarchy are archived. Archived labels and labels
 that changed during review remain untouched.
 
+Inbox unit resolution checks the complete stored `unit_v2` text before
+splitting it into parser fragments. An exact synonym, an exact unit name, or
+an unambiguous single hierarchy preserves the complete match without creating
+unresolved child fragments. Successfully resolved `unit_v2` values, including
+multiple units, take precedence over matches in the original extracted text.
+Explicit list separators are preserved even when consecutive units have
+increasing echelons or a unit name ends with a number. Numbered `ТА` armies
+remain hierarchy segments.
+Exact unit names take precedence over conflicting synonyms.
+The original text is a recovery fallback when `unit_v2` remains unresolved.
+If some parsed units already match, recovery requires both texts to describe
+the same single hierarchy. Separate unmatched units remain unresolved. The
+backfill refreshes automatic links without rewriting `unit` or `unit_v2`.
+
+After updating the resolver, reprocess historical inbox unit links with:
+
+```sh
+backfill_till_ts="$(date -u +%Y-%m-%dT%H:%M:%S)"
+sudo wdintel-rs --mode=live oneoff-backfill-inbox-unit-links \
+  --start-ts 2026-07-01T00:00:00 \
+  --till-ts "$backfill_till_ts"
+```
+
+The range uses UTC message creation time. `--start-ts` is inclusive;
+`--till-ts` is exclusive and defaults to the command's start time. The backfill
+retries stored unit text, refreshes unit links, recalculates network assignments
+and their derived units, and clears resolved failure references; it does not
+re-extract message bodies. See [network reconciliation](network-unit-matching.md)
+for matching rules and historical network repair.
+
+Keep the same start and end bounds when resuming. Each successful batch logs
+`last_inbox_item_id` after committing; pass that value with
+`--after-inbox-item-id` to continue after an interruption. An incomplete batch
+rolls back and is retried. Source rows remain locked while their links are
+refreshed, so concurrent source edits are reconciled after committing.
+
+Each batch also queues group-statistics recalculation within the statistics
+retention window. Check representative inbox unit links and the unparsed-label
+list, then wait for the queued recalculation to finish before checking unit
+counts and filters for the processed range.
+
 ### Remove invalid army/corps and higher echelons from SIGINT unit names
 
 This workflow finds blacklisted army and corps values `УВ(с)`, `УВ`, and `ТН`,

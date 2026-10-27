@@ -104,5 +104,5 @@ export async function rerDutyShortStateGet(id: string): Promise<RerDutyShortStat
   const raw = await postJson<{ state?: unknown } | null>('/api/rer-duty/filters/get', { id });
   const state =
     (raw?.state ?? null) ? (transformSnakeToCamel(raw?.state ?? {}) as RerDutyQueryState) : null;
-  return { state: state ?? { waterfalls: [] } };
+  return { state: state ?? { waterfalls: [], groupScopes: null } };
 }

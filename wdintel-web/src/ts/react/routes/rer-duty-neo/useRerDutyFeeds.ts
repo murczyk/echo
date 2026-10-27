@@ -150,6 +150,8 @@ export function useRerDutyFeeds(
   currentUserOrganismId: number | null = null,
   deviceAccess: DeviceAccess = { status: 'loading' },
   radioFeaturesAllowed = false,
+  hideNetworks = false,
+  networkVisibilityReady = true,
 ) {
   const [keywordSets, setKeywordSets] = useState<OrganismKeywordSetDto[]>([]);
   const reloadKeywordSets = useCallback(async () => {
@@ -159,7 +161,6 @@ export function useRerDutyFeeds(
   const filterOpts = useRerDutyFilterOptions(radioFeaturesAllowed);
   const [pollIntervalSec, setPollIntervalSec] = useState(INBOX_COUNT_POLL_INTERVAL_MS / 1000);
   const dutySettings = useDutySettings();
-  const lastInboxEventPollAtRef = useRef(Number.NEGATIVE_INFINITY);
   // Until the persisted preference is known (or after it fails), Duty must not make an
   // automatic positioning decision from the optimistic default.
   const dutyDisableAutoScroll =
@@ -183,12 +184,15 @@ export function useRerDutyFeeds(
     disableAutoScroll: dutyDisableAutoScroll,
     deviceAccess,
     radioFeaturesAllowed,
+    hideNetworks,
+    networkVisibilityReady,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
+  const deviceAccessError = deviceAccess.status === 'error' ? deviceAccess.message : null;
   useEffect(() => {
-    if (deviceAccess.status === 'error') setFeedError(deviceAccess.message);
-  }, [deviceAccess, setFeedError]);
+    if (deviceAccessError != null) setFeedError(deviceAccessError);
+  }, [deviceAccessError, setFeedError]);
   useEffect(() => {
     let cancelled = false;
     fetchOrganismKeywordSets()
@@ -241,16 +245,10 @@ export function useRerDutyFeeds(
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
-      const now = Date.now();
-      const poll =
-        now - lastInboxEventPollAtRef.current >= INBOX_COUNT_POLL_INTERVAL_MS
-          ? (() => {
-              lastInboxEventPollAtRef.current = now;
-              return feedState.pollNow();
-            })()
-          : Promise.resolve();
       const refreshes = feedState.messageFeeds.flatMap((feed) => {
-        const visibleMessageIds = new Set(feed.items.map(([messageId]) => messageId));
+        const visibleMessageIds = new Set(
+          [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
+        );
         const visibleChangedMessageIds = Array.from(
           new Set(messageIds.filter((messageId) => visibleMessageIds.has(messageId))),
         );
@@ -267,13 +265,9 @@ export function useRerDutyFeeds(
         ];
       });
 
-      if (refreshes.length === 0) {
-        await poll;
-        return;
-      }
+      if (refreshes.length === 0) return;
 
       await Promise.all([
-        poll,
         ...refreshes.map(
           async ({
             feedId,
@@ -486,6 +480,9 @@ export function useRerDutyFeeds(
     ],
   );
   useEffect(() => {
+    filterOpts.setRequiredGroupKeys(availableGroupKeys);
+  }, [availableGroupKeys, filterOpts.setRequiredGroupKeys]);
+  useEffect(() => {
     setKnownGroupKeys((previous) => {
       const next = mergeKnownGroupKeys(
         previous,
@@ -512,10 +509,12 @@ export function useRerDutyFeeds(
     });
   }, [reloadLocations, setFeedError]);
   return {
+    buildReqForFeed: feedState.buildReqForFeed,
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
     error: feedState.error,
     errorNotificationVersion: feedState.errorNotificationVersion,
+    setError: feedState.setError,
     clearDutyError: () => feedState.setError(null),
     authUserName,
     columnRefsRef: feedState.columnRefsRef,
@@ -539,6 +538,7 @@ export function useRerDutyFeeds(
     loadFeedNewerMessages: feedState.loadFeedNewerMessages,
     flushPendingNewerMessages: feedState.flushPendingNewerMessages,
     applyFilter: feedState.applyFilter,
+    setGroupScope: feedState.setGroupScope,
     toggleGroup: feedState.toggleGroup,
     selectAllGroups: feedState.selectAllGroups,
     handleSaveFilter: actions.handleSaveFilter,
@@ -595,6 +595,7 @@ export function useRerDutyFeeds(
     watchModeByFeedId: feedState.watchModeByFeedId,
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,
     loadingNewerFeedIds: feedState.loadingNewerFeedIds,
+    isExplicitNavigationLoading: feedState.isExplicitNavigationLoading,
     arrowResultByFeedId: feedState.arrowResultByFeedId,
     copiedFeedbackId: actions.copiedFeedbackId,
     handleEditedMessage: actions.handleEditedMessage,

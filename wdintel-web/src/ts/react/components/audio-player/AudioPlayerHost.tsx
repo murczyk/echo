@@ -61,8 +61,6 @@ export function AudioPlayerHost({
     player.setAttribute('storage-key', storageKey);
     player.setAttribute('theme', theme ?? getMuiPaletteMode());
     if (displayName !== '<файл без назви>') player.setAttribute('file-name', displayName);
-    if (waveSrc !== '') player.setAttribute('wave-src', waveSrc);
-    if (spectrumSrc !== '') player.setAttribute('spectrum-src', spectrumSrc);
     const originalPlay = player.play;
     const restorePlay = () => {
       if (suppressInitialAutoplay) player.play = originalPlay;
@@ -84,7 +82,16 @@ export function AudioPlayerHost({
       callbacks.current.onPlayerChange?.(null, player);
       host.replaceChildren();
     };
-  }, [displayName, href, spectrumSrc, storageKey, suppressInitialAutoplay, waveSrc, variant, mode]);
+  }, [displayName, href, storageKey, suppressInitialAutoplay, variant, mode]);
+
+  useLayoutEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+    if (waveSrc) player.setAttribute('wave-src', waveSrc);
+    else player.removeAttribute('wave-src');
+    if (spectrumSrc) player.setAttribute('spectrum-src', spectrumSrc);
+    else player.removeAttribute('spectrum-src');
+  }, [displayName, href, storageKey, suppressInitialAutoplay, variant, mode, waveSrc, spectrumSrc]);
 
   useLayoutEffect(() => {
     if (playerRef.current) syncAudioPlayerTheme(playerRef.current, theme ?? paletteMode);

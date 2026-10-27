@@ -22,6 +22,12 @@ pub struct Model {
     pub disable_network_assignment: bool,
     pub interseption_kind: InterseptionKind,
     pub is_aviation_group: Option<bool>,
+    pub fetch_new_messages: Option<bool>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub color_key: Option<String>,
+    pub created_by_login_id: Option<Uuid>,
+    pub ai_transcript_analysis_enabled: Option<bool>,
+    pub ai_transcript_analysis_enabled_at: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -36,6 +42,8 @@ pub enum Relation {
     Datasource,
     #[sea_orm(has_many = "super::datasource_group::Entity")]
     DatasourceGroup,
+    #[sea_orm(has_many = "super::device_audio_forwarding_group::Entity")]
+    DeviceAudioForwardingGroup,
     #[sea_orm(has_many = "super::group_admin_data::Entity")]
     GroupAdminData,
     #[sea_orm(has_many = "super::group_stats_recalculation_task::Entity")]
@@ -56,6 +64,8 @@ pub enum Relation {
     SignalGroupAor,
     #[sea_orm(has_many = "super::signal_message_group::Entity")]
     SignalMessageGroup,
+    #[sea_orm(has_many = "super::user_group_feed_read_state::Entity")]
+    UserGroupFeedReadState,
 }
 
 impl Related<super::datasource::Entity> for Entity {
@@ -67,6 +77,12 @@ impl Related<super::datasource::Entity> for Entity {
 impl Related<super::datasource_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DatasourceGroup.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingGroup.def()
     }
 }
 
@@ -130,12 +146,9 @@ impl Related<super::signal_message_group::Entity> for Entity {
     }
 }
 
-impl Related<super::login::Entity> for Entity {
+impl Related<super::user_group_feed_read_state::Entity> for Entity {
     fn to() -> RelationDef {
-        super::signal_group_admin::Relation::Login.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::signal_group_admin::Relation::SignalGroup.def().rev())
+        Relation::UserGroupFeedReadState.def()
     }
 }
 

@@ -13,6 +13,11 @@ import {
 } from '../../../services/api/direct-submit';
 import type { RecentValues } from './useRecentValues';
 import {
+  compatibleMessageUnitSelection,
+  isMessageUnitSelectionValid,
+  MESSAGE_UNIT_SELECTION_ERROR,
+} from './message-unit-selection';
+import {
   DO_NOT_SEND_GROUP_VALUE,
   parseCoords,
   type MessageFormData,
@@ -22,6 +27,9 @@ import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 import { fallbackFailedMessageUploads, messageUploadFailure } from './message-upload-fallback';
 
 type SubmitOptions = {
+  engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
+  replyGroupMasterKey?: string | null;
   busy: boolean;
   radioFeaturesAllowed: boolean;
   cyberEchoEnabled: boolean;
@@ -53,6 +61,9 @@ export function useMessageSubmit({
   isReportCreateMode,
   editTarget,
   reportSource,
+  engagedMessageId,
+  replySourceUnavailable,
+  replyGroupMasterKey,
   existingMedia,
   onSubmitEdit,
   tagsLoaded,
@@ -65,6 +76,8 @@ export function useMessageSubmit({
   handleDrawerCloseAfterSubmit,
   handleCreateSuccess,
 }: SubmitOptions) {
+  const sourceUnavailable = useRef(replySourceUnavailable);
+  sourceUnavailable.current = replySourceUnavailable;
   const mounted = useRef(false);
   const submission = useRef<AbortController | null>(null);
   useEffect(() => {
@@ -80,6 +93,13 @@ export function useMessageSubmit({
 
   const onSubmit = async (data: MessageFormData) => {
     if (busy || submission.current || !mounted.current) return;
+    if (
+      !isEditMode &&
+      !isMessageUnitSelectionValid(data.unit, data.unitSelection, data.unitNetworkSelection)
+    ) {
+      setErrorMsg(MESSAGE_UNIT_SELECTION_ERROR);
+      return;
+    }
     let createdResult: DirectSubmitResponse | null = null;
 
     const hasTextContent = isReportMode
@@ -205,15 +225,18 @@ export function useMessageSubmit({
         hash_id: metadata.hash_id?.trim() || undefined,
       }));
       const recentValues = buildRecentValues(data, dmrRows);
+      const unitSelection = compatibleMessageUnitSelection(data.unit, data.unitSelection);
 
       const payload = {
         full_body: data.full_body?.trim() || undefined,
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
         signal_group_master_key:
-          data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
-            ? null
-            : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
+          engagedMessageId != null && replyGroupMasterKey
+            ? replyGroupMasterKey
+            : data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
+              ? null
+              : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length ? uploadUrls : null,
         attachment_updates: buildAttachmentUpdates(
@@ -241,6 +264,8 @@ export function useMessageSubmit({
           ? data.post || undefined
           : (editTarget?.message.post ?? undefined),
         unit: data.unit || undefined,
+        unit_id: unitSelection?.id,
+        create_unit: unitSelection?.create,
         locations: data.locations || [],
         network: networkObj,
         dmr: radioFeaturesAllowed
@@ -261,6 +286,8 @@ export function useMessageSubmit({
             })),
         deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
         retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
+        engaged_message_id:
+          !isEditMode && !sourceUnavailable.current ? engagedMessageId : undefined,
         parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
         copy_source_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
       };

@@ -1,3 +1,5 @@
+import { useMessageReplies } from '../message-replies/MessageRepliesProvider';
+import { MessageReplyChain } from '../message-replies/MessageReplyChain';
 import { useMessageDeleteAccess, useMessageWriteAccess } from './MessageWriteAccess';
 import { useContext } from 'react';
 import { DutyExcludeMenuContext } from './DutyExcludeMenu';
@@ -23,6 +25,7 @@ import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message
 import {
   MessageCardHeader,
   MessageCardMetadata,
+  MessageCardTimestampFooter,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
@@ -41,7 +44,11 @@ import {
   type MessageEntityFilterKind,
   type TagsLayoutVariant,
 } from '../../rer-duty-neo/utils';
-import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
+import {
+  hideMessageCardNetworks,
+  resolveMessageCardEtalonDisplayModel,
+} from './message-card.utils';
+import type { MessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type {
   MessageTextPreviewLineLimit,
@@ -74,6 +81,7 @@ const ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE = {
 
 const MessageCardRoot = styled('div')(({ theme }) => ({
   ...theme.typography.body2,
+  '--message-card-metadata-text-color': theme.palette.text.secondary,
 }));
 
 export function formatMessageCardTooltipTime(
@@ -104,21 +112,20 @@ export type MessageCardProps = {
   id: number;
   msg: InboxMessage;
   readOnly?: boolean;
-  /** Number of feeds (columns). When >= 3, header columns use differential shrink (left 3, center 2, right 0). When 1 or 2, all columns shrink equally. */
-  feedCount?: number;
-  /** Duty vs analysis: controls stacked action icon grid width (4 vs 3 columns). */
   displayMode?: MessageCardDisplayMode;
   analysisDestination?: 'classic' | 'neo';
   /** Tag chips section visual density mode. */
   tagsLayout?: TagsLayoutVariant;
   hideBotTags?: boolean;
+  hideNetworks?: boolean;
   tagsLoading?: boolean;
-  /** Baseline "now" when the card is off-screen; while visible, relative time updates every second. */
+  /** Baseline "now" when the card is off-screen; visible dates update at Kyiv midnight. */
   referenceTimeMs: number | null;
   /** Auth user display name for background watermark */
   authUserName: string | null;
   tagContributionsOrganismId?: number;
   groupName: string | null;
+  hideGroupName?: boolean;
   reportGroupInfos?: Record<string, SignalGroupEntry>;
   senderName: string | null;
   copiedFeedbackId: string | null;
@@ -142,9 +149,12 @@ export type MessageCardProps = {
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyMessageLink?: () => void;
-  onCopyEtalon?: () => void;
-  onCopyLocation?: () => void;
-  onCreateReport?: (focusTarget: HTMLElement) => void;
+  onCopyEtalon?: (value: string) => void;
+  onCopyLocation?: (value: string) => void;
+  onCreateReport?: (
+    visibleEtalonDisplayModel: MessageCardEtalonDisplayModel,
+    focusTarget: HTMLElement,
+  ) => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
   onEditDetails?: (focusTarget: HTMLElement) => void;
@@ -155,7 +165,6 @@ export type MessageCardProps = {
   botTagAction?: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
-  rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
   showCallsignAddForm?: boolean;
   /**
@@ -174,16 +183,17 @@ function MessageCardComponent({
   id,
   msg,
   readOnly = false,
-  feedCount = 1,
   displayMode = 'duty',
   analysisDestination = 'classic',
   tagsLayout = 'full',
   hideBotTags = false,
+  hideNetworks = false,
   tagsLoading = false,
   referenceTimeMs,
   authUserName,
   tagContributionsOrganismId,
   groupName,
+  hideGroupName = false,
   reportGroupInfos = EMPTY_GROUP_INFOS,
   senderName,
   copiedFeedbackId,
@@ -218,7 +228,6 @@ function MessageCardComponent({
   botTagAction = null,
   onCancelBotTagAction,
   onMarkBotTagWrong,
-  rightHeaderInsetPx = 0,
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,
@@ -226,6 +235,7 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
   messageTimeBasis = 'interception',
 }: MessageCardProps) {
+  const replies = useMessageReplies(id);
   const canWrite = useMessageWriteAccess();
   const canDelete = useMessageDeleteAccess();
   if (!canDelete) onDelete = undefined;
@@ -239,9 +249,7 @@ function MessageCardComponent({
     analysisCallsignActions = undefined;
     showCallsignAddForm = false;
   }
-  const displayTimestamp = messageTimeBasis === 'creation' ? msg.createdAt : msg.timestamp;
   const downloadGuard = useMessageCardDownloadGuard();
-  const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
     if (!networks) return {};
@@ -257,9 +265,19 @@ function MessageCardComponent({
       }),
     [msg, featureStrictNetworks, networkDisplayMap, derivedNetworkMap, networks],
   );
-  const onCopyEtalonAction = etalonDisplayModel.copyEtalonValue == null ? undefined : onCopyEtalon;
+  const visibleEtalonDisplayModel = useMemo(
+    () =>
+      hideNetworks ? hideMessageCardNetworks(etalonDisplayModel, msg.unit) : etalonDisplayModel,
+    [hideNetworks, etalonDisplayModel, msg.unit],
+  );
+  const onCopyEtalonAction =
+    visibleEtalonDisplayModel.copyEtalonValue == null || onCopyEtalon == null
+      ? undefined
+      : () => onCopyEtalon(visibleEtalonDisplayModel.copyEtalonValue!);
   const onCopyLocationAction =
-    etalonDisplayModel.copyLocationValue == null ? undefined : onCopyLocation;
+    visibleEtalonDisplayModel.copyLocationValue == null || onCopyLocation == null
+      ? undefined
+      : () => onCopyLocation(visibleEtalonDisplayModel.copyLocationValue!);
   const pointEtalons = useMemo(() => getPointEtalonsFromMessage(msg, tagsMap), [msg, tagsMap]);
   const radioFeaturesAllowed = useRadioFeatures();
   const dutyExcludeMenuEnabled = useContext(DutyExcludeMenuContext);
@@ -338,24 +356,26 @@ function MessageCardComponent({
     : undefined;
 
   const headerProps: MessageCardHeaderProps = {
-    compact: compactLayout,
     displayMode,
     id,
     msg,
-    displayTimestamp: messageTimeBasis === 'creation' ? displayTimestamp : undefined,
     messageTimeBasis,
     copiedFeedbackId,
-    etalonDisplayModel,
+    etalonDisplayModel: visibleEtalonDisplayModel,
     mapHref,
     analysisHref,
-    rightInsetPx: rightHeaderInsetPx,
+    onReply:
+      replies.open == null ? undefined : (focus) => replies.open?.({ id, message: msg, focus }),
     onBookmark,
     onImportant,
-    onCreateReport,
+    onCreateReport:
+      onCreateReport == null
+        ? undefined
+        : (focusTarget) => onCreateReport(visibleEtalonDisplayModel, focusTarget),
     onCopyText,
     onCopyFreq: radioFeaturesAllowed ? onCopyFreq : undefined,
-    onCopyTextWithNetwork,
-    onCopyTextWithNetworkAndNote,
+    onCopyTextWithNetwork: hideNetworks ? undefined : onCopyTextWithNetwork,
+    onCopyTextWithNetworkAndNote: hideNetworks ? undefined : onCopyTextWithNetworkAndNote,
     onCopyMessageLink,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
@@ -367,6 +387,9 @@ function MessageCardComponent({
     readOnly,
   };
   const visibleMessageComments = messageComments;
+  const timestampFooter = (
+    <MessageCardTimestampFooter msg={msg} referenceTimeMs={referenceTimeMs} />
+  );
 
   return (
     <li
@@ -379,7 +402,7 @@ function MessageCardComponent({
         data-message-card-root="true"
         data-message-card-display-mode={displayMode}
         data-important={msg.important ? 'true' : undefined}
-        className="message-card-root relative flex w-full flex-col overflow-hidden"
+        className="message-card-root relative flex w-full min-w-0 flex-col overflow-hidden"
       >
         {watermarkUserName !== '' && (
           <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
@@ -387,15 +410,27 @@ function MessageCardComponent({
           </div>
         )}
         <MessageCardHeader {...headerProps} />
+        <div className="message-card-divider" aria-hidden="true" />
         <MessageCardContentWithDownloadGuard
+          timestampFooter={visibleMessageComments.length === 0 ? timestampFooter : undefined}
           metadata={
             <MessageCardMetadata
               msg={msg}
-              groupName={groupName}
+              groupName={hideGroupName ? null : groupName}
               senderName={senderName}
-              etalonDisplayModel={etalonDisplayModel}
+              etalonDisplayModel={visibleEtalonDisplayModel}
               metadataTrigger={metadataTrigger}
+              hideExplicitUnit
             />
+          }
+          replyContent={
+            replies.snapshot.relations.length ? (
+              <MessageReplyChain
+                id={id}
+                snapshot={replies.snapshot}
+                timeBasis={displayMode === 'duty' ? 'creation' : messageTimeBasis}
+              />
+            ) : null
           }
           messageId={id}
           msg={msg}
@@ -403,6 +438,7 @@ function MessageCardComponent({
           tagsOrder={tagsOrder}
           tagContributionsOrganismId={tagContributionsOrganismId}
           hideBotTags={hideBotTags}
+          hideNetworks={hideNetworks}
           tagsLoading={tagsLoading}
           onToggleTag={onToggleTag}
           readOnly={readOnly}
@@ -430,6 +466,7 @@ function MessageCardComponent({
           isDownloadStarting={downloadGuard.isDownloadStarting}
           onDownloadStart={downloadGuard.onDownloadStart}
         />
+        {visibleMessageComments.length > 0 ? timestampFooter : null}
       </MessageCardRoot>
     </li>
   );

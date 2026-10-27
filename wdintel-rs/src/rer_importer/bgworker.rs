@@ -1,4 +1,5 @@
 use crate::config::*;
+use crate::rer_importer::import_csv::reconcile_rer_csv_message_target_group_in_transaction;
 use crate::types::*;
 use sea_orm::*;
 
@@ -13,11 +14,35 @@ pub async fn process_message_to_inbox<'a, 'async_trait, C>(
     m_created_at: Option<(String, String)>,
 ) -> Result<Vec<i64>, AppError>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let datetime_override = m_created_at.map(|(date, time)| {
         crate::inbox::InboxDatetimeOverride::Fields { date, time }
     });
+    Ok(process_message_to_inbox_with_override(
+        settlements,
+        txn,
+        rq,
+        config,
+        message_id,
+        datetime_override,
+        None,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn process_message_to_inbox_with_override<
+    C: ConnectionTrait + TransactionTrait,
+>(
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &C,
+    rq: &reqwest::Client,
+    config: &Config,
+    message_id: i64,
+    datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
+    target_group: Option<(&str, i64)>,
+) -> anyhow::Result<Vec<i64>> {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
     let mut changed_inbox_item_ids = vec![];
@@ -25,6 +50,16 @@ where
         let Some(message_id) = recs.pop() else {
             break;
         };
+        if let Some((group_id, datasource_group_id)) = target_group {
+            reconcile_rer_csv_message_target_group_in_transaction(
+                group_id,
+                datasource_group_id,
+                message_id,
+                txn,
+            )
+            .await
+            .context(h!())?;
+        }
         let result = process_message_to_inbox_one(
             settlements.clone(),
             txn,
@@ -57,7 +92,7 @@ pub async fn process_message_to_inbox_nofail<'a, 'async_trait, C>(
     m_created_at: Option<(String, String)>,
 ) -> Vec<i64>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let datetime_override = m_created_at.map(|(date, time)| {
         crate::inbox::InboxDatetimeOverride::Fields { date, time }
@@ -87,7 +122,7 @@ pub(crate) async fn process_historical_message_to_inbox_nofail<
     reference_time: chrono::DateTime<chrono_tz::Tz>,
 ) -> Vec<i64>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     process_message_to_inbox_nofail_with_override(
         settlements,
@@ -112,7 +147,7 @@ async fn process_message_to_inbox_nofail_with_override<'a, 'async_trait, C>(
     datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
 ) -> Vec<i64>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     let mut cache = TopKCache::<String, String>::new(CAPACITY);
     let mut recs = vec![message_id];
@@ -164,7 +199,7 @@ async fn process_message_to_inbox_one<'a, 'async_trait, C>(
     datetime_override: Option<crate::inbox::InboxDatetimeOverride>,
 ) -> Result<crate::inbox::ConstructInboxItemResult, AppError>
 where
-    C: ConnectionTrait + 'async_trait,
+    C: ConnectionTrait + TransactionTrait + 'async_trait,
 {
     Ok(crate::inbox::construct_inbox_item_with_datetime(
         settlements,

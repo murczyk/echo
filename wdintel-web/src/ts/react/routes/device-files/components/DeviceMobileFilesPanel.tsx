@@ -1,7 +1,7 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useEffect, useRef } from 'react';
 
-import type { SyncSummary } from '../../../../../Bindings';
+import type { AiAgentFileCitation, SyncSummary } from '../../../../../Bindings';
 import { formatDeviceDateTime } from '../../devices/helpers';
 import { PowerButton } from '../../../components/PowerButton';
 import type { DeviceAnalyticsTagFilter } from '../types';
@@ -15,6 +15,7 @@ export function DeviceMobileFilesPanel({
   syncId,
   session,
   files,
+  citation,
   tagsState,
   tagFilter,
   onTagFilterChange,
@@ -23,6 +24,7 @@ export function DeviceMobileFilesPanel({
   syncId: string | null;
   session: SyncSummary | null;
   files: DeviceFilesState;
+  citation?: AiAgentFileCitation;
   tagsState: DeviceAnalyticsTagsState;
   tagFilter: DeviceAnalyticsTagFilter;
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
@@ -36,6 +38,7 @@ export function DeviceMobileFilesPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className={files.selectedFile === null ? 'h-full min-h-0' : 'hidden'}>
         <DeviceFilesSidebar
+          active={files.selectedFile === null}
           fullHeight
           files={{
             ...files,
@@ -74,6 +77,9 @@ export function DeviceMobileFilesPanel({
             <DeviceFileContentPane
               deviceId={deviceId}
               file={files.selectedFile}
+              onSelectFile={files.selectFile}
+              revisionPinned={files.revisionPinned}
+              citation={citation}
               sessionScoped={syncId !== null}
               mobile
             />

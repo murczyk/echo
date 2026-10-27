@@ -33,18 +33,32 @@ pub struct Model {
     pub totp_epoch: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
     pub display_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub signal_profile_id: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::ai_agent_conversation::Entity")]
     AiAgentConversation,
+    #[sea_orm(has_many = "super::ai_agent_map::Entity")]
+    AiAgentMap,
     #[sea_orm(has_many = "super::ai_agent_settings::Entity")]
     AiAgentSettings,
+    #[sea_orm(has_many = "super::ai_callsign_action::Entity")]
+    AiCallsignAction,
+    #[sea_orm(has_many = "super::ai_callsign_feedback::Entity")]
+    AiCallsignFeedback,
+    #[sea_orm(has_many = "super::ai_callsign_override::Entity")]
+    AiCallsignOverride,
+    #[sea_orm(has_many = "super::ai_callsign_reparse_run::Entity")]
+    AiCallsignReparseRun,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
     #[sea_orm(has_many = "super::ai_intel_report_attempt::Entity")]
     AiIntelReportAttempt,
+    #[sea_orm(has_many = "super::ai_position_feedback::Entity")]
+    AiPositionFeedback,
     #[sea_orm(has_many = "super::api_integration::Entity")]
     ApiIntegration,
     #[sea_orm(has_many = "super::api_integration_iggy_destination::Entity")]
@@ -65,6 +79,10 @@ pub enum Relation {
     DeltaLogin,
     #[sea_orm(has_many = "super::device::Entity")]
     Device,
+    #[sea_orm(has_many = "super::device_audio_forwarding_group::Entity")]
+    DeviceAudioForwardingGroup,
+    #[sea_orm(has_many = "super::device_audio_forwarding_settings::Entity")]
+    DeviceAudioForwardingSettings,
     #[sea_orm(has_many = "super::device_name::Entity")]
     DeviceName,
     #[sea_orm(has_many = "super::echo_missing_message::Entity")]
@@ -75,14 +93,28 @@ pub enum Relation {
     GoiIntegration,
     #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
     GoiIntegrationAccessLogin,
+    #[sea_orm(has_many = "super::importance_operation::Entity")]
+    ImportanceOperation,
     #[sea_orm(has_many = "super::log_users_report_generation::Entity")]
     LogUsersReportGeneration,
     #[sea_orm(has_one = "super::login_totp::Entity")]
     LoginTotp,
+    #[sea_orm(has_many = "super::messenger_alert_delivery::Entity")]
+    MessengerAlertDelivery,
     #[sea_orm(has_many = "super::network_freq_last_datetime_in_aor::Entity")]
     NetworkFreqLastDatetimeInAor,
     #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
     NetworkRecalculationTask,
+    #[sea_orm(has_many = "super::notification_event::Entity")]
+    NotificationEvent,
+    #[sea_orm(has_many = "super::notification_read_boundary::Entity")]
+    NotificationReadBoundary,
+    #[sea_orm(
+        has_many = "super::notification_read_boundary_completed::Entity"
+    )]
+    NotificationReadBoundaryCompleted,
+    #[sea_orm(has_many = "super::notification_receipt::Entity")]
+    NotificationReceipt,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OrganismId",
@@ -99,8 +131,12 @@ pub enum Relation {
     PalitraAccessLogin,
     #[sea_orm(has_many = "super::palitra_highlight_blacklist::Entity")]
     PalitraHighlightBlacklist,
+    #[sea_orm(has_many = "super::report_download_history::Entity")]
+    ReportDownloadHistory,
     #[sea_orm(has_many = "super::report_history::Entity")]
     ReportHistory,
+    #[sea_orm(has_one = "super::rer_report_access_login::Entity")]
+    RerReportAccessLogin,
     #[sea_orm(has_many = "super::restream::Entity")]
     Restream,
     #[sea_orm(has_many = "super::restream_setup::Entity")]
@@ -111,10 +147,6 @@ pub enum Relation {
     SigintActivityDecisionChangelog,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
-    #[sea_orm(has_many = "super::signal_message::Entity")]
-    SignalMessage,
-    #[sea_orm(has_many = "super::signal_message_group::Entity")]
-    SignalMessageGroup,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
@@ -163,12 +195,26 @@ pub enum Relation {
     SigintZone,
     #[sea_orm(has_many = "super::signal_group_admin::Entity")]
     SignalGroupAdmin,
+    #[sea_orm(has_many = "super::signal_message::Entity")]
+    SignalMessage,
+    #[sea_orm(has_many = "super::signal_message_group::Entity")]
+    SignalMessageGroup,
+    #[sea_orm(
+        belongs_to = "super::signal_profile::Entity",
+        from = "Column::SignalProfileId",
+        to = "super::signal_profile::Column::Uuid",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    SignalProfile,
     #[sea_orm(has_many = "super::system_settings::Entity")]
     SystemSettings,
     #[sea_orm(has_many = "super::tags_ordering::Entity")]
     TagsOrdering,
     #[sea_orm(has_many = "super::url_visit_notification::Entity")]
     UrlVisitNotification,
+    #[sea_orm(has_many = "super::user_group_feed_read_state::Entity")]
+    UserGroupFeedReadState,
     #[sea_orm(has_one = "super::user_settings::Entity")]
     UserSettings,
 }
@@ -179,9 +225,39 @@ impl Related<super::ai_agent_conversation::Entity> for Entity {
     }
 }
 
+impl Related<super::ai_agent_map::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentMap.def()
+    }
+}
+
 impl Related<super::ai_agent_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentSettings.def()
+    }
+}
+
+impl Related<super::ai_callsign_action::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignAction.def()
+    }
+}
+
+impl Related<super::ai_callsign_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignFeedback.def()
+    }
+}
+
+impl Related<super::ai_callsign_override::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignOverride.def()
+    }
+}
+
+impl Related<super::ai_callsign_reparse_run::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiCallsignReparseRun.def()
     }
 }
 
@@ -194,6 +270,12 @@ impl Related<super::ai_chat::Entity> for Entity {
 impl Related<super::ai_intel_report_attempt::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiIntelReportAttempt.def()
+    }
+}
+
+impl Related<super::ai_position_feedback::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiPositionFeedback.def()
     }
 }
 
@@ -239,6 +321,18 @@ impl Related<super::device::Entity> for Entity {
     }
 }
 
+impl Related<super::device_audio_forwarding_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingGroup.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingSettings.def()
+    }
+}
+
 impl Related<super::device_name::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeviceName.def()
@@ -269,6 +363,12 @@ impl Related<super::goi_integration_access_login::Entity> for Entity {
     }
 }
 
+impl Related<super::importance_operation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ImportanceOperation.def()
+    }
+}
+
 impl Related<super::log_users_report_generation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::LogUsersReportGeneration.def()
@@ -281,6 +381,12 @@ impl Related<super::login_totp::Entity> for Entity {
     }
 }
 
+impl Related<super::messenger_alert_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MessengerAlertDelivery.def()
+    }
+}
+
 impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NetworkFreqLastDatetimeInAor.def()
@@ -290,6 +396,30 @@ impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
 impl Related<super::network_recalculation_task::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NetworkRecalculationTask.def()
+    }
+}
+
+impl Related<super::notification_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationEvent.def()
+    }
+}
+
+impl Related<super::notification_read_boundary::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReadBoundary.def()
+    }
+}
+
+impl Related<super::notification_read_boundary_completed::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReadBoundaryCompleted.def()
+    }
+}
+
+impl Related<super::notification_receipt::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReceipt.def()
     }
 }
 
@@ -323,9 +453,21 @@ impl Related<super::palitra_highlight_blacklist::Entity> for Entity {
     }
 }
 
+impl Related<super::report_download_history::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ReportDownloadHistory.def()
+    }
+}
+
 impl Related<super::report_history::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::ReportHistory.def()
+    }
+}
+
+impl Related<super::rer_report_access_login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::RerReportAccessLogin.def()
     }
 }
 
@@ -485,6 +627,24 @@ impl Related<super::signal_group_admin::Entity> for Entity {
     }
 }
 
+impl Related<super::signal_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessage.def()
+    }
+}
+
+impl Related<super::signal_message_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalMessageGroup.def()
+    }
+}
+
+impl Related<super::signal_profile::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SignalProfile.def()
+    }
+}
+
 impl Related<super::system_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SystemSettings.def()
@@ -503,18 +663,38 @@ impl Related<super::url_visit_notification::Entity> for Entity {
     }
 }
 
+impl Related<super::user_group_feed_read_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserGroupFeedReadState.def()
+    }
+}
+
 impl Related<super::user_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserSettings.def()
     }
 }
 
-impl Related<super::signal_group::Entity> for Entity {
+impl Related<super::sigint_inbox_item::Entity> for Entity {
     fn to() -> RelationDef {
-        super::signal_group_admin::Relation::SignalGroup.def()
+        super::ai_callsign_override::Relation::SigintInboxItem.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::signal_group_admin::Relation::Login.def().rev())
+        Some(super::ai_callsign_override::Relation::Login.def().rev())
+    }
+}
+
+impl Related<super::sigint_network_freq::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::network_freq_last_datetime_in_aor::Relation::SigintNetworkFreq
+            .def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::network_freq_last_datetime_in_aor::Relation::Login
+                .def()
+                .rev(),
+        )
     }
 }
 

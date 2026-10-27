@@ -148,7 +148,11 @@ async fn resolve_roots(
             file_entry::Column::DeviceId,
             file_entry::Column::Name,
         ])
-        .target_and_where(file_entry::Column::ParentId.is_null())
+        .target_and_where(
+            file_entry::Column::ParentId
+                .is_null()
+                .and(file_entry::Column::ArchiveFileId.is_null()),
+        )
         .do_nothing()
         .to_owned(),
     )
@@ -157,6 +161,7 @@ async fn resolve_roots(
     .map_err(map_database)?;
     let root_keys = inputs.keys().cloned().collect::<Vec<_>>();
     let rows = file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::ParentId.is_null())
         .filter(directory_kind_expr())
         .filter(
@@ -253,6 +258,7 @@ async fn resolve_directory_depth(
     .map_err(map_database)?;
     let directory_keys = inputs.keys().cloned().collect::<Vec<_>>();
     let rows = file_entry::Entity::find()
+        .filter(file_entry::Column::ArchiveFileId.is_null())
         .filter(file_entry::Column::ParentId.is_not_null())
         .filter(directory_kind_expr())
         .filter(
@@ -305,6 +311,9 @@ fn directory_active_model(
     now: NaiveDateTime,
 ) -> file_entry::ActiveModel {
     file_entry::ActiveModel {
+        archive_file_id: sea_orm::ActiveValue::NotSet,
+        archive_relative_path: sea_orm::ActiveValue::NotSet,
+        is_archive: sea_orm::ActiveValue::NotSet,
         id: Set(id),
         device_id: Set(device_id),
         parent_id: Set(parent_id),

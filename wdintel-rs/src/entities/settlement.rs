@@ -30,13 +30,29 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(has_one = "super::settlement_alias::Entity")]
+    SettlementAlias,
     #[sea_orm(has_many = "super::sigint_inbox_item_settlement::Entity")]
     SigintInboxItemSettlement,
+    #[sea_orm(has_many = "super::sigint_network_settlement::Entity")]
+    SigintNetworkSettlement,
+}
+
+impl Related<super::settlement_alias::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SettlementAlias.def()
+    }
 }
 
 impl Related<super::sigint_inbox_item_settlement::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemSettlement.def()
+    }
+}
+
+impl Related<super::sigint_network_settlement::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintNetworkSettlement.def()
     }
 }
 

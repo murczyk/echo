@@ -1,3 +1,4 @@
+import ReplyIcon from '@mui/icons-material/Reply';
 import { AuthorLabel } from '../../../components/AuthorLabel';
 import { useRadioFeatures } from '../RadioFeatures';
 import MessageIcon from '@mui/icons-material/Message';
@@ -18,6 +19,7 @@ import DeskIcon from '@mui/icons-material/Desk';
 import DeskOutlinedIcon from '@mui/icons-material/DeskOutlined';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
+import SquareTwoToneIcon from '@mui/icons-material/SquareTwoTone';
 import FlagIcon from '@mui/icons-material/Flag';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import LaunchIcon from '@mui/icons-material/Launch';
@@ -36,7 +38,7 @@ import { Menu, MenuItem } from '@mui/material';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode, RefObject } from 'react';
+import type { ButtonHTMLAttributes, MouseEvent, ReactNode, RefObject } from 'react';
 import { APP_TIME_ZONE, ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 
@@ -54,23 +56,20 @@ import {
 } from './message-card.utils';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import type { MessageTimeBasis } from '../../../services/api/user-settings';
+import { useMessageCardDateDisplayMs } from './useMessageCardDateDisplayMs';
 
 dayjs.extend(customParseFormat);
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
-const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 28;
-const MESSAGE_CARD_ACTION_BUTTON_SIZE_PX = 28;
-const MESSAGE_CARD_ACTION_GROUP_BORDER_PX = 2;
-const MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX = 480;
+const MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX = 520;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
 type ActionIconsRowProps = {
   id: number;
   msg: InboxMessage;
-  compact?: boolean;
   readOnly?: boolean;
   displayMode: MessageCardDisplayMode;
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
@@ -79,6 +78,7 @@ type ActionIconsRowProps = {
   copiedFeedbackId: string | null;
   onBookmark?: () => void;
   onImportant?: () => void;
+  onReply?: (focusTarget: HTMLElement) => void;
   onCreateReport?: (focusTarget: HTMLElement) => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
@@ -92,9 +92,7 @@ type ActionIconsRowProps = {
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
   attachmentArchiveDownload?: MessageCardAttachmentArchiveDownloadAction;
   headerRowRef: RefObject<HTMLDivElement | null>;
-  leftHeaderContentRef: RefObject<HTMLDivElement | null>;
-  rightHeaderContentRef: RefObject<HTMLDivElement | null>;
-  headerColumnGap: number;
+  onCompactChange: (compact: boolean) => void;
 };
 
 export type MessageCardAttachmentArchiveDownloadAction = {
@@ -166,19 +164,6 @@ function MenuRow({ icon, children }: { icon: JSX.Element; children: ReactNode })
     <span className="message-card-header-menu-row">
       {icon}
       <span className="message-card-header-menu-row__label">{children}</span>
-    </span>
-  );
-}
-
-function ImportantStatus({ position }: { position: 'desktop' | 'mobile' }) {
-  return (
-    <span
-      className={`message-card-important-status message-card-important-status--${position}`}
-      data-message-card-important-status="true"
-      data-message-card-important-status-position={position}
-    >
-      <FlagIcon aria-hidden className="message-card-important-status__icon" />
-      Важливе
     </span>
   );
 }
@@ -406,7 +391,6 @@ function OverflowExcludePanel({
 function ActionIconsRow({
   id,
   msg,
-  compact = false,
   readOnly = false,
   displayMode,
   excludeMenuOptions = [],
@@ -415,6 +399,7 @@ function ActionIconsRow({
   navigationMenuItems = [],
   onBookmark,
   onImportant,
+  onReply,
   onCreateReport,
   onCopyText,
   onCopyFreq,
@@ -428,9 +413,7 @@ function ActionIconsRow({
   onExcludeMessageEntity,
   attachmentArchiveDownload,
   headerRowRef,
-  leftHeaderContentRef,
-  rightHeaderContentRef,
-  headerColumnGap,
+  onCompactChange,
 }: ActionIconsRowProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
@@ -447,9 +430,9 @@ function ActionIconsRow({
   const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] =
     useState<MenuAnchorPosition | null>(null);
   const overflowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const [stackedLayout, setStackedLayout] = useState(false);
   const [mobileActions, setMobileActions] = useState(false);
   const [overflowPanel, setOverflowPanel] = useState<OverflowPanel>('main');
+  const canShowReply = !readOnly && isPresent(onReply);
   const canShowPrimaryActions =
     !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
   const canShowExcludeMenu =
@@ -467,13 +450,16 @@ function ActionIconsRow({
   const canShowLocationCopy =
     etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItemCandidates: Array<OverflowMenuItem | null> = [
-    mobileActions && canShowPrimaryActions && isPresent(onCreateReport)
+    mobileActions && canShowReply
       ? {
-          key: 'report',
-          title: 'Створити розвіддонесення',
-          icon: <NoteAddIcon fontSize="small" />,
+          key: 'reply',
+          title: 'Відповісти',
+          icon: <ReplyIcon fontSize="small" />,
           selected: false,
-          onClick: (event) => onCreateReport(overflowMenuTriggerRef.current ?? event.currentTarget),
+          onClick: (event) => {
+            const focusTarget = overflowMenuTriggerRef.current ?? event.currentTarget;
+            window.setTimeout(() => onReply(focusTarget), 0);
+          },
         }
       : null,
     mobileActions && canShowPrimaryActions
@@ -481,7 +467,7 @@ function ActionIconsRow({
           key: 'important',
           title: msg.important ? 'Позначити як не важливе' : 'Позначити як важливе',
           icon: msg.important ? (
-            <FlagIcon fontSize="small" />
+            <FlagIcon fontSize="small" titleAccess={msg.aiImportant ? 'Позначено ШІ' : undefined} />
           ) : (
             <FlagOutlinedIcon fontSize="small" />
           ),
@@ -642,6 +628,7 @@ function ActionIconsRow({
   }
 
   if (
+    !canShowReply &&
     !canShowPrimaryActions &&
     !canShowNavigationMenu &&
     !canShowExcludeMenu &&
@@ -651,12 +638,20 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    canShowPrimaryActions && isPresent(onCreateReport) && !mobileActions ? (
+    !readOnly && isPresent(onCreateReport) ? (
       <ActionIconButton
         key="report"
         title="Створити розвіддонесення"
         icon={<NoteAddIcon className="message-card-action-btn__icon" />}
         onClick={(event) => onCreateReport(event.currentTarget)}
+      />
+    ) : null,
+    canShowReply && !mobileActions ? (
+      <ActionIconButton
+        key="reply"
+        title="Відповісти"
+        icon={<ReplyIcon className="message-card-action-btn__icon" />}
+        onClick={(event) => onReply(event.currentTarget)}
       />
     ) : null,
     canShowPrimaryActions && !mobileActions ? (
@@ -665,7 +660,10 @@ function ActionIconsRow({
         title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
         icon={
           msg.important ? (
-            <FlagIcon className="message-card-action-btn__icon" />
+            <FlagIcon
+              className="message-card-action-btn__icon"
+              titleAccess={msg.aiImportant ? 'Позначено ШІ' : undefined}
+            />
           ) : (
             <FlagOutlinedIcon className="message-card-action-btn__icon" />
           )
@@ -745,36 +743,22 @@ function ActionIconsRow({
     ) : null,
   ].filter((button): button is JSX.Element => button != null);
 
-  const actionGridColumns = displayMode === 'duty' ? 4 : 3;
-
   useLayoutEffect(() => {
     const headerRow =
       headerRowRef.current ??
       rootRef.current?.closest<HTMLDivElement>('[data-message-card-header-row]');
-    const leftHeaderContent =
-      leftHeaderContentRef.current ??
-      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-left]');
-    const rightHeaderContent =
-      rightHeaderContentRef.current ??
-      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-right]');
-    if (!headerRow || !leftHeaderContent || !rightHeaderContent) {
+    if (!headerRow) {
       return;
     }
 
-    const minInlineWidth =
-      buttons.length * MESSAGE_CARD_ACTION_BUTTON_SIZE_PX + MESSAGE_CARD_ACTION_GROUP_BORDER_PX;
     let rafId: number | null = null;
     const updateLayout = () => {
       if (headerRow.clientWidth <= 0) {
         return;
       }
-      const availableActionWidth =
-        headerRow.clientWidth -
-        leftHeaderContent.scrollWidth -
-        rightHeaderContent.scrollWidth -
-        headerColumnGap * 2;
-      setMobileActions(headerRow.clientWidth <= MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX);
-      setStackedLayout(availableActionWidth < minInlineWidth);
+      const compact = headerRow.clientWidth <= MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX;
+      setMobileActions(compact);
+      onCompactChange(compact);
     };
 
     const scheduleUpdateLayout = () => {
@@ -802,22 +786,13 @@ function ActionIconsRow({
       scheduleUpdateLayout();
     });
     observer.observe(headerRow);
-    observer.observe(leftHeaderContent);
-    observer.observe(rightHeaderContent);
     return () => {
       observer.disconnect();
       if (rafId != null && typeof cancelAnimationFrame !== 'undefined') {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [
-    buttons.length,
-    displayMode,
-    headerColumnGap,
-    headerRowRef,
-    leftHeaderContentRef,
-    rightHeaderContentRef,
-  ]);
+  }, [headerRowRef, onCompactChange]);
 
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
@@ -1085,23 +1060,7 @@ function ActionIconsRow({
   return (
     <>
       <div ref={rootRef} className="flex w-full justify-center">
-        <div
-          role={stackedLayout ? 'group' : undefined}
-          aria-label="Дії повідомлення"
-          className={
-            stackedLayout
-              ? 'message-card-action-group message-card-action-group--stacked'
-              : 'message-card-action-group'
-          }
-          data-action-grid-columns={stackedLayout ? actionGridColumns : undefined}
-          style={
-            stackedLayout
-              ? ({
-                  ['--message-card-action-cols' as string]: actionGridColumns,
-                } as CSSProperties)
-              : undefined
-          }
-        >
+        <div aria-label="Дії повідомлення" className="message-card-action-group">
           {buttons}
         </div>
       </div>
@@ -1162,7 +1121,7 @@ function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNet
         <PeopleOutlineOutlinedIcon />
       </span>
       <span className="inline-flex max-w-full items-center align-top [overflow-wrap:anywhere] break-words">
-        <strong>{label}</strong>
+        <HeaderText wrap>{label}</HeaderText>
         {badge ? (
           <span className="badge badge-no-unit-sm relative -top-[0.06em] ml-[0.35em] align-middle">
             в дорозвідці
@@ -1175,8 +1134,10 @@ function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNet
 
 function NetworkEtalonSection({
   etalonDisplayModel,
+  hideExplicitUnit = false,
 }: {
   etalonDisplayModel: MessageCardEtalonDisplayModel;
+  hideExplicitUnit?: boolean;
 }) {
   const {
     displayValue,
@@ -1185,6 +1146,7 @@ function NetworkEtalonSection({
     renderedNetworks,
     showInlineLocationTooltip,
   } = etalonDisplayModel;
+  if (hideExplicitUnit && primaryKind === 'unit') return null;
   const showTopGridLocation = primaryKind === 'network' && locationDisplayValue != null;
 
   const geoButton =
@@ -1237,22 +1199,19 @@ function NetworkEtalonSection({
 }
 
 export type MessageCardHeaderProps = {
-  compact?: boolean;
   readOnly?: boolean;
   displayMode: MessageCardDisplayMode;
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   id: number;
   msg: InboxMessage;
-  displayTimestamp?: number | null;
   messageTimeBasis?: MessageTimeBasis;
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   mapHref?: string;
   analysisHref?: string;
-  rightInsetPx?: number;
-  topRight?: ReactNode;
   onBookmark?: () => void;
   onImportant?: () => void;
+  onReply?: (focusTarget: HTMLElement) => void;
   onCreateReport?: (focusTarget: HTMLElement) => void;
   onCopyText?: () => void;
   onCopyFreq?: () => void;
@@ -1274,6 +1233,7 @@ export function MessageCardMetadata({
   etalonDisplayModel,
   metadataTrigger,
   wrapText = false,
+  hideExplicitUnit = false,
 }: {
   msg: InboxMessage;
   groupName: string | null;
@@ -1281,6 +1241,7 @@ export function MessageCardMetadata({
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadataTrigger?: ReactNode;
   wrapText?: boolean;
+  hideExplicitUnit?: boolean;
 }) {
   const radioFeaturesAllowed = useRadioFeatures();
   const canUseMessageDevices = useMessageDeviceAccess();
@@ -1290,7 +1251,7 @@ export function MessageCardMetadata({
   const deviceName = canUseMessageDevices ? msg.deviceName?.trim() : undefined;
 
   return (
-    <div className="flex w-full items-start gap-2">
+    <div className="message-card-metadata flex w-full items-start gap-2">
       <div
         className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0"
         style={{ flexWrap: 'wrap' }}
@@ -1330,7 +1291,10 @@ export function MessageCardMetadata({
         {isPresent(deviceName) && deviceName !== '' ? (
           <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} wrapText={wrapText} />
         ) : null}
-        <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
+        <NetworkEtalonSection
+          etalonDisplayModel={etalonDisplayModel}
+          hideExplicitUnit={hideExplicitUnit}
+        />
         {showTopGridLocation ? (
           <MetaLine
             icon={<PlaceOutlinedIcon />}
@@ -1345,12 +1309,48 @@ export function MessageCardMetadata({
   );
 }
 
+export function MessageCardTimestampFooter({
+  msg,
+  referenceTimeMs,
+}: Pick<MessageCardHeaderProps, 'msg'> & { referenceTimeMs: number | null }) {
+  const receiptTimestamp = Number.isFinite(msg.createdAt) ? msg.createdAt : null;
+  const [footerRef, displayMs] = useMessageCardDateDisplayMs(referenceTimeMs, receiptTimestamp);
+
+  if (receiptTimestamp == null) return null;
+
+  const receiptTime = dayjs(receiptTimestamp).tz(APP_TIME_ZONE);
+  const now = dayjs(displayMs ?? Date.now()).tz(APP_TIME_ZONE);
+  const receiptFormat = receiptTime.isSame(now, 'day')
+    ? 'HH:mm'
+    : receiptTime.year() === now.year()
+      ? 'DD.MM, HH:mm'
+      : 'DD.MM.YYYY, HH:mm';
+
+  return (
+    <div
+      ref={footerRef as RefObject<HTMLDivElement>}
+      className="message-card-timestamp-footer"
+      data-message-card-timestamp-footer="true"
+    >
+      <time dateTime={receiptTime.toISOString()} title="Час отримання повідомлення">
+        <HeaderText className="opacity-50">{receiptTime.format(receiptFormat)}</HeaderText>
+      </time>
+    </div>
+  );
+}
+
+function formatCreationDateTime(createdAt: number | null | undefined): string {
+  return Number.isFinite(createdAt)
+    ? dayjs(createdAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY, HH:mm')
+    : '—';
+}
+
 function formatAnalysisEventDateTime(msg: InboxMessage): string {
   const timestamp = msg.timestamp == null ? null : dayjs(msg.timestamp).tz(APP_TIME_ZONE);
   const parsedDate = dayjs(msg.date?.trim() ?? '', ['YYYY-MM-DD', 'DD.MM.YYYY'], true);
   const date = parsedDate.isValid()
-    ? parsedDate.format('DD.MM')
-    : msg.date?.trim() || timestamp?.format('DD.MM');
+    ? parsedDate.format('DD.MM.YYYY')
+    : msg.date?.trim() || timestamp?.format('DD.MM.YYYY');
   const time =
     msg.isTimeNull === true
       ? null
@@ -1363,22 +1363,19 @@ function formatAnalysisEventDateTime(msg: InboxMessage): string {
 // Hot path: preserve native structural layout and conditional menu mounting.
 // Leaf MUI components remain intentional; see ./AGENTS.md.
 function MessageCardHeaderComponent({
-  compact = false,
   readOnly = false,
   displayMode,
   excludeMenuOptions = [],
   id,
   msg,
-  displayTimestamp,
   messageTimeBasis,
   copiedFeedbackId,
   etalonDisplayModel,
   mapHref,
   analysisHref,
-  rightInsetPx = 0,
-  topRight,
   onBookmark,
   onImportant,
+  onReply,
   onCreateReport,
   onCopyText,
   onCopyFreq,
@@ -1393,9 +1390,15 @@ function MessageCardHeaderComponent({
   attachmentArchiveDownload,
 }: MessageCardHeaderProps) {
   const headerRowRef = useRef<HTMLDivElement | null>(null);
-  const leftHeaderContentRef = useRef<HTMLDivElement | null>(null);
-  const rightHeaderContentRef = useRef<HTMLDivElement | null>(null);
-  const headerColumnGap = compact ? 16 : 32;
+  const [compactActions, setCompactActions] = useState(false);
+  const explicitUnit = etalonDisplayModel.headerUnit ?? '—';
+  const displaysCreationTime = messageTimeBasis === 'creation';
+  const timestampLabel = displaysCreationTime
+    ? 'Дата і час створення повідомлення'
+    : 'Дата і час перехоплення';
+  const timestampValue = displaysCreationTime
+    ? formatCreationDateTime(msg.createdAt)
+    : formatAnalysisEventDateTime(msg);
   const navigationMenuItems = buildMessageCardNavigationMenuItems(
     etalonDisplayModel.renderedNetworks,
     mapHref,
@@ -1407,29 +1410,13 @@ function MessageCardHeaderComponent({
         displayMode === 'duty' ? 'flex-nowrap' : 'flex-wrap'
       } message-card-header-timestamps--mobile-nowrap items-center`}
     >
-      {messageTimeBasis === 'creation' ? (
-        <div
-          className="message-card-timestamp-item"
-          data-message-card-timestamp-item="true"
-          title="Дата і час створення повідомлення"
-        >
-          <HeaderText className="opacity-50">
-            {msg.createdAt == null
-              ? '—'
-              : dayjs(msg.createdAt).tz(APP_TIME_ZONE).format('DD.MM, HH:mm')}
-          </HeaderText>
-        </div>
-      ) : null}
       <div
         className="message-card-timestamp-item"
         data-message-card-timestamp-item="true"
-        title="Дата і час перехоплення"
+        title={timestampLabel}
       >
-        <TodayOutlinedIcon
-          className="message-card-header-icon"
-          titleAccess="Дата і час перехоплення"
-        />
-        <HeaderText>{formatAnalysisEventDateTime(msg)}</HeaderText>
+        <TodayOutlinedIcon className="message-card-header-icon" titleAccess={timestampLabel} />
+        <HeaderText>{timestampValue}</HeaderText>
       </div>
     </div>
   );
@@ -1439,64 +1426,63 @@ function MessageCardHeaderComponent({
       ref={headerRowRef}
       data-message-card-header-row="true"
       data-message-card-display-mode={displayMode}
-      className="flex w-full items-center"
-      style={{
-        columnGap: headerColumnGap,
-        minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX,
-      }}
+      data-message-card-actions-compact={compactActions ? 'true' : undefined}
+      className="message-card-header-row w-full"
     >
-      <div className="flex min-w-0 flex-1 items-center">
-        <div ref={leftHeaderContentRef} data-message-card-header-left="true">
+      <div className="message-card-header-identity">
+        <div data-message-card-header-left="true" className="min-w-0">
+          <div className="message-card-header-unit" data-message-card-header-unit-row="true">
+            <span className="message-card-header-meta__icon">
+              <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
+            </span>
+            <HeaderText wrap>{explicitUnit}</HeaderText>
+          </div>
           {dateTimeBlock}
         </div>
       </div>
-      {!readOnly || isPresent(attachmentArchiveDownload) ? (
-        <div className="message-card-header-actions flex items-center justify-center">
-          {msg.important ? <ImportantStatus position="mobile" /> : null}
-          <ActionIconsRow
-            id={id}
-            msg={msg}
-            compact={compact}
-            readOnly={readOnly}
-            displayMode={displayMode}
-            excludeMenuOptions={excludeMenuOptions}
-            etalonDisplayModel={etalonDisplayModel}
-            copiedFeedbackId={copiedFeedbackId}
-            navigationMenuItems={navigationMenuItems}
-            onBookmark={onBookmark}
-            onImportant={onImportant}
-            onCreateReport={onCreateReport}
-            onCopyText={onCopyText}
-            onCopyFreq={onCopyFreq}
-            onCopyTextWithNetwork={onCopyTextWithNetwork}
-            onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-            onCopyMessageLink={onCopyMessageLink}
-            onCopyEtalon={onCopyEtalon}
-            onCopyLocation={onCopyLocation}
-            onDelete={onDelete}
-            onEditDetails={onEditDetails}
-            onExcludeMessageEntity={onExcludeMessageEntity}
-            attachmentArchiveDownload={attachmentArchiveDownload}
-            headerRowRef={headerRowRef}
-            leftHeaderContentRef={leftHeaderContentRef}
-            rightHeaderContentRef={rightHeaderContentRef}
-            headerColumnGap={headerColumnGap}
-          />
+      {msg.important || !readOnly || isPresent(attachmentArchiveDownload) ? (
+        <div className="message-card-header-actions flex items-center justify-end gap-2">
+          {msg.important ? (
+            <span
+              className="message-card-important-status"
+              title={msg.aiImportant ? 'Позначено ШІ' : undefined}
+              data-message-card-important-status="true"
+            >
+              <FlagIcon aria-hidden className="message-card-important-status__icon" />
+              Важливе
+            </span>
+          ) : null}
+          {!readOnly || isPresent(attachmentArchiveDownload) ? (
+            <ActionIconsRow
+              id={id}
+              msg={msg}
+              readOnly={readOnly}
+              displayMode={displayMode}
+              excludeMenuOptions={excludeMenuOptions}
+              etalonDisplayModel={etalonDisplayModel}
+              copiedFeedbackId={copiedFeedbackId}
+              navigationMenuItems={navigationMenuItems}
+              onBookmark={onBookmark}
+              onImportant={onImportant}
+              onReply={onReply}
+              onCreateReport={onCreateReport}
+              onCopyText={onCopyText}
+              onCopyFreq={onCopyFreq}
+              onCopyTextWithNetwork={onCopyTextWithNetwork}
+              onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+              onCopyMessageLink={onCopyMessageLink}
+              onCopyEtalon={onCopyEtalon}
+              onCopyLocation={onCopyLocation}
+              onDelete={onDelete}
+              onEditDetails={onEditDetails}
+              onExcludeMessageEntity={onExcludeMessageEntity}
+              attachmentArchiveDownload={attachmentArchiveDownload}
+              headerRowRef={headerRowRef}
+              onCompactChange={setCompactActions}
+            />
+          ) : null}
         </div>
       ) : null}
-      <div
-        className="message-card-header-end flex min-w-0 flex-1 items-center justify-end"
-        style={{ paddingRight: `${rightInsetPx}px` }}
-      >
-        <div
-          ref={rightHeaderContentRef}
-          data-message-card-header-right="true"
-          className="inline-flex items-center gap-2"
-        >
-          {msg.important ? <ImportantStatus position="desktop" /> : null}
-          {topRight ?? <div className="min-h-7" />}
-        </div>
-      </div>
     </div>
   );
 

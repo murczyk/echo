@@ -1,17 +1,17 @@
 use super::ROLE_CYBER;
-use crate::config::ROLE_ADMIN;
+use crate::config::{ROLE_ADMIN, ROLE_CYBER_VIEWER};
 use crate::devices::devices::query::{
     authorize_file_registry_access, FileRegistryDeviceAccess,
 };
-use crate::entities::login;
+use crate::entities::{ai_agent_user_link, login};
 use crate::error::AppError;
 use crate::h;
 use crate::system_settings::ensure_devices_section_enabled;
 use crate::types::{ShortContext, ShortContextErr, Uuid};
 use actix_identity::Identity;
 use sea_orm::{
-    AccessMode, ConnectionTrait, DatabaseConnection, IsolationLevel,
-    TransactionTrait,
+    AccessMode, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
+    IsolationLevel, QueryFilter, TransactionTrait,
 };
 
 pub(in crate::devices) const DEVICE_OPERATION_FORBIDDEN: &str =
@@ -29,7 +29,7 @@ pub(in crate::devices) fn organism_id(
 }
 
 pub(crate) fn require_read(roles: &serde_json::Value) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_CYBER_VIEWER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_audio_source(
@@ -41,13 +41,13 @@ pub(in crate::devices) fn require_audio_source(
 pub(in crate::devices) fn require_audio_read(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+    require_read(roles)
 }
 
 pub(in crate::devices) fn require_audio_edit(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_audio_read(roles).c(h!())?;
+    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN]).c(h!())?;
     Ok(())
 }
 
@@ -56,9 +56,22 @@ pub(crate) async fn require_message_devices(
     login_id: &Uuid,
 ) -> Result<(), AppError> {
     ensure_devices_section_enabled(dbx).await.c(h!())?;
-    Ok(crate::users::has_role(dbx, login_id, ROLE_CYBER)
+    let login = crate::users::load_active_login(dbx, login_id)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    let link = ai_agent_user_link::Entity::find()
+        .filter(ai_agent_user_link::Column::AgentLoginId.eq(*login_id))
+        .one(dbx)
+        .await
+        .c(h!())?;
+    let login = if let Some(link) = link {
+        crate::users::load_active_login(dbx, &link.human_login_id)
+            .await
+            .c(h!())?
+    } else {
+        login
+    };
+    require_read(&login.roles)
 }
 
 pub(crate) fn resolve_message_devices_access(
@@ -74,19 +87,19 @@ pub(crate) fn resolve_message_devices_access(
 pub(in crate::devices) fn require_create(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_CYBER_VIEWER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_source_write(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_CYBER_VIEWER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_file_sync(
     roles: &serde_json::Value,
 ) -> Result<(), AppError> {
-    require_any_role(roles, &[ROLE_CYBER, ROLE_ADMIN])
+    require_any_role(roles, &[ROLE_CYBER, ROLE_CYBER_VIEWER, ROLE_ADMIN])
 }
 
 pub(in crate::devices) fn require_analytical_write(

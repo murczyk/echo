@@ -1,7 +1,10 @@
-import { Box, Paper, Tab, Tabs, CircularProgress } from '@mui/material';
+import type { DeviceFileSelection } from '../../device-files/device-file-archive';
+import type { DeviceAudioSettingsState } from '../use-device-audio-settings';
+import { Box, Paper, Tab, Tabs, CircularProgress, Tooltip } from '@mui/material';
+import WarningIcon from '@mui/icons-material/Warning';
 import type { ReactNode } from 'react';
 
-import type { DeviceFileTreeEntry } from '../../../../../Bindings';
+import type { AiAgentFileCitation } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
 import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
@@ -19,10 +22,15 @@ export type DeviceDetailsTab = 'analytical' | 'files' | 'journal' | 'audio';
 export function DeviceDetailsTabPanel({
   audio,
   audioEditor,
+  audioSettings,
+  audioForwardingConfigured,
   mobileFiles,
   mobile = false,
   activeTab,
   selectedFile,
+  onSelectFile,
+  revisionPinned = false,
+  citation,
   journal,
   deviceId,
   syncId = null,
@@ -38,10 +46,15 @@ export function DeviceDetailsTabPanel({
 }: {
   audio: DeviceAudioState;
   audioEditor: DeviceAudioEditorState;
+  audioSettings: DeviceAudioSettingsState;
+  audioForwardingConfigured?: boolean;
   mobileFiles?: ReactNode;
   mobile?: boolean;
   activeTab: DeviceDetailsTab;
-  selectedFile: DeviceFileTreeEntry | null;
+  selectedFile: DeviceFileSelection | null;
+  onSelectFile?: (file: DeviceFileSelection) => void;
+  revisionPinned?: boolean;
+  citation?: AiAgentFileCitation;
   journal: DeviceFileJournalState;
   deviceId: string;
   syncId?: string | null;
@@ -71,7 +84,16 @@ export function DeviceDetailsTabPanel({
     >
       <Box
         hidden={mobile && activeTab === 'files' && selectedFile !== null}
-        sx={{ px: 2, pt: 0.5, borderBottom: 1, borderColor: 'divider' }}
+        sx={{
+          px: 2,
+          pt: 0.5,
+          borderBottom: 1,
+          borderColor: 'divider',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          '&[hidden]': { display: 'none' },
+        }}
       >
         <Tabs
           value={activeTab}
@@ -80,7 +102,13 @@ export function DeviceDetailsTabPanel({
           variant={mobile ? 'fullWidth' : 'scrollable'}
           scrollButtons="auto"
           allowScrollButtonsMobile
-          sx={{ minHeight: 42, '& .MuiTabs-indicator': { height: 2 } }}
+          sx={{
+            minHeight: 42,
+            minWidth: 0,
+            flex: 1,
+            '& .MuiTabs-indicator': { height: 2 },
+            ...(mobile ? { '& .MuiTab-root': { minWidth: 0, px: 0.5, fontSize: '0.75rem' } } : {}),
+          }}
         >
           <Tab
             id="device-details-analytical-tab"
@@ -107,11 +135,33 @@ export function DeviceDetailsTabPanel({
             label="Аудіо"
           />
         </Tabs>
+        {audioForwardingConfigured === false ? (
+          <Tooltip
+            title="Пересилання аудіо в групи не налаштоване для цього пристрою."
+            arrow
+            describeChild
+          >
+            <Box
+              component="span"
+              role="img"
+              aria-label="Пересилання аудіо не налаштоване"
+              tabIndex={0}
+              sx={{ display: 'inline-flex', flexShrink: 0, cursor: 'help' }}
+            >
+              <WarningIcon color="warning" fontSize="small" />
+            </Box>
+          </Tooltip>
+        ) : null}
       </Box>
 
       <Box sx={{ minHeight: 0, flex: 1, overflow: 'hidden' }}>
         {activeTab === 'audio' ? (
-          <DeviceAudioTab audio={audio} editor={audioEditor} mobile={mobile} />
+          <DeviceAudioTab
+            audio={audio}
+            editor={audioEditor}
+            settings={audioSettings}
+            mobile={mobile}
+          />
         ) : null}
         {!dataReady && activeTab !== 'audio' ? (
           <div className="p-echo-lg" role={sessionError ? 'alert' : 'status'}>
@@ -159,6 +209,9 @@ export function DeviceDetailsTabPanel({
               <DeviceFileContentPane
                 deviceId={deviceId}
                 file={selectedFile ?? null}
+                onSelectFile={onSelectFile}
+                revisionPinned={revisionPinned}
+                citation={citation}
                 sessionScoped={syncId !== null}
               />
             )}

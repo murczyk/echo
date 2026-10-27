@@ -6,7 +6,7 @@ use sea_orm::{
 use uuid::Uuid;
 
 use super::{ReuseReceipt, ReuseRequest};
-use crate::config::DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS;
+use crate::devices::config::DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS;
 use crate::devices::files::content::protocol::ContentError;
 use crate::h;
 
@@ -79,7 +79,7 @@ async fn reuse_in(
     request: &ReuseRequest,
 ) -> Result<ReuseReceipt, ContentError> {
     let target = Target::find_by_statement(Statement::from_sql_and_values(DbBackend::Postgres,
-        "select device_id, kind::text as kind, revision from file_entry where id=$1 for update",
+        "select device_id, kind::text as kind, revision from file_entry where id=$1 and archive_file_id is null for update",
         [file_id.into()]))
         .one(tx).await.context(h!()).map_err(unavailable)?
         .filter(|target| target.device_id == device_id && target.kind == "file")
@@ -126,7 +126,7 @@ async fn reuse_in(
     if open.is_some() {
         return Err(ContentError::conflict("upload_in_progress"));
     }
-    bind(tx, file_id, revision, request.source_upload_id)
+    bind(tx, device_id, file_id, revision, request.source_upload_id)
         .await
         .map_err(unavailable)?;
     Ok(receipt)
@@ -162,6 +162,7 @@ async fn load_binding(
 
 async fn bind(
     tx: &DatabaseTransaction,
+    device_id: Uuid,
     file_id: Uuid,
     revision: i64,
     upload_id: Uuid,
@@ -178,10 +179,15 @@ async fn bind(
         "verified source content missing"
     );
     let updated = tx.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-        "update file_entry e set content_path=c.object_key from file_content c where e.id=$1 and e.revision=$2 and c.file_id=e.id and c.revision=e.revision",
+        "update file_entry e set content_path=c.object_key from file_content c where e.id=$1 and e.revision=$2 and e.archive_file_id is null and c.file_id=e.id and c.revision=e.revision",
         [file_id.into(), revision.into()]))
         .await.context(h!())?;
     ensure!(updated.rows_affected() == 1, "content reuse target changed");
+    crate::devices::files::archive::enqueue::ensure_in(
+        tx, device_id, file_id, revision,
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 

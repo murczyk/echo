@@ -288,9 +288,13 @@ async fn inbox_item_context(
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
     let login = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let Some(message_uid) =
         normalized_optional_string(Some(req.message_uid.as_str()))
     else {
@@ -415,6 +419,7 @@ async fn inbox_window_bl(
     message_ref: &str,
     inbox_req: InboxMessagesReq,
 ) -> Result<Option<InboxWindowRsp>, AppError> {
+    validate_inbox_window_period(&inbox_req).context(h!())?;
     let rows = load_inbox_item_context_rows(&env.dbx, message_ref)
         .await
         .context(h!())?;
@@ -518,12 +523,19 @@ async fn count_inbox_window_messages(
     Ok(count)
 }
 
+fn validate_inbox_window_period(req: &InboxMessagesReq) -> anyhow::Result<()> {
+    let since = req.since_date_inclusive_ms.context(h!())?;
+    let till = req.till_date_inclusive_ms.context(h!())?;
+    anyhow::ensure!(since < till, "Message windows require an ordered period");
+    DateTime::from_timestamp_millis(since).context(h!())?;
+    DateTime::from_timestamp_millis(till).context(h!())?;
+    Ok(())
+}
+
 fn inbox_window_base_req(mut inbox_req: InboxMessagesReq) -> InboxMessagesReq {
     inbox_req.since_id_noninclusive = None;
     inbox_req.before_id_noninclusive = None;
     inbox_req.around_message_ref = None;
-    inbox_req.since_date_inclusive_ms = None;
-    inbox_req.till_date_inclusive_ms = None;
     inbox_req.nolimit = None;
     inbox_req.load_latest = None;
     inbox_req.calculate_freq_pelengs_summary = None;
@@ -712,7 +724,7 @@ async fn messages_by_id(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -742,9 +754,13 @@ async fn messages_by_id_matching_filters(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
@@ -788,9 +804,13 @@ async fn messages_by_id_with_metadata(
     req: Json<MessageIdsReq>,
 ) -> Result<Json<InboxMessagesRsp>, AppError> {
     let login = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -840,9 +860,13 @@ async fn messages_by_uuid(
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let req = req.into_inner();
     let login = login_id_from_identity(&user).c(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "Cyber", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &login,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let default_req = InboxMessagesReq {
         highlight_points: Some(true),
         ..Default::default()
@@ -963,9 +987,9 @@ pub(crate) async fn messages_by_id_bl(
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_REPORT,
-            intel_product::RELATION_KIND_COMMENT,
+        .and_where(crate::rer_importer::intel_product_filter::relation_kind_is_in([
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
+            crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
         ]))
         .and_where(
             Expr::col((
@@ -1191,9 +1215,13 @@ async fn inbox_messages(
     req: Json<InboxMessagesReq>,
 ) -> Result<Json<InboxMessagesApiRsp>, AppError> {
     let user_id = login_id_from_identity(&user)?;
-    has_any_role(&env.dbx, &user_id, vec!["Rer", "Cyber", "ApiAgent"])
-        .await
-        .c(h!())?;
+    has_any_role(
+        &env.dbx,
+        &user_id,
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
+    )
+    .await
+    .c(h!())?;
     let is_admin = has_role(&env.dbx, &user_id, "Admin").await.is_ok();
     let page_id = req.page_id.clone();
     let req = req.into_inner();
@@ -1810,20 +1838,19 @@ async fn query_inbox_digest_with_analytics(
         "inbox messages count",
         analytics_inbox_request_supported(&req),
         |db| async move {
-            let query = build_analytics_inbox_digest_query(
+            let digest = load_analytics_inbox_digest(
                 &login,
                 &analytics_env,
                 &analytics_req,
                 &db,
                 freshness_max_age_ms,
+                None,
             )
-            .await?;
-            match query {
-                Some(query) => query_inbox_digest(db, query).await,
+            .await
+            .context(h!())?;
+            match digest {
+                Some(digest) => Ok(digest),
                 None => {
-                    debug!(
-                        "inbox messages count cursor is newer than analytics; using PostgreSQL"
-                    );
                     query_inbox_digest(
                         analytics_env.replica(),
                         analytics_lag_fallback_q,
@@ -1903,31 +1930,23 @@ async fn query_rer_duty_inbox_digest_with_fresh_tail(
         "rer duty inbox messages count",
         true,
         |db| async move {
-            let postgres_tail = query_inbox_digest(
-                postgres_tail_db,
-                postgres_tail_query,
+            let postgres_tail =
+                query_inbox_digest(postgres_tail_db, postgres_tail_query)
+                    .await
+                    .context(h!())?;
+            let Some(historical) = load_analytics_inbox_digest(
+                &login,
+                &analytics_env,
+                &analytics_req,
+                &db,
+                freshness_max_age_ms,
+                Some(fresh_tail_lower_bound),
             )
             .await
-            .context(h!())?;
-            let Some(query) =
-                build_historical_analytics_inbox_digest_query(
-                    &login,
-                    &analytics_env,
-                    &analytics_req,
-                    &db,
-                    freshness_max_age_ms,
-                    fresh_tail_lower_bound,
-                )
-                .await
-                .context(h!())?
+            .context(h!())?
             else {
-                debug!(
-                    "rer duty inbox messages count cursor is newer than analytics; using PostgreSQL fresh tail"
-                );
                 return Ok(postgres_tail);
             };
-            let historical =
-                query_inbox_digest(db, query).await.context(h!())?;
             merge_inbox_digests(historical, postgres_tail)
         },
         |_db| query_inbox_digest(postgres_fallback_db, postgres_query),
@@ -1962,7 +1981,7 @@ async fn inbox_messages_count(
     has_any_role(
         &env.dbx,
         &login_id_from_identity(&user)?,
-        vec!["Rer", "Cyber", "ApiAgent"],
+        vec!["Rer", ROLE_CYBER_VIEWER_RESTRICTED, "ApiAgent"],
     )
     .await
     .c(h!())?;
@@ -2038,8 +2057,8 @@ async fn delete_message(
     let txn = env.dbx.begin().await.context(h!())?;
     let intelligence_report_parent_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(req.id))
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .filter(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .select_only()
         .column(intel_product::Column::SourceMessageId)
@@ -2287,12 +2306,15 @@ fn generic_submit_item_to_inbox_message(
         callsigns_alg2: vec![],
         checked: true,
         important: false,
+        ai_important: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         created_at: None,
         created_at_order: None,
+        is_own: None,
         has_date_in_header: false,
         group_master_key: None,
+        group_master_keys: None,
         sender: item.sender.clone(),
         extended_form: item.comment.clone(),
         message_comments: vec![],
@@ -2629,12 +2651,6 @@ async fn ensure_submit_group_aor(
         created_at: NotSet,
     }
     .insert(txn)
-    .await
-    .c(h!())?;
-    crate::battle_line::requeue_settlement_links_for_group(
-        txn,
-        group_master_key,
-    )
     .await
     .c(h!())?;
     Ok(())
@@ -3328,8 +3344,8 @@ async fn ensure_comment_save_access(
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
+        .and_where(crate::rer_importer::intel_product_filter::relation_kind_eq(
+            crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ))
         .and_where(
             Expr::col((
@@ -4214,7 +4230,7 @@ async fn load_postgres_fresh_tail_candidate_ids(
     Ok(ids)
 }
 
-fn analytics_fresh_tail_lower_bound(
+pub(crate) fn analytics_fresh_tail_lower_bound(
     now: NaiveDateTime,
     freshness_max_age_ms: u64,
     minimum_tail_minutes: i64,
@@ -4461,6 +4477,18 @@ async fn get_inbox_messages_with_internal_lower_bound(
     req: &InboxMessagesReq,
     internal_lower_bound: Option<NaiveDateTime>,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if req.nolimit != Some(true) {
+        return Ok(get_postgres_inbox_page(
+            &env.dbx,
+            login,
+            logins,
+            env,
+            req,
+            internal_lower_bound,
+        )
+        .await
+        .c(h!())?);
+    }
     let q = build_inbox_query_with_internal_lower_bound(
         &env.dbx,
         login,
@@ -4471,6 +4499,50 @@ async fn get_inbox_messages_with_internal_lower_bound(
     .await
     .c(h!())?;
     fetch_inbox_messages_with_query(&env.dbx, login, logins, env, req, &q).await
+}
+
+async fn get_postgres_inbox_page(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    internal_lower_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Vec<(i64, InboxMessage)>> {
+    let transaction = dbx
+        .begin_with_config(
+            Some(IsolationLevel::RepeatableRead),
+            Some(AccessMode::ReadOnly),
+        )
+        .await
+        .c(h!())?;
+    let ids = load_postgres_inbox_page_ids(
+        &transaction,
+        login,
+        env,
+        req,
+        internal_lower_bound,
+    )
+    .await
+    .c(h!())?;
+    let messages = if ids.is_empty() {
+        Vec::new()
+    } else {
+        let query =
+            build_inbox_page_details_query(&transaction, login, req, &ids)
+                .await
+                .c(h!())?;
+        fetch_inbox_message_descriptions(
+            &transaction,
+            Statement::from_string(DatabaseBackend::Postgres, query),
+        )
+        .await
+        .c(h!())?
+    };
+    transaction.commit().await.c(h!())?;
+    aggregate_to_inbox_messages(login, messages, logins, &req, &env)
+        .await
+        .c(h!())
 }
 
 pub async fn get_inbox_messages_created_between(
@@ -4532,6 +4604,11 @@ pub async fn get_inbox_messages_with_conn(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if req.nolimit != Some(true) {
+        return Ok(get_postgres_inbox_page(dbx, login, logins, env, req, None)
+            .await
+            .c(h!())?);
+    }
     let q = build_inbox_query(login, env, req).await.c(h!())?;
     let res = fetch_inbox_messages_with_query(dbx, login, logins, env, req, &q)
         .await
@@ -4580,6 +4657,20 @@ async fn fetch_inbox_messages_with_statement(
     req: &InboxMessagesReq,
     statement: Statement,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let messages = fetch_inbox_message_descriptions(dbx, statement)
+        .await
+        .c(h!())?;
+    Ok(
+        aggregate_to_inbox_messages(login, messages, logins, &req, &env)
+            .await
+            .c(h!())?,
+    )
+}
+
+async fn fetch_inbox_message_descriptions<C: ConnectionTrait>(
+    dbx: &C,
+    statement: Statement,
+) -> anyhow::Result<Vec<InboxMessageDesc>> {
     let results = dbx.query_all_raw(statement).await.context(h!())?;
 
     let messages: Vec<InboxMessageDesc> = results
@@ -4588,10 +4679,7 @@ async fn fetch_inbox_messages_with_statement(
         .collect::<Result<Vec<_>, DbErr>>()
         .context(h!())?;
 
-    let res = aggregate_to_inbox_messages(login, messages, logins, &req, &env)
-        .await
-        .context(h!())?;
-    Ok(res)
+    Ok(messages)
 }
 
 /// Find our dups and dups of our duplicate_of origin. Don't do anything fancy beyond this.
@@ -5102,7 +5190,7 @@ mod tests {
         }
         let mut login = login.into_active_model();
         login.roles = Set(json!(["Rer", ROLE_CYBER]));
-        login.update(&env.dbx).await.unwrap();
+        let login = login.update(&env.dbx).await.unwrap();
         for (filter, expected) in [
             (
                 Some(InboxMessagesReq {
@@ -5187,6 +5275,35 @@ mod tests {
             actix_test::read_body_json(response).await;
         assert_eq!(response["messages"].as_array().unwrap().len(), 1);
         assert_eq!(response["messages"][0][0], json!(messages[0].0));
+        let mut login = login.into_active_model();
+        login.roles = Set(json!([crate::config::ROLE_CYBER_VIEWER]));
+        login.update(&env.dbx).await.unwrap();
+        let filter = InboxMessagesReq {
+            selected_device_names: Some(vec![
+                "ECHO-3461 allowed device".to_string()
+            ]),
+            ..Default::default()
+        };
+        for (endpoint, body, field) in endpoint_bodies(Some(filter)) {
+            let response = actix_test::call_service(
+                &app,
+                actix_test::TestRequest::post()
+                    .uri(endpoint)
+                    .cookie(session_cookie.clone())
+                    .set_json(body)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK, "{endpoint}");
+            let response: serde_json::Value =
+                actix_test::read_body_json(response).await;
+            assert_eq!(response[field].as_array().unwrap().len(), 1);
+            let row = &response[field][0];
+            assert_eq!(
+                row.as_i64().or_else(|| row[0].as_i64()),
+                Some(messages[0].0),
+            );
+        }
         set_devices_section_enabled(&env.dbx, false).await;
         for filter in [
             InboxMessagesReq {
@@ -5966,13 +6083,20 @@ mod tests {
             crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
                 .await
                 .unwrap();
+        let period = InboxMessagesReq {
+            since_date_inclusive_ms: Some(now.and_utc().timestamp_millis()),
+            till_date_inclusive_ms: Some(
+                (now + Duration::seconds(43)).and_utc().timestamp_millis(),
+            ),
+            ..Default::default()
+        };
         let window = inbox_window_bl(
             &env,
             &login.id,
             &logins,
             false,
             &target_message_uuid.to_string(),
-            InboxMessagesReq::default(),
+            period.clone(),
         )
         .await
         .unwrap()
@@ -5992,6 +6116,63 @@ mod tests {
             .windows(2)
             .all(|messages| messages[0].0 < messages[1].0));
 
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSCreatedAt,
+        ] {
+            let bounded = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    (now + Duration::seconds(5)).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    (now + Duration::seconds(38)).and_utc().timestamp_millis(),
+                ),
+                sort_by: Some(sort_by),
+                ..period.clone()
+            };
+            let window = inbox_window_bl(
+                &env,
+                &login.id,
+                &logins,
+                false,
+                &target_message_uuid.to_string(),
+                bounded,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(window.inbox.inbox_items.len(), 33);
+            assert_eq!(window.messages_before, 16);
+            assert_eq!(window.messages_after, 16);
+            assert!(!window.has_more_before);
+            assert!(!window.has_more_after);
+            assert_eq!(window.inbox.inbox_items[0].1.text, "window-5");
+            assert_eq!(window.inbox.inbox_items[32].1.text, "window-37");
+        }
+        for (since, till) in [
+            (None, None),
+            (period.since_date_inclusive_ms, None),
+            (None, period.till_date_inclusive_ms),
+            (Some(10), Some(10)),
+            (Some(20), Some(10)),
+            (Some(i64::MIN), Some(i64::MAX)),
+        ] {
+            assert!(inbox_window_bl(
+                &env,
+                &login.id,
+                &logins,
+                false,
+                &target_message_uuid.to_string(),
+                InboxMessagesReq {
+                    since_date_inclusive_ms: since,
+                    till_date_inclusive_ms: till,
+                    ..period.clone()
+                }
+            )
+            .await
+            .is_err());
+        }
+
         let filtered_window = inbox_window_bl(
             &env,
             &login.id,
@@ -6000,7 +6181,7 @@ mod tests {
             &target_message_uuid.to_string(),
             InboxMessagesReq {
                 selected_groups: Some(vec!["other-group".to_string()]),
-                ..Default::default()
+                ..period.clone()
             },
         )
         .await
@@ -6016,7 +6197,7 @@ mod tests {
             &target_message_uuid.to_string(),
             InboxMessagesReq {
                 selected_senders: Some(vec!["other-sender".to_string()]),
-                ..Default::default()
+                ..period.clone()
             },
         )
         .await
@@ -7754,6 +7935,191 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn hybrid_latest_inbox_reconciles_replica_lag_3780() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let ids = seed_latest_inbox_messages_3780(&env, &group, now).await;
+        let analytics = snapshot_latest_inbox_replica_3780(&env).await;
+        let req = InboxMessagesReq {
+            load_latest: Some(true),
+            sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+            ..Default::default()
+        };
+        let candidates = load_analytics_inbox_candidates(
+            &login.id, &env, &req, &analytics, 90_000,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            candidates,
+            ids[4..].iter().rev().copied().collect::<Vec<_>>()
+        );
+        let arrival = seed_message_with_media(
+            &env,
+            &group,
+            None,
+            "latest-backdated-arrival",
+        )
+        .await
+        .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(now - Duration::days(30)),
+            )
+            .filter(signal_message::Column::Id.eq(arrival.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let tail = load_postgres_fresh_tail_inbox_candidates(
+            &env.dbx,
+            &login.id,
+            &env,
+            &req,
+            now - Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tail, vec![arrival.id]);
+        let candidates = merge_inbox_candidate_ids(candidates, tail);
+        let mut diagnostics = InboxReadDiagnostics::new(None);
+        let rows = hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            &candidates,
+            &mut diagnostics,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let expected = ids[5..]
+            .iter()
+            .copied()
+            .chain([arrival.id])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            expected
+        );
+        invalidate_latest_inbox_candidates_3780(&env, &ids).await;
+        assert!(hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            &candidates,
+            &mut diagnostics,
+        )
+        .await
+        .unwrap()
+        .is_none());
+        assert_eq!(diagnostics.reason, "candidate_revalidation_incomplete");
+        let rows = get_inbox_messages_with_internal_lower_bound(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            None,
+        )
+        .await
+        .unwrap();
+        let expected = ids[3..22]
+            .iter()
+            .copied()
+            .chain([arrival.id])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            rows.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            expected
+        );
+        analytics.close().await.unwrap();
+        env.dbx
+            .execute_unprepared(r#"DROP SCHEMA inbox_replica_3780 CASCADE"#)
+            .await
+            .unwrap();
+    }
+
+    async fn seed_latest_inbox_messages_3780(
+        env: &Arc<Env>,
+        group: &datasource_group::Model,
+        now: NaiveDateTime,
+    ) -> Vec<i64> {
+        let mut ids = Vec::new();
+        for index in 0..INBOX_MESSAGES_PAGE_LIMIT + 4 {
+            let message = seed_message_with_media(
+                env,
+                group,
+                None,
+                &format!("latest-replica-{index}"),
+            )
+            .await
+            .unwrap();
+            ids.push(message.id);
+        }
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(now - Duration::hours(1)),
+            )
+            .filter(signal_message::Column::Id.is_in(ids.clone()))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ids
+    }
+
+    async fn invalidate_latest_inbox_candidates_3780(env: &Env, ids: &[i64]) {
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(ids[ids.len() - 1]))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message_group::Entity::delete_many()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(ids[ids.len() - 2]),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    async fn snapshot_latest_inbox_replica_3780(
+        env: &Env,
+    ) -> DatabaseConnection {
+        env.dbx
+            .execute_unprepared(
+                r#"
+            DROP SCHEMA IF EXISTS inbox_replica_3780 CASCADE;
+            CREATE SCHEMA inbox_replica_3780;
+            CREATE TABLE inbox_replica_3780.signal_message AS
+                SELECT * FROM public.signal_message;
+            CREATE TABLE inbox_replica_3780.sigint_inbox_item AS
+                SELECT * FROM public.sigint_inbox_item;
+            CREATE TABLE inbox_replica_3780.signal_message_group AS
+                SELECT * FROM public.signal_message_group;
+        "#,
+            )
+            .await
+            .unwrap();
+        let mut options =
+            ConnectOptions::new(crate::mk_conn_string(&env.config));
+        options
+            .max_connections(1)
+            .map_sqlx_postgres_opts(|options| {
+                options.options([("search_path", "inbox_replica_3780,public")])
+            });
+        Database::connect(options).await.unwrap()
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn hybrid_inbox_preserves_messages_without_inbox_rows() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
@@ -7845,6 +8211,172 @@ mod tests {
         .await
         .unwrap()
         .is_none());
+    }
+
+    async fn seed_position_display_message_3064(
+        env: &Arc<Env>,
+        group: &datasource_group::Model,
+    ) -> (signal_message::Model, signal_message_media::Model) {
+        use crate::entities::ai_position_mention;
+        let message = seed_message_with_media(
+            env,
+            group,
+            Some("application/pdf"),
+            "position-display",
+        )
+        .await
+        .unwrap();
+        let mut message = message.into_active_model();
+        message.body = Set(Some("Циркон 9".to_string()));
+        let message = message.update(&env.dbx).await.unwrap();
+        let media = signal_message_media::Entity::find()
+            .filter(
+                signal_message_media::Column::SignalMessageId.eq(message.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        for media_id in [None, Some(media.id)] {
+            let mention = ai_position_mention::ActiveModel {
+                sigint_inbox_item_id: Set(if media_id.is_none() {
+                    Some(message.id)
+                } else {
+                    None
+                }),
+                media_id: Set(media_id),
+                name: Set("Циркон 9".to_string()),
+                name_key: Set("циркон 9".to_string()),
+                kind: Set("position".to_string()),
+                begin_char: Set(0),
+                end_char: Set(8),
+                message_at: Set(message.created_at),
+                group_master_key: Set(Some(group.group_master_key.clone())),
+                group_is_secret: Set(false),
+                aor_ids: Set(vec![]),
+                model_name: Set("test".to_string()),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+            // Only located positions are highlighted.
+            crate::entities::ai_position_coordinate::ActiveModel {
+                mention_id: Set(mention.id),
+                coordinate_text: Set("36T XT 75734 68963".to_string()),
+                coordinate_system: Set("mgrs".to_string()),
+                mgrs: Set("36TXT7573468963".to_string()),
+                lat: Set(47.55029916845189),
+                lng: Set(35.335663776872615),
+                certainty: Set("high".to_string()),
+                evidence: Set(String::new()),
+                message_at: Set(message.created_at),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        (message, media)
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn ai_position_display_flags_leave_extraction_data_available_3064() {
+        use crate::entities::user_settings;
+        use crate::rer_importer::highlight::ContentNode;
+
+        let env = cleanup().await.unwrap();
+        system_settings::ActiveModel {
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let (message, media) =
+            seed_position_display_message_3064(&env, &group).await;
+        let req = InboxMessagesReq {
+            nolimit: Some(true),
+            load_latest: Some(true),
+            highlight_points: Some(true),
+            highlight_callsigns: Some(true),
+            ..Default::default()
+        };
+        for (global_enabled, user_enabled, displayed) in [
+            (None, None, false),
+            (Some(false), Some(true), true),
+            (Some(false), Some(false), false),
+            (Some(true), Some(false), true),
+        ] {
+            system_settings::Entity::update_many()
+                .col_expr(
+                    system_settings::Column::AiPositionHighlightsEnabled,
+                    Expr::value(global_enabled),
+                )
+                .filter(system_settings::Column::Deleted.eq(false))
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+            user_settings::Entity::insert(user_settings::ActiveModel {
+                login_id: Set(login.id),
+                ai_position_highlights_enabled: Set(user_enabled),
+                ..Default::default()
+            })
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(
+                    user_settings::Column::LoginId,
+                )
+                .update_column(
+                    user_settings::Column::AiPositionHighlightsEnabled,
+                )
+                .to_owned(),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+            let messages =
+                get_inbox_messages(&login.id, &vec![login.id], &env, &req)
+                    .await
+                    .unwrap();
+            let (_, message) =
+                messages.iter().find(|(id, _)| *id == message.id).unwrap();
+            assert_eq!(
+                message
+                    .text_marked
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .any(|node| matches!(node, ContentNode::CNPositionC(_))),
+                displayed
+            );
+            assert_eq!(!message.media[0].positions.is_empty(), displayed);
+            let allowed =
+                [group.group_master_key.clone()].into_iter().collect();
+            assert_eq!(
+                crate::ai_position::list::positions_by_message(
+                    &env.dbx,
+                    vec![media.signal_message_id],
+                    &allowed
+                )
+                .await
+                .unwrap()
+                .len(),
+                1
+            );
+            assert_eq!(
+                crate::ai_position::list::positions_by_media(
+                    &env.dbx,
+                    vec![media.id],
+                    &allowed
+                )
+                .await
+                .unwrap()
+                .len(),
+                1
+            );
+        }
     }
 
     #[serial]
@@ -7973,6 +8505,8 @@ mod tests {
             .await
             .unwrap();
         for media in &media {
+            env.dbx.execute_raw(sea_orm::Statement::from_sql_and_values(sea_orm::DbBackend::Postgres,
+                "insert into transcription_source(id,source_key) values($1,$2) on conflict do nothing",[media.id.into(),crate::transcriber::media_queue::source_key(media).into()])).await.unwrap();
             echo_gpu_transcription_queue::ActiveModel {
                 source_id: Set(media.id),
                 state: Set(echo_gpu_client::QueueState::Completed
@@ -9150,5 +9684,75 @@ mod tests {
             matching_sender_messages[0].1.sender.as_deref(),
             Some("sender-c")
         );
+        assert_eq!(
+            matching_sender_messages[0].1.group_master_keys.as_ref(),
+            Some(&vec![datasource_group.group_master_key.clone()])
+        );
+        let all_groups_req = InboxMessagesReq {
+            selected_groups: None,
+            selected_senders: None,
+            ..matching_sender_req.clone()
+        };
+        let all_groups_messages =
+            get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
+                .await
+                .unwrap();
+        assert_eq!(
+            all_groups_messages[0].1.group_master_keys.as_ref(),
+            Some(&vec![datasource_group.group_master_key.clone()])
+        );
+        let aor = find_test_aor(&env.dbx).await.unwrap();
+        mk_signal_group_aor(
+            &env.dbx,
+            signal_group_aor::ActiveModel {
+                master_key: Set(other_group.master_key.clone()),
+                aor_id: Set(aor.id),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let all_groups_messages =
+            get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
+                .await
+                .unwrap();
+        let mut memberships =
+            all_groups_messages[0].1.group_master_keys.clone().unwrap();
+        memberships.sort();
+        let mut expected =
+            vec![datasource_group.group_master_key, other_group.master_key];
+        expected.sort();
+        assert_eq!(memberships, expected);
+        for selected_senders in
+            [None, matching_sender_req.selected_senders.clone()]
+        {
+            let scoped_req = InboxMessagesReq {
+                selected_senders,
+                ..matching_sender_req.clone()
+            };
+            let scoped_messages =
+                get_inbox_messages(&login.id, &logins, &env, &scoped_req)
+                    .await
+                    .unwrap();
+            assert_eq!(scoped_messages.len(), 1);
+            assert_eq!(
+                scoped_messages[0].1.sender.as_deref(),
+                Some("sender-c")
+            );
+            assert_eq!(
+                scoped_messages[0].1.group_master_key.as_deref(),
+                matching_sender_req
+                    .selected_groups
+                    .as_ref()
+                    .unwrap()
+                    .first()
+                    .map(String::as_str)
+            );
+            let mut memberships =
+                scoped_messages[0].1.group_master_keys.clone().unwrap();
+            memberships.sort();
+            assert_eq!(memberships, expected);
+        }
     }
 }

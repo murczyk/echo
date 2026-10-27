@@ -1,3 +1,4 @@
+pub(crate) mod archive;
 mod bl;
 pub(crate) mod content;
 mod cursor;
@@ -5,6 +6,7 @@ mod error;
 mod ltree;
 mod metadata;
 mod path;
+pub(crate) mod preview;
 pub(in crate::devices) mod query;
 pub(crate) mod sessions;
 pub(crate) mod sync;
@@ -28,6 +30,7 @@ pub(in crate::devices) use types::{
     RootEntry, SearchEntry, SearchFilesCommand, SearchFilesResult,
     SubtreeFileCount, SubtreeFileCountsCommand, TreeEntry,
 };
+pub(crate) mod locate;
 pub mod types;
 
 use std::time::Instant;
@@ -134,17 +137,34 @@ pub(crate) async fn browse(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    let device_id = parse_uuid(&body.device_id);
+    if let Some(response) = archive::tree::browse(
+        &env.dbx,
+        env.file_registry_db().c(h!())?,
+        &login,
+        &body,
+    )
+    .await?
+    {
+        return Ok(Json(response));
+    }
     if body.sync_id.is_some() {
-        return Ok(Json(
-            sessions::read::browse(
-                &env.dbx,
-                env.file_registry_db().c(h!())?,
-                &login,
-                body,
-            )
-            .await
-            .c(h!())?,
-        ));
+        let mut response = sessions::read::browse(
+            &env.dbx,
+            env.file_registry_db().c(h!())?,
+            &login,
+            body,
+        )
+        .await
+        .c(h!())?;
+        archive::hydrate::tree(
+            env.file_registry_db().c(h!())?.connection(),
+            device_id,
+            &mut response.entries,
+        )
+        .await
+        .c(h!())?;
+        return Ok(Json(response));
     }
     let result = bl::browse(
         &env.dbx,
@@ -159,11 +179,20 @@ pub(crate) async fn browse(
             tag_ids: body.tag_ids.unwrap_or_default(),
             tag_match: body.tag_match,
             untagged: body.untagged.unwrap_or(false),
+            has_content: body.has_content,
         },
     )
     .await
     .c(h!())?;
-    Ok(Json(map_browse(result).c(h!())?))
+    let mut response = map_browse(result).c(h!())?;
+    archive::hydrate::tree(
+        env.file_registry_db().c(h!())?.connection(),
+        device_id,
+        &mut response.entries,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(response))
 }
 
 #[post("/api/device/files/search")]
@@ -175,17 +204,24 @@ pub(crate) async fn search(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    let device_id = parse_uuid(&body.device_id);
     if body.sync_id.is_some() {
-        return Ok(Json(
-            sessions::read::search(
-                &env.dbx,
-                env.file_registry_db().c(h!())?,
-                &login,
-                body,
-            )
-            .await
-            .c(h!())?,
-        ));
+        let mut response = sessions::read::search(
+            &env.dbx,
+            env.file_registry_db().c(h!())?,
+            &login,
+            body,
+        )
+        .await
+        .c(h!())?;
+        archive::hydrate::tree(
+            env.file_registry_db().c(h!())?.connection(),
+            device_id,
+            &mut response.entries,
+        )
+        .await
+        .c(h!())?;
+        return Ok(Json(response));
     }
     let result = bl::search(
         &env.dbx,
@@ -222,7 +258,15 @@ pub(crate) async fn search(
     )
     .await
     .c(h!())?;
-    Ok(Json(map_search(result)))
+    let mut response = map_search(result);
+    archive::hydrate::tree(
+        env.file_registry_db().c(h!())?.connection(),
+        device_id,
+        &mut response.entries,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(response))
 }
 
 #[post("/api/device/files/journal")]
@@ -234,17 +278,24 @@ pub(crate) async fn journal(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
+    let device_id = parse_uuid(&body.device_id);
     if body.sync_id.is_some() {
-        return Ok(Json(
-            sessions::read::journal(
-                &env.dbx,
-                env.file_registry_db().c(h!())?,
-                &login,
-                body,
-            )
-            .await
-            .c(h!())?,
-        ));
+        let mut response = sessions::read::journal(
+            &env.dbx,
+            env.file_registry_db().c(h!())?,
+            &login,
+            body,
+        )
+        .await
+        .c(h!())?;
+        archive::hydrate::journal(
+            env.file_registry_db().c(h!())?.connection(),
+            device_id,
+            &mut response.entries,
+        )
+        .await
+        .c(h!())?;
+        return Ok(Json(response));
     }
     let result = bl::journal(
         &env.dbx,
@@ -261,7 +312,15 @@ pub(crate) async fn journal(
     )
     .await
     .c(h!())?;
-    Ok(Json(map_journal(result)))
+    let mut response = map_journal(result);
+    archive::hydrate::journal(
+        env.file_registry_db().c(h!())?.connection(),
+        device_id,
+        &mut response.entries,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(response))
 }
 
 #[post("/api/device/files/sync")]

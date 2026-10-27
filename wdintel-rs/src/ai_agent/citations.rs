@@ -24,6 +24,31 @@ pub(super) fn parse(payload: &Value) -> Option<Vec<AiAgentMessageCitation>> {
         .then_some(citations)
 }
 
+pub(crate) async fn readable_message_ids(
+    dbx: &sea_orm::DatabaseConnection,
+    human: Uuid,
+    ids: &[i64],
+) -> anyhow::Result<HashSet<i64>> {
+    let mut readable = HashSet::new();
+    if ids.is_empty() {
+        return Ok(readable);
+    }
+    let login = crate::users::load_active_login(dbx, &human).await.c(h!())?;
+    if login.organism_id.is_none() || login.sigint_zone_id.is_none() {
+        return Ok(readable);
+    }
+    for batch in ids.chunks(crate::config::AI_AGENT_CITATION_ACCESS_BATCH) {
+        readable.extend(
+            crate::rer_importer::analysis::accessible_message_ids(
+                dbx, &human, batch,
+            )
+            .await
+            .c(h!())?,
+        );
+    }
+    Ok(readable)
+}
+
 pub(super) async fn load(
     dbx: &impl ConnectionTrait,
     request_ids: &[Uuid],

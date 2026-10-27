@@ -128,7 +128,11 @@ pub(crate) async fn detail(
     let device = bl::read(&env.dbx, &login, parse_uuid(&body.device_id), scope)
         .await
         .c(h!())?;
-    Ok(Json(map_device_details(device)))
+    let configured =
+        crate::devices::audio::forwarding::configured(&env.dbx, device.id)
+            .await
+            .c(h!())?;
+    Ok(Json(map_device_details(device, configured)))
 }
 
 #[post("/api/device/create")]
@@ -150,7 +154,7 @@ pub(crate) async fn create(
         env.into_inner(),
         &device,
     );
-    Ok(Json(map_device_details(device)))
+    Ok(Json(map_device_details(device, false)))
 }
 
 #[post("/api/device/update")]
@@ -166,13 +170,18 @@ pub(crate) async fn update(
         name: map_required_patch(body.name),
         aor_ids: map_required_patch(body.aor_ids),
         unit_id: map_nullable_patch(body.unit_id),
+        audio_forwarding: body.audio_forwarding,
     };
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
     let device = bl::update(&env.dbx, &login, command).await.c(h!())?;
     if access::require_read(&login.roles).is_ok() {
-        Ok(HttpResponse::Ok().json(map_device_details(device)))
+        let configured =
+            crate::devices::audio::forwarding::configured(&env.dbx, device.id)
+                .await
+                .c(h!())?;
+        Ok(HttpResponse::Ok().json(map_device_details(device, configured)))
     } else {
         Ok(HttpResponse::NoContent().finish())
     }

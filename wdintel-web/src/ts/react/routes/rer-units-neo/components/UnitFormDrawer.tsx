@@ -18,12 +18,17 @@ import {
 } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
-import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
+import type {
+  CreateUnitReq,
+  OrbitUnitDetails,
+  Unit,
+  UnitCombatType,
+} from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
-import { getCreateUnitDuplicateCandidates } from '../../../services/api/units';
+import { getCreateUnitDuplicateCandidates, getUnitCombatTypes } from '../../../services/api/units';
 import {
   defaultUnitMasks,
   EMPTY_UNIT_FORM,
@@ -52,7 +57,10 @@ type Props = {
   open: boolean;
   suspended?: boolean;
   unit: Unit | null;
+  initialName?: string;
   devicesSectionEnabled: boolean;
+  hideNetworks?: boolean;
+  canMergeDuplicates?: boolean;
   submitting: boolean;
   error: string | null;
   orbitUnits: OrbitUnitDetails[];
@@ -102,8 +110,8 @@ const HIERARCHY_FIELDS: Array<{
   { key: 'army', label: 'Армія', placeholder: 'Назва армії' },
   {
     key: 'militaryDistrict',
-    label: 'Група армій/Фронт/Види та роди ЗС',
-    placeholder: 'Назва групи армій, фронту або виду ЗС',
+    label: 'Група армій/Фронт',
+    placeholder: 'Назва групи армій або фронту',
   },
   {
     key: 'armyRegion',
@@ -117,12 +125,18 @@ function UnitDetailsFields({
   editing,
   disabled,
   editSection,
+  combatTypes,
+  combatTypesLoading,
+  combatTypeName,
   onChange,
 }: {
   form: UnitForm;
   editing: boolean;
   disabled: boolean;
   editSection: 'all' | 'unit' | 'orbit';
+  combatTypes: UnitCombatType[];
+  combatTypesLoading: boolean;
+  combatTypeName: string | null;
   onChange: (value: UnitForm) => void;
 }) {
   if (editSection === 'orbit') {
@@ -147,7 +161,7 @@ function UnitDetailsFields({
     <>
       <Typography color="text.secondary">Заповніть відомі рівні підпорядкування.</Typography>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {editing ? (
+        {editing || form.name !== null ? (
           <TextField
             label="Назва"
             placeholder="Назва підрозділу"
@@ -169,6 +183,25 @@ function UnitDetailsFields({
             fullWidth
           />
         ))}
+        <TextField
+          select
+          label="Види та роди ЗС"
+          value={form.combatTypeId ?? ''}
+          onChange={(event) => onChange({ ...form, combatTypeId: event.target.value || null })}
+          disabled={disabled || combatTypesLoading}
+          helperText={combatTypesLoading ? 'Завантаження видів та родів ЗС…' : undefined}
+          fullWidth
+        >
+          <MenuItem value="">Не визначено</MenuItem>
+          {form.combatTypeId && !combatTypes.some((type) => type.id === form.combatTypeId) ? (
+            <MenuItem value={form.combatTypeId}>{combatTypeName ?? 'Поточне значення'}</MenuItem>
+          ) : null}
+          {combatTypes.map((combatType) => (
+            <MenuItem key={combatType.id} value={combatType.id}>
+              {combatType.name}
+            </MenuItem>
+          ))}
+        </TextField>
         <TextField
           label="Коментар"
           placeholder="Додаткова інформація про підрозділ"
@@ -403,7 +436,10 @@ export function UnitFormDrawer({
   open,
   suspended = false,
   unit,
+  initialName = '',
   devicesSectionEnabled,
+  hideNetworks = false,
+  canMergeDuplicates = true,
   submitting,
   error,
   orbitUnits,
@@ -418,6 +454,28 @@ export function UnitFormDrawer({
   editSection = 'all',
 }: Props) {
   const [form, setForm] = useState<UnitForm>(EMPTY_UNIT_FORM);
+  const [combatTypes, setCombatTypes] = useState<UnitCombatType[]>([]);
+  const [combatTypesLoading, setCombatTypesLoading] = useState(false);
+  const [combatTypesError, setCombatTypesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || editSection === 'orbit') return;
+    const controller = new AbortController();
+    setCombatTypesLoading(true);
+    setCombatTypesError(null);
+    void getUnitCombatTypes({ signal: controller.signal })
+      .then((response) => {
+        if (!controller.signal.aborted) setCombatTypes(response.combatTypes);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setCombatTypesError(formatUnitError(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCombatTypesLoading(false);
+      });
+    return () => controller.abort();
+  }, [open, editSection]);
+
   const [networkStep, setNetworkStep] = useState(false);
   const [skipNetworkCreation, setSkipNetworkCreation] = useState(false);
   const [locations, setLocations] = useState<string[]>([]);
@@ -447,7 +505,8 @@ export function UnitFormDrawer({
         previousSession.editSection !== editSection);
     sessionRef.current = { open, unitId, editSection };
     if (!isNewSession) return;
-    const initialForm = unit === null ? EMPTY_UNIT_FORM : unitToForm(unit);
+    const initialForm =
+      unit === null ? { ...EMPTY_UNIT_FORM, name: initialName || null } : unitToForm(unit);
     initialFormRef.current = initialForm;
     setForm(initialForm);
     setNetworkStep(false);
@@ -459,18 +518,19 @@ export function UnitFormDrawer({
     setSelectedDuplicateUnitIds(new Set());
     setCheckingDuplicates(false);
     setDuplicateCheckError(null);
-  }, [editSection, open, unit]);
+  }, [editSection, initialName, open, unit]);
 
   function continueFromDetails() {
     if (editing) {
       onSubmit({ unit: trimUnitForm(form), autoNetwork: undefined });
       return;
     }
-    if (!devicesSectionEnabled) {
+    if (!devicesSectionEnabled || hideNetworks) {
       void checkDuplicates({ unit: trimUnitForm(form), autoNetwork: undefined });
       return;
     }
-    setUnitMask(defaultUnitMasks(form));
+    const masks = defaultUnitMasks(form);
+    setUnitMask(uniqueTrimmed([...masks, form.name ?? '']));
     setNetworkStep(true);
   }
 
@@ -486,6 +546,10 @@ export function UnitFormDrawer({
   }
 
   async function checkDuplicates(value: UnitFormSubmit) {
+    if (!canMergeDuplicates) {
+      onSubmit(value);
+      return;
+    }
     setCheckingDuplicates(true);
     setDuplicateCheckError(null);
     try {
@@ -559,6 +623,7 @@ export function UnitFormDrawer({
       anchor="right"
       open={open && !suspended}
       onClose={busy ? undefined : requestClose}
+      onKeyDown={(event) => event.stopPropagation()}
       ModalProps={{ BackdropProps: { sx: (theme) => pageDrawerBackdropSx(theme) } }}
       slotProps={{
         paper: {
@@ -609,7 +674,7 @@ export function UnitFormDrawer({
             />
           ) : networkStep ? (
             <AutoNetworkFields
-              unitName={unitName(form)}
+              unitName={form.name?.trim() || unitName(form)}
               skipNetworkCreation={skipNetworkCreation}
               allowSkip
               locations={locations}
@@ -626,6 +691,9 @@ export function UnitFormDrawer({
                 editing={editing}
                 disabled={submitting || checkingDuplicates}
                 editSection={editSection}
+                combatTypes={combatTypes}
+                combatTypesLoading={combatTypesLoading}
+                combatTypeName={unit?.combatTypeName ?? null}
                 onChange={setForm}
               />
               {editing && editSection === 'all' ? (
@@ -641,6 +709,11 @@ export function UnitFormDrawer({
               ) : null}
             </>
           )}
+          {combatTypesError ? (
+            <PowerAlert severity="error">
+              Не вдалося завантажити види та роди ЗС: {combatTypesError}
+            </PowerAlert>
+          ) : null}
           {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
           {duplicateCheckError ? (
             <PowerAlert severity="error">
@@ -689,7 +762,7 @@ export function UnitFormDrawer({
           >
             {duplicateStep
               ? 'Створити'
-              : !editing && devicesSectionEnabled && !networkStep
+              : !editing && devicesSectionEnabled && !hideNetworks && !networkStep
                 ? 'Далі'
                 : editing
                   ? 'Зберегти'

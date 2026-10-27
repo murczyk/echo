@@ -23,6 +23,7 @@ export type MessageCardNavigationMenuItem = {
 
 export type MessageCardEtalonDisplayModel = {
   primaryKind: 'network' | 'location' | 'unit' | 'empty';
+  headerUnit?: string | null;
   displayValue: string;
   copyEtalonValue: string | null;
   copyLocationValue: string | null;
@@ -388,11 +389,13 @@ export function resolveMessageCardEtalonDisplayModel(
   const renderedNetworks = resolveMessageCardRenderedNetworks(msg.networkIds, options);
   const locationDisplayValue = normalizeLocationDisplayValue(msg.location);
   const etalonBindingValue = resolveEtalonBindingDisplayValue(msg, options);
+  const headerUnit = normalizeLabel(msg.unit) || null;
 
   if (renderedNetworks.length > 0) {
     const displayValue = renderedNetworks.map((network) => network.label).join('\n');
     return {
       primaryKind: 'network',
+      headerUnit,
       displayValue,
       copyEtalonValue: displayValue,
       copyLocationValue: null,
@@ -407,6 +410,7 @@ export function resolveMessageCardEtalonDisplayModel(
   if (etalonBindingValue.copyValue != null) {
     return {
       primaryKind: 'unit',
+      headerUnit,
       displayValue: etalonBindingValue.displayValue,
       copyEtalonValue: etalonBindingValue.copyValue,
       copyLocationValue: locationDisplayValue,
@@ -419,6 +423,7 @@ export function resolveMessageCardEtalonDisplayModel(
   if (locationDisplayValue != null) {
     return {
       primaryKind: 'location',
+      headerUnit,
       displayValue: locationDisplayValue,
       copyEtalonValue: null,
       copyLocationValue: locationDisplayValue,
@@ -430,10 +435,57 @@ export function resolveMessageCardEtalonDisplayModel(
 
   return {
     primaryKind: 'empty',
+    headerUnit,
     displayValue: NO_DATA_LABEL,
     copyEtalonValue: null,
     copyLocationValue: null,
     renderedNetworks,
+    showInlineLocationTooltip: false,
+    locationDisplayValue: null,
+  };
+}
+
+export function hideMessageCardNetworks(
+  displayModel: MessageCardEtalonDisplayModel,
+  unitValue: string | null | undefined,
+): MessageCardEtalonDisplayModel {
+  const unit = normalizeLabel(unitValue);
+  const locationDisplayValue = displayModel.locationDisplayValue;
+
+  if (unit !== '') {
+    return {
+      ...displayModel,
+      primaryKind: 'unit',
+      headerUnit: unit,
+      displayValue: unit,
+      copyEtalonValue: unit,
+      copyLocationValue: locationDisplayValue,
+      renderedNetworks: [],
+      showInlineLocationTooltip: false,
+    };
+  }
+
+  if (locationDisplayValue != null) {
+    return {
+      ...displayModel,
+      primaryKind: 'location',
+      headerUnit: unit || null,
+      displayValue: locationDisplayValue,
+      copyEtalonValue: null,
+      copyLocationValue: locationDisplayValue,
+      renderedNetworks: [],
+      showInlineLocationTooltip: false,
+    };
+  }
+
+  return {
+    ...displayModel,
+    primaryKind: 'empty',
+    headerUnit: unit || null,
+    displayValue: NO_DATA_LABEL,
+    copyEtalonValue: null,
+    copyLocationValue: null,
+    renderedNetworks: [],
     showInlineLocationTooltip: false,
     locationDisplayValue: null,
   };
@@ -475,55 +527,4 @@ export function buildMessageLinkFullUrl(
   const href = buildMessageLinkHref(msg, feature, id);
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   return `${origin}${href}`;
-}
-
-export function scrollToAndHighlightMessage(
-  targetElement: HTMLElement,
-  options: { scroll?: boolean; persistentHighlight?: boolean } = {},
-): () => void {
-  if (options.scroll !== false) {
-    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-
-  const cardRoot = (
-    targetElement.matches?.('[data-message-card-root]')
-      ? targetElement
-      : targetElement.querySelector?.('[data-message-card-root], .message-card-root') ||
-        targetElement.firstElementChild ||
-        targetElement
-  ) as HTMLElement;
-
-  const originalOutline = cardRoot.style.outline;
-  const originalOutlineColor = cardRoot.style.outlineColor;
-  const originalOutlineOffset = cardRoot.style.outlineOffset;
-  const originalTransition = cardRoot.style.transition;
-  let fadeTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let restoreTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let restored = false;
-
-  const restoreHighlight = () => {
-    if (restored) return;
-    restored = true;
-    if (fadeTimeoutId != null) clearTimeout(fadeTimeoutId);
-    if (restoreTimeoutId != null) clearTimeout(restoreTimeoutId);
-    cardRoot.style.outline = originalOutline;
-    cardRoot.style.outlineColor = originalOutlineColor;
-    cardRoot.style.outlineOffset = originalOutlineOffset;
-    cardRoot.style.transition = originalTransition;
-  };
-
-  cardRoot.style.transition = 'none';
-  cardRoot.style.outline = '2px solid var(--color-primary, #3b82f6)';
-  cardRoot.style.outlineOffset = '-2px';
-
-  if (!options.persistentHighlight) {
-    fadeTimeoutId = setTimeout(() => {
-      cardRoot.style.transition = 'outline-color 0.7s ease-out';
-      cardRoot.style.outlineColor = 'transparent';
-    }, 1000);
-
-    restoreTimeoutId = setTimeout(restoreHighlight, 1800);
-  }
-
-  return restoreHighlight;
 }
