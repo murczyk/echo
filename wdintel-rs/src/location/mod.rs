@@ -523,11 +523,15 @@ fn remove_blacklisted_location_words(
                 .contains(&word.as_str())
                 || crate::config::LOCATION_CONTEXT_WORDS
                     .contains(&word.as_str());
-            if is_context_word
-                && names.iter().any(|name| {
-                    name.start <= word.start() && word.end() <= name.end
-                })
-            {
+            let is_compound_name_word =
+                crate::config::LOCATION_STANDALONE_BLACKLIST_WORDS
+                    .contains(&word.as_str());
+            if names.iter().any(|name| {
+                name.start <= word.start()
+                    && word.end() <= name.end
+                    && (is_context_word
+                        || (is_compound_name_word && name.len() > word.len()))
+            }) {
                 word.as_str().to_string()
             } else {
                 " ".to_string()
@@ -1087,6 +1091,7 @@ fn collect_blacklist() -> Vec<&'static str> {
         "БАТАРЕЯ",
         "БАТАРЄЯ",
     ];
+    words.extend_from_slice(crate::config::LOCATION_STANDALONE_BLACKLIST_WORDS);
     words.extend_from_slice(crate::config::LOCATION_COUNTRY_NAMES);
     words.extend_from_slice(crate::config::LOCATION_CONTEXT_WORDS);
     words
@@ -1937,6 +1942,13 @@ mod tests {
             ),
             ("РФ/РБ/Украина/Россия/Беларусь", vec![]),
             ("роти", vec![]),
+            ("глибокий", vec![]),
+            ("малий", vec![]),
+            ("ГЛИБОКИЙ; МаЛиЙ; н.п. Вовчанськ", vec!["ВОВЧАНСЬК"]),
+            ("н.п. Малий Бурлук", vec!["МАЛИЙ БУРЛУК"]),
+            ("н.п. Малий Суходіл", vec!["МАЛИЙ СУХОДІЛ"]),
+            ("н.п. Малий-Прісинок", vec!["МАЛИЙ ПРІСИНОК"]),
+            ("н.п. Малий Керменчик", vec!["МАЛИЙ КЕРМЕНЧИК"]),
             ("н.п. Українка; н.п. Південне", vec!["ПІВДЕННЕ", "УКРАЇНКА"]),
             ("південні околиці Вільча", vec!["ВІЛЬЧА"]),
             (

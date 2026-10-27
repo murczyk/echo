@@ -2074,6 +2074,9 @@ pub async fn submit_upsert_inbox_item(
     parse_body_coordinates: bool,
     invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
+    crate::ai_settlement::worker::delete_job(txn, id)
+        .await
+        .c(h!())?;
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     let existing_message = m_existing.is_some();
     if let Some(existing) = m_existing {
@@ -2448,9 +2451,6 @@ async fn clear_body_derived_fields(
     )
     .await
     .c(h!())?;
-    crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
-        .await
-        .c(h!())?;
     crate::ai_position::worker::enqueue_message_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;
