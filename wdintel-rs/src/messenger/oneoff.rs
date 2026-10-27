@@ -150,8 +150,9 @@ pub async fn oneoff_backfill_image_thumbnails(
         if remaining == Some(0) {
             break;
         }
-        let batch_size = remaining
-            .map_or(ps.batch_size, |remaining| remaining.min(ps.batch_size));
+        let batch_size = remaining.map_or(ps.batch_size, |remaining| {
+            std::cmp::Ord::min(remaining, ps.batch_size)
+        });
         let mut query = signal_message_media::Entity::find()
             .filter(Expr::cust(
                 "lower(btrim(split_part(content_type, ';', 1))) LIKE 'image/%'",
