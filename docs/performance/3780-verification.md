@@ -35,8 +35,8 @@ hostname, Tailscale hostname and direct-IP API hostname.
    coverage, pending-ID overflow and relevant recent changes have different
    causes. Complete history does not make a recent-change fallback incorrect.
    Correlate request IDs across count-queue, source-admission, source-pool and
-   SQL stages; distinguish ten-second queue rejection from SQL execution and
-   whole-request expiry. During comparable multi-user traffic, verify useful
+   SQL stages; distinguish ordinary ten-second admission/pool rejection, historical count
+   operation/queue waits, SQL execution and whole-request expiry. During comparable multi-user traffic, verify useful
    completions for another user while one user loads several facets. Check
    active source backends after expiry and `cancel_sent` failures; a completed
    HTTP response does not prove database cancellation. Verify source pools keep
@@ -63,6 +63,42 @@ hostname, Tailscale hostname and direct-IP API hostname.
    reset statistics for a comparison. Bound diagnostic SQL with read-only
    transactions, statement/lock timeouts and modest native memory/thread caps;
    inspect plain plans before executing actual plans.
+
+## Historical-window verification
+
+Use the search SQL/HTTP settings documented in [search routing](3780-search.md#execution-budgets).
+Verify the upstream proxy read timeout exceeds the configured search HTTP budget.
+Check a search beyond the ordinary 60-second deadline and its eventual configured
+expiry; a non-search request must still expire at 60 seconds. Verify React counts
+and Duty search requests survive their former 35-/65-second limits and still
+cancel on filter changes. An HTTP/client expiry must stop the pinned source SQL.
+
+For counts, compare the complete period with exact sums and distinct-key unions
+from disjoint windows. Include null/empty frequencies, canonical units and the
+undefined-unit bucket, normalized callsigns, tags, groups with missing secret
+groups, and each facet's own-filter removal. Exercise midnight and sub-millisecond
+boundaries, exclusive Analysis and inclusive inbox upper bounds, empty windows,
+current/stale attachments, deleted/inaccessible messages and a failure after
+prior progress. A failure must never return a partial total.
+
+Check the parent indexed probe, quarterly probes and daily date-first fallback
+separately; report their combined request cost. Measure common short, selective
+and no-match terms with warm/cold-cache variation. Confirm date predicates
+constrain attachment membership and body primary-key work in daily queries.
+Verify the indexed alternative remains available for empty pages. Compare first
+and later pages, 0+20 and 9+11 merges, all three time bases and both directions.
+Run concurrent counts and pages for the same and different users; counts must
+release SQL capacity between windows and leave room for pages.
+
+For network activity, inspect the final native aggregation separately from its
+period-bounds stage. Every large input needs explicit ID bounds. Compare complete
+results after range merging, including Kyiv day boundaries, multiple groups,
+network/frequency validity, null interception/timestamp fallbacks and the latest
+activity timestamp. Inspect source daily candidate/link plans for full-history
+scans or temporary spills. Keep network reads on the ordinary 60-second deadline.
+Measure total traversal and concurrent aggregate memory as well as per-range
+cost. The local probes do not establish full HTTP latency or eliminate shared
+native memory failures; those require a separately approved rollout.
 
 ## Representative workload and correctness
 

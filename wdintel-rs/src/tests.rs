@@ -180,6 +180,10 @@ pub mod test {
     async fn runtime_pool_uses_guardrails_and_operator_pool_remains_uncapped() {
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
+            search_statement_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+            search_http_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
             statement_timeout_ms: 25,
             report_worker_statement_timeout_ms: 25,
             lock_timeout_ms: 15,
@@ -227,6 +231,10 @@ pub mod test {
     async fn runtime_pool_exposes_application_name_in_pg_stat_activity() {
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
+            search_statement_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+            search_http_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
             statement_timeout_ms: 100,
             report_worker_statement_timeout_ms: 200,
             lock_timeout_ms: 50,

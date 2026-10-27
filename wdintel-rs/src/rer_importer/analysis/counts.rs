@@ -42,6 +42,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
+    crate::read_query::set_search(&req.search);
     let queue = fallback_queue(CountRequestKey {
         pool_identity: postgres_pool_identity(&env.dbx),
         login,

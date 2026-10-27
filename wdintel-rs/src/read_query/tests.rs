@@ -229,3 +229,211 @@ async fn source_read_admission_keeps_capacity_for_another_login_3780() {
     }
     db.close().await.unwrap();
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn search_probe_timeout_preserves_snapshot_and_query_settings_3780() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let transaction = begin(&env.dbx).await.unwrap();
+    let before = transaction.query_one_raw(Statement::from_string(
+        DbBackend::Postgres, "SELECT current_setting('statement_timeout') AS timeout, txid_current_snapshot()::text AS snapshot",
+    )).await.unwrap().unwrap();
+    let rows = transaction
+        .probe(
+            Statement::from_string(DbBackend::Postgres, "SELECT pg_sleep(1)"),
+            10,
+        )
+        .await
+        .unwrap();
+    assert!(rows.is_none());
+    let rows = transaction
+        .probe(
+            Statement::from_string(
+                DbBackend::Postgres,
+                "SELECT 42::bigint AS value",
+            ),
+            1_000,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(rows[0].try_get::<i64>("", "value").unwrap(), 42);
+    let after = transaction.query_one_raw(Statement::from_string(
+        DbBackend::Postgres, "SELECT current_setting('statement_timeout') AS timeout, txid_current_snapshot()::text AS snapshot",
+    )).await.unwrap().unwrap();
+    for column in ["timeout", "snapshot"] {
+        assert_eq!(
+            before.try_get::<String>("", column).unwrap(),
+            after.try_get::<String>("", column).unwrap()
+        );
+    }
+    transaction.commit().await.unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn search_statement_budget_does_not_leak_to_ordinary_reads_3780() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let mut config = env.config.clone();
+    config.postgres_runtime = Some(PostgresRuntimeConfig {
+        statement_timeout_ms: 20,
+        search_statement_timeout_ms: 200,
+        search_http_timeout_ms: 1_000,
+        report_worker_statement_timeout_ms: 20,
+        lock_timeout_ms: 15,
+        idle_in_transaction_session_timeout_ms: 1_000,
+    });
+    let db = crate::new_pg_runtime_pool_from_config(
+        &config,
+        crate::PgRuntimePoolRole::Web,
+    )
+    .await
+    .unwrap();
+    scope(
+        "search-budget-3780".into(),
+        vec![pool_identity(&db)],
+        async {
+            configure_search_timeouts(SearchTimeouts {
+                statement_ms: 200,
+                http_ms: 1_000,
+            });
+            set_search(&Some("needle".into()));
+            connection(&db)
+                .query_one_raw(Statement::from_string(
+                    DbBackend::Postgres,
+                    "SELECT pg_sleep(0.05)",
+                ))
+                .await
+                .unwrap();
+        },
+    )
+    .await;
+    let setting = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT current_setting('statement_timeout') AS timeout",
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<String>("", "timeout")
+        .unwrap();
+    assert_eq!(setting, "20ms");
+    scope(
+        "ordinary-budget-3780".into(),
+        vec![pool_identity(&db)],
+        async {
+            let error = connection(&db)
+                .query_one_raw(Statement::from_string(
+                    DbBackend::Postgres,
+                    "SELECT pg_sleep(0.05)",
+                ))
+                .await
+                .unwrap_err();
+            assert!(is_statement_timeout(&anyhow::Error::new(error)));
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn historical_counts_leave_read_capacity_for_pages_3780() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let db = test_pool(&env, 4).await;
+    let login = uuid::Uuid::new_v4();
+    let available = SOURCE_READS.available_permits();
+    let mut counts = Vec::new();
+    for _ in 0..ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN {
+        let reader = db.clone();
+        counts.push(tokio::spawn(async move {
+            scope(
+                "count-lane-3780".into(),
+                vec![pool_identity(&reader)],
+                async {
+                    set_count_request();
+                    set_login(login);
+                    set_search(&Some("needle".into()));
+                    let _operation = acquire_count_operation().await.unwrap();
+                    connection(&reader)
+                        .query_one_raw(Statement::from_string(
+                            DbBackend::Postgres,
+                            "SELECT pg_sleep(30) /* count_lane_3780 */",
+                        ))
+                        .await
+                },
+            )
+            .await
+        }));
+    }
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let active = env.dbx.query_one_raw(Statement::from_string(DbBackend::Postgres,
+                "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE state='active' AND query LIKE 'SELECT pg_sleep(30) /* count_lane_3780 */%'",
+            )).await.unwrap().unwrap().try_get::<i64>("", "count").unwrap();
+            if active == ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN as i64 { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    scope(
+        "queued-count-3780".into(),
+        vec![pool_identity(&db)],
+        async {
+            set_login(login);
+            set_count_request();
+            set_search(&Some("needle".into()));
+            assert!(tokio::time::timeout(
+                Duration::from_millis(20),
+                acquire_count_operation()
+            )
+            .await
+            .is_err());
+        },
+    )
+    .await;
+    for search_count in [false, true] {
+        let result = tokio::time::timeout(
+            Duration::from_secs(1),
+            scope("other-read-3780".into(), vec![pool_identity(&db)], async {
+                set_login(if search_count {
+                    uuid::Uuid::new_v4()
+                } else {
+                    login
+                });
+                set_search(&Some("needle".into()));
+                if search_count {
+                    set_count_request();
+                }
+                let _operation = if search_count {
+                    Some(acquire_count_operation().await.unwrap())
+                } else {
+                    None
+                };
+                connection(&db)
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        "SELECT 42::bigint AS value",
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get::<i64>("", "value")
+                    .unwrap()
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, 42);
+    }
+    for count in counts {
+        count.abort();
+        let _ = count.await;
+    }
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while SOURCE_READS.available_permits() != available {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+}

@@ -805,6 +805,27 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesTotalLoading).toBe(false);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('keeps a source search count alive beyond the ordinary read deadline', async () => {
+    vi.useFakeTimers();
+    const selected = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(selected.promise);
+    const h = renderHook({ ...buildQueryState(), search: 'historical' });
+    harnesses.push(h);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    const signal = fetchInboxCountMock.mock.calls[0][1]?.signal;
+    await act(async () => vi.advanceTimersByTimeAsync(65_000));
+    expect(signal?.aborted).toBe(false);
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    expect(h.onError).not.toHaveBeenCalled();
+    await act(async () => {
+      selected.resolve({ quantity: 17, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.latest.messagesTotalCount).toBe(17);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+  });
+
   it('marks counts as loading synchronously when the date range changes', async () => {
     vi.useFakeTimers();
     const h = renderHook();

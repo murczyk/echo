@@ -8,6 +8,7 @@ import type {
   SignalProfileEntry,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
+import { searchRequestDeadlineMs } from '../../services/api/client';
 import {
   appendNewerItemsToFeed,
   appendWindowedMessageItems,
@@ -250,10 +251,11 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `before=${beforeIdNoninclusive}; generation=${requestGeneration}`,
         );
         try {
+          const req = runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive });
           const response = await withDutyFeedRequestDeadline(
-            DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
+            searchRequestDeadlineMs(req.search, DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS),
             (signal) =>
-              fetchInboxMessages(runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive }), {
+              fetchInboxMessages(req, {
                 signal,
               }),
           );
@@ -449,16 +451,13 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `since=${requestedSinceId}; loadedTail=${loadedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
         );
         try {
+          const req = runParams.buildReqForFeed(currentFeed, {
+            sinceIdNoninclusive: requestedSinceId,
+            nolimit: requestNolimit || undefined,
+          });
           const response = await withDutyFeedRequestDeadline(
-            DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
-            (signal) =>
-              fetchInboxMessages(
-                runParams.buildReqForFeed(currentFeed, {
-                  sinceIdNoninclusive: requestedSinceId,
-                  nolimit: requestNolimit || undefined,
-                }),
-                { signal },
-              ),
+            searchRequestDeadlineMs(req.search, DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS),
+            (signal) => fetchInboxMessages(req, { signal }),
           );
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const capturedFollowGeneration = operation.newerOptions.followGeneration;

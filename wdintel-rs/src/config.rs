@@ -1197,6 +1197,9 @@ pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
 pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_NETWORK_ACTIVITY_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_NETWORK_ACTIVITY_SOURCE_WINDOW_DAYS: i64 = 1;
+pub const ANALYTICS_NETWORK_ACTIVITY_OPERATION: &str = "network group activity";
 pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
 pub const ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE: i64 = 4_000_000;
 pub const ANALYTICS_INBOX_LATEST_PROBE_DAYS: i64 = 2;
@@ -1743,11 +1746,24 @@ pub const ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT: u32 = 16;
 pub const ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT: usize = 8;
 pub const ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS: u64 = 250;
 pub const ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS: i64 = 7;
+pub const ANALYSIS_SOURCE_SEARCH_WINDOW_MONTHS: u32 = 3;
+pub const ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 90_000;
+pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT: u64 = 600_000;
+pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX: u64 = 600_000;
+pub const ANALYSIS_SEARCH_INDEXED_PAGE_PROBE_TIMEOUT_MS: u64 = 250;
+pub const ANALYSIS_SEARCH_ORDERED_PAGE_PROBE_TIMEOUT_MS: u64 = 1_000;
 pub const ANALYSIS_SOURCE_SEARCH_SQL_HINT: &str =
     "/* echo_scoped_source_search */";
 pub const ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS: u64 = 10_000;
 pub const ANALYSIS_SOURCE_READ_MAX_CONCURRENT: usize = 8;
 pub const ANALYSIS_SOURCE_READ_MAX_PER_LOGIN: usize = 2;
+pub const ANALYSIS_SOURCE_COUNT_MAX_CONCURRENT: usize = 4;
+pub const ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN: usize = 2;
+pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT: usize = 4;
+pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN: usize = 2;
+pub const ANALYSIS_SOURCE_COUNT_PROBE_TIMEOUT_MS: u64 = 8_000;
+pub const ANALYSIS_SOURCE_COUNT_WINDOW_TIMEOUT_MS: u64 = 8_000;
+pub const ANALYSIS_SOURCE_COUNT_WINDOW_DAYS: i64 = 1;
 pub const ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYSIS_SOURCE_READ_QUEUE_ERROR: &str =
     "analysis source read admission exhausted";
@@ -2041,6 +2057,8 @@ pub struct ReplicaConfig {
 #[serde(try_from = "PostgresRuntimeConfigRaw")]
 pub struct PostgresRuntimeConfig {
     pub statement_timeout_ms: u64,
+    pub search_statement_timeout_ms: u64,
+    pub search_http_timeout_ms: u64,
     pub report_worker_statement_timeout_ms: u64,
     pub lock_timeout_ms: u64,
     pub idle_in_transaction_session_timeout_ms: u64,
@@ -2050,6 +2068,10 @@ pub struct PostgresRuntimeConfig {
 struct PostgresRuntimeConfigRaw {
     #[serde(default)]
     statement_timeout_ms: Option<u64>,
+    #[serde(default)]
+    search_statement_timeout_ms: Option<u64>,
+    #[serde(default)]
+    search_http_timeout_ms: Option<u64>,
     #[serde(default)]
     report_worker_statement_timeout_ms: Option<u64>,
     #[serde(default)]
@@ -2068,6 +2090,10 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
             statement_timeout_ms: config
                 .statement_timeout_ms
                 .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT),
+            search_statement_timeout_ms: config.search_statement_timeout_ms
+                .unwrap_or(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT),
+            search_http_timeout_ms: config.search_http_timeout_ms
+                .unwrap_or(ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT),
             report_worker_statement_timeout_ms: config
                 .report_worker_statement_timeout_ms
                 .unwrap_or(
@@ -2089,6 +2115,17 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
 
 impl PostgresRuntimeConfig {
     fn validate(&self) -> Result<(), String> {
+        validate_postgres_runtime_timeout(
+            "search_statement_timeout_ms",
+            self.search_statement_timeout_ms,
+        )?;
+        if self.search_http_timeout_ms <= self.search_statement_timeout_ms
+            || self.search_http_timeout_ms > ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX
+        {
+            return Err(format!(
+                "[postgres_runtime].search_http_timeout_ms must exceed search_statement_timeout_ms and be at most {ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX} milliseconds"
+            ));
+        }
         validate_postgres_runtime_timeout(
             "statement_timeout_ms",
             self.statement_timeout_ms,

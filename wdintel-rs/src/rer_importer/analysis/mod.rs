@@ -2163,6 +2163,7 @@ pub(crate) async fn require_analysis_device_filter_access(
     login: &Uuid,
     req: &AnalysisStatsReq,
 ) -> Result<(), AppError> {
+    crate::read_query::set_search(&req.search);
     if analysis_req_has_device_names(req) {
         crate::devices::access::require_message_devices(dbx, login)
             .await
@@ -9554,7 +9555,7 @@ where
     let queue_started = std::time::Instant::now();
     let _postgres_queue_guard = match postgres_queue {
         Some(queue) => Some(tokio::time::timeout(
-            std::time::Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
+            std::time::Duration::from_millis(crate::read_query::queue_timeout_ms()),
             queue.lock_owned(),
         ).await.map_err(|_| {
             warn!(target: "analytics_route", "request_id={} operation={operation:?} route=postgres stage=count_queue outcome=rejected reason=count_queue_timeout elapsed_ms={}", crate::read_query::request_id(), queue_started.elapsed().as_millis());
@@ -9563,7 +9564,15 @@ where
         None => None,
     };
     info!(target: "analytics_route", "request_id={} operation={operation:?} stage=count_queue outcome=success elapsed_ms={}", crate::read_query::request_id(), queue_started.elapsed().as_millis());
+    let _search_count_operation = if crate::read_query::is_search_count() {
+        Some(crate::read_query::acquire_count_operation().await.c(h!())?)
+    } else {
+        None
+    };
     let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
+        && !crate::read_query::is_search_count()
+        && !(operation == ANALYTICS_NETWORK_ACTIVITY_OPERATION
+            && crate::read_query::connection(&env.dbx).is_source_read())
     {
         Some(
             acquire_analytics_postgres_fallback_capacity(operation)
@@ -10063,9 +10072,21 @@ async fn query_count_stats_groups_postgres(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
+    let groups = if stats::source_count_windows(req, None).c(h!())?.is_some() {
+        let login = login_id_from_identity(user).c(h!())?;
+        stats::fetch_group_count_keys_in_source_windows(
+            req,
+            &login,
+            &env.dbx,
+            master_keys.clone(),
+        )
         .await
-        .context(h!())?;
+        .c(h!())?
+    } else {
+        stats::fetch_groups(req, user, env, master_keys.clone())
+            .await
+            .c(h!())?
+    };
     let groups = if should_include_missing_secret_groups(req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys)
             .await

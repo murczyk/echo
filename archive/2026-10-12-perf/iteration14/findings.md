@@ -5,8 +5,8 @@ Read-only investigation on `echo-pivnich` and its paired analytics host,
 10:24 deployment, and a recurrence at 10:55. Sanitized aggregates are in
 [measurements.json](measurements.json); raw SQL, search text, access keys,
 request IDs and logs remain private. No deployment or remote repair was performed
-by this investigation. The [root work log](../../../wip.md) records the separate
-local implementation and outstanding windowing work.
+by this investigation. The [archived progress](progress.md) records the subsequent local implementation
+and remaining operational verification.
 
 ## Result
 
@@ -210,7 +210,7 @@ refresh statistics, flush logs/caches, run health checks that write metadata,
 restart services or change limits/data. Active source SQL was truncated by
 `track_activity_query_size` and was not treated as a complete replayable query.
 
-## Work to prepare next
+## Follow-up identified during investigation
 
 - Inspect the final network aggregation's native/gateway plans and source
   fallback plan with representative parameters. Verify explicit bounds on
@@ -227,3 +227,8 @@ restart services or change limits/data. Active source SQL was truncated by
 - Validate proposed changes locally and prepare a concrete rollout separately.
   The user requested findings first and deferred handling the outage case;
   no new outage fix or remote mutation is included here.
+
+
+The subsequent implementation and read-only bounded-plan measurements are in
+[implementation.md](implementation.md). The observations above describe the
+incident before that local change; they do not claim it has been deployed.

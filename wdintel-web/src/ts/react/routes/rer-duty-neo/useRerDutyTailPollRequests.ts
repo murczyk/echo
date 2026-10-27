@@ -3,6 +3,7 @@ import type { MutableRefObject } from 'react';
 
 import type { InboxMessagesReq } from '../../../../Bindings';
 import { fetchInboxCount } from '../../services/api/inbox';
+import { searchRequestDeadlineMs } from '../../services/api/client';
 import type { MessageFeedState } from './utils';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import {
@@ -59,13 +60,13 @@ export function useRerDutyTailPollRequests(params: Params) {
       const finish = beginDutyScrollDebugActivity(feedId, 'tailCount', `tail=${tailId}`);
       let quantity: number;
       try {
+        const req = requestParams.buildReqForFeed(feed, {
+          sinceIdNoninclusive: tailId,
+          nolimit: true,
+        });
         ({ quantity } = await withDutyFeedRequestDeadline(
-          DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
-          (signal) =>
-            fetchInboxCount(
-              requestParams.buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
-              { signal },
-            ),
+          searchRequestDeadlineMs(req.search, DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS),
+          (signal) => fetchInboxCount(req, { signal }),
         ));
         finish(`ok; quantity=${quantity}; tail=${tailId}`);
       } catch (error) {

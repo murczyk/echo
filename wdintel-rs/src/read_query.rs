@@ -5,12 +5,13 @@ use sea_orm::{
 };
 use sqlx::{pool::PoolConnection, Connection, PgConnection, PgPool, Postgres};
 use std::{
+    cell::Cell,
     collections::HashMap,
     future::Future,
     sync::{Arc, Mutex, OnceLock, Weak},
     time::{Duration, Instant},
 };
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 
 #[cfg(test)]
 mod tests;
@@ -22,10 +23,30 @@ struct ReadContext {
     request_id: String,
     source_pools: Vec<usize>,
     login: OnceLock<uuid::Uuid>,
+    search: OnceLock<()>,
+    count_request: Cell<bool>,
+    timeouts: Cell<SearchTimeouts>,
+    deadline_changed: Arc<Notify>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SearchTimeouts {
+    pub(crate) statement_ms: u64,
+    pub(crate) http_ms: u64,
+}
+
+impl Default for SearchTimeouts {
+    fn default() -> Self {
+        Self {
+            statement_ms: ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+            http_ms: ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
+        }
+    }
 }
 
 tokio::task_local! {
     static READ_CONTEXT: ReadContext;
+    static STATEMENT_BUDGET_MS: u64;
 }
 
 static SOURCE_READS: once_cell::sync::Lazy<Arc<Semaphore>> =
@@ -33,6 +54,22 @@ static SOURCE_READS: once_cell::sync::Lazy<Arc<Semaphore>> =
         Arc::new(Semaphore::new(ANALYSIS_SOURCE_READ_MAX_CONCURRENT))
     });
 static LOGIN_READS: once_cell::sync::Lazy<
+    Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
+> = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+static COUNT_READS: once_cell::sync::Lazy<Arc<Semaphore>> =
+    once_cell::sync::Lazy::new(|| {
+        Arc::new(Semaphore::new(ANALYSIS_SOURCE_COUNT_MAX_CONCURRENT))
+    });
+static LOGIN_COUNT_READS: once_cell::sync::Lazy<
+    Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
+> = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+static COUNT_OPERATIONS: once_cell::sync::Lazy<Arc<Semaphore>> =
+    once_cell::sync::Lazy::new(|| {
+        Arc::new(Semaphore::new(
+            ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT,
+        ))
+    });
+static LOGIN_COUNT_OPERATIONS: once_cell::sync::Lazy<
     Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
 > = once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
 static LOGIN_OPERATIONS: once_cell::sync::Lazy<
@@ -53,6 +90,102 @@ pub(crate) fn set_login(login: uuid::Uuid) {
     let _ = READ_CONTEXT.try_with(|context| context.login.set(login));
 }
 
+pub(crate) fn configure_search_timeouts(timeouts: SearchTimeouts) {
+    let _ = READ_CONTEXT.try_with(|context| context.timeouts.set(timeouts));
+}
+
+pub(crate) fn set_count_request() {
+    let _ = READ_CONTEXT.try_with(|context| context.count_request.set(true));
+}
+
+pub(crate) fn is_search_count() -> bool {
+    READ_CONTEXT
+        .try_with(|context| {
+            context.count_request.get() && context.search.get().is_some()
+        })
+        .unwrap_or(false)
+}
+
+pub(crate) fn queue_timeout_ms() -> u64 {
+    if is_search_count() {
+        http_timeout_ms()
+    } else {
+        ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS
+    }
+}
+
+pub(crate) async fn with_statement_budget<T>(
+    timeout_ms: u64,
+    future: impl Future<Output = T>,
+) -> T {
+    STATEMENT_BUDGET_MS.scope(timeout_ms, future).await
+}
+
+pub(crate) async fn probe(
+    db: &DatabaseConnection,
+    statement: Statement,
+    timeout_ms: u64,
+) -> anyhow::Result<Option<Vec<QueryResult>>> {
+    let transaction = begin(db).await.c(h!())?;
+    let rows = transaction.probe(statement, timeout_ms).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(rows)
+}
+
+pub(crate) fn set_search(search: &Option<String>) {
+    if search
+        .as_deref()
+        .is_none_or(|search| search.trim().is_empty())
+    {
+        return;
+    }
+    let _ = READ_CONTEXT.try_with(|context| {
+        if context.search.set(()).is_ok() {
+            context.deadline_changed.notify_one();
+        }
+    });
+}
+
+pub(crate) fn http_timeout_ms() -> u64 {
+    READ_CONTEXT
+        .try_with(|context| {
+            if context.search.get().is_some() {
+                context.timeouts.get().http_ms
+            } else {
+                ANALYTICS_HTTP_READ_TIMEOUT_MS
+            }
+        })
+        .unwrap_or(ANALYTICS_HTTP_READ_TIMEOUT_MS)
+}
+
+fn search_statement_timeout_ms() -> Option<u64> {
+    READ_CONTEXT
+        .try_with(|context| {
+            context
+                .search
+                .get()
+                .map(|_| context.timeouts.get().statement_ms)
+        })
+        .ok()
+        .flatten()
+}
+
+pub(crate) async fn with_deadline<T>(
+    future: impl Future<Output = T>,
+) -> Result<T, ()> {
+    let started = tokio::time::Instant::now();
+    let changed = READ_CONTEXT.with(|context| context.deadline_changed.clone());
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            biased;
+            _ = changed.notified() => {},
+            result = &mut future => return Ok(result),
+            _ = tokio::time::sleep_until(started + Duration::from_millis(http_timeout_ms())) => return Err(()),
+        }
+    }
+}
+
 pub(crate) async fn scope<T>(
     request_id: String,
     source_pools: Vec<usize>,
@@ -64,6 +197,10 @@ pub(crate) async fn scope<T>(
                 request_id,
                 source_pools,
                 login: OnceLock::new(),
+                search: OnceLock::new(),
+                count_request: Cell::new(false),
+                timeouts: Cell::new(SearchTimeouts::default()),
+                deadline_changed: Arc::new(Notify::new()),
             },
             future,
         )
@@ -81,6 +218,7 @@ pub(crate) struct ReadConnection<'a> {
 fn login_reads(
     queues: &Mutex<HashMap<uuid::Uuid, Weak<Semaphore>>>,
     login: uuid::Uuid,
+    max_concurrent: usize,
 ) -> anyhow::Result<Arc<Semaphore>> {
     let mut queues = queues
         .lock()
@@ -93,22 +231,32 @@ fn login_reads(
         return Err(DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into()))
             .c(h!());
     }
-    let queue = Arc::new(Semaphore::new(ANALYSIS_SOURCE_READ_MAX_PER_LOGIN));
+    let queue = Arc::new(Semaphore::new(max_concurrent));
     queues.insert(login, Arc::downgrade(&queue));
     Ok(queue)
 }
 
-async fn acquire_reads(
-) -> anyhow::Result<(Option<OwnedSemaphorePermit>, OwnedSemaphorePermit)> {
+struct ReadPermits {
+    _count: Option<OwnedSemaphorePermit>,
+    _login: Option<OwnedSemaphorePermit>,
+    _global: OwnedSemaphorePermit,
+}
+
+async fn acquire_reads() -> anyhow::Result<ReadPermits> {
     let started = Instant::now();
     let login = READ_CONTEXT
         .try_with(|context| context.login.get().copied())
         .ok()
         .flatten();
     let acquire = async {
+        let (queues, max) = if is_search_count() {
+            (&*LOGIN_COUNT_READS, ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN)
+        } else {
+            (&*LOGIN_READS, ANALYSIS_SOURCE_READ_MAX_PER_LOGIN)
+        };
         let login = match login {
             Some(login) => Some(
-                login_reads(&LOGIN_READS, login)
+                login_reads(queues, login, max)
                     .c(h!())?
                     .acquire_owned()
                     .await
@@ -116,11 +264,20 @@ async fn acquire_reads(
             ),
             None => None,
         };
+        let count = if is_search_count() {
+            Some(COUNT_READS.clone().acquire_owned().await.c(h!())?)
+        } else {
+            None
+        };
         let global = SOURCE_READS.clone().acquire_owned().await.c(h!())?;
-        anyhow::Ok((login, global))
+        anyhow::Ok(ReadPermits {
+            _count: count,
+            _login: login,
+            _global: global,
+        })
     };
     let result = tokio::time::timeout(
-        Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
+        Duration::from_millis(queue_timeout_ms()),
         acquire,
     )
     .await;
@@ -142,15 +299,64 @@ pub(crate) async fn acquire_operation(
     let Some(login) = login else { return Ok(None) };
     tokio::time::timeout(
         Duration::from_millis(ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS),
-        login_reads(&LOGIN_OPERATIONS, login)
-            .c(h!())?
-            .acquire_owned(),
+        login_reads(
+            &LOGIN_OPERATIONS,
+            login,
+            ANALYSIS_SOURCE_READ_MAX_PER_LOGIN,
+        )
+        .c(h!())?
+        .acquire_owned(),
     )
     .await
     .map_err(|_| DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into()))
     .c(h!())?
     .map(Some)
     .c(h!())
+}
+
+pub(crate) struct CountOperationPermits {
+    _login: Option<OwnedSemaphorePermit>,
+    _global: OwnedSemaphorePermit,
+}
+
+pub(crate) async fn acquire_count_operation(
+) -> anyhow::Result<CountOperationPermits> {
+    let started = Instant::now();
+    let login = READ_CONTEXT
+        .try_with(|context| context.login.get().copied())
+        .ok()
+        .flatten();
+    let result = tokio::time::timeout(
+        Duration::from_millis(queue_timeout_ms()),
+        async {
+            let login = match login {
+                Some(login) => Some(
+                    login_reads(
+                        &LOGIN_COUNT_OPERATIONS,
+                        login,
+                        ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN,
+                    )
+                    .c(h!())?
+                    .acquire_owned()
+                    .await
+                    .c(h!())?,
+                ),
+                None => None,
+            };
+            let global =
+                COUNT_OPERATIONS.clone().acquire_owned().await.c(h!())?;
+            anyhow::Ok(CountOperationPermits {
+                _login: login,
+                _global: global,
+            })
+        },
+    )
+    .await;
+    log::info!(target: "analytics_route", "request_id={} stage=count_operation_admission outcome={} elapsed_ms={}", request_id(), if matches!(result, Ok(Ok(_))) { "success" } else { "rejected" }, started.elapsed().as_millis());
+    result
+        .map_err(|_| DbErr::Custom(ANALYSIS_SOURCE_READ_QUEUE_ERROR.into()))
+        .c(h!())?
+        .c(h!())
 }
 
 #[derive(Clone, Copy)]
@@ -165,7 +371,7 @@ struct ReadLease {
     backend: Option<BackendIdentity>,
     request_id: String,
     started: Instant,
-    permits: Option<(Option<OwnedSemaphorePermit>, OwnedSemaphorePermit)>,
+    permits: Option<ReadPermits>,
 }
 
 impl Drop for ReadLease {
@@ -282,6 +488,47 @@ async fn read_lease(
 }
 
 impl ReadTransaction {
+    pub(crate) async fn probe(
+        &self,
+        statement: Statement,
+        timeout_ms: u64,
+    ) -> anyhow::Result<Option<Vec<QueryResult>>> {
+        let mut lease = self.lease.lock().await;
+        let connection = &mut **lease.connection.as_mut().c(h!())?;
+        sqlx::query(sqlx::AssertSqlSafe("SAVEPOINT echo_search_probe"))
+            .execute(&mut *connection)
+            .await
+            .map_err(query_error)
+            .c(h!())?;
+        let started = Instant::now();
+        let result = read_rows_inner(
+            connection,
+            statement,
+            false,
+            true,
+            Some(timeout_ms),
+        )
+        .await;
+        sqlx::query(sqlx::AssertSqlSafe(
+            "ROLLBACK TO SAVEPOINT echo_search_probe",
+        ))
+        .execute(&mut *connection)
+        .await
+        .map_err(query_error)
+        .c(h!())?;
+        sqlx::query(sqlx::AssertSqlSafe("RELEASE SAVEPOINT echo_search_probe"))
+            .execute(connection)
+            .await
+            .map_err(query_error)
+            .c(h!())?;
+        log::info!(target: "analytics_route", "request_id={} stage=source_probe outcome={} elapsed_ms={} budget_ms={timeout_ms}", request_id(), if result.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+        match result {
+            Ok(rows) => Ok(Some(rows)),
+            Err(error) if is_statement_timeout(&error) => Ok(None),
+            Err(error) => Err(error).c(h!()),
+        }
+    }
+
     pub(crate) async fn commit(self) -> anyhow::Result<()> {
         let mut lease = self.lease.into_inner();
         sqlx::query(sqlx::AssertSqlSafe("COMMIT"))
@@ -373,7 +620,7 @@ async fn read_rows(
 ) -> anyhow::Result<Vec<QueryResult>> {
     let started = Instant::now();
     let result =
-        read_rows_inner(connection, statement, one, in_transaction).await;
+        read_rows_inner(connection, statement, one, in_transaction, None).await;
     log::info!(target: "analytics_route", "request_id={} stage=source_sql outcome={} elapsed_ms={}", request_id(), if result.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
     result
 }
@@ -383,16 +630,37 @@ async fn read_rows_inner(
     statement: Statement,
     one: bool,
     in_transaction: bool,
+    timeout_ms: Option<u64>,
 ) -> anyhow::Result<Vec<QueryResult>> {
     let scoped = statement.sql.contains(ANALYSIS_SOURCE_SEARCH_SQL_HINT);
+    let requested_timeout = timeout_ms
+        .or_else(|| STATEMENT_BUDGET_MS.try_with(|timeout| *timeout).ok());
+    let search_timeout =
+        match (requested_timeout, search_statement_timeout_ms()) {
+            (Some(requested), Some(configured)) => {
+                Some(std::cmp::min(requested, configured))
+            }
+            (requested, configured) => requested.or(configured),
+        };
+    let local_settings = scoped || search_timeout.is_some();
+    if local_settings && !in_transaction {
+        sqlx::query(sqlx::AssertSqlSafe("BEGIN READ ONLY"))
+            .execute(&mut *connection)
+            .await
+            .map_err(query_error)
+            .c(h!())?;
+    }
+    if let Some(timeout) = search_timeout {
+        sqlx::query(sqlx::AssertSqlSafe(
+            "SELECT set_config('statement_timeout',$1,true)",
+        ))
+        .bind(timeout.to_string())
+        .execute(&mut *connection)
+        .await
+        .map_err(query_error)
+        .c(h!())?;
+    }
     if scoped {
-        if !in_transaction {
-            sqlx::query(sqlx::AssertSqlSafe("BEGIN READ ONLY"))
-                .execute(&mut *connection)
-                .await
-                .map_err(query_error)
-                .c(h!())?;
-        }
         sqlx::query(sqlx::AssertSqlSafe("SET LOCAL jit=off"))
             .execute(&mut *connection)
             .await
@@ -415,7 +683,7 @@ async fn read_rows_inner(
         query.fetch_all(&mut *connection).await
     };
     let rows = rows.map_err(query_error).c(h!())?;
-    if scoped && !in_transaction {
+    if local_settings && !in_transaction {
         sqlx::query(sqlx::AssertSqlSafe("COMMIT"))
             .execute(connection)
             .await
@@ -425,8 +693,18 @@ async fn read_rows_inner(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+fn is_statement_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|error| {
+        let Some(DbErr::Query(RuntimeErr::SqlxError(error))) = error.downcast_ref::<DbErr>() else {
+            return false;
+        };
+        matches!(error.as_ref(), sqlx::Error::Database(error)
+            if error.code().as_deref() == Some("57014") && error.message().contains("statement timeout"))
+    })
+}
+
 impl ReadConnection<'_> {
-    fn is_source_read(&self) -> bool {
+    pub(crate) fn is_source_read(&self) -> bool {
         READ_CONTEXT
             .try_with(|context| {
                 context.source_pools.contains(&pool_identity(self.db))

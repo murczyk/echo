@@ -53,6 +53,7 @@ import type { DeviceAccess } from './useRerDutyPageSettings';
 import { useRerDutyTailPollRequests } from './useRerDutyTailPollRequests';
 import { useRerDutyPollingCoordinator } from './useRerDutyPollingCoordinator';
 import { useRerDutyCountSchedule } from './useRerDutyCountSchedule';
+import { searchRequestDeadlineMs } from '../../services/api/client';
 import { useRerDutyPollingFeedWork } from './useRerDutyPollingFeedWork';
 import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
@@ -669,13 +670,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
+          const req = buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true });
           ({ quantity } = await withDutyFeedRequestDeadline(
-            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+            searchRequestDeadlineMs(req.search, DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS),
             (signal) =>
-              fetchInboxCount(
-                buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
-                { signal, headers: { 'x-echo-request-trigger': trigger } },
-              ),
+              fetchInboxCount(req, { signal, headers: { 'x-echo-request-trigger': trigger } }),
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
         } catch (error) {

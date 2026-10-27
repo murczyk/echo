@@ -12,6 +12,15 @@ export type RequestOptions = {
   signal?: AbortSignal;
 };
 
+const SEARCH_READ_REQUEST_DEADLINE_MS = 605_000;
+
+export function searchRequestDeadlineMs(
+  search: string | null | undefined,
+  ordinaryMs: number,
+): number {
+  return search?.trim() ? SEARCH_READ_REQUEST_DEADLINE_MS : ordinaryMs;
+}
+
 export class HttpRequestError extends Error {
   status: number;
   retryAfterMs?: number;

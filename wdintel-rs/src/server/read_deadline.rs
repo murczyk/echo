@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::config::ANALYTICS_HTTP_READ_TIMEOUT_MS;
 use crate::error::AppError;
 use actix_web::{
@@ -6,6 +7,7 @@ use actix_web::{
     middleware::Next,
     Error, HttpMessage,
 };
+#[cfg(test)]
 use std::time::Duration;
 
 fn has_read_deadline(path: &str) -> bool {
@@ -30,6 +32,9 @@ fn has_read_deadline(path: &str) -> bool {
                 | "/api/sigint/freqs-for-period"
                 | "/api/sigint/freqs/daily"
                 | "/api/sigint/freqs/alt-unit"
+                | "/api/sigint/network-group-activity"
+                | "/api/sigint/network-group-activity-one"
+                | "/api/sigint/network-group-activity-summary"
         )
 }
 
@@ -56,19 +61,29 @@ pub(super) async fn enforce<B: MessageBody>(
             pools
         })
         .unwrap_or_default();
+    let search_timeouts = req
+        .app_data::<actix_web::web::Data<crate::types::Env>>()
+        .and_then(|env| env.config.postgres_runtime.as_ref())
+        .map(|config| crate::read_query::SearchTimeouts {
+            statement_ms: config.search_statement_timeout_ms,
+            http_ms: config.search_http_timeout_ms,
+        })
+        .unwrap_or_default();
     crate::read_query::scope(request_id, source_pools, async move {
+    crate::read_query::configure_search_timeouts(search_timeouts);
+    if path.ends_with("/count") || path.ends_with("get-inbox-count") {
+        crate::read_query::set_count_request();
+    }
     let started = tokio::time::Instant::now();
-    match tokio::time::timeout(
-        Duration::from_millis(ANALYTICS_HTTP_READ_TIMEOUT_MS),
-        next.call(req),
-    )
+    match crate::read_query::with_deadline(next.call(req))
     .await
     {
         Ok(response) => response,
         Err(_) => {
+            let deadline_ms = crate::read_query::http_timeout_ms();
             log::warn!(
                 target: "analytics_route",
-                "request_id={} path={} outcome=error reason=request_deadline elapsed_ms={} deadline_ms={ANALYTICS_HTTP_READ_TIMEOUT_MS}",
+                "request_id={} path={} outcome=error reason=request_deadline elapsed_ms={} deadline_ms={deadline_ms}",
                 crate::read_query::request_id(), path,
                 started.elapsed().as_millis(),
             );
@@ -86,6 +101,62 @@ pub(super) async fn enforce<B: MessageBody>(
 mod tests {
     use super::*;
     use actix_web::{test, web, App, HttpResponse};
+
+    #[actix_web::test]
+    async fn search_reads_extend_the_deadline_but_still_expire_3780() {
+        let app = test::init_service(
+            App::new()
+                .wrap(actix_web::middleware::from_fn(enforce))
+                .route(
+                    "/api/rer/analysis/stats/messages/count",
+                    web::post().to(|| async {
+                        crate::read_query::set_search(&Some("needle".into()));
+                        tokio::time::sleep(Duration::from_millis(
+                            ANALYTICS_HTTP_READ_TIMEOUT_MS + 1,
+                        ))
+                        .await;
+                        HttpResponse::Ok().finish()
+                    }),
+                )
+                .route(
+                    "/api/rer-importer/get-inbox",
+                    web::post().to(|| async {
+                        crate::read_query::set_search(&Some("needle".into()));
+                        std::future::pending::<HttpResponse>().await
+                    }),
+                ),
+        )
+        .await;
+        tokio::time::pause();
+        let response = test::try_call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/rer/analysis/stats/messages/count")
+                .to_request(),
+        );
+        tokio::pin!(response);
+        assert!(futures::poll!(&mut response).is_pending());
+        tokio::time::advance(Duration::from_millis(
+            ANALYTICS_HTTP_READ_TIMEOUT_MS,
+        ))
+        .await;
+        assert!(futures::poll!(&mut response).is_pending());
+        tokio::time::advance(Duration::from_millis(2)).await;
+        assert_eq!(response.await.unwrap().status(), 200);
+        let response = test::try_call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/rer-importer/get-inbox")
+                .to_request(),
+        );
+        tokio::pin!(response);
+        assert!(futures::poll!(&mut response).is_pending());
+        tokio::time::advance(Duration::from_millis(
+            crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
+        ))
+        .await;
+        assert_eq!(response.await.unwrap_err().error_response().status(), 503);
+    }
 
     // #3780: a queued read must expire even when it never executes SQL.
     #[actix_web::test]
