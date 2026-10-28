@@ -67,7 +67,7 @@ pub(crate) async fn validate_selection<C: ConnectionTrait>(
         }
     );
     anyhow::ensure!(
-        fallback.is_none() || primary.is_some(),
+        !enabled || fallback.is_none() || primary.is_some(),
         crate::error::AppError::BL {
             msg: "Оберіть основний ШІ движок перед резервним".to_string()
         }

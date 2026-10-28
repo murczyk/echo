@@ -194,6 +194,21 @@ async fn progress_is_transactional_and_fallback_selection_is_distinct_and_preser
         settings.worker_fallback_ai_engine_id,
         Some(fallback.engine.id)
     );
+    let settings =
+        crate::ai_callsign::save_worker_settings(&env.dbx, false, None, None)
+            .await
+            .unwrap();
+    assert!(!settings.worker_enabled);
+    assert_eq!(settings.worker_ai_engine_id, None);
+    assert_eq!(
+        settings.worker_fallback_ai_engine_id,
+        Some(fallback.engine.id)
+    );
+    assert!(crate::ai_callsign::save_worker_settings(
+        &env.dbx, true, None, None
+    )
+    .await
+    .is_err());
     let item = mk_sigint_inbox_item(&env.dbx, Default::default())
         .await
         .unwrap();
