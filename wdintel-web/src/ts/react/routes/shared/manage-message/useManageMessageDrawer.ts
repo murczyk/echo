@@ -36,10 +36,7 @@ import { useRecentValues } from './useRecentValues';
 import { useMessageUnitOptions } from './useMessageUnitOptions';
 import { useMessageUnitSelection } from './useMessageUnitSelection';
 import { useMessageNetworkUnits } from './useMessageNetworkUnits';
-import {
-  compatibleMessageUnitSelection,
-  isMessageUnitSelectionValid,
-} from './message-unit-selection';
+import { isMessageUnitSelectionValid } from './message-unit-selection';
 import { isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 import {
@@ -401,14 +398,7 @@ export function useManageMessageDrawer({
     defaultValues: EMPTY_FORM_VALUES,
   });
 
-  const { control, formState, getValues, setValue, reset, resetField, watch } = methods;
-  const explicitUnitSelectionRef = useRef(false);
-  useEffect(() => {
-    const subscription = watch((_values, { name, type }) => {
-      if (name === 'unit' && type === 'change') explicitUnitSelectionRef.current = true;
-    });
-    return () => subscription.unsubscribe();
-  }, [watch]);
+  const { control, formState, getValues, setValue, reset, resetField } = methods;
   const formValues = useWatch({ control });
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
@@ -821,7 +811,6 @@ export function useManageMessageDrawer({
   useEffect(() => {
     if (!formReady) return;
     unitInteractedRef.current = false;
-    explicitUnitSelectionRef.current = false;
     setDeviceNameInput('');
     setPostInput('');
     setNetworkNameInput('');
@@ -908,16 +897,12 @@ export function useManageMessageDrawer({
         const payload = payloads[0];
         if (isReportCreateMode && payload) {
           const copiedValues = mapDirectSubmitCopyToForm(payload);
-          explicitUnitSelectionRef.current = Boolean(
-            compatibleMessageUnitSelection(copiedValues.unit, copiedValues.unitSelection),
-          );
           reset({
             ...copiedValues,
             full_body: '',
             text: '',
-            comment: '',
             signalGroupMasterKey: '',
-            deviceName: '',
+            deviceName: cyberEchoEnabled ? (reportSource.message.deviceName ?? '') : '',
           });
           setReportCopyLoadedSourceId(reportSource.id);
         }
@@ -941,6 +926,7 @@ export function useManageMessageDrawer({
     reportCopyRetryAttempt,
     reportParentIdsKey,
     reportSource?.id,
+    cyberEchoEnabled,
     reset,
   ]);
 
@@ -1017,15 +1003,10 @@ export function useManageMessageDrawer({
   }, [formReady, isEditMode, editTarget?.id, tagsMap]);
 
   useEffect(() => {
-    if (!formReady || hideNetworks) return;
-    const source = isEditMode
-      ? editTarget
-      : isReportCreateMode && reportCopyLoaded
-        ? reportSource
-        : null;
+    if (!formReady || hideNetworks || !isEditMode || isReportMode) return;
+    const source = editTarget;
     if (!source) return;
     if (selectedNetworkRef.current) return;
-    if (!isEditMode && explicitUnitSelectionRef.current) return;
     let active = true;
     const initialNetworkSelectionRevision = networkSelectionRevisionRef.current;
     const initialNetworkName = getValues('network_name');
@@ -1035,8 +1016,7 @@ export function useManageMessageDrawer({
       networkSelectionRevisionRef.current === initialNetworkSelectionRevision &&
       getValues('network_name') === initialNetworkName &&
       getValues('unit') === initialUnitName &&
-      !getValues('unitNetworkSelection') &&
-      (isEditMode || !explicitUnitSelectionRef.current);
+      !getValues('unitNetworkSelection');
     const hydrateNetwork = async () => {
       const linkedNetworkIds = source.message.networkIds ?? [];
       const freeformName = source.message.networkName?.trim();
@@ -1076,10 +1056,8 @@ export function useManageMessageDrawer({
     formReady,
     hideNetworks,
     isEditMode,
+    isReportMode,
     editTarget?.id,
-    isReportCreateMode,
-    reportCopyLoaded,
-    reportSource?.id,
     getValues,
     setSelectedNetwork,
     setValue,
