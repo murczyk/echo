@@ -79,6 +79,7 @@ export function AdminAiCallsignsPage() {
   const [testResults, setTestResults] = useState<AiCallsignParseResultItem[]>([]);
   const [workerSettings, setWorkerSettings] = useState<AiCallsignWorkerSettingsItem>({
     enabled: false,
+    fallbackAiEngineId: null,
     aiEngineId: null,
   });
   const [tab, setTab] = useState<AiCallsignTab>('prompt');

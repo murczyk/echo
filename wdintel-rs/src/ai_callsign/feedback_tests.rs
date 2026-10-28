@@ -387,6 +387,7 @@ fn numeric_template_callsigns_are_kept_independently_of_ai() {
 #[tokio::test]
 #[serial]
 async fn completion_rejects_stale_body_and_cancelled_run_and_counts_once() {
+    use super::worker::CompletionSource;
     use sea_orm::EntityTrait;
     let env = cleanup().await.unwrap();
     let (actor, id) = seed(&env.dbx, &[]).await;
@@ -403,7 +404,7 @@ async fn completion_rejects_stale_body_and_cancelled_run_and_counts_once() {
         id,
         "stale body",
         vec![],
-        None
+        CompletionSource::Queue(chrono::Utc::now().naive_utc())
     )
     .await
     .is_err());
@@ -418,7 +419,7 @@ async fn completion_rejects_stale_body_and_cancelled_run_and_counts_once() {
         id,
         &body,
         vec![],
-        Some(run_id)
+        CompletionSource::Reparse(run_id)
     )
     .await
     .unwrap());
@@ -434,7 +435,7 @@ async fn completion_rejects_stale_body_and_cancelled_run_and_counts_once() {
         id,
         &body,
         vec![],
-        Some(run_id),
+        CompletionSource::Reparse(run_id),
     )
     .await
     .unwrap();
@@ -444,7 +445,7 @@ async fn completion_rejects_stale_body_and_cancelled_run_and_counts_once() {
         id,
         &body,
         vec![],
-        Some(run_id),
+        CompletionSource::Reparse(run_id),
     )
     .await
     .unwrap();

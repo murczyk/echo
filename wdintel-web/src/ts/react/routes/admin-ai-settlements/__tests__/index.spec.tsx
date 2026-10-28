@@ -74,7 +74,13 @@ beforeEach(() => {
         results: [],
       },
     ],
-    worker: { enabled: false, aiEngineId: 'engine-a', groupsExcept: false, groupMasterKeys: [] },
+    worker: {
+      enabled: false,
+      fallbackAiEngineId: null,
+      aiEngineId: 'engine-a',
+      groupsExcept: false,
+      groupMasterKeys: [],
+    },
     groups: [],
   });
   mocks.test.mockResolvedValue({
@@ -251,6 +257,7 @@ describe('AdminAiSettlementsPage', () => {
     expect(mocks.saveWorker).toHaveBeenCalledWith({
       enabled: true,
       aiEngineId: 'engine-a',
+      fallbackAiEngineId: null,
       groupsExcept: false,
       groupMasterKeys: [],
     });

@@ -34,7 +34,7 @@ async function installPositions(page: Page) {
     prompt: 'Знайди позиції',
     promptOverridden: false,
     engines: [],
-    worker: { enabled: false, aiEngineId: null },
+    worker: { enabled: false, fallbackAiEngineId: null, aiEngineId: null },
     pendingJobs: 0,
     openFeedback: 0,
   };

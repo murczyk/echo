@@ -25,7 +25,8 @@ pub(super) async fn enrich(
                 );
         }
         Ok(Err(error)) => {
-            warn!("direct submit AI callsign parsing failed: {error:#}");
+            let error = crate::ai_worker::bounded_error(&format!("{error:#}"));
+            warn!("direct submit AI callsign parsing failed: {error}");
             parsed.ai_callsign_warning = Some(
                 "Не вдалося розпізнати позивні за допомогою ШІ. Застосовано звичайний парсинг. Повідомлення можна зберегти."
                     .to_string(),
@@ -51,12 +52,11 @@ async fn parse(
     else {
         return Ok(None);
     };
-    let callsigns = crate::ai_callsign::parse_with_feedback(
+    let callsigns = crate::ai_callsign::worker::parse_with_config(
         &env.ai_engine_client,
         &env.dbx,
         &env.rq,
-        &config.ai_engine,
-        &config.prompt,
+        &config,
         body,
         is_aviation_group,
     )

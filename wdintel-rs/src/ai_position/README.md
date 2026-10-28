@@ -187,3 +187,14 @@ A saved prompt overrides it until it is reset to the standard one.
 
 The tables are excluded from analytics replication because they may hold
 private-group points.
+
+## Worker reliability and monitoring
+
+The admin worker settings select a primary AI engine and an optional fallback.
+See [AI queue reliability](../ai_worker/README.md) for deadlines, failure and
+progress semantics, compatibility, and deployment requirements.
+
+Queue health is published in `POST /api/monitoring` under `ai.position`.
+Future recurring troubleshooting queries must publish their useful results
+there and extend Echo Sergeant's checks and README, following the
+[monitoring contract](../server/README.md).
