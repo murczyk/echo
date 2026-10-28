@@ -1042,8 +1042,13 @@ it from the repository.
 Table creation does not require that explicit command. The source timer
 compares all current non-excluded PostgreSQL tables with the publication and a
 fingerprint recorded after the last complete reconciliation. A mismatch runs
-the same locked, coordinated operation. The bgworker merely requests the
-oneshot after migrations and never waits for PeerDB or ClickHouse. If the
+manifest-authorized repairs for already-published tables before the same
+coordinated operation. The repair subprocess inherits the source lock, so it
+does not wait for its parent. This lets the background reconciler resolve
+schema drift before strict gateway checks, even when it acquires the lock
+before the deployment verifier. Repair failures preserve the recorded
+fingerprint and stop before table-selection changes. The bgworker merely
+requests the oneshot after migrations and never waits for PeerDB or ClickHouse. If the
 analytics container is unavailable, Echo starts normally and analytical
 requests fall back to PostgreSQL; the timer retries every minute. A failed
 reconciliation does not update the fingerprint, so it cannot be mistaken for
