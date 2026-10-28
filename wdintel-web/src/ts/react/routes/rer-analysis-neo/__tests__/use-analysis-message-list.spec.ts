@@ -1034,7 +1034,7 @@ describe('useAnalysisMessageList pagination', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3689
-  it('allows scroll pagination after a page button supersedes a slow edge request', async () => {
+  it('#3780 aborts a slow edge request when a page button supersedes it', async () => {
     const h = renderHook();
     harnesses.push(h);
     act(() => h.latest.setMessages(page(60)));
@@ -1044,9 +1044,12 @@ describe('useAnalysisMessageList pagination', () => {
     act(() => {
       staleLoad = h.latest.loadMoreMessages();
     });
+    const signal = fetchInboxMessagesMock.mock.calls.at(-1)?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
 
     fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(40)));
     await act(async () => h.latest.loadNextPage());
+    expect(signal?.aborted).toBe(true);
     expect(h.latest.messages).toEqual(page(40));
 
     fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(20)));

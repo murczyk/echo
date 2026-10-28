@@ -23,6 +23,8 @@ export function useRerDutyInitialLoadTrigger(params: Params) {
   const loadRef = useRef(params.loadFeedInitialMessages);
   loadRef.current = params.loadFeedInitialMessages;
 
+  useEffect(() => () => startedKeysRef.current.clear(), []);
+
   useEffect(() => {
     if (!params.deviceAccessResolved || (params.hasShortState && !params.shortStateReady)) return;
     const needingLoad = params.messageFeeds.filter(

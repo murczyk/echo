@@ -51,6 +51,7 @@ export type NewerLoadResult = {
 };
 
 type DirectionalOperation = {
+  controller: AbortController;
   direction: 'older' | 'newer';
   promise: Promise<void>;
   resolve: () => void;
@@ -151,6 +152,7 @@ function createOperation(
     };
   });
   return {
+    controller: new AbortController(),
     direction,
     promise,
     resolve,
@@ -258,7 +260,9 @@ export function useRerDutyDirectionalLoads(params: Params) {
               fetchInboxMessages(req, {
                 signal,
               }),
+            operation.controller.signal,
           );
+          if (operation.controller.signal.aborted) return;
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
@@ -328,6 +332,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
+          if (operation.controller.signal.aborted) return;
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
@@ -422,6 +427,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             (candidate) => candidate.id === feedId,
           );
           return Boolean(
+            !operation.controller.signal.aborted &&
             latestFeed &&
             runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
             feedNewerSinceId(latestFeed) === requestedSinceId &&
@@ -458,6 +464,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           const response = await withDutyFeedRequestDeadline(
             searchRequestDeadlineMs(req.search, DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS),
             (signal) => fetchInboxMessages(req, { signal }),
+            operation.controller.signal,
           );
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const capturedFollowGeneration = operation.newerOptions.followGeneration;
@@ -761,11 +768,17 @@ export function useRerDutyDirectionalLoads(params: Params) {
 
   const invalidateFeedLoads = useCallback((feedId: string) => {
     const lane = lanesRef.current[feedId];
+    delete lanesRef.current[feedId];
     lane?.queued.forEach((operation) => operation.resolve());
     lane?.active?.resolve();
-    delete lanesRef.current[feedId];
+    lane?.active?.controller.abort();
     invalidatedLoadingFeedIdsRef.current.add(feedId);
   }, []);
+
+  useLayoutEffect(
+    () => () => Object.keys(lanesRef.current).forEach(invalidateFeedLoads),
+    [invalidateFeedLoads],
+  );
 
   const removeFeedLoads = useCallback(
     (feedId: string) => {

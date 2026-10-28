@@ -69,6 +69,12 @@ count limits instead of holding an operation slot for their entire traversal.
 Windowed network fallbacks likewise rely on statement admission and release
 capacity between days. Count coordination is keyed by operation, pool, login and filters: identical
 requests queue while unrelated facets can progress. Limits are process-local.
+Ordinary fallbacks caused by configured analytics failures,
+freshness/coverage/revalidation failures, open circuits and query-policy source
+routes use operation admission. An unconfigured
+analytics stack relies on SQL admission. Capacity/fairness regressions live in
+`wdintel-rs/src/read_query/tests.rs` and
+`wdintel-rs/src/rer_importer/analysis/tests.rs`.
 
 Each wrapped source query pins its connection and backend PID/start time.
 Dropping a read sends a cancellation through an independent connection with
@@ -142,7 +148,8 @@ have a default 90-second statement budget and a ten-minute total HTTP budget,
 covering all windows, admission and count queues together. Local SQL settings
 are restored before pooled reuse. Cancellation still pins and cleans up the
 active source connection. React Analysis counts and Duty search requests allow
-605 seconds; their ordinary 35-/65-second deadlines remain unchanged.
+605 seconds; their ordinary 35-/65-second deadlines remain unchanged. Filter
+reloads, feed removal and unmounting abort pending Duty page/count requests.
 
 Optional settings in `config.toml` are backward compatible:
 
@@ -156,6 +163,13 @@ The HTTP budget must exceed the search statement budget and cannot exceed
 600,000 ms. Probe/window limits can shorten SQL budgets. Existing statement,
 lock, idle-transaction and worker settings keep their separate meanings. The
 search policy applies when `[postgres_runtime]` is absent as well.
+
+After approval naming the target, set the API nginx server's
+`proxy_read_timeout 605s;`, validate with `sudo nginx -t`, then apply with
+`sudo systemctl reload nginx`. This leaves five seconds beyond the maximum
+backend search budget for its timeout response. Other upstream proxies need
+at least the same allowance. These configuration changes require separate
+approval under `AGENTS.md`.
 
 ### Analytical literal search
 
@@ -238,8 +252,8 @@ allow analytics. Results/counts are not merged between databases.
 Initial tracking and freshness windows exceeding the ledger's 24-hour retention
 force source fallback. The old singleton `attachment_search_change` remains
 maintained for backend rollback compatibility. After observing changes, the extract
-worker removes at most 500 entries older than 24 hours plus the 60-second request
-deadline every minute; pending changes are never pruned. The extra interval
+worker removes at most 500 entries older than 24 hours plus the maximum ten-minute
+search request deadline every minute; pending changes are never pruned. The extra interval
 protects active requests using the maximum freshness window. Locked tuples are
 deleted directly, keeping cleanup seeks bounded even with a large expired backlog.
 Both tracking tables stay excluded from CDC.

@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 
 import type { InboxMessagesReq } from '../../../../Bindings';
@@ -35,6 +35,14 @@ export function useRerDutyTailPollRequests(params: Params) {
     Record<string, Promise<ConfirmedTailPreview | null>>
   >({});
   const tailPreviewGenerationByFeedIdRef = useRef<Record<string, number>>({});
+  const controllersByFeedIdRef = useRef<Record<string, AbortController>>({});
+
+  useEffect(
+    () => () => {
+      Object.values(controllersByFeedIdRef.current).forEach((controller) => controller.abort());
+    },
+    [],
+  );
 
   const getActiveTailCount = useCallback(
     (feedId: string) => tailCountRequestPromiseByFeedIdRef.current[feedId],
@@ -46,6 +54,8 @@ export function useRerDutyTailPollRequests(params: Params) {
       (tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0) + 1;
     delete tailCountRequestPromiseByFeedIdRef.current[feedId];
     delete tailPreviewPromiseByFeedIdRef.current[feedId];
+    controllersByFeedIdRef.current[feedId]?.abort();
+    delete controllersByFeedIdRef.current[feedId];
   }, []);
 
   const requestValidatedTailCount = useCallback((feedId: string, tailId: number) => {
@@ -56,6 +66,8 @@ export function useRerDutyTailPollRequests(params: Params) {
     if (!feed || feed.loading || feed.items.at(-1)?.[0] !== tailId) return Promise.resolve(null);
     const requestGeneration = requestParams.getFeedLoadGeneration(feedId);
     const requestSignature = requestParams.getFeedCountSignature(feed);
+    const controller = new AbortController();
+    controllersByFeedIdRef.current[feedId] = controller;
     const requestPromise = (async () => {
       const finish = beginDutyScrollDebugActivity(feedId, 'tailCount', `tail=${tailId}`);
       let quantity: number;
@@ -67,16 +79,19 @@ export function useRerDutyTailPollRequests(params: Params) {
         ({ quantity } = await withDutyFeedRequestDeadline(
           searchRequestDeadlineMs(req.search, DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS),
           (signal) => fetchInboxCount(req, { signal }),
+          controller.signal,
         ));
         finish(`ok; quantity=${quantity}; tail=${tailId}`);
       } catch (error) {
         finish(`error; tail=${tailId}; ${error instanceof Error ? error.message : String(error)}`);
+        if (controller.signal.aborted) return null;
         throw error;
       }
       const currentFeed = requestParams.messageFeedsRef.current.find(
         (candidate) => candidate.id === feedId,
       );
       if (
+        controller.signal.aborted ||
         !currentFeed ||
         currentFeed.loading ||
         requestParams.getFeedLoadGeneration(feedId) !== requestGeneration ||
@@ -94,6 +109,7 @@ export function useRerDutyTailPollRequests(params: Params) {
       .finally(() => {
         if (tailCountRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
           delete tailCountRequestPromiseByFeedIdRef.current[feedId];
+          delete controllersByFeedIdRef.current[feedId];
         }
       })
       .catch(() => {});

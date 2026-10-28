@@ -776,7 +776,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(2);
   });
 
-  it('cancels an unresolved count cycle when the duty hook unmounts', async () => {
+  it('#3780 aborts an unresolved count when the duty hook unmounts', async () => {
     await mountLoadedFeed();
     await startPoll();
     hoisted.beginDutyNotificationPollCycle.mockClear();
@@ -789,7 +789,11 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     const pendingCount = deferred<{ quantity: number; firstElementTs: number | null }>(
       'unmounted count',
     );
-    hoisted.fetchInboxCount.mockReturnValueOnce(pendingCount.promise);
+    let signal: AbortSignal | undefined;
+    hoisted.fetchInboxCount.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+      signal = options?.signal;
+      return pendingCount.promise;
+    });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -798,6 +802,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     await act(async () => {
       root.unmount();
     });
+    expect(signal?.aborted).toBe(true);
     pendingCount.resolve({ quantity: 1, firstElementTs: null });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -1614,7 +1619,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
   });
 
-  it('ignores a stale in-flight count response after filter reload', async () => {
+  it('#3780 aborts a stale in-flight count after filter reload', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -1642,7 +1647,11 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     const countResponse = deferred<{ quantity: number; firstElementTs: number | null }>(
       'countResponse',
     );
-    hoisted.fetchInboxCount.mockReturnValueOnce(countResponse.promise);
+    let signal: AbortSignal | undefined;
+    hoisted.fetchInboxCount.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+      signal = options?.signal;
+      return countResponse.promise;
+    });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -1662,6 +1671,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     await act(async () => {
       apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
     });
+    expect(signal?.aborted).toBe(true);
     await act(async () => {
       await flushMicrotasks();
     });

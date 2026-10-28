@@ -221,19 +221,24 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
     });
 
-    it('ignores an older-load failure after a filter reload invalidates the request', async () => {
+    it('#3780 aborts an older search after a filter reload invalidates the request', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
       };
       const older = deferred<InboxMessagesRsp>('older');
       const reload = deferred<InboxMessagesRsp>('reload');
       hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 40));
-      hoisted.fetchInboxMessages.mockImplementationOnce(() => older.promise);
+      let signal: AbortSignal | undefined;
+      hoisted.fetchInboxMessages.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+        signal = options?.signal;
+        return older.promise;
+      });
       hoisted.fetchInboxMessages.mockImplementationOnce(() => reload.promise);
       await act(async () => root.render(<TestHarness apiRef={apiRef} />));
       await act(async () => flushMicrotasks());
 
       const olderPromise = apiRef.current!.loadFeedOlderMessages('mf-0');
+      expect(signal?.aborted).toBe(false);
       await act(async () => {
         apiRef.current!.applyFilter('mf-0', {
           ...emptyFilter(),
@@ -241,6 +246,7 @@ describe('useRerDutyFeedState — directional loading and races', () => {
         });
         await flushMicrotasks();
       });
+      expect(signal?.aborted).toBe(true);
       older.reject(new Error('stale older failure'));
       await act(async () => {
         await olderPromise;

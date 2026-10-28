@@ -31,9 +31,13 @@ mod cyber_roles_migration_tests;
 mod session_tests;
 
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
-    let identity = user.id().map_err(|_| AppError::Unauthenticated)?;
-    let login =
-        Uuid::parse_str(&identity).map_err(|_| AppError::Unauthenticated)?;
+    let identity = user
+        .id()
+        .map_err(|_| AppError::Unauthenticated)
+        .context(h!())?;
+    let login = Uuid::parse_str(&identity)
+        .map_err(|_| AppError::Unauthenticated)
+        .context(h!())?;
     crate::read_query::set_login(login);
     Ok(login)
 }

@@ -2108,40 +2108,48 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
                     POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
                 ),
         };
-        config.validate()?;
-        Ok(config)
+        config
+            .validate()
+            .c(h!())
+            .map_err(|error| format!("{error:#}"))
+            .map(|()| config)
     }
 }
 
 impl PostgresRuntimeConfig {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> anyhow::Result<()> {
         validate_postgres_runtime_timeout(
             "search_statement_timeout_ms",
             self.search_statement_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         if self.search_http_timeout_ms <= self.search_statement_timeout_ms
             || self.search_http_timeout_ms > ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX
         {
-            return Err(format!(
+            anyhow::bail!(
                 "[postgres_runtime].search_http_timeout_ms must exceed search_statement_timeout_ms and be at most {ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX} milliseconds"
-            ));
+            );
         }
         validate_postgres_runtime_timeout(
             "statement_timeout_ms",
             self.statement_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         validate_postgres_runtime_timeout(
             "report_worker_statement_timeout_ms",
             self.report_worker_statement_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         validate_postgres_runtime_timeout(
             "lock_timeout_ms",
             self.lock_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         validate_postgres_runtime_timeout(
             "idle_in_transaction_session_timeout_ms",
             self.idle_in_transaction_session_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         Ok(())
     }
 }
@@ -2149,11 +2157,11 @@ impl PostgresRuntimeConfig {
 fn validate_postgres_runtime_timeout(
     name: &str,
     value: u64,
-) -> std::result::Result<(), String> {
+) -> anyhow::Result<()> {
     if !(1..=POSTGRES_RUNTIME_TIMEOUT_MS_MAX).contains(&value) {
-        return Err(format!(
+        anyhow::bail!(
             "[postgres_runtime].{name} must be between 1 and {POSTGRES_RUNTIME_TIMEOUT_MS_MAX} milliseconds"
-        ));
+        );
     }
     Ok(())
 }
@@ -2699,6 +2707,18 @@ lock_timeout_ms = 2147483648
             r#"
 [postgres_runtime]
 report_worker_statement_timeout_ms = 2147483648
+"#,
+            r#"
+[postgres_runtime]
+search_statement_timeout_ms = 0
+"#,
+            r#"
+[postgres_runtime]
+search_http_timeout_ms = 600001
+"#,
+            r#"
+[postgres_runtime]
+search_http_timeout_ms = 90000
 "#,
         ] {
             let error = toml::from_str::<TestPostgresRuntimeSection>(input)

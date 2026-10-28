@@ -11231,27 +11231,6 @@ fn analysis_split_count_failure_opens_the_circuit_for_later_dimensions() {
     assert!(analytics_retry_attempt(&inbox).is_some());
 }
 
-#[test]
-fn fallback_capacity_limits_source_search_and_incident_routes_3780() {
-    for reason in [
-        "query_policy",
-        "analytics_error",
-        "analytics_timeout",
-        "analytics_saturated",
-        "analytics_unhealthy",
-        "analytics_unavailable",
-        "attachment_history_incomplete",
-        "candidate_ordering_incomplete",
-        "candidate_revalidation_incomplete",
-        "circuit_open",
-        "postgres_tail_error",
-        "revalidation_error",
-    ] {
-        assert!(analytics_fallback_needs_capacity(reason));
-    }
-    assert!(!analytics_fallback_needs_capacity("unconfigured"));
-}
-
 #[tokio::test]
 async fn count_stats_analytics_timeout_retries_postgres() {
     let analytics_query = std::future::pending::<Result<&str, AppError>>();

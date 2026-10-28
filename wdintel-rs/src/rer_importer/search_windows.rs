@@ -491,6 +491,88 @@ mod tests {
                 }
             }
         }
+        assert_adaptive_count_reconciliation(
+            &env.dbx,
+            &allowed.master_key,
+            period,
+        )
+        .await;
+    }
+
+    fn slow_indexed_probe(
+        window: SearchWindow,
+        mut statement: Statement,
+    ) -> Statement {
+        if window.till - window.since > Duration::days(1) {
+            statement.sql = format!(
+                "WITH probe_delay AS MATERIALIZED (SELECT pg_sleep(1)) SELECT result.* FROM ({}) result CROSS JOIN probe_delay",
+                statement.sql
+            );
+        }
+        statement
+    }
+
+    async fn assert_adaptive_count_reconciliation(
+        db: &DatabaseConnection,
+        allowed: &str,
+        period: SearchWindow,
+    ) {
+        let since = period.since.checked_sub_months(Months::new(4)).unwrap();
+        crate::read_query::scope(
+            "adaptive-count-reconciliation-3780".into(),
+            vec![crate::read_query::pool_identity(db)],
+            async {
+                crate::read_query::set_search(&Some("Береза".into()));
+                crate::read_query::configure_search_timeouts(
+                    crate::read_query::SearchTimeouts {
+                        statement_ms: 100,
+                        http_ms: 10_000,
+                    },
+                );
+                for descending in [false, true] {
+                    let windows = || {
+                        SearchWindows::for_search(
+                            &Some("Береза".into()),
+                            since,
+                            period.till,
+                            descending,
+                        )
+                        .unwrap()
+                    };
+                    let build = |window, keys| {
+                        Ok(slow_indexed_probe(
+                            window,
+                            daily_count_query(
+                                window,
+                                allowed,
+                                InboxMessagesSortBy::IMSDatetime,
+                                AnalysisSearchMode::Exact,
+                                keys,
+                            )
+                            .c(h!())?,
+                        ))
+                    };
+                    assert_eq!(
+                        sum(db, windows(), |window| build(window, false))
+                            .await
+                            .unwrap(),
+                        3
+                    );
+                    assert_eq!(
+                        keys(db, windows(), |window| build(window, true))
+                            .await
+                            .unwrap(),
+                        HashSet::from([String::new(), "3780.1".to_string()])
+                    );
+                    assert!(exists(db, windows(), |window| build(
+                        window, true
+                    ))
+                    .await
+                    .unwrap());
+                }
+            },
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -507,16 +589,51 @@ mod tests {
         };
         let mut completed = 0;
         let build = |window: SearchWindow| {
-            std::future::ready(Ok(Statement::from_sql_and_values(
+            std::future::ready(anyhow::Ok(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 "SELECT 42::bigint / $1::bigint AS count",
-                [if window.since == since { 0i64 } else { 1 }.into()],
+                [if window.since == since
+                    && window.till - window.since <= Duration::days(1)
+                {
+                    0i64
+                } else {
+                    1
+                }
+                .into()],
             )))
         };
-        let result = read_daily(&env.dbx, period, true, &build, &mut |_| {
-            completed += 1;
-            Ok(false)
-        })
+        let result = crate::read_query::scope(
+            "failed-adaptive-count-3780".into(),
+            vec![crate::read_query::pool_identity(&env.dbx)],
+            async {
+                crate::read_query::set_search(&Some("needle".into()));
+                crate::read_query::configure_search_timeouts(
+                    crate::read_query::SearchTimeouts {
+                        statement_ms: 100,
+                        http_ms: 10_000,
+                    },
+                );
+                read(
+                    &env.dbx,
+                    SearchWindows {
+                        remaining: period,
+                        descending: true,
+                        split: false,
+                    },
+                    |window| async move {
+                        Ok(slow_indexed_probe(
+                            window,
+                            build(window).await.c(h!())?,
+                        ))
+                    },
+                    |_| {
+                        completed += 1;
+                        Ok(false)
+                    },
+                )
+                .await
+            },
+        )
         .await;
         assert!(result.is_err());
         assert_eq!(completed, 1);
