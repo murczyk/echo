@@ -41,6 +41,9 @@ pub mod task;
 pub mod types;
 pub mod util;
 
+#[cfg(test)]
+mod callsign_candidates_tests;
+
 pub(crate) struct EtalonkaProgress {
     units: ProgressBar,
     networks: ProgressBar,
