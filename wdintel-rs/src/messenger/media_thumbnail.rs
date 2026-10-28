@@ -522,6 +522,9 @@ async fn recover_missing_thumbnail_locked(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> Result<(), AppError> {
+    if thumbnail_source_is_active(media.id) {
+        return Ok(());
+    }
     let Some(media) = signal_message_media::Entity::find_by_id(media.id)
         .one(&env.dbx)
         .await
@@ -1894,6 +1897,9 @@ async fn process_thumbnail_source(
     }
     let operation = ThumbnailOperation::new(media_id);
     let _operation_guard = operation.lock().await;
+    if thumbnail_source_is_active(media_id) {
+        return;
+    }
     match generate_staged_thumbnail_locked(env, media_id, &source_path).await {
         Ok(()) => {
             retries.remove(&media_id);
@@ -1940,6 +1946,9 @@ async fn process_thumbnail_source_reference(
     }
     let operation = ThumbnailOperation::new(media_id);
     let _operation_guard = operation.lock().await;
+    if thumbnail_source_is_active(media_id) {
+        return;
+    }
     match generate_referenced_thumbnail_locked(env, media_id, &reference_path)
         .await
     {
@@ -2637,6 +2646,9 @@ async fn schedule_thumbnail_recovery_if_needed(
     env: &actix_web::web::Data<Env>,
     media: &signal_message_media::Model,
 ) -> Result<ThumbnailGenerationStatus, AppError> {
+    if thumbnail_source_is_active(media.id) {
+        return Ok(ThumbnailGenerationStatus::Pending);
+    }
     if let Some(failures) = thumbnail_recovery_terminal_failures(media.id) {
         return Ok(ThumbnailGenerationStatus::Failed(failures));
     }
