@@ -25,7 +25,8 @@ pub(super) async fn enrich(
                 );
         }
         Ok(Err(error)) => {
-            warn!("direct submit AI callsign parsing failed: {error:#}");
+            let error = crate::ai_worker::bounded_error(&format!("{error:#}"));
+            warn!("direct submit AI callsign parsing failed: {error}");
             parsed.ai_callsign_warning = Some(
                 "Не вдалося розпізнати позивні за допомогою ШІ. Застосовано звичайний парсинг. Повідомлення можна зберегти."
                     .to_string(),

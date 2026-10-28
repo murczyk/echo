@@ -178,7 +178,7 @@ pub(crate) async fn record_failure<C: ConnectionTrait>(
     Ok(())
 }
 
-fn bounded_error(error: &str) -> String {
+pub(crate) fn bounded_error(error: &str) -> String {
     error
         .chars()
         .take(crate::config::AI_WORKER_MAX_ERROR_CHARS)
