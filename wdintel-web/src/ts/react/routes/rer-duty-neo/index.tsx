@@ -697,9 +697,7 @@ export function RerDutyNeoPage({
   const anyFeedInitialLoading = messageFeeds.some(
     (feed) => feed.loading && feed.items.length === 0,
   );
-  const anyFeedReloading = messageFeeds.some((feed) => feed.loading && feed.items.length > 0);
   const isInitialLoading = !hasCompletedInitialLoad && anyFeedInitialLoading;
-  const showLoadingBackdrop = hasCompletedInitialLoad && anyFeedReloading;
   useEffect(() => startDutyNeoDocumentTitleTracking(), []);
   useEffect(() => {
     setDutyNeoDocumentTitleUnreadCount(dutyTabUnreadTotal);
@@ -759,7 +757,6 @@ export function RerDutyNeoPage({
                     messageFeeds={messageFeeds}
                     narrowScreen={narrowScreen}
                     onSelectFeed={setActiveFeedId}
-                    showLoadingBackdrop={showLoadingBackdrop}
                     editorOpen={editorOpen}
                     editorEmbeddedOpen={editorEmbeddedOpen}
                   />
