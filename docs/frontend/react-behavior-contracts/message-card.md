@@ -275,6 +275,7 @@ that point. Positions without parseable coordinates remain textual. Regression:
 
 - **Behavior ID:** `react-message-card-authorization`
 - **Expected observable result:** write and delete permissions remain independent; viewer cards retain permitted downloads without mutation controls, and Cyber group exclusion does not disclose post exclusion data.
+- Duty and Analysis show the message-card delete action only with `DeleteMsg` access (including inherited Admin/Full access). Duty deletion requires confirmation; cancellation preserves the message. Browser regression: `wdintel-web/tests/e2e/rer-duty-message-delete.spec.ts` ([#3894](https://github.com/echoua/echo/issues/3894)).
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568), [#3569](https://github.com/echoua/echo/issues/3569)
 
