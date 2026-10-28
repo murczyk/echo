@@ -50,6 +50,7 @@ pub use super::ai_transcript_analysis_job::Entity as AiTranscriptAnalysisJob;
 pub use super::ai_transcript_analysis_settings::Entity as AiTranscriptAnalysisSettings;
 pub use super::ai_transcript_analysis_test_message::Entity as AiTranscriptAnalysisTestMessage;
 pub use super::ai_transcript_analysis_test_result::Entity as AiTranscriptAnalysisTestResult;
+pub use super::ai_worker_progress::Entity as AiWorkerProgress;
 pub use super::alert::Entity as Alert;
 pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;

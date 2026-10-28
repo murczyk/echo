@@ -9,7 +9,9 @@ import {
   savedFiltersList,
 } from '../../services/api/inbox';
 import { fetchServerInfo } from '../../services/api/server-info';
+import { fetchAnalysisLocations } from '../../services/api/analysis';
 import { useSigintGroupCatalog } from '../../hooks/use-sigint-group-catalog';
+import { buildDutyLocationsStatsReq, sortDutyLocations } from './duty-location-filter';
 
 export type { GroupCatalogError } from '../../hooks/use-sigint-group-catalog';
 
@@ -28,7 +30,10 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
+  const [locationsList, setLocationsList] = useState<string[]>([]);
+  const [locationsLoading, setLocationsLoading] = useState(false);
   const mountedRef = useRef(true);
+  const locationsRequestGenerationRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -89,6 +94,22 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     }
   }, [radioFeaturesAllowed]);
 
+  /** Rejects only for the latest request while mounted; stale results resolve silently. */
+  const reloadLocations = useCallback(async () => {
+    const generation = ++locationsRequestGenerationRef.current;
+    const isCurrent = () =>
+      mountedRef.current && generation === locationsRequestGenerationRef.current;
+    setLocationsLoading(true);
+    try {
+      const rsp = await fetchAnalysisLocations(buildDutyLocationsStatsReq(Date.now()));
+      if (isCurrent()) setLocationsList(sortDutyLocations(rsp.locations ?? []));
+    } catch (error) {
+      if (isCurrent()) throw error;
+    } finally {
+      if (isCurrent()) setLocationsLoading(false);
+    }
+  }, []);
+
   const pruneSavedFilterUiState = useCallback((feedId: string) => {
     setSelectedSavedIdByFeedId((prev) => {
       if (!(feedId in prev)) return prev;
@@ -126,6 +147,9 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     pruneSavedFilterUiState,
     reloadFreqsLoading,
     reloadLatestFrequencies,
+    locationsList,
+    locationsLoading,
+    reloadLocations,
     featureStrictNetworks,
   };
 }

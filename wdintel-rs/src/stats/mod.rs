@@ -5246,6 +5246,10 @@ mod tests {
 
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
+            search_statement_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+            search_http_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
             statement_timeout_ms: POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT,
             report_worker_statement_timeout_ms:
                 POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT,

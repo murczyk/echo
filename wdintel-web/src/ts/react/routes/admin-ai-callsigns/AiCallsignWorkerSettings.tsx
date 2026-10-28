@@ -5,14 +5,13 @@ import {
   Checkbox,
   CircularProgress,
   FormControlLabel,
-  MenuItem,
   Stack,
-  TextField,
   Typography,
 } from '@mui/material';
 import { useEffect, useState } from 'react';
 
 import type { AiCallsignEngineItem, AiCallsignWorkerSettingsItem } from '../../../../Bindings';
+import { AiWorkerEngineSelect } from '../../components/AiWorkerEngineSelect';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
@@ -33,6 +32,7 @@ export function AiCallsignWorkerSettings({
 }) {
   const [enabled, setEnabled] = useState(settings.enabled);
   const [aiEngineId, setAiEngineId] = useState(settings.aiEngineId ?? '');
+  const [fallbackAiEngineId, setFallbackAiEngineId] = useState(settings.fallbackAiEngineId ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { notify } = usePowerSnackbar();
@@ -40,6 +40,7 @@ export function AiCallsignWorkerSettings({
   useEffect(() => {
     setEnabled(settings.enabled);
     setAiEngineId(settings.aiEngineId ?? '');
+    setFallbackAiEngineId(settings.fallbackAiEngineId ?? '');
   }, [settings]);
 
   async function save() {
@@ -53,6 +54,7 @@ export function AiCallsignWorkerSettings({
       const saved = await saveAiCallsignWorkerSettings({
         enabled,
         aiEngineId: aiEngineId || null,
+        fallbackAiEngineId: fallbackAiEngineId || null,
       });
       onSaved(saved);
       notify({ severity: 'success', message: 'Налаштування воркера збережено.' });
@@ -95,24 +97,17 @@ export function AiCallsignWorkerSettings({
             label="Воркер що парсить позивні через ШІ"
           />
 
-          <TextField
-            select
-            fullWidth
+          <AiWorkerEngineSelect
+            engines={engines}
+            primaryId={aiEngineId}
+            fallbackId={fallbackAiEngineId}
             required={enabled}
-            disabled={saving || engines.length === 0}
-            label="ШІ движок"
-            value={aiEngineId}
-            onChange={(event) => setAiEngineId(event.target.value)}
-          >
-            <MenuItem value="">
-              <em>Не вибрано</em>
-            </MenuItem>
-            {engines.map((engine) => (
-              <MenuItem key={engine.id} value={engine.id}>
-                {engine.name} · {engine.modelName}
-              </MenuItem>
-            ))}
-          </TextField>
+            disabled={saving}
+            onChange={(primaryId, fallbackId) => {
+              setAiEngineId(primaryId);
+              setFallbackAiEngineId(fallbackId);
+            }}
+          />
 
           <PowerButton
             type="button"

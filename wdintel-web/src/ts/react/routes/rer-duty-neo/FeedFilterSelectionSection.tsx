@@ -1,4 +1,12 @@
-import { Box, ToggleButton, ToggleButtonGroup, TextField, Typography } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import {
+  Box,
+  ToggleButton,
+  ToggleButtonGroup,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRankedFilterOptions } from '../../utils/search-filter';
@@ -9,6 +17,7 @@ type FeedFilterSelectionMode = 'include' | 'exclude';
 
 export type FeedFilterSelectionSectionProps<T> = {
   title: string;
+  titleTooltip?: string;
   mode: FeedFilterSelectionMode;
   onModeChange: (mode: FeedFilterSelectionMode) => void;
   value: readonly T[];
@@ -33,6 +42,7 @@ export type FeedFilterSelectionSectionProps<T> = {
   keepOpenOnSelect?: boolean;
   preserveInputOnSelect?: boolean;
   onInputChange?: (value: string) => void;
+  onOpen?: () => void;
   bulkPaste?: boolean;
   bulkPasteOptions?: readonly T[];
   bulkPasteSeparators?: string[];
@@ -52,8 +62,34 @@ export type FeedFilterSelectionSectionProps<T> = {
   onBulkPasteResolveError?: (error: unknown) => void;
 };
 
+function SectionTitleTooltip({ title }: { title: string }) {
+  return (
+    <Tooltip
+      arrow
+      placement="right"
+      slotProps={{ tooltip: { sx: { maxWidth: 280 } } }}
+      title={title}
+    >
+      <Box
+        component="span"
+        aria-label={title}
+        sx={{
+          display: 'inline-flex',
+          flexShrink: 0,
+          lineHeight: 0,
+          cursor: 'default',
+          color: 'text.secondary',
+        }}
+      >
+        <InfoOutlinedIcon sx={{ fontSize: 18 }} />
+      </Box>
+    </Tooltip>
+  );
+}
+
 export function FeedFilterSelectionSection<T>({
   title,
+  titleTooltip,
   mode,
   onModeChange,
   value,
@@ -78,6 +114,7 @@ export function FeedFilterSelectionSection<T>({
   keepOpenOnSelect,
   preserveInputOnSelect,
   onInputChange,
+  onOpen,
   bulkPaste = false,
   bulkPasteOptions,
   bulkPasteSeparators,
@@ -151,6 +188,11 @@ export function FeedFilterSelectionSection<T>({
     () => (rankedSearch ? createRankedFilterOptions(getOptionLabel) : undefined),
     [getOptionLabel, rankedSearch],
   );
+  const titleNode = (
+    <Typography variant="subtitle2" className="font-semibold">
+      {title}
+    </Typography>
+  );
   const [inputValue, setInputValue] = useState('');
   const applyResetAfterSelectionRef = useRef(false);
   const lastNotifiedInputValueRef = useRef<string | undefined>(undefined);
@@ -169,9 +211,14 @@ export function FeedFilterSelectionSection<T>({
   return (
     <Box>
       <Box className="flex items-center justify-between mb-2 gap-2">
-        <Typography variant="subtitle2" className="font-semibold">
-          {title}
-        </Typography>
+        {titleTooltip ? (
+          <Box className="flex items-center gap-1">
+            {titleNode}
+            <SectionTitleTooltip title={titleTooltip} />
+          </Box>
+        ) : (
+          titleNode
+        )}
         {headerRight}
       </Box>
       <Box className="flex flex-wrap gap-2 items-center">
@@ -237,6 +284,7 @@ export function FeedFilterSelectionSection<T>({
               : undefined
           }
           disableCloseOnSelect={shouldKeepOpen}
+          onOpen={onOpen}
           onClose={() => {
             if (shouldKeepOpen) {
               updateInputValue('');

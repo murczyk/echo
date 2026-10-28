@@ -23,6 +23,7 @@ pub mod ai_intel_report;
 pub mod ai_position;
 pub mod ai_settlement;
 pub mod ai_transcript_analysis;
+mod ai_worker;
 pub(crate) mod alpine;
 pub mod api_integrations;
 pub mod atak;
@@ -68,6 +69,7 @@ pub mod operator;
 pub mod orbit;
 pub mod organism;
 pub mod palitra;
+pub(crate) mod read_query;
 pub mod report_history;
 pub mod rer_importer;
 pub mod rer_report_admin;
@@ -383,6 +385,16 @@ pub struct OneoffBackfillInboxUnitLinksPs {
     /// Resume after this inbox item ID (exclusive).
     #[arg(long, default_value_t = 0)]
     pub after_inbox_item_id: i64,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffRecalculateHistoricSettlementsPs {
+    /// Resume after this inbox item id (exclusive).
+    #[arg(long, default_value_t = 0)]
+    pub after_id: i64,
+    /// Stop after scanning this many inbox items.
+    #[arg(long)]
+    pub limit: Option<u64>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1245,6 +1257,10 @@ enum Cmd {
     /// Recalculates settlement links, including existing links, in the selected time range (today by default).
     #[command(visible_alias = "oneoff-recalculate-inbox-settlements")]
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
+    /// Create settlement rows from `location_v2` for messages that have none.
+    OneoffRecalculateHistoricSettlements(
+        OneoffRecalculateHistoricSettlementsPs,
+    ),
     OneoffAddMissingSettlements,
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillPelengBattleLineDistance(
@@ -2088,6 +2104,12 @@ async fn async_main(
         }
         Cmd::OneoffLinkInboxSettlements(ps) => {
             battle_line::settlement_queue::oneoff_link_inbox_settlements(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffRecalculateHistoricSettlements(ps) => {
+            battle_line::settlement_queue::oneoff_recalculate_historic_settlements(
                 mode, &ps,
             )
             .await

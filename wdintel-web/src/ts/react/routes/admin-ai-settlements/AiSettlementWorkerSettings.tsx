@@ -5,7 +5,6 @@ import {
   Checkbox,
   CircularProgress,
   FormControlLabel,
-  MenuItem,
   Stack,
   TextField,
   ToggleButton,
@@ -19,6 +18,7 @@ import type {
   AiSettlementGroupItem,
   AiSettlementWorkerSettingsItem,
 } from '../../../../Bindings';
+import { AiWorkerEngineSelect } from '../../components/AiWorkerEngineSelect';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerAutocomplete } from '../../components/PowerAutocomplete';
 import { PowerButton } from '../../components/PowerButton';
@@ -42,6 +42,7 @@ export function AiSettlementWorkerSettings({
 }) {
   const [enabled, setEnabled] = useState(settings.enabled);
   const [aiEngineId, setAiEngineId] = useState(settings.aiEngineId ?? '');
+  const [fallbackAiEngineId, setFallbackAiEngineId] = useState(settings.fallbackAiEngineId ?? '');
   const [groupsExcept, setGroupsExcept] = useState(settings.groupsExcept);
   const [groupMasterKeys, setGroupMasterKeys] = useState(settings.groupMasterKeys);
   const [saving, setSaving] = useState(false);
@@ -51,6 +52,7 @@ export function AiSettlementWorkerSettings({
   useEffect(() => {
     setEnabled(settings.enabled);
     setAiEngineId(settings.aiEngineId ?? '');
+    setFallbackAiEngineId(settings.fallbackAiEngineId ?? '');
     setGroupsExcept(settings.groupsExcept);
     setGroupMasterKeys(settings.groupMasterKeys);
   }, [settings]);
@@ -66,6 +68,7 @@ export function AiSettlementWorkerSettings({
       const saved = await saveAiSettlementWorkerSettings({
         enabled,
         aiEngineId: aiEngineId || null,
+        fallbackAiEngineId: fallbackAiEngineId || null,
         groupsExcept,
         groupMasterKeys,
       });
@@ -90,7 +93,9 @@ export function AiSettlementWorkerSettings({
             </Typography>
             <Typography color="text.secondary" variant="body2">
               Після звичайного парсингу inbox-повідомлення воркер запускає ШІ-пошук населених
-              пунктів, додає лише відсутні значення в location_v2 і не видаляє наявні.
+              пунктів і замінює ними розпізнані локації повідомлення. Якщо ШІ не знайшов населених
+              пунктів, попередні локації видаляються. Локації, збережені вручну, не змінюються
+              воркером.
             </Typography>
           </Stack>
 
@@ -112,24 +117,17 @@ export function AiSettlementWorkerSettings({
             label="Воркер, що парсить населені пункти через ШІ"
           />
 
-          <TextField
-            select
-            fullWidth
+          <AiWorkerEngineSelect
+            engines={engines}
+            primaryId={aiEngineId}
+            fallbackId={fallbackAiEngineId}
             required={enabled}
-            disabled={saving || engines.length === 0}
-            label="ШІ движок"
-            value={aiEngineId}
-            onChange={(event) => setAiEngineId(event.target.value)}
-          >
-            <MenuItem value="">
-              <em>Не вибрано</em>
-            </MenuItem>
-            {engines.map((engine) => (
-              <MenuItem key={engine.id} value={engine.id}>
-                {engine.name} · {engine.modelName}
-              </MenuItem>
-            ))}
-          </TextField>
+            disabled={saving}
+            onChange={(primaryId, fallbackId) => {
+              setAiEngineId(primaryId);
+              setFallbackAiEngineId(fallbackId);
+            }}
+          />
 
           <section className="flex flex-col gap-echo-md" aria-labelledby="settlement-worker-groups">
             <Typography component="h3" variant="h6" id="settlement-worker-groups">

@@ -230,7 +230,7 @@ export function useMessageSubmit({
       const payload = {
         full_body: data.full_body?.trim() || undefined,
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
-        comment: data.comment?.trim() || undefined,
+        comment: isReportCreateMode ? undefined : data.comment?.trim() || undefined,
         signal_group_master_key:
           engagedMessageId != null && replyGroupMasterKey
             ? replyGroupMasterKey

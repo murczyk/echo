@@ -3,7 +3,10 @@ import type { DeepPartial, UseFormReturn } from 'react-hook-form';
 import type { UnitResponse } from '../../../services/api/direct-submit';
 import type { MessageFormData } from './manage-message-drawer.schema';
 import { normalizeMessageUnitName } from './message-unit-name';
-import { compatibleMessageUnitSelection } from './message-unit-selection';
+import {
+  compatibleMessageUnitSelection,
+  isMessageUnitSelectionValid,
+} from './message-unit-selection';
 
 type Props = {
   active: boolean;
@@ -20,7 +23,9 @@ export function useMessageUnitSelection({ active, isEditMode, methods, values, r
     const name = getValues('unit') ?? '';
     const selection = getValues('unitSelection');
     const compatibleSelection = compatibleMessageUnitSelection(name, selection);
-    if (selection && !compatibleSelection) {
+    const inheritedSelection =
+      selection?.inherited === true && isMessageUnitSelectionValid(name, selection);
+    if (selection && !compatibleSelection && !inheritedSelection) {
       setValue('unitSelection', undefined, { shouldDirty: true });
       void trigger('unit');
     }
@@ -28,6 +33,7 @@ export function useMessageUnitSelection({ active, isEditMode, methods, values, r
       isEditMode ||
       getValues('unitNetworkSelection') ||
       compatibleSelection ||
+      inheritedSelection ||
       !name.trim() ||
       results?.search !== name
     ) {

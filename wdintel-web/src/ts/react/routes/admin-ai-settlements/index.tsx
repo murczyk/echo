@@ -93,6 +93,7 @@ export function AdminAiSettlementsPage() {
   const [messageVersions, setMessageVersions] = useState<AiSettlementTestMessageVersionItem[]>([]);
   const [workerSettings, setWorkerSettings] = useState<AiSettlementWorkerSettingsItem>({
     enabled: false,
+    fallbackAiEngineId: null,
     aiEngineId: null,
     groupsExcept: false,
     groupMasterKeys: [],

@@ -159,12 +159,11 @@ async fn process(
     let Some(body) = message.body.filter(|body| !body.is_empty()) else {
         return Ok("skipped");
     };
-    let callsigns = super::parse_with_feedback(
+    let callsigns = super::worker::parse_with_config(
         &env.ai_engine_client,
         &env.dbx,
         &env.rq,
-        &config.ai_engine,
-        &config.prompt,
+        config,
         &body,
         is_aviation_group,
     )
@@ -180,7 +179,7 @@ async fn process(
         job.inbox_item_id,
         &body,
         callsigns,
-        Some(run.id),
+        super::worker::CompletionSource::Reparse(run.id),
     )
     .await
     .c(h!())?;
@@ -215,8 +214,7 @@ async fn finish(
                 "pending"
             },
             Some(
-                error
-                    .to_string()
+                format!("{error:#}")
                     .chars()
                     .take(AI_CALLSIGN_WORKER_MAX_ERROR_CHARS)
                     .collect::<String>(),

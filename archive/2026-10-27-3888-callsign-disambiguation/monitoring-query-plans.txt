@@ -1,0 +1,85 @@
+SET
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+INSERT 0 2000000
+INSERT 0 2000000
+ANALYZE
+ANALYZE
+                                                                             QUERY PLAN                                                                              
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.43..0.46 rows=1 width=8) (actual rows=1 loops=1)
+   Buffers: local read=4 written=4
+   ->  Index Only Scan using ai_settlement_worker_job_created_at_idx on ai_settlement_worker_job  (cost=0.43..62758.43 rows=2000000 width=8) (actual rows=1 loops=1)
+         Heap Fetches: 1
+         Buffers: local read=4 written=4
+ Planning:
+   Buffers: shared hit=32 read=1, local read=2 written=2
+ Planning Time: 0.452 ms
+ Execution Time: 0.062 ms
+(9 rows)
+
+                                                                                       QUERY PLAN                                                                                        
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.85..787.27 rows=1 width=8) (actual rows=1 loops=1)
+   Buffers: local hit=5987126 read=26148 written=1004
+   ->  Nested Loop Semi Join  (cost=0.85..1048287.76 rows=1333 width=8) (actual rows=1 loops=1)
+         Buffers: local hit=5987126 read=26148 written=1004
+         ->  Index Scan using ai_settlement_worker_job_created_at_idx on ai_settlement_worker_job q  (cost=0.43..62758.43 rows=2000000 width=16) (actual rows=1999001 loops=1)
+               Buffers: local hit=4 read=16266 written=625
+         ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on signal_message_group g  (cost=0.43..0.49 rows=1 width=8) (actual rows=0 loops=1999001)
+               Index Cond: ((signal_message_id = q.sigint_inbox_item_id) AND (group_master_key = 'included'::text))
+               Heap Fetches: 1
+               Buffers: local hit=5987122 read=9882 written=379
+ Planning:
+   Buffers: shared hit=81 read=1, local hit=4 read=14 written=14
+ Planning Time: 0.334 ms
+ Execution Time: 1037.078 ms
+(14 rows)
+
+                                                                                       QUERY PLAN                                                                                        
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=0.85..802.25 rows=1 width=8) (actual rows=1 loops=1)
+   Buffers: local hit=7973391 read=38882
+   ->  Nested Loop Anti Join  (cost=0.85..1068261.10 rows=1333 width=8) (actual rows=1 loops=1)
+         Buffers: local hit=7973391 read=38882
+         ->  Index Scan using ai_settlement_worker_job_created_at_idx on ai_settlement_worker_job q  (cost=0.43..62758.43 rows=2000000 width=16) (actual rows=1999001 loops=1)
+               Buffers: local hit=1 read=16269
+         ->  Index Only Scan using signal_message_group_signal_message_id_group_master_key_idx on signal_message_group g  (cost=0.43..0.49 rows=1 width=8) (actual rows=1 loops=1999001)
+               Index Cond: ((signal_message_id = q.sigint_inbox_item_id) AND (group_master_key = 'excluded'::text))
+               Heap Fetches: 1999000
+               Buffers: local hit=7973390 read=22613
+ Planning:
+   Buffers: local hit=4 read=12
+ Planning Time: 0.664 ms
+ Execution Time: 1160.536 ms
+(14 rows)
+
+                                                                                          QUERY PLAN                                                                                           
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit  (cost=16.91..16.92 rows=1 width=8) (actual rows=0 loops=1)
+   Buffers: local read=3
+   ->  Sort  (cost=16.91..16.92 rows=1 width=8) (actual rows=0 loops=1)
+         Sort Key: q.created_at
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: local read=3
+         ->  Nested Loop  (cost=8.88..16.90 rows=1 width=8) (actual rows=0 loops=1)
+               Buffers: local read=3
+               ->  HashAggregate  (cost=8.45..8.46 rows=1 width=8) (actual rows=0 loops=1)
+                     Group Key: g.signal_message_id
+                     Batches: 1  Memory Usage: 24kB
+                     Buffers: local read=3
+                     ->  Index Only Scan using signal_message_group_group_master_key_signal_message_id_idx on signal_message_group g  (cost=0.43..8.45 rows=1 width=8) (actual rows=0 loops=1)
+                           Index Cond: (group_master_key = 'missing'::text)
+                           Heap Fetches: 0
+                           Buffers: local read=3
+               ->  Index Scan using ai_settlement_worker_job_pkey on ai_settlement_worker_job q  (cost=0.43..8.45 rows=1 width=16) (never executed)
+                     Index Cond: (sigint_inbox_item_id = g.signal_message_id)
+ Planning:
+   Buffers: local hit=4 read=12
+ Planning Time: 0.714 ms
+ Execution Time: 0.129 ms
+(22 rows)
+

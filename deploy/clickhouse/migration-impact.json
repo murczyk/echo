@@ -944,7 +944,15 @@
         { "table": "public.ai_position_mention", "strategy": "excluded" }
       ]
     },
-    "echo:m20261021_131746_echo_native_datasource": { "changes": [] }
+    "echo:m20261021_131746_echo_native_datasource": { "changes": [] },
+    "echo:m20261027_153932_ai_worker_fallback_monitoring": {
+      "changes": [
+        { "table": "public.ai_callsign_settings", "strategy": "excluded" },
+        { "table": "public.ai_settlement_settings", "strategy": "excluded" },
+        { "table": "public.ai_position_settings", "strategy": "excluded" },
+        { "table": "public.ai_worker_progress", "strategy": "excluded" }
+      ]
+    }
   },
   "dependencies": {
     "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },

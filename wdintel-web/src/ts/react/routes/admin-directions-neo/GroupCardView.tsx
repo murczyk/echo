@@ -64,6 +64,7 @@ function buildGroupMessagesRequest(masterKey: string): InboxMessagesReq {
     deniedUnits: null,
     deniedUnitIds: null,
     selectedLocations: null,
+    deniedLocations: null,
     nolimit: null,
     orWithExtendedForm: null,
     loadLatest: true,

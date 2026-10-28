@@ -6,8 +6,8 @@ failed source revalidation use PostgreSQL fallback. Authorization and message
 details remain authoritative on PostgreSQL. Analytics and bounded source
 revalidation use correlated `EXISTS` per text source so the gateway can push
 text predicates into ClickHouse together with ordering and the page limit.
-Quoted Fuzzy predicates use the source until complete gateway pushdown is
-supported. Source quoted-body matching reads the already joined inbox JSON
+Quoted Fuzzy, Exact and Substring predicates use the source until complete
+gateway pushdown is supported. Source quoted-body matching reads the already joined inbox JSON
 field; attachment and negative-term semantics remain unchanged.
 
 Correlated source reads parse each tsquery once through a scalar subquery.
@@ -27,7 +27,67 @@ PostgreSQL fresh-tail pages and counts correlate text predicates to the outer
 message IDs, including filename and attachment branches. Their creation-time
 lower bound limits candidate messages before text checks; they do not construct
 a search-match union across the entire history. Full-period PostgreSQL reads
-retain their existing text strategy.
+start with indexed match sets; the bounded complex-search and historical-count
+strategies below can use date-first matching.
+
+## Source search and cancellation
+
+Pure positive Fuzzy OR alternatives share one tsquery and one match union
+across body, filenames, current attachment revisions and audio filenames.
+Alternatives containing AND or negative tokens retain their original grouping.
+For a fully bounded period of at most seven days, Fuzzy OR searches with
+excluded quoted phrases materialize date/access-eligible IDs first, select
+positive matches, then check exclusions only on those matches. Other filters
+remain in the outer query; this candidate scope never replaces authorization
+or removes a facet's own-filter rules. Longer and unbounded periods retain
+indexed match-set planning. Bounded complex Fuzzy and daily literal strategies
+disable JIT locally inside a read-only transaction; the setting cannot leak
+to a pooled connection.
+
+Date-bounded interception-time inbox candidates and maps start from the inbox
+date range before looking up messages. Map peleng and source access predicates
+remain correlated to each candidate. The network facet uses inbox IDs for
+literal attachment membership when its inbox join is obligatory, enabling the
+existing body/index bitmap OR. Six-month common-word Exact searches can still
+be slow; index selection alone does not establish their latency.
+
+Wrapped analysis/inbox/frequency and network-activity source reads share eight
+SQL slots per API process. Ordinary reads retain two slots per authenticated
+login and a ten-second admission/pool wait. Text-search counts additionally
+share four count slots, with two per login in a separate class; this leaves
+capacity for pages, including pages from the same login. At most four source
+search-count operations, two per login, traverse windows concurrently; additional
+facets queue within their request budget. This lets admitted counts finish rather
+than interleaving every facet until all expire. SQL permits are released between
+historical windows; count-operation admission is separate from ordinary reads. Their admission and identical-count queue
+waits can use the remaining whole-request budget; acquiring a pooled connection
+still has a ten-second bound.
+
+The existing eight fallback-operation slots, limited to two per login, cover
+ordinary fallbacks and query-policy source routes. Search counts use the SQL
+count limits instead of holding an operation slot for their entire traversal.
+Windowed network fallbacks likewise rely on statement admission and release
+capacity between days. Count coordination is keyed by operation, pool, login and filters: identical
+requests queue while unrelated facets can progress. Limits are process-local.
+Ordinary fallbacks caused by configured analytics failures,
+freshness/coverage/revalidation failures, open circuits and query-policy source
+routes use operation admission. An unconfigured
+analytics stack relies on SQL admission. Capacity/fairness regressions live in
+`wdintel-rs/src/read_query/tests.rs` and
+`wdintel-rs/src/rer_importer/analysis/tests.rs`.
+
+Each wrapped source query pins its connection and backend PID/start time.
+Dropping a read sends a cancellation through an independent connection with
+a three-second budget, retaining the query slot and checked-out connection
+until cleanup. That connection is discarded rather than reused. Paged source
+reads retain their single repeatable-read, read-only snapshot. Analytics,
+workers and writes keep their existing drivers. Cancellation failure is logged
+as `cancel_sent=false`; it is not proof that SQL stopped.
+
+The activity recorder surrounds the read deadline and records the actual error
+status once. Request IDs link count waits, source admission/pool/SQL spans,
+fallback outcomes and deadline errors. Use successful completions and queue
+latency together when assessing the limits; faster 503s alone are not recovery.
 
 Unbounded, limited `load_latest` analytics pages first probe the last two days
 by message creation time, rounding the lower boundary down to a minute so
@@ -39,6 +99,109 @@ the existing complete-history selection so older matches are retained.
 Explicit time/cursor scopes and unlimited reads keep their existing behavior.
 Source freshness, authorization, revalidation and fresh-tail merging still
 apply; the probe does not assume message IDs follow interception time.
+
+## Historical text-search counts and pages
+
+Historical count windows run sequentially with independent read-only
+transactions. Historical data is considered sufficiently stable: small changes
+from imports or edits between windows are accepted. Message counts add across
+non-overlapping intervals; distinct facets union identities before counting.
+Groups retain missing-secret-group behavior, and each facet retains its own
+filter removal. Any failed window fails the complete count. Authorization,
+attachment revisions and freshness guards still apply.
+
+For bounded source text searches longer than three calendar months, first try
+the complete indexed count/key query with an eight-second probe. A fast or empty
+query finishes immediately. After a timeout, try disjoint windows capped at
+three calendar months, sequentially. If one also times out after eight seconds,
+use daily windows for it and the remaining period. Daily Exact/Substring
+queries materialize date-eligible IDs, match body and current attachments, then
+apply the original access/facet predicates. Body matching uses candidate inbox
+primary-key lookups; it does not repeat a global body GIN scan for every day.
+Daily SQL has an eight-second cap, reduced further by a smaller configured
+search statement budget. A failed daily query returns an error, not a subtotal.
+
+This is an adaptive access strategy, not a claim that three-month queries are
+always fast. The [measurements](../../archive/2026-10-12-perf/iteration13/findings.md)
+show repeated global index work increasing with smaller calendar windows;
+three-/four-month partitions performed better for one term, while another
+required date-first work at a much smaller span. One measured daily Exact
+prototype completed in 1.418 seconds, while a seven-day version still timed
+out. Full six-month HTTP latency under concurrent traffic remains a rollout
+measurement. Counts over shorter periods keep their existing query strategy.
+
+Paged source searches over these long bounded periods first probe the indexed
+query for 250 ms. On timeout they visit three-month windows in the requested
+time order, probing an ordered date-index scan for one second per window and
+using the indexed window query if that probe expires. They stop at 20 IDs.
+Interception, timestamp and creation ordering, timestamp/ID cursors, inclusive
+inbox bounds and exclusive analysis bounds are retained. ID selection and detail
+hydration share the existing repeatable-read snapshot. Unlimited reads retain
+their existing path. Sparse and empty searches must keep an index alternative:
+the measured empty control was 20 ms indexed but exceeded eight seconds ordered.
+
+### Execution budgets
+
+Validated nonblank text filters select a search-specific policy. Ordinary reads
+keep the 60-second HTTP deadline and existing pool SQL settings. Search reads
+have a default 90-second statement budget and a ten-minute total HTTP budget,
+covering all windows, admission and count queues together. Local SQL settings
+are restored before pooled reuse. Cancellation still pins and cleans up the
+active source connection. React Analysis counts and Duty search requests allow
+605 seconds; their ordinary 35-/65-second deadlines remain unchanged. Filter
+reloads, feed removal and unmounting abort pending Duty page/count requests.
+
+Optional settings in `config.toml` are backward compatible:
+
+```toml
+[postgres_runtime]
+search_statement_timeout_ms = 90000
+search_http_timeout_ms = 600000
+```
+
+The HTTP budget must exceed the search statement budget and cannot exceed
+600,000 ms. Probe/window limits can shorten SQL budgets. Existing statement,
+lock, idle-transaction and worker settings keep their separate meanings. The
+search policy applies when `[postgres_runtime]` is absent as well.
+
+After approval naming the target, set the API nginx server's
+`proxy_read_timeout 605s;`, validate with `sudo nginx -t`, then apply with
+`sudo systemctl reload nginx`. This leaves five seconds beyond the maximum
+backend search budget for its timeout response. Other upstream proxies need
+at least the same allowance. These configuration changes require separate
+approval under `AGENTS.md`.
+
+### Analytical literal search
+
+Exact and Substring retain source routing. The gateway plans reviewed in
+[iteration 12](../../archive/2026-10-12-perf/iteration12/findings.md) still evaluated
+literal body predicates locally; removing the routing guard would transfer
+large inputs rather than enable useful native filtering. Windowing does not
+change this support boundary. Native literal search requires separate gateway
+predicate-pushdown work and actual prepared-plan/result verification.
+
+## Network activity fallback
+
+The final native network-group aggregation runs sequential disjoint ranges of
+at most one million message IDs, with explicit bounds on the link, inbox and
+message inputs. It sums matching day/group/network buckets and keeps the latest
+activity timestamp. This is separate from the existing period-bounds query.
+A failed range discards the entire analytical result before source fallback.
+
+The source fallback visits daily time ranges. Indexed interception-time
+candidates and separate timestamp/creation branches preserve the original
+`COALESCE` behavior for null interception times. Matching network links are
+resolved before message/access/frequency joins. Buckets spanning window
+boundaries add rather than overwrite. The three network-activity routes now
+share ordinary read admission, cancellation and the 60-second HTTP deadline.
+
+These bounds reduce individual query memory; they do not establish a safe
+installation-wide native concurrency limit. Pivnich permitted 32 queries with
+an 8.80-GiB shared cap and a 2.20-GiB per-query cap. Those operational limits
+were assessed and left unchanged. Compare aggregate-memory exceptions and
+useful completions under concurrent traffic before proposing a limits change.
+See [iteration 14](../../archive/2026-10-12-perf/iteration14/implementation.md)
+for diagnostic evidence and rollout limits.
 
 ## Attachment coverage
 
@@ -89,8 +252,8 @@ allow analytics. Results/counts are not merged between databases.
 Initial tracking and freshness windows exceeding the ledger's 24-hour retention
 force source fallback. The old singleton `attachment_search_change` remains
 maintained for backend rollback compatibility. After observing changes, the extract
-worker removes at most 500 entries older than 24 hours plus the 60-second request
-deadline every minute; pending changes are never pruned. The extra interval
+worker removes at most 500 entries older than 24 hours plus the maximum ten-minute
+search request deadline every minute; pending changes are never pruned. The extra interval
 protects active requests using the maximum freshness window. Locked tuples are
 deleted directly, keeping cleanup seeks bounded even with a large expired backlog.
 Both tracking tables stay excluded from CDC.

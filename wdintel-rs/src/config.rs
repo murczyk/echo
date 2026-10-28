@@ -87,6 +87,10 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
+pub const AI_WORKER_PRIMARY_TIMEOUT_SECS: u64 = 20;
+pub const AI_WORKER_MONITORING_CACHE_TTL_SECS: u64 = 60;
+pub const AI_WORKER_FALLBACK_TIMEOUT_SECS: u64 = 20;
+pub const AI_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
 pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GLM_5_3_COOLDOWN_SECS: u64 = 60;
@@ -157,6 +161,7 @@ pub const LOCATION_FUZZY_MIN_CHARS: usize = 5;
 pub const LOCATION_FUZZY_DISTANCE_DIVISOR: usize = 7;
 pub const LOCATION_FOREST_CONTEXT_WORDS: &[&str] =
     &["НА", "ВІД", "БІЛЯ", "МАСИВ", "МАССИВ"];
+pub const LOCATION_STANDALONE_BLACKLIST_WORDS: &[&str] = &["ГЛИБОКИЙ", "МАЛИЙ"];
 pub const LOCATION_COUNTRY_NAMES: &[&str] = &[
     "УКРАЇНА",
     "УКРАИНА",
@@ -1196,6 +1201,9 @@ pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
 pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_NETWORK_ACTIVITY_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_NETWORK_ACTIVITY_SOURCE_WINDOW_DAYS: i64 = 1;
+pub const ANALYTICS_NETWORK_ACTIVITY_OPERATION: &str = "network group activity";
 pub const ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE: usize = 1_000;
 pub const ANALYTICS_INBOX_MESSAGE_ID_CHUNK_SIZE: i64 = 4_000_000;
 pub const ANALYTICS_INBOX_LATEST_PROBE_DAYS: i64 = 2;
@@ -1381,6 +1389,7 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+DELETE FROM ai_worker_progress;
 DELETE FROM ai_transcript_analysis_job;
 DELETE FROM ai_transcript_analysis_test_message;
 UPDATE ai_transcript_analysis_settings SET prompt='',worker_enabled=false,worker_ai_engine_id=null,revision=gen_random_uuid();
@@ -1741,6 +1750,29 @@ pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
 pub const ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT: u32 = 16;
 pub const ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT: usize = 8;
 pub const ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS: u64 = 250;
+pub const ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS: i64 = 7;
+pub const ANALYSIS_SOURCE_SEARCH_WINDOW_MONTHS: u32 = 3;
+pub const ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 90_000;
+pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT: u64 = 600_000;
+pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX: u64 = 600_000;
+pub const ANALYSIS_SEARCH_INDEXED_PAGE_PROBE_TIMEOUT_MS: u64 = 250;
+pub const ANALYSIS_SEARCH_ORDERED_PAGE_PROBE_TIMEOUT_MS: u64 = 1_000;
+pub const ANALYSIS_SOURCE_SEARCH_SQL_HINT: &str =
+    "/* echo_scoped_source_search */";
+pub const ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS: u64 = 10_000;
+pub const ANALYSIS_SOURCE_READ_MAX_CONCURRENT: usize = 8;
+pub const ANALYSIS_SOURCE_READ_MAX_PER_LOGIN: usize = 2;
+pub const ANALYSIS_SOURCE_COUNT_MAX_CONCURRENT: usize = 4;
+pub const ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN: usize = 2;
+pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT: usize = 4;
+pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN: usize = 2;
+pub const ANALYSIS_SOURCE_COUNT_PROBE_TIMEOUT_MS: u64 = 8_000;
+pub const ANALYSIS_SOURCE_COUNT_WINDOW_TIMEOUT_MS: u64 = 8_000;
+pub const ANALYSIS_SOURCE_COUNT_WINDOW_DAYS: i64 = 1;
+pub const ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES: usize = 2_048;
+pub const ANALYSIS_SOURCE_READ_QUEUE_ERROR: &str =
+    "analysis source read admission exhausted";
+pub const POSTGRES_READ_CANCEL_TIMEOUT_MS: u64 = 3_000;
 pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS: u64 = 5_000;
 pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYTICS_COUNT_FALLBACK_QUEUE_MAX_ENTRIES: usize = 2_048;
@@ -2030,6 +2062,8 @@ pub struct ReplicaConfig {
 #[serde(try_from = "PostgresRuntimeConfigRaw")]
 pub struct PostgresRuntimeConfig {
     pub statement_timeout_ms: u64,
+    pub search_statement_timeout_ms: u64,
+    pub search_http_timeout_ms: u64,
     pub report_worker_statement_timeout_ms: u64,
     pub lock_timeout_ms: u64,
     pub idle_in_transaction_session_timeout_ms: u64,
@@ -2039,6 +2073,10 @@ pub struct PostgresRuntimeConfig {
 struct PostgresRuntimeConfigRaw {
     #[serde(default)]
     statement_timeout_ms: Option<u64>,
+    #[serde(default)]
+    search_statement_timeout_ms: Option<u64>,
+    #[serde(default)]
+    search_http_timeout_ms: Option<u64>,
     #[serde(default)]
     report_worker_statement_timeout_ms: Option<u64>,
     #[serde(default)]
@@ -2057,6 +2095,10 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
             statement_timeout_ms: config
                 .statement_timeout_ms
                 .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT),
+            search_statement_timeout_ms: config.search_statement_timeout_ms
+                .unwrap_or(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT),
+            search_http_timeout_ms: config.search_http_timeout_ms
+                .unwrap_or(ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT),
             report_worker_statement_timeout_ms: config
                 .report_worker_statement_timeout_ms
                 .unwrap_or(
@@ -2071,29 +2113,48 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
                     POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
                 ),
         };
-        config.validate()?;
-        Ok(config)
+        config
+            .validate()
+            .c(h!())
+            .map_err(|error| format!("{error:#}"))
+            .map(|()| config)
     }
 }
 
 impl PostgresRuntimeConfig {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> anyhow::Result<()> {
+        validate_postgres_runtime_timeout(
+            "search_statement_timeout_ms",
+            self.search_statement_timeout_ms,
+        )
+        .c(h!())?;
+        if self.search_http_timeout_ms <= self.search_statement_timeout_ms
+            || self.search_http_timeout_ms > ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX
+        {
+            anyhow::bail!(
+                "[postgres_runtime].search_http_timeout_ms must exceed search_statement_timeout_ms and be at most {ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX} milliseconds"
+            );
+        }
         validate_postgres_runtime_timeout(
             "statement_timeout_ms",
             self.statement_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         validate_postgres_runtime_timeout(
             "report_worker_statement_timeout_ms",
             self.report_worker_statement_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         validate_postgres_runtime_timeout(
             "lock_timeout_ms",
             self.lock_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         validate_postgres_runtime_timeout(
             "idle_in_transaction_session_timeout_ms",
             self.idle_in_transaction_session_timeout_ms,
-        )?;
+        )
+        .c(h!())?;
         Ok(())
     }
 }
@@ -2101,11 +2162,11 @@ impl PostgresRuntimeConfig {
 fn validate_postgres_runtime_timeout(
     name: &str,
     value: u64,
-) -> std::result::Result<(), String> {
+) -> anyhow::Result<()> {
     if !(1..=POSTGRES_RUNTIME_TIMEOUT_MS_MAX).contains(&value) {
-        return Err(format!(
+        anyhow::bail!(
             "[postgres_runtime].{name} must be between 1 and {POSTGRES_RUNTIME_TIMEOUT_MS_MAX} milliseconds"
-        ));
+        );
     }
     Ok(())
 }
@@ -2651,6 +2712,18 @@ lock_timeout_ms = 2147483648
             r#"
 [postgres_runtime]
 report_worker_statement_timeout_ms = 2147483648
+"#,
+            r#"
+[postgres_runtime]
+search_statement_timeout_ms = 0
+"#,
+            r#"
+[postgres_runtime]
+search_http_timeout_ms = 600001
+"#,
+            r#"
+[postgres_runtime]
+search_http_timeout_ms = 90000
 "#,
         ] {
             let error = toml::from_str::<TestPostgresRuntimeSection>(input)

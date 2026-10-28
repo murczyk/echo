@@ -212,6 +212,7 @@ pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
 struct WorkerConfig {
     prompt: String,
     ai_engine: ai_engine::Model,
+    fallback_ai_engine: Option<ai_engine::Model>,
 }
 
 /// The text a job reads, the message it belongs to, that message's time and
@@ -253,7 +254,7 @@ async fn process_next(
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
 ) -> anyhow::Result<bool> {
-    let Some(config) = load_worker_config(dbx).await.c(h!())? else {
+    let Some(mut config) = load_worker_config(dbx).await.c(h!())? else {
         return Ok(false);
     };
     let Some(job) = load_next_job(dbx).await.c(h!())? else {
@@ -264,16 +265,28 @@ async fn process_next(
         drop_unavailable_source(dbx, &job).await.c(h!())?;
         return Ok(true);
     };
-    let extraction = match extract(
-        ai_client,
+    let settlements = source_settlements(dbx, &job).await.c(h!())?;
+    let extraction = match crate::ai_worker::with_fallback(
+        "position",
         &config.ai_engine,
-        &config.prompt,
-        &source.text,
-        &source_settlements(dbx, &job).await.c(h!())?,
+        config.fallback_ai_engine.as_ref(),
+        |engine| {
+            let prompt = &config.prompt;
+            let text = &source.text;
+            let settlements = &settlements;
+            async move {
+                extract(ai_client, &engine, prompt, text, settlements)
+                    .await
+                    .c(h!())
+            }
+        },
     )
     .await
     {
-        Ok(extraction) => extraction,
+        Ok((extraction, engine)) => {
+            config.ai_engine = engine;
+            extraction
+        }
         Err(error) => {
             fail_job(dbx, &job, format!("{error:#}")).await.c(h!())?;
             return Ok(true);
@@ -321,7 +334,15 @@ async fn load_worker_config(
     let Some(ai_engine) = ai_engine else {
         return Ok(None);
     };
+    let fallback_ai_engine = crate::ai_worker::load_fallback(
+        dbx,
+        ai_engine.id,
+        settings.worker_fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     Ok(Some(WorkerConfig {
+        fallback_ai_engine,
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
     }))
@@ -540,6 +561,13 @@ async fn complete_job(
         transaction.commit().await.c(h!())?;
         return Ok(false);
     }
+    crate::ai_worker::record_success(
+        &transaction,
+        "position",
+        source.message_id,
+    )
+    .await
+    .c(h!())?;
     replace_mentions(&transaction, job, source, config, extraction)
         .await
         .c(h!())?;
@@ -797,6 +825,26 @@ async fn fail_job(
     job: &ai_position_worker_job::Model,
     error_text: String,
 ) -> anyhow::Result<()> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let current = ai_position_worker_job::Entity::find_by_id(job.id)
+        .lock_exclusive()
+        .one(&transaction)
+        .await
+        .c(h!())?;
+    if current.as_ref().map(|current| current.created_at)
+        != Some(job.created_at)
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
+    crate::ai_worker::record_failure(
+        &transaction,
+        "position",
+        &job.id.to_string(),
+        &error_text,
+    )
+    .await
+    .c(h!())?;
     let attempts = job.attempts + 1;
     let error_text: String = error_text
         .chars()
@@ -813,9 +861,10 @@ async fn fail_job(
             .filter(
                 ai_position_worker_job::Column::CreatedAt.eq(job.created_at),
             )
-            .exec(dbx)
+            .exec(&transaction)
             .await
             .c(h!())?;
+        transaction.commit().await.c(h!())?;
         return Ok(());
     }
     // Matching created_at keeps a re-enqueued job's fresh state.
@@ -833,9 +882,10 @@ async fn fail_job(
         )
         .filter(ai_position_worker_job::Column::Id.eq(job.id))
         .filter(ai_position_worker_job::Column::CreatedAt.eq(job.created_at))
-        .exec(dbx)
+        .exec(&transaction)
         .await
         .c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -891,6 +941,7 @@ pub(crate) async fn extract_attachment_chunk(
     .c(h!())?;
     let settings = settings(&env.dbx).await.c(h!())?;
     let config = WorkerConfig {
+        fallback_ai_engine: None,
         prompt: effective_prompt(
             settings.as_ref().map_or("", |settings| &settings.prompt),
         )
@@ -992,6 +1043,7 @@ mod tests {
             .await
             .unwrap();
         ai_position_settings::ActiveModel {
+            worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
             id: Set(AI_POSITION_SETTINGS_ID),
             prompt: Set(String::new()),
             worker_enabled: Set(true),
@@ -1028,6 +1080,87 @@ mod tests {
             response_text: String::new(),
             model_name: "test".to_string(),
         }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn fallback_position_job_records_actual_engine_and_progress_3888() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let primary = crate::ai_worker::test_support::engine(
+            &env.dbx,
+            401,
+            "primary denied",
+            false,
+        )
+        .await;
+        let fallback = crate::ai_worker::test_support::engine(&env.dbx, 200, r#"{"positions":[{"name":"Циркон 9","kind":"position","coordinates":[]}]}"#, false).await;
+        ai_position_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        ai_position_settings::ActiveModel {
+            id: Set(AI_POSITION_SETTINGS_ID),
+            prompt: Set(String::new()),
+            worker_enabled: Set(true),
+            worker_ai_engine_id: Set(Some(primary.engine.id)),
+            worker_fallback_ai_engine_id: Set(Some(fallback.engine.id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(BODY.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        enqueue_message_if_enabled(&env.dbx, message.id)
+            .await
+            .unwrap();
+        let mut redis = env.redis.clone();
+        assert!(super::process_next(
+            &env.ai_engine_client,
+            &env.dbx,
+            &mut redis
+        )
+        .await
+        .unwrap());
+        let mentions = ai_position_mention::Entity::find()
+            .filter(
+                ai_position_mention::Column::SigintInboxItemId.eq(message.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(mentions.len(), 1);
+        assert_eq!(mentions[0].ai_engine_id, Some(fallback.engine.id));
+        assert!(ai_position_worker_job::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        let monitoring =
+            crate::ai_worker::monitoring::load(&env.dbx).await.unwrap();
+        assert!(monitoring.position.last_completed_at_ms.is_some());
+        assert!(monitoring
+            .position
+            .latest_processed_entry_created_at_ms
+            .is_some());
+        assert_eq!(fallback.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
@@ -1796,6 +1929,15 @@ mod tests {
         .await
         .unwrap());
 
+        super::fail_job(&env.dbx, &job, "stale failure".into())
+            .await
+            .unwrap();
+        assert!(crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+
         assert!(ai_position_mention::Entity::find()
             .filter(
                 ai_position_mention::Column::SigintInboxItemId.eq(message.id)
@@ -1809,6 +1951,23 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+        let current = load_next_job(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(current.attempts, 0);
+        let error = "ж".repeat(crate::config::AI_WORKER_MAX_ERROR_CHARS + 1);
+        super::fail_job(&env.dbx, &current, error).await.unwrap();
+        let progress = crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(progress.last_completed_at.is_none());
+        assert!(progress.last_error_at.is_some());
+        assert_eq!(
+            progress.last_error.unwrap().chars().count(),
+            crate::config::AI_WORKER_MAX_ERROR_CHARS
+        );
+        let current = load_next_job(&env.dbx).await.unwrap();
+        assert!(current.is_none());
     }
 
     #[tokio::test]

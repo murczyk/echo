@@ -1,0 +1,311 @@
+{
+  "investigated_on": "2026-10-27",
+  "timezone": "UTC",
+  "method": "Read-only SSH, PostgreSQL READ ONLY transactions with statement timeouts, existing journal and service status; no new inference requests or remote mutations.",
+  "servers": {
+    "echo-pivnich": {
+      "package_version": "0.1.1~rc.202610261229-1",
+      "worker_engine": "GLM-5.3",
+      "backend": "glm-5.3",
+      "same_engine_selected_by": [
+        "callsign",
+        "settlement",
+        "position"
+      ],
+      "start": {
+        "sample_time": "2026-10-27 14:47:41.702136",
+        "queue": {
+          "deleted": 3935589,
+          "updated": 51203,
+          "inserted": 5105473,
+          "stats_reset": null,
+          "estimated_rows": 1169573
+        },
+        "oldest": [
+          {
+            "sigint_inbox_item_id": 34172427,
+            "created_at": "2026-10-11T15:32:34.894061",
+            "next_attempt_at": "2026-10-11T15:32:34.894061",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 34172429,
+            "created_at": "2026-10-11T15:32:34.894173",
+            "next_attempt_at": "2026-10-11T15:32:34.894173",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 34172432,
+            "created_at": "2026-10-11T15:32:34.894619",
+            "next_attempt_at": "2026-10-11T15:32:34.894619",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 34172434,
+            "created_at": "2026-10-11T15:32:36.643216",
+            "next_attempt_at": "2026-10-11T15:32:36.643216",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 34172439,
+            "created_at": "2026-10-11T15:32:42.311403",
+            "next_attempt_at": "2026-10-11T15:32:42.311403",
+            "attempts": 0,
+            "error": null
+          }
+        ]
+      },
+      "end": {
+        "sample_time": "2026-10-27 14:51:49.568314",
+        "queue": {
+          "deleted": 3935591,
+          "updated": 51322,
+          "inserted": 5105728,
+          "estimated_rows": 1169826
+        },
+        "oldest": [
+          {
+            "sigint_inbox_item_id": 34172659,
+            "created_at": "2026-10-11T15:34:55.727108",
+            "next_attempt_at": "2026-10-11T15:34:55.727108",
+            "attempts": 0
+          }
+        ],
+        "recent_failure": [
+          {
+            "id": 34172657,
+            "error": "at wdintel-rs/src/ai_callsign/mod.rs line 539 column 12",
+            "worker": "callsign",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:54.075443"
+          },
+          {
+            "id": 34172654,
+            "error": "at wdintel-rs/src/ai_callsign/mod.rs line 539 column 12",
+            "worker": "callsign",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:53.505765"
+          },
+          {
+            "id": 34172652,
+            "error": "at wdintel-rs/src/ai_callsign/mod.rs line 539 column 12",
+            "worker": "callsign",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:53.041876"
+          },
+          {
+            "id": 34467445,
+            "error": "Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "settlement",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:52.723435"
+          },
+          {
+            "id": 34467446,
+            "error": "Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "settlement",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:51.871376"
+          },
+          {
+            "id": 34467441,
+            "error": "Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "settlement",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:51.344635"
+          },
+          {
+            "id": 34259940,
+            "error": "at wdintel-rs/src/ai_position/extract.rs line 86 column 67: at wdintel-rs/src/ai_position/extract.rs line 143 column 8: Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "position",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:49:55.197889"
+          },
+          {
+            "id": 34259939,
+            "error": "at wdintel-rs/src/ai_position/extract.rs line 86 column 67: at wdintel-rs/src/ai_position/extract.rs line 143 column 8: Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "position",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:49:54.891565"
+          },
+          {
+            "id": 34259942,
+            "error": "at wdintel-rs/src/ai_position/extract.rs line 86 column 67: at wdintel-rs/src/ai_position/extract.rs line 143 column 8: Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "position",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:49:51.874973"
+          }
+        ]
+      },
+      "elapsed_seconds": 247.866,
+      "counter_deltas": {
+        "inserted": 255,
+        "updated": 119,
+        "deleted": 2
+      },
+      "net_queue_growth": 253,
+      "rates_per_minute": {
+        "inserted": 61.73,
+        "updated": 28.81,
+        "deleted": 0.48
+      },
+      "next_job_query_execution_ms": 0.192
+    },
+    "echo-skhid": {
+      "package_version": "0.1.1~rc.202610261229-1",
+      "worker_engine": "GLM-5.3",
+      "backend": "glm-5.3",
+      "same_engine_selected_by": [
+        "callsign",
+        "settlement",
+        "position"
+      ],
+      "start": {
+        "sample_time": "2026-10-27 14:47:41.881385",
+        "queue": {
+          "deleted": 3350520,
+          "updated": 69562,
+          "inserted": 5385475,
+          "stats_reset": null,
+          "estimated_rows": 2034864
+        },
+        "oldest": [
+          {
+            "sigint_inbox_item_id": 42876113,
+            "created_at": "2026-10-10T09:03:50.762692",
+            "next_attempt_at": "2026-10-10T09:03:50.762692",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 42876115,
+            "created_at": "2026-10-10T09:03:50.762752",
+            "next_attempt_at": "2026-10-10T09:03:50.762752",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 42876117,
+            "created_at": "2026-10-10T09:03:50.762822",
+            "next_attempt_at": "2026-10-10T09:03:50.762822",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 42876122,
+            "created_at": "2026-10-10T09:03:52.031643",
+            "next_attempt_at": "2026-10-10T09:03:52.031643",
+            "attempts": 0,
+            "error": null
+          },
+          {
+            "sigint_inbox_item_id": 42876121,
+            "created_at": "2026-10-10T09:03:52.032256",
+            "next_attempt_at": "2026-10-10T09:03:52.032256",
+            "attempts": 0,
+            "error": null
+          }
+        ]
+      },
+      "end": {
+        "sample_time": "2026-10-27 14:51:49.609677",
+        "queue": {
+          "deleted": 3350520,
+          "updated": 69686,
+          "inserted": 5385901,
+          "estimated_rows": 2035290
+        },
+        "oldest": [
+          {
+            "sigint_inbox_item_id": 42876332,
+            "created_at": "2026-10-10T09:04:40.747341",
+            "next_attempt_at": "2026-10-10T09:04:40.747341",
+            "attempts": 0
+          }
+        ],
+        "recent_failure": [
+          {
+            "id": 42876328,
+            "error": "at wdintel-rs/src/ai_callsign/mod.rs line 539 column 12",
+            "worker": "callsign",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:53.714732"
+          },
+          {
+            "id": 42876325,
+            "error": "at wdintel-rs/src/ai_callsign/mod.rs line 539 column 12",
+            "worker": "callsign",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:53.363732"
+          },
+          {
+            "id": 42876318,
+            "error": "at wdintel-rs/src/ai_callsign/mod.rs line 539 column 12",
+            "worker": "callsign",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:52.867937"
+          },
+          {
+            "id": 43477008,
+            "error": "Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "settlement",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:53.863477"
+          },
+          {
+            "id": 43476997,
+            "error": "Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "settlement",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:52.683663"
+          },
+          {
+            "id": 43476995,
+            "error": "Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "settlement",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:51.899621"
+          },
+          {
+            "id": 43297683,
+            "error": "at wdintel-rs/src/ai_position/extract.rs line 86 column 67: at wdintel-rs/src/ai_position/extract.rs line 143 column 8: Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "position",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:53.351834"
+          },
+          {
+            "id": 43297684,
+            "error": "at wdintel-rs/src/ai_position/extract.rs line 86 column 67: at wdintel-rs/src/ai_position/extract.rs line 143 column 8: Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "position",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:52.441862"
+          },
+          {
+            "id": 43297682,
+            "error": "at wdintel-rs/src/ai_position/extract.rs line 86 column 67: at wdintel-rs/src/ai_position/extract.rs line 143 column 8: Business-logic error: ШІ API повернув HTTP 401 Unauthorized: {\"error\":{\"message\":\"Authentication Error, model 'glm-5.3' is not in this grant's allowlist ['gpt-luna']\",\"type\":\"auth_error\",\"param\":\"None\",\"code\":\"401\"}}",
+            "worker": "position",
+            "attempts": 1,
+            "next_attempt_at": "2026-10-27T14:51:51.574935"
+          }
+        ]
+      },
+      "elapsed_seconds": 247.728,
+      "counter_deltas": {
+        "inserted": 426,
+        "updated": 124,
+        "deleted": 0
+      },
+      "net_queue_growth": 426,
+      "rates_per_minute": {
+        "inserted": 103.18,
+        "updated": 30.03,
+        "deleted": 0.0
+      },
+      "next_job_query_execution_ms": 0.081
+    }
+  }
+}

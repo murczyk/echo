@@ -31,6 +31,13 @@ use uuid::Uuid;
 pub(crate) struct WorkerConfig {
     pub prompt: String,
     pub ai_engine: ai_engine::Model,
+    pub fallback_ai_engine: Option<ai_engine::Model>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum CompletionSource {
+    Queue(chrono::NaiveDateTime),
+    Reparse(Uuid),
 }
 
 struct CallsignJobState {
@@ -202,12 +209,11 @@ async fn process_next(
             .await
             .c(h!())?;
     let body = message.body.unwrap_or_default();
-    let callsigns = match super::parse_with_feedback(
+    let callsigns = match parse_with_config(
         ai_client,
         dbx,
         rq,
-        &config.ai_engine,
-        &config.prompt,
+        &config,
         &body,
         is_aviation_group,
     )
@@ -215,7 +221,7 @@ async fn process_next(
     {
         Ok(callsigns) => callsigns,
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await.c(h!())?;
+            fail_job(dbx, job, format!("{error:#}")).await.c(h!())?;
             return Ok(true);
         }
     };
@@ -226,19 +232,16 @@ async fn process_next(
         job.sigint_inbox_item_id,
         &body,
         ai_callsigns,
-        None,
+        CompletionSource::Queue(job.created_at),
     )
     .await
     {
         Ok(changed) => changed,
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await.c(h!())?;
+            fail_job(dbx, job, format!("{error:#}")).await.c(h!())?;
             return Ok(true);
         }
     };
-    delete_job(dbx, job.sigint_inbox_item_id, job.created_at)
-        .await
-        .c(h!())?;
     if changed {
         if let Err(error) = fanout_mult(
             redis,
@@ -255,6 +258,37 @@ async fn process_next(
         }
     }
     Ok(true)
+}
+
+pub(crate) async fn parse_with_config<C: ConnectionTrait>(
+    ai_client: &crate::ai_engine::AiEngineClient,
+    db: &C,
+    rq: &reqwest::Client,
+    config: &WorkerConfig,
+    body: &str,
+    is_aviation_group: bool,
+) -> anyhow::Result<Vec<String>> {
+    let (callsigns, _) = crate::ai_worker::with_fallback(
+        "callsign",
+        &config.ai_engine,
+        config.fallback_ai_engine.as_ref(),
+        |engine| async move {
+            super::parse_with_feedback(
+                ai_client,
+                db,
+                rq,
+                &engine,
+                &config.prompt,
+                body,
+                is_aviation_group,
+            )
+            .await
+            .c(h!())
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(callsigns)
 }
 
 pub(crate) async fn load_worker_config(
@@ -283,7 +317,15 @@ pub(crate) async fn load_worker_config(
         .ok_or_else(|| AppError::BL {
             msg: "ШІ движок воркера позивних вимкнено або видалено".to_string(),
         })?;
+    let fallback_ai_engine = crate::ai_worker::load_fallback(
+        dbx,
+        ai_engine.id,
+        settings.worker_fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     Ok(Some(WorkerConfig {
+        fallback_ai_engine,
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
     }))
@@ -311,8 +353,12 @@ pub(crate) async fn complete_job(
     sigint_inbox_item_id: i64,
     body: &str,
     ai_callsigns: Vec<String>,
-    run_id: Option<Uuid>,
+    source: CompletionSource,
 ) -> anyhow::Result<bool> {
+    let run_id = match source {
+        CompletionSource::Reparse(run_id) => Some(run_id),
+        CompletionSource::Queue(_) => None,
+    };
     let desired = super::feedback::apply_overrides(
         dbx,
         sigint_inbox_item_id,
@@ -336,6 +382,11 @@ pub(crate) async fn complete_job(
                 .await
                 .context(h!())?
         else {
+            if let CompletionSource::Queue(created_at) = source {
+                delete_job(&transaction, sigint_inbox_item_id, created_at)
+                    .await
+                    .c(h!())?;
+            }
             transaction.commit().await.c(h!())?;
             return Ok(false);
         };
@@ -350,6 +401,15 @@ pub(crate) async fn complete_job(
                 && message.body.as_deref().unwrap_or_default() == body,
             "Message changed during callsign parsing"
         );
+        if let CompletionSource::Queue(created_at) = source {
+            if !lock_current_job(&transaction, sigint_inbox_item_id, created_at)
+                .await
+                .c(h!())?
+            {
+                transaction.commit().await.c(h!())?;
+                return Ok(false);
+            }
+        }
         let callsigns = super::feedback::apply_overrides(
             &transaction,
             sigint_inbox_item_id,
@@ -372,9 +432,36 @@ pub(crate) async fn complete_job(
         )
         .await
         .context(h!())?;
-        if let Some(run_id) = run_id {
+        record_completion(&transaction, sigint_inbox_item_id, source, changed)
+            .await
+            .c(h!())?;
+        transaction.commit().await.c(h!())?;
+        return Ok(changed);
+    }
+}
+
+async fn record_completion(
+    transaction: &DatabaseTransaction,
+    sigint_inbox_item_id: i64,
+    source: CompletionSource,
+    changed: bool,
+) -> anyhow::Result<()> {
+    match source {
+        CompletionSource::Queue(created_at) => {
+            crate::ai_worker::record_success(
+                transaction,
+                "callsign",
+                sigint_inbox_item_id,
+            )
+            .await
+            .c(h!())?;
+            delete_job(transaction, sigint_inbox_item_id, created_at)
+                .await
+                .c(h!())?;
+        }
+        CompletionSource::Reparse(run_id) => {
             super::reparse::record_success(
-                &transaction,
+                transaction,
                 run_id,
                 sigint_inbox_item_id,
                 if changed { "changed" } else { "unchanged" },
@@ -382,9 +469,8 @@ pub(crate) async fn complete_job(
             .await
             .c(h!())?;
         }
-        transaction.commit().await.c(h!())?;
-        return Ok(changed);
     }
+    Ok(())
 }
 
 async fn lock_callsign_job_state(
@@ -496,20 +582,52 @@ async fn fail_job(
     job: ai_callsign_worker_job::Model,
     error_text: String,
 ) -> Result<(), AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    if !lock_current_job(&transaction, job.sigint_inbox_item_id, job.created_at)
+        .await
+        .c(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
     let attempts = job.attempts + 1;
     let error_text = truncate_error(error_text);
+    crate::ai_worker::record_failure(
+        &transaction,
+        "callsign",
+        &job.sigint_inbox_item_id.to_string(),
+        &error_text,
+    )
+    .await
+    .c(h!())?;
     if attempts >= AI_CALLSIGN_WORKER_MAX_ATTEMPTS {
         error!(
             "ai_callsign_worker dropped message_id={} after {} attempts: {}",
             job.sigint_inbox_item_id, attempts, error_text
         );
-        delete_job(dbx, job.sigint_inbox_item_id, job.created_at)
+        delete_job(&transaction, job.sigint_inbox_item_id, job.created_at)
             .await
             .c(h!())?;
+        transaction.commit().await.c(h!())?;
         return Ok(());
     }
-    dbx.execute_raw(super::feedback::sql("update ai_callsign_worker_job set attempts = $3, next_attempt_at = $4, last_error = $5 where sigint_inbox_item_id = $1 and created_at = $2", vec![job.sigint_inbox_item_id.into(), job.created_at.into(), attempts.into(), (Utc::now().naive_utc() + ChronoDuration::seconds(retry_delay_secs(attempts))).into(), error_text.into()])).await.c(h!())?;
+    transaction.execute_raw(super::feedback::sql("update ai_callsign_worker_job set attempts = $3, next_attempt_at = $4, last_error = $5 where sigint_inbox_item_id = $1 and created_at = $2", vec![job.sigint_inbox_item_id.into(), job.created_at.into(), attempts.into(), (Utc::now().naive_utc() + ChronoDuration::seconds(retry_delay_secs(attempts))).into(), error_text.into()])).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(())
+}
+
+async fn lock_current_job(
+    transaction: &DatabaseTransaction,
+    sigint_inbox_item_id: i64,
+    created_at: chrono::NaiveDateTime,
+) -> anyhow::Result<bool> {
+    let current =
+        ai_callsign_worker_job::Entity::find_by_id(sigint_inbox_item_id)
+            .lock_exclusive()
+            .one(transaction)
+            .await
+            .c(h!())?;
+    Ok(current.is_some_and(|job| job.created_at == created_at))
 }
 
 async fn delete_job<C>(
@@ -568,6 +686,10 @@ fn truncate_error(error: String) -> String {
 }
 
 #[cfg(test)]
+#[path = "worker/fallback_tests.rs"]
+mod fallback_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         merge_current_and_ai_callsigns, normalize_callsigns, retry_delay_secs,
@@ -622,11 +744,28 @@ mod tests {
             .await
             .unwrap();
         let old = load_next_job(&env.dbx).await.unwrap().unwrap();
+        let body = signal_message::Entity::find_by_id(item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .body
+            .unwrap_or_default();
         enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
             .await
             .unwrap();
         let new = load_next_job(&env.dbx).await.unwrap().unwrap();
         assert!(new.created_at > old.created_at);
+        assert!(!complete_job(
+            &env.dbx,
+            &env.rq,
+            item.id,
+            &body,
+            vec![],
+            CompletionSource::Queue(old.created_at),
+        )
+        .await
+        .unwrap());
         delete_job(&env.dbx, old.sigint_inbox_item_id, old.created_at)
             .await
             .unwrap();
@@ -636,10 +775,30 @@ mod tests {
         let pending = load_next_job(&env.dbx).await.unwrap().unwrap();
         assert_eq!(pending.created_at, new.created_at);
         assert_eq!(pending.attempts, 0);
+        assert!(crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
         delete_job(&env.dbx, new.sigint_inbox_item_id, new.created_at)
             .await
             .unwrap();
         assert!(load_next_job(&env.dbx).await.unwrap().is_none());
+        assert!(!complete_job(
+            &env.dbx,
+            &env.rq,
+            item.id,
+            &body,
+            vec![],
+            CompletionSource::Queue(new.created_at),
+        )
+        .await
+        .unwrap());
+        assert!(crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
         ai_engine::Entity::delete_by_id(engine_id)
             .exec(&env.dbx)
             .await

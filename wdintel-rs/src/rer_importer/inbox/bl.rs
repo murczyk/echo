@@ -586,8 +586,7 @@ pub async fn get_inbox_map_items(
 ) -> Result<Vec<InboxMapItem>, AppError> {
     let q = build_inbox_map_query(login, env, req).await.c(h!())?;
 
-    let query_res: Vec<QueryResult> = env
-        .dbx
+    let query_res: Vec<QueryResult> = crate::read_query::connection(&env.dbx)
         .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
@@ -639,7 +638,7 @@ order by inbox_item_count desc, s.id
         DatabaseBackend::Postgres,
         sql,
     ))
-    .all(&env.dbx)
+    .all(&crate::read_query::connection(&env.dbx))
     .await
     .c(h!())?)
 }
@@ -2074,6 +2073,9 @@ pub async fn submit_upsert_inbox_item(
     parse_body_coordinates: bool,
     invalidate_body_derived_fields: bool,
 ) -> Result<i64, AppError> {
+    crate::ai_settlement::worker::delete_job(txn, id)
+        .await
+        .c(h!())?;
     let m_existing = SigintInboxItem::find_by_id(id).one(txn).await.c(h!())?;
     let existing_message = m_existing.is_some();
     if let Some(existing) = m_existing {
@@ -2448,9 +2450,6 @@ async fn clear_body_derived_fields(
     )
     .await
     .c(h!())?;
-    crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
-        .await
-        .c(h!())?;
     crate::ai_position::worker::enqueue_message_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;

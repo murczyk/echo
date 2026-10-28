@@ -115,6 +115,42 @@ where
     }
 }
 
+fn filter_stats_search<Q>(
+    query: Q,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
+    use crate::attachments::analytics::{SearchCoverageScope, SearchTimeBasis};
+    filter_search_with_source_scope(
+        query,
+        &req.search,
+        search_mode,
+        correlated_terms,
+        scope,
+        inbox_required,
+        Some(SearchCoverageScope {
+            since: Some(dt_from_millis(req.since_date_inclusive_ms).c(h!())?),
+            till: Some(dt_from_millis(req.till_date_noninclusive_ms).c(h!())?),
+            till_inclusive: false,
+            time_basis: if req.message_time_basis
+                == Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+            {
+                SearchTimeBasis::Creation
+            } else {
+                SearchTimeBasis::Interception
+            },
+            groups: master_keys,
+        }),
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum AnalysisFacet {
     Groups,
@@ -199,7 +235,7 @@ pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
     report_tags_only_this_unit: bool,
 ) -> Result<AnalyticsTagAccess, AppError> {
     let login_row = login::Entity::find_by_id(*login_id)
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?;
     let owner_organism_id = login_row
@@ -215,7 +251,7 @@ pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
         .select_only()
         .column(tag::Column::Id)
         .into_tuple::<i64>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
     let unit_login_ids =
@@ -225,7 +261,7 @@ pub(in crate::rer_importer) async fn resolve_analytics_tag_access(
                 .select_only()
                 .column(login::Column::Id)
                 .into_tuple::<uuid::Uuid>()
-                .all(db)
+                .all(&crate::read_query::connection(db))
                 .await
                 .context(h!())?
         } else {
@@ -439,7 +475,7 @@ async fn resolve_analytics_message_id_scope_for_range_uncached(
     let bounds = MessageIdBounds::find_by_statement(
         analytics_message_id_scope_statement(dt_since, dt_till),
     )
-    .one(db)
+    .one(&crate::read_query::connection(db))
     .await
     .context(h!())?
     .unwrap_or(MessageIdBounds {
@@ -658,11 +694,106 @@ where
 {
     let result = build_distinct_count_query(query, expression)
         .into_model::<DistinctCountRes>()
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .unwrap_or(DistinctCountRes { count: 0 });
     Ok(result.count)
+}
+
+pub(super) fn source_count_windows(
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> anyhow::Result<Option<crate::rer_importer::search_windows::SearchWindows>>
+{
+    if scope.is_some() {
+        return Ok(None);
+    }
+    Ok(
+        crate::rer_importer::search_windows::SearchWindows::for_search(
+            &req.search,
+            dt_from_millis(req.since_date_inclusive_ms).c(h!())?,
+            dt_from_millis(req.till_date_noninclusive_ms).c(h!())?,
+            true,
+        ),
+    )
+}
+
+fn source_count_periods(
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> anyhow::Result<crate::rer_importer::search_windows::SearchWindows> {
+    Ok(source_count_windows(req, scope).c(h!())?.unwrap_or(
+        crate::rer_importer::search_windows::SearchWindows::single(
+            dt_from_millis(req.since_date_inclusive_ms).c(h!())?,
+            dt_from_millis(req.till_date_noninclusive_ms).c(h!())?,
+        ),
+    ))
+}
+
+fn request_in_window(
+    req: &AnalysisStatsReq,
+    window: crate::rer_importer::search_windows::SearchWindow,
+) -> AnalysisStatsReq {
+    let mut req = req.clone();
+    req.since_date_inclusive_ms = window.since.and_utc().timestamp_millis();
+    req.till_date_noninclusive_ms = window.till.and_utc().timestamp_millis();
+    req
+}
+
+fn distinct_key_statement<E: EntityTrait>(
+    query: Select<E>,
+    expression: SimpleExpr,
+) -> Statement {
+    query
+        .select_only()
+        .column_as(Expr::cust_with_expr("($1)::text", expression), "identity")
+        .distinct()
+        .build(DbBackend::Postgres)
+}
+
+fn project_count_key(
+    mut statement: Statement,
+    column: &str,
+    count_null: bool,
+) -> Statement {
+    let expression = format!("window_keys.{column}::text");
+    let expression = if count_null {
+        format!("COALESCE({expression},'null')")
+    } else {
+        expression
+    };
+    statement.sql = format!(
+        "SELECT DISTINCT {expression} AS identity FROM ({}) window_keys",
+        statement.sql
+    );
+    statement
+}
+
+async fn count_distinct_in_source_windows<E: EntityTrait>(
+    query: Select<E>,
+    expression: SimpleExpr,
+    db: &DatabaseConnection,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+    build: impl Fn(
+        &AnalysisStatsReq,
+        NaiveDateTime,
+        NaiveDateTime,
+    ) -> Result<Select<E>, AppError>,
+) -> Result<i64, AppError> {
+    let Some(windows) = source_count_windows(req, scope).c(h!())? else {
+        return count_distinct_with_db(query, expression, db).await;
+    };
+    let identities =
+        crate::rer_importer::search_windows::keys(db, windows, |window| {
+            let req = request_in_window(req, window);
+            let query = build(&req, window.since, window.till).c(h!())?;
+            Ok(distinct_key_statement(query, expression.clone()))
+        })
+        .await
+        .c(h!())?;
+    identities.len().try_into().c(h!()).map_err(Into::into)
 }
 
 fn build_distinct_count_query<E>(
@@ -779,7 +910,7 @@ pub(super) async fn fetch_group_activity_stats_with_db(
         .column_as(signal_message::Column::Id.min(), "min_id")
         .filter(signal_message::Column::Timestamp.gte(week_cutoff))
         .into_tuple::<Option<i64>>()
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .flatten();
@@ -794,7 +925,7 @@ pub(super) async fn fetch_group_activity_stats_with_db(
         &scope,
     )
     .into_tuple::<(String, i64, i64)>()
-    .all(db)
+    .all(&crate::read_query::connection(db))
     .await
     .context(h!())?;
     let counts = rows
@@ -884,8 +1015,11 @@ async fn fetch_groups_for_login_with_db(
         units,
     )?;
 
-    let groups_res: Vec<GroupsRes> =
-        groups_res.into_model::<GroupsRes>().all(db).await.c(h!())?;
+    let groups_res: Vec<GroupsRes> = groups_res
+        .into_model::<GroupsRes>()
+        .all(&crate::read_query::connection(db))
+        .await
+        .c(h!())?;
     let mut groups = vec![];
     for x in groups_res {
         let Some(master_key) = x.master_key else {
@@ -1065,8 +1199,52 @@ pub async fn count_groups(
         None,
         None,
     )?;
-    let count = groups_res.count(&read_db).await.c(h!())?;
+    let count = groups_res
+        .count(&crate::read_query::connection(&read_db))
+        .await
+        .c(h!())?;
     Ok(count as i64)
+}
+
+pub(super) async fn fetch_group_count_keys_in_source_windows(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+) -> anyhow::Result<Vec<AnalysisStatsGroup>> {
+    let identities = crate::rer_importer::search_windows::keys(
+        db,
+        source_count_periods(req, None).c(h!())?,
+        |window| {
+            let req = request_in_window(req, window);
+            let query = build_groups_query(
+                &req,
+                login,
+                window.since,
+                window.till,
+                master_keys.clone(),
+                None,
+                None,
+            )
+            .c(h!())?;
+            Ok(distinct_key_statement(
+                query,
+                Expr::col((
+                    signal_message_group::Entity,
+                    signal_message_group::Column::GroupMasterKey,
+                )),
+            ))
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(identities
+        .into_iter()
+        .map(|master_key| AnalysisStatsGroup {
+            master_key,
+            count: 0,
+        })
+        .collect())
 }
 
 pub(super) fn build_groups_query(
@@ -1183,9 +1361,10 @@ fn apply_group_stats_filters(
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, req)?;
-    let query = filter_search_with_scope(
+    let query = filter_stats_search(
         query,
-        &req.search,
+        req,
+        &accessible_groups,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -1365,7 +1544,7 @@ async fn query_daily_group_activity(
     .context(h!())?;
     query
         .into_model::<AnalysisDailyGroupActivity>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())
 }
@@ -1479,7 +1658,7 @@ pub(super) async fn fetch_callsign_relation_messages_with_db(
     };
     let rows = query
         .into_model::<AnalysisCallsignRelationMessageRow>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
 
@@ -1601,7 +1780,7 @@ pub(super) async fn fetch_callsign_frequency_matches_with_db(
         min_matches,
     );
     let rows = AnalysisCallsignFrequencyMatchRow::find_by_statement(statement)
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
 
@@ -1738,7 +1917,7 @@ async fn fetch_senders_for_login_with_db(
     .context(h!())?;
     let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
         .into_model::<SenderBreakdownRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
 
@@ -1926,12 +2105,29 @@ pub(super) async fn count_senders_with_db(
         &login_value,
         dt_since,
         dt_till,
-        master_keys,
+        master_keys.clone(),
         scope,
         units.as_deref(),
     )?;
-    count_distinct_with_db(senders_res, preferred_group_sender_expr(None), db)
-        .await
+    count_distinct_in_source_windows(
+        senders_res,
+        preferred_group_sender_expr(None),
+        db,
+        req,
+        scope,
+        |req, since, till| {
+            build_senders_filtered_query(
+                &&Json(req.clone()),
+                &login_value,
+                since,
+                till,
+                master_keys.clone(),
+                scope,
+                units.as_deref(),
+            )
+        },
+    )
+    .await
 }
 
 fn build_senders_filtered_query(
@@ -2014,9 +2210,10 @@ fn build_senders_filtered_query(
     )
     .context(h!())?;
     let senders_res = apply_metadata_filters(senders_res, &req.0)?;
-    let senders_res = filter_search_with_scope(
+    let senders_res = filter_stats_search(
         senders_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -2170,9 +2367,10 @@ where
     )
     .context(h!())?;
     let query = apply_metadata_filters(query, &req.0)?;
-    let query = filter_search_with_scope(
+    let query = filter_stats_search(
         query,
-        &req.search,
+        req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -2278,7 +2476,7 @@ async fn fetch_posts_with_db(
             tag_access.as_ref(),
         )?
         .into_model::<PostsRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?
     };
@@ -2332,7 +2530,7 @@ async fn read_unfiltered_post_stats(
         sql,
         vec![dt_since.into(), dt_till.into(), master_keys.into()],
     ))
-    .all(db)
+    .all(&crate::read_query::connection(db))
     .await
     .context(h!())?)
 }
@@ -2385,17 +2583,31 @@ pub(super) async fn count_posts_with_db(
     let posts_res = build_posts_filtered_query(
         &req,
         &login_value,
-        master_keys,
+        master_keys.clone(),
         dt_since,
         dt_till,
         scope,
         units.as_deref(),
         tag_access.as_ref(),
     )?;
-    count_distinct_with_db(
+    count_distinct_in_source_windows(
         posts_res,
         Expr::col((sigint_post::Entity, sigint_post::Column::Name)).if_null(""),
         db,
+        req,
+        scope,
+        |req, since, till| {
+            build_posts_filtered_query(
+                &&Json(req.clone()),
+                &login_value,
+                master_keys.clone(),
+                since,
+                till,
+                scope,
+                units.as_deref(),
+                tag_access.as_ref(),
+            )
+        },
     )
     .await
 }
@@ -2524,9 +2736,10 @@ fn build_posts_filtered_query(
     )
     .context(h!())?;
     let post_res = apply_metadata_filters(post_res, &req.0)?;
-    let post_res = filter_search_with_scope(
+    let post_res = filter_stats_search(
         post_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -2688,7 +2901,7 @@ async fn fetch_freqs_for_login_with_db(
             .context(h!())?;
     let freqs = freqs_res
         .into_model::<FreqsRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .into_iter()
@@ -2725,7 +2938,11 @@ async fn get_new_freqs_with_scopes(
         query.build(DbBackend::Postgres)
     );
 
-    let new_freqs = query.into_tuple::<String>().all(db).await.context(h!())?;
+    let new_freqs = query
+        .into_tuple::<String>()
+        .all(&crate::read_query::connection(db))
+        .await
+        .context(h!())?;
 
     Ok(new_freqs)
 }
@@ -2850,15 +3067,28 @@ pub(super) async fn count_freqs_with_db(
         &login_value,
         dt_since,
         dt_till,
-        master_keys,
+        master_keys.clone(),
         scope,
         units.as_deref(),
     )?;
-    count_distinct_with_db(
+    count_distinct_in_source_windows(
         freqs_res,
         Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Freq))
             .if_null(""),
         db,
+        req,
+        scope,
+        |req, since, till| {
+            build_freqs_filtered_query(
+                req,
+                &login_value,
+                since,
+                till,
+                master_keys.clone(),
+                scope,
+                units.as_deref(),
+            )
+        },
     )
     .await
 }
@@ -2995,9 +3225,10 @@ fn build_freqs_filtered_query(
     )
     .context(h!())?;
     let freqs_res = apply_metadata_filters(freqs_res, &req)?;
-    let freqs_res = filter_search_with_scope(
+    let freqs_res = filter_stats_search(
         freqs_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         scope.is_some(),
         scope,
@@ -3130,7 +3361,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
 
     Ok(callsigns_res
         .into_model::<CallsignsRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .into_iter()
@@ -3160,23 +3391,45 @@ pub(super) async fn count_callsigns_with_db(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let login_value = login_id_from_identity(user)?;
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_till =
-        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
+    let build = |window| {
+        let req = request_in_window(req, window);
+        let query = build_callsign_inbox_item_ids_query(
+            &req,
+            &login_value,
+            window.since,
+            window.till,
+            master_keys.clone(),
+        )
+        .c(h!())?;
+        Ok(project_count_key(
+            callsign_counts_statement(query),
+            "callsign",
+            false,
+        ))
+    };
+    if let Some(windows) = source_count_windows(req, None).c(h!())? {
+        let keys =
+            crate::rer_importer::search_windows::keys(db, windows, build)
+                .await
+                .c(h!())?;
+        return keys.len().try_into().c(h!()).map_err(Into::into);
+    }
     let callsigns = load_callsigns_with_counts(
         db,
         build_callsign_inbox_item_ids_query(
-            &req.0,
+            req,
             &login_value,
-            dt_since,
-            dt_till,
+            dt_from_millis(req.since_date_inclusive_ms).c(h!())?,
+            dt_from_millis(req.till_date_noninclusive_ms).c(h!())?,
             master_keys,
-        )?,
+        )
+        .c(h!())?,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok(callsigns.len() as i64)
 }
 
@@ -3226,7 +3479,7 @@ pub(super) async fn count_callsigns_analytics_with_db(
         );
     let result = callsigns_res
         .into_model::<DistinctCountRes>()
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .unwrap_or(DistinctCountRes { count: 0 });
@@ -3583,7 +3836,7 @@ async fn fetch_metadata_single_value_stats(
             .order_by_desc(Expr::cust("2"))
             .order_by_asc(Expr::cust("1"))
             .into_model::<MetadataValueRes>()
-            .all(db)
+            .all(&crate::read_query::connection(db))
             .await
             .context(h!())?;
 
@@ -3653,7 +3906,7 @@ async fn fetch_metadata_multi_value_stats(
             sql,
             values,
         ))
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
 
@@ -3768,10 +4021,9 @@ fn build_callsign_inbox_item_ids_query(
     .distinct())
 }
 
-async fn load_callsigns_with_counts(
-    db: &DatabaseConnection,
+fn callsign_counts_statement(
     query: Select<sigint_inbox_item::Entity>,
-) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+) -> Statement {
     let filtered_items = query.build(DbBackend::Postgres);
     let values = filtered_items
         .values
@@ -3790,9 +4042,18 @@ async fn load_callsigns_with_counts(
         ORDER BY callsign
         "#,
     );
-    let statement =
-        Statement::from_sql_and_values(DbBackend::Postgres, sql, values);
-    let rows = db.query_all_raw(statement).await.context(h!())?;
+    Statement::from_sql_and_values(DbBackend::Postgres, sql, values)
+}
+
+async fn load_callsigns_with_counts(
+    db: &DatabaseConnection,
+    query: Select<sigint_inbox_item::Entity>,
+) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
+    let statement = callsign_counts_statement(query);
+    let rows = crate::read_query::connection(db)
+        .query_all_raw(statement)
+        .await
+        .context(h!())?;
     let callsigns = rows
         .iter()
         .map(|row| {
@@ -4175,7 +4436,7 @@ async fn execute_callsign_page_statement(
     statement: Statement,
 ) -> Result<Vec<CallsignPageRow>, AppError> {
     Ok(CallsignPageRow::find_by_statement(statement)
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?)
 }
@@ -4318,9 +4579,10 @@ fn build_callsigns_filtered_query(
     )
     .context(h!())?;
     let callsigns_res = apply_metadata_filters(callsigns_res, &req)?;
-    let callsigns_res = filter_search_with_scope(
+    let callsigns_res = filter_stats_search(
         callsigns_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -4436,14 +4698,14 @@ async fn fetch_tags_for_login_with_db(
         .column_as(Expr::count(Expr::val(1)), "count")
         .group_by(sigint_inbox_item_tag::Column::TagId)
         .into_model::<TagsRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .c(h!())?
     } else {
         let query =
             build_tags_query(req, login_str, dt_since, dt_till, master_keys)?;
         TagsRes::find_by_statement(DbBackend::Postgres.build(&query))
-            .all(db)
+            .all(&crate::read_query::connection(db))
             .await
             .c(h!())?
     };
@@ -4522,7 +4784,7 @@ pub(super) async fn fetch_analytics_tags_for_login_with_scope(
             )
             .context(h!())?
             .into_model::<TagsRes>()
-            .all(db)
+            .all(&crate::read_query::connection(db))
             .await
             .context(h!())
         }
@@ -4607,6 +4869,35 @@ pub(super) async fn count_tags_with_db(
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
+    if let Some(windows) = source_count_windows(req, None).c(h!())? {
+        let identities =
+            crate::rer_importer::search_windows::keys(db, windows, |window| {
+                let req = request_in_window(req, window);
+                let (ctes, query) = build_tags_query_parts(
+                    &req,
+                    &login_value,
+                    window.since,
+                    window.till,
+                    master_keys.clone(),
+                )
+                .c(h!())?;
+                let query = query
+                    .select_only()
+                    .column_as(
+                        Expr::cust_with_expr(
+                            "($1)::text",
+                            Expr::col(sigint_inbox_item_tag::Column::TagId),
+                        ),
+                        "identity",
+                    )
+                    .distinct();
+                Ok(DbBackend::Postgres
+                    .build(&build_tags_with_query(ctes, query)))
+            })
+            .await
+            .c(h!())?;
+        return identities.len().try_into().c(h!()).map_err(Into::into);
+    }
     let tags_res = build_tags_count_query(
         &req.0,
         &login_value,
@@ -4617,7 +4908,7 @@ pub(super) async fn count_tags_with_db(
     let result = DistinctCountRes::find_by_statement(
         DbBackend::Postgres.build(&tags_res),
     )
-    .one(db)
+    .one(&crate::read_query::connection(db))
     .await
     .context(h!())?
     .unwrap_or(DistinctCountRes { count: 0 });
@@ -4662,7 +4953,7 @@ pub(super) async fn count_tags_analytics_with_db(
     .context(h!())?;
     let result = tags_res
         .into_model::<DistinctCountRes>()
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .unwrap_or(DistinctCountRes { count: 0 });
@@ -5090,9 +5381,10 @@ fn build_tags_filtered_query_with_owner_condition(
     }
     .context(h!())?;
     let tags_res = apply_metadata_filters(tags_res, &req)?;
-    let tags_res = filter_search_with_scope(
+    let tags_res = filter_stats_search(
         tags_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -5181,7 +5473,7 @@ async fn fetch_units_with_db(
     // );
     let units_res: Vec<UnitsRes> = units_res
         .into_model::<UnitsRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
     let units = units_res
@@ -5235,27 +5527,58 @@ pub(super) async fn count_units_with_db(
         scope,
     )
     .c(h!())?;
-    let canonical_count = count_distinct_with_db(
+    let canonical_count = count_distinct_in_source_windows(
         units_res,
         Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
         db,
+        req,
+        scope,
+        |req, since, till| {
+            build_units_count_query(
+                &&Json(req.clone()),
+                &login_value,
+                since,
+                till,
+                master_keys.clone(),
+                scope,
+            )
+        },
     )
     .await
     .context(h!())?;
-    let undefined_count = build_undefined_unit_query(
-        &req,
-        &login_value,
-        dt_since,
-        dt_till,
-        master_keys,
-        scope,
-    )
-    .context(h!())?
-    .into_model::<UnitsRes>()
-    .one(db)
-    .await
-    .context(h!())?
-    .is_some() as i64;
+    let undefined_count =
+        if let Some(windows) = source_count_windows(req, scope).c(h!())? {
+            crate::rer_importer::search_windows::exists(db, windows, |window| {
+                let req = Json(request_in_window(req, window));
+                let query = build_undefined_unit_query(
+                    &&req,
+                    &login_value,
+                    window.since,
+                    window.till,
+                    master_keys.clone(),
+                    scope,
+                )
+                .c(h!())?;
+                Ok(query.limit(1).build(DbBackend::Postgres))
+            })
+            .await
+            .c(h!())? as i64
+        } else {
+            build_undefined_unit_query(
+                &req,
+                &login_value,
+                dt_since,
+                dt_till,
+                master_keys,
+                scope,
+            )
+            .c(h!())?
+            .into_model::<UnitsRes>()
+            .one(&crate::read_query::connection(db))
+            .await
+            .c(h!())?
+            .is_some() as i64
+        };
     Ok(canonical_count + undefined_count)
 }
 
@@ -5618,9 +5941,10 @@ fn build_units_filtered_query(
     )
     .context(h!())?;
     let units_res = apply_metadata_filters(units_res, &req.0)?;
-    let units_res = filter_search_with_scope(
+    let units_res = filter_stats_search(
         units_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -5740,7 +6064,7 @@ async fn fetch_locations_for_login_with_db(
     // );
     let locations_res = locations_res
         .into_model::<LocationsRes>()
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .into_iter()
@@ -5810,14 +6134,27 @@ pub(super) async fn count_locations_with_db(
         &user,
         dt_since,
         dt_till,
-        master_keys,
+        master_keys.clone(),
         scope,
         units.as_deref(),
     )?;
-    count_distinct_with_db(
+    count_distinct_in_source_windows(
         locations_res,
         Expr::col(sigint_inbox_item::Column::LocationV2).if_null(""),
         db,
+        req,
+        scope,
+        |req, since, till| {
+            build_locations_filtered_query(
+                &&Json(req.clone()),
+                &user,
+                since,
+                till,
+                master_keys.clone(),
+                scope,
+                units.as_deref(),
+            )
+        },
     )
     .await
 }
@@ -5980,9 +6317,10 @@ fn build_facet_messages_query(
     )
     .context(h!())?;
     let locations_res = apply_metadata_filters(locations_res, &req).c(h!())?;
-    let locations_res = filter_search_with_scope(
+    let locations_res = filter_stats_search(
         locations_res,
-        &req.search,
+        &req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -6049,7 +6387,7 @@ pub(super) async fn fetch_device_names_with_db(
     .group_by(device_name::Column::Name)
     .order_by_asc(device_name::Column::Name)
     .into_model::<AnalysisStatsDeviceName>()
-    .all(db)
+    .all(&crate::read_query::connection(db))
     .await
     .c(h!())
 }
@@ -6114,7 +6452,7 @@ async fn fetch_aors_for_login_with_db(
         build_aors_query(req, login_str, dt_since, dt_till, master_keys)?
     };
     let aors_res: Vec<AorsRes> = AorsRes::find_by_statement(stmt)
-        .all(db)
+        .all(&crate::read_query::connection(db))
         .await
         .context(h!())?;
     let mut aors = vec![];
@@ -6215,7 +6553,7 @@ pub(super) async fn count_aors_raw_with_db(
     )
     .context(h!())?;
     let count = DistinctCountRes::find_by_statement(stmt)
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .context(h!())?;
@@ -6231,14 +6569,32 @@ async fn count_aors_with_db(
     dt_till: NaiveDateTime,
 ) -> Result<i64, AppError> {
     let login_value = login_id_from_identity(user)?;
-    let stmt =
-        build_aors_query(&req.0, &login_value, dt_since, dt_till, master_keys)?;
-    let count = AorsRes::find_by_statement(stmt)
-        .all(db)
+    if let Some(windows) = source_count_windows(req, None).c(h!())? {
+        let keys =
+            crate::rer_importer::search_windows::keys(db, windows, |window| {
+                let req = request_in_window(req, window);
+                let statement = build_aors_query(
+                    &req,
+                    &login_value,
+                    window.since,
+                    window.till,
+                    master_keys.clone(),
+                )
+                .c(h!())?;
+                Ok(project_count_key(statement, "aor_id", false))
+            })
+            .await
+            .c(h!())?;
+        return keys.len().try_into().c(h!()).map_err(Into::into);
+    }
+    let statement =
+        build_aors_query(req, &login_value, dt_since, dt_till, master_keys)
+            .c(h!())?;
+    Ok(AorsRes::find_by_statement(statement)
+        .all(&crate::read_query::connection(db))
         .await
-        .context(h!())?
-        .len();
-    Ok(count as i64)
+        .c(h!())?
+        .len() as i64)
 }
 
 fn build_aors_query(
@@ -6687,9 +7043,10 @@ fn build_aor_messages_query(
         scope,
     )
     .context(h!())?;
-    let messages = filter_search_with_scope(
+    let messages = filter_stats_search(
         messages,
-        &req.search,
+        req,
+        master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -6747,8 +7104,10 @@ pub async fn fetch_networks_for_login(
         networks_query.to_string(PostgresQueryBuilder),
     );
 
-    let networks_res: Vec<NetworksRes> =
-        NetworksRes::find_by_statement(stmt).all(db).await.c(h!())?;
+    let networks_res: Vec<NetworksRes> = NetworksRes::find_by_statement(stmt)
+        .all(&crate::read_query::connection(db))
+        .await
+        .c(h!())?;
 
     let mut networks = vec![];
     for x in networks_res {
@@ -6784,25 +7143,37 @@ pub(super) async fn count_networks_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
-    let networks_query =
-        build_networks_query(&req.0, user, dt_since, dt_till, master_keys)?;
-
-    // println!(
-    //     "> network count res sql: {}",
-    //     networks_query.to_string(PostgresQueryBuilder)
-    // );
-
-    let stmt = Statement::from_string(
-        DbBackend::Postgres,
-        networks_query.to_string(PostgresQueryBuilder),
-    );
-
-    let networks_res: Vec<NetworksRes> =
-        NetworksRes::find_by_statement(stmt).all(db).await.c(h!())?;
-
-    let res = networks_res.len() as i64;
-
-    Ok(res)
+    if let Some(windows) = source_count_windows(req, None).c(h!())? {
+        let keys =
+            crate::rer_importer::search_windows::keys(db, windows, |window| {
+                let req = request_in_window(req, window);
+                let query = build_networks_query(
+                    &req,
+                    user,
+                    window.since,
+                    window.till,
+                    master_keys.clone(),
+                )
+                .c(h!())?;
+                Ok(project_count_key(
+                    DbBackend::Postgres.build(&query),
+                    "network_id",
+                    true,
+                ))
+            })
+            .await
+            .c(h!())?;
+        return keys.len().try_into().c(h!()).map_err(Into::into);
+    }
+    let query = build_networks_query(req, user, dt_since, dt_till, master_keys)
+        .c(h!())?;
+    Ok(
+        NetworksRes::find_by_statement(DbBackend::Postgres.build(&query))
+            .all(&crate::read_query::connection(db))
+            .await
+            .c(h!())?
+            .len() as i64,
+    )
 }
 
 pub(super) async fn count_networks_analytics_with_db(
@@ -6842,7 +7213,7 @@ pub(super) async fn count_networks_analytics_with_db(
         units.as_deref(),
     )?;
     let result = DistinctCountRes::find_by_statement(statement)
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .unwrap_or(DistinctCountRes { count: 0 });
@@ -6904,7 +7275,7 @@ pub(super) async fn fetch_analytics_networks_for_login_with_scope(
             )
             .context(h!())?;
             NetworksRes::find_by_statement(statement)
-                .all(db)
+                .all(&crate::read_query::connection(db))
                 .await
                 .context(h!())
         }
@@ -7126,9 +7497,10 @@ fn build_network_analytics_messages_query(
     )
     .context(h!())?;
     let messages = apply_metadata_filters(messages, req)?;
-    let messages = filter_search_with_scope(
+    let messages = filter_stats_search(
         messages,
-        &req.search,
+        req,
+        master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -7857,9 +8229,16 @@ fn build_networks_query_for_login(
     )
     .context(h!())?;
     let messages_q = apply_metadata_filters(messages_q, &req)?;
-    let messages_q =
-        filter_search_with_mode(messages_q, &req.search, req.search_mode)
-            .context(h!())?;
+    let messages_q = filter_stats_search(
+        messages_q,
+        &req,
+        &master_keys,
+        req.search_mode,
+        search_uses_candidate_ids(&req.selected_freqs, None),
+        None,
+        true,
+    )
+    .context(h!())?;
     let messages_q =
         filter_selected_device_names(messages_q, &req.selected_device_names)?;
     let messages_q = filter_selected_tags(
@@ -8185,9 +8564,6 @@ async fn fetch_selected_count_for_login_with_conn(
     scope: Option<&AnalyticsMessageIdScope>,
     resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> anyhow::Result<i64> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_till =
-        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let units = resolve_or_borrow_analysis_unit_filters(
         &env.dbx,
         &req.0,
@@ -8197,14 +8573,46 @@ async fn fetch_selected_count_for_login_with_conn(
     .await
     .context(h!())?;
     let units = units.as_deref();
+    let build = |window| {
+        let req = Json(request_in_window(req, window));
+        Ok(build_selected_count_query(
+            &req,
+            login_str,
+            master_keys.clone(),
+            scope,
+            units,
+        )
+        .c(h!())?
+        .build(DbBackend::Postgres))
+    };
+    if let Some(windows) = source_count_windows(req, scope).c(h!())? {
+        return crate::rer_importer::search_windows::sum(db, windows, build)
+            .await
+            .c(h!());
+    }
+    let statement = build(crate::rer_importer::search_windows::SearchWindow {
+        since: dt_from_millis(req.since_date_inclusive_ms).c(h!())?,
+        till: dt_from_millis(req.till_date_noninclusive_ms).c(h!())?,
+    })
+    .c(h!())?;
+    let result = DistinctCountRes::find_by_statement(statement)
+        .one(&crate::read_query::connection(db))
+        .await
+        .c(h!())?;
+    Ok(result.map_or(0, |row| row.count))
+}
+
+fn build_selected_count_query(
+    req: &Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> anyhow::Result<Select<sigint_inbox_item::Entity>> {
+    let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
+    let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
-    let instant = std::time::Instant::now();
-
-    #[derive(FromQueryResult)]
-    struct SelectedCountRes {
-        count: i64,
-    }
     let selected_count_res = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -8291,9 +8699,10 @@ async fn fetch_selected_count_for_login_with_conn(
     .context(h!())?;
     let selected_count_res =
         apply_metadata_filters(selected_count_res, &req.0).context(h!())?;
-    let selected_count_res = filter_search_with_scope(
+    let selected_count_res = filter_stats_search(
         selected_count_res,
-        &req.search,
+        req,
+        &master_keys,
         req.search_mode,
         search_uses_candidate_ids(&req.selected_freqs, scope),
         scope,
@@ -8319,18 +8728,7 @@ async fn fetch_selected_count_for_login_with_conn(
     //    .build(DbBackend::Postgres)
     //    .to_string();
     //);
-    let selected_count_res: SelectedCountRes = selected_count_res
-        .into_model::<SelectedCountRes>()
-        .one(db)
-        .await
-        .context(h!())?
-        .unwrap_or(SelectedCountRes { count: 0 });
-    let count_selected: i64 = selected_count_res.count;
-
-    if instant.elapsed().as_secs() > 1 {
-        debug!("count selected op took: {:?}", instant.elapsed());
-    }
-    Ok(count_selected)
+    Ok(selected_count_res)
 }
 
 pub(super) async fn fetch_selected_count_raw_with_db(
@@ -8447,7 +8845,7 @@ async fn fetch_count_overall(
     // );
     let overall_count_res: OverallCountRes = overall_count_res
         .into_model::<OverallCountRes>()
-        .one(db)
+        .one(&crate::read_query::connection(db))
         .await
         .context(h!())?
         .context(h!())?;

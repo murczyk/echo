@@ -805,6 +805,27 @@ describe('useAnalysisMessageList pagination', () => {
     expect(h.latest.messagesTotalLoading).toBe(false);
   });
 
+  // Regression: https://github.com/echoua/echo/issues/3780
+  it('keeps a source search count alive beyond the ordinary read deadline', async () => {
+    vi.useFakeTimers();
+    const selected = deferred<{ quantity: number; firstElementTs: null }>();
+    fetchInboxCountMock.mockReturnValueOnce(selected.promise);
+    const h = renderHook({ ...buildQueryState(), search: 'historical' });
+    harnesses.push(h);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    const signal = fetchInboxCountMock.mock.calls[0][1]?.signal;
+    await act(async () => vi.advanceTimersByTimeAsync(65_000));
+    expect(signal?.aborted).toBe(false);
+    expect(h.latest.messagesTotalLoading).toBe(true);
+    expect(h.onError).not.toHaveBeenCalled();
+    await act(async () => {
+      selected.resolve({ quantity: 17, firstElementTs: null });
+      await Promise.resolve();
+    });
+    expect(h.latest.messagesTotalCount).toBe(17);
+    expect(h.latest.messagesTotalLoading).toBe(false);
+  });
+
   it('marks counts as loading synchronously when the date range changes', async () => {
     vi.useFakeTimers();
     const h = renderHook();
@@ -1013,7 +1034,7 @@ describe('useAnalysisMessageList pagination', () => {
   });
 
   // Regression: https://github.com/echoua/echo/issues/3689
-  it('allows scroll pagination after a page button supersedes a slow edge request', async () => {
+  it('#3780 aborts a slow edge request when a page button supersedes it', async () => {
     const h = renderHook();
     harnesses.push(h);
     act(() => h.latest.setMessages(page(60)));
@@ -1023,9 +1044,12 @@ describe('useAnalysisMessageList pagination', () => {
     act(() => {
       staleLoad = h.latest.loadMoreMessages();
     });
+    const signal = fetchInboxMessagesMock.mock.calls.at(-1)?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
 
     fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(40)));
     await act(async () => h.latest.loadNextPage());
+    expect(signal?.aborted).toBe(true);
     expect(h.latest.messages).toEqual(page(40));
 
     fetchInboxMessagesMock.mockResolvedValueOnce(inboxResponse(page(20)));

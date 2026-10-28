@@ -28,9 +28,9 @@ use base64::Engine;
 use chrono::Utc;
 use reqwest::StatusCode;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
+    ConnectionTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use std::time::Duration;
 use types::{
@@ -312,7 +312,17 @@ where
 {
     let is_used = ai_callsign_settings::Entity::find()
         .filter(ai_callsign_settings::Column::WorkerEnabled.eq(true))
-        .filter(ai_callsign_settings::Column::WorkerAiEngineId.eq(ai_engine_id))
+        .filter(
+            Condition::any()
+                .add(
+                    ai_callsign_settings::Column::WorkerAiEngineId
+                        .eq(ai_engine_id),
+                )
+                .add(
+                    ai_callsign_settings::Column::WorkerFallbackAiEngineId
+                        .eq(ai_engine_id),
+                ),
+        )
         .one(dbx)
         .await
         .c(h!())?
@@ -335,7 +345,15 @@ where
     let is_used = ai_settlement_settings::Entity::find()
         .filter(ai_settlement_settings::Column::WorkerEnabled.eq(true))
         .filter(
-            ai_settlement_settings::Column::WorkerAiEngineId.eq(ai_engine_id),
+            Condition::any()
+                .add(
+                    ai_settlement_settings::Column::WorkerAiEngineId
+                        .eq(ai_engine_id),
+                )
+                .add(
+                    ai_settlement_settings::Column::WorkerFallbackAiEngineId
+                        .eq(ai_engine_id),
+                ),
         )
         .one(dbx)
         .await

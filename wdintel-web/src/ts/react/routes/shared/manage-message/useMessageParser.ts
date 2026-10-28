@@ -165,7 +165,7 @@ export function useMessageParser(
       setParsing(false);
 
       if (!rawBody.trim()) {
-        if (sourceWasNotEmpty && !hasManualFormChangesRef.current) {
+        if (parserActive && sourceWasNotEmpty && !hasManualFormChangesRef.current) {
           ownershipRef.current = createParserOwnershipState();
           setParserFeedback(null);
           onPristineSourceCleared?.();

@@ -1,0 +1,1615 @@
+{
+  "date": "2026-10-27",
+  "timezone": "UTC",
+  "operation": "User-approved switch of three workers per server to the existing Gemma engine; no further queue clearing.",
+  "servers": {
+    "echo-skhid": {
+      "before": {
+        "engine": [
+          {
+            "id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "url": "http://100.105.172.96:8000/v1",
+            "name": "Gemma 4 26B — vLLM router",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true,
+            "callsign_enabled": true
+          }
+        ],
+        "worker": [
+          {
+            "name": "GPT-6 Luna",
+            "worker": "callsign",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a12aa3-59d2-7d50-81db-37a2f2f32465"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "settlement",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a12aa3-59d2-7d50-81db-37a2f2f32465"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "position",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a12aa3-59d2-7d50-81db-37a2f2f32465"
+          }
+        ],
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 3350520,
+            "inserts": 5388599,
+            "updates": 73519,
+            "estimated_rows": 650
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 125254,
+            "inserts": 1896301,
+            "updates": 28888,
+            "estimated_rows": 650
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 60354,
+            "inserts": 1898454,
+            "updates": 35096,
+            "estimated_rows": 650
+          }
+        ]
+      },
+      "switch": {
+        "worker": [
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ],
+        "committed_at": "2026-10-27 15:21:44.322932"
+      },
+      "observation_start": {
+        "observed_at": "2026-10-27 15:22:30.85761",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 3350544,
+            "inserts": 5388737,
+            "updates": 73967,
+            "estimated_rows": 764
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 125276,
+            "inserts": 1896439,
+            "updates": 29330,
+            "estimated_rows": 766
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 60371,
+            "inserts": 1898592,
+            "updates": 35566,
+            "estimated_rows": 773
+          }
+        ],
+        "tracked": [
+          {
+            "id": 47115552,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461189"
+          },
+          {
+            "id": 47115553,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461208"
+          },
+          {
+            "id": 47115555,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461634"
+          },
+          {
+            "id": 47115554,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461689"
+          },
+          {
+            "id": 47115559,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461908"
+          },
+          {
+            "id": 47115552,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461189"
+          },
+          {
+            "id": 47115553,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461208"
+          },
+          {
+            "id": 47115555,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461634"
+          },
+          {
+            "id": 47115554,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461689"
+          },
+          {
+            "id": 47115559,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461908"
+          },
+          {
+            "id": "01a17df4-05d2-7182-be18-7381d82bcf0d",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461189",
+            "inbox_item_id": 47115552
+          },
+          {
+            "id": "01a17df4-0525-76aa-897e-c2145bb5466a",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461208",
+            "inbox_item_id": 47115553
+          },
+          {
+            "id": "01a17df4-05ef-7aaa-9d84-17ce6ac6a0ad",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461634",
+            "inbox_item_id": 47115555
+          },
+          {
+            "id": "01a17df4-0744-72ad-b1a0-c43d72d3f5b8",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461689",
+            "inbox_item_id": 47115554
+          },
+          {
+            "id": "01a17df4-0525-70ad-8bce-86f8c3e9657f",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.461908",
+            "inbox_item_id": 47115559
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df4-ad26-7d30-bc46-2b0c0ea6a3f2",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:29.539519"
+          },
+          {
+            "id": "01a17df4-9c8c-718c-a054-12d705e00838",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:25.282445"
+          }
+        ]
+      },
+      "observation_end": {
+        "tracked_status": [
+          {
+            "id": 47115554,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115555,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115553,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115559,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115552,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115554,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115555,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115553,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115559,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 47115552,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-05d2-7182-be18-7381d82bcf0d",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-0525-76aa-897e-c2145bb5466a",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-05ef-7aaa-9d84-17ce6ac6a0ad",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-0744-72ad-b1a0-c43d72d3f5b8",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-0525-70ad-8bce-86f8c3e9657f",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          }
+        ],
+        "observed_at": "2026-10-27 15:24:11.313815",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 3350596,
+            "inserts": 5388898,
+            "updates": 73972,
+            "estimated_rows": 874
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 125325,
+            "inserts": 1896600,
+            "updates": 29335,
+            "estimated_rows": 880
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 60408,
+            "inserts": 1898753,
+            "updates": 35571,
+            "estimated_rows": 897
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df6-254e-7cce-ab09-bd9f1f3f7ca5",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:24:05.790384"
+          },
+          {
+            "id": "01a17df6-254f-70d4-9a22-00b3c74d3028",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:24:05.790384"
+          }
+        ],
+        "worker": [
+          {
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ]
+      },
+      "interval_seconds": 100.456,
+      "queue_counter_deltas": {
+        "ai_callsign_worker_job": {
+          "inserts": 161,
+          "updates": 5,
+          "deletes": 52
+        },
+        "ai_settlement_worker_job": {
+          "inserts": 161,
+          "updates": 5,
+          "deletes": 49
+        },
+        "ai_position_worker_job": {
+          "inserts": 161,
+          "updates": 5,
+          "deletes": 37
+        }
+      }
+    },
+    "echo-siversk": {
+      "before": {
+        "engine": [
+          {
+            "id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "url": "http://100.105.172.96:8000/v1",
+            "name": "Gemma 4 26B — vLLM router",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true,
+            "callsign_enabled": true
+          }
+        ],
+        "worker": [
+          {
+            "name": "GPT-6 Luna",
+            "worker": "callsign",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a11c1f-ea3c-74f8-83cb-829a336443e4"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "settlement",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a11c1f-ea3c-74f8-83cb-829a336443e4"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "position",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a11c1f-ea3c-74f8-83cb-829a336443e4"
+          }
+        ],
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 1027852,
+            "inserts": 1229655,
+            "updates": 37864,
+            "estimated_rows": 104
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 97829,
+            "inserts": 273266,
+            "updates": 11690,
+            "estimated_rows": 104
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 58771,
+            "inserts": 273641,
+            "updates": 22971,
+            "estimated_rows": 104
+          }
+        ]
+      },
+      "switch": {
+        "worker": [
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ],
+        "committed_at": "2026-10-27 15:21:45.323157"
+      },
+      "observation_start": {
+        "observed_at": "2026-10-27 15:22:30.83248",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 1027880,
+            "inserts": 1229678,
+            "updates": 37996,
+            "estimated_rows": 95
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 97856,
+            "inserts": 273289,
+            "updates": 11770,
+            "estimated_rows": 97
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 58796,
+            "inserts": 273664,
+            "updates": 23106,
+            "estimated_rows": 99
+          }
+        ],
+        "tracked": [
+          {
+            "id": 10671720,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:13.292224"
+          },
+          {
+            "id": 10671722,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:18.62462"
+          },
+          {
+            "id": 10671723,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:18.624936"
+          },
+          {
+            "id": 10671725,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:24.270466"
+          },
+          {
+            "id": 10671724,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:24.270702"
+          },
+          {
+            "id": 10671720,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:13.292224"
+          },
+          {
+            "id": 10671722,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:18.62462"
+          },
+          {
+            "id": 10671723,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:18.624936"
+          },
+          {
+            "id": 10671725,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:24.270466"
+          },
+          {
+            "id": 10671724,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:24.270702"
+          },
+          {
+            "id": "01a17df4-6e7e-7d8a-8156-95636e50a5fa",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:13.292224",
+            "inbox_item_id": 10671720
+          },
+          {
+            "id": "01a17df4-83ed-73fb-ae90-d13e24839139",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:18.62462",
+            "inbox_item_id": 10671722
+          },
+          {
+            "id": "01a17df4-8470-78db-bb0c-6ae9e0c636ee",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:18.624936",
+            "inbox_item_id": 10671723
+          },
+          {
+            "id": "01a17df4-9925-72b7-9e23-08211c82ae52",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:24.270466",
+            "inbox_item_id": 10671725
+          },
+          {
+            "id": "01a17df4-9b0b-721e-90ff-70e7b84471de",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:24.270702",
+            "inbox_item_id": 10671724
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df4-a74d-7ea8-b8f4-1c20372a4efb",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:28.041477"
+          },
+          {
+            "id": "01a17df4-a74e-715e-8cc2-62c7805ef9fb",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:28.041477"
+          }
+        ]
+      },
+      "observation_end": {
+        "tracked_status": [
+          {
+            "id": 10671725,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671722,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671720,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671724,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671723,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671725,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671722,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671720,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671724,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 10671723,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-83ed-73fb-ae90-d13e24839139",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-6e7e-7d8a-8156-95636e50a5fa",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-9925-72b7-9e23-08211c82ae52",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-9b0b-721e-90ff-70e7b84471de",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-8470-78db-bb0c-6ae9e0c636ee",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          }
+        ],
+        "observed_at": "2026-10-27 15:24:11.2805",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 1027935,
+            "inserts": 1229700,
+            "updates": 37996,
+            "estimated_rows": 63
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 97912,
+            "inserts": 273311,
+            "updates": 11770,
+            "estimated_rows": 63
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 58846,
+            "inserts": 273686,
+            "updates": 23106,
+            "estimated_rows": 70
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df6-271c-7761-9668-fc1976de74bf",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:24:06.296598"
+          },
+          {
+            "id": "01a17df6-1a0f-737a-a363-1c9783654bb4",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:24:02.952068"
+          }
+        ],
+        "worker": [
+          {
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ]
+      },
+      "interval_seconds": 100.448,
+      "queue_counter_deltas": {
+        "ai_callsign_worker_job": {
+          "inserts": 22,
+          "updates": 0,
+          "deletes": 55
+        },
+        "ai_settlement_worker_job": {
+          "inserts": 22,
+          "updates": 0,
+          "deletes": 56
+        },
+        "ai_position_worker_job": {
+          "inserts": 22,
+          "updates": 0,
+          "deletes": 50
+        }
+      }
+    },
+    "echo-pivnich": {
+      "before": {
+        "engine": [
+          {
+            "id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "url": "http://100.105.172.96:8000/v1",
+            "name": "Gemma 4 26B — vLLM router",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true,
+            "callsign_enabled": true
+          }
+        ],
+        "worker": [
+          {
+            "name": "GPT-6 Luna",
+            "worker": "callsign",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a12ab9-2424-7fe1-a12b-678f41ce2e99"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "settlement",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a12ab9-2424-7fe1-a12b-678f41ce2e99"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "position",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a12ab9-2424-7fe1-a12b-678f41ce2e99"
+          }
+        ],
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 3935591,
+            "inserts": 5107463,
+            "updates": 53033,
+            "estimated_rows": 345
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 100310,
+            "inserts": 1179576,
+            "updates": 15707,
+            "estimated_rows": 345
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 45337,
+            "inserts": 1191439,
+            "updates": 21827,
+            "estimated_rows": 346
+          }
+        ]
+      },
+      "switch": {
+        "worker": [
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ],
+        "committed_at": "2026-10-27 15:21:46.079969"
+      },
+      "observation_start": {
+        "observed_at": "2026-10-27 15:22:30.839634",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 3935616,
+            "inserts": 5107549,
+            "updates": 53491,
+            "estimated_rows": 407
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 100330,
+            "inserts": 1179662,
+            "updates": 16006,
+            "estimated_rows": 412
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 45356,
+            "inserts": 1191527,
+            "updates": 22106,
+            "estimated_rows": 419
+          }
+        ],
+        "tracked": [
+          {
+            "id": 36918943,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:47.685127"
+          },
+          {
+            "id": 36918944,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:48.483239"
+          },
+          {
+            "id": 36918952,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.586614"
+          },
+          {
+            "id": 36918947,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.586783"
+          },
+          {
+            "id": 36918953,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.587146"
+          },
+          {
+            "id": 36918952,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.586614"
+          },
+          {
+            "id": 36918947,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.586783"
+          },
+          {
+            "id": 36918953,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.587146"
+          },
+          {
+            "id": 36918949,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.587172"
+          },
+          {
+            "id": 36918961,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:54.643388"
+          },
+          {
+            "id": "01a17df4-037b-746f-bc02-e979d576c6d2",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:46.026591",
+            "inbox_item_id": 36918933
+          },
+          {
+            "id": "01a17df4-0915-7e2d-8993-d9f7d57738cb",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:47.236992",
+            "inbox_item_id": 36918934
+          },
+          {
+            "id": "01a17df4-0bfa-798a-8fbd-f6a135add506",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:47.68447",
+            "inbox_item_id": 36918938
+          },
+          {
+            "id": "01a17df4-0c41-7245-9949-3806cb12419c",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:47.685127",
+            "inbox_item_id": 36918943
+          },
+          {
+            "id": "01a17df4-1008-7f75-9c83-d9d0cca7d496",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:48.483239",
+            "inbox_item_id": 36918944
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df4-af0f-7130-a322-5460a15d9142",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:30.024579"
+          },
+          {
+            "id": "01a17df4-ab78-7817-8c77-442821efd914",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:29.108819"
+          }
+        ]
+      },
+      "observation_end": {
+        "tracked_status": [
+          {
+            "id": 36918943,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918944,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918952,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918947,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918953,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918952,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918947,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918953,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918949,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 36918961,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-037b-746f-bc02-e979d576c6d2",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-0915-7e2d-8993-d9f7d57738cb",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-0bfa-798a-8fbd-f6a135add506",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-0c41-7245-9949-3806cb12419c",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-1008-7f75-9c83-d9d0cca7d496",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          }
+        ],
+        "observed_at": "2026-10-27 15:24:11.078815",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 3935668,
+            "inserts": 5107663,
+            "updates": 53491,
+            "estimated_rows": 468
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 100376,
+            "inserts": 1179776,
+            "updates": 16006,
+            "estimated_rows": 478
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 45393,
+            "inserts": 1191641,
+            "updates": 22106,
+            "estimated_rows": 492
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df6-33aa-769b-9e2f-5653fb9aa3a1",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:24:09.508798"
+          },
+          {
+            "id": "01a17df6-33aa-7b5f-9c2b-f2c8fc3e4ea0",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:24:09.508798"
+          }
+        ],
+        "worker": [
+          {
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ]
+      },
+      "interval_seconds": 100.239,
+      "queue_counter_deltas": {
+        "ai_callsign_worker_job": {
+          "inserts": 114,
+          "updates": 0,
+          "deletes": 52
+        },
+        "ai_settlement_worker_job": {
+          "inserts": 114,
+          "updates": 0,
+          "deletes": 46
+        },
+        "ai_position_worker_job": {
+          "inserts": 114,
+          "updates": 0,
+          "deletes": 37
+        }
+      }
+    },
+    "echo-zp2": {
+      "before": {
+        "engine": [
+          {
+            "id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "url": "http://100.105.172.96:8000/v1",
+            "name": "Gemma 4 26B — vLLM router",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true,
+            "callsign_enabled": true
+          }
+        ],
+        "worker": [
+          {
+            "name": "GPT-6 Luna",
+            "worker": "callsign",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a129fe-b5db-7461-9779-d88f3a7ddf78"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "settlement",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a129fe-b5db-7461-9779-d88f3a7ddf78"
+          },
+          {
+            "name": "GPT-6 Luna",
+            "worker": "position",
+            "backend": "gpt-6-luna",
+            "enabled": true,
+            "engine_id": "01a129fe-b5db-7461-9779-d88f3a7ddf78"
+          }
+        ],
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 1416661,
+            "inserts": 1709547,
+            "updates": 43114,
+            "estimated_rows": 113
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 111588,
+            "inserts": 338190,
+            "updates": 11021,
+            "estimated_rows": 113
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 54340,
+            "inserts": 341643,
+            "updates": 20498,
+            "estimated_rows": 114
+          }
+        ]
+      },
+      "switch": {
+        "worker": [
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "engine": "Gemma 4 26B — vLLM router",
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ],
+        "committed_at": "2026-10-27 15:21:46.974054"
+      },
+      "observation_start": {
+        "observed_at": "2026-10-27 15:22:30.937339",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 1416685,
+            "inserts": 1709574,
+            "updates": 43258,
+            "estimated_rows": 116
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 111611,
+            "inserts": 338217,
+            "updates": 11113,
+            "estimated_rows": 117
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 54353,
+            "inserts": 341670,
+            "updates": 20645,
+            "estimated_rows": 128
+          }
+        ],
+        "tracked": [
+          {
+            "id": 14539351,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:04.780668"
+          },
+          {
+            "id": 14539352,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:05.017312"
+          },
+          {
+            "id": 14539354,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:15.276094"
+          },
+          {
+            "id": 14539355,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:15.276491"
+          },
+          {
+            "id": 14539353,
+            "worker": "callsign",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:15.276541"
+          },
+          {
+            "id": 14539349,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:59.441058"
+          },
+          {
+            "id": 14539350,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:59.441227"
+          },
+          {
+            "id": 14539351,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:04.780668"
+          },
+          {
+            "id": 14539352,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:05.017312"
+          },
+          {
+            "id": 14539354,
+            "worker": "settlement",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:15.276094"
+          },
+          {
+            "id": "01a17df4-37f2-782b-b7e6-ba7402e524f9",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:59.441058",
+            "inbox_item_id": 14539349
+          },
+          {
+            "id": "01a17df4-3864-73bd-a39a-276e5f3d4ad4",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:21:59.441227",
+            "inbox_item_id": 14539350
+          },
+          {
+            "id": "01a17df4-4cd0-76f8-b56e-958f1a3a3eee",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:04.780668",
+            "inbox_item_id": 14539351
+          },
+          {
+            "id": "01a17df4-4dd8-7ae4-9de1-381d41d30646",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:05.017312",
+            "inbox_item_id": 14539352
+          },
+          {
+            "id": "01a17df4-75e7-71fb-a3fe-bf9aa386cec5",
+            "worker": "position",
+            "attempts": 0,
+            "created_at": "2026-10-27T15:22:15.276094",
+            "inbox_item_id": 14539354
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df4-af77-7c55-b76f-cb0914f47b00",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:30.124505"
+          },
+          {
+            "id": "01a17df4-a93a-7218-b041-04d9faf28367",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:22:28.525854"
+          }
+        ]
+      },
+      "observation_end": {
+        "tracked_status": [
+          {
+            "id": 14539354,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539355,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539352,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539351,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539353,
+            "error": null,
+            "worker": "callsign",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539354,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539350,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539352,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539349,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": 14539351,
+            "error": null,
+            "worker": "settlement",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-3864-73bd-a39a-276e5f3d4ad4",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-75e7-71fb-a3fe-bf9aa386cec5",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-37f2-782b-b7e6-ba7402e524f9",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-4cd0-76f8-b56e-958f1a3a3eee",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          },
+          {
+            "id": "01a17df4-4dd8-7ae4-9de1-381d41d30646",
+            "error": null,
+            "worker": "position",
+            "pending": false,
+            "attempts": null
+          }
+        ],
+        "observed_at": "2026-10-27 15:24:11.11965",
+        "queue": [
+          {
+            "table": "ai_callsign_worker_job",
+            "deletes": 1416734,
+            "inserts": 1709595,
+            "updates": 43258,
+            "estimated_rows": 88
+          },
+          {
+            "table": "ai_settlement_worker_job",
+            "deletes": 111667,
+            "inserts": 338238,
+            "updates": 11113,
+            "estimated_rows": 81
+          },
+          {
+            "table": "ai_position_worker_job",
+            "deletes": 54387,
+            "inserts": 341692,
+            "updates": 20645,
+            "estimated_rows": 116
+          }
+        ],
+        "gemma_position_result": [
+          {
+            "id": "01a17df5-ff54-7b27-9c08-9f5f838e038a",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:23:55.950423"
+          },
+          {
+            "id": "01a17df5-ff54-7e35-a3e8-23b8ec57574e",
+            "ai_engine_id": "019fe0fc-e308-7a16-ab91-52dce5da3e78",
+            "model_name": "google/gemma-4-26B-A4B-it",
+            "created_at": "2026-10-27T15:23:55.950423"
+          }
+        ],
+        "worker": [
+          {
+            "worker": "callsign",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "settlement",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          },
+          {
+            "worker": "position",
+            "backend": "google/gemma-4-26B-A4B-it",
+            "enabled": true
+          }
+        ]
+      },
+      "interval_seconds": 100.182,
+      "queue_counter_deltas": {
+        "ai_callsign_worker_job": {
+          "inserts": 21,
+          "updates": 0,
+          "deletes": 49
+        },
+        "ai_settlement_worker_job": {
+          "inserts": 21,
+          "updates": 0,
+          "deletes": 56
+        },
+        "ai_position_worker_job": {
+          "inserts": 22,
+          "updates": 0,
+          "deletes": 34
+        }
+      }
+    }
+  }
+}

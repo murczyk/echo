@@ -445,6 +445,9 @@ fn short_state_filter(
         selected_device_names: None,
         denied_device_names: None,
         units_exact_match_only: None,
+        locations_selected: None,
+        locations_denied: None,
+        include_peleng_locations: None,
         last_viewed_message_id: None,
         highlight_keywords_enabled: None,
         highlight_keyword_set_id: None,
@@ -692,7 +695,7 @@ async fn mk_analysis_message_with_location(
     )
     .await
     .context(h!())?;
-    mk_sigint_inbox_item(
+    let inbox_item = mk_sigint_inbox_item(
         db,
         sigint_inbox_item::ActiveModel {
             id: Set(signal_message.id),
@@ -705,6 +708,14 @@ async fn mk_analysis_message_with_location(
             )),
             ..Default::default()
         },
+    )
+    .await
+    .context(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        db,
+        inbox_item.id,
+        inbox_item.id_uuid,
+        location_v2,
     )
     .await
     .context(h!())?;
@@ -3257,6 +3268,8 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
             ] {
                 for (search, indexes) in [
                     ("Береза", vec![0, 1, 2, 3]),
+                    ("Береза or Вільха or Сосна or Клен or Ясен or Дуб or Граб or Тис or Бук or Кедр or Липа or Осика -\"невідоме місце\" -\"відсутня фраза\" -\"немає тексту\" -\"неіснуючий запис\"", vec![0, 1, 2, 3, 4]),
+                    ("Береза or Вільха -\"зміна позиції\" -\"відсутня фраза\"", vec![0, 1, 2, 4]),
                     ("-Береза", vec![4]),
                     ("\"зміна позиції\"", vec![3]),
                 ] {
@@ -3286,22 +3299,30 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
                         .iter()
                         .map(|index| ids[*index])
                         .collect::<Vec<_>>();
-                    if search == "Береза" {
+                    if search == "Береза" || search.starts_with("Береза or ") {
                         expected.push(audio);
                     }
-                    if selected_freqs.is_none() && search == "Береза" {
+                    if selected_freqs.is_none() && (search == "Береза" || search.starts_with("Береза or ")) {
                         expected.push(other_frequency);
                     }
                     assert_full_period_search_results_3780(
-                        &fixture, &login.id, &req, expected,
-                    )
-                    .await;
+                        &fixture, &login.id, &req, expected.clone(),
+                    ).await;
+                    crate::attachments::search::in_source_count_window_async(
+                        assert_full_period_search_results_3780(&fixture, &login.id, &req, expected),
+                    ).await;
                 }
             }
         }
     }
     assert_attachment_search_without_inbox_3780(
         &fixture, &login.id, ids[1], date,
+    )
+    .await;
+    crate::attachments::search::in_source_count_window_async(
+        assert_attachment_search_without_inbox_3780(
+            &fixture, &login.id, ids[1], date,
+        ),
     )
     .await;
 }
@@ -10700,6 +10721,82 @@ async fn analytics_read_outcome_distinguishes_unconfigured_and_unavailable() {
     assert!(result.postgres_fallback_permit.is_some());
 }
 
+async fn seed_window_count_messages_3780(fixture: &RerAnalysisFixture) {
+    let db = &fixture.env.dbx;
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    let july = test_dt(2026, 7, 1, 0, 0);
+    let dates = [
+        test_dt(2026, 2, 2, 10, 0),
+        test_dt(2026, 5, 2, 10, 0),
+        july - chrono::Duration::microseconds(1),
+        july,
+        test_dt(2026, 8, 2, 10, 0),
+    ];
+    for date in dates {
+        let message = mk_analysis_message(
+            db,
+            "window3780",
+            "3780.1",
+            date,
+            &[&fixture.alpha],
+            &[fixture.network_wide.network.id],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_population_times(db, message.id, date, date)
+            .await
+            .unwrap();
+        set_message_post(db, message.id, "WindowPost")
+            .await
+            .unwrap();
+        set_message_callsigns(
+            db,
+            message.id,
+            serde_json::json!(["WindowCallsign"]),
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(tag.id),
+            confidence: Set(1.0),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+    for (date, group, deleted) in [
+        (test_dt(2026, 5, 2, 10, 0), &fixture.secret_live, false),
+        (test_dt(2026, 5, 2, 10, 0), &fixture.alpha, true),
+        (test_dt(2026, 10, 1, 0, 0), &fixture.alpha, false),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            "window3780",
+            "3780.1",
+            date,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_population_times(db, message.id, date, date)
+            .await
+            .unwrap();
+        if deleted {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn analysis_split_count_endpoints_preserve_totals_and_device_authorization(
@@ -10802,6 +10899,76 @@ async fn analysis_split_count_endpoints_preserve_totals_and_device_authorization
         };
         assert_eq!(result, expected, "{endpoint}");
     }
+    seed_window_count_messages_3780(&fixture).await;
+    for mode in [
+        AnalysisSearchMode::Fuzzy,
+        AnalysisSearchMode::Exact,
+        AnalysisSearchMode::Substring,
+    ] {
+        for basis in [
+            None,
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+        ] {
+            let mut baseline = analysis_stats_req0(&fixture);
+            baseline.search = Some("window3780".into());
+            baseline.search_mode = Some(mode);
+            baseline.message_time_basis = basis;
+            baseline.selected_groups =
+                Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+            baseline.since_date_inclusive_ms =
+                test_dt(2026, 8, 2, 0, 0).and_utc().timestamp_millis();
+            baseline.till_date_noninclusive_ms =
+                test_dt(2026, 8, 3, 0, 0).and_utc().timestamp_millis();
+            let mut historical = baseline.clone();
+            historical.since_date_inclusive_ms =
+                test_dt(2026, 1, 1, 0, 0).and_utc().timestamp_millis();
+            historical.till_date_noninclusive_ms =
+                test_dt(2026, 10, 1, 0, 0).and_utc().timestamp_millis();
+            for endpoint in endpoints {
+                let uri = format!("/api/rer/analysis/stats/{endpoint}/count");
+                let baseline: serde_json::Value =
+                    actix_test::call_and_read_body_json(
+                        &app,
+                        actix_test::TestRequest::post()
+                            .uri(&uri)
+                            .cookie(cookie.clone())
+                            .set_json(&baseline)
+                            .to_request(),
+                    )
+                    .await;
+                let result: serde_json::Value =
+                    actix_test::call_and_read_body_json(
+                        &app,
+                        actix_test::TestRequest::post()
+                            .uri(&uri)
+                            .cookie(cookie.clone())
+                            .set_json(&historical)
+                            .to_request(),
+                    )
+                    .await;
+                match endpoint {
+                    "messages" => assert_eq!(
+                        result["count_selected"], 5,
+                        "{mode:?}/{basis:?}"
+                    ),
+                    "units/matches" => {
+                        for field in
+                            ["exact_matches_count", "non_exact_matches_count"]
+                        {
+                            assert_eq!(
+                                result[field].as_i64().unwrap(),
+                                baseline[field].as_i64().unwrap() * 5
+                            );
+                        }
+                    }
+                    _ => assert_eq!(
+                        result, baseline,
+                        "{endpoint}/{mode:?}/{basis:?}"
+                    ),
+                }
+            }
+        }
+    }
     set_devices_section_enabled(&fixture.env.dbx, true).await;
     req.selected_device_names = Some(vec!["restricted-device".to_string()]);
     for endpoint in endpoints {
@@ -10866,11 +11033,19 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
     first.unwrap();
     second.unwrap();
     third.unwrap();
-    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(maximum.load(Ordering::SeqCst), 3);
     assert_eq!(
         ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
         available
     );
+    maximum.store(0, Ordering::SeqCst);
+    let (first, second) = tokio::join!(
+        load(&req, "analysis stats groups count"),
+        load(&req, "analysis stats groups count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
     load(&req, "analysis stats networks count").await.unwrap();
     maximum.store(0, Ordering::SeqCst);
     let mut other_req = req.clone();
@@ -10893,7 +11068,7 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
     first.unwrap();
     second.unwrap();
     third.unwrap();
-    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(maximum.load(Ordering::SeqCst), 3);
     assert_eq!(
         ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
         available
@@ -10902,8 +11077,7 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
 
 #[tokio::test]
 #[serial]
-async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
-{
+async fn analysis_split_postgres_only_count_facets_do_not_block_each_other() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     assert!(fixture.env.analytics.is_none());
     assert!(fixture.env.config.analytics.is_none());
@@ -10916,7 +11090,9 @@ async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
     let login = uuid::Uuid::new_v4();
     let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
 
-    for req in [req, search_req, creation_req] {
+    for (req, needs_capacity) in
+        [(req, false), (search_req, false), (creation_req, true)]
+    {
         let active = std::sync::atomic::AtomicUsize::new(0);
         let maximum = std::sync::atomic::AtomicUsize::new(0);
         let active = &active;
@@ -10931,11 +11107,13 @@ async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
                     panic!("PostgreSQL-only request used analytics")
                 },
                 |db| async move {
-                    assert_eq!(
-                        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
-                            .available_permits(),
-                        available
-                    );
+                    let permits = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+                        .available_permits();
+                    if needs_capacity {
+                        assert!(permits < available);
+                    } else {
+                        assert_eq!(permits, available);
+                    }
                     let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
                     maximum.fetch_max(concurrent, Ordering::SeqCst);
                     db.execute_unprepared("select pg_sleep(0.02)")
@@ -10956,8 +11134,93 @@ async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
         second.unwrap();
         third.unwrap();
         fourth.unwrap();
-        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+        assert_eq!(maximum.load(Ordering::SeqCst), 4);
+        assert_eq!(
+            ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
+            available
+        );
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn network_activity_windows_leave_fallback_capacity_for_pages_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(
+        serde_json::from_value(serde_json::json!({
+            "pg_host":"unavailable", "pg_user":"unavailable",
+            "pg_password":"unavailable", "pg_dbname":"unavailable"
+        }))
+        .unwrap(),
+    );
+    let ready = tokio::sync::Barrier::new(3);
+    let release = tokio::sync::Notify::new();
+    crate::read_query::scope(
+        "network-window-capacity-3780".into(),
+        vec![crate::read_query::pool_identity(&env.dbx)],
+        async {
+            crate::read_query::set_login(uuid::Uuid::new_v4());
+            let ready = &ready;
+            let release = &release;
+            let window = || {
+                with_analytics_read_fallback(
+                    &env,
+                    ANALYTICS_NETWORK_ACTIVITY_OPERATION,
+                    true,
+                    |_db| async { panic!("unavailable analytics was queried") },
+                    |db| async move {
+                        crate::read_query::connection(&db)
+                            .query_one_raw(Statement::from_string(
+                                DbBackend::Postgres,
+                                "SELECT 42::bigint AS value",
+                            ))
+                            .await
+                            .c(h!())?;
+                        let released = release.notified();
+                        ready.wait().await;
+                        released.await;
+                        Ok::<_, AppError>(42i64)
+                    },
+                )
+            };
+            let page = async {
+                ready.wait().await;
+                let result = tokio::time::timeout(
+                    core::time::Duration::from_secs(1),
+                    with_analytics_read_fallback(
+                        &env,
+                        "network window concurrent page",
+                        true,
+                        |_db| async {
+                            panic!("unavailable analytics was queried")
+                        },
+                        |db| async move {
+                            let row = crate::read_query::connection(&db)
+                                .query_one_raw(Statement::from_string(
+                                    DbBackend::Postgres,
+                                    "SELECT 42::bigint AS value",
+                                ))
+                                .await
+                                .c(h!())?
+                                .c(h!())?;
+                            Ok::<_, AppError>(
+                                row.try_get::<i64>("", "value").c(h!())?,
+                            )
+                        },
+                    ),
+                )
+                .await;
+                release.notify_waiters();
+                result.unwrap().unwrap()
+            };
+            let (first, second, page) = tokio::join!(window(), window(), page);
+            assert_eq!(first.unwrap(), 42);
+            assert_eq!(second.unwrap(), 42);
+            assert_eq!(page, 42);
+        },
+    )
+    .await;
 }
 
 #[test]
@@ -10977,27 +11240,6 @@ fn analysis_split_count_failure_opens_the_circuit_for_later_dimensions() {
     assert!(analytics_retry_attempt(&units).is_none());
     let inbox = analytics_retry_state_for_operation(&states, "analysis inbox");
     assert!(analytics_retry_attempt(&inbox).is_some());
-}
-
-#[test]
-fn fallback_capacity_only_limits_analytics_incident_routes() {
-    for reason in [
-        "analytics_error",
-        "analytics_timeout",
-        "analytics_saturated",
-        "analytics_unhealthy",
-        "analytics_unavailable",
-        "attachment_history_incomplete",
-        "candidate_ordering_incomplete",
-        "candidate_revalidation_incomplete",
-        "circuit_open",
-        "postgres_tail_error",
-        "revalidation_error",
-    ] {
-        assert!(analytics_fallback_needs_capacity(reason));
-    }
-    assert!(!analytics_fallback_needs_capacity("query_policy"));
-    assert!(!analytics_fallback_needs_capacity("unconfigured"));
 }
 
 #[tokio::test]
@@ -11024,6 +11266,10 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
     let mut config =
         crate::config::read_config(crate::types::Mode::Test).unwrap();
     config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
+        search_statement_timeout_ms:
+            crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+        search_http_timeout_ms:
+            crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
         statement_timeout_ms: 25,
         report_worker_statement_timeout_ms: 25,
         lock_timeout_ms: 15,
@@ -12668,6 +12914,294 @@ async fn echo_3461_inbox_device_filters_include_exclude_and_keep_nulls() {
     )
     .await;
     assert_eq!(include_and_exclude, vec![alpha_message.id]);
+}
+
+struct LocationFilterMessages {
+    location_a: i64,
+    location_b: i64,
+    null_location: i64,
+    null_location_null_freq: i64,
+    peleng_freq: i64,
+}
+
+async fn clear_message_freq(db: &DatabaseConnection, message_id: i64) {
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.freq = Set(None);
+    inbox_item.update(db).await.unwrap();
+}
+
+async fn mk_location_filter_message(
+    fixture: &RerAnalysisFixture,
+    label: &str,
+    freq: &str,
+    minute: u32,
+    location_v2: Option<&str>,
+) -> i64 {
+    let db = &fixture.env.dbx;
+    let datetime = test_dt(2026, 3, 1, 8, minute);
+    let message = mk_analysis_message_with_location(
+        db,
+        label,
+        freq,
+        datetime,
+        &[&fixture.alpha],
+        &[],
+        false,
+        location_v2,
+    )
+    .await
+    .unwrap();
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.update(db).await.unwrap();
+    message.id
+}
+
+async fn mk_location_filter_messages(
+    fixture: &RerAnalysisFixture,
+) -> LocationFilterMessages {
+    let db = &fixture.env.dbx;
+    let location_a = crate::location::utils::format_location("Location A");
+    let location_b = crate::location::utils::format_location("Location B");
+    mk_freq_location(
+        db,
+        freq_location::ActiveModel {
+            freq: Set("3308.4".to_string()),
+            location: Set("Location A".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 7, 0)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let null_location_null_freq = mk_location_filter_message(
+        fixture,
+        "echo-3308-null-freq",
+        "3308.5",
+        5,
+        None,
+    )
+    .await;
+    clear_message_freq(db, null_location_null_freq).await;
+    LocationFilterMessages {
+        location_a: mk_location_filter_message(
+            fixture,
+            "echo-3308-a",
+            "3308.1",
+            1,
+            Some(&location_a),
+        )
+        .await,
+        location_b: mk_location_filter_message(
+            fixture,
+            "echo-3308-b",
+            "3308.2",
+            2,
+            Some(&location_b),
+        )
+        .await,
+        null_location: mk_location_filter_message(
+            fixture,
+            "echo-3308-null",
+            "3308.3",
+            3,
+            None,
+        )
+        .await,
+        null_location_null_freq,
+        peleng_freq: mk_location_filter_message(
+            fixture,
+            "echo-3308-peleng",
+            "3308.4",
+            4,
+            None,
+        )
+        .await,
+    }
+}
+
+fn location_filter_base_req(fixture: &RerAnalysisFixture) -> InboxMessagesReq {
+    InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        nolimit: Some(true),
+        ..Default::default()
+    }
+}
+
+fn strings(values: &[&str]) -> Option<Vec<String>> {
+    Some(values.iter().map(|value| (*value).to_owned()).collect())
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_denied_location_keeps_null_locations() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let unfiltered =
+        inbox_map_item_ids(&fixture.env, &login_id, &base_req).await;
+    let empty_list = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: Some(vec![]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(empty_list, unfiltered);
+
+    let denied_a = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["Location A"]),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(!denied_a.contains(&messages.location_a));
+    assert!(denied_a.contains(&messages.location_b));
+    assert!(denied_a.contains(&messages.null_location));
+    assert!(denied_a.contains(&messages.null_location_null_freq));
+    assert!(denied_a.contains(&messages.peleng_freq));
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_denied_empty_location_excludes_null_locations() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+
+    let denied_empty = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&[""]),
+            ..location_filter_base_req(&fixture)
+        },
+    )
+    .await;
+    let mut expected = vec![messages.location_a, messages.location_b];
+    expected.sort();
+    let mut denied_empty = denied_empty;
+    denied_empty.sort();
+    assert_eq!(denied_empty, expected);
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_denied_peleng_location_keeps_null_freqs() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+
+    let denied_a = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["Location A"]),
+            include_peleng_locations: Some(true),
+            ..location_filter_base_req(&fixture)
+        },
+    )
+    .await;
+    assert!(!denied_a.contains(&messages.location_a));
+    assert!(!denied_a.contains(&messages.peleng_freq));
+    assert!(denied_a.contains(&messages.location_b));
+    assert!(denied_a.contains(&messages.null_location));
+    assert!(denied_a.contains(&messages.null_location_null_freq));
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_selected_and_denied_locations_combine() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let selected_and_denied = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&["Location A", "Location B"]),
+            denied_locations: strings(&["Location B"]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(selected_and_denied, vec![messages.location_a]);
+
+    let selected_empty_denied_peleng = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&[""]),
+            denied_locations: strings(&["Location A"]),
+            include_peleng_locations: Some(true),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(selected_empty_denied_peleng.contains(&messages.null_location));
+    assert!(selected_empty_denied_peleng
+        .contains(&messages.null_location_null_freq));
+    assert!(!selected_empty_denied_peleng.contains(&messages.peleng_freq));
+    assert!(!selected_empty_denied_peleng.contains(&messages.location_a));
+    assert!(!selected_empty_denied_peleng.contains(&messages.location_b));
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_location_wildcards_match_literally() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let denied_wildcards = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["%", "_"]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(denied_wildcards.contains(&messages.location_a));
+    assert!(denied_wildcards.contains(&messages.location_b));
+
+    let selected_wildcards = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&["%", "_"]),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(!selected_wildcards.contains(&messages.location_a));
+    assert!(!selected_wildcards.contains(&messages.location_b));
 }
 
 #[tokio::test]

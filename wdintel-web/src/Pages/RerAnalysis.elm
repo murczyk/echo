@@ -391,6 +391,7 @@ getInboxReq model =
     , deniedUnits = Nothing
     , deniedUnitIds = Nothing
     , selectedLocations = emptyToNothing model.locationsSelected
+    , deniedLocations = Nothing
     , includePelengLocations = Just model.includePelengLocations
     , selectedTags = emptyToNothing model.tagsSelected
     , deniedTags = Nothing
