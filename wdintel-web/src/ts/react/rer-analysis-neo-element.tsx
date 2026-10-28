@@ -4,10 +4,7 @@ import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
 import { PowerSnackbarProvider } from './components/PowerSnackbar';
-import {
-  POWER_ANALYSIS_SNACKBAR_CLEARANCE,
-  POWER_FLOATING_CONTROL_RIGHT_CLEARANCE,
-} from './routes/shared/manage-message/floating-control-geometry';
+import { POWER_ANALYSIS_SNACKBAR_CLEARANCE } from './routes/shared/manage-message/floating-control-geometry';
 import { RerAnalysisNeoPage } from './routes/rer-analysis-neo';
 
 function getAuthUserNameFromShell(el: Element): string | null {
@@ -37,10 +34,7 @@ function RerAnalysisNeoRoot({
 }) {
   return (
     <NeoMuiThemeProvider>
-      <PowerSnackbarProvider
-        bottomInset={POWER_ANALYSIS_SNACKBAR_CLEARANCE}
-        rightInset={POWER_FLOATING_CONTROL_RIGHT_CLEARANCE}
-      >
+      <PowerSnackbarProvider bottomInset={POWER_ANALYSIS_SNACKBAR_CLEARANCE}>
         <RerAnalysisNeoPage
           key={`${authUserName ?? ''}:${authUserRoles.join(',')}`}
           authUserName={authUserName}

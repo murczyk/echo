@@ -1516,9 +1516,10 @@ test('#3360 keeps an OFF reading anchor stable while a long snackbar error is sh
   const snackbar = page.locator('.MuiSnackbar-root');
   const snackbarBox = await snackbar.boundingBox();
   expect(snackbarBox).not.toBeNull();
-  expect(snackbarBox!.width).toBeLessThanOrEqual(520);
+  expect(snackbarBox!.width).toBeCloseTo(520, 0);
   expect(snackbarBox!.x).toBeGreaterThanOrEqual(24);
   expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(1280);
+  expect(snackbarBox!.x + snackbarBox!.width / 2).toBeCloseTo(640, 0);
   const closeButton = snackbar.getByRole('button', { name: 'Закрити сповіщення' });
   await expect(closeButton).toBeVisible();
   const closeButtonBox = await closeButton.boundingBox();
@@ -1568,9 +1569,10 @@ test('#3400 keeps an unbroken snackbar error within the narrow viewport @regress
   const snackbar = page.locator('.MuiSnackbar-root');
   const snackbarBox = await snackbar.boundingBox();
   expect(snackbarBox).not.toBeNull();
-  expect(snackbarBox!.width).toBeLessThanOrEqual(374);
+  expect(snackbarBox!.width).toBeCloseTo(374, 0);
   expect(snackbarBox!.x).toBeGreaterThanOrEqual(8);
   expect(snackbarBox!.x + snackbarBox!.width).toBeLessThanOrEqual(390);
+  expect(snackbarBox!.x + snackbarBox!.width / 2).toBeCloseTo(195, 0);
   const closeButton = snackbar.getByRole('button', { name: 'Закрити сповіщення' });
   await expect(closeButton).toBeVisible();
   const closeButtonBox = await closeButton.boundingBox();

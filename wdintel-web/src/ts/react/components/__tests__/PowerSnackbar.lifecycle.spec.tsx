@@ -291,14 +291,14 @@ describe('PowerSnackbarProvider', () => {
     expect(document.body.querySelector('.MuiSnackbar-root')).toBeNull();
   });
 
-  it('uses safe-area-aware bottom-right insets', async () => {
+  it('uses a safe-area-aware bottom inset', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
 
     await act(async () =>
       root.render(
-        <PowerSnackbarProvider bottomInset={47} rightInset={59}>
+        <PowerSnackbarProvider bottomInset={47}>
           <NotificationHarness />
         </PowerSnackbarProvider>,
       ),
@@ -311,7 +311,6 @@ describe('PowerSnackbarProvider', () => {
       .map((style) => style.textContent ?? '')
       .join('\n');
     expect(generatedStyles).toContain('calc(47px + env(safe-area-inset-bottom, 0px))');
-    expect(generatedStyles).toContain('calc(59px + env(safe-area-inset-right, 0px))');
     await act(async () => root.unmount());
   });
 
@@ -334,8 +333,6 @@ describe('PowerSnackbarProvider', () => {
       .join('\n');
     expect(generatedStyles).toContain('calc(8px + env(safe-area-inset-bottom, 0px))');
     expect(generatedStyles).toContain('calc(24px + env(safe-area-inset-bottom, 0px))');
-    expect(generatedStyles).toContain('calc(8px + env(safe-area-inset-right, 0px))');
-    expect(generatedStyles).toContain('calc(24px + env(safe-area-inset-right, 0px))');
     await act(async () => root.unmount());
   });
 
