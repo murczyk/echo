@@ -172,34 +172,36 @@ pub(crate) fn extract_callsigns_for_group(
     body: &str,
     is_aviation_group: bool,
 ) -> Result<Vec<CNCallsign>, AppError> {
+    let original_body = body;
     let body = &demoji::demoji(body);
     let mut res: Vec<CNCallsign> = vec![];
-    for callsign in extract_kazhanchik_callsigns(body)? {
+    for callsign in extract_kazhanchik_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_callsign_details_callsigns(body)? {
+    for callsign in extract_callsign_details_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_buran_callsigns(body)? {
+    for callsign in extract_buran_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_dmr_alias_callsigns(body)? {
+    for callsign in extract_dmr_alias_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_kharkiv_callsigns(body)? {
+    for callsign in extract_kharkiv_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_digital_callsigns(body)? {
+    for callsign in extract_digital_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_non_caps_callsigns(body)? {
+    for callsign in extract_non_caps_callsigns(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
-    for callsign in extract_sender_receiver_pair(body)? {
+    for callsign in extract_sender_receiver_pair(body).c(h!())? {
         push_if_unique_callsign(&callsign, &mut res);
     }
     for callsign in
-        extract_avia_callsigns_for_group(body, is_aviation_group).c(h!())?
+        extract_avia_callsigns_for_group(original_body, is_aviation_group)
+            .c(h!())?
     {
         push_if_unique_callsign(&callsign, &mut res);
     }
@@ -1329,7 +1331,7 @@ fn extract_avia_callsigns_for_group(
             .sum::<usize>();
 
     const CALLSIGN_REGEX_STR: &str = concat!(
-        r"[\p{Cyrillic}]+((-[\p{Cyrillic}]+)|(\s+\d{1,2}))?",
+        r"[\p{Cyrillic}]+(?:[ \t—–-]+[\p{Cyrillic}]+)?(?:[ \t]+\d{1,2})?",
         r"|(\d{1,3}[\s-]?[Йй])|(\d{2,})",
         r"|[A-Za-z]{1,4}-\d{2,6}"
     );
@@ -1339,7 +1341,7 @@ fn extract_avia_callsigns_for_group(
             r"(?P<callsign>{CALLSIGN_REGEX_STR})"
         )).unwrap();
         static ref CALLSIGN_LINE_REGEX: Regex = Regex::new(&format!(
-            r"^\s*(?:{CALLSIGN_REGEX_STR})(?:\s*,\s*(?:{CALLSIGN_REGEX_STR}))*\s*$"
+            r"^\s*(?:{CALLSIGN_REGEX_STR})(?:\s*,\s*(?:{CALLSIGN_REGEX_STR}))*\s*,?\s*$"
         )).unwrap();
     }
 
@@ -1349,21 +1351,20 @@ fn extract_avia_callsigns_for_group(
         .iter()
         .skip(skip_lines)
         .take(crate::config::CALLSIGNS_MAX_LINES);
-    let mut in_callsign_header = true;
     let mut seen_header_line = false;
     for line in header_lines {
         let is_callsign_line = CALLSIGN_LINE_REGEX.is_match(line);
         if line.trim().is_empty() {
             if seen_header_line {
-                in_callsign_header = false;
+                break;
             }
         } else {
             seen_header_line = true;
             if !is_callsign_line {
-                in_callsign_header = false;
+                break;
             }
         }
-        if is_callsign_line && (in_callsign_header || !line.contains(',')) {
+        if is_callsign_line {
             for capture in CALLSIGN_REGEX.captures_iter(line) {
                 add_callsign_with_numeric_min_len(
                     &capture,
@@ -1404,7 +1405,7 @@ fn avia_format_lines(
         static ref RE_FREQ: Regex =
             Regex::new(r"^\s*\d{3}[.,]\d{3,4}\s*$").unwrap();
         static ref RE_NETWORK: Regex =
-            Regex::new(r"^(🟠|🔴|🔷|🟡|⚫)|(\s*УКХ р/м).*$").unwrap();
+            Regex::new(r"^\s*(?:🟠|🔴|🔷|🟡|⚫|УКХ р/м).*$").unwrap();
         static ref RE_EMPTY: Regex = Regex::new(r"^\s*$").unwrap();
     }
 
@@ -1417,7 +1418,9 @@ fn avia_format_lines(
     let line0 = &lines[0];
     let mut line_index = if RE_POST.is_match(line0) {
         1
-    } else if is_aviation_group && RE_DATE.is_match(line0) {
+    } else if is_aviation_group
+        && (RE_DATE.is_match(line0) || RE_SEPARATOR.is_match(line0))
+    {
         0
     } else {
         log::trace!("RE_POST failed on line 0");
@@ -1674,6 +1677,11 @@ pub(crate) fn parse_reprocess_period(
         NaiveDateTime::parse_from_str(start, "%Y-%m-%dT%H:%M:%S").c(h!())?;
     let end_dt =
         NaiveDateTime::parse_from_str(end, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    if start_dt >= end_dt {
+        return Err(AppError::BL {
+            msg: "--start must be earlier than --end".to_string(),
+        });
+    }
     Ok((start_dt, end_dt))
 }
 
@@ -1702,7 +1710,12 @@ where
 {
     Ok(SigintInboxItem::find()
         .find_also_related(SignalMessage)
-        .filter(sigint_inbox_item::Column::Reviewed.ne(true))
+        .filter(
+            Condition::any()
+                .add(sigint_inbox_item::Column::Reviewed.eq(false))
+                .add(sigint_inbox_item::Column::Reviewed.is_null()),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(start_dt))
         .filter(sigint_inbox_item::Column::Datetime.lt(end_dt))
         .all(dbx)
@@ -1734,9 +1747,15 @@ pub(crate) async fn recompute_inbox_item_callsigns<C>(
 where
     C: ConnectionTrait,
 {
+    if inbox_item.reviewed == Some(true) {
+        return Ok(None);
+    }
     let Some(message) = message else {
         return Ok(None);
     };
+    if message.deleted {
+        return Ok(None);
+    }
     let Some(body) = message.body.clone() else {
         return Ok(None);
     };
@@ -1761,8 +1780,13 @@ where
     )
     .await
     .c(h!())?;
+    let effective = crate::inbox::callsigns::InboxItemCallsigns {
+        primary: after.clone(),
+        alg2: existing.alg2.clone(),
+    }
+    .effective();
     let callsign_tokens = serde_json::to_value(
-        highlight_callsigns(rq, &body, &after).await.c(h!())?,
+        highlight_callsigns(rq, &body, &effective).await.c(h!())?,
     )
     .c(h!())?;
     Ok(Some(RecomputedInboxCallsigns {
@@ -1832,11 +1856,8 @@ pub(crate) async fn persist_recomputed_inbox_item_callsigns<C>(
 where
     C: ConnectionTrait,
 {
-    SigintInboxItem::find_by_id(inbox_item.id)
-        .lock_exclusive()
-        .one(dbx)
+    let current = lock_reprocess_inbox_item(dbx, &inbox_item, recomputed)
         .await
-        .c(h!())?
         .c(h!())?;
     let message = SignalMessage::find_by_id(inbox_item.id)
         .lock_exclusive()
@@ -1860,10 +1881,12 @@ where
         )
         .into());
     }
-    let inbox_item_uuid = inbox_item.id_uuid;
-    let mut inbox_item = inbox_item.into_active_model();
-    inbox_item.callsign_tokens = Set(Some(recomputed.callsign_tokens.clone()));
-    inbox_item.update(dbx).await.c(h!())?;
+    let inbox_item_uuid = current.id_uuid;
+    if current.callsign_tokens.as_ref() != Some(&recomputed.callsign_tokens) {
+        let mut current = current.into_active_model();
+        current.callsign_tokens = Set(Some(recomputed.callsign_tokens.clone()));
+        current.update(dbx).await.c(h!())?;
+    }
     crate::inbox::callsigns::sync(
         dbx,
         recomputed.inbox_item_id,
@@ -1876,7 +1899,66 @@ where
     )
     .await
     .c(h!())?;
+    if recomputed.before != recomputed.after {
+        refresh_reprocessed_callsign_relations(dbx, inbox_item.id)
+            .await
+            .c(h!())?;
+    }
     Ok(())
+}
+
+async fn refresh_reprocessed_callsign_relations<C: ConnectionTrait>(
+    dbx: &C,
+    inbox_item_id: i64,
+) -> anyhow::Result<()> {
+    let inbox_item = SigintInboxItem::find_by_id(inbox_item_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
+        vec![inbox_item],
+        dbx,
+    )
+    .await
+    .c(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        dbx,
+        inbox_item_id,
+        format!("callsign reprocessing {inbox_item_id}"),
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn lock_reprocess_inbox_item<C: ConnectionTrait>(
+    dbx: &C,
+    inbox_item: &sigint_inbox_item::Model,
+    recomputed: &RecomputedInboxCallsigns,
+) -> anyhow::Result<sigint_inbox_item::Model> {
+    let current = SigintInboxItem::find_by_id(inbox_item.id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let existing = load_existing_callsigns(dbx, [inbox_item.id])
+        .await
+        .c(h!())?
+        .remove(&inbox_item.id)
+        .unwrap_or_default();
+    if current.reviewed == Some(true)
+        || current.datetime != inbox_item.datetime
+        || existing.primary != recomputed.before
+        || existing.alg2 != recomputed.alg2
+        || inbox_item.id != recomputed.inbox_item_id
+    {
+        return Err(anyhow::anyhow!(
+            "Inbox item changed during callsign reprocessing"
+        ));
+    }
+    Ok(current)
 }
 
 fn count_callsigns_per_message(
@@ -2284,6 +2366,10 @@ async fn load_callsign_graph_items(
     .await
     .c(h!())?)
 }
+
+#[cfg(test)]
+#[path = "callsign_reconciliation_tests.rs"]
+mod reconciliation_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4046,6 +4132,7 @@ fn aviation_group_accepts_two_digit_callsigns() {
 
 #[tokio::test]
 async fn aviation_group_parses_compact_callsign_headers() {
+    // Regression: https://github.com/echoua/echo/issues/3888
     let rq = reqwest::Client::new();
     for (callsign, header, newline, frequency) in [
         ("42", "42\nНВ", "\n", "134.3750"),
@@ -4054,65 +4141,144 @@ async fn aviation_group_parses_compact_callsign_headers() {
         ("42", "42\nНВ", "\r\n", "134.3750"),
         ("44", "НВ\n44", "\n", "134,3750"),
     ] {
-        let body = format!(
-            "19.10.2026, 10:05:32\n{frequency}\n🟠\n{header}\n\n— {callsign} по заданию разрешил.\n— {callsign}. Контроль на взлет разрешил 50 4 5."
+        for network in ["🟠", "🔴", "🔷", "🟡", "⚫", "  🔴 "] {
+            let body = format!(
+            "19.10.2026, 10:05:32\n{frequency}\n{network}\n{header}\n\n— {callsign} по заданию разрешил.\n— {callsign}. Контроль на взлет разрешил 50 4 5."
         )
         .replace('\n', newline);
-        assert!(parse_primary_callsigns(&rq, &body, false)
-            .await
+            assert!(parse_primary_callsigns(&rq, &body, false)
+                .await
+                .unwrap()
+                .is_empty());
+
+            assert!(extract_avia_callsigns_for_group(
+                &body.replace(frequency, "134x3750"),
+                true,
+            )
             .unwrap()
             .is_empty());
-
-        assert!(extract_avia_callsigns_for_group(
-            &body.replace(frequency, "134x3750"),
-            true,
-        )
-        .unwrap()
-        .is_empty());
-        let callsigns =
-            parse_primary_callsigns(&rq, &body, true).await.unwrap();
-        assert_eq!(callsigns, vec![callsign.to_string()]);
-        let highlights =
-            highlight_callsigns(&rq, &body, &callsigns).await.unwrap();
-        assert_eq!(highlights.len(), 3);
-        for highlight in highlights {
-            assert_eq!(highlight.etalon, callsign);
-            assert_eq!(
-                body.chars()
-                    .skip(highlight.begin)
-                    .take(highlight.end - highlight.begin)
-                    .collect::<String>(),
-                callsign
-            );
+            let callsigns =
+                parse_primary_callsigns(&rq, &body, true).await.unwrap();
+            assert_eq!(callsigns, vec![callsign.to_string()]);
+            let highlights =
+                highlight_callsigns(&rq, &body, &callsigns).await.unwrap();
+            assert_eq!(highlights.len(), 3);
+            for highlight in highlights {
+                assert_eq!(highlight.etalon, callsign);
+                assert_eq!(
+                    body.chars()
+                        .skip(highlight.begin)
+                        .take(highlight.end - highlight.begin)
+                        .collect::<String>(),
+                    callsign
+                );
+            }
         }
     }
 }
 
 #[tokio::test]
 async fn aviation_group_parses_comma_separated_callsigns() {
-    let body = "Отримано з поста \"34\"\n--------------------------------------\n22.10.2026, 10:39:11\n134.3750\n🟠\nБАЙКАЛ\n43, 41\n\n— Байкал 43, 41, прием.\n50, 75\n— 50, 75 высота.";
-    let rq = reqwest::Client::new();
-    let standard = parse_primary_callsigns(&rq, body, false).await.unwrap();
-    assert_eq!(standard, vec!["байкал"]);
+    // Regression: https://github.com/echoua/echo/issues/3888
+    for header in ["43, 41", "43, 41,", " 43, 41, "] {
+        let body = "Отримано з поста \"34\"\n--------------------------------------\n22.10.2026, 10:39:11\n134.3750\n🟠\nБАЙКАЛ\n43, 41\n\n— Байкал 43, 41, прием.\n50, 75\n— 50, 75 высота.";
+        let body = body.replacen("43, 41\n", &format!("{header}\n"), 1);
+        let body = body.as_str();
+        let rq = reqwest::Client::new();
+        let standard = parse_primary_callsigns(&rq, body, false).await.unwrap();
+        assert_eq!(standard, vec!["байкал"]);
 
-    let callsigns = parse_primary_callsigns(&rq, body, true).await.unwrap();
-    assert_eq!(callsigns, vec!["байкал", "43", "41"]);
-    let highlights = highlight_callsigns(&rq, body, &callsigns).await.unwrap();
-    for callsign in ["41", "43", "байкал"] {
-        let highlights = highlights
-            .iter()
-            .filter(|highlight| highlight.etalon == callsign)
+        let callsigns = parse_primary_callsigns(&rq, body, true).await.unwrap();
+        assert_eq!(callsigns, vec!["байкал", "43", "41"]);
+        let highlights =
+            highlight_callsigns(&rq, body, &callsigns).await.unwrap();
+        for callsign in ["41", "43", "байкал"] {
+            let highlights = highlights
+                .iter()
+                .filter(|highlight| highlight.etalon == callsign)
+                .collect::<Vec<_>>();
+            assert_eq!(highlights.len(), 2);
+            for highlight in highlights {
+                assert_eq!(
+                    body.chars()
+                        .skip(highlight.begin)
+                        .take(highlight.end - highlight.begin)
+                        .collect::<String>()
+                        .to_lowercase(),
+                    callsign
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn aviation_header_stops_before_flight_data() {
+    // Regression: https://github.com/echoua/echo/issues/3888
+    for (separator, boundary) in [
+        ("", "\n"),
+        ("", "— Контроль на взлет разрешил.\n"),
+        ("--------------------\n", "\n"),
+    ] {
+        let body = format!(
+            "{separator}19.10.2026, 10:05:32\n134.3750\n🟠\n42\nНВ\n{boundary}75\nВЫСОТА\n50, 80"
+        );
+        let callsigns = extract_avia_callsigns_for_group(&body, true)
+            .unwrap()
+            .into_iter()
+            .map(|callsign| callsign.text)
             .collect::<Vec<_>>();
-        assert_eq!(highlights.len(), 2);
-        for highlight in highlights {
+        assert_eq!(callsigns, vec!["42"]);
+    }
+}
+
+#[tokio::test]
+async fn aviation_group_parses_compound_callsigns_with_exact_spans() {
+    // Regression: https://github.com/echoua/echo/issues/3888
+    let rq = reqwest::Client::new();
+    for callsign in ["Большой Двор", "БОЛЬШОЙ-ДВОР", "Большой—Двор"]
+    {
+        for newline in ["\n", "\r\n"] {
+            let body = format!(
+                " \n19.10.2026, 10:05:32\n134.3750\n🟠\n{callsign}, 42,\nНВ\n\n— Большой Двор, 42, прием."
+            )
+            .replace('\n', newline);
+            let extracted =
+                extract_avia_callsigns_for_group(&body, true).unwrap();
             assert_eq!(
-                body.chars()
-                    .skip(highlight.begin)
-                    .take(highlight.end - highlight.begin)
-                    .collect::<String>()
-                    .to_lowercase(),
-                callsign
+                extracted
+                    .iter()
+                    .map(|callsign| callsign.text.as_str())
+                    .collect::<Vec<_>>(),
+                vec![callsign, "42"]
             );
+            for callsign in extracted {
+                assert_eq!(
+                    body.chars()
+                        .skip(callsign.begin)
+                        .take(callsign.end - callsign.begin)
+                        .collect::<String>(),
+                    callsign.text
+                );
+            }
+            let callsigns =
+                parse_primary_callsigns(&rq, &body, true).await.unwrap();
+            assert_eq!(callsigns, vec![callsign.to_lowercase(), "42".into()]);
+            let highlights =
+                highlight_callsigns(&rq, &body, &callsigns).await.unwrap();
+            assert_eq!(highlights.len(), 4);
+            for highlight in highlights {
+                assert_eq!(
+                    callsign_match_key(
+                        &body
+                            .chars()
+                            .skip(highlight.begin)
+                            .take(highlight.end - highlight.begin)
+                            .collect::<String>()
+                    ),
+                    callsign_match_key(&highlight.etalon)
+                );
+            }
         }
     }
 }
