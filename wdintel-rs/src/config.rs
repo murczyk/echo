@@ -157,6 +157,7 @@ pub const LOCATION_FUZZY_MIN_CHARS: usize = 5;
 pub const LOCATION_FUZZY_DISTANCE_DIVISOR: usize = 7;
 pub const LOCATION_FOREST_CONTEXT_WORDS: &[&str] =
     &["НА", "ВІД", "БІЛЯ", "МАСИВ", "МАССИВ"];
+pub const LOCATION_STANDALONE_BLACKLIST_WORDS: &[&str] = &["ГЛИБОКИЙ", "МАЛИЙ"];
 pub const LOCATION_COUNTRY_NAMES: &[&str] = &[
     "УКРАЇНА",
     "УКРАИНА",
