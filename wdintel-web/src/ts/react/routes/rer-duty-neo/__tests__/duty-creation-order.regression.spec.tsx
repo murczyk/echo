@@ -20,6 +20,7 @@ let items: Item[];
 let older: Item[];
 let newer: Item[];
 let radioFeaturesAllowed: boolean;
+let locationsFail: boolean;
 
 function message(id: number, createdOffset: number, eventOffset: number): Item {
   return [
@@ -57,6 +58,9 @@ function responseFor(path: string, body: Record<string, unknown>): unknown {
       return { data: {} };
     case '/api/rer/analysis/stats/posts':
       return { posts: [] };
+    case '/api/rer/analysis/stats/locations':
+      if (locationsFail) throw new Error('locations failed');
+      return { locations: [{ location: 'КИЇВ', count: 1 }] };
     case '/api/sigint/units':
       return { units: [], show_load_more: false };
     case '/api/rer-importer/get-inbox':
@@ -108,6 +112,7 @@ describe('Duty creation-time contract', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     radioFeaturesAllowed = true;
+    locationsFail = false;
     requests = [];
     items = [message(9, 300, -60_000), message(7, 100, 60_000), message(2, 200, 0)];
     older = [];
@@ -155,6 +160,8 @@ describe('Duty creation-time contract', () => {
             freqsDenied: ['153.6260'],
             postsSelected: ['POST-1'],
             postsDenied: ['POST-2'],
+            locationsSelected: ['КИЇВ'],
+            includePelengLocations: true,
           },
           { adjacentFreqsRange: 0.005 },
         ],
@@ -172,6 +179,8 @@ describe('Duty creation-time contract', () => {
         denied_freqs: null,
         selected_posts: null,
         denied_posts: null,
+        selected_locations: ['КИЇВ'],
+        include_peleng_locations: false,
       });
     }
     expect(feeds.messageFeeds[0].filter.freqsSelected).toEqual(['153.6250']);
@@ -192,7 +201,30 @@ describe('Duty creation-time contract', () => {
       denied_freqs: ['153.6260'],
       selected_posts: ['POST-1'],
       denied_posts: ['POST-2'],
+      selected_locations: ['КИЇВ'],
+      include_peleng_locations: true,
     });
+    expect(requests.some(({ path }) => path.endsWith('/stats/locations'))).toBe(false);
+  });
+
+  it('loads location options on demand and surfaces load errors', async () => {
+    await mount();
+    expect(requests.some(({ path }) => path.endsWith('/stats/locations'))).toBe(false);
+
+    act(() => feeds.loadLocations());
+    await settle();
+    expect(feeds.locationsList).toEqual(['КИЇВ']);
+    expect(requests.find(({ path }) => path.endsWith('/stats/locations'))?.body).toMatchObject({
+      message_time_basis: 'creation',
+    });
+
+    locationsFail = true;
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    act(() => feeds.loadLocations());
+    await settle();
+    expect(feeds.error).toContain('Не вдалося завантажити список локацій');
+    expect(feeds.locationsList).toEqual(['КИЇВ']);
+    consoleError.mockRestore();
   });
 
   it('keeps creation order through pagination, buffering, and Analysis preference changes', async () => {

@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   details: vi.fn(),
   saved: vi.fn(),
   server: vi.fn(),
+  locations: vi.fn(),
 }));
 
 vi.mock('../../../services/api/inbox', () => ({
@@ -24,6 +25,7 @@ vi.mock('../../../services/api/inbox', () => ({
   savedFiltersList: api.saved,
 }));
 vi.mock('../../../services/api/server-info', () => ({ fetchServerInfo: api.server }));
+vi.mock('../../../services/api/analysis', () => ({ fetchAnalysisLocations: api.locations }));
 
 import { useRerDutyFilterOptions } from '../useRerDutyFilterOptions';
 
@@ -282,6 +284,81 @@ describe('useRerDutyFilterOptions', () => {
     expect(current?.freqs).toEqual(['155.5']);
     expect(current?.freqsReady).toBe(true);
     warning.mockRestore();
+  });
+
+  describe('locations', () => {
+    beforeEach(() => {
+      api.groups.mockResolvedValue([]);
+      api.details.mockResolvedValue([]);
+    });
+
+    it('loads locations only on demand with a fresh look-back each time', async () => {
+      api.locations.mockResolvedValue({
+        locations: [
+          { location: 'ЛЬВІВ', count: 1 },
+          { location: '', count: 2 },
+        ],
+      });
+      const now = vi.spyOn(Date, 'now');
+      mount();
+      await act(async () => {});
+      expect(api.locations).not.toHaveBeenCalled();
+
+      now.mockReturnValue(10_000_000_000);
+      await act(async () => current?.reloadLocations());
+      expect(current?.locationsList).toEqual(['', 'ЛЬВІВ']);
+      expect(current?.locationsLoading).toBe(false);
+      expect(api.locations.mock.calls[0][0]).toMatchObject({
+        tillDateNoninclusiveMs: 10_000_000_000,
+        messageTimeBasis: 'creation',
+      });
+
+      now.mockReturnValue(10_000_060_000);
+      await act(async () => current?.reloadLocations());
+      expect(api.locations).toHaveBeenCalledTimes(2);
+      expect(api.locations.mock.calls[1][0].tillDateNoninclusiveMs).toBe(10_000_060_000);
+      now.mockRestore();
+    });
+
+    it('shows loading while fetching and rejects on the latest failure', async () => {
+      const pending = deferred<{ locations: [] }>();
+      api.locations.mockReturnValueOnce(pending.promise);
+      mount();
+      await act(async () => {});
+
+      let result: Promise<void> | undefined;
+      act(() => {
+        result = current?.reloadLocations();
+      });
+      expect(current?.locationsLoading).toBe(true);
+      const error = new Error('locations failed');
+      await act(async () => {
+        pending.reject(error);
+        await expect(result).rejects.toBe(error);
+      });
+      expect(current?.locationsLoading).toBe(false);
+    });
+
+    it('ignores stale location responses and errors', async () => {
+      const first = deferred<{ locations: Array<{ location: string; count: number }> }>();
+      const second = deferred<{ locations: Array<{ location: string; count: number }> }>();
+      api.locations.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+      mount();
+      await act(async () => {});
+
+      let stale: Promise<void> | undefined;
+      act(() => {
+        stale = current?.reloadLocations();
+        void current?.reloadLocations();
+      });
+      await act(async () => second.resolve({ locations: [{ location: 'КИЇВ', count: 1 }] }));
+      await act(async () => {
+        first.reject(new Error('stale'));
+        await expect(stale).resolves.toBeUndefined();
+      });
+      expect(current?.locationsList).toEqual(['КИЇВ']);
+      expect(current?.locationsLoading).toBe(false);
+    });
   });
 
   function mount() {

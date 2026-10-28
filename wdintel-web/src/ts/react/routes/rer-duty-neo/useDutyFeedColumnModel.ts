@@ -100,6 +100,35 @@ function buildFeedColumnView(
   };
 }
 
+function buildLocationFilterActions(
+  feed: MessageFeedState,
+  feeds: RerDutyFeedsBundle,
+): Pick<
+  FeedColumnModel['filterPanel']['actions'],
+  | 'onLocationsChange'
+  | 'onLocationsDeniedChange'
+  | 'onLocationsModeTransfer'
+  | 'onIncludePelengLocationsChange'
+  | 'onLoadLocations'
+> {
+  const { applyFilter, loadLocations } = feeds;
+  return {
+    onLocationsChange: (v: string[]) =>
+      applyFilter(feed.id, { ...feed.filter, locationsSelected: v.length ? v : null }),
+    onLocationsDeniedChange: (v: string[]) =>
+      applyFilter(feed.id, { ...feed.filter, locationsDenied: v.length ? v : null }),
+    onLocationsModeTransfer: ({ includeValues, excludeValues }) =>
+      applyFilter(feed.id, {
+        ...feed.filter,
+        locationsSelected: includeValues.length ? includeValues : null,
+        locationsDenied: excludeValues.length ? excludeValues : null,
+      }),
+    onIncludePelengLocationsChange: (v: boolean) =>
+      applyFilter(feed.id, { ...feed.filter, includePelengLocations: v }),
+    onLoadLocations: loadLocations,
+  };
+}
+
 function buildFeedFilterPanel(
   feed: MessageFeedState,
   deps: DutyFeedColumnModelDeps,
@@ -111,6 +140,8 @@ function buildFeedFilterPanel(
     senderOptions,
     freqs,
     postsList,
+    locationsList,
+    locationsLoading,
     unitsMap,
     persistentUnitFilterValues,
     reloadFreqsLoading,
@@ -158,6 +189,9 @@ function buildFeedFilterPanel(
       unitsDenied: feed.filter.unitsDenied ?? [],
       selectedDeviceNames: feed.filter.selectedDeviceNames ?? [],
       deniedDeviceNames: feed.filter.deniedDeviceNames ?? [],
+      locationsSelected: feed.filter.locationsSelected ?? [],
+      locationsDenied: feed.filter.locationsDenied ?? [],
+      includePelengLocations: feed.filter.includePelengLocations,
     },
     sources: {
       groupsList,
@@ -166,6 +200,7 @@ function buildFeedFilterPanel(
       senderOptions,
       freqs,
       postsList,
+      locationsList,
       unitsList: Object.values(unitsMap),
       persistentUnitFilterValues,
     },
@@ -177,6 +212,7 @@ function buildFeedFilterPanel(
       reloadFreqsLoading,
       groupCatalogLoading,
       groupCatalogError,
+      locationsLoading,
     },
     devices: deps.canUseMessageDevices
       ? {
@@ -250,6 +286,7 @@ function buildFeedFilterPanel(
         }),
       onUnitsExactMatchOnlyChange: (v: boolean) =>
         applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
+      ...buildLocationFilterActions(feed, deps.feeds),
       onAdjacentFreqsRangeChange: (v: number) => {
         if (v === feed.adjacentFreqsRange) return;
         if (

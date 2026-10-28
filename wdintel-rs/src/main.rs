@@ -388,6 +388,16 @@ pub struct OneoffBackfillInboxUnitLinksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffRecalculateHistoricSettlementsPs {
+    /// Resume after this inbox item id (exclusive).
+    #[arg(long, default_value_t = 0)]
+    pub after_id: i64,
+    /// Stop after scanning this many inbox items.
+    #[arg(long)]
+    pub limit: Option<u64>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffLinkInboxSettlementsPs {
     /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00` or `2026-08-18 00:00:00`
     #[arg(long)]
@@ -1237,6 +1247,10 @@ enum Cmd {
     /// Recalculates settlement links, including existing links, in the selected time range (today by default).
     #[command(visible_alias = "oneoff-recalculate-inbox-settlements")]
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
+    /// Create settlement rows from `location_v2` for messages that have none.
+    OneoffRecalculateHistoricSettlements(
+        OneoffRecalculateHistoricSettlementsPs,
+    ),
     OneoffAddMissingSettlements,
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillPelengBattleLineDistance(
@@ -2078,6 +2092,12 @@ async fn async_main(
         }
         Cmd::OneoffLinkInboxSettlements(ps) => {
             battle_line::settlement_queue::oneoff_link_inbox_settlements(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffRecalculateHistoricSettlements(ps) => {
+            battle_line::settlement_queue::oneoff_recalculate_historic_settlements(
                 mode, &ps,
             )
             .await

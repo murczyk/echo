@@ -616,7 +616,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         ...opts,
         filter: radioFeaturesAllowed
           ? filter
-          : { ...filter, freqsSelected: [], freqsDenied: [], postsSelected: [], postsDenied: [] },
+          : {
+              ...filter,
+              freqsSelected: [],
+              freqsDenied: [],
+              postsSelected: [],
+              postsDenied: [],
+              includePelengLocations: false,
+            },
         expandedFreqsSelected: expandedSelected,
         expandedFreqsDenied: expandedDenied,
         highlightSignals: feed.highlightSignalsEnabled ?? false,
