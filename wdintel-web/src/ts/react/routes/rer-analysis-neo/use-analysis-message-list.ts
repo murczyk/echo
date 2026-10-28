@@ -51,6 +51,7 @@ const FIRST_PAGE_CURSOR: AnalysisMessagePageCursor = {
 };
 
 type FocusedLoadScope = {
+  controller: AbortController;
   targetMessageId: number | null;
   queryState: AnalysisQueryState;
   generation: number;
@@ -66,6 +67,7 @@ function isCurrentFocusedLoadScope(
   return (
     focusedMessageActive &&
     scope != null &&
+    !scope.controller.signal.aborted &&
     scope.targetMessageId === focusedMessageId &&
     scope.queryState === queryState &&
     scope.generation === generation
@@ -123,6 +125,7 @@ export function useAnalysisMessageList({
   const messagesRef = useRef(messages);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const pageControllerRef = useRef<AbortController | null>(null);
   const pageRequestInFlightRef = useRef<number | null>(null);
   const exhaustedBeforeWindowMessageIdRef = useRef<number | null>(null);
   const focusedLoadGenerationRef = useRef(0);
@@ -133,6 +136,14 @@ export function useAnalysisMessageList({
     earlier: null,
     later: null,
   });
+  const cancelMessagePageRequests = useCallback(() => {
+    pageControllerRef.current?.abort();
+    Object.values(focusedLoadingDirectionsRef.current).forEach((scope) =>
+      scope?.controller.abort(),
+    );
+  }, []);
+
+  useEffect(() => cancelMessagePageRequests, [cancelMessagePageRequests]);
   const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
   const callsignEnrichmentGenerationRef = useRef(0);
   const unscopedCallsignsRef = useRef(new Set<string>());
@@ -241,6 +252,7 @@ export function useAnalysisMessageList({
     );
 
   useEffect(() => {
+    pageControllerRef.current?.abort();
     loadMoreMessagesRequestRef.current += 1;
     pageRequestInFlightRef.current = null;
     exhaustedBeforeWindowMessageIdRef.current = null;
@@ -259,8 +271,14 @@ export function useAnalysisMessageList({
       queryState,
       focusedLoadGenerationRef.current,
     );
-    if (!earlierLoading) focusedLoadingDirectionsRef.current.earlier = null;
-    if (!laterLoading) focusedLoadingDirectionsRef.current.later = null;
+    if (!earlierLoading) {
+      focusedLoadingDirectionsRef.current.earlier?.controller.abort();
+      focusedLoadingDirectionsRef.current.earlier = null;
+    }
+    if (!laterLoading) {
+      focusedLoadingDirectionsRef.current.later?.controller.abort();
+      focusedLoadingDirectionsRef.current.later = null;
+    }
     setFocusedHasMoreEarlier(focusedMessageActive ? initialFocusedHasMoreEarlier : true);
     setFocusedHasMoreLater(focusedMessageActive ? initialFocusedHasMoreLater : true);
     setFocusedLoadingEarlier(earlierLoading);
@@ -285,6 +303,7 @@ export function useAnalysisMessageList({
   }, []);
 
   const invalidateMessagePageRequests = useCallback(() => {
+    cancelMessagePageRequests();
     invalidateCallsignEnrichment();
     loadMoreMessagesRequestRef.current += 1;
     pageRequestInFlightRef.current = null;
@@ -297,7 +316,7 @@ export function useAnalysisMessageList({
     setMessagesPaging(false);
     setLoadingBeforeWindow(false);
     setLoadingAfterWindow(false);
-  }, [invalidateCallsignEnrichment]);
+  }, [cancelMessagePageRequests, invalidateCallsignEnrichment]);
 
   const invalidateMessagePaging = useCallback(() => {
     invalidateMessagePageRequests();
@@ -423,9 +442,13 @@ export function useAnalysisMessageList({
       if (options.mode && pageRequestInFlightRef.current !== null) return null;
 
       const requestId = loadMoreMessagesRequestRef.current + 1;
+      pageControllerRef.current?.abort();
+      const controller = new AbortController();
+      pageControllerRef.current = controller;
       loadMoreMessagesRequestRef.current = requestId;
       pageRequestInFlightRef.current = requestId;
-      const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
+      const isStale = () =>
+        controller.signal.aborted || requestId !== loadMoreMessagesRequestRef.current;
 
       setMessagesPaging(true);
       if (options.mode === 'above') setLoadingBeforeWindow(true);
@@ -437,7 +460,7 @@ export function useAnalysisMessageList({
           sinceIdNoninclusive: cursor.sinceIdNoninclusive,
           newestFirst: cursor.requestNewestFirst ?? newestFirst,
         };
-        const rsp = await fetchInboxMessages(paginatedReq);
+        const rsp = await fetchInboxMessages(paginatedReq, { signal: controller.signal });
         if (isStale()) return null;
         mergeMessageReferences(rsp);
         const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
@@ -504,6 +527,7 @@ export function useAnalysisMessageList({
         }
         return null;
       } finally {
+        if (pageControllerRef.current === controller) pageControllerRef.current = null;
         if (pageRequestInFlightRef.current === requestId) {
           pageRequestInFlightRef.current = null;
         }
@@ -601,11 +625,13 @@ export function useAnalysisMessageList({
       if (isNullOrUndefined(inboxReq)) return false;
 
       const requestScope: FocusedLoadScope = {
+        controller: new AbortController(),
         targetMessageId: focusedMessageId,
         queryState,
         generation: focusedLoadGenerationRef.current,
       };
       const isStale = () =>
+        requestScope.controller.signal.aborted ||
         requestScope.generation !== focusedLoadGenerationRef.current ||
         focusedMessageIdRef.current !== requestScope.targetMessageId ||
         !focusedMessageActiveRef.current ||
@@ -615,12 +641,15 @@ export function useAnalysisMessageList({
       else setFocusedLoadingLater(true);
       setMessagesPaging(true);
       try {
-        const rsp = await fetchInboxMessages({
-          ...inboxReq,
-          beforeIdNoninclusive: direction === 'earlier' ? boundaryMessage[0] : null,
-          sinceIdNoninclusive: direction === 'later' ? boundaryMessage[0] : null,
-          newestFirst: direction === 'earlier',
-        });
+        const rsp = await fetchInboxMessages(
+          {
+            ...inboxReq,
+            beforeIdNoninclusive: direction === 'earlier' ? boundaryMessage[0] : null,
+            sinceIdNoninclusive: direction === 'later' ? boundaryMessage[0] : null,
+            newestFirst: direction === 'earlier',
+          },
+          { signal: requestScope.controller.signal },
+        );
         if (isStale()) return false;
         mergeMessageReferences(rsp);
         const responseMessages = rsp.inboxItems ?? [];

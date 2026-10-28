@@ -5,6 +5,16 @@ use sea_orm::{
     Value,
 };
 
+tokio::task_local! {
+    static SOURCE_COUNT_WINDOW: bool;
+}
+
+pub(crate) async fn in_source_count_window_async<T>(
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    SOURCE_COUNT_WINDOW.scope(true, future).await
+}
+
 fn bind(values: &mut Vec<Value>, value: impl Into<Value>) -> String {
     values.push(value.into());
     format!("${}", values.len())
@@ -84,6 +94,7 @@ pub fn text_predicate(
 ) -> anyhow::Result<String> {
     text_predicate_with_correlation(
         query, message, scope, structured, values, false, None, None, false,
+        None,
     )
     .c(h!())
 }
@@ -99,7 +110,47 @@ fn text_predicate_with_correlation(
     search_mode: Option<AnalysisSearchMode>,
     direct_body_key: Option<&str>,
     inline_tsquery: bool,
+    source_scope: Option<&str>,
 ) -> anyhow::Result<String> {
+    let mut predicates = search_predicates(
+        query,
+        message,
+        scope,
+        structured,
+        values,
+        correlated,
+        search_mode,
+        direct_body_key,
+        inline_tsquery,
+        source_scope,
+    )
+    .c(h!())?;
+    predicates.matches.extend(predicates.exclusions);
+    Ok(if predicates.matches.is_empty() {
+        "true".into()
+    } else {
+        predicates.matches.join(" and ")
+    })
+}
+
+struct SearchPredicates {
+    matches: Vec<String>,
+    exclusions: Vec<String>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_predicates(
+    query: &str,
+    message: &str,
+    scope: &str,
+    structured: bool,
+    values: &mut Vec<Value>,
+    correlated: bool,
+    search_mode: Option<AnalysisSearchMode>,
+    direct_body_key: Option<&str>,
+    inline_tsquery: bool,
+    source_scope: Option<&str>,
+) -> anyhow::Result<SearchPredicates> {
     let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
         query.chars().count() <= crate::config::ATTACHMENT_MAX_QUERY_CHARS,
@@ -128,8 +179,20 @@ fn text_predicate_with_correlation(
     let prefixes =
         crate::rer_importer::analysis::search::ts_prefix_query(&text_query)
             .is_some();
+    let combined = if search_mode == AnalysisSearchMode::Fuzzy && !correlated {
+        combined_or_predicate(
+            &text_query,
+            message,
+            scope,
+            prefixes,
+            values,
+            source_scope,
+        )
+    } else {
+        None
+    };
     let mut alternatives: Vec<Vec<String>> = vec![vec![]];
-    for token in text_query.split_whitespace() {
+    for token in text_query.split_whitespace().filter(|_| combined.is_none()) {
         if token.eq_ignore_ascii_case("or") {
             alternatives.push(vec![]);
             continue;
@@ -158,6 +221,7 @@ fn text_predicate_with_correlation(
                 &format!("media.file_name ilike {name_pattern} escape '\\'"),
                 &format!("body_search.search_tsv @@ {tsquery}"),
                 correlated,
+                source_scope,
             )
         } else {
             message_literal_predicate(
@@ -168,6 +232,7 @@ fn text_predicate_with_correlation(
                 values,
                 direct_body_key,
                 correlated,
+                source_scope,
             )
         };
         alternatives.last_mut().unwrap().push(if negative {
@@ -182,7 +247,10 @@ fn text_predicate_with_correlation(
         .map(|a| format!("({})", a.join(" and ")))
         .collect();
     let mut filters = vec![];
-    if !alternatives.is_empty() {
+    let mut exclusions = vec![];
+    if let Some(combined) = combined {
+        filters.push(combined);
+    } else if !alternatives.is_empty() {
         filters.push(format!("({})", alternatives.join(" or ")));
     }
     for (negative, pattern) in parts
@@ -199,17 +267,70 @@ fn text_predicate_with_correlation(
             values,
             direct_body_key,
             correlated,
+            source_scope,
         );
-        filters.push(format!(
-            "{}({predicate})",
-            if negative { "not " } else { "" }
-        ));
+        if negative {
+            exclusions.push(format!("not ({predicate})"));
+        } else {
+            filters.push(format!("({predicate})"));
+        }
     }
-    Ok(if filters.is_empty() {
-        "true".into()
-    } else {
-        filters.join(" and ")
+    Ok(SearchPredicates {
+        matches: filters,
+        exclusions,
     })
+}
+
+fn combined_or_predicate(
+    query: &str,
+    message: &str,
+    scope: &str,
+    prefixes: bool,
+    values: &mut Vec<Value>,
+    source_scope: Option<&str>,
+) -> Option<String> {
+    let mut terms = Vec::new();
+    let mut expect_term = true;
+    for token in query.split_whitespace() {
+        if expect_term {
+            if token.starts_with('-')
+                || token.eq_ignore_ascii_case("or")
+                || token.eq_ignore_ascii_case("and")
+            {
+                return None;
+            }
+            terms.push(token);
+        } else if !token.eq_ignore_ascii_case("or") {
+            return None;
+        }
+        expect_term = !expect_term;
+    }
+    if expect_term || terms.len() < 2 {
+        return None;
+    }
+    let tsqueries = terms
+        .iter()
+        .map(|term| {
+            term_tsquery(term, prefixes, values, source_scope.is_some())
+        })
+        .collect::<Vec<_>>();
+    let filenames = terms
+        .iter()
+        .map(|term| {
+            let parameter = bind(values, literal_pattern(term));
+            format!("media.file_name ilike {parameter} escape '\\'")
+        })
+        .collect::<Vec<_>>();
+    let tsquery = format!("({})", tsqueries.join(" || "));
+    Some(exists_term(
+        message,
+        scope,
+        &format!("chunk.search_tsv @@ {tsquery}"),
+        &format!("({})", filenames.join(" or ")),
+        &format!("body_search.search_tsv @@ {tsquery}"),
+        false,
+        source_scope,
+    ))
 }
 
 fn literal_pattern(token: &str) -> String {
@@ -312,6 +433,7 @@ fn message_literal_predicate(
     values: &mut Vec<Value>,
     direct_body_key: Option<&str>,
     correlated: bool,
+    source_scope: Option<&str>,
 ) -> String {
     let operator = literal_operator(pattern, search_mode, values);
     let mut sources = Vec::new();
@@ -339,6 +461,7 @@ fn message_literal_predicate(
         &filename,
         &format!("audio_search.file_name {operator}"),
         correlated,
+        source_scope,
     ));
     if let Some(body) = &body {
         if let Some(key) =
@@ -364,13 +487,14 @@ fn exists_term(
     filename: &str,
     body: &str,
     correlated: bool,
+    source_scope: Option<&str>,
 ) -> String {
     let mut sources = Vec::new();
     if !matches!(scope, "attachments" | "document") {
-        sources.push(format!(
-            "select body_search.id from sigint_search body_search where {}{body}",
-            if correlated { format!("body_search.id={message} and ") } else { String::new() }
-        ));
+        sources.push(match source_scope {
+            Some(source_scope) => format!("select body_search.id from {source_scope} source_candidate join lateral (select body_search.id from sigint_search body_search where body_search.id=source_candidate.id and {body} offset 0) body_search on true"),
+            None => format!("select body_search.id from sigint_search body_search where {}{body}", if correlated { format!("body_search.id={message} and ") } else { String::new() }),
+        });
     }
     sources.extend(attachment_term_sources(
         message,
@@ -379,6 +503,7 @@ fn exists_term(
         filename,
         &filename.replace("media.file_name", "audio_search.file_name"),
         correlated,
+        source_scope,
     ));
     term_sources_predicate(message, sources, correlated)
 }
@@ -390,6 +515,7 @@ fn attachment_term_sources(
     filename: &str,
     audio: &str,
     correlated: bool,
+    source_scope: Option<&str>,
 ) -> Vec<String> {
     let mut sources = Vec::new();
     if scope != "body" {
@@ -401,7 +527,7 @@ fn attachment_term_sources(
         let correlation = if correlated {
             format!("{} and ", media_filter(message, scope))
         } else {
-            String::new()
+            source_scope.map(|scope| format!("media.signal_message_id in (select id from {scope}) and ")).unwrap_or_default()
         };
         sources.push(format!("select {key} from signal_message_media media where {correlation}{filename}"));
         sources.push(format!("select {key} from attachment_chunk chunk join attachment_document doc on doc.media_id=chunk.media_id and doc.revision=chunk.revision join signal_message_media media on media.id=chunk.media_id where {correlation}{chunk}"));
@@ -410,7 +536,7 @@ fn attachment_term_sources(
         let correlation = if correlated {
             format!("audio_search.signal_message_id={message} and ")
         } else {
-            String::new()
+            source_scope.map(|scope| format!("audio_search.signal_message_id in (select id from {scope}) and ")).unwrap_or_default()
         };
         sources.push(format!("select audio_search.signal_message_id from signal_message_audio_search audio_search where {correlation}{audio}"));
     }
@@ -459,6 +585,7 @@ pub(crate) fn message_filter_with_mode(
         search_mode,
         None,
         false,
+        None,
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
@@ -486,9 +613,152 @@ pub(crate) fn analysis_message_filter(
             "signal_message.id"
         }),
         inline_tsquery,
+        None,
     )
     .c(h!())?;
     Ok(Expr::cust_with_values(sql, values))
+}
+
+pub(crate) fn use_source_search_scope(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    scope: &super::analytics::SearchCoverageScope<'_>,
+) -> anyhow::Result<bool> {
+    let (Some(since), Some(till)) = (scope.since, scope.till) else {
+        return Ok(false);
+    };
+    if search_mode.unwrap_or_default() != AnalysisSearchMode::Fuzzy {
+        return Ok(SOURCE_COUNT_WINDOW
+            .try_with(|enabled| *enabled)
+            .unwrap_or(false)
+            && till - since
+                <= chrono::Duration::days(
+                    i64::from(
+                        crate::config::ANALYSIS_SOURCE_SEARCH_WINDOW_MONTHS,
+                    ) * 31,
+                ));
+    }
+    if till - since
+        > chrono::Duration::days(
+            crate::config::ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS,
+        )
+    {
+        return Ok(false);
+    }
+    let parts =
+        crate::rer_importer::analysis::search::parse_search_parts(query)
+            .c(h!())?;
+    Ok(!parts.not_ilike.is_empty()
+        && parts
+            .ts_query
+            .split_whitespace()
+            .any(|word| word.eq_ignore_ascii_case("or")))
+}
+
+pub(crate) fn scoped_analysis_message_filter(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    scope: &super::analytics::SearchCoverageScope<'_>,
+) -> anyhow::Result<SimpleExpr> {
+    let mut values = Vec::new();
+    let literal = search_mode.unwrap_or_default() != AnalysisSearchMode::Fuzzy;
+    let scope_sql = if literal {
+        source_literal_date_scope(scope, &mut values)
+    } else {
+        source_search_scope(scope, &mut values)
+    };
+    let predicates = search_predicates(
+        query,
+        "signal_message.id",
+        "all",
+        true,
+        &mut values,
+        false,
+        search_mode,
+        Some("signal_message.id"),
+        false,
+        Some("source_search_scope"),
+    )
+    .c(h!())?;
+    let matches = if predicates.matches.is_empty() {
+        "true".into()
+    } else {
+        predicates.matches.join(" and ")
+    };
+    let exclusions = if predicates.exclusions.is_empty() {
+        "true".into()
+    } else {
+        predicates.exclusions.join(" and ")
+    };
+    let inbox_join = if literal {
+        "left join lateral (select id,body_noheader from sigint_inbox_item where id=signal_message.id offset 0) sigint_inbox_item on true"
+    } else {
+        "left join sigint_inbox_item on sigint_inbox_item.id=signal_message.id"
+    };
+    Ok(Expr::cust_with_values(
+        format!("{} signal_message.id in (with source_search_scope as materialized ({scope_sql}), source_search_matches as materialized (select signal_message.id from source_search_scope signal_message {inbox_join} where {matches}) select signal_message.id from source_search_matches signal_message {inbox_join} where {exclusions})", crate::config::ANALYSIS_SOURCE_SEARCH_SQL_HINT),
+        values,
+    ))
+}
+
+fn source_literal_date_scope(
+    scope: &super::analytics::SearchCoverageScope<'_>,
+    values: &mut Vec<Value>,
+) -> String {
+    use super::analytics::SearchTimeBasis;
+    let (table, column) = match scope.time_basis {
+        SearchTimeBasis::Interception => ("sigint_inbox_item", "datetime"),
+        SearchTimeBasis::Timestamp => ("signal_message", "timestamp"),
+        SearchTimeBasis::Creation => ("signal_message", "created_at"),
+    };
+    let mut filters = Vec::new();
+    if let Some(since) = scope.since {
+        filters.push(format!("{column}>={}", bind(values, since)));
+    }
+    if let Some(till) = scope.till {
+        filters.push(format!(
+            "{column}{}{}",
+            if scope.till_inclusive { "<=" } else { "<" },
+            bind(values, till)
+        ));
+    }
+    format!("select id from {table} where {}", filters.join(" and "))
+}
+
+fn source_search_scope(
+    scope: &super::analytics::SearchCoverageScope<'_>,
+    values: &mut Vec<Value>,
+) -> String {
+    use super::analytics::SearchTimeBasis;
+    let groups = bind(values, scope.groups.to_vec());
+    let column = match scope.time_basis {
+        SearchTimeBasis::Interception => "candidate_inbox.datetime",
+        SearchTimeBasis::Timestamp => "candidate_message.timestamp",
+        SearchTimeBasis::Creation => "candidate_message.created_at",
+    };
+    let mut filters = vec![format!("exists(select 1 from signal_message_group candidate_access where candidate_access.signal_message_id=candidate_message.id and candidate_access.group_master_key=any({groups}) offset 0)")];
+    if let Some(since) = scope.since {
+        let parameter = bind(values, since);
+        filters.push(format!("{column}>={parameter}"));
+    }
+    if let Some(till) = scope.till {
+        let parameter = bind(values, till);
+        filters.push(format!(
+            "{column}{}{parameter}",
+            if scope.till_inclusive { "<=" } else { "<" }
+        ));
+    }
+    let from = match scope.time_basis {
+        SearchTimeBasis::Interception => "sigint_inbox_item candidate_inbox join lateral (select candidate_message.id from signal_message candidate_message where candidate_message.id=candidate_inbox.id and not candidate_message.deleted offset 0) candidate_message on true",
+        _ => "signal_message candidate_message",
+    };
+    if !matches!(scope.time_basis, SearchTimeBasis::Interception) {
+        filters.push("not candidate_message.deleted".into());
+    }
+    format!(
+        "select candidate_message.id from {from} where {}",
+        filters.join(" and ")
+    )
 }
 
 #[cfg(test)]

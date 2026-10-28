@@ -9,16 +9,21 @@ export const DUTY_FEED_REQUEST_TIMEOUT_MESSAGE = 'Сервер не відпов
 export async function withDutyFeedRequestDeadline<T>(
   deadlineMs: number,
   request: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const controller = new AbortController();
+  const cancel = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
   const timeoutError = new DOMException(DUTY_FEED_REQUEST_TIMEOUT_MESSAGE, 'AbortError');
   const timeout = setTimeout(() => controller.abort(timeoutError), deadlineMs);
   try {
     return await request(controller.signal);
   } catch (error) {
-    if (controller.signal.aborted) throw timeoutError;
+    if (controller.signal.aborted) throw controller.signal.reason;
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener('abort', cancel);
   }
 }

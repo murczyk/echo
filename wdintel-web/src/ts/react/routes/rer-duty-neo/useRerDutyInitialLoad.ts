@@ -49,6 +49,7 @@ export function createEmptyFeedState(
 type Params = {
   messageFeeds: MessageFeedState[];
   messageFeedsRef: MutableRefObject<MessageFeedState[]>;
+  controllersByFeedIdRef: MutableRefObject<Record<string, AbortController>>;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   setError: Dispatch<SetStateAction<string | null>>;
   buildReqForFeed: (
@@ -176,6 +177,10 @@ export function useRerDutyInitialLoad(params: Params) {
       const current = paramsRef.current;
       const feed = current.messageFeeds.find((candidate) => candidate.id === feedId);
       if (!feed) return;
+      current.controllersByFeedIdRef.current[feedId]?.abort();
+      const controller = new AbortController();
+      current.controllersByFeedIdRef.current[feedId] = controller;
+      const requestOptions = { signal: controller.signal };
       const requestGeneration = current.getFeedLoadGeneration(feedId);
       const preserveUnread = overrides?.preserveUnread ?? false;
       const initialTarget = current.feedInitialTargetByFeedIdRef?.current?.[feedId];
@@ -214,10 +219,10 @@ export function useRerDutyInitialLoad(params: Params) {
           });
           const latestReq = current.buildReqForFeed(effectiveFeed, { loadLatest: true });
           const [olderResponse, newerResponse, targetResponse, latestResponse] = await Promise.all([
-            fetchInboxMessages(inboxReq),
-            fetchInboxMessages(newerReq),
-            fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq),
-            fetchInboxMessages(latestReq),
+            fetchInboxMessages(inboxReq, requestOptions),
+            fetchInboxMessages(newerReq, requestOptions),
+            fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq, requestOptions),
+            fetchInboxMessages(latestReq, requestOptions),
           ]);
           responses = [olderResponse, newerResponse, targetResponse];
           const newestItem = latestResponse.inboxItems.at(-1);
@@ -225,9 +230,13 @@ export function useRerDutyInitialLoad(params: Params) {
             ? messageOrderCursor(newestItem[0], newestItem[1])
             : null;
         } else {
-          responses = [await fetchInboxMessages(inboxReq)];
+          responses = [await fetchInboxMessages(inboxReq, requestOptions)];
         }
-        if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
+        if (
+          controller.signal.aborted ||
+          current.getFeedLoadGeneration(feedId) !== requestGeneration
+        )
+          return;
         const response = responses[0];
         const metadata = mergeInitialLoadMetadata(responses);
         current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
@@ -301,7 +310,12 @@ export function useRerDutyInitialLoad(params: Params) {
         const tail = items.at(-1);
         return tail ? messageOrderCursor(tail[0], tail[1]) : null;
       } catch (error) {
-        if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
+        if (
+          controller.signal.aborted ||
+          current.getFeedLoadGeneration(feedId) !== requestGeneration
+        )
+          return;
+        controller.abort();
         const currentFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
@@ -323,6 +337,9 @@ export function useRerDutyInitialLoad(params: Params) {
           ),
         );
         return null;
+      } finally {
+        if (current.controllersByFeedIdRef.current[feedId] === controller)
+          delete current.controllersByFeedIdRef.current[feedId];
       }
     },
     [],

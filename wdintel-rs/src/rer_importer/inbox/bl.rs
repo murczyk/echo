@@ -586,8 +586,7 @@ pub async fn get_inbox_map_items(
 ) -> Result<Vec<InboxMapItem>, AppError> {
     let q = build_inbox_map_query(login, env, req).await.c(h!())?;
 
-    let query_res: Vec<QueryResult> = env
-        .dbx
+    let query_res: Vec<QueryResult> = crate::read_query::connection(&env.dbx)
         .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, q))
         .await
         .context(h!())?;
@@ -639,7 +638,7 @@ order by inbox_item_count desc, s.id
         DatabaseBackend::Postgres,
         sql,
     ))
-    .all(&env.dbx)
+    .all(&crate::read_query::connection(&env.dbx))
     .await
     .c(h!())?)
 }

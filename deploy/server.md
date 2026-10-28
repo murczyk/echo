@@ -338,7 +338,7 @@ server {
     access_log  off;
 
     client_max_body_size 200M;
-    proxy_read_timeout 600;
+    proxy_read_timeout 605;
     proxy_connect_timeout 600;
     proxy_send_timeout 600;
 

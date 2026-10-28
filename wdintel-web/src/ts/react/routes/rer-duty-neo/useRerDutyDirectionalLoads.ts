@@ -8,6 +8,7 @@ import type {
   SignalProfileEntry,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
+import { searchRequestDeadlineMs } from '../../services/api/client';
 import {
   appendNewerItemsToFeed,
   appendWindowedMessageItems,
@@ -50,6 +51,7 @@ export type NewerLoadResult = {
 };
 
 type DirectionalOperation = {
+  controller: AbortController;
   direction: 'older' | 'newer';
   promise: Promise<void>;
   resolve: () => void;
@@ -150,6 +152,7 @@ function createOperation(
     };
   });
   return {
+    controller: new AbortController(),
     direction,
     promise,
     resolve,
@@ -250,13 +253,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `before=${beforeIdNoninclusive}; generation=${requestGeneration}`,
         );
         try {
+          const req = runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive });
           const response = await withDutyFeedRequestDeadline(
-            DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
+            searchRequestDeadlineMs(req.search, DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS),
             (signal) =>
-              fetchInboxMessages(runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive }), {
+              fetchInboxMessages(req, {
                 signal,
               }),
+            operation.controller.signal,
           );
+          if (operation.controller.signal.aborted) return;
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
@@ -326,6 +332,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
+          if (operation.controller.signal.aborted) return;
           const latestFeed = runParams.messageFeedsRef.current.find(
             (candidate) => candidate.id === feedId,
           );
@@ -420,6 +427,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             (candidate) => candidate.id === feedId,
           );
           return Boolean(
+            !operation.controller.signal.aborted &&
             latestFeed &&
             runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
             feedNewerSinceId(latestFeed) === requestedSinceId &&
@@ -449,16 +457,14 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `since=${requestedSinceId}; loadedTail=${loadedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
         );
         try {
+          const req = runParams.buildReqForFeed(currentFeed, {
+            sinceIdNoninclusive: requestedSinceId,
+            nolimit: requestNolimit || undefined,
+          });
           const response = await withDutyFeedRequestDeadline(
-            DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
-            (signal) =>
-              fetchInboxMessages(
-                runParams.buildReqForFeed(currentFeed, {
-                  sinceIdNoninclusive: requestedSinceId,
-                  nolimit: requestNolimit || undefined,
-                }),
-                { signal },
-              ),
+            searchRequestDeadlineMs(req.search, DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS),
+            (signal) => fetchInboxMessages(req, { signal }),
+            operation.controller.signal,
           );
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const capturedFollowGeneration = operation.newerOptions.followGeneration;
@@ -762,11 +768,17 @@ export function useRerDutyDirectionalLoads(params: Params) {
 
   const invalidateFeedLoads = useCallback((feedId: string) => {
     const lane = lanesRef.current[feedId];
+    delete lanesRef.current[feedId];
     lane?.queued.forEach((operation) => operation.resolve());
     lane?.active?.resolve();
-    delete lanesRef.current[feedId];
+    lane?.active?.controller.abort();
     invalidatedLoadingFeedIdsRef.current.add(feedId);
   }, []);
+
+  useLayoutEffect(
+    () => () => Object.keys(lanesRef.current).forEach(invalidateFeedLoads),
+    [invalidateFeedLoads],
+  );
 
   const removeFeedLoads = useCallback(
     (feedId: string) => {

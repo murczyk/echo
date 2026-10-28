@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { InboxMessagesReq } from '../../../../Bindings';
 import { fetchInboxCount } from '../../services/api/analysis';
-import { isAbortError } from '../../services/api/client';
+import { isAbortError, searchRequestDeadlineMs } from '../../services/api/client';
 import { isNullOrUndefined } from '../../utils/misc';
 import { buildInboxOverallCountReq, buildInboxReq } from './helpers';
 import type { AnalysisQueryState } from './types';
@@ -106,12 +106,15 @@ export function useAnalysisMessageCounts({
     };
     let deadlineId: number;
     const deadline = new Promise<never>((_, reject) => {
-      deadlineId = window.setTimeout(() => {
-        timedOut = true;
-        const error = new Error('Сервер не відповів вчасно. Спробуйте ще раз.');
-        controller.abort(error);
-        reject(error);
-      }, ANALYSIS_COUNT_REQUEST_DEADLINE_MS);
+      deadlineId = window.setTimeout(
+        () => {
+          timedOut = true;
+          const error = new Error('Сервер не відповів вчасно. Спробуйте ще раз.');
+          controller.abort(error);
+          reject(error);
+        },
+        searchRequestDeadlineMs(inboxReq.search, ANALYSIS_COUNT_REQUEST_DEADLINE_MS),
+      );
       controller.signal.addEventListener(
         'abort',
         () => {
