@@ -1405,7 +1405,7 @@ fn avia_format_lines(
         static ref RE_FREQ: Regex =
             Regex::new(r"^\s*\d{3}[.,]\d{3,4}\s*$").unwrap();
         static ref RE_NETWORK: Regex =
-            Regex::new(r"^\s*(?:🟠|🔴|🔷|🟡|⚫|УКХ р/м).*$").unwrap();
+            Regex::new(r"^\s*(?:🟠|🔴|🔷|🔸|🟡|⚫|УКХ р/м).*$").unwrap();
         static ref RE_EMPTY: Regex = Regex::new(r"^\s*$").unwrap();
     }
 
@@ -4114,6 +4114,31 @@ async fn test_extract_callsigns_avia_format_no_caps_5_digits() {
         vec!["44307".to_string(), "Саксофон".to_string()];
     let ress: Vec<String> = res.into_iter().map(|x| x.text).collect();
     assert_eq!(ress, expected);
+}
+
+#[test]
+fn extract_callsigns_avia_format_diamond_network() {
+    let body = r#"Отримано з поста "33"
+--------------------------------------
+28.07.2026, 10:18:06
+139.8250
+🔸УКХ р/м управління (ОГ Лева) підрозділом зі складу 121 мсп 68 мсд 6 А (ГОЛУБІВКА, КУП'ЯНСЬК, Харківська область) СС: 3,0 ,7👥:,30,81,5248540,822595,9619,28133,29, 0,404849, 790467, 25, 81,26,31,9556🔐
+НВ
+КРАСИВЫЙ
+
+— Красивый, ты где пропадал"#;
+
+    for is_aviation_group in [false, true] {
+        let callsigns =
+            extract_avia_callsigns_for_group(body, is_aviation_group).unwrap();
+        assert_eq!(
+            callsigns
+                .iter()
+                .map(|callsign| callsign.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["КРАСИВЫЙ"]
+        );
+    }
 }
 
 #[test]
