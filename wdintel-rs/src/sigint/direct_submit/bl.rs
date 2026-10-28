@@ -2603,6 +2603,95 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_3891_report_copies_comments_without_resubmitting_them() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        for legacy in [false, true] {
+            let mut payload = direct_submit_payload("#3891 commented source");
+            if !legacy {
+                payload.comment = Some("Source comment".to_string());
+            }
+            let source = submit_signal_message(&login, &env, payload)
+                .await
+                .unwrap()
+                .signal_message_id;
+            if legacy {
+                sigint_comment::ActiveModel {
+                    signal_message_id: Set(source),
+                    login_id: Set(login),
+                    comment: Set("Source comment".to_string()),
+                    created_at: Set((chrono::Utc::now()
+                        - chrono::Duration::days(7))
+                    .naive_utc()),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+            }
+            let source_comments =
+                crate::sigint::comments::find_linked_message_comments(
+                    &env.dbx,
+                    &[source],
+                )
+                .await
+                .unwrap();
+            assert_eq!(source_comments.len(), 1);
+            for additional_comment in [None, Some("Additional comment")] {
+                let mut payload =
+                    copy_signal_messages(&login, &env, vec![source])
+                        .await
+                        .unwrap()
+                        .payloads
+                        .remove(0);
+                assert_eq!(payload.comment.as_deref(), Some("Source comment"));
+                payload.full_body = Some("#3891 report".to_string());
+                payload.comment = additional_comment.map(str::to_string);
+                let report = submit_signal_message(&login, &env, payload)
+                    .await
+                    .unwrap()
+                    .signal_message_id;
+                let comments =
+                    crate::sigint::comments::find_linked_message_comments(
+                        &env.dbx,
+                        &[report],
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    comments.len(),
+                    1 + usize::from(additional_comment.is_some())
+                );
+                let inherited = comments
+                    .iter()
+                    .find(|comment| comment.comment == "Source comment")
+                    .unwrap();
+                assert_eq!(inherited.login_id, source_comments[0].login_id);
+                assert_eq!(inherited.created_at, source_comments[0].created_at);
+                assert_eq!(inherited.post_id, source_comments[0].post_id);
+                if let Some(additional_comment) = additional_comment {
+                    assert!(comments.iter().any(|comment| {
+                        comment.comment == additional_comment
+                            && comment.login_id == Some(login)
+                    }));
+                }
+            }
+            assert_eq!(
+                crate::sigint::comments::find_linked_message_comments(
+                    &env.dbx,
+                    &[source],
+                )
+                .await
+                .unwrap(),
+                source_comments
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn issue_3891_copy_preserves_event_date_and_time() {
         let env = cleanup().await.unwrap();
         let login = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)

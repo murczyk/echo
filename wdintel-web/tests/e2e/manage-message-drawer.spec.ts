@@ -443,9 +443,9 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       expect(payload).toMatchObject({
         unit: '51 пдп',
         timestamp: '2026-10-20T04:12:00.000Z',
-        comment: 'Source comment',
         signal_group_master_key: null,
       });
+      expect(payload.comment).toBeUndefined();
       expect(payload.unit_id).toBeUndefined();
       expect(payload.create_unit).toBeUndefined();
       await expect(editor).toHaveCount(0);

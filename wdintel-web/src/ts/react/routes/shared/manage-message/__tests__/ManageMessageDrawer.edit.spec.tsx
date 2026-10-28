@@ -2050,7 +2050,7 @@ describe('ManageMessageDrawer edit mode', () => {
         retained_media_ids: ['media-1'],
         attachment_updates: undefined,
         parent_signal_message_ids: [42],
-        comment: 'existing comment',
+        comment: undefined,
       }),
     );
 
@@ -2655,6 +2655,7 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 91 });
     const report = buildMessage({
       text: 'existing report body',
+      extendedForm: 'existing report comment',
       groupMasterKey: null,
       parentMessages: [
         {
@@ -2738,6 +2739,7 @@ describe('ManageMessageDrawer edit mode', () => {
       91,
       expect.objectContaining({
         full_body: 'existing report body',
+        comment: 'existing report comment',
         signal_group_master_key: null,
       }),
     );
