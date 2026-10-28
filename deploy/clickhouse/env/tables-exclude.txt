@@ -179,3 +179,4 @@ public.ai_transcript_analysis_settings
 public.ai_transcript_analysis_test_message
 public.ai_transcript_analysis_test_result
 public.ai_transcript_analysis_job
+public.ai_worker_progress

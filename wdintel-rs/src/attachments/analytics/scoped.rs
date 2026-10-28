@@ -1,6 +1,6 @@
 use super::*;
 use crate::config::{
-    ANALYTICS_HTTP_READ_TIMEOUT_MS,
+    ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX,
     ATTACHMENT_SEARCH_CHANGE_CLEANUP_BATCH_SIZE,
     ATTACHMENT_SEARCH_CHANGE_LIMIT, ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS,
 };
@@ -187,7 +187,7 @@ async fn prune_search_changes(
             i64::try_from(ATTACHMENT_SEARCH_CHANGE_RETENTION_SECS).c(h!())?,
         )
         - Duration::milliseconds(
-            i64::try_from(ANALYTICS_HTTP_READ_TIMEOUT_MS).c(h!())?,
+            i64::try_from(ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX).c(h!())?,
         );
     source
         .execute_raw(Statement::from_sql_and_values(

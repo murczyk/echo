@@ -54,6 +54,7 @@ pub mod report_chunking;
 pub mod reports;
 pub mod saved_filter_unit_ids;
 pub mod search;
+mod search_windows;
 pub mod signals;
 pub mod types;
 pub mod unit;

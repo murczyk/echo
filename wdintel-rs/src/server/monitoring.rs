@@ -70,6 +70,7 @@ pub struct MonitoringDatasource {
 pub struct Monitoring {
     pub datasources: Vec<MonitoringDatasource>,
     pub free_space_root_mb: i64,
+    pub ai: crate::ai_worker::monitoring::AiMonitoring,
 }
 
 #[derive(Clone)]
@@ -120,6 +121,9 @@ async fn load_monitoring(
     Ok(Monitoring {
         datasources,
         free_space_root_mb: root_free_space_mb(),
+        ai: crate::ai_worker::monitoring::load_cached(&env.dbx)
+            .await
+            .c(h!())?,
     })
 }
 

@@ -180,9 +180,9 @@ test.describe('@regression Classic Duty polling', () => {
           .toBeLessThanOrEqual(1);
         await scroller.evaluate((element) => {
           element.style.scrollBehavior = 'auto';
-          element.scrollTop = 0;
-          element.dispatchEvent(new Event('scroll'));
         });
+        await scroller.hover();
+        await page.mouse.wheel(0, -1200);
         await expect(scroller.locator('.bi-arrow-down-circle')).toBeVisible();
         await scroller.locator('.bi-arrow-down-circle').click();
         await expect(page.getByText('Duty message 40', { exact: false }).first()).toBeVisible();

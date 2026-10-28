@@ -480,7 +480,7 @@ async fn attachment_search_bootstrap_overflow_and_retention_stay_conservative_37
     )
     .await;
     assert_eq!(remaining, vec![501]);
-    execute(source, "INSERT INTO attachment_search_message_change VALUES (0,(now() AT TIME ZONE 'UTC')-interval '1 day 1 millisecond')", vec![]).await.unwrap();
+    execute(source, "INSERT INTO attachment_search_message_change VALUES (0,(now() AT TIME ZONE 'UTC')-interval '1 day 5 minutes')", vec![]).await.unwrap();
     reconcile_search_changes(source).await.unwrap();
     assert_eq!(
         query_ids(source, "SELECT count(*) FROM attachment_search_message_change WHERE message_id=0").await,

@@ -1,0 +1,85 @@
+{
+  "date_utc": "2026-10-26",
+  "target": "echo-skhid",
+  "remote_mutations": false,
+  "scope": "isolated read-only SQL diagnostics; reconstructed permitted-group scope, not complete original POST",
+  "schema_limit": "audio-search arm omitted consistently from old/new remote comparison because installed schema lacks it; covered locally",
+  "fuzzy": {
+    "old": {
+      "timeout_ms": 8000
+    },
+    "combined_or": {
+      "execution_ms": 5747.159,
+      "shared_read_blocks": 124040,
+      "shared_hit_blocks": 124067,
+      "qualifying_ids": 242
+    },
+    "scoped_staged_jit_on": {
+      "execution_ms": 2948.931,
+      "shared_read_blocks": 8106,
+      "shared_hit_blocks": 530756,
+      "qualifying_ids": 242
+    },
+    "scoped_staged_jit_off": {
+      "execution_ms": 1783.197,
+      "shared_read_blocks": 5199,
+      "shared_hit_blocks": 533663,
+      "qualifying_ids": 242
+    },
+    "same_statement_set_comparison": {
+      "timeout_ms": 20000,
+      "equivalence_established": false
+    }
+  },
+  "map": {
+    "ok": true,
+    "execution_ms": 2054.228,
+    "shared_reads": 7042,
+    "shared_hits": 667698,
+    "temp_written": 0,
+    "rows": 49.0
+  },
+  "exact_network": {
+    "estimated_old_cost": 6541913.88,
+    "estimated_corrected_cost": 29468.43,
+    "corrected_case_0": {
+      "timeout_ms": 20000
+    },
+    "corrected_case_1": {
+      "execution_ms": 8536.886,
+      "shared_read_blocks": 165549,
+      "shared_hit_blocks": 639480,
+      "grouped_rows": 187
+    },
+    "long_range_latency_resolved": false
+  },
+  "acceptance": "local fix only; production concurrent latency and error-rate improvement require approved deployment and follow-up windows",
+  "local_validation": {
+    "focused_3780": {
+      "passed": 49,
+      "failed": 0,
+      "ignored": 1,
+      "ignored_reason": "existing 250k-row attachment-claim benchmark"
+    },
+    "related_analysis": {
+      "passed": 51,
+      "failed": 0
+    },
+    "attachments": {
+      "passed": 20,
+      "failed": 0
+    },
+    "inbox": {
+      "passed": 66,
+      "failed": 0,
+      "local_nlp_dependency_started_for_retry_then_stopped": true
+    },
+    "clippy_all_targets_all_features_strict": true,
+    "cargo_check_all_targets_all_features": true,
+    "cargo_fmt_check": true,
+    "front_end_build": true,
+    "diff_check": true,
+    "browser_regressions_run": false,
+    "concurrent_http_replay_run": false
+  }
+}

@@ -4,7 +4,12 @@ import { normalizeMessageUnitName } from './message-unit-name';
 
 export const MESSAGE_UNIT_SELECTION_ERROR = 'Підрозділ не обрано';
 
-export type MessageUnitSelection = { name: string; id?: number; create?: boolean };
+export type MessageUnitSelection = {
+  name: string;
+  id?: number;
+  create?: boolean;
+  inherited?: boolean;
+};
 export type MessageNetworkUnitSelection = {
   networkId: number;
   unitIds: number[];
@@ -49,5 +54,12 @@ export function isMessageUnitSelectionValid(
         normalizeMessageUnitName(units.map((unit) => unit?.name).join(', '))
     );
   }
-  return !name?.trim() || compatibleMessageUnitSelection(name, selection) != null;
+  return (
+    !name?.trim() ||
+    (selection?.inherited === true &&
+      selection.id == null &&
+      selection.create !== true &&
+      name === selection.name) ||
+    compatibleMessageUnitSelection(name, selection) != null
+  );
 }

@@ -41,6 +41,8 @@ JOIN signal_group
     ON signal_group.master_key = datasource_group.group_master_key
 WHERE network_link.sigint_network_id = ANY($1)
   AND network_link.sigint_inbox_item_id BETWEEN $2 AND $3
+  AND inbox_item.id BETWEEN $2 AND $3
+  AND signal_message.id BETWEEN $2 AND $3
   AND signal_message.deleted = false
   AND signal_message.datasource_group_id = ANY($4)
   AND signal_group.deleted = false
@@ -462,40 +464,62 @@ pub(crate) async fn load_network_group_activity(
         return Ok(NetworkGroupsActivitySummaryRsp::default());
     }
 
-    let rows = sqlx::query_as::<_, NetworkGroupActivityRow>(
-        NETWORK_GROUP_ACTIVITY_SQL,
-    )
-    .bind(network_ids)
-    .bind(min_item_id)
-    .bind(max_item_id)
-    .bind(&datasource_group_ids)
-    .bind(since)
-    .bind(till)
-    .fetch_all(analytics_db.get_postgres_connection_pool())
-    .await
-    .c(h!())?;
-
     let mut response = NetworkGroupsActivitySummaryRsp::default();
-    for row in rows {
-        let network_id = row.network_id.to_string();
-        let last_activity_at =
-            row.last_activity_at.and_utc().timestamp_millis();
-        response
-            .last_activity_at
-            .entry(network_id.clone())
-            .and_modify(|current| {
-                *current = std::cmp::max(*current, last_activity_at)
-            })
-            .or_insert(last_activity_at);
-        response
-            .activity
-            .entry(network_id)
-            .or_default()
-            .entry(row.day.to_string())
-            .or_default()
-            .insert(row.group_name, row.message_count);
+    let mut start = min_item_id;
+    while start <= max_item_id {
+        let end = std::cmp::min(
+            start.saturating_add(
+                crate::config::ANALYTICS_NETWORK_ACTIVITY_MESSAGE_ID_CHUNK_SIZE
+                    - 1,
+            ),
+            max_item_id,
+        );
+        let rows = sqlx::query_as::<_, NetworkGroupActivityRow>(
+            NETWORK_GROUP_ACTIVITY_SQL,
+        )
+        .bind(network_ids)
+        .bind(start)
+        .bind(end)
+        .bind(&datasource_group_ids)
+        .bind(since)
+        .bind(till)
+        .fetch_all(analytics_db.get_postgres_connection_pool())
+        .await
+        .c(h!())?;
+        for row in rows {
+            merge_network_group_activity_row(&mut response, row).c(h!())?;
+        }
+        if end == max_item_id {
+            break;
+        }
+        start = end + 1;
     }
     Ok(response)
+}
+
+fn merge_network_group_activity_row(
+    response: &mut NetworkGroupsActivitySummaryRsp,
+    row: NetworkGroupActivityRow,
+) -> anyhow::Result<()> {
+    let network_id = row.network_id.to_string();
+    let last_activity_at = row.last_activity_at.and_utc().timestamp_millis();
+    response
+        .last_activity_at
+        .entry(network_id.clone())
+        .and_modify(|current| {
+            *current = std::cmp::max(*current, last_activity_at)
+        })
+        .or_insert(last_activity_at);
+    let count = response
+        .activity
+        .entry(network_id)
+        .or_default()
+        .entry(row.day.to_string())
+        .or_default()
+        .entry(row.group_name)
+        .or_default();
+    *count = count.checked_add(row.message_count).c(h!())?;
+    Ok(())
 }
 
 pub(crate) async fn load_network_points(
@@ -1258,6 +1282,118 @@ fn finalize_network_freq_callsigns(
 mod tests {
     use super::*;
     use crate::entities::sea_orm_active_enums::SigintNetworkKind;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_activity_ranges_sum_shared_groups_and_keep_latest_time_3780(
+    ) {
+        use crate::entities::{
+            sigint_inbox_item, sigint_inbox_item_network, signal_message,
+        };
+        use crate::functest::tests::*;
+        let env = cleanup().await.unwrap();
+        env.dbx.execute_unprepared(r#"
+            CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived;
+            CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS
+            SELECT sigint_inbox_item_id, sigint_network_id FROM sigint_inbox_item_network;
+        "#).await.unwrap();
+        let group = find_test_signal_group(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource_group(&env.dbx).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("3780.1".into()),
+                active_from: Set(dt(3, 1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let base = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "id")
+            .into_tuple::<Option<i64>>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .flatten()
+            .unwrap_or(0)
+            + 1;
+        let width =
+            crate::config::ANALYTICS_NETWORK_ACTIVITY_MESSAGE_ID_CHUNK_SIZE;
+        let latest = dt(3, 2) + Duration::seconds(2);
+        for (offset, seconds, deleted) in [
+            (0, 0, false),
+            (width - 1, 1, false),
+            (width, 2, false),
+            (width + 1, 3, true),
+        ] {
+            let id = base + offset;
+            let timestamp = dt(3, 2) + Duration::seconds(seconds);
+            mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    id: Set(id),
+                    datasource_group_id: Set(Some(datasource.id)),
+                    timestamp: Set(Some(timestamp)),
+                    created_at: Set(timestamp),
+                    deleted: Set(deleted),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(id),
+                    freq: Set(Some("3780.1".into())),
+                    datetime: Set(None),
+                    date: Set(None),
+                    time: Set(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item_network(
+                &env.dbx,
+                sigint_inbox_item_network::ActiveModel {
+                    sigint_network_id: Set(network.id),
+                    sigint_inbox_item_id: Set(id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let response = load_network_group_activity(
+            &env.dbx,
+            &env.dbx,
+            &[group.master_key],
+            &[network.id],
+            dt(3, 1),
+            dt(3, 3),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            response.last_activity_at[&network.id.to_string()],
+            latest.and_utc().timestamp_millis()
+        );
+        assert_eq!(
+            response.activity[&network.id.to_string()]
+                .values()
+                .flat_map(HashMap::values)
+                .sum::<i64>(),
+            3
+        );
+        assert_eq!(response.activity[&network.id.to_string()].len(), 1);
+    }
 
     #[tokio::test]
     #[serial_test::serial]

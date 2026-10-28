@@ -143,16 +143,26 @@ pub async fn collect_inbox_pelengs(
 }
 
 pub fn inbox_item_has_active_peleng_exists() -> SimpleExpr {
-    Expr::exists(
+    active_peleng_exists(false)
+}
+
+pub(crate) fn inbox_item_has_active_peleng_correlated_exists() -> SimpleExpr {
+    active_peleng_exists(true)
+}
+
+fn active_peleng_exists(correlated: bool) -> SimpleExpr {
+    let mut query =
         sigint_peleng::Entity::find()
             .select_only()
             .expr(Expr::value(1))
             .filter(Expr::col(sigint_peleng::Column::SourceInboxItemId).equals(
                 (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id),
             ))
-            .filter(sigint_peleng::Column::Deleted.eq(false))
-            .into_query(),
-    )
+            .filter(sigint_peleng::Column::Deleted.eq(false));
+    if correlated {
+        query = query.offset(0);
+    }
+    Expr::exists(query.into_query())
 }
 
 pub async fn collect_inbox_item_pelengs(

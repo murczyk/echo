@@ -13,7 +13,8 @@ pub(super) struct InboxReadDiagnostics {
     pub(super) ordered_count: Option<usize>,
     result_count: Option<usize>,
     postgres_started: Option<Instant>,
-    _analytics_fallback_permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    _analytics_fallback_permit:
+        Option<crate::rer_importer::analysis::SourceFallbackPermit>,
 }
 
 impl InboxReadDiagnostics {
@@ -47,7 +48,7 @@ impl InboxReadDiagnostics {
 
     pub(super) fn hold_analytics_fallback_capacity(
         &mut self,
-        permit: Option<tokio::sync::OwnedSemaphorePermit>,
+        permit: Option<crate::rer_importer::analysis::SourceFallbackPermit>,
     ) {
         if permit.is_some() {
             self._analytics_fallback_permit = permit;

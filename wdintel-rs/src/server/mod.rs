@@ -1989,6 +1989,7 @@ pub async fn main_server(
                 redis_session_store.clone(),
                 Key::from(cookie_secret.as_bytes()),
             ))
+            .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
                 middleware::mk_activity_middleware(Some(redis_for_middleware)),
             ))
@@ -1996,7 +1997,6 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 crate::event_stream::deployment_only_poll,
             ))
-            .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
                 middleware::access_log_middleware,
             ))

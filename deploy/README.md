@@ -322,7 +322,7 @@ Make sure your nginx (`brew install nginx`) has the following configuration (`/o
         client_max_body_size 200M;
         root /Users/kon/workspace/echo/wdintel-web/public;
         index index.html;
-        proxy_read_timeout 600;
+        proxy_read_timeout 605;
         proxy_connect_timeout 600;
         proxy_send_timeout 600;
         ssl_certificate /Users/kon/workspace/echo/deploy/echo.localhost.crt;

@@ -240,10 +240,16 @@ pub async fn save_ai_settlement_worker_settings(
         except: req.groups_except,
         master_keys: req.group_master_keys,
     };
-    let settings =
-        save_worker_settings(&env.dbx, req.enabled, ai_engine_id, group_filter)
-            .await
-            .context(h!())?;
+    let settings = save_worker_settings(
+        &env.dbx,
+        req.enabled,
+        ai_engine_id,
+        group_filter,
+        crate::ai_worker::parse_fallback_update(req.fallback_ai_engine_id)
+            .c(h!())?,
+    )
+    .await
+    .context(h!())?;
     Ok(Json(worker_settings_item(&settings)))
 }
 
@@ -263,6 +269,7 @@ async fn load_page(
         AiSettlementWorkerSettingsItem {
             enabled: false,
             ai_engine_id: None,
+            fallback_ai_engine_id: None,
             groups_except: false,
             group_master_keys: Vec::new(),
         },
@@ -329,6 +336,9 @@ fn worker_settings_item(
     settings: &ai_settlement_settings::Model,
 ) -> AiSettlementWorkerSettingsItem {
     AiSettlementWorkerSettingsItem {
+        fallback_ai_engine_id: settings
+            .worker_fallback_ai_engine_id
+            .map(|id| id.to_string()),
         enabled: settings.worker_enabled,
         ai_engine_id: settings
             .worker_ai_engine_id
@@ -386,8 +396,25 @@ async fn save_worker_settings(
     enabled: bool,
     ai_engine_id: Option<Uuid>,
     mut group_filter: groups::GroupFilter,
+    fallback_update: Option<Option<Uuid>>,
 ) -> Result<ai_settlement_settings::Model, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
+    let existing =
+        ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
+            .one(&transaction)
+            .await
+            .c(h!())?;
+    let fallback_ai_engine_id = fallback_update.unwrap_or(
+        existing.and_then(|settings| settings.worker_fallback_ai_engine_id),
+    );
+    crate::ai_worker::validate_selection(
+        &transaction,
+        enabled,
+        ai_engine_id,
+        fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     lock_worker_engine(&transaction, ai_engine_id)
         .await
         .context(h!())?;
@@ -402,9 +429,15 @@ async fn save_worker_settings(
                 .to_string(),
         });
     }
-    persist_worker_settings(&transaction, enabled, ai_engine_id, group_filter)
-        .await
-        .c(h!())?;
+    persist_worker_settings(
+        &transaction,
+        enabled,
+        ai_engine_id,
+        group_filter,
+        fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     let settings =
         ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
             .one(&transaction)
@@ -421,6 +454,7 @@ async fn persist_worker_settings(
     enabled: bool,
     ai_engine_id: Option<Uuid>,
     group_filter: groups::GroupFilter,
+    fallback_ai_engine_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     ai_settlement_settings::Entity::insert(
         ai_settlement_settings::ActiveModel {
@@ -429,6 +463,7 @@ async fn persist_worker_settings(
             updated_at: Set(Utc::now().naive_utc()),
             worker_enabled: Set(enabled),
             worker_ai_engine_id: Set(ai_engine_id),
+            worker_fallback_ai_engine_id: Set(fallback_ai_engine_id),
             worker_groups_except: Set(Some(group_filter.except)),
             worker_group_master_keys: Set(Some(group_filter.master_keys)),
         },
@@ -438,6 +473,7 @@ async fn persist_worker_settings(
             .update_columns([
                 ai_settlement_settings::Column::WorkerEnabled,
                 ai_settlement_settings::Column::WorkerAiEngineId,
+                ai_settlement_settings::Column::WorkerFallbackAiEngineId,
                 ai_settlement_settings::Column::WorkerGroupsExcept,
                 ai_settlement_settings::Column::WorkerGroupMasterKeys,
                 ai_settlement_settings::Column::UpdatedAt,
@@ -1006,6 +1042,7 @@ async fn save_prompt(
 ) -> Result<(), AppError> {
     ai_settlement_settings::Entity::insert(
         ai_settlement_settings::ActiveModel {
+            worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
             id: Set(AI_SETTLEMENT_SETTINGS_ID),
             prompt: Set(prompt),
             updated_at: Set(now),
@@ -1393,6 +1430,7 @@ mod tests {
                 true,
                 Some(ai_engine_id),
                 Default::default(),
+                None,
             )
             .await
         });
@@ -1438,6 +1476,7 @@ mod tests {
             .unwrap();
         let now = chrono::Utc::now().naive_utc();
         ai_settlement_settings::ActiveModel {
+            worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
             id: Set(AI_SETTLEMENT_SETTINGS_ID),
             prompt: Set("override".to_string()),
             updated_at: Set(now),

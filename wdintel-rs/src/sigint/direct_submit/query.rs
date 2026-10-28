@@ -1124,7 +1124,10 @@ where
                 .c(h!())?
                 .ok_or(AppError::NotFound)
                 .c(h!())?;
-        if payload.unit.as_deref() == source_inbox_item.unit_v2.as_deref() {
+        if payload.unit_id.is_none()
+            && !payload.create_unit
+            && payload.unit.as_deref() == source_inbox_item.unit_v2.as_deref()
+        {
             unit_source_ids.push(*source_signal_message_id);
         }
         if payload.full_body.as_deref() == source_message.body.as_deref()

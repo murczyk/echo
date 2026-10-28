@@ -70,7 +70,7 @@ pub(super) async fn order_counts(
         ordered_frequency_query(query, req, Some(limit)),
         vec![frequencies.into(), counts.into()],
     ))
-    .all(db)
+    .all(&crate::read_query::connection(db))
     .await
     .c(h!())
 }
@@ -83,7 +83,7 @@ async fn query_counts(
         DbBackend::Postgres,
         sql,
     ))
-    .all(db)
+    .all(&crate::read_query::connection(db))
     .await
     .c(h!())
 }
