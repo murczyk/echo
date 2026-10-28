@@ -6,6 +6,7 @@ import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 const NOW = Date.UTC(2026, 9, 22, 12);
 const DAY = 86_400_000;
+const SIX_HOURS = DAY / 4;
 
 function account(id: string, patch: Partial<Login> = {}): Login {
   return {
@@ -149,8 +150,16 @@ for (const width of [390, 1280]) {
     if (width === 1280) {
       await page.goto('/');
       await page.getByRole('button', { name: 'Адмін', exact: true }).click();
-      await expect(page.getByRole('menuitem').last()).toHaveText('KPI');
-      await page.getByRole('menuitem', { name: 'KPI', exact: true }).click();
+      const adminMenu = page.locator('#navbar-dropdown-menu-admin');
+      await expect(
+        adminMenu.locator(':scope > li > [role="menuitem"]').filter({ hasText: /^KPI$/ }),
+      ).toHaveCount(0);
+      const knowledgeBase = adminMenu
+        .getByRole('menuitem', { name: 'База знань', exact: true })
+        .locator('..');
+      await knowledgeBase.hover();
+      await expect(knowledgeBase.getByRole('menuitem').last()).toHaveText('KPI');
+      await knowledgeBase.getByRole('menuitem', { name: 'KPI', exact: true }).click();
     } else {
       await page.goto('/admin/kpi');
     }
@@ -346,7 +355,10 @@ test('#3826 historical tabs use bounded periods and isolate unavailable sources 
   await page.route('**/api/kpi/requests', async (route) => {
     const period = route.request().postDataJSON();
     requests.push({ endpoint: 'requests', ...period });
-    if (failRequests) return route.fulfill({ status: 500, body: 'History unavailable' });
+    if (failRequests && period.since === NOW - 30 * DAY + SIX_HOURS) {
+      return route.fulfill({ status: 500, body: 'History unavailable' });
+    }
+    if (period.until === NOW) return route.fallback();
     return route.fulfill({
       json: {
         period,
@@ -364,7 +376,12 @@ test('#3826 historical tabs use bounded periods and isolate unavailable sources 
     });
   });
   await page.goto('/admin/kpi?tab=quality');
-  await expect(page.getByRole('tab')).toHaveCount(10);
+  await expect(page.getByRole('tab')).toHaveText([
+    'База користувачів',
+    'Активність',
+    'Чого затримуються (швидкість)',
+    'Технічна якість',
+  ]);
   await expect(page.getByRole('tab', { name: 'Технічна якість', exact: true })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -374,13 +391,35 @@ test('#3826 historical tabs use bounded periods and isolate unavailable sources 
   ).toBeVisible();
   await expect(metric(page, 'Сповіщення для відправлення')).toHaveText('0');
   await expect(metric(page, 'Час до відправлення в транспорт: медіана')).toHaveText('Недоступно');
+  await expect(metric(page, 'Записані відповіді API')).toHaveCount(0);
   failRequests = false;
+  requests.length = 0;
   await page.getByRole('button', { name: 'Повторити: якість API', exact: true }).click();
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('4760');
+  await expect(metric(page, 'Помилки сервера API')).toHaveText('238');
+  await expect(metric(page, 'Помилки клієнта API')).toHaveText('357');
   await expect(metric(page, 'Частка відповідей з помилкою')).toHaveText('12.50%');
-  expect(requests.at(-1)).toEqual({ endpoint: 'requests', since: NOW - 30 * DAY, until: NOW });
+  expect(requests).toEqual(
+    Array.from({ length: 120 }, (_, index) => ({
+      endpoint: 'requests',
+      since: NOW - 30 * DAY + index * SIX_HOURS,
+      until: NOW - 30 * DAY + (index + 1) * SIX_HOURS,
+    })),
+  );
+  const statuses = await openValues(page, 'Відповіді API за HTTP-статусом');
+  await expect(statuses.getByRole('row', { name: '200 4165', exact: true })).toBeVisible();
+  await expect(statuses.getByRole('row', { name: '404 357', exact: true })).toBeVisible();
+  await expect(statuses.getByRole('row', { name: '500 238', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: /^Період історії/ }).click();
   await page.getByRole('option', { name: 'Останні 7 днів', exact: true }).click();
-  await expect.poll(() => requests.at(-1)?.since).toBe(NOW - 7 * DAY);
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('1080');
+  expect(requests.slice(120)).toEqual(
+    Array.from({ length: 28 }, (_, index) => ({
+      endpoint: 'requests',
+      since: NOW - 7 * DAY + index * SIX_HOURS,
+      until: NOW - 7 * DAY + (index + 1) * SIX_HOURS,
+    })),
+  );
   await page.getByRole('tab', { name: 'Активність', exact: true }).click();
   await expect(
     page.getByRole('region', { name: 'Спостереження сторінок', exact: true }),
@@ -392,8 +431,85 @@ test('#3826 historical tabs use bounded periods and isolate unavailable sources 
     'aria-selected',
     'true',
   );
-  await page.getByRole('tab', { name: 'Радять', exact: true }).click();
-  await expect(page.getByRole('tabpanel')).toContainText('збереженої ідентичності автора');
+  for (const tab of await page.getByRole('tab').all()) {
+    await tab.click();
+    await expect(
+      page.getByRole('region', { name: 'Показники, для яких бракує даних або визначень' }),
+    ).toHaveCount(0);
+  }
+  await page.goto('/admin/kpi?tab=referrals');
+  await expect(page.getByRole('tab', { name: 'База користувачів', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(metric(page, 'Облікові записи')).toHaveText('9');
+});
+
+test('#3826 API-quality batches cancel on period changes and retain complete snapshots @regression', async ({
+  page,
+}) => {
+  await setup(page);
+  let releaseOld!: () => void;
+  let finishOld!: () => void;
+  const oldReady = new Promise<void>((resolve) => {
+    releaseOld = resolve;
+  });
+  const oldFinished = new Promise<void>((resolve) => {
+    finishOld = resolve;
+  });
+  const requests: { since: number; until: number }[] = [];
+  let failRequests = false;
+  await page.route('**/api/kpi/requests', async (route) => {
+    const period = route.request().postDataJSON();
+    requests.push(period);
+    const old = period.since === NOW - 30 * DAY;
+    if (old) await oldReady;
+    if (failRequests && period.since === NOW - 6 * DAY + SIX_HOURS) {
+      return route.fulfill({ status: 500, body: 'History unavailable' });
+    }
+    await route.fulfill({
+      json: {
+        period,
+        available: true,
+        reason: null,
+        total: old ? 999 : 10,
+        serverErrors: 1,
+        clientErrors: 0,
+        byStatus: [
+          { id: '200', label: '200', count: old ? 998 : 9 },
+          { id: '500', label: '500', count: 1 },
+        ],
+      },
+    });
+    if (old) finishOld();
+  });
+  await page.goto('/admin/kpi?tab=quality');
+  await expect.poll(() => requests.length).toBe(1);
+  await page.getByRole('combobox', { name: /^Період історії/ }).click();
+  await page.getByRole('option', { name: 'Останні 7 днів', exact: true }).click();
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('280');
+  releaseOld();
+  await oldFinished;
+  expect(requests).toHaveLength(29);
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('280');
+  await expect(metric(page, 'Частка відповідей з помилкою')).toHaveText('10.00%');
+  failRequests = true;
+  await page.clock.setFixedTime(NOW + DAY);
+  await page.getByRole('button', { name: 'Оновити KPI', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Повторити: якість API', exact: true }),
+  ).toBeVisible();
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('280');
+  const quality = page.getByRole('region', { name: 'Якість запитів API', exact: true });
+  await expect(quality).toContainText('Показано попередні дані.');
+  await expect(quality).toContainText(new Date(NOW).toISOString());
+  failRequests = false;
+  await page.getByRole('button', { name: 'Повторити: якість API', exact: true }).click();
+  await expect(quality).toContainText(new Date(NOW + DAY).toISOString());
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('280');
+  await expect(
+    page.getByRole('button', { name: 'Повторити: якість API', exact: true }),
+  ).toHaveCount(0);
 });
 
 test('#3826 changed periods discard delayed history responses and retain failed snapshots @regression', async ({

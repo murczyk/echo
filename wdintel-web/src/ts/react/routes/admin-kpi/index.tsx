@@ -6,7 +6,7 @@ import { PowerButton } from '../../components/PowerButton';
 import { AccountsTab } from './AccountsTab';
 import { ActivityHistory, QualityHistory, ReportsHistory } from './HistoryTabs';
 import { KpiPanel, MetricCard, SnapshotState } from './KpiSummary';
-import { KpiTab, kpiTabs, unavailableMetrics } from './tabs';
+import { KpiTab, kpiTabs } from './tabs';
 import { useKpiData } from './use-kpi-data';
 
 const KPI_DAY_MS = 86_400_000;
@@ -129,13 +129,6 @@ export function AdminKpiPage() {
               )}
               {tab === KpiTab.Speed && <ReportsHistory period={period} />}
               {tab === KpiTab.Quality && <QualityHistory period={period} />}
-              <KpiPanel title="Показники, для яких бракує даних або визначень">
-                <ul className="space-y-echo-sm">
-                  {unavailableMetrics[tab].map((text) => (
-                    <li key={text}>{text}</li>
-                  ))}
-                </ul>
-              </KpiPanel>
             </>
           )}
         </div>
