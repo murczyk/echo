@@ -38,6 +38,9 @@ entries = {
 strategies_by_table = {}
 for table, strategy in entries:
     strategies_by_table.setdefault(table, set()).add(strategy)
+for strategies in strategies_by_table.values():
+    if "replicated_snapshot" in strategies:
+        strategies.discard("cdc_additive")
 conflicts = {
     table: strategies
     for table, strategies in strategies_by_table.items()
@@ -72,6 +75,8 @@ strategies = {
         )
     )
 }
+if "replicated_snapshot" in strategies:
+    strategies.discard("cdc_additive")
 if len(strategies) != 1:
     raise SystemExit(1)
 print(next(iter(strategies)))
@@ -162,6 +167,7 @@ main() {
   [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
     || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
   control_release=$(require_paired_control_release "$analytics_ssh_target")
+  SOURCE_RECONCILE_LOCK_WAIT_SECONDS=${SOURCE_RECONCILE_LOCK_WAIT_SECONDS:-300}
   acquire_source_reconcile_lock
 
   if [[ "$mode" == --manifest ]]; then
