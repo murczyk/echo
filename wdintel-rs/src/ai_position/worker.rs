@@ -825,8 +825,20 @@ async fn fail_job(
     job: &ai_position_worker_job::Model,
     error_text: String,
 ) -> anyhow::Result<()> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let current = ai_position_worker_job::Entity::find_by_id(job.id)
+        .lock_exclusive()
+        .one(&transaction)
+        .await
+        .c(h!())?;
+    if current.as_ref().map(|current| current.created_at)
+        != Some(job.created_at)
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
     crate::ai_worker::record_failure(
-        dbx,
+        &transaction,
         "position",
         &job.id.to_string(),
         &error_text,
@@ -849,9 +861,10 @@ async fn fail_job(
             .filter(
                 ai_position_worker_job::Column::CreatedAt.eq(job.created_at),
             )
-            .exec(dbx)
+            .exec(&transaction)
             .await
             .c(h!())?;
+        transaction.commit().await.c(h!())?;
         return Ok(());
     }
     // Matching created_at keeps a re-enqueued job's fresh state.
@@ -869,9 +882,10 @@ async fn fail_job(
         )
         .filter(ai_position_worker_job::Column::Id.eq(job.id))
         .filter(ai_position_worker_job::Column::CreatedAt.eq(job.created_at))
-        .exec(dbx)
+        .exec(&transaction)
         .await
         .c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -1915,6 +1929,15 @@ mod tests {
         .await
         .unwrap());
 
+        super::fail_job(&env.dbx, &job, "stale failure".into())
+            .await
+            .unwrap();
+        assert!(crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+
         assert!(ai_position_mention::Entity::find()
             .filter(
                 ai_position_mention::Column::SigintInboxItemId.eq(message.id)
@@ -1928,6 +1951,23 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+        let current = load_next_job(&env.dbx).await.unwrap().unwrap();
+        assert_eq!(current.attempts, 0);
+        let error = "ж".repeat(crate::config::AI_WORKER_MAX_ERROR_CHARS + 1);
+        super::fail_job(&env.dbx, &current, error).await.unwrap();
+        let progress = crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(progress.last_completed_at.is_none());
+        assert!(progress.last_error_at.is_some());
+        assert_eq!(
+            progress.last_error.unwrap().chars().count(),
+            crate::config::AI_WORKER_MAX_ERROR_CHARS
+        );
+        let current = load_next_job(&env.dbx).await.unwrap();
+        assert!(current.is_none());
     }
 
     #[tokio::test]

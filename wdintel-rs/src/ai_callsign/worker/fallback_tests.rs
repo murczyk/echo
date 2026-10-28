@@ -4,6 +4,60 @@ use crate::ai_callsign::feedback::sql;
 use crate::ai_worker::test_support::engine;
 use crate::functest::tests::{cleanup_locked, mk_sigint_inbox_item};
 use std::sync::atomic::Ordering;
+use tracing_subscriber::util::SubscriberInitExt;
+
+#[tokio::test]
+#[serial_test::serial]
+async fn oversized_primary_responses_are_bounded_in_fallback_logs_3888() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let response = format!(
+        "{}PRIVATE_RESPONSE_TAIL",
+        "ж".repeat(crate::config::AI_WORKER_MAX_ERROR_CHARS + 100)
+    );
+    let primary = engine(&env.dbx, 200, &response, false).await;
+    let fallback = engine(&env.dbx, 200, r#"{"callsigns":[]}"#, false).await;
+    crate::ai_callsign::save_worker_settings(
+        &env.dbx,
+        true,
+        Some(primary.engine.id),
+        Some(Some(fallback.engine.id)),
+    )
+    .await
+    .unwrap();
+    let item = mk_sigint_inbox_item(&env.dbx, Default::default())
+        .await
+        .unwrap();
+    enqueue_if_enabled(&env.dbx, item.id, item.id_uuid)
+        .await
+        .unwrap();
+    let output = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing_subscriber::filter::LevelFilter::WARN)
+        .without_time()
+        .with_ansi(false)
+        .with_writer(output.reopen().unwrap())
+        .finish();
+    let _capture = subscriber.set_default();
+    let mut redis = env.redis.clone();
+    assert!(
+        process_next(&env.ai_engine_client, &env.dbx, &env.rq, &mut redis,)
+            .await
+            .unwrap()
+    );
+    let output = std::fs::read_to_string(output.path()).unwrap();
+    assert!(output.contains("AI worker primary failed; using fallback"));
+    assert!(output.contains('ж'));
+    assert!(!output.contains("PRIVATE_RESPONSE_TAIL"));
+    assert!(
+        output.matches('ж').count() <= crate::config::AI_WORKER_MAX_ERROR_CHARS
+    );
+    assert_eq!(fallback.calls.load(Ordering::SeqCst), 1);
+    assert!(ai_callsign_worker_job::Entity::find_by_id(item.id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
+}
 
 #[tokio::test]
 #[serial_test::serial]

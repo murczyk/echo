@@ -123,7 +123,7 @@ where
     match first {
         Ok(value) => Ok((value, primary.clone())),
         Err(primary_error) => {
-            log::warn!("AI worker primary failed; using fallback: worker={worker} primary_id={} fallback_id={} error={primary_error:#}", primary.id, fallback.id);
+            log::warn!("AI worker primary failed; using fallback: worker={worker} primary_id={} fallback_id={} error={}", primary.id, fallback.id, bounded_error(&format!("{primary_error:#}")));
             let value = attempt(&operation, fallback, AI_WORKER_FALLBACK_TIMEOUT_SECS)
                 .await.map_err(|fallback_error| anyhow::anyhow!("Primary AI failed: {primary_error:#}; fallback AI failed: {fallback_error:#}")).c(h!())?;
             Ok((value, fallback.clone()))
@@ -167,12 +167,20 @@ pub(crate) async fn record_failure<C: ConnectionTrait>(
     job_id: &str,
     error: &str,
 ) -> anyhow::Result<()> {
+    let error = bounded_error(error);
     log::warn!(
         "AI worker job failed: worker={worker} job_id={job_id} error={error}"
     );
     db.execute_raw(crate::ai_callsign::feedback::sql(
         "insert into ai_worker_progress(worker,last_error_at,last_error) values($1,now() at time zone 'utc',$2) on conflict(worker) do update set last_error_at=excluded.last_error_at,last_error=excluded.last_error",
-        vec![worker.into(), error.chars().take(crate::config::AI_CALLSIGN_WORKER_MAX_ERROR_CHARS).collect::<String>().into()],
+        vec![worker.into(), error.into()],
     )).await.c(h!())?;
     Ok(())
+}
+
+fn bounded_error(error: &str) -> String {
+    error
+        .chars()
+        .take(crate::config::AI_WORKER_MAX_ERROR_CHARS)
+        .collect()
 }

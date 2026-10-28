@@ -25,13 +25,14 @@ impl Drop for TestEngine {
 pub(crate) async fn engine(
     db: &DatabaseConnection,
     status: u16,
-    content: &'static str,
+    content: &str,
     stall: bool,
 ) -> TestEngine {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = calls.clone();
+    let content = content.to_string();
     let task = tokio::spawn(async move {
         loop {
             let (mut socket, _) = listener.accept().await.unwrap();

@@ -179,7 +179,7 @@ async fn process(
         job.inbox_item_id,
         &body,
         callsigns,
-        Some(run.id),
+        super::worker::CompletionSource::Reparse(run.id),
     )
     .await
     .c(h!())?;

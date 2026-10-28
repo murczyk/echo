@@ -16,13 +16,17 @@ Both attempts must fail before the job is retried. Existing parser results,
 user overrides, settlement group restrictions, reviewed/manual locations,
 source freshness checks, and transactional persistence still apply. Position
 results record the engine that supplied the accepted extraction. Failure
-records retain bounded error chains and log the first failed attempt.
+records retain bounded error chains. Both fallback and job-failure logs limit
+error chains to 2,000 characters, including malformed model responses.
+Settlement commits and retries validate both saved engine snapshots.
 
 ## Progress
 
 `ai_worker_progress` holds one row per queue. Success updates progress in the
 same transaction as results, including valid empty or unchanged results.
 Failed, stale, cancelled, or rolled-back completions cannot advance success.
+Queue deletion and progress updates commit together; callsign and position
+results and failures must match the current queue generation.
 Callsign reparse runs keep their separate run status and do not advance the
 normal queue's success clock.
 

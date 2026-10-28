@@ -529,19 +529,29 @@ async fn worker_config_is_current(
     };
     if !settings.worker_enabled
         || settings.worker_ai_engine_id != Some(expected.ai_engine.id)
+        || settings.worker_fallback_ai_engine_id
+            != expected.fallback_ai_engine.as_ref().map(|engine| engine.id)
         || settings.updated_at != expected.settings_updated_at
         || effective_prompt(&settings.prompt) != expected.prompt
     {
         return Ok(false);
     }
-    let ai_engine = ai_engine::Entity::find_by_id(expected.ai_engine.id)
-        .lock_exclusive()
-        .one(transaction)
-        .await
-        .c(h!())?;
-    Ok(ai_engine.as_ref() == Some(&expected.ai_engine)
-        && expected.ai_engine.enabled
-        && expected.ai_engine.callsign_enabled)
+    for engine in std::iter::once(&expected.ai_engine)
+        .chain(expected.fallback_ai_engine.as_ref())
+    {
+        let current = ai_engine::Entity::find_by_id(engine.id)
+            .lock_shared()
+            .one(transaction)
+            .await
+            .c(h!())?;
+        if current.as_ref() != Some(engine)
+            || !engine.enabled
+            || !engine.callsign_enabled
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 async fn fail_job(
@@ -1380,14 +1390,66 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
-        let settings = ai_settlement_settings::Entity::find_by_id(
+        let mut fallback = config.ai_engine.clone().into_active_model();
+        let fallback_id = uuid::Uuid::now_v7();
+        fallback.id = Set(fallback_id);
+        fallback.name = Set(format!("fallback-{fallback_id}"));
+        let fallback = fallback.insert(&env.dbx).await.unwrap();
+        let mut settings = ai_settlement_settings::Entity::find_by_id(
             AI_SETTLEMENT_SETTINGS_ID,
         )
         .one(&env.dbx)
         .await
         .unwrap()
-        .unwrap();
-        let mut settings = settings.into_active_model();
+        .unwrap()
+        .into_active_model();
+        settings.worker_fallback_ai_engine_id = Set(Some(fallback_id));
+        settings.update(&env.dbx).await.unwrap();
+        let with_fallback =
+            load_worker_config(&env.dbx).await.unwrap().unwrap();
+        let mut fallback = fallback.into_active_model();
+        fallback.model_name = Set("changed-during-extraction".to_string());
+        fallback.update(&env.dbx).await.unwrap();
+        for stale in [&config, &with_fallback] {
+            assert!(!complete_job(
+                &env.dbx,
+                message.id,
+                "message body",
+                stale,
+                vec!["STALE FALLBACK".to_string()],
+            )
+            .await
+            .unwrap());
+            fail_job(
+                &env.dbx,
+                message.id,
+                "message body",
+                stale,
+                "stale fallback failure".to_string(),
+            )
+            .await
+            .unwrap();
+        }
+        assert!(crate::entities::ai_worker_progress::Entity::find()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        let job = ai_settlement_worker_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.attempts, 0);
+        let config = load_worker_config(&env.dbx).await.unwrap().unwrap();
+        let mut settings = ai_settlement_settings::Entity::find_by_id(
+            AI_SETTLEMENT_SETTINGS_ID,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
         settings.worker_enabled = Set(false);
         settings.updated_at =
             Set(config.settings_updated_at + chrono::Duration::seconds(1));
