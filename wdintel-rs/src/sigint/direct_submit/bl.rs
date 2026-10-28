@@ -136,6 +136,46 @@ pub async fn copy_signal_messages(
     Ok(DirectSubmitCopyRsp { payloads })
 }
 
+fn copied_event_datetime(
+    source_timestamp: Option<chrono::NaiveDateTime>,
+    message: &crate::rer_importer::types::InboxMessage,
+) -> anyhow::Result<(Option<chrono::NaiveDateTime>, Option<bool>)> {
+    if message.date.is_none()
+        && message.time.is_none()
+        && message.is_time_null != Some(true)
+    {
+        return Ok((source_timestamp, message.is_time_null));
+    }
+    let local_timestamp = source_timestamp.map(|timestamp| {
+        timestamp.and_utc().with_timezone(&chrono_tz::Europe::Kyiv)
+    });
+    let event_date = message.date.clone().or_else(|| {
+        local_timestamp
+            .map(|timestamp| timestamp.format("%Y-%m-%d").to_string())
+    });
+    let event_time = message.time.clone().or_else(|| {
+        local_timestamp
+            .map(|timestamp| timestamp.format("%H:%M:%S%.f").to_string())
+    });
+    let is_time_null = if event_date.is_some() && event_time.is_none() {
+        Some(true)
+    } else {
+        message.is_time_null
+    };
+    let event_time = if is_time_null == Some(true) {
+        Some(format!("{SIGINT_MESSAGE_DATE_ONLY_HOUR:02}:00"))
+    } else {
+        event_time
+    };
+    let timestamp = crate::inbox::datetime::from_date_time_text(
+        event_date.as_deref(),
+        event_time.as_deref(),
+    )
+    .c(h!())?
+    .or(source_timestamp);
+    Ok((timestamp, is_time_null))
+}
+
 async fn copy_signal_message_payload<C>(
     env: &Env,
     dbx: &C,
@@ -201,8 +241,10 @@ where
             )
         })
         .map(|selection| selection.unit_id);
+    let (timestamp, is_time_null) =
+        copied_event_datetime(source.timestamp, message).c(h!())?;
     Ok(DirectSubmitPayload {
-        is_time_null: copy_inputs.inbox_item.is_time_null,
+        is_time_null,
         full_body: source.body.clone().or_else(|| Some(message.text.clone())),
         text: message
             .no_headers_body
@@ -214,7 +256,7 @@ where
         from_callsign: None,
         to,
         tags: Some(copy_inputs.tag_labels),
-        timestamp: source.timestamp.map(|timestamp| {
+        timestamp: timestamp.map(|timestamp| {
             timestamp
                 .and_utc()
                 .to_rfc3339_opts(SecondsFormat::Millis, true)
@@ -678,9 +720,14 @@ async fn save_signal_message(
     let unit_requested =
         is_new_message || payload.unit_id.is_some() || payload.create_unit;
     let selected_unit = if unit_requested {
-        super::units::resolve_unit(&txn, login, &payload)
-            .await
-            .c(h!())?
+        super::units::resolve_unit(
+            &txn,
+            login,
+            &payload,
+            copy_source_signal_message_ids,
+        )
+        .await
+        .c(h!())?
     } else {
         super::units::preserve_unit(&txn, signal_message_id.c(h!())?, &payload)
             .await
@@ -2552,6 +2599,138 @@ mod tests {
         assert_eq!(deleted_parent.date, None);
         assert_eq!(deleted_parent.time, None);
         assert_eq!(deleted_parent.group_name, None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3891_copy_preserves_event_date_and_time() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        for (date, time, is_time_null, expected) in [
+            ("2026-10-20", "09:46:00", false, "2026-10-20T06:46:00Z"),
+            ("2026-10-16", "19:41", false, "2026-10-16T16:41:00Z"),
+            ("2026-10-16", "12:00:00", true, "2026-10-16T09:00:00Z"),
+        ] {
+            let mut payload = direct_submit_payload("#3891 original message");
+            payload.timestamp = Some("2026-10-21T10:20:00Z".to_string());
+            let created =
+                submit_signal_message(&login, &env, payload).await.unwrap();
+            let mut item = sigint_inbox_item::Entity::find_by_id(
+                created.signal_message_id,
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+            item.date = Set(Some(date.to_string()));
+            item.time = Set(Some(time.to_string()));
+            item.is_time_null = Set(Some(is_time_null));
+            item.datetime = Set(crate::inbox::datetime::from_date_time_text(
+                Some(date),
+                Some(time),
+            )
+            .unwrap());
+            item.update(&env.dbx).await.unwrap();
+
+            let copied = copy_signal_messages(
+                &login,
+                &env,
+                vec![created.signal_message_id],
+            )
+            .await
+            .unwrap()
+            .payloads
+            .remove(0);
+            let timestamp = chrono::DateTime::parse_from_rfc3339(
+                copied.timestamp.as_ref().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                timestamp,
+                chrono::DateTime::parse_from_rfc3339(expected).unwrap()
+            );
+            assert_eq!(copied.is_time_null, Some(is_time_null));
+            let report = submit_signal_message(&login, &env, copied)
+                .await
+                .unwrap()
+                .message
+                .unwrap();
+            assert_eq!(report.date.as_deref(), Some(date));
+            assert_eq!(report.is_time_null, Some(is_time_null));
+            assert_eq!(
+                report.time.as_deref(),
+                Some(if is_time_null {
+                    "12:00:00"
+                } else if time == "19:41" {
+                    "19:41:00"
+                } else {
+                    time
+                })
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3891_copy_preserves_partial_event_metadata() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        for (date, time, has_timestamp, expected, is_time_null) in [
+            (Some("2026-10-16"), None, true, "2026-10-16T10:20:00Z", None),
+            (None, Some("09:46"), true, "2026-10-21T06:46:00Z", None),
+            (
+                Some("2026-10-16"),
+                None,
+                false,
+                "2026-10-16T09:00:00Z",
+                Some(true),
+            ),
+        ] {
+            let mut payload = direct_submit_payload("#3891 partial metadata");
+            payload.timestamp = Some("2026-10-21T10:20:00Z".to_string());
+            let source = submit_signal_message(&login, &env, payload)
+                .await
+                .unwrap()
+                .signal_message_id;
+            let mut item = sigint_inbox_item::Entity::find_by_id(source)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+            item.date = Set(date.map(str::to_string));
+            item.time = Set(time.map(str::to_string));
+            item.is_time_null = Set(None);
+            item.update(&env.dbx).await.unwrap();
+            if !has_timestamp {
+                let mut signal = signal_message::Entity::find_by_id(source)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .into_active_model();
+                signal.timestamp = Set(None);
+                signal.update(&env.dbx).await.unwrap();
+            }
+            let copied = copy_signal_messages(&login, &env, vec![source])
+                .await
+                .unwrap()
+                .payloads
+                .remove(0);
+            assert_eq!(copied.is_time_null, is_time_null);
+            assert_eq!(
+                chrono::DateTime::parse_from_rfc3339(
+                    copied.timestamp.as_ref().unwrap()
+                )
+                .unwrap(),
+                chrono::DateTime::parse_from_rfc3339(expected).unwrap()
+            );
+        }
     }
 
     #[tokio::test]

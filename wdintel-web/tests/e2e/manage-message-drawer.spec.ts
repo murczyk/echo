@@ -216,10 +216,12 @@ async function openOverflowingMessageEditor(
 async function openCreateEditorWithLinkedMessage(
   page: Page,
   host: ManageMessageDrawerHost,
+  sourceMetadata: Record<string, unknown> = {},
 ): Promise<void> {
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
     messageText: 'E2E source for dirty replacement',
   });
+  Object.assign(inboxResponse.inbox_items[0]![1] as Record<string, unknown>, sourceMetadata);
   await installMessageCardMediaPreviewAssetRoutes(page);
   const dutyMocks =
     host === 'duty'
@@ -366,6 +368,87 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
 
       await expect(page.locator('[data-manage-message-presentation]')).toHaveCount(0);
       await expect(reportAction).toBeFocused();
+    });
+
+    test(`@regression #3891 ${host} preserves inherited metadata through report text changes and manual edits`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1600, height: 1000 });
+      await openCreateEditorWithLinkedMessage(page, host, {
+        date: '2026-10-20',
+        time: '09:46',
+        timestamp: Date.parse('2026-10-21T10:20:00Z'),
+        unit: '51 пдп',
+        networkIds: [7],
+        networkName: 'Source network',
+      });
+      await page.getByRole('textbox', { name: 'Текст повідомлення' }).press('Escape');
+      await page.route('**/api/1.1/messages/copy', (route) =>
+        route.fulfill({
+          json: {
+            payloads: [
+              {
+                full_body: '20.10.2026, 09:46 original',
+                timestamp: '2026-10-20T06:46:00Z',
+                unit: '51 пдп',
+                freq: '149.500',
+                comment: 'Source comment',
+                network: { name: 'Source network' },
+              },
+            ],
+          },
+        }),
+      );
+      await page.route('**/api/sigint/unit/search', (route) =>
+        route.fulfill({
+          json: {
+            units: [
+              { id: 51, name: '51 пдп' },
+              { id: 52, name: '51 пдп' },
+            ],
+          },
+        }),
+      );
+      await page.route('**/api/1.1/intelligence-reports/quick-suggestion', (route) =>
+        route.fulfill({ json: { suggestions: ['Suggested report'] } }),
+      );
+      await page.route('**/api/1.1/submit-direct', (route) =>
+        route.fulfill({ json: { signal_message_id: 501 } }),
+      );
+      await page
+        .getByRole('button', { name: 'Створити розвіддонесення', exact: true })
+        .first()
+        .click();
+      const editor = page.locator('[data-manage-message-presentation]');
+      const body = editor.getByRole('textbox', { name: 'Текст розвіддонесення' });
+      const unit = editor.getByRole('combobox', { name: 'Підрозділ', exact: true });
+      const date = editor.getByLabel('Дата перехоплення', { exact: true });
+      const time = editor.getByLabel('Час перехоплення', { exact: true });
+      await expect(unit).toHaveValue('51 пдп');
+      await expect(date).toHaveValue(/20.*10.*2026/);
+      await expect(time).toHaveValue(/09.*46/);
+      await expect(editor.getByText('Підрозділ не обрано', { exact: true })).toHaveCount(0);
+      await time.fill('07:12');
+      await body.fill('Report draft');
+      await body.clear();
+      await expect(unit).toHaveValue('51 пдп');
+      await expect(date).toHaveValue(/20.*10.*2026/);
+      await expect(time).toHaveValue(/07.*12/);
+      await body.fill('Final report');
+      await editor.getByRole('combobox', { name: 'Відправити в групу' }).click();
+      await page.getByRole('option', { name: 'Не відправляти', exact: true }).click();
+      const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+      await editor.getByRole('button', { name: 'Створити', exact: true }).click();
+      const payload = (await submitted).postDataJSON();
+      expect(payload).toMatchObject({
+        unit: '51 пдп',
+        timestamp: '2026-10-20T04:12:00.000Z',
+        comment: 'Source comment',
+        signal_group_master_key: null,
+      });
+      expect(payload.unit_id).toBeUndefined();
+      expect(payload.create_unit).toBeUndefined();
+      await expect(editor).toHaveCount(0);
     });
 
     test(`${host} closes the report composer after successful creation`, async ({ page }) => {
