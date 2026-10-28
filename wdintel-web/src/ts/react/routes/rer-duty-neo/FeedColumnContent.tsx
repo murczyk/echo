@@ -126,7 +126,6 @@ type DutyMessageCardItemProps = {
   msg: InboxMessage;
   hideGroupName: boolean;
   feedId: string;
-  feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
   hideNetworks: boolean;
@@ -173,7 +172,6 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   msg,
   hideGroupName,
   feedId,
-  feedCount,
   tagsLayout,
   hideBotTags,
   hideNetworks,
@@ -227,7 +225,6 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       id={id}
       msg={msg}
       analysisDestination="neo"
-      feedCount={feedCount}
       tagsLayout={tagsLayout}
       hideBotTags={hideBotTags}
       hideNetworks={hideNetworks}
@@ -303,7 +300,6 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onEditDetails={(focusTarget) => onMessageEdit(id, msg, focusTarget)}
       onOpenPointsOnMap={onOpenPointsOnMap}
       onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
-      rightHeaderInsetPx={0}
       filterState={filterState}
     />
   );
@@ -316,7 +312,6 @@ type DutyMessageListProps = {
   hideGroupName: boolean;
   unreadBoundaryMessageId?: number | null;
   feedId: string;
-  feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
   hideNetworks: boolean;
@@ -367,7 +362,6 @@ const DutyMessageList = memo(
     hideGroupName,
     unreadBoundaryMessageId,
     feedId,
-    feedCount,
     tagsLayout,
     hideBotTags,
     hideNetworks,
@@ -420,7 +414,6 @@ const DutyMessageList = memo(
                   msg={msg}
                   hideGroupName={hideGroupName}
                   feedId={feedId}
-                  feedCount={feedCount}
                   tagsLayout={tagsLayout}
                   hideBotTags={hideBotTags}
                   hideNetworks={hideNetworks}
@@ -474,7 +467,6 @@ const DutyMessageList = memo(
     prev.hideGroupName === next.hideGroupName &&
     prev.unreadBoundaryMessageId === next.unreadBoundaryMessageId &&
     prev.feedId === next.feedId &&
-    prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
     prev.hideBotTags === next.hideBotTags &&
     prev.hideNetworks === next.hideNetworks &&
@@ -732,6 +724,7 @@ export const FeedColumnContent = memo(
     const feedRef = useRef<MessageFeedHandle>(null);
     const scrollerRef = useRef<HTMLDivElement>(null);
     const scrollOptions = {
+      focus: view.linkedMessageFocus,
       policy: DUTY_FEED_POLICY,
       diagnostics: {
         enabled: debugEnabled,
@@ -820,7 +813,6 @@ export const FeedColumnContent = memo(
           hideGroupName={feed.filter.groupsSelected?.length === 1}
           unreadBoundaryMessageId={view.unreadBoundaryMessageId}
           feedId={feed.id}
-          feedCount={feedCount}
           tagsLayout={tagsLayout}
           hideBotTags={hideBotTags}
           hideNetworks={hideNetworks}
@@ -966,6 +958,7 @@ export const FeedColumnContent = memo(
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
       prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.editorHighlightedMessageId !== nextView.editorHighlightedMessageId ||
+      prevView.linkedMessageFocus !== nextView.linkedMessageFocus ||
       prevView.unreadBoundaryMessageId !== nextView.unreadBoundaryMessageId ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {

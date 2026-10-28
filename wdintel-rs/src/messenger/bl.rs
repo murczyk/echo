@@ -87,6 +87,9 @@ pub async fn edit_account(
     dbx: &DatabaseConnection,
     login: &Uuid,
 ) -> anyhow::Result<()> {
+    crate::datasource::native::require_external_datasource(dbx, id)
+        .await
+        .c(h!())?;
     let api_login = api_login
         .map(|api_login| Uuid::parse_str(&api_login))
         .transpose()
@@ -126,6 +129,9 @@ pub async fn deactivate_account(
     login: Option<Uuid>,
     mark_deleted: bool,
 ) -> Result<(), AppError> {
+    crate::datasource::native::require_external_datasource(txn, id)
+        .await
+        .c(h!())?;
     let account = load_echo_account(id, txn).await.c(h!())?;
     let datasource = datasource::Entity::find_by_id(account.id)
         .one(txn)
@@ -163,6 +169,11 @@ pub async fn link_account(
     txn: &DatabaseTransaction,
     login: &Uuid,
 ) -> Result<EchoAccountF1, AppError> {
+    if let Some(id) = datasource_id {
+        crate::datasource::native::require_external_datasource(txn, id)
+            .await
+            .c(h!())?;
+    }
     validate_system_service_name(system_service_name)?;
     let source =
         EchoMessageSource::try_from_value(&source.to_string()).c(h!())?;
@@ -522,6 +533,9 @@ pub async fn get_qr_code(
     db: &DatabaseConnection,
     login: &Uuid,
 ) -> Result<String, AppError> {
+    crate::datasource::native::require_external_datasource(db, account_id)
+        .await
+        .c(h!())?;
     let m_account = list_echo_accounts(Some(account_id), db)
         .await
         .c(h!())?
@@ -634,7 +648,8 @@ where
         pub attachments_path: Option<String>,
     }
 
-    let mut q = datasource::Entity::find();
+    let mut q = datasource::Entity::find()
+        .filter(datasource::Column::Kind.ne(DATASOURCE_ECHO_NATIVE_KIND));
     if let Some(id) = m_id {
         q = q.filter(datasource::Column::Id.eq(id));
     }
@@ -788,6 +803,62 @@ where
                 api_endpoint: ods.api_endpoint,
                 is_linked: true,
                 description: ods.description,
+                is_imported: false,
+                signal_port: None,
+                process_name: None,
+                attachments_path: None,
+                echo_client_id: None,
+                echo_account_id: None,
+                echo_client_lock_id: None,
+            })
+        }
+    }
+    let ingest_datasources = datasource::Entity::find()
+        .filter(
+            datasource::Column::Kind
+                .eq(crate::config::MESSENGER_INGEST_DATASOURCE_KIND),
+        )
+        .filter(datasource::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?;
+    if !ingest_datasources.is_empty() {
+        let aor_ids = ingest_datasources
+            .iter()
+            .filter_map(|a| a.default_aor_id)
+            .collect::<Vec<_>>();
+        let aors = if aor_ids.is_empty() {
+            HashMap::new()
+        } else {
+            area_of_responsibility::Entity::find()
+                .filter(area_of_responsibility::Column::Id.eq_any(aor_ids))
+                .all(txn)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|aor| (aor.id, render_aor(aor)))
+                .collect::<HashMap<_, _>>()
+        };
+        for ids in ingest_datasources {
+            let aor = ids.default_aor_id.and_then(|id| aors.get(&id).cloned());
+            datasources.push(EchoAccountF1 {
+                id: ids.id,
+                can_read_messages: None,
+                can_send_messages: None,
+                area_of_responsibility: aor,
+                status: ids.status.into_value().value.into_owned(),
+                created_at: ids.created_at.and_utc().timestamp_millis(),
+                client_id: None,
+                display_name: ids.display_name,
+                system_service_name: None,
+                messenger: ids.kind,
+                phone_number: "".to_string(),
+                api_login: ids
+                    .api_login_id
+                    .map(|login_id| login_id.to_string()),
+                api_endpoint: ids.api_endpoint,
+                is_linked: true,
+                description: ids.description,
                 is_imported: false,
                 signal_port: None,
                 process_name: None,
@@ -1034,6 +1105,13 @@ pub async fn bl_group_update(
         req.fetch_new_messages,
         &group.master_key,
         txn,
+    )
+    .await
+    .c(h!())?;
+    crate::ai_transcript_analysis::settings::set_group(
+        txn,
+        &group.master_key,
+        req.ai_transcript_analysis_enabled,
     )
     .await
     .c(h!())?;

@@ -7,7 +7,7 @@ import { CoordinateAttachmentHoverPreview } from './CoordinateAttachmentHoverPre
 import { CoordinatePreviewMapSurface } from './CoordinatePreviewMapSurface';
 import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 
-const PREVIEW_ROOT_MARGIN = '160px 0px';
+const PREVIEW_ROOT_MARGIN = '1000px 0px';
 const OPEN_DELAY_MS = 600;
 const CLOSE_DELAY_MS = 120;
 
@@ -70,7 +70,11 @@ export function CoordinateAttachmentThumbnail({
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) setIsNearViewport(true);
       },
-      { rootMargin: PREVIEW_ROOT_MARGIN, threshold: 0.01 },
+      {
+        root: host.closest('[data-message-feed-scroller]'),
+        rootMargin: PREVIEW_ROOT_MARGIN,
+        threshold: 0.01,
+      },
     );
     observer.observe(host);
     return () => observer.disconnect();

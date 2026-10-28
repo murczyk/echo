@@ -84,7 +84,9 @@ type SignalGroupEntryLike = {
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
+  aiTranscriptAnalysisEnabled?: boolean;
   is_aviation_group?: boolean;
+  ai_transcript_analysis_enabled?: boolean;
   fetchNewMessages?: boolean | null;
   fetch_new_messages?: boolean | null;
   groupStats?: SignalGroupStatsLike | null;
@@ -110,7 +112,9 @@ type OrphanSignalGroupEntryLike = {
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
+  aiTranscriptAnalysisEnabled?: boolean;
   is_aviation_group?: boolean;
+  ai_transcript_analysis_enabled?: boolean;
   fetchNewMessages?: boolean | null;
   fetch_new_messages?: boolean | null;
   isArchived?: boolean;
@@ -169,7 +173,9 @@ type ZoneDatasourceGroupLike = {
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
   isAviationGroup?: boolean;
+  aiTranscriptAnalysisEnabled?: boolean;
   is_aviation_group?: boolean;
+  ai_transcript_analysis_enabled?: boolean;
   fetchNewMessages?: boolean | null;
   fetch_new_messages?: boolean | null;
   allowedUsers?: string[] | null;
@@ -269,6 +275,7 @@ type ZonePair = [number, SigintZone];
 
 type ZoneDatasourceGroupAddReqBody = {
   zone_id: number;
+  ai_transcript_analysis_enabled: boolean | null;
   datasource_id: number;
   is_secret: boolean;
   interseption_kind: InterseptionKind | null;
@@ -287,6 +294,7 @@ type ZoneDatasourceGroupUpdateReqBody = {
   interseption_kind: InterseptionKind | null;
   disable_network_assignment: boolean | null;
   is_aviation_group: boolean | null;
+  ai_transcript_analysis_enabled: boolean | null;
   fetch_new_messages: boolean | null;
   user_logins: string[];
   organism_ids: number[];
@@ -414,6 +422,8 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    aiTranscriptAnalysisEnabled:
+      raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
     fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
@@ -432,6 +442,8 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    aiTranscriptAnalysisEnabled:
+      raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
     fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
@@ -455,6 +467,8 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
     isAviationGroup: raw.isAviationGroup ?? raw.is_aviation_group ?? false,
+    aiTranscriptAnalysisEnabled:
+      raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
     fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
     allowedUsers,
     allowedUserDetails: (raw.allowedUserDetails ?? raw.allowed_user_details ?? []).map(
@@ -543,6 +557,7 @@ function toZoneDatasourceGroupAddReqBody(
 ): ZoneDatasourceGroupAddReqBody {
   return {
     zone_id: req.zoneId,
+    ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
     datasource_id: req.datasourceId,
     is_secret: req.isSecret,
     interseption_kind: req.interseptionKind ?? null,
@@ -565,6 +580,7 @@ function toZoneDatasourceGroupUpdateReqBody(
     interseption_kind: req.interseptionKind ?? null,
     disable_network_assignment: req.disableNetworkAssignment ?? null,
     is_aviation_group: req.isAviationGroup ?? null,
+    ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
     fetch_new_messages: req.fetchNewMessages ?? null,
     user_logins: req.userLogins,
     organism_ids: req.organismIds,

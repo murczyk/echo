@@ -36,6 +36,26 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
   });
 
   afterEach(fixture.cleanup);
+  it('#3780 restarts initial searches after Strict Mode cleanup', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    hoisted.fetchInboxMessages
+      .mockImplementationOnce(() => new Promise<InboxMessagesRsp>(() => {}))
+      .mockResolvedValueOnce(rangeRsp(21, 40));
+    await act(async () =>
+      root.render(
+        <React.StrictMode>
+          <TestHarness apiRef={apiRef} />
+        </React.StrictMode>,
+      ),
+    );
+    await act(async () => flushMicrotasks());
+    expect(hoisted.fetchInboxMessages.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
+    expect(apiRef.current?.messageFeeds[0]?.items[0]?.[0]).toBe(21);
+  });
+
   it('runs a single get-inbox initial load per feed on mount', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -142,6 +162,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ selectedGroups: ['scoped-group'], deniedGroups: null }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
@@ -163,6 +184,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
       expect.objectContaining({ selectedGroups: ['group-a'], deniedGroups: null }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(apiRef.current?.messageFeeds[0]?.filter.groupsSelected).toEqual(['group-a']);
 
@@ -172,6 +194,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
       expect.objectContaining({ selectedGroups: null }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
@@ -216,6 +239,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
         selectedFreqs: ['155.5', '155.504'],
         highlightSignals: true,
       }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
@@ -271,6 +295,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
         selectedFreqs: ['155.5', '155.504'],
         highlightSignals: true,
       }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
@@ -484,6 +509,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ selectedDeviceNames: ['selected'], deniedDeviceNames: ['denied'] }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(apiRef.current?.messageFeeds[0]?.filter).toMatchObject({
       selectedDeviceNames: ['selected'],
@@ -507,6 +533,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ selectedDeviceNames: null, deniedDeviceNames: null }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 
@@ -561,6 +588,43 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages.mock.calls[0][0].reportTagsOnlyThisUnit).toBeNull();
   });
 
+  it('#3612 keeps off-window unread identities when navigating to a historical reply', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(62, 78));
+    const { apiRef } = await mountLoadedFeed();
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({
+          ...feed,
+          items: rangeRsp(62, 81).inboxItems,
+          readIds: new Set(Array.from({ length: 17 }, (_, index) => index + 62)),
+          pendingNewerItems: rangeRsp(82, 82).inboxItems,
+          windowedUnreadItems: new Map([
+            [79, 7900],
+            [80, 8000],
+            [81, 8100],
+          ]),
+          unreadCount: 4,
+        })),
+      );
+    });
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 20));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(22, 41));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(63, 82));
+    hoisted.fetchMessagesByIdsWithMetadata.mockResolvedValueOnce(rangeRsp(21, 21));
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', { beforeIdNoninclusive: 21, messageIds: [21] });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true, {
+        preserveUnread: true,
+      });
+      await flushMicrotasks();
+    });
+    const feed = apiRef.current!.messageFeeds[0];
+    expect(feed.items.some(([id]) => id === 21)).toBe(true);
+    expect(feed.unreadCount).toBe(4);
+    expect(feed.unresolvedUnreadIds).toEqual(new Set([79, 80, 81, 82]));
+    expect(feed.readIds.has(21)).toBe(true);
+  });
+
   it('loads a direct-link target with an exact pagination cursor', async () => {
     const { apiRef } = await mountLoadedFeed();
     hoisted.fetchInboxMessages.mockClear();
@@ -582,13 +646,16 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ sinceIdNoninclusive: 41, loadLatest: false }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(hoisted.fetchMessagesByIdsWithMetadata).toHaveBeenCalledWith(
       [41],
       expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     const loadedIds = apiRef.current!.messageFeeds[0].items.map(([id]) => id);
     expect(loadedIds).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
@@ -982,7 +1049,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
   });
 
-  it('invalidates a stale empty-feed initial response during reload', async () => {
+  it('#3780 aborts a stale empty-feed initial request during reload', async () => {
     const stale = deferred<InboxMessagesRsp>('stale');
     const fresh = deferred<InboxMessagesRsp>('fresh');
     hoisted.fetchInboxMessages
@@ -994,7 +1061,10 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
     await act(async () => root.render(<TestHarness apiRef={apiRef} />));
     await act(async () => flushMicrotasks());
+    const signal = hoisted.fetchInboxMessages.mock.calls.at(-1)?.[1]?.signal;
+    expect(signal?.aborted).toBe(false);
     await act(async () => apiRef.current?.reloadEmptyFeeds());
+    expect(signal?.aborted).toBe(true);
     await act(async () => flushMicrotasks());
 
     fresh.resolve(inboxRsp([[9, minimalInboxMessage({ createdAtOrder: 900 })]]));
@@ -1193,6 +1263,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
       expect.objectContaining({ sortBy: 'IMSCreatedAt' }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([2, 1]);
   });

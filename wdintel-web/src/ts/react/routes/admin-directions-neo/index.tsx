@@ -39,6 +39,7 @@ import {
   Datasource,
   InterseptionKind,
   Login,
+  NativeGroupDetail,
   Organism,
   OrphanSignalGroupEntry,
   SigintZone,
@@ -62,6 +63,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerButton } from '../../components/PowerButton';
+import { PowerSnackbarProvider, usePowerSnackbar } from '../../components/PowerSnackbar';
 import { EchoChip } from '../../components/EchoChip';
 import {
   CUSTOM_STYLES,
@@ -87,6 +89,9 @@ import { listLogins } from '../../services/api/logins';
 import { editGroup } from '../../services/api/messenger';
 import { listOrganisms } from '../../services/api/organisms';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { getUserSigintGroups } from '../../services/api/inbox-reference-data';
+import { fetchCurrentUser } from '../../services/api/user';
+import { NativeGroupDialog } from './NativeGroupDialog';
 import { ZoneGroupCell } from './ZoneGroupCell';
 import { buildAccessItems, type ZoneGroupAccessItem } from './zone-group-access';
 import {
@@ -187,6 +192,7 @@ type GroupEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   selectedUsers: string[];
   selectedUserDetails: SignalGroupLogin[];
@@ -207,6 +213,7 @@ type OrphanEditState = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   shortNote: string;
   longNote: string;
@@ -638,7 +645,9 @@ function renderDatasourceCell(
     );
 
   const label = datasource.displayName || `#${datasourceId}`;
-  const hasIcon = ['signal', 'whatsapp', 'echo_operator'].includes(datasource.kind.toLowerCase());
+  const hasIcon = ['signal', 'whatsapp', 'echo_operator', 'echo_native'].includes(
+    datasource.kind.toLowerCase(),
+  );
 
   if (!hasIcon)
     return (
@@ -703,6 +712,7 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     interseptionKind: 'rer',
     disableNetworkAssignment: false,
     isAviationGroup: false,
+    aiTranscriptAnalysisEnabled: false,
     fetchNewMessages: true,
     isArchived: false,
     groupStats: {
@@ -728,6 +738,7 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       interseptionKind: 'rer',
       disableNetworkAssignment: false,
       isAviationGroup: false,
+      aiTranscriptAnalysisEnabled: false,
       fetchNewMessages: true,
       allowedUsers: [],
       allowedUserDetails: [],
@@ -1018,7 +1029,13 @@ function OrphanGroupsTable(props: {
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           {props.onEdit ? (
             <MrtRowActionButton
-              label="Редагувати"
+              label={
+                row.original.isArchived &&
+                getDatasource(row.original.datasourceId, props.datasourceById)?.kind ===
+                  'echo_native'
+                  ? 'Переглянути налаштування'
+                  : 'Редагувати'
+              }
               onClick={() => props.onEdit?.(row.original)}
               icon={<EditIcon fontSize="small" />}
               opensModal
@@ -1500,7 +1517,12 @@ function ZoneGroupsTable(props: {
               opensModal
             />
             <MrtRowActionButton
-              label="Видалити"
+              label={
+                getDatasource(row.original.datasourceId, props.datasourceById)?.kind ===
+                'echo_native'
+                  ? 'Змінити напрямки'
+                  : 'Видалити'
+              }
               onClick={() =>
                 props.onDelete(row.original.zoneId, row.original.datasourceId, row.original.group)
               }
@@ -1697,6 +1719,7 @@ type DirectionsTab =
     };
 
 function AdminDirectionsNeoPageBody() {
+  const { notify } = usePowerSnackbar();
   const [status, setStatus] = useState<LoadingStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [datasources, setDatasources] = useState<DatasourceEntry[]>([]);
@@ -1715,6 +1738,11 @@ function AdminDirectionsNeoPageBody() {
   const [deleteDialog, setDeleteDialog] = useState<DeleteState | null>(null);
   const [archiveDialog, setArchiveDialog] = useState<ArchiveState | null>(null);
   const [unarchiveDialog, setUnarchiveDialog] = useState<UnarchiveState | null>(null);
+  const [nativeDialog, setNativeDialog] = useState<{
+    masterKey: string | null;
+    requestId: string;
+  } | null>(null);
+  const [nativeSaveNotice, setNativeSaveNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [selectedGroupMasterKey, setSelectedGroupMasterKey] = useState(getSelectedGroupMasterKey);
 
@@ -1996,6 +2024,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: group.interseptionKind,
             disableNetworkAssignment: group.disableNetworkAssignment,
             isAviationGroup: group.isAviationGroup,
+            aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
             fetchNewMessages: group.fetchNewMessages,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
@@ -2011,6 +2040,10 @@ function AdminDirectionsNeoPageBody() {
     } catch (err) {
       setStatus('error');
       setError(formatErrorMessage(err));
+      notify({
+        severity: 'error',
+        message: `Не вдалося завантажити групи: ${formatErrorMessage(err)}`,
+      });
     }
   }
 
@@ -2018,7 +2051,41 @@ function AdminDirectionsNeoPageBody() {
     loadData();
   }, []);
 
+  function openNativeDialog(masterKey: string | null) {
+    setNativeDialog({ masterKey, requestId: crypto.randomUUID() });
+  }
+
+  async function handleNativeGroupSaved(group: NativeGroupDetail) {
+    setNativeDialog(null);
+    setNativeSaveNotice('Групу збережено. Перевіряємо доступ до її повідомлень…');
+    const accessCheck = (async () => {
+      try {
+        const user = await fetchCurrentUser();
+        const canRead =
+          user.organismId !== null &&
+          user.sigintZoneId !== null &&
+          (await getUserSigintGroups(null)).includes(group.masterKey);
+        setNativeSaveNotice(
+          canRead
+            ? 'Групу збережено. Ви маєте доступ до її повідомлень.'
+            : 'Групу збережено. За поточними налаштуваннями доступу її повідомлення вам недоступні.',
+        );
+      } catch (error) {
+        setNativeSaveNotice('Групу збережено. Не вдалося перевірити доступ до її повідомлень.');
+        notify({
+          severity: 'error',
+          message: `Помилка перевірки доступу: ${formatErrorMessage(error)}`,
+        });
+      }
+    })();
+    await Promise.all([loadData(), accessCheck]);
+  }
+
   function openEditDialog(zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) {
+    if (getDatasource(datasourceId, datasourceById)?.kind === 'echo_native') {
+      openNativeDialog(group.groupMasterKey);
+      return;
+    }
     const groupName = getGroupName(group.groupMasterKey, null, groupInfos);
     setEditDialog({
       zoneId,
@@ -2030,6 +2097,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
+      aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
       fetchNewMessages: group.fetchNewMessages,
       selectedUsers: group.allowedUsers,
       selectedUserDetails: group.allowedUserDetails,
@@ -2045,6 +2113,10 @@ function AdminDirectionsNeoPageBody() {
   }
 
   function openOrphanEditDialog(group: OrphanSignalGroupEntry) {
+    if (getDatasource(group.datasourceId, datasourceById)?.kind === 'echo_native') {
+      openNativeDialog(group.masterKey);
+      return;
+    }
     const groupName = getOrphanGroupName(group);
     setOrphanEditDialog({
       group,
@@ -2053,6 +2125,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: group.interseptionKind,
       disableNetworkAssignment: group.disableNetworkAssignment,
       isAviationGroup: group.isAviationGroup,
+      aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
       fetchNewMessages: group.fetchNewMessages,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
@@ -2063,6 +2136,10 @@ function AdminDirectionsNeoPageBody() {
   }
 
   function openAssignDialog(group: OrphanSignalGroupEntry) {
+    if (getDatasource(group.datasourceId, datasourceById)?.kind === 'echo_native') {
+      openNativeDialog(group.masterKey);
+      return;
+    }
     const preselectedZones = zones.length === 1 ? zones : [];
 
     setAssignDialog({
@@ -2111,6 +2188,10 @@ function AdminDirectionsNeoPageBody() {
   }
 
   function openDeleteDialog(zoneId: number, datasourceId: number, group: ZoneDatasourceGroup) {
+    if (getDatasource(datasourceId, datasourceById)?.kind === 'echo_native') {
+      openNativeDialog(group.groupMasterKey);
+      return;
+    }
     const groupName = getGroupName(group.groupMasterKey, null, groupInfos);
     setDeleteDialog({
       zoneId,
@@ -2135,6 +2216,10 @@ function AdminDirectionsNeoPageBody() {
         isSaving: false,
         error: 'Не вдалося архівувати групу',
       });
+      notify({
+        severity: 'error',
+        message: `Не вдалося архівувати групу: ${formatErrorMessage(err)}`,
+      });
     }
   }
 
@@ -2148,6 +2233,10 @@ function AdminDirectionsNeoPageBody() {
         ...unarchiveDialog,
         isSaving: false,
         error: 'Не вдалося розархівувати групу',
+      });
+      notify({
+        severity: 'error',
+        message: `Не вдалося розархівувати групу: ${formatErrorMessage(err)}`,
       });
       return;
     }
@@ -2168,6 +2257,7 @@ function AdminDirectionsNeoPageBody() {
       interseptionKind: supportNonRerInterceptions ? editDialog.interseptionKind : null,
       disableNetworkAssignment: editDialog.disableNetworkAssignment,
       isAviationGroup: editDialog.isAviationGroup,
+      aiTranscriptAnalysisEnabled: editDialog.aiTranscriptAnalysisEnabled,
       fetchNewMessages: editDialog.fetchNewMessages,
       userLogins: selectedUsers,
       organismIds: selectedOrganismIds,
@@ -2204,6 +2294,7 @@ function AdminDirectionsNeoPageBody() {
           interseptionKind: updatedGroup.interseptionKind,
           disableNetworkAssignment: updatedGroup.disableNetworkAssignment,
           isAviationGroup: updatedGroup.isAviationGroup,
+          aiTranscriptAnalysisEnabled: updatedGroup.aiTranscriptAnalysisEnabled,
           fetchNewMessages: updatedGroup.fetchNewMessages,
           adminData:
             updatedGroup.shortNote || updatedGroup.longNote
@@ -2239,6 +2330,7 @@ function AdminDirectionsNeoPageBody() {
         interseptionKind: supportNonRerInterceptions ? orphanEditDialog.interseptionKind : null,
         disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
         isAviationGroup: orphanEditDialog.isAviationGroup,
+        aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
         fetchNewMessages: orphanEditDialog.fetchNewMessages,
       });
 
@@ -2258,6 +2350,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
+            aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
             colorKey: updated.colorKey,
             fetchNewMessages: orphanEditDialog.fetchNewMessages,
           };
@@ -2279,6 +2372,7 @@ function AdminDirectionsNeoPageBody() {
             interseptionKind: orphanEditDialog.interseptionKind,
             disableNetworkAssignment: orphanEditDialog.disableNetworkAssignment,
             isAviationGroup: orphanEditDialog.isAviationGroup,
+            aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
             colorKey: updated.colorKey,
             fetchNewMessages: orphanEditDialog.fetchNewMessages,
           };
@@ -2324,6 +2418,7 @@ function AdminDirectionsNeoPageBody() {
       zoneId,
       datasourceId,
       masterKey: assignDialog.group.masterKey,
+      aiTranscriptAnalysisEnabled: null,
       isSecret: assignDialog.isSecret,
       interseptionKind: supportNonRerInterceptions ? assignDialog.interseptionKind : null,
       userLogins: selectedUsers,
@@ -2370,6 +2465,7 @@ function AdminDirectionsNeoPageBody() {
               interseptionKind: assignDialog.interseptionKind,
               disableNetworkAssignment: assignDialog.disableNetworkAssignment,
               isAviationGroup: assignDialog.group.isAviationGroup,
+              aiTranscriptAnalysisEnabled: assignDialog.group.aiTranscriptAnalysisEnabled,
               fetchNewMessages: assignDialog.group.fetchNewMessages,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
@@ -2525,12 +2621,44 @@ function AdminDirectionsNeoPageBody() {
 
       <TablePageToolbar
         title="Напрямки"
+        actions={
+          <PowerButton
+            variant="contained"
+            startIcon={<AddCircleOutlineIcon />}
+            disabled={status !== 'success'}
+            onClick={() => openNativeDialog(null)}
+          >
+            Створити групу
+          </PowerButton>
+        }
         withGlobalTextFilter={false}
         internalActionsHidden
         internalActionsDisabled={status === 'loading'}
       />
 
+      {nativeSaveNotice ? (
+        <PowerAlert severity="info" onClose={() => setNativeSaveNotice(null)}>
+          {nativeSaveNotice}
+        </PowerAlert>
+      ) : null}
+
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">{renderContent()}</div>
+
+      {nativeDialog ? (
+        <NativeGroupDialog
+          key={nativeDialog.requestId}
+          {...nativeDialog}
+          logins={logins}
+          organisms={organisms}
+          aors={aors}
+          zones={zones}
+          supportNonRerInterceptions={supportNonRerInterceptions}
+          onClose={() => setNativeDialog(null)}
+          onSaved={(group) => {
+            void handleNativeGroupSaved(group);
+          }}
+        />
+      ) : null}
 
       <Dialog
         open={Boolean(editDialog)}
@@ -2603,6 +2731,18 @@ function AdminDirectionsNeoPageBody() {
               />
             }
             label="Авіаційна група"
+          />
+          <FormControlLabel
+            label="Автоматично аналізувати транскрипції аудіо"
+            control={
+              <Switch
+                checked={editDialog?.aiTranscriptAnalysisEnabled ?? false}
+                disabled={editDialog?.isSaving}
+                onChange={(_, aiTranscriptAnalysisEnabled) => {
+                  if (editDialog) setEditDialog({ ...editDialog, aiTranscriptAnalysisEnabled });
+                }}
+              />
+            }
           />
           <FormControlLabel
             control={
@@ -2799,6 +2939,19 @@ function AdminDirectionsNeoPageBody() {
               />
             }
             label="Авіаційна група"
+          />
+          <FormControlLabel
+            label="Автоматично аналізувати транскрипції аудіо"
+            control={
+              <Switch
+                checked={orphanEditDialog?.aiTranscriptAnalysisEnabled ?? false}
+                disabled={orphanEditDialog?.isSaving}
+                onChange={(_, aiTranscriptAnalysisEnabled) => {
+                  if (orphanEditDialog)
+                    setOrphanEditDialog({ ...orphanEditDialog, aiTranscriptAnalysisEnabled });
+                }}
+              />
+            }
           />
           <FormControlLabel
             control={
@@ -3081,5 +3234,9 @@ function AdminDirectionsNeoPageBody() {
 }
 
 export function AdminDirectionsNeoPage() {
-  return <AdminDirectionsNeoPageBody />;
+  return (
+    <PowerSnackbarProvider>
+      <AdminDirectionsNeoPageBody />
+    </PowerSnackbarProvider>
+  );
 }

@@ -36,10 +36,7 @@ import { useRecentValues } from './useRecentValues';
 import { useMessageUnitOptions } from './useMessageUnitOptions';
 import { useMessageUnitSelection } from './useMessageUnitSelection';
 import { useMessageNetworkUnits } from './useMessageNetworkUnits';
-import {
-  compatibleMessageUnitSelection,
-  isMessageUnitSelectionValid,
-} from './message-unit-selection';
+import { isMessageUnitSelectionValid } from './message-unit-selection';
 import { isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 import {
@@ -75,6 +72,8 @@ export type ManageMessageIntentChange = {
 };
 
 export type UseManageMessageDrawerProps = {
+  engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -113,6 +112,8 @@ export function useManageMessageDrawer({
   onEditSuccess,
   editTarget = null,
   reportSource = null,
+  engagedMessageId,
+  replySourceUnavailable,
   editAsReport = false,
   editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
@@ -124,6 +125,7 @@ export function useManageMessageDrawer({
 }: UseManageMessageDrawerProps) {
   const radioFeaturesAllowed = canUseRadioFeatures(currentUser?.roles);
   const isEditMode = isPresent(editTarget);
+  const isReplyMode = !isEditMode && !reportSource && engagedMessageId != null;
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
   const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
   const reportParents = isPresent(reportSource)
@@ -384,8 +386,9 @@ export function useManageMessageDrawer({
   ]);
 
   const resolver = useMemo(
-    () => zodResolver(makeMessageSchema(isEditMode, false, isReportMode, radioFeaturesAllowed)),
-    [isEditMode, isReportMode, radioFeaturesAllowed],
+    () =>
+      zodResolver(makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed)),
+    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed],
   );
 
   const methods = useForm<MessageFormData>({
@@ -395,14 +398,7 @@ export function useManageMessageDrawer({
     defaultValues: EMPTY_FORM_VALUES,
   });
 
-  const { control, formState, getValues, setValue, reset, resetField, watch } = methods;
-  const explicitUnitSelectionRef = useRef(false);
-  useEffect(() => {
-    const subscription = watch((_values, { name, type }) => {
-      if (name === 'unit' && type === 'change') explicitUnitSelectionRef.current = true;
-    });
-    return () => subscription.unsubscribe();
-  }, [watch]);
+  const { control, formState, getValues, setValue, reset, resetField } = methods;
   const formValues = useWatch({ control });
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
@@ -699,7 +695,7 @@ export function useManageMessageDrawer({
           formValues.unitNetworkSelection,
         ),
       isEditMode,
-      allowMissingGroup: isReportMode,
+      allowMissingGroup: isReportMode || isReplyMode,
       reportTextRequired: isReportMode,
       groupsLoading,
       selectedGroupKey,
@@ -729,6 +725,7 @@ export function useManageMessageDrawer({
     isEditMode,
     isReportCreateMode,
     isReportMode,
+    isReplyMode,
     parseStatus,
     parsing,
     reportCopyLoaded,
@@ -757,7 +754,7 @@ export function useManageMessageDrawer({
             resetField('signalGroupMasterKey', { defaultValue: initialGroupMasterKey });
           } else {
             resetField('signalGroupMasterKey', { defaultValue: '' });
-            setReferenceDataError('Обрана група більше недоступна.');
+            if (!isReplyMode) setReferenceDataError('Обрана група більше недоступна.');
           }
           return;
         }
@@ -803,6 +800,7 @@ export function useManageMessageDrawer({
     formReady,
     handleReferenceDataError,
     initialGroupMasterKey,
+    isReplyMode,
     intentKey,
     isEditMode,
     isReportMode,
@@ -813,7 +811,6 @@ export function useManageMessageDrawer({
   useEffect(() => {
     if (!formReady) return;
     unitInteractedRef.current = false;
-    explicitUnitSelectionRef.current = false;
     setDeviceNameInput('');
     setPostInput('');
     setNetworkNameInput('');
@@ -900,16 +897,12 @@ export function useManageMessageDrawer({
         const payload = payloads[0];
         if (isReportCreateMode && payload) {
           const copiedValues = mapDirectSubmitCopyToForm(payload);
-          explicitUnitSelectionRef.current = Boolean(
-            compatibleMessageUnitSelection(copiedValues.unit, copiedValues.unitSelection),
-          );
           reset({
             ...copiedValues,
             full_body: '',
             text: '',
-            comment: '',
             signalGroupMasterKey: '',
-            deviceName: '',
+            deviceName: cyberEchoEnabled ? (reportSource.message.deviceName ?? '') : '',
           });
           setReportCopyLoadedSourceId(reportSource.id);
         }
@@ -933,6 +926,7 @@ export function useManageMessageDrawer({
     reportCopyRetryAttempt,
     reportParentIdsKey,
     reportSource?.id,
+    cyberEchoEnabled,
     reset,
   ]);
 
@@ -1009,15 +1003,10 @@ export function useManageMessageDrawer({
   }, [formReady, isEditMode, editTarget?.id, tagsMap]);
 
   useEffect(() => {
-    if (!formReady || hideNetworks) return;
-    const source = isEditMode
-      ? editTarget
-      : isReportCreateMode && reportCopyLoaded
-        ? reportSource
-        : null;
+    if (!formReady || hideNetworks || !isEditMode || isReportMode) return;
+    const source = editTarget;
     if (!source) return;
     if (selectedNetworkRef.current) return;
-    if (!isEditMode && explicitUnitSelectionRef.current) return;
     let active = true;
     const initialNetworkSelectionRevision = networkSelectionRevisionRef.current;
     const initialNetworkName = getValues('network_name');
@@ -1027,8 +1016,7 @@ export function useManageMessageDrawer({
       networkSelectionRevisionRef.current === initialNetworkSelectionRevision &&
       getValues('network_name') === initialNetworkName &&
       getValues('unit') === initialUnitName &&
-      !getValues('unitNetworkSelection') &&
-      (isEditMode || !explicitUnitSelectionRef.current);
+      !getValues('unitNetworkSelection');
     const hydrateNetwork = async () => {
       const linkedNetworkIds = source.message.networkIds ?? [];
       const freeformName = source.message.networkName?.trim();
@@ -1068,10 +1056,8 @@ export function useManageMessageDrawer({
     formReady,
     hideNetworks,
     isEditMode,
+    isReportMode,
     editTarget?.id,
-    isReportCreateMode,
-    reportCopyLoaded,
-    reportSource?.id,
     getValues,
     setSelectedNetwork,
     setValue,
@@ -1206,6 +1192,9 @@ export function useManageMessageDrawer({
     isReportCreateMode,
     editTarget,
     reportSource,
+    engagedMessageId,
+    replySourceUnavailable,
+    replyGroupMasterKey: initialGroupMasterKey,
     existingMedia,
     onSubmitEdit,
     tagsLoaded,

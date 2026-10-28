@@ -5,6 +5,8 @@ mod retry_tests;
 mod settings;
 #[cfg(test)]
 mod settings_tests;
+#[cfg(test)]
+mod source_material_tests;
 pub mod types;
 
 pub use attempts::list_attempts;
@@ -33,7 +35,7 @@ use crate::config::{
 };
 use crate::entities::{
     ai_engine, ai_intel_report_attempt, ai_intel_report_settings, login,
-    media_summary, signal_message, signal_message_media,
+    media_summary, signal_message,
 };
 use crate::error::AppError;
 use crate::h;
@@ -48,9 +50,9 @@ use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, QueryFilter, QueryOrder,
-    Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseBackend, DatabaseConnection, EntityTrait, FromQueryResult,
+    QueryFilter, Statement,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -423,20 +425,31 @@ async fn load_source_materials(
     dbx: &DatabaseConnection,
     source: &signal_message::Model,
 ) -> Result<Vec<String>, AppError> {
-    let media = signal_message_media::Entity::find()
-        .filter(signal_message_media::Column::SignalMessageId.eq(source.id))
-        .order_by_asc(signal_message_media::Column::CreatedAt)
-        .order_by_asc(signal_message_media::Column::Id)
-        .all(dbx)
+    let media_ids = dbx
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+select id from (
+    select id, created_at from signal_message_media where signal_message_id = $1
+    union all
+    select id, created_at from signal_message_audio_ref where signal_message_id = $1
+) media
+order by created_at, id
+"#,
+            [source.id.into()],
+        ))
         .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| row.try_get::<Uuid>("", "id"))
+        .collect::<Result<Vec<_>, _>>()
         .c(h!())?;
-    let media_ids = media.iter().map(|item| item.id).collect::<Vec<_>>();
     let transcriptions =
         crate::transcriber::completed_transcriptions(dbx, &media_ids)
             .await
             .c(h!())?;
     let summaries = media_summary::Entity::find()
-        .filter(media_summary::Column::MediaId.is_in(media_ids))
+        .filter(media_summary::Column::MediaId.is_in(media_ids.iter().copied()))
         .filter(media_summary::Column::State.eq("completed"))
         .filter(media_summary::Column::Summary.is_not_null())
         .all(dbx)
@@ -453,14 +466,14 @@ async fn load_source_materials(
             candidates.push(format!("Текст повідомлення:\n{body}"));
         }
     }
-    for item in media {
-        if let Some(transcription) = transcriptions.get(&item.id) {
+    for media_id in media_ids {
+        if let Some(transcription) = transcriptions.get(&media_id) {
             let transcription = transcription.trim();
             if !transcription.is_empty() {
                 candidates.push(format!("Розшифровка аудіо:\n{transcription}"));
             }
         }
-        if let Some(summary) = summaries.get(&item.id) {
+        if let Some(summary) = summaries.get(&media_id) {
             let summary = summary.trim();
             if !summary.is_empty() {
                 candidates.push(format!("Стислий опис документа:\n{summary}"));

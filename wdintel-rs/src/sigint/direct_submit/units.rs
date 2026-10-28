@@ -14,6 +14,7 @@ pub(super) async fn resolve_unit<C>(
     db: &C,
     login: &Uuid,
     payload: &DirectSubmitPayload,
+    copy_source_ids: &[i64],
 ) -> anyhow::Result<Option<sigint_unit::Model>>
 where
     C: ConnectionTrait,
@@ -24,6 +25,24 @@ where
             msg: "Вкажіть назву нового підрозділу або оберіть підрозділ зі списку.".to_string(),
         })
         .c(h!());
+    }
+    if payload.unit_id.is_none()
+        && !payload.create_unit
+        && !copy_source_ids.is_empty()
+        && sigint_inbox_item::Entity::find()
+            .filter(
+                sigint_inbox_item::Column::Id.is_in(copy_source_ids.to_vec()),
+            )
+            .filter(
+                sigint_inbox_item::Column::UnitV2
+                    .eq(payload.unit.as_deref().unwrap_or_default()),
+            )
+            .one(db)
+            .await
+            .c(h!())?
+            .is_some()
+    {
+        return Ok(None);
     }
     let unit = if let Some(id) = payload.unit_id {
         Some(
@@ -334,6 +353,70 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_3891_legacy_report_preserves_unit_without_selecting_catalog_match(
+    ) {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let created =
+            submit_signal_message(&login, &env, payload("Успадкований 3891"))
+                .await
+                .unwrap();
+        let source = created.signal_message_id;
+        let original = sigint_inbox_item::Entity::find_by_id(source)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let catalog = seed_unit(
+            &env.dbx,
+            &login,
+            CreateUnitReq {
+                name: Some("Успадкований 3891".to_string()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let mut copied = copy_signal_messages(&login, &env, vec![source])
+            .await
+            .unwrap()
+            .payloads
+            .remove(0);
+        assert_eq!(copied.unit_id, None);
+        copied.full_body = Some("#3891 report with different text".to_string());
+        let report = submit_signal_message(&login, &env, copied.clone())
+            .await
+            .unwrap();
+        let report_item =
+            sigint_inbox_item::Entity::find_by_id(report.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(report_item.unit_v2, original.unit_v2);
+        let selection = crate::inbox::unit_selection::load_selections(
+            &env.dbx,
+            &[report.signal_message_id],
+        )
+        .await
+        .unwrap();
+        assert!(
+            selection.is_empty(),
+            "an inherited unit must not select a catalog match"
+        );
+
+        copied.unit_id = Some(catalog.id);
+        let selected =
+            submit_signal_message(&login, &env, copied).await.unwrap();
+        assert_eq!(
+            parsed_unit_id(&env.dbx, selected.signal_message_id).await,
+            catalog.id
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn direct_submit_3535_created_one_unit_for_concurrent_requests() {
         let env = cleanup().await.unwrap();
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
@@ -401,10 +484,10 @@ mod tests {
         let txn = env.dbx.begin().await.unwrap();
         let mut existing = payload(&unit.name);
         existing.unit_id = Some(unit.id);
-        resolve_unit(&txn, &login, &existing).await.unwrap();
+        resolve_unit(&txn, &login, &existing, &[]).await.unwrap();
         let mut new = payload("Відкочений 3535");
         new.create_unit = true;
-        resolve_unit(&txn, &login, &new).await.unwrap();
+        resolve_unit(&txn, &login, &new, &[]).await.unwrap();
         txn.rollback().await.unwrap();
         assert!(
             !sigint_unit::Entity::find_by_id(unit.id)
@@ -759,7 +842,7 @@ mod tests {
         request.create_unit = true;
         let txn = env.dbx.begin().await.unwrap();
         assert_eq!(
-            resolve_unit(&txn, &login, &request)
+            resolve_unit(&txn, &login, &request, &[])
                 .await
                 .unwrap()
                 .unwrap()

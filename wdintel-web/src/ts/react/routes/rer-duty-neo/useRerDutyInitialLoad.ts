@@ -14,6 +14,7 @@ import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-message
 import {
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
   messageOrderCursor,
+  compareMessageTuple,
   windowInitialMessageItems,
 } from './utils';
 import type { DutyFeedFilterOptions, MessageFeedState } from './utils';
@@ -48,6 +49,7 @@ export function createEmptyFeedState(
 type Params = {
   messageFeeds: MessageFeedState[];
   messageFeedsRef: MutableRefObject<MessageFeedState[]>;
+  controllersByFeedIdRef: MutableRefObject<Record<string, AbortController>>;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   setError: Dispatch<SetStateAction<string | null>>;
   buildReqForFeed: (
@@ -69,6 +71,7 @@ type Params = {
   clearFeedUnreadBaselines: (feedId: string) => void;
   completeFeedReload: (feedId: string) => void;
   setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
+  getFeedUnreadCursor?: (feedId: string) => MessageCursor | null;
   feedInitialTargetByFeedIdRef?: MutableRefObject<
     Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
   >;
@@ -85,6 +88,7 @@ type Params = {
 function preserveUnreadState(
   feed: MessageFeedState,
   items: Array<[number, InboxMessage]>,
+  readThrough: MessageCursor | null,
 ): Pick<
   MessageFeedState,
   | 'readIds'
@@ -101,6 +105,15 @@ function preserveUnreadState(
     ...feed.items.filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
     ...(feed.pendingNewerItems ?? []).filter(([id]) => !feed.readIds.has(id)).map(([id]) => id),
   ]);
+  if (readThrough) {
+    items.forEach(([id, message]) => {
+      if (
+        !knownUnreadIds.has(id) &&
+        compareMessageTuple(messageOrderCursor(id, message), readThrough) <= 0
+      )
+        readIds.add(id);
+    });
+  }
   const unresolvedUnreadIds = new Set([...knownUnreadIds].filter((id) => !itemIds.has(id)));
   const previousUnresolvedUnreadCount = Math.max(
     feed.unresolvedUnreadCount ?? 0,
@@ -164,6 +177,10 @@ export function useRerDutyInitialLoad(params: Params) {
       const current = paramsRef.current;
       const feed = current.messageFeeds.find((candidate) => candidate.id === feedId);
       if (!feed) return;
+      current.controllersByFeedIdRef.current[feedId]?.abort();
+      const controller = new AbortController();
+      current.controllersByFeedIdRef.current[feedId] = controller;
+      const requestOptions = { signal: controller.signal };
       const requestGeneration = current.getFeedLoadGeneration(feedId);
       const preserveUnread = overrides?.preserveUnread ?? false;
       const initialTarget = current.feedInitialTargetByFeedIdRef?.current?.[feedId];
@@ -202,10 +219,10 @@ export function useRerDutyInitialLoad(params: Params) {
           });
           const latestReq = current.buildReqForFeed(effectiveFeed, { loadLatest: true });
           const [olderResponse, newerResponse, targetResponse, latestResponse] = await Promise.all([
-            fetchInboxMessages(inboxReq),
-            fetchInboxMessages(newerReq),
-            fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq),
-            fetchInboxMessages(latestReq),
+            fetchInboxMessages(inboxReq, requestOptions),
+            fetchInboxMessages(newerReq, requestOptions),
+            fetchMessagesByIdsWithMetadata(initialTarget.messageIds, inboxReq, requestOptions),
+            fetchInboxMessages(latestReq, requestOptions),
           ]);
           responses = [olderResponse, newerResponse, targetResponse];
           const newestItem = latestResponse.inboxItems.at(-1);
@@ -213,9 +230,13 @@ export function useRerDutyInitialLoad(params: Params) {
             ? messageOrderCursor(newestItem[0], newestItem[1])
             : null;
         } else {
-          responses = [await fetchInboxMessages(inboxReq)];
+          responses = [await fetchInboxMessages(inboxReq, requestOptions)];
         }
-        if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
+        if (
+          controller.signal.aborted ||
+          current.getFeedLoadGeneration(feedId) !== requestGeneration
+        )
+          return;
         const response = responses[0];
         const metadata = mergeInitialLoadMetadata(responses);
         current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
@@ -228,8 +249,10 @@ export function useRerDutyInitialLoad(params: Params) {
         );
         const pollCursor =
           response.pollCursorId == null ? null : { id: response.pollCursorId, timestamp: null };
+        const readThrough =
+          preserveUnread && initialTarget ? (current.getFeedUnreadCursor?.(feedId) ?? null) : null;
         if (preserveUnread) {
-          current.setFeedUnreadCursor(feedId, items.length === 0 ? pollCursor : null);
+          current.setFeedUnreadCursor(feedId, items.length === 0 ? pollCursor : readThrough);
         } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
@@ -254,9 +277,14 @@ export function useRerDutyInitialLoad(params: Params) {
                   referenceTimeMs: Date.now(),
                   pendingNewerItems: [],
                   evictedNewerTailId: null,
-                  historicalReadThrough: initialTarget ? historicalReadThrough : null,
+                  historicalReadThrough:
+                    preserveUnread && initialTarget
+                      ? candidate.historicalReadThrough
+                      : initialTarget
+                        ? historicalReadThrough
+                        : null,
                   ...(preserveUnread && previousFeed
-                    ? preserveUnreadState(previousFeed, items)
+                    ? preserveUnreadState(previousFeed, items, readThrough)
                     : {
                         readIds: new Set<number>(items.map(([id]) => id)),
                         windowedUnreadItems: new Map<number, number>(),
@@ -282,7 +310,12 @@ export function useRerDutyInitialLoad(params: Params) {
         const tail = items.at(-1);
         return tail ? messageOrderCursor(tail[0], tail[1]) : null;
       } catch (error) {
-        if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
+        if (
+          controller.signal.aborted ||
+          current.getFeedLoadGeneration(feedId) !== requestGeneration
+        )
+          return;
+        controller.abort();
         const currentFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
@@ -304,6 +337,9 @@ export function useRerDutyInitialLoad(params: Params) {
           ),
         );
         return null;
+      } finally {
+        if (current.controllersByFeedIdRef.current[feedId] === controller)
+          delete current.controllersByFeedIdRef.current[feedId];
       }
     },
     [],

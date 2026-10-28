@@ -3,6 +3,7 @@ import type { MessageTextPreviewLineLimit } from '../../services/api/user-settin
 import type { FeedColumnModel } from './types';
 import type { MessageCardEtalonDisplayModel } from '../shared/message-card/message-card.utils';
 import type { GroupScope } from '../shared/group-navigation';
+import type { MessageFeedFocus } from '../shared/message-feed';
 import { groupFilterScope } from '../shared/group-navigation';
 import { useDutyUnreadBoundaries } from './useDutyUnreadBoundaries';
 import { useDutyFeedColumnActions, type RerDutyFeedsBundle } from './useDutyFeedColumnActions';
@@ -12,13 +13,16 @@ import {
   feedNeedsUnreadPrefetch,
   hasActiveFeedFilter,
   type MessageFeedState,
+  stableStringify,
   type TagsLayoutVariant,
 } from './utils';
+import { DUTY_SINGLE_FEED_MAX_WIDTH_PX } from './duty-layout';
 
 export type DutyFeedColumnModelDeps = {
   feeds: RerDutyFeedsBundle;
   editorSourceFeedId: string | null;
   editorHighlightedMessageId: number | null;
+  linkedMessageFocus?: { feedId: string; filterSignature: string; focus: MessageFeedFocus } | null;
   narrowScreen: boolean;
   authUserName: string | null;
   currentUser: User | null;
@@ -48,12 +52,6 @@ export type DutyFeedColumnModelDeps = {
   selectGroupScope: (feedId: string, scope: GroupScope) => void;
 };
 
-function dutyFeedColumnMaxWidth(feedCount: number, narrow: boolean): string {
-  if (narrow) return '100%';
-  if (feedCount <= 1) return '960px';
-  return '100%';
-}
-
 function buildFeedColumnView(
   feed: MessageFeedState,
   deps: DutyFeedColumnModelDeps,
@@ -73,11 +71,16 @@ function buildFeedColumnView(
   } = deps.feeds;
   return {
     narrowScreen: deps.narrowScreen,
+    linkedMessageFocus:
+      deps.linkedMessageFocus?.feedId === feed.id &&
+      deps.linkedMessageFocus.filterSignature === stableStringify(feed.filter)
+        ? deps.linkedMessageFocus.focus
+        : null,
     editorHighlightedMessageId:
       deps.editorSourceFeedId === feed.id ? deps.editorHighlightedMessageId : null,
     feedCount: messageFeeds.length,
     canRemove: messageFeeds.length > 1,
-    maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, deps.narrowScreen),
+    maxWidth: messageFeeds.length === 1 ? DUTY_SINGLE_FEED_MAX_WIDTH_PX : '100%',
     isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
     autoScrollAllowed: !dutyDisableAutoScroll,
     initialPositioningReady,

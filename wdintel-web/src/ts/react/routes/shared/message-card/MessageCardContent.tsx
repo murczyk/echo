@@ -267,6 +267,7 @@ function PointBlacklistPaletteDialog({
 
 export function MessageCardMessageBody({
   metadata,
+  timestampFooter,
   messageId,
   msg,
   tagsMap,
@@ -274,6 +275,7 @@ export function MessageCardMessageBody({
   tagContributionsOrganismId,
   hideBotTags = false,
   hideNetworks = false,
+  replyContent,
   tagsLoading = false,
   onToggleTag,
   readOnly = false,
@@ -302,6 +304,7 @@ export function MessageCardMessageBody({
   onDownloadStart,
 }: {
   metadata?: ReactNode;
+  timestampFooter?: ReactNode;
   messageId: number;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
@@ -309,6 +312,7 @@ export function MessageCardMessageBody({
   tagContributionsOrganismId?: number;
   hideBotTags?: boolean;
   hideNetworks?: boolean;
+  replyContent?: ReactNode;
   tagsLoading?: boolean;
   readOnly?: boolean;
   onToggleTag?: (tagId: number) => void;
@@ -777,7 +781,6 @@ export function MessageCardMessageBody({
   const parents = getParentMessages(msg);
   const hasCallsignControls = !readOnly && isPresent(analysisCallsignActions);
   const hasVisibleReports = hasVisibleMessageCardIntelligenceReports(reports, parents);
-  const hasSidebarContent = tagsLoading || hasTags || hasCallsignControls || hasVisibleReports;
   const textPrimary = useMemoText(
     msg,
     messageId,
@@ -966,18 +969,21 @@ export function MessageCardMessageBody({
   const hasVisibleAudioContent = isAudioVisible && audioAttachments.length > 0;
   const hasVisibleSummary = showSummaryCarousel && selectedSummaryMediaIdentity != null;
   const hasExtendedForm = isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '';
-  const hasFollowingMainContent =
+  const hasAttachmentContent =
     unpreviewableRawCoordinates != null ||
     attachmentCounters != null ||
     hasVisibleMediaContent ||
     hasVisibleCoordinateContent ||
     hasVisibleDocumentContent ||
     hasVisibleSummary ||
-    hasVisibleAudioContent ||
-    hasExtendedForm;
-  const hasMainColumnContent = metadata != null || hasMessageText || hasFollowingMainContent;
-  const showMetadataDivider = metadata != null && (hasMessageText || hasFollowingMainContent);
-  const showMessageTextDivider = hasMessageText && hasFollowingMainContent;
+    hasVisibleAudioContent;
+  const hasDetailsContent =
+    metadata != null ||
+    tagsSection != null ||
+    hasCallsignControls ||
+    hasVisibleReports ||
+    hasExtendedForm ||
+    replyContent != null;
 
   return (
     <div className="message-card-content">
@@ -1003,152 +1009,148 @@ export function MessageCardMessageBody({
         />
       ) : null}
       <div
-        className={
-          hasSidebarContent
-            ? 'message-card-content-layout message-card-content-layout--with-sidebar'
-            : 'message-card-content-layout'
-        }
+        className={`message-card-content-layout${timestampFooter != null ? ' message-card-content-layout--with-timestamp' : ''}`}
       >
         <div className="message-card-main">
-          {metadata ? <div className="message-card-main-section">{metadata}</div> : null}
-          {showMetadataDivider ? <div className="message-card-divider" /> : null}
           {messageTextSection}
-          {showMessageTextDivider ? <div className="message-card-divider" /> : null}
-          {unpreviewableRawCoordinates != null ? (
-            <MessageCardRawCoordinates coordinates={unpreviewableRawCoordinates} />
-          ) : null}
-          {attachmentCounters}
-          {isMediaVisible || (!collapseMediaPreviews && coordinateMapAttachment != null) ? (
-            <MessageCardImageList
-              images={isMediaVisible ? images : []}
-              videos={isMediaVisible ? videoAttachments : []}
-              trailingContent={!collapseMediaPreviews ? coordinateMapAttachment : null}
-              selectedImageIndex={selectedSummaryImageIndex >= 0 ? selectedSummaryImageIndex : null}
-              selectedVideoIndex={selectedSummaryVideoIndex >= 0 ? selectedSummaryVideoIndex : null}
-              onOpen={(index) => {
-                blurActiveElement();
-                setAttachmentPreviewIndex(index);
-              }}
-              onOpenVideo={(index) => {
-                blurActiveElement();
-                setAttachmentPreviewIndex(images.length + index);
-              }}
-              isDownloadStarting={isDownloadStarting}
-              onDownloadStart={onDownloadStart}
-            />
-          ) : null}
-          {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
-            <MessageCardAttachmentPreviewProvider
-              attachments={previewAttachments}
-              initialIndex={attachmentPreviewIndex}
-              onClose={() => setAttachmentPreviewIndex(null)}
-              onPreviewActivated={pauseInlineAudioPlayers}
-              isDownloadStarting={isDownloadStarting}
-              onDownloadStart={onDownloadStart}
-            />
-          ) : null}
-          {isDocumentVisible && hasDocumentAttachments ? (
-            <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
-              {documents.map((document, index) => {
-                const previewIndex = previewableDocuments.findIndex(
-                  (previewableDocument) => previewableDocument.href === document.href,
-                );
-                return (
-                  <MessageMediaDocumentLink
-                    key={document.id ?? document.href}
-                    document={document}
-                    index={index}
-                    selected={selectedSummaryDocumentIndex === index}
-                    onPreview={
-                      previewIndex >= 0
-                        ? () => {
-                            blurActiveElement();
-                            setAttachmentPreviewIndex(
-                              images.length + videoAttachments.length + previewIndex,
-                            );
-                          }
-                        : undefined
-                    }
-                    isDownloadStarting={isDownloadStarting}
-                    onDownloadStart={onDownloadStart}
-                  />
-                );
-              })}
-              {downloadAttachments.map((attachment) => {
-                const selected =
-                  selectedSummaryMediaIdentity != null &&
-                  summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
-                const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
-                return kmzPreviewIndex >= 0 ? (
-                  <KmzAttachmentPreviewLink
-                    key={attachment.id}
-                    mediaId={resolveMediaAttachmentId(attachment)}
-                    originalHref={String(attachment.href ?? '')}
-                    fileName={mediaAttachmentDisplayName(attachment)}
-                    sizeBytes={attachment.sizeBytes ?? null}
-                    contentType={mediaAttachmentContentType(attachment)}
-                    initialStatus={attachment.kmzConversionStatus ?? 'pending'}
-                    selected={selected}
-                    onPreview={() => {
-                      blurActiveElement();
-                      setAttachmentPreviewIndex(kmzPreviewStartIndex + kmzPreviewIndex);
-                    }}
-                    isDownloadStarting={isDownloadStarting}
-                    onDownloadStart={onDownloadStart}
-                  />
-                ) : (
-                  <MessageMediaDownloadLink
-                    key={attachment.id}
-                    attachment={attachment}
-                    selected={selected}
-                    isDownloadStarting={isDownloadStarting}
-                    onDownloadStart={onDownloadStart}
-                  />
-                );
-              })}
-            </div>
-          ) : null}
-          {hasVisibleSummary ? (
-            <MessageCardMediaSummaryCarousel
-              items={summaryScope}
-              selectedIdentity={selectedSummaryMediaIdentity}
-              onSelectedIdentityChange={setSelectedSummaryIdentity}
-            />
-          ) : null}
-          {collapseMediaPreviews ? coordinateMapAttachment : null}
-          {hasVisibleAudioContent ? (
-            <div className="mt-1 flex w-full flex-col items-start gap-[8px]">
-              {audioAttachments.map((attachment) => (
-                <MessageMediaAudioPlayer
-                  key={attachment.id}
-                  attachment={attachment}
+          {hasAttachmentContent ? (
+            <div className="message-card-attachments-region">
+              {unpreviewableRawCoordinates != null ? (
+                <MessageCardRawCoordinates coordinates={unpreviewableRawCoordinates} />
+              ) : null}
+              {attachmentCounters}
+              {isMediaVisible || (!collapseMediaPreviews && coordinateMapAttachment != null) ? (
+                <MessageCardImageList
+                  images={isMediaVisible ? images : []}
+                  videos={isMediaVisible ? videoAttachments : []}
+                  trailingContent={!collapseMediaPreviews ? coordinateMapAttachment : null}
+                  selectedImageIndex={
+                    selectedSummaryImageIndex >= 0 ? selectedSummaryImageIndex : null
+                  }
+                  selectedVideoIndex={
+                    selectedSummaryVideoIndex >= 0 ? selectedSummaryVideoIndex : null
+                  }
+                  onOpen={(index) => {
+                    blurActiveElement();
+                    setAttachmentPreviewIndex(index);
+                  }}
+                  onOpenVideo={(index) => {
+                    blurActiveElement();
+                    setAttachmentPreviewIndex(images.length + index);
+                  }}
                   isDownloadStarting={isDownloadStarting}
                   onDownloadStart={onDownloadStart}
-                  onPlayerChange={(player, previousPlayer) => {
-                    if (player) inlineAudioPlayersRef.current.add(player);
-                    if (previousPlayer) inlineAudioPlayersRef.current.delete(previousPlayer);
-                  }}
                 />
-              ))}
-            </div>
-          ) : null}
-          {hasExtendedForm ? (
-            <div className="flex flex-row items-center gap-[6px] min-w-0">
-              <ChatBubbleOutlineOutlinedIcon
-                sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
-                titleAccess="Коментар"
-              />
-              <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
-                {msg.extendedForm}
-              </Typography>
+              ) : null}
+              {attachmentPreviewIndex != null && previewAttachments.length > 0 ? (
+                <MessageCardAttachmentPreviewProvider
+                  attachments={previewAttachments}
+                  initialIndex={attachmentPreviewIndex}
+                  onClose={() => setAttachmentPreviewIndex(null)}
+                  onPreviewActivated={pauseInlineAudioPlayers}
+                  isDownloadStarting={isDownloadStarting}
+                  onDownloadStart={onDownloadStart}
+                />
+              ) : null}
+              {isDocumentVisible && hasDocumentAttachments ? (
+                <div className="mt-1 flex flex-wrap items-start gap-2 w-full">
+                  {documents.map((document, index) => {
+                    const previewIndex = previewableDocuments.findIndex(
+                      (previewableDocument) => previewableDocument.href === document.href,
+                    );
+                    return (
+                      <MessageMediaDocumentLink
+                        key={document.id ?? document.href}
+                        document={document}
+                        index={index}
+                        selected={selectedSummaryDocumentIndex === index}
+                        onPreview={
+                          previewIndex >= 0
+                            ? () => {
+                                blurActiveElement();
+                                setAttachmentPreviewIndex(
+                                  images.length + videoAttachments.length + previewIndex,
+                                );
+                              }
+                            : undefined
+                        }
+                        isDownloadStarting={isDownloadStarting}
+                        onDownloadStart={onDownloadStart}
+                      />
+                    );
+                  })}
+                  {downloadAttachments.map((attachment) => {
+                    const selected =
+                      selectedSummaryMediaIdentity != null &&
+                      summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity;
+                    const kmzPreviewIndex = kmzPreviewAttachments.indexOf(attachment);
+                    return kmzPreviewIndex >= 0 ? (
+                      <KmzAttachmentPreviewLink
+                        key={attachment.id}
+                        mediaId={resolveMediaAttachmentId(attachment)}
+                        originalHref={String(attachment.href ?? '')}
+                        fileName={mediaAttachmentDisplayName(attachment)}
+                        sizeBytes={attachment.sizeBytes ?? null}
+                        contentType={mediaAttachmentContentType(attachment)}
+                        initialStatus={attachment.kmzConversionStatus ?? 'pending'}
+                        selected={selected}
+                        onPreview={() => {
+                          blurActiveElement();
+                          setAttachmentPreviewIndex(kmzPreviewStartIndex + kmzPreviewIndex);
+                        }}
+                        isDownloadStarting={isDownloadStarting}
+                        onDownloadStart={onDownloadStart}
+                      />
+                    ) : (
+                      <MessageMediaDownloadLink
+                        key={attachment.id}
+                        attachment={attachment}
+                        selected={selected}
+                        isDownloadStarting={isDownloadStarting}
+                        onDownloadStart={onDownloadStart}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
+              {hasVisibleSummary ? (
+                <MessageCardMediaSummaryCarousel
+                  items={summaryScope}
+                  selectedIdentity={selectedSummaryMediaIdentity}
+                  onSelectedIdentityChange={setSelectedSummaryIdentity}
+                />
+              ) : null}
+              {collapseMediaPreviews ? coordinateMapAttachment : null}
+              {hasVisibleAudioContent ? (
+                <div className="mt-1 flex w-full flex-col items-start gap-[8px]">
+                  {audioAttachments.map((attachment) => (
+                    <MessageMediaAudioPlayer
+                      key={attachment.id}
+                      attachment={attachment}
+                      isDownloadStarting={isDownloadStarting}
+                      onDownloadStart={onDownloadStart}
+                      onPlayerChange={(player, previousPlayer) => {
+                        if (player) inlineAudioPlayersRef.current.add(player);
+                        if (previousPlayer) inlineAudioPlayersRef.current.delete(previousPlayer);
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
-        {hasMainColumnContent && hasSidebarContent ? (
-          <div className="message-card-main-sidebar-divider" aria-hidden="true" />
-        ) : null}
-        {hasSidebarContent ? (
-          <div className="message-card-sidebar">
+        {hasDetailsContent ? (
+          <div className="message-card-details-region">
+            {metadata ? <div className="message-card-main-section">{metadata}</div> : null}
+            {metadata != null &&
+            (tagsSection != null ||
+              hasCallsignControls ||
+              hasVisibleReports ||
+              hasExtendedForm ||
+              replyContent != null) ? (
+              <div className="message-card-divider" />
+            ) : null}
             {tagsSection}
             {hasCallsignControls ? (
               <MessageCardCallsignsSection
@@ -1167,8 +1169,21 @@ export function MessageCardMessageBody({
               groupInfos={reportGroupInfos}
               onEdit={readOnly ? undefined : onEditReport}
             />
+            {hasExtendedForm ? (
+              <div className="flex flex-row items-center gap-[6px] min-w-0">
+                <ChatBubbleOutlineOutlinedIcon
+                  sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
+                  titleAccess="Коментар"
+                />
+                <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
+                  {msg.extendedForm}
+                </Typography>
+              </div>
+            ) : null}
+            {replyContent}
           </div>
         ) : null}
+        {timestampFooter}
       </div>
       {messageComments.length > 0 ? (
         <MessageCardComments

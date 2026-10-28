@@ -491,7 +491,7 @@ pub async fn network_group_activity_summary_bl(
 
     crate::rer_importer::analysis::with_analytics_read_fallback(
         &env,
-        "network group activity",
+        crate::config::ANALYTICS_NETWORK_ACTIVITY_OPERATION,
         true,
         move |analytics_db| async move {
             crate::sigint::network::analytics::load_network_group_activity(
@@ -618,33 +618,198 @@ async fn load_network_group_activity_postgres(
     }
 
     let mut res = NetworkGroupsActivitySummaryRsp::default();
-    for row in networks_group_stat
-        .into_model::<NetworkGroupsMessageCountByDay>()
-        .all(db)
-        .await
-        .context(h!())?
-    {
-        let network_id = row.network_id.to_string();
-        let day = row.day.to_string();
-        let group = row.group.clone();
-        let count = row.count;
-        let last_activity_at =
-            row.last_activity_at.and_utc().timestamp_millis();
-        res.last_activity_at
-            .entry(network_id.clone())
-            .and_modify(|current| {
-                *current = std::cmp::max(*current, last_activity_at)
-            })
-            .or_insert(last_activity_at);
-        res.activity
-            .entry(network_id)
-            .or_default()
-            .entry(day)
-            .or_default()
-            .insert(group, count);
+    let mut since = dt_since;
+    while since < dt_till {
+        let till = std::cmp::min(
+            since.checked_add_signed(Duration::days(crate::config::ANALYTICS_NETWORK_ACTIVITY_SOURCE_WINDOW_DAYS)).unwrap_or(dt_till),
+            dt_till,
+        );
+        let statement = network_group_activity_postgres_statement(
+            networks_group_stat.clone(),
+            network_ids,
+            since,
+            till,
+        );
+        for row in NetworkGroupsMessageCountByDay::find_by_statement(statement)
+            .all(&crate::read_query::connection(db))
+            .await
+            .c(h!())?
+        {
+            let network_id = row.network_id.to_string();
+            let last_activity_at =
+                row.last_activity_at.and_utc().timestamp_millis();
+            res.last_activity_at
+                .entry(network_id.clone())
+                .and_modify(|current| {
+                    *current = std::cmp::max(*current, last_activity_at)
+                })
+                .or_insert(last_activity_at);
+            let count = res
+                .activity
+                .entry(network_id)
+                .or_default()
+                .entry(row.day.to_string())
+                .or_default()
+                .entry(row.group)
+                .or_default();
+            *count = count.checked_add(row.count).c(h!())?;
+        }
+        log::info!(target: "analytics_route", "request_id={} stage=network_source_window since={since} till={till} outcome=success", crate::read_query::request_id());
+        since = till;
     }
-
     Ok(res)
+}
+
+fn network_group_activity_postgres_statement(
+    mut query: Select<signal_message::Entity>,
+    network_ids: &[i64],
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> Statement {
+    let candidates = Alias::new("activity_candidates");
+    let message = Alias::new("candidate_message");
+    let columns = [
+        signal_message::Column::Id,
+        signal_message::Column::DatasourceGroupId,
+        signal_message::Column::Timestamp,
+        signal_message::Column::CreatedAt,
+        signal_message::Column::Deleted,
+    ];
+    let lookup = Query::select()
+        .columns(columns)
+        .from(signal_message::Entity)
+        .and_where(
+            Expr::col(signal_message::Column::Id)
+                .equals((candidates.clone(), Alias::new("id"))),
+        )
+        .offset(0)
+        .to_owned();
+    let source = Query::select()
+        .columns(columns.map(|column| (message.clone(), column)))
+        .expr_as(
+            Expr::col((candidates.clone(), Alias::new("network_id"))),
+            Alias::new("activity_network_id"),
+        )
+        .from(candidates.clone())
+        .join_lateral(JoinType::InnerJoin, lookup, message, Expr::value(true))
+        .to_owned();
+    QuerySelect::query(&mut query)
+        .from_clear()
+        .from_subquery(source, signal_message::Entity)
+        .and_where(
+            Expr::col((
+                sigint_inbox_item_network::Entity,
+                sigint_inbox_item_network::Column::SigintNetworkId,
+            ))
+            .equals((
+                signal_message::Entity,
+                Alias::new("activity_network_id"),
+            )),
+        )
+        .with_cte(
+            CommonTableExpression::new()
+                .table_name(candidates)
+                .query(network_activity_candidates(network_ids, since, till))
+                .materialized(true)
+                .to_owned(),
+        );
+    query.build(DbBackend::Postgres)
+}
+
+fn network_activity_candidates(
+    network_ids: &[i64],
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> SelectStatement {
+    let dates = Alias::new("activity_dates");
+    let links = Alias::new("activity_links");
+    let lookup = Query::select()
+        .columns([
+            sigint_inbox_item_network::Column::SigintInboxItemId,
+            sigint_inbox_item_network::Column::SigintNetworkId,
+        ])
+        .from(sigint_inbox_item_network::Entity)
+        .and_where(
+            Expr::col(sigint_inbox_item_network::Column::SigintInboxItemId)
+                .equals((dates.clone(), Alias::new("id"))),
+        )
+        .and_where(
+            Expr::col(sigint_inbox_item_network::Column::SigintNetworkId)
+                .is_in(network_ids.to_vec()),
+        )
+        .offset(0)
+        .to_owned();
+    Query::select()
+        .expr_as(
+            Expr::col((
+                links.clone(),
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            )),
+            Alias::new("id"),
+        )
+        .expr_as(
+            Expr::col((
+                links.clone(),
+                sigint_inbox_item_network::Column::SigintNetworkId,
+            )),
+            Alias::new("network_id"),
+        )
+        .from_subquery(network_activity_date_candidates(since, till), dates)
+        .join_lateral(JoinType::InnerJoin, lookup, links, Expr::value(true))
+        .to_owned()
+}
+
+fn network_activity_date_candidates(
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> SelectStatement {
+    let mut dates = Query::select();
+    dates
+        .column(sigint_inbox_item::Column::Id)
+        .from(sigint_inbox_item::Entity)
+        .and_where(Expr::col(sigint_inbox_item::Column::Datetime).gte(since))
+        .and_where(Expr::col(sigint_inbox_item::Column::Datetime).lt(till));
+    for column in [
+        signal_message::Column::Timestamp,
+        signal_message::Column::CreatedAt,
+    ] {
+        let null_inbox = Query::select()
+            .column(sigint_inbox_item::Column::Id)
+            .from(sigint_inbox_item::Entity)
+            .and_where(
+                Expr::col((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .and_where(Expr::col(sigint_inbox_item::Column::Datetime).is_null())
+            .offset(0)
+            .to_owned();
+        let mut messages = Query::select();
+        messages
+            .column((signal_message::Entity, signal_message::Column::Id))
+            .from(signal_message::Entity)
+            .join_lateral(
+                JoinType::InnerJoin,
+                null_inbox,
+                Alias::new("null_inbox"),
+                Expr::value(true),
+            )
+            .and_where(Expr::col((signal_message::Entity, column)).gte(since))
+            .and_where(Expr::col((signal_message::Entity, column)).lt(till));
+        if matches!(column, signal_message::Column::CreatedAt) {
+            messages.and_where(
+                Expr::col((
+                    signal_message::Entity,
+                    signal_message::Column::Timestamp,
+                ))
+                .is_null(),
+            );
+        }
+        dates.union(UnionType::All, messages);
+    }
+    dates
 }
 
 fn network_activity_timestamp() -> SimpleExpr {
@@ -1361,5 +1526,59 @@ mod tests {
             .flat_map(HashMap::values)
             .sum();
         assert_eq!(message_count, 1);
+        let created_only = seed_network_activity(
+            &env.dbx,
+            network.id,
+            allowed_datasource_group.id,
+            freq,
+            dt(3),
+        )
+        .await;
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(Option::<NaiveDateTime>::None),
+            )
+            .filter(signal_message::Column::Id.eq(created_only))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let interception = seed_network_activity(
+            &env.dbx,
+            network.id,
+            allowed_datasource_group.id,
+            freq,
+            dt(6),
+        )
+        .await;
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::Datetime,
+                Expr::value(dt(2) + Duration::hours(23)),
+            )
+            .filter(sigint_inbox_item::Column::Id.eq(interception))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let activity = load_network_group_activity_postgres(
+            &env.dbx,
+            &groups,
+            &[network.id],
+            dt(1),
+            dt(7),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            activity.activity[&network.id.to_string()]
+                .values()
+                .flat_map(HashMap::values)
+                .sum::<i64>(),
+            3
+        );
+        assert_eq!(
+            activity.last_activity_at[&network.id.to_string()],
+            dt(3).and_utc().timestamp_millis()
+        );
     }
 }

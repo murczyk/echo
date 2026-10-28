@@ -2163,6 +2163,7 @@ pub(crate) async fn require_analysis_device_filter_access(
     login: &Uuid,
     req: &AnalysisStatsReq,
 ) -> Result<(), AppError> {
+    crate::read_query::set_search(&req.search);
     if analysis_req_has_device_names(req) {
         crate::devices::access::require_message_devices(dbx, login)
             .await
@@ -2537,6 +2538,15 @@ where
             )
             .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
             .filter(sigint_comment::Column::Comment.eq("").not())
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    sigint_comment::Entity,
+                    sigint_comment::Column::LoginId,
+                )),
+                None,
+            ))
+            // Keep EXISTS correlated so each parent probes the comment index.
+            .offset(0)
             .into_query();
         let linked_message = Alias::new("linked_message");
         let linked_comment_exists = intel_product::Entity::find()
@@ -2547,7 +2557,7 @@ where
             ))
             .join_as(
                 JoinType::InnerJoin,
-                intel_product::Relation::SignalMessage1.def(),
+                intel_product::Relation::SignalMessage2.def(),
                 linked_message.clone(),
             )
             .filter(
@@ -2565,9 +2575,24 @@ where
                 .eq(false),
             )
             .filter(
-                Expr::col((linked_message, signal_message::Column::Body))
+                Expr::col((linked_message.clone(), signal_message::Column::Body))
                     .ne(""),
             )
+            .filter(note_comment_author_filter(
+                Expr::col((
+                    linked_message.clone(),
+                    signal_message::Column::LoginId,
+                )),
+                Some(
+                    Func::lower(Expr::col((
+                        linked_message,
+                        signal_message::Column::Sender,
+                    )))
+                    .into(),
+                ),
+            ))
+            // Avoid hashing the full linked-message relation for a narrow page.
+            .offset(0)
             .into_query();
 
         q = q.filter(
@@ -2626,6 +2651,48 @@ where
     //     q.build(DbBackend::Postgres).to_string()
     // );
     Ok(q)
+}
+
+fn note_comment_author_filter(
+    author: SimpleExpr,
+    sender: Option<SimpleExpr>,
+) -> SimpleExpr {
+    let parsing_enabled = system_settings::Entity::find()
+        .select_only()
+        .column(system_settings::Column::SigintCommentParsingEnabled)
+        .filter(system_settings::Column::Deleted.eq(false))
+        .order_by_desc(system_settings::Column::UpdatedAt)
+        .limit(1)
+        .into_query();
+    let system_logins = login::Entity::find()
+        .filter(login::Column::Login.eq(SYSTEM_LOGIN_NAME))
+        .filter(Expr::value(true).in_subquery(parsing_enabled));
+    let unknown_author = author.clone().is_null();
+    let unknown_author = if let Some(sender) = sender {
+        let system_senders = system_logins
+            .clone()
+            .select_only()
+            .expr(Expr::cust_with_expr(
+                "unnest(ARRAY(VALUES ($1::text), (replace($1::text, '-', '')), \
+                 ('{' || $1::text || '}'), ('urn:uuid:' || $1::text)))",
+                Expr::col(login::Column::Id),
+            ))
+            .into_query();
+        unknown_author.and(
+            sender
+                .clone()
+                .is_null()
+                .or(sender.not_in_subquery(system_senders)),
+        )
+    } else {
+        unknown_author
+    };
+    unknown_author.or(author.not_in_subquery(
+        system_logins
+            .select_only()
+            .column(login::Column::Id)
+            .into_query(),
+    ))
 }
 
 fn selected_tags_accessible_expr(
@@ -3735,16 +3802,64 @@ pub(in crate::rer_importer) fn filter_search_with_scope<Q>(
 where
     Q: QueryFilter + QuerySelect,
 {
+    filter_search_with_source_scope(
+        q,
+        search,
+        search_mode,
+        correlated_terms,
+        scope,
+        inbox_required,
+        None,
+    )
+}
+
+pub(in crate::rer_importer) fn filter_search_with_source_scope<Q>(
+    q: Q,
+    search: &Option<String>,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    inbox_required: bool,
+    source_scope: Option<
+        crate::attachments::analytics::SearchCoverageScope<'_>,
+    >,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter + QuerySelect,
+{
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        let predicate = crate::attachments::search::analysis_message_filter(
-            search,
-            search_mode,
-            correlated_terms,
-            scope.is_some(),
-            inbox_required,
-        )
+        let source_scope = match source_scope {
+            Some(source_scope)
+                if scope.is_none()
+                    && !correlated_terms
+                    && crate::attachments::search::use_source_search_scope(
+                        search,
+                        search_mode,
+                        &source_scope,
+                    )
+                    .c(h!())? =>
+            {
+                Some(source_scope)
+            }
+            _ => None,
+        };
+        let predicate = if let Some(source_scope) = source_scope {
+            crate::attachments::search::scoped_analysis_message_filter(
+                search,
+                search_mode,
+                &source_scope,
+            )
+        } else {
+            crate::attachments::search::analysis_message_filter(
+                search,
+                search_mode,
+                correlated_terms,
+                scope.is_some(),
+                inbox_required,
+            )
+        }
         .c(h!())?;
         q2 = q2.filter(predicate);
 
@@ -9005,6 +9120,7 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // through PostgreSQL so every panel describes the same message set.
     req.message_time_basis
         != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+        && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
 }
 
@@ -9054,7 +9170,8 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_text_search_supported(&req.search, req.search_mode)
+    req.or_with_extended_form != Some(true)
+        && analytics_text_search_supported(&req.search, req.search_mode)
         && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
             || (req.load_latest == Some(true) && req.nolimit != Some(true)))
 }
@@ -9091,8 +9208,7 @@ struct AnalyticsRetryCancellationGuard<'a> {
 pub(crate) struct AnalyticsReadOutcome<T> {
     pub(crate) value: T,
     pub(crate) postgres_reason: Option<&'static str>,
-    pub(crate) postgres_fallback_permit:
-        Option<tokio::sync::OwnedSemaphorePermit>,
+    pub(crate) postgres_fallback_permit: Option<SourceFallbackPermit>,
 }
 
 pub(crate) fn postgres_pool_identity(db: &DatabaseConnection) -> usize {
@@ -9172,6 +9288,7 @@ where
     A: std::future::Future<Output = Result<T, AppError>>,
     P: std::future::Future<Output = Result<T, AppError>>,
 {
+    let request_id = crate::read_query::request_id();
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
@@ -9185,7 +9302,7 @@ where
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
                 }
-                info!(target: "analytics_route", "operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
+                info!(target: "analytics_route", "request_id={request_id} operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(response);
             }
             Ok(Err(err)) => {
@@ -9231,7 +9348,7 @@ where
     let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
     });
-    info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
+    info!(target: "analytics_route", "request_id={request_id} operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
         if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
     response
 }
@@ -9337,6 +9454,7 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
+    let request_id = crate::read_query::request_id();
     let analytics_retry_state = env
         .analytics
         .as_ref()
@@ -9374,21 +9492,28 @@ where
             .map(AnalyticsConfig::freshness_max_age_ms)
             .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
         let analytics_conn = analytics.conn.clone();
-        let query = async move {
-            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms)
-                .await?;
-            analytics_query(analytics_conn).await
-        };
-
-        let response = if use_configured_timeout {
-            tokio::time::timeout(timeout, query).await.ok()
-        } else {
-            Some(query.await)
+        let deadline = tokio::time::Instant::now() + timeout;
+        let response = match tokio::time::timeout_at(
+            deadline,
+            ensure_analytics_fresh(&analytics_conn, freshness_max_age_ms),
+        )
+        .await
+        {
+            Ok(Ok(())) => {
+                let query = analytics_query(analytics_conn);
+                if use_configured_timeout {
+                    tokio::time::timeout_at(deadline, query).await.ok()
+                } else {
+                    Some(query.await)
+                }
+            }
+            Ok(Err(err)) => Some(Err(err)),
+            Err(_) => None,
         };
         let open_circuit = match response {
             Some(Ok(response)) => {
                 retry_attempt.record_success();
-                info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
+                info!(target: "analytics_route", "request_id={request_id} operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(AnalyticsReadOutcome {
                     value: response,
                     postgres_reason: None,
@@ -9427,11 +9552,27 @@ where
         );
     }
 
+    let queue_started = std::time::Instant::now();
     let _postgres_queue_guard = match postgres_queue {
-        Some(queue) => Some(queue.lock_owned().await),
+        Some(queue) => Some(tokio::time::timeout(
+            std::time::Duration::from_millis(crate::read_query::queue_timeout_ms()),
+            queue.lock_owned(),
+        ).await.map_err(|_| {
+            warn!(target: "analytics_route", "request_id={} operation={operation:?} route=postgres stage=count_queue outcome=rejected reason=count_queue_timeout elapsed_ms={}", crate::read_query::request_id(), queue_started.elapsed().as_millis());
+            AppError::ServiceUnavailable { msg: "Аналітична система перевантажена. Спробуйте повторити запит.".into(), retry_after_secs: 1 }
+        }).c(h!())?),
         None => None,
     };
+    info!(target: "analytics_route", "request_id={} operation={operation:?} stage=count_queue outcome=success elapsed_ms={}", crate::read_query::request_id(), queue_started.elapsed().as_millis());
+    let _search_count_operation = if crate::read_query::is_search_count() {
+        Some(crate::read_query::acquire_count_operation().await.c(h!())?)
+    } else {
+        None
+    };
     let postgres_fallback_permit = if analytics_fallback_needs_capacity(reason)
+        && !crate::read_query::is_search_count()
+        && !(operation == ANALYTICS_NETWORK_ACTIVITY_OPERATION
+            && crate::read_query::connection(&env.dbx).is_source_read())
     {
         Some(
             acquire_analytics_postgres_fallback_capacity(operation)
@@ -9445,7 +9586,7 @@ where
     let response = postgres_query(env.replica())
         .await
         .map_err(|error| map_postgres_runtime_timeout(error, operation));
-    info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
+    info!(target: "analytics_route", "request_id={request_id} operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
         if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
     response.map(|value| AnalyticsReadOutcome {
         value,
@@ -9457,7 +9598,8 @@ where
 pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
     matches!(
         reason,
-        "analytics_error"
+        "query_policy"
+            | "analytics_error"
             | "analytics_timeout"
             | "analytics_saturated"
             | "analytics_resource_limit"
@@ -9472,9 +9614,16 @@ pub(crate) fn analytics_fallback_needs_capacity(reason: &str) -> bool {
     )
 }
 
+pub(crate) struct SourceFallbackPermit {
+    _login: Option<tokio::sync::OwnedSemaphorePermit>,
+    _global: tokio::sync::OwnedSemaphorePermit,
+}
+
 pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
     operation: &str,
-) -> Result<tokio::sync::OwnedSemaphorePermit, AppError> {
+) -> Result<SourceFallbackPermit, AppError> {
+    let request_id = crate::read_query::request_id();
+    let login = crate::read_query::acquire_operation().await.c(h!())?;
     let timeout = core::time::Duration::from_millis(
         ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS,
     );
@@ -9486,11 +9635,14 @@ pub(crate) async fn acquire_analytics_postgres_fallback_capacity(
     )
     .await
     {
-        Ok(Ok(permit)) => Ok(permit),
+        Ok(Ok(permit)) => Ok(SourceFallbackPermit {
+            _login: login,
+            _global: permit,
+        }),
         Ok(Err(_)) | Err(_) => {
             warn!(
                 target: "analytics_route",
-                "operation={operation:?} route=postgres outcome=rejected reason=fallback_saturated"
+                "request_id={request_id} operation={operation:?} route=postgres outcome=rejected reason=fallback_saturated"
             );
             Err(AppError::ServiceUnavailable {
                 msg: "Аналітична система перевантажена. Спробуйте повторити запит."
@@ -9920,9 +10072,21 @@ async fn query_count_stats_groups_postgres(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
+    let groups = if stats::source_count_windows(req, None).c(h!())?.is_some() {
+        let login = login_id_from_identity(user).c(h!())?;
+        stats::fetch_group_count_keys_in_source_windows(
+            req,
+            &login,
+            &env.dbx,
+            master_keys.clone(),
+        )
         .await
-        .context(h!())?;
+        .c(h!())?
+    } else {
+        stats::fetch_groups(req, user, env, master_keys.clone())
+            .await
+            .c(h!())?
+    };
     let groups = if should_include_missing_secret_groups(req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys)
             .await
@@ -11456,6 +11620,7 @@ async fn collect_group_names(
             signal_group::Column::InterseptionKind,
             signal_group::Column::DisableNetworkAssignment,
             signal_group::Column::IsAviationGroup,
+            signal_group::Column::AiTranscriptAnalysisEnabled,
             signal_group::Column::ColorKey,
             signal_group::Column::FetchNewMessages,
         ])
@@ -11467,6 +11632,7 @@ async fn collect_group_names(
             sea_orm_active_enums::InterseptionKind,
             bool,
             Option<bool>,
+            Option<bool>,
             Option<String>,
             Option<bool>,
         )>()
@@ -11476,7 +11642,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11502,6 +11668,7 @@ async fn collect_group_names(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        ai_transcript_analysis_enabled,
         color_key,
         fetch_new_messages,
     ) in signal_groups
@@ -11519,6 +11686,8 @@ async fn collect_group_names(
                 interseption_kind: interseption_kind.into(),
                 disable_network_assignment,
                 is_aviation_group: is_aviation_group.unwrap_or(false),
+                ai_transcript_analysis_enabled: ai_transcript_analysis_enabled
+                    .unwrap_or(false),
                 fetch_new_messages: fetch_new_messages.unwrap_or(true),
                 group_stats: stats,
                 admin_data: group_admin_data,
@@ -11558,6 +11727,7 @@ async fn collect_group_names(
                 crate::sigint::types::InterseptionKind::InterseptionRer,
             disable_network_assignment: false,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
             group_stats: stats,
             admin_data: group_admin_data,

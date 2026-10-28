@@ -200,51 +200,13 @@ pub async fn report_docx_kind_reo(
     };
     let mut current_req = req.req.clone();
     current_req.report_tags_only_this_unit = Some(false);
-    let report_settings =
-        crate::system_settings::get_report_generation_settings(&env.dbx)
-            .await
-            .c(h!())?;
-    let chunks = inbox_report_period_chunks(
-        &current_req,
-        report_settings.chunking_hours,
-    )
-    .context(h!())?;
-    let analytics_req = &current_req;
-    let postgres_req = &current_req;
-    let analytics_chunks = &chunks;
-    let postgres_chunks = &chunks;
-    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+    let messages = load_reo_report_messages(
+        &login,
         env,
-        "REO report interception scan",
-        crate::rer_importer::analysis::analytics_inbox_request_supported(
-            &current_req,
-        ),
-        |db| async move {
-            load_reo_report_messages(
-                &db,
-                &login,
-                env,
-                analytics_req,
-                analytics_chunks,
-                summary_only,
-                no_comments,
-                only_comments_from_current_organism,
-            )
-            .await
-        },
-        |db| async move {
-            load_reo_report_messages(
-                &db,
-                &login,
-                env,
-                postgres_req,
-                postgres_chunks,
-                summary_only,
-                no_comments,
-                only_comments_from_current_organism,
-            )
-            .await
-        },
+        &current_req,
+        summary_only,
+        no_comments,
+        only_comments_from_current_organism,
     )
     .await
     .context(h!())?;
@@ -321,31 +283,45 @@ pub async fn report_docx_kind_reo(
 }
 
 async fn load_reo_report_messages(
-    dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
-    chunks: &[ReportPeriodChunk],
     summary_only: bool,
     no_comments: bool,
     only_comments_from_current_organism: bool,
-) -> Result<Vec<(i64, ReoInboxMessage)>, AppError> {
+) -> anyhow::Result<Vec<(i64, ReoInboxMessage)>> {
     if summary_only {
-        return Ok(summary::load_summary_messages(
-            dbx,
+        return summary::load_summary_messages(
             login,
             env,
             req,
-            chunks,
             no_comments,
             only_comments_from_current_organism,
         )
         .await
-        .c(h!())?);
+        .context(h!());
     }
-    Ok(load_reo_inbox_messages_chunks(dbx, login, env, req, chunks)
-        .await
-        .c(h!())?)
+    let report_settings =
+        crate::system_settings::get_report_generation_settings(&env.dbx)
+            .await
+            .c(h!())?;
+    let chunks =
+        inbox_report_period_chunks(req, report_settings.chunking_hours)
+            .context(h!())?;
+    let chunks = &chunks;
+    crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "REO report interception scan",
+        crate::rer_importer::analysis::analytics_inbox_request_supported(req),
+        |db| async move {
+            load_reo_inbox_messages_chunks(&db, login, env, req, chunks).await
+        },
+        |db| async move {
+            load_reo_inbox_messages_chunks(&db, login, env, req, chunks).await
+        },
+    )
+    .await
+    .context(h!())
 }
 
 async fn load_reo_inbox_messages_chunks(

@@ -17,6 +17,7 @@ pub struct Model {
     pub updated_at: DateTime,
     pub worker_groups_except: Option<bool>,
     pub worker_group_master_keys: Option<Vec<String>>,
+    pub worker_fallback_ai_engine_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -28,13 +29,15 @@ pub enum Relation {
         on_update = "NoAction",
         on_delete = "SetNull"
     )]
-    AiEngine,
-}
-
-impl Related<super::ai_engine::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AiEngine.def()
-    }
+    AiEngine2,
+    #[sea_orm(
+        belongs_to = "super::ai_engine::Entity",
+        from = "Column::WorkerFallbackAiEngineId",
+        to = "super::ai_engine::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    AiEngine1,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

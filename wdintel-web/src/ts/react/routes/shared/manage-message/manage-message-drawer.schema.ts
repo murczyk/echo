@@ -106,7 +106,12 @@ export function makeMessageSchema(
       post: z.string().optional(),
       unit: z.string().optional(),
       unitSelection: z
-        .object({ name: z.string(), id: z.number().optional(), create: z.boolean().optional() })
+        .object({
+          name: z.string(),
+          id: z.number().optional(),
+          create: z.boolean().optional(),
+          inherited: z.boolean().optional(),
+        })
         .optional(),
       unitNetworkSelection: z
         .object({

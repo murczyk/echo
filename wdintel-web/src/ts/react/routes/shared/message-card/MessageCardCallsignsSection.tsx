@@ -79,8 +79,8 @@ export function MessageCardCallsignsSection({
               sx={{
                 height: 24,
                 borderRadius: 16,
-                fontSize: 10,
-                '& .MuiChip-label': { py: 0 },
+                fontSize: 'calc(1rem * 13 / 14)',
+                '& .MuiChip-label': { py: 0, lineHeight: 'calc(18 / 13)' },
                 '& .MuiChip-deleteIcon': {
                   width: 18,
                   height: 18,

@@ -15,7 +15,10 @@ import { SettingsMessageCard } from './SettingsMessageCard';
 import { SettingsAnalysisTimeBasisCard } from './SettingsAnalysisTimeBasisCard';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
-import type { UserDutySettings } from '../../services/api/user-settings';
+import {
+  MessageAttachmentPreviewMode,
+  type UserDutySettings,
+} from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 import {
   isDutyFilterPersistenceDisabled,
@@ -112,12 +115,30 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       showClassicDuty: dutySettings.showClassicDuty,
       showClassicAnalysis: dutySettings.showClassicAnalysis,
       dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
+      largeMediaPreviews: dutySettings.largeMediaPreviews,
+      largeMessageCardText: dutySettings.largeMessageCardText,
       mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
       aiPositionHighlightsEnabled: dutySettings.aiPositionHighlightsEnabled,
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
       ...overrides,
     });
+  };
+  const attachmentPreviewMode = dutySettings.dutyCollapseMediaPreviews
+    ? MessageAttachmentPreviewMode.Collapsed
+    : dutySettings.largeMediaPreviews
+      ? MessageAttachmentPreviewMode.Large
+      : MessageAttachmentPreviewMode.Compact;
+  const handleLargeMessageCardTextChange = (largeMessageCardText: boolean) => {
+    dutySettings.setLargeMessageCardText(largeMessageCardText);
+    scheduleDutySettingsSave({ largeMessageCardText });
+  };
+  const handleAttachmentPreviewModeChange = (value: MessageAttachmentPreviewMode) => {
+    const dutyCollapseMediaPreviews = value === MessageAttachmentPreviewMode.Collapsed;
+    const largeMediaPreviews = value === MessageAttachmentPreviewMode.Large;
+    dutySettings.setDutyCollapseMediaPreviews(dutyCollapseMediaPreviews);
+    dutySettings.setLargeMediaPreviews(largeMediaPreviews);
+    scheduleDutySettingsSave({ dutyCollapseMediaPreviews, largeMediaPreviews });
   };
   const globalSettings = useGlobalSetting();
   const [myGroupsStatus, setMyGroupsStatus] = useState<'idle' | 'loading' | 'success' | 'error'>(
@@ -319,11 +340,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setDutyAudioTranscriptionCollapsed(value);
                 scheduleDutySettingsSave({ dutyAudioTranscriptionCollapsed: value });
               }}
-              collapseMediaPreviews={dutySettings.dutyCollapseMediaPreviews}
-              onCollapseMediaPreviewsChange={(value) => {
-                dutySettings.setDutyCollapseMediaPreviews(value);
-                scheduleDutySettingsSave({ dutyCollapseMediaPreviews: value });
-              }}
+              attachmentPreviewMode={attachmentPreviewMode}
+              onAttachmentPreviewModeChange={handleAttachmentPreviewModeChange}
+              largeMessageCardText={dutySettings.largeMessageCardText}
+              onLargeMessageCardTextChange={handleLargeMessageCardTextChange}
             />
           ) : null}
 
@@ -400,11 +420,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       dutySettings.setMediaSummaryEnabled(value);
                       scheduleDutySettingsSave({ mediaSummaryEnabled: value });
                     }}
-                    collapseMediaPreviews={dutySettings.dutyCollapseMediaPreviews}
-                    onCollapseMediaPreviewsChange={(value) => {
-                      dutySettings.setDutyCollapseMediaPreviews(value);
-                      scheduleDutySettingsSave({ dutyCollapseMediaPreviews: value });
-                    }}
+                    attachmentPreviewMode={attachmentPreviewMode}
+                    onAttachmentPreviewModeChange={handleAttachmentPreviewModeChange}
+                    largeMessageCardText={dutySettings.largeMessageCardText}
+                    onLargeMessageCardTextChange={handleLargeMessageCardTextChange}
                     loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
                   />
 

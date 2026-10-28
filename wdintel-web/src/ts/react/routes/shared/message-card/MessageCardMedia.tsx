@@ -255,7 +255,7 @@ export function AudioPlayerHost({
     sizeBytes == null || sizeBytes <= AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES;
   return (
     <NeutralAudioPlayerHost
-      href={href}
+      href={/^\/api\/messenger\/media\/[^/?]+$/.test(href) ? `${href}?playback=1` : href}
       displayName={displayName}
       storageKey={`echo-inbox-${mediaId || displayName}`}
       waveSrc={mediaId !== '' && canLoadDerivedImages ? mediaAttachmentWaveUrl(mediaId) : ''}
@@ -330,8 +330,8 @@ export function MessageMediaAudioPlayer({
                 minHeight: 26,
                 py: 0.25,
                 px: 0.75,
-                fontSize: 11,
-                lineHeight: 1.25,
+                fontSize: 'calc(1rem * 13 / 14)',
+                lineHeight: 'calc(18 / 13)',
                 textTransform: 'none',
                 fontWeight: 500,
                 color: 'text.primary',
@@ -406,8 +406,8 @@ export function MessageMediaDownloadLink({
             py: 0.25,
             pl: 0.75,
             pr: 4,
-            fontSize: 11,
-            lineHeight: 1.25,
+            fontSize: 'calc(1rem * 13 / 14)',
+            lineHeight: 'calc(18 / 13)',
             textTransform: 'none',
             fontWeight: 500,
             color: 'text.primary',
@@ -508,8 +508,8 @@ export function MessageMediaDownloadAllLink({
           minHeight: 26,
           py: 0.25,
           px: 0.75,
-          fontSize: 11,
-          lineHeight: 1.25,
+          fontSize: 'calc(1rem * 13 / 14)',
+          lineHeight: 'calc(18 / 13)',
           textTransform: 'none',
           fontWeight: 500,
           color: 'text.primary',
@@ -641,8 +641,8 @@ export function MessageMediaVideoPreviewButton({
           minHeight: 26,
           py: 0.25,
           px: 0.75,
-          fontSize: 11,
-          lineHeight: 1.25,
+          fontSize: 'calc(1rem * 13 / 14)',
+          lineHeight: 'calc(18 / 13)',
           textTransform: 'none',
           fontWeight: 500,
           alignSelf: 'flex-start',

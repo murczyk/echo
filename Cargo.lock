@@ -2914,7 +2914,7 @@ dependencies = [
 
 [[package]]
 name = "echo-iggy"
-version = "1.0.0"
+version = "1.0.1"
 
 [[package]]
 name = "echo-im"
@@ -10049,6 +10049,7 @@ dependencies = [
  "rustls",
  "sea-orm",
  "sea-orm-migration",
+ "sea-query-sqlx",
  "serde",
  "serde_ignored",
  "serde_json",

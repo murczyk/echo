@@ -165,7 +165,7 @@ export function useMessageParser(
       setParsing(false);
 
       if (!rawBody.trim()) {
-        if (sourceWasNotEmpty && !hasManualFormChangesRef.current) {
+        if (parserActive && sourceWasNotEmpty && !hasManualFormChangesRef.current) {
           ownershipRef.current = createParserOwnershipState();
           setParserFeedback(null);
           onPristineSourceCleared?.();
@@ -275,9 +275,9 @@ export function useMessageParser(
   }, [getValues]);
 
   useEffect(() => {
-    const rawBody = fullBody ?? '';
+    const rawBody = getValues('full_body') ?? '';
     if (handleBodyChange(rawBody)) return;
-    if (handleSignalGroupChange(signalGroupMasterKey ?? '', rawBody)) return;
+    if (handleSignalGroupChange(getValues('signalGroupMasterKey') ?? '', rawBody)) return;
 
     const trimmed = rawBody.trim();
     if (!trimmed) {
@@ -300,6 +300,7 @@ export function useMessageParser(
 
     return () => window.clearTimeout(timer);
   }, [
+    getValues,
     fullBody,
     signalGroupMasterKey,
     bodyRevision,

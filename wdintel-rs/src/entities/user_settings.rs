@@ -31,6 +31,8 @@ pub struct Model {
     pub message_auto_parse_enabled: Option<bool>,
     pub ai_position_highlights_enabled: Option<bool>,
     pub receive_alerts_in_messenger: Option<bool>,
+    pub large_media_previews: Option<bool>,
+    pub large_message_card_text: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

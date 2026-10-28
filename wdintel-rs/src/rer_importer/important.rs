@@ -382,6 +382,29 @@ async fn remove_importants(
     Ok(())
 }
 
+async fn suppress_ai_importance_if_allowed(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    login: Uuid,
+    message_id: i64,
+) -> anyhow::Result<()> {
+    // Personal marks remain removable after access is revoked; AI marks require current access.
+    match crate::messenger::media::ensure_media_access(
+        &env.dbx, &login, message_id,
+    )
+    .await
+    {
+        Ok(()) => {
+            crate::ai_transcript_analysis::worker::suppress(txn, message_id)
+                .await
+                .c(h!())?
+        }
+        Err(AppError::Forbidden(_)) => (),
+        Err(error) => return Err(error).c(h!()),
+    }
+    Ok(())
+}
+
 async fn set_importance(
     env: &Env,
     login: Uuid,
@@ -439,6 +462,11 @@ async fn set_importance(
             }
         }
     } else {
+        if !affected_ids.is_empty() {
+            suppress_ai_importance_if_allowed(env, &txn, login, message_id)
+                .await
+                .c(h!())?;
+        }
         remove_importants(&txn, login, &affected_ids)
             .await
             .context(h!())?;
@@ -826,6 +854,10 @@ mod tests {
         assert_eq!(
             notification_receipt::Entity::find()
                 .filter(notification_receipt::Column::EventId.eq(event.id))
+                .filter(
+                    notification_receipt::Column::RecipientLoginId
+                        .is_in([first.id, second.id])
+                )
                 .count(&env.dbx)
                 .await
                 .unwrap(),

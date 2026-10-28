@@ -29,6 +29,19 @@ be retained.
 
 ## Worker group restrictions
 
+Successful AI worker results replace the message's parsed locations and reconcile
+their settlement links. An empty result clears the locations and links. Failed
+requests and stale results leave the existing locations unchanged.
+Empty locations are stored as SQL `NULL`, including legacy empty strings and
+delimiter-only values. Replacements and removals also recalculate network
+assignments, queue affected frequency freshness and group statistics work, and
+emit settlement unlink events in the same transaction.
+Manual saves cancel pending settlement jobs in that transaction, so late AI
+results cannot replace or clear the submitted locations. Manual edits do not
+enqueue settlement jobs; explicit parser reprocessing can enqueue them again.
+Reviewed inbox items are protected at completion too, including jobs queued
+before this behavior was deployed.
+
 The **Воркер** tab at `/admin/ai/settlements` includes **Групи для обробки**.
 Select active, non-deleted, non-archived Signal groups and choose **Лише** to
 process messages belonging to any selected group, or **Окрім** to exclude
@@ -51,3 +64,14 @@ processing; saving requires replacing or removing unavailable selections.
 
 Behavior coverage: `wdintel-rs/src/ai_settlement/worker_group_tests.rs` and
 `wdintel-web/tests/e2e/settlement-worker-groups.spec.ts`.
+
+## Worker reliability and monitoring
+
+The admin worker settings select a primary AI engine and an optional fallback.
+See [AI queue reliability](../ai_worker/README.md) for deadlines, failure and
+progress semantics, compatibility, and deployment requirements.
+
+Queue health is published in `POST /api/monitoring` under `ai.settlement`.
+Future recurring troubleshooting queries must publish their useful results
+there and extend Echo Sergeant's checks and README, following the
+[monitoring contract](../server/README.md).

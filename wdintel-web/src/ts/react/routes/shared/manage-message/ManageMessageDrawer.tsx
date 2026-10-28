@@ -1,3 +1,5 @@
+import { CitedMessageCard } from '../message-replies/CitedMessageCard';
+import type { MessageTimeBasis } from '../../../services/api/user-settings';
 import { canWriteMessages, hasRole } from '../../../utils/roles';
 import { RadioFeaturesProvider } from '../RadioFeatures';
 import {
@@ -34,7 +36,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 
-import type { User, InboxMessage } from '../../../../../Bindings';
+import type { User, InboxMessage, CitedMessage } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerForm } from '../../../components/PowerForm';
@@ -73,6 +75,11 @@ import { useObservedWidth } from '../../../hooks/use-observed-width';
 import { resolveManageMessageEmbeddedFormLayout } from './manage-message-editor-layout';
 
 export type Props = {
+  engagedMessageId?: number;
+  replySourceUnavailable?: boolean;
+  citedMessage?: CitedMessage;
+  citationLoading?: boolean;
+  citationTimeBasis?: MessageTimeBasis;
   open: boolean;
   hideNetworks?: boolean;
   cyberEchoEnabled: boolean;
@@ -426,6 +433,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     const wideMessageBody = adaptiveEmbeddedForm && embeddedFormLayout.density === 'wide';
     const messageBodyRows = compactMessageBody ? 6 : wideMessageBody ? 4 : 12;
     const messageBodyMinHeight = compactMessageBody ? 162 : wideMessageBody ? 130 : null;
+    const isReplyMode = !props.editTarget && !props.reportSource && props.engagedMessageId != null;
     const canWrite = canWriteMessages(props.currentUser?.roles);
     const returnFocusRef = useRef<HTMLElement | null>(null);
     const wasOpenRef = useRef(false);
@@ -780,6 +788,29 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                           },
                         }}
                       >
+                        {isReplyMode ? (
+                          <section
+                            aria-label="Цитоване повідомлення"
+                            className="col-span-full mb-echo-sm min-w-0"
+                          >
+                            <Typography variant="subtitle2" className="mb-echo-xs!">
+                              Відповідь на повідомлення
+                            </Typography>
+                            {props.citationLoading ? (
+                              <CircularProgress size={20} aria-label="Завантаження цитати" />
+                            ) : (
+                              <CitedMessageCard
+                                message={props.citedMessage}
+                                timeBasis={props.citationTimeBasis ?? 'creation'}
+                              />
+                            )}
+                            {props.replySourceUnavailable ? (
+                              <PowerAlert severity="info" className="mt-echo-sm">
+                                Повідомлення буде збережено як звичайне, без зв’язку з джерелом.
+                              </PowerAlert>
+                            ) : null}
+                          </section>
+                        ) : null}
                         {isReportMode ? (
                           <ReportTextRow
                             originalText={originalReportText}
@@ -898,8 +929,9 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                                     <TextField
                                       {...field}
                                       onChange={(event) => {
-                                        drawerState.handleBodyChange(event.target.value);
-                                        field.onChange(event);
+                                        const value = event.target.value;
+                                        field.onChange(value);
+                                        drawerState.handleBodyChange(value);
                                       }}
                                       label="Текст повідомлення"
                                       fullWidth
@@ -946,6 +978,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
                             groupEditable={isReportMode}
+                            groupLocked={isReplyMode}
                             cyberEchoEnabled={props.cyberEchoEnabled}
                             deviceNameOptions={deviceNameOptions}
                             deviceNamesLoading={deviceNamesLoading}

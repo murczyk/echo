@@ -54,6 +54,7 @@ pub mod report_chunking;
 pub mod reports;
 pub mod saved_filter_unit_ids;
 pub mod search;
+mod search_windows;
 pub mod signals;
 pub mod types;
 pub mod unit;
@@ -174,6 +175,22 @@ async fn messenger_media(
         .await
         .c(h!())?;
 
+    if crate::messenger::audio_ref::is_reference(&media)
+        && req
+            .query_string()
+            .split('&')
+            .any(|part| part == "playback=1")
+    {
+        return crate::devices::audio::message_representation(
+            &env,
+            login_id_from_identity(&user).c(h!())?,
+            media.id,
+            crate::devices::audio::types::DeviceAudioRepresentation::Content,
+            Some(&req),
+        )
+        .await;
+    }
+
     Ok(serve_messenger_media(&req, env.as_ref(), &media)
         .await
         .c(h!())?)
@@ -186,21 +203,7 @@ async fn load_authorized_messenger_media(
 ) -> Result<signal_message_media::Model, AppError> {
     ensure_base_role(&env.dbx, user).await.c(h!())?;
     let login = login_id_from_identity(user).c(h!())?;
-    let media = signal_message_media::Entity::find_by_id(media_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?;
-    crate::messenger::media::ensure_media_access(
-        &env.dbx,
-        &login,
-        media.signal_message_id,
-    )
-    .await
-    .c(h!())?;
-
-    Ok(media)
+    crate::messenger::audio_ref::authorized(env, &login, media_id).await
 }
 
 #[get("/api/messenger/media/{media_id}/playback")]
@@ -214,6 +217,16 @@ async fn messenger_media_playback(
     let media = load_authorized_messenger_media(env.as_ref(), &user, path.0)
         .await
         .c(h!())?;
+    if crate::messenger::audio_ref::is_reference(&media) {
+        return crate::devices::audio::message_representation(
+            &env,
+            login_id_from_identity(&user).c(h!())?,
+            media.id,
+            crate::devices::audio::types::DeviceAudioRepresentation::Content,
+            Some(&req),
+        )
+        .await;
+    }
     match crate::messenger::media_preview::recommended(&env, &media).await {
         Ok(true) => {
             return Ok(HttpResponse::TemporaryRedirect()
@@ -368,6 +381,9 @@ pub(crate) async fn serve_messenger_media(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> Result<HttpResponse, AppError> {
+    if crate::messenger::audio_ref::is_reference(media) {
+        return serve_small_messenger_media(req, env, media).await;
+    }
     let cache_config =
         crate::messenger::media_local_cache::configured_config_best_effort(
             &env.config,
@@ -837,12 +853,13 @@ async fn rer_message_attachments_zip(
     // endpoint must not grant access merely because a message URL is known.
     crate::messenger::media::ensure_media_access(&env.dbx, &login, message_id)
         .await?;
-    let media = signal_message_media::Entity::find()
-        .filter(signal_message_media::Column::SignalMessageId.eq(message_id))
-        .order_by_asc(signal_message_media::Column::CreatedAt)
-        .all(&env.dbx)
-        .await
-        .c(h!())?;
+    let media = crate::messenger::audio_ref::for_messages(
+        &env,
+        &env.dbx,
+        &[message_id],
+    )
+    .await
+    .c(h!())?;
     if media.len() > crate::config::RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES {
         return Err(AppError::BL {
             msg: format!(
@@ -1487,6 +1504,9 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                         sii.lat IS NOT NULL
                         AND sii.lng IS NOT NULL
                         AND sg.name = $1
+                        AND (sg.datasource_id IS NULL OR sg.datasource_id NOT IN (
+                            SELECT id FROM datasource WHERE kind = $2
+                        ))
                         AND sg.deleted = false
                         AND sii.freq <> TO_CHAR(FLOOR(CAST(sii.freq AS NUMERIC)) + ROUND(MOD(CAST(sii.freq AS NUMERIC) * 1000, 1000) / 5) * 0.005, '999.9999')
                 ), invalidated AS (
@@ -1513,7 +1533,10 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
                 WHERE
                   sii.id = updated.id
             "#,
-        [group.clone().into()],
+        [
+            group.clone().into(),
+            crate::config::DATASOURCE_ECHO_NATIVE_KIND.into(),
+        ],
     );
 
     // println!("Query: {}", q);
@@ -1523,6 +1546,7 @@ pub async fn oneoff_round_freq(mode: Mode) -> Result<(), AppError> {
     println!("> rounded {} freqs", res.rows_affected());
     if res.rows_affected() > 0 {
         let master_keys = signal_group::Entity::find()
+            .filter(crate::datasource::native::external_group_condition())
             .filter(signal_group::Column::Name.eq(group))
             .filter(signal_group::Column::Deleted.eq(false))
             .select_only()

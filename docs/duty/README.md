@@ -20,8 +20,11 @@ preference. Analysis alone retains the event/creation-time choice; its saved
   Local sorting, pagination/unread cursors, pending buffers, and notification
   selection use `createdAtOrder` (microseconds), falling back only to
   `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
-- Cards use creation time for the primary/relative time display. Event dates remain
-  message metadata; editing an event date cannot move a card in the feed.
+- Cards use creation time for the primary absolute header timestamp. Their independent
+  receipt-time footer also uses `createdAt`: `HH:mm` today, `DD.MM, HH:mm` on other
+  dates this year, and `DD.MM.YYYY, HH:mm` in other years (Kyiv calendar).
+  The header date always includes the year. Event dates remain message metadata, and editing an
+  event date cannot move a card in the feed.
 - The sorting chooser exists only under Settings → Analysis. Existing Analysis
   preferences and its shared API/storage field are preserved.
 
@@ -81,6 +84,9 @@ Explicit initial loads, filter changes, and navigation remain immediate.
 Inbox events hydrate changed displayed and buffered messages without starting
 extra count polls. Buffer updates preserve the displayed window; identical
 payloads preserve message references to avoid unnecessary card reconciliation.
+Reply metadata follows the [message reply refresh contract](../message-replies.md#rendering-and-refresh):
+events invalidate citations, and admitted polling cycles reconcile them without
+starting extra counts. Citation timestamps always use creation time on Duty.
 Reuse an unread count for the loaded-tail boundary only when filters,
 cursor, and request generation match; different boundaries retain separate
 answers. For six loaded unread messages and three unloaded newer messages,

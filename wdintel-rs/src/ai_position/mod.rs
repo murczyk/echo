@@ -100,9 +100,29 @@ pub async fn save_ai_position_worker_settings(
             .await
             .context(h!())?;
     }
+    let existing = settings(&transaction).await.c(h!())?;
+    let fallback_ai_engine_id =
+        crate::ai_worker::parse_fallback_update(req.fallback_ai_engine_id)
+            .c(h!())?
+            .unwrap_or(
+                existing
+                    .and_then(|settings| settings.worker_fallback_ai_engine_id),
+            );
+    crate::ai_worker::validate_selection(
+        &transaction,
+        req.enabled,
+        ai_engine_id,
+        fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     upsert_settings(
         &transaction,
-        SettingsChange::Worker(req.enabled, ai_engine_id),
+        SettingsChange::Worker(
+            req.enabled,
+            ai_engine_id,
+            fallback_ai_engine_id,
+        ),
     )
     .await
     .c(h!())?;
@@ -110,6 +130,7 @@ pub async fn save_ai_position_worker_settings(
     Ok(Json(AiPositionWorkerSettingsItem {
         enabled: req.enabled,
         ai_engine_id: ai_engine_id.map(|id| id.to_string()),
+        fallback_ai_engine_id: fallback_ai_engine_id.map(|id| id.to_string()),
     }))
 }
 
@@ -196,7 +217,17 @@ where
 {
     let is_used = ai_position_settings::Entity::find()
         .filter(ai_position_settings::Column::WorkerEnabled.eq(true))
-        .filter(ai_position_settings::Column::WorkerAiEngineId.eq(ai_engine_id))
+        .filter(
+            sea_orm::Condition::any()
+                .add(
+                    ai_position_settings::Column::WorkerAiEngineId
+                        .eq(ai_engine_id),
+                )
+                .add(
+                    ai_position_settings::Column::WorkerFallbackAiEngineId
+                        .eq(ai_engine_id),
+                ),
+        )
         .one(dbx)
         .await
         .c(h!())?
@@ -209,8 +240,8 @@ where
     Ok(())
 }
 
-pub(crate) async fn settings(
-    dbx: &DatabaseConnection,
+pub(crate) async fn settings<C: sea_orm::ConnectionTrait>(
+    dbx: &C,
 ) -> anyhow::Result<Option<ai_position_settings::Model>> {
     ai_position_settings::Entity::find_by_id(AI_POSITION_SETTINGS_ID)
         .one(dbx)
@@ -281,6 +312,10 @@ async fn load_page(
             })
             .collect(),
         worker: AiPositionWorkerSettingsItem {
+            fallback_ai_engine_id: settings
+                .as_ref()
+                .and_then(|s| s.worker_fallback_ai_engine_id)
+                .map(|id| id.to_string()),
             enabled: settings.as_ref().is_some_and(|s| s.worker_enabled),
             ai_engine_id: settings
                 .as_ref()
@@ -294,7 +329,7 @@ async fn load_page(
 
 enum SettingsChange {
     Prompt(String),
-    Worker(bool, Option<Uuid>),
+    Worker(bool, Option<Uuid>, Option<Uuid>),
 }
 
 async fn upsert_settings<C>(
@@ -305,6 +340,7 @@ where
     C: sea_orm::ConnectionTrait,
 {
     let mut settings = ai_position_settings::ActiveModel {
+        worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
         id: Set(AI_POSITION_SETTINGS_ID),
         prompt: Set(String::new()),
         worker_enabled: Set(false),
@@ -316,12 +352,18 @@ where
             settings.prompt = Set(prompt);
             vec![ai_position_settings::Column::Prompt]
         }
-        SettingsChange::Worker(enabled, ai_engine_id) => {
+        SettingsChange::Worker(
+            enabled,
+            ai_engine_id,
+            fallback_ai_engine_id,
+        ) => {
+            settings.worker_fallback_ai_engine_id = Set(fallback_ai_engine_id);
             settings.worker_enabled = Set(enabled);
             settings.worker_ai_engine_id = Set(ai_engine_id);
             vec![
                 ai_position_settings::Column::WorkerEnabled,
                 ai_position_settings::Column::WorkerAiEngineId,
+                ai_position_settings::Column::WorkerFallbackAiEngineId,
             ]
         }
     };

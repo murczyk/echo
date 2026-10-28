@@ -65,13 +65,12 @@ for (const routePath of ['/rer-analysis', '/rer-analysis-neo']) {
     await expect.poll(() => inboxRequests.at(-1)?.search_mode).toBe('Substring');
     await expect.poll(() => countRequests.at(-1)?.search_mode).toBe('Substring');
     await page.getByRole('button', { name: 'Довідка про пошук' }).click();
-    await expect(page.getByText('Гнучкий пошук: також «ротний».')).toBeVisible();
-    await expect(page.getByText('Точний збіг: лише слово «рота», також «РОТА.».')).toBeVisible();
-    await expect(page.getByText('Збіг за входженням: також «воротар».')).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Докладніше про пошук' })).toHaveAttribute(
-      'href',
-      '/docs/analysis-search/',
-    );
+    await expect(page.getByText('Гнучкий пошук: також «ротний», «роти»')).toBeVisible();
+    await expect(page.getByText('Точний збіг: лише слово «рота»')).toBeVisible();
+    await expect(page.getByText('Збіг за входженням: також «воротар»')).toBeVisible();
+    await expect(
+      page.getByRole('link', { name: 'Докладніше на сторінці документації' }),
+    ).toHaveAttribute('href', '/docs/analysis-search/');
     if (routePath.endsWith('-neo')) await page.keyboard.press('Escape');
     else await page.getByRole('button', { name: 'Довідка про пошук' }).click();
     await search.click();
@@ -133,6 +132,7 @@ test('@regression #3780 Neo search modes and help remain reachable on a phone', 
   await page.setViewportSize({ width: 320, height: 844 });
   await installSearchApiMocks(page);
   await page.goto('/rer-analysis-neo');
+  await page.getByRole('button', { name: 'Закрити фільтри' }).click();
   await page.getByRole('button', { name: 'Відкрити пошук' }).click();
   const search = page.getByRole('combobox', { name: 'Пошук', exact: true });
   await search.fill('рота');
@@ -157,5 +157,7 @@ test('@regression #3780 Neo search modes and help remain reachable on a phone', 
   }
   await search.press('Escape');
   await help.click();
-  await expect(page.getByRole('link', { name: 'Докладніше про пошук' })).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'Докладніше на сторінці документації' }),
+  ).toBeVisible();
 });

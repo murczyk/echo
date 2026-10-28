@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from 'react';
 
 import type { AiPositionPageRsp, TestAiPositionRsp } from '../../../../Bindings';
+import { AiWorkerEngineSelect } from '../../components/AiWorkerEngineSelect';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
@@ -100,6 +101,7 @@ export function SettingsTab() {
   const [prompt, setPrompt] = useState('');
   const [workerEnabled, setWorkerEnabled] = useState(false);
   const [workerEngineId, setWorkerEngineId] = useState('');
+  const [fallbackEngineId, setFallbackEngineId] = useState('');
   const [testEngineId, setTestEngineId] = useState('');
   const [testText, setTestText] = useState(DEFAULT_TEST_TEXT);
   const [testResult, setTestResult] = useState<TestAiPositionRsp | null>(null);
@@ -113,6 +115,7 @@ export function SettingsTab() {
       setPrompt(next.prompt);
       setWorkerEnabled(next.worker.enabled);
       setWorkerEngineId(next.worker.aiEngineId ?? '');
+      setFallbackEngineId(next.worker.fallbackAiEngineId ?? '');
       setTestEngineId((current) => current || next.worker.aiEngineId || next.engines[0]?.id || '');
     } catch (loadError) {
       const message = `Не вдалося завантажити налаштування: ${errorMessage(loadError)}`;
@@ -171,11 +174,16 @@ export function SettingsTab() {
                 }
                 label="Розпізнавати позиції в нових повідомленнях і документах"
               />
-              <EngineSelect
-                page={page}
-                label="ШІ движок"
-                value={workerEngineId}
-                onChange={setWorkerEngineId}
+              <AiWorkerEngineSelect
+                engines={page.engines}
+                primaryId={workerEngineId}
+                fallbackId={fallbackEngineId}
+                required={workerEnabled}
+                disabled={busy}
+                onChange={(primaryId, fallbackId) => {
+                  setWorkerEngineId(primaryId);
+                  setFallbackEngineId(fallbackId);
+                }}
               />
               <PowerButton
                 variant="contained"
@@ -185,6 +193,7 @@ export function SettingsTab() {
                     await saveAiPositionWorkerSettings({
                       enabled: workerEnabled,
                       aiEngineId: workerEngineId || null,
+                      fallbackAiEngineId: fallbackEngineId || null,
                     });
                     await load();
                     return 'Налаштування воркера збережено';

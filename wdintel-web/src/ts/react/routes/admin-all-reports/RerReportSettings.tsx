@@ -233,7 +233,7 @@ export function RerReportSettings() {
               <TextField
                 {...params}
                 label="Працює над звітом РЕР"
-                helperText="Тільки ці користувачі бачать прапорець «для звіту РЕР» в аналізі"
+                helperText="Тільки ці користувачі бачать прапорець «Для звіту РЕР» в аналізі"
               />
             )}
             className="w-full min-[900px]:w-[620px]"

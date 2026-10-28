@@ -9,6 +9,7 @@ WorkingDirectory=/etc/iggy/data
 Environment=IGGY_CONFIG_PATH=/etc/iggy/config.toml
 EnvironmentFile=-/etc/iggy/root.env
 ExecStart=/usr/local/bin/iggy-server
+LimitNOFILE=1048576
 
 Restart=on-failure
 RestartSec=5

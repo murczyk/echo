@@ -9,7 +9,7 @@ use actix_web::{
     body::MessageBody,
     dev::{ServiceRequest, ServiceResponse},
     middleware::Next,
-    Error,
+    Error, HttpMessage,
 };
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
@@ -222,6 +222,8 @@ where
 
     let start_time = Instant::now();
     let request_id = Uuid::new_v4().to_string();
+    req.extensions_mut()
+        .insert(crate::read_query::RequestId(request_id.clone()));
     let timestamp = chrono::Utc::now().timestamp();
 
     // Extract request details
@@ -363,7 +365,7 @@ where
                     .await;
             }
         }
-        Err(_) => {
+        Err(error) => {
             // Even on error, we might want to log the response
             let response_time_ms = start_time.elapsed().as_millis() as u64;
 
@@ -377,9 +379,11 @@ where
                 request_headers: None,
                 request_body: None,
                 request_content_type: None,
-                response_status: Some(500),
+                response_status: Some(
+                    error.as_response_error().status_code().as_u16(),
+                ),
                 response_time_ms: Some(response_time_ms),
-                event_type: "error".to_string(),
+                event_type: "response".to_string(),
                 client_ip,
                 user_agent,
             };
@@ -646,6 +650,67 @@ mod tests {
             "019c42d7-499d-7e83-be43-62dc838ea42a"
         )));
         assert!(!identity_requires_logout(None));
+    }
+
+    // https://github.com/echoua/echo/issues/3826
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn recorded_middleware_errors_preserve_http_status_3826() {
+        use actix_web::{
+            dev::ServiceResponse, http::StatusCode, middleware, test, App,
+        };
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let mut redis = crate::new_redis_for_db(&config, 15).await.unwrap();
+        for status in [
+            StatusCode::UNAUTHORIZED,
+            StatusCode::FORBIDDEN,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            let path = format!("/api/telemetry-test/{}", uuid::Uuid::new_v4());
+            let app = test::init_service(
+                App::new()
+                    .wrap_fn(move |_, _| {
+                        std::future::ready(Err::<ServiceResponse, _>(
+                            actix_web::error::InternalError::new(
+                                "rejected", status,
+                            )
+                            .into(),
+                        ))
+                    })
+                    .wrap(middleware::from_fn(super::mk_activity_middleware(
+                        Some(redis.clone()),
+                    ))),
+            )
+            .await;
+            let error = test::try_call_service(
+                &app,
+                test::TestRequest::post().uri(&path).to_request(),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.as_response_error().status_code(), status);
+            let members: Vec<String> =
+                redis.zrange("echo-md-requests", 0, -1).await.unwrap();
+            let mut recorded_status = None;
+            for member in members {
+                let key = format!("echo-md-requests:{member}");
+                let payload: Option<String> = redis.get(&key).await.unwrap();
+                let Some(payload) = payload else { continue };
+                let activity: ActivityDetails =
+                    serde_json::from_str(&payload).unwrap();
+                if activity.request_path != path {
+                    continue;
+                }
+                if activity.event_type == "error" {
+                    recorded_status = activity.response_status;
+                }
+                let _: () =
+                    redis.zrem("echo-md-requests", member).await.unwrap();
+                let _: () = redis.del(key).await.unwrap();
+            }
+            assert_eq!(recorded_status, Some(status.as_u16()));
+        }
     }
 
     #[tokio::test]

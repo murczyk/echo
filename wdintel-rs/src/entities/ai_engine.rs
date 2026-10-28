@@ -41,8 +41,6 @@ pub enum Relation {
     AiAgentSecurityReview,
     #[sea_orm(has_many = "super::ai_callsign_parse_result::Entity")]
     AiCallsignParseResult,
-    #[sea_orm(has_many = "super::ai_callsign_settings::Entity")]
-    AiCallsignSettings,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
     #[sea_orm(has_many = "super::ai_intel_report_attempt::Entity")]
@@ -51,12 +49,12 @@ pub enum Relation {
     AiIntelReportEngineBudget,
     #[sea_orm(has_many = "super::ai_position_mention::Entity")]
     AiPositionMention,
-    #[sea_orm(has_many = "super::ai_position_settings::Entity")]
-    AiPositionSettings,
     #[sea_orm(has_many = "super::ai_settlement_parse_result::Entity")]
     AiSettlementParseResult,
-    #[sea_orm(has_many = "super::ai_settlement_settings::Entity")]
-    AiSettlementSettings,
+    #[sea_orm(has_many = "super::ai_transcript_analysis_settings::Entity")]
+    AiTranscriptAnalysisSettings,
+    #[sea_orm(has_many = "super::ai_transcript_analysis_test_result::Entity")]
+    AiTranscriptAnalysisTestResult,
     #[sea_orm(has_many = "super::media_summary::Entity")]
     MediaSummary,
     #[sea_orm(has_many = "super::media_summary_settings::Entity")]
@@ -105,12 +103,6 @@ impl Related<super::ai_callsign_parse_result::Entity> for Entity {
     }
 }
 
-impl Related<super::ai_callsign_settings::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AiCallsignSettings.def()
-    }
-}
-
 impl Related<super::ai_chat::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiChat.def()
@@ -135,21 +127,21 @@ impl Related<super::ai_position_mention::Entity> for Entity {
     }
 }
 
-impl Related<super::ai_position_settings::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::AiPositionSettings.def()
-    }
-}
-
 impl Related<super::ai_settlement_parse_result::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiSettlementParseResult.def()
     }
 }
 
-impl Related<super::ai_settlement_settings::Entity> for Entity {
+impl Related<super::ai_transcript_analysis_settings::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::AiSettlementSettings.def()
+        Relation::AiTranscriptAnalysisSettings.def()
+    }
+}
+
+impl Related<super::ai_transcript_analysis_test_result::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiTranscriptAnalysisTestResult.def()
     }
 }
 
@@ -198,6 +190,19 @@ impl Related<super::ai_settlement_test_message::Entity> for Entity {
     fn via() -> Option<RelationDef> {
         Some(
             super::ai_settlement_parse_result::Relation::AiEngine
+                .def()
+                .rev(),
+        )
+    }
+}
+
+impl Related<super::ai_transcript_analysis_test_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::ai_transcript_analysis_test_result::Relation::AiTranscriptAnalysisTestMessage.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::ai_transcript_analysis_test_result::Relation::AiEngine
                 .def()
                 .rev(),
         )

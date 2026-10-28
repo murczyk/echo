@@ -10,6 +10,7 @@ import {
   type MouseEventHandler,
   type PointerEventHandler,
   type ReactElement,
+  type TouchEventHandler,
 } from 'react';
 
 import type { IntelligenceReportSummary } from '../intelligence-reports';
@@ -25,7 +26,7 @@ type PreviewTriggerProps = {
   onMouseLeave?: MouseEventHandler<HTMLElement>;
   onMouseMove?: MouseEventHandler<HTMLElement>;
   onPointerDown?: PointerEventHandler<HTMLElement>;
-  onTouchStart?: React.TouchEventHandler<HTMLElement>;
+  onTouchStart?: TouchEventHandler<HTMLElement>;
 };
 
 function canHover(): boolean {
@@ -69,16 +70,16 @@ function MessageSummaryPreviewContent({
       }}
     >
       <header className="border-b border-solid border-(--color-divider) px-3 py-2">
-        <strong className="text-sm">{label}</strong>
+        <strong className="message-card-summary-title">{label}</strong>
       </header>
       {unavailable ? (
-        <div className="px-3 py-2.5 text-sm leading-5">Прев’ю недоступне</div>
+        <div className="message-card-secondary-text px-3 py-2.5">Прев’ю недоступне</div>
       ) : (
         <>
-          <div className="max-h-60 overflow-y-auto whitespace-pre-wrap wrap-break-word px-3 py-2.5 text-sm leading-5">
+          <div className="message-card-secondary-text max-h-60 overflow-y-auto whitespace-pre-wrap wrap-break-word px-3 py-2.5">
             {summary.text.trim() || 'Без тексту'}
           </div>
-          <dl className="m-0 grid gap-1 border-t border-solid border-(--color-divider) px-3 py-2 text-xs">
+          <dl className="message-card-caption m-0 grid gap-1 border-t border-solid border-(--color-divider) px-3 py-2">
             <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">
               <dt className="text-(--color-action)">Група</dt>
               <dd className="m-0 wrap-break-word font-semibold">{groupName ?? 'Без групи'}</dd>

@@ -234,6 +234,18 @@ async fn ensure_group(
 ) -> anyhow::Result<String> {
     let group_master_key = source_group_key(&group);
     let echo_id = mk_echo_id(group.id);
+    crate::datasource::native::require_external_datasource(txn, datasource_id)
+        .await
+        .c(h!())?;
+    for key in group_master_key.iter().chain(std::iter::once(&echo_id)) {
+        crate::datasource::native::ensure_group_datasource_compatible(
+            txn,
+            key,
+            datasource_id,
+        )
+        .await
+        .c(h!())?;
+    }
 
     let keys = if let Some(master_key) = &group_master_key {
         vec![echo_id.clone(), master_key.clone()]
@@ -242,6 +254,7 @@ async fn ensure_group(
     };
 
     let signal_group_candidates = signal_group::Entity::find()
+        .filter(crate::datasource::native::external_group_condition())
         .filter(
             Condition::any()
                 .add(signal_group::Column::Name.eq(group.name.clone()))
@@ -331,6 +344,13 @@ async fn ensure_group(
         .await
         .c(h!())?
     } else if let Some(datasource_group_by_name) = datasource_group_by_name {
+        crate::datasource::native::ensure_group_datasource_compatible(
+            txn,
+            &datasource_group_by_name.group_master_key,
+            datasource_id,
+        )
+        .await
+        .c(h!())?;
         let owned_signal_group = signal_group::Entity::find()
             .filter(
                 signal_group::Column::MasterKey
@@ -390,6 +410,20 @@ async fn move_datasource_group_to_source_group(
     signal_group: Option<&signal_group::Model>,
     group_name: &str,
 ) -> anyhow::Result<datasource_group::Model> {
+    crate::datasource::native::ensure_group_datasource_compatible(
+        txn,
+        &datasource_group.group_master_key,
+        datasource_group.datasource_id,
+    )
+    .await
+    .c(h!())?;
+    crate::datasource::native::ensure_group_datasource_compatible(
+        txn,
+        group_master_key,
+        datasource_group.datasource_id,
+    )
+    .await
+    .c(h!())?;
     let signal_group = ensure_source_signal_group(
         txn,
         datasource_group.datasource_id,
@@ -414,6 +448,29 @@ async fn merge_signal_group_references(
     source_signal_group: signal_group::Model,
     target_signal_group: &signal_group::Model,
 ) -> anyhow::Result<()> {
+    let mapping = datasource_group::Entity::find_by_id(datasource_group_id)
+        .one(txn)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    crate::datasource::native::require_external_datasource(
+        txn,
+        mapping.datasource_id,
+    )
+    .await
+    .c(h!())?;
+    for key in [
+        &source_signal_group.master_key,
+        &target_signal_group.master_key,
+    ] {
+        crate::datasource::native::ensure_group_datasource_compatible(
+            txn,
+            key,
+            mapping.datasource_id,
+        )
+        .await
+        .c(h!())?;
+    }
     signal_message_group::Entity::update_many()
         .filter(
             signal_message_group::Column::GroupMasterKey
@@ -520,6 +577,13 @@ async fn sync_datasource_group(
     signal_group: Option<&signal_group::Model>,
     group_name: &str,
 ) -> anyhow::Result<datasource_group::Model> {
+    crate::datasource::native::ensure_group_datasource_compatible(
+        txn,
+        &model.group_master_key,
+        model.datasource_id,
+    )
+    .await
+    .c(h!())?;
     if let Some(signal_group) = signal_group {
         sync_signal_group(txn, model.datasource_id, signal_group, group_name)
             .await
@@ -538,12 +602,19 @@ async fn sync_datasource_group(
     }
 }
 
-async fn sync_signal_group(
+pub(crate) async fn sync_signal_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     signal_group: &signal_group::Model,
     group_name: &str,
 ) -> anyhow::Result<signal_group::Model> {
+    crate::datasource::native::ensure_group_datasource_compatible(
+        txn,
+        &signal_group.master_key,
+        datasource_id,
+    )
+    .await
+    .c(h!())?;
     let signal_group_name = signal_group.name.as_deref();
 
     if signal_group.datasource_id == Some(datasource_id)
@@ -559,12 +630,19 @@ async fn sync_signal_group(
     }
 }
 
-async fn insert_or_sync_signal_group(
+pub(crate) async fn insert_or_sync_signal_group(
     txn: &DatabaseTransaction,
     datasource_id: i64,
     master_key: String,
     group_name: &str,
 ) -> anyhow::Result<signal_group::Model> {
+    crate::datasource::native::ensure_group_datasource_compatible(
+        txn,
+        &master_key,
+        datasource_id,
+    )
+    .await
+    .c(h!())?;
     signal_group::Entity::insert(signal_group::ActiveModel {
         master_key: Set(master_key.clone()),
         name: Set(Some(group_name.to_string())),
@@ -644,6 +722,82 @@ mod tests {
         mk_signal_message, mk_signal_message_group,
     };
     use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn operator_does_not_reuse_native_group_by_name_or_key() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let native = crate::datasource::native::load(&txn).await.unwrap();
+        let native_key = format!(
+            "{}{}",
+            crate::config::DATASOURCE_ECHO_NATIVE_GROUP_PREFIX,
+            uuid::Uuid::new_v4()
+        );
+        let native_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(native_key.clone()),
+                name: Set(Some("Shared name".into())),
+                datasource_id: Set(Some(native.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let operator = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                kind: Set("echo_operator".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let resolved = ensure_group(
+            operator.id,
+            &txn,
+            types::Group {
+                id: "native-isolation".into(),
+                name: "Shared name".into(),
+                source_signal_group_id: None,
+                source_whatsapp_group_jid: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_ne!(resolved, native_key);
+        assert!(ensure_group(
+            operator.id,
+            &txn,
+            types::Group {
+                id: "native-explicit".into(),
+                name: "Replacement".into(),
+                source_signal_group_id: Some(native_key.clone()),
+                source_whatsapp_group_jid: None,
+            }
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            signal_group::Entity::find_by_id(native_key.clone())
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap(),
+            native_group
+        );
+        assert_eq!(
+            datasource_group::Entity::find()
+                .filter(datasource_group::Column::DatasourceId.eq(operator.id))
+                .filter(datasource_group::Column::GroupMasterKey.eq(native_key))
+                .count(&txn)
+                .await
+                .unwrap(),
+            0
+        );
+        txn.rollback().await.unwrap();
+    }
 
     #[test]
     fn source_group_key_ignores_blank_values() {

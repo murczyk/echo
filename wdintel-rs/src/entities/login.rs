@@ -79,6 +79,10 @@ pub enum Relation {
     DeltaLogin,
     #[sea_orm(has_many = "super::device::Entity")]
     Device,
+    #[sea_orm(has_many = "super::device_audio_forwarding_group::Entity")]
+    DeviceAudioForwardingGroup,
+    #[sea_orm(has_many = "super::device_audio_forwarding_settings::Entity")]
+    DeviceAudioForwardingSettings,
     #[sea_orm(has_many = "super::device_name::Entity")]
     DeviceName,
     #[sea_orm(has_many = "super::echo_missing_message::Entity")]
@@ -89,6 +93,8 @@ pub enum Relation {
     GoiIntegration,
     #[sea_orm(has_many = "super::goi_integration_access_login::Entity")]
     GoiIntegrationAccessLogin,
+    #[sea_orm(has_many = "super::importance_operation::Entity")]
+    ImportanceOperation,
     #[sea_orm(has_many = "super::log_users_report_generation::Entity")]
     LogUsersReportGeneration,
     #[sea_orm(has_one = "super::login_totp::Entity")]
@@ -99,6 +105,16 @@ pub enum Relation {
     NetworkFreqLastDatetimeInAor,
     #[sea_orm(has_many = "super::network_recalculation_task::Entity")]
     NetworkRecalculationTask,
+    #[sea_orm(has_many = "super::notification_event::Entity")]
+    NotificationEvent,
+    #[sea_orm(has_many = "super::notification_read_boundary::Entity")]
+    NotificationReadBoundary,
+    #[sea_orm(
+        has_many = "super::notification_read_boundary_completed::Entity"
+    )]
+    NotificationReadBoundaryCompleted,
+    #[sea_orm(has_many = "super::notification_receipt::Entity")]
+    NotificationReceipt,
     #[sea_orm(
         belongs_to = "super::organism::Entity",
         from = "Column::OrganismId",
@@ -197,6 +213,8 @@ pub enum Relation {
     TagsOrdering,
     #[sea_orm(has_many = "super::url_visit_notification::Entity")]
     UrlVisitNotification,
+    #[sea_orm(has_many = "super::user_group_feed_read_state::Entity")]
+    UserGroupFeedReadState,
     #[sea_orm(has_one = "super::user_settings::Entity")]
     UserSettings,
 }
@@ -303,6 +321,18 @@ impl Related<super::device::Entity> for Entity {
     }
 }
 
+impl Related<super::device_audio_forwarding_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingGroup.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingSettings.def()
+    }
+}
+
 impl Related<super::device_name::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeviceName.def()
@@ -333,6 +363,12 @@ impl Related<super::goi_integration_access_login::Entity> for Entity {
     }
 }
 
+impl Related<super::importance_operation::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::ImportanceOperation.def()
+    }
+}
+
 impl Related<super::log_users_report_generation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::LogUsersReportGeneration.def()
@@ -360,6 +396,30 @@ impl Related<super::network_freq_last_datetime_in_aor::Entity> for Entity {
 impl Related<super::network_recalculation_task::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::NetworkRecalculationTask.def()
+    }
+}
+
+impl Related<super::notification_event::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationEvent.def()
+    }
+}
+
+impl Related<super::notification_read_boundary::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReadBoundary.def()
+    }
+}
+
+impl Related<super::notification_read_boundary_completed::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReadBoundaryCompleted.def()
+    }
+}
+
+impl Related<super::notification_receipt::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::NotificationReceipt.def()
     }
 }
 
@@ -603,6 +663,12 @@ impl Related<super::url_visit_notification::Entity> for Entity {
     }
 }
 
+impl Related<super::user_group_feed_read_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UserGroupFeedReadState.def()
+    }
+}
+
 impl Related<super::user_settings::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::UserSettings.def()
@@ -629,15 +695,6 @@ impl Related<super::sigint_network_freq::Entity> for Entity {
                 .def()
                 .rev(),
         )
-    }
-}
-
-impl Related<super::signal_group::Entity> for Entity {
-    fn to() -> RelationDef {
-        super::signal_group_admin::Relation::SignalGroup.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::signal_group_admin::Relation::Login.def().rev())
     }
 }
 

@@ -593,6 +593,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     callsigns: callsigns.clone(),
                     checked: m.checked.unwrap_or(false),
                     important: false,
+                    ai_important: false,
                     bookmarked: false,
                     timestamp: m
                         .timestamp

@@ -16,6 +16,7 @@ pub struct BlSzdGroupUpdateRes {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
@@ -107,6 +108,14 @@ pub async fn bl_szd_group_update(
     )
     .await
     .c(h!())?;
+    let ai_transcript_analysis_enabled =
+        crate::ai_transcript_analysis::settings::set_group(
+            txn,
+            &szd.group_master_key,
+            req.ai_transcript_analysis_enabled,
+        )
+        .await
+        .c(h!())?;
     let fetch_new_messages = update_group_fetch_new_messages_if_present(
         req.fetch_new_messages,
         &szd.group_master_key,
@@ -164,6 +173,7 @@ pub async fn bl_szd_group_update(
         interseption_kind,
         disable_network_assignment,
         is_aviation_group,
+        ai_transcript_analysis_enabled,
         fetch_new_messages,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_user_details: render_group_logins(
@@ -227,7 +237,7 @@ pub async fn update_group_aviation_if_present(
     Ok(is_aviation_group)
 }
 
-async fn update_group_disable_network_assignment_if_present(
+pub(crate) async fn update_group_disable_network_assignment_if_present(
     disable_network_assignment: Option<bool>,
     master_key: &str,
     txn: &DatabaseTransaction,
@@ -399,7 +409,7 @@ pub async fn bl_zones_datasources_group_add(
     Ok(is_secret)
 }
 
-async fn update_group_admin_data(
+pub(crate) async fn update_group_admin_data(
     txn: &DatabaseTransaction,
     master_key: &str,
     short_note: Option<String>,
@@ -649,6 +659,19 @@ pub async fn replace_group_admin_logins(
     .c(h!())?
     .into_iter()
     .collect::<HashSet<_>>();
+
+    if crate::datasource::native::is_native_group(txn, master_key)
+        .await
+        .c(h!())?
+    {
+        let logins = admin_logins
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        crate::messenger::group::native::ensure_active_admin(txn, &logins)
+            .await
+            .c(h!())?;
+    }
 
     signal_group_admin::Entity::update_many()
         .col_expr(signal_group_admin::Column::Deleted, Expr::value(true))
@@ -1022,6 +1045,7 @@ pub async fn bl_szd_groups_list(
         interseption_kind: db_enums::InterseptionKind,
         disable_network_assignment: bool,
         is_aviation_group: Option<bool>,
+        ai_transcript_analysis_enabled: Option<bool>,
         fetch_new_messages: Option<bool>,
         short_note: Option<String>,
         long_note: Option<String>,
@@ -1053,6 +1077,10 @@ pub async fn bl_szd_groups_list(
             "disable_network_assignment",
         )
         .column_as(signal_group::Column::IsAviationGroup, "is_aviation_group")
+        .column_as(
+            signal_group::Column::AiTranscriptAnalysisEnabled,
+            "ai_transcript_analysis_enabled",
+        )
         .column_as(signal_group::Column::ColorKey, "color_key")
         .column_as(signal_group::Column::FetchNewMessages, "fetch_new_messages")
         .column(group_admin_data::Column::ShortNote)
@@ -1075,6 +1103,7 @@ pub async fn bl_szd_groups_list(
             bool,
             Option<bool>,
             Option<bool>,
+            Option<bool>,
             i64,
             Option<String>,
             Option<String>,
@@ -1087,6 +1116,7 @@ pub async fn bl_szd_groups_list(
             row.interseption_kind.into(),
             row.disable_network_assignment,
             row.is_aviation_group,
+            row.ai_transcript_analysis_enabled,
             row.fetch_new_messages,
             row.id,
             row.short_note,
@@ -1130,6 +1160,7 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     is_aviation_group,
+                    ai_transcript_analysis_enabled,
                     fetch_new_messages,
                     szd_id,
                     short_note,
@@ -1145,6 +1176,8 @@ pub async fn bl_szd_groups_list(
                     interseption_kind,
                     disable_network_assignment,
                     is_aviation_group: is_aviation_group.unwrap_or(false),
+                    ai_transcript_analysis_enabled:
+                        ai_transcript_analysis_enabled.unwrap_or(false),
                     fetch_new_messages: fetch_new_messages.unwrap_or(true),
                     allowed_users: group_users
                         .get(&master_key)

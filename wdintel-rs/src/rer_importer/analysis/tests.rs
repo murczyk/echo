@@ -3067,6 +3067,43 @@ async fn assert_full_period_search_results_3780(
     );
 }
 
+async fn seed_full_period_audio_search_3780(
+    fixture: &RerAnalysisFixture,
+    date: NaiveDateTime,
+) -> i64 {
+    let db = &fixture.env.dbx;
+    let message = mk_analysis_message(
+        db,
+        "Аудіозапис",
+        "155.2750",
+        date,
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"
+        with source as (
+            insert into transcription_source(id, source_key)
+            values ($1, '3780-audio/' || $1::text) returning id
+        ), audio as (
+            insert into signal_message_audio_ref
+                (id, signal_message_id, audio_id, transcription_source_id)
+            select $1, $2, $1, id from source returning id
+        )
+        insert into signal_message_audio_search(id, signal_message_id, file_name)
+        select id, $2, 'Береза.wav' from audio
+        "#,
+        [uuid::Uuid::new_v4().into(), message.id.into()],
+    ))
+    .await
+    .unwrap();
+    message.id
+}
+
 async fn assert_attachment_search_without_inbox_3780(
     fixture: &RerAnalysisFixture,
     login: &uuid::Uuid,
@@ -3180,6 +3217,7 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
         date,
     )
     .await;
+    let audio = seed_full_period_audio_search_3780(&fixture, date).await;
     let mut other_frequency = 0;
     for (index, group, datetime, deleted) in [
         (0, &fixture.alpha, date, false),
@@ -3219,6 +3257,8 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
             ] {
                 for (search, indexes) in [
                     ("Береза", vec![0, 1, 2, 3]),
+                    ("Береза or Вільха or Сосна or Клен or Ясен or Дуб or Граб or Тис or Бук or Кедр or Липа or Осика -\"невідоме місце\" -\"відсутня фраза\" -\"немає тексту\" -\"неіснуючий запис\"", vec![0, 1, 2, 3, 4]),
+                    ("Береза or Вільха -\"зміна позиції\" -\"відсутня фраза\"", vec![0, 1, 2, 4]),
                     ("-Береза", vec![4]),
                     ("\"зміна позиції\"", vec![3]),
                 ] {
@@ -3248,19 +3288,30 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
                         .iter()
                         .map(|index| ids[*index])
                         .collect::<Vec<_>>();
-                    if selected_freqs.is_none() && search == "Береза" {
+                    if search == "Береза" || search.starts_with("Береза or ") {
+                        expected.push(audio);
+                    }
+                    if selected_freqs.is_none() && (search == "Береза" || search.starts_with("Береза or ")) {
                         expected.push(other_frequency);
                     }
                     assert_full_period_search_results_3780(
-                        &fixture, &login.id, &req, expected,
-                    )
-                    .await;
+                        &fixture, &login.id, &req, expected.clone(),
+                    ).await;
+                    crate::attachments::search::in_source_count_window_async(
+                        assert_full_period_search_results_3780(&fixture, &login.id, &req, expected),
+                    ).await;
                 }
             }
         }
     }
     assert_attachment_search_without_inbox_3780(
         &fixture, &login.id, ids[1], date,
+    )
+    .await;
+    crate::attachments::search::in_source_count_window_async(
+        assert_attachment_search_without_inbox_3780(
+            &fixture, &login.id, ids[1], date,
+        ),
     )
     .await;
 }
@@ -4913,6 +4964,314 @@ async fn rer_analysis_callsign_and_tag_stats_follow_tag_like_filters() {
         fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([(tag_comment.id, 3)])
     );
+}
+
+async fn seed_note_filter_comments(
+    fixture: &RerAnalysisFixture,
+) -> (BTreeSet<i64>, BTreeSet<i64>) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    let datetime = test_dt(2026, 3, 1, 10, 5);
+    let mut all_note_ids = BTreeSet::new();
+    let mut user_note_ids = BTreeSet::new();
+    for legacy in [true, false] {
+        for authors in [
+            vec![system_login_id],
+            vec![login.id],
+            vec![system_login_id, login.id],
+        ] {
+            let message = mk_analysis_message(
+                db,
+                "note-filter-message",
+                "940.9",
+                datetime,
+                &[&fixture.alpha],
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+            all_note_ids.insert(message.id);
+            if authors.contains(&login.id) {
+                user_note_ids.insert(message.id);
+            }
+            for author in authors {
+                if legacy {
+                    mk_sigint_comment(
+                        db,
+                        sigint_comment::ActiveModel {
+                            signal_message_id: Set(message.id),
+                            login_id: Set(author),
+                            comment: Set("note".to_string()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                } else {
+                    crate::sigint::comments::create_linked_message_comment_from_ingestion(
+                        db,
+                        &fixture.env.config,
+                        message.id,
+                        &author,
+                        "note",
+                        datetime,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+    }
+    (all_note_ids, user_note_ids)
+}
+
+async fn mk_note_filter_parent(
+    fixture: &RerAnalysisFixture,
+) -> signal_message::Model {
+    mk_analysis_message(
+        &fixture.env.dbx,
+        "note-filter-parent",
+        "940.9",
+        test_dt(2026, 3, 1, 10, 5),
+        &[&fixture.alpha],
+        &[],
+        false,
+    )
+    .await
+    .unwrap()
+}
+
+async fn seed_note_filter_sender_authors(
+    fixture: &RerAnalysisFixture,
+    all_note_ids: &mut BTreeSet<i64>,
+    user_note_ids: &mut BTreeSet<i64>,
+) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let system_login_id = crate::users::system_login_id(db).await.unwrap();
+    for (author, sender, system_only) in [
+        (None, Some(system_login_id.to_string()), true),
+        (None, Some(system_login_id.to_string().to_uppercase()), true),
+        (None, Some(system_login_id.simple().to_string()), true),
+        (None, Some(system_login_id.braced().to_string()), true),
+        (None, Some(system_login_id.urn().to_string()), true),
+        (None, Some(login.id.to_string()), false),
+        (Some(login.id), Some(system_login_id.to_string()), false),
+        (Some(system_login_id), Some(login.id.to_string()), true),
+        (None, None, false),
+        (None, Some("non-UUID sender".to_string()), false),
+    ] {
+        let parent = mk_note_filter_parent(fixture).await;
+        let child = crate::sigint::comments::create_linked_message_comment_from_ingestion(
+            db,
+            &fixture.env.config,
+            parent.id,
+            &login.id,
+            "note",
+            test_dt(2026, 3, 1, 10, 5),
+            None,
+        )
+        .await
+        .unwrap();
+        signal_message::ActiveModel {
+            id: Set(child),
+            login_id: Set(author),
+            sender: Set(sender),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .unwrap();
+        all_note_ids.insert(parent.id);
+        if !system_only {
+            user_note_ids.insert(parent.id);
+        }
+    }
+}
+
+async fn seed_note_filter_non_notes(
+    fixture: &RerAnalysisFixture,
+) -> BTreeSet<i64> {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let parent = mk_note_filter_parent(fixture).await;
+    mk_sigint_comment(
+        db,
+        sigint_comment::ActiveModel {
+            signal_message_id: Set(parent.id),
+            login_id: Set(login.id),
+            comment: Set(String::new()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let mut ids = BTreeSet::from([parent.id]);
+    for (body, deleted, relation_kind) in [
+        (Some(""), false, intel_product_filter::RELATION_KIND_COMMENT),
+        (None, false, intel_product_filter::RELATION_KIND_COMMENT),
+        (
+            Some("note"),
+            true,
+            intel_product_filter::RELATION_KIND_COMMENT,
+        ),
+        (
+            Some("report"),
+            false,
+            intel_product_filter::RELATION_KIND_REPORT,
+        ),
+    ] {
+        let parent = mk_note_filter_parent(fixture).await;
+        ids.insert(parent.id);
+        let child = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                login_id: Set(Some(login.id)),
+                body: Set(body.map(str::to_string)),
+                deleted: Set(deleted),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(child.id),
+            source_message_id: Set(parent.id),
+            relation_kind: Set(relation_kind),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        mk_sigint_comment(
+            db,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(parent.id),
+                login_id: Set(login.id),
+                comment: Set("stale migrated note".to_string()),
+                migrated_signal_message_id: Set(Some(child.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    ids
+}
+
+async fn assert_note_filter_matches(
+    fixture: &RerAnalysisFixture,
+    request: &InboxMessagesReq,
+    candidates: &[i64],
+    expected: &BTreeSet<i64>,
+) {
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let logins = crate::users::get_organism_login_ids_by_id(db, &login.id)
+        .await
+        .unwrap();
+    for nolimit in [true, false] {
+        let request = InboxMessagesReq {
+            nolimit: Some(nolimit),
+            ..request.clone()
+        };
+        let messages = crate::rer_importer::inbox::get_inbox_messages(
+            &login.id,
+            &logins,
+            &fixture.env,
+            &request,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            messages.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>(),
+            *expected,
+        );
+    }
+    let mut stats_request = analysis_stats_req0(fixture);
+    stats_request.or_with_extended_form = Some(true);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &stats_request)
+            .await
+            .unwrap(),
+        expected.len() as i64,
+    );
+    let query =
+        crate::rer_importer::inbox::query::build_inbox_query_for_candidate_ids(
+            db,
+            &login.id,
+            &fixture.env,
+            request,
+            candidates,
+            false,
+        )
+        .await
+        .unwrap();
+    let matching_ids = db
+        .query_all_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.try_get_by::<i64, _>("id").unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(matching_ids, *expected);
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_note_filter_respects_comment_parsing_setting() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let (mut all_note_ids, mut user_note_ids) =
+        seed_note_filter_comments(&fixture).await;
+    seed_note_filter_sender_authors(
+        &fixture,
+        &mut all_note_ids,
+        &mut user_note_ids,
+    )
+    .await;
+    let mut candidates = seed_note_filter_non_notes(&fixture).await;
+    candidates.extend(&all_note_ids);
+    let candidates = candidates.into_iter().collect::<Vec<_>>();
+    let request = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        or_with_extended_form: Some(true),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    for (index, (enabled, expected)) in [
+        (None, &all_note_ids),
+        (Some(true), &user_note_ids),
+        (Some(false), &all_note_ids),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if let Some(enabled) = enabled {
+            system_settings::ActiveModel {
+                sigint_comment_parsing_enabled: Set(enabled),
+                updated_at: Set(test_dt(2026, 3, 1, 12, index as u32)),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .unwrap();
+        }
+        system_settings::ActiveModel {
+            sigint_comment_parsing_enabled: Set(enabled != Some(true)),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        assert_note_filter_matches(&fixture, &request, &candidates, expected)
+            .await;
+    }
 }
 
 #[tokio::test]
@@ -10172,7 +10531,13 @@ fn count_stats_analytics_supports_tag_filters() {
 
     req.or_without_coords = None;
     req.or_with_extended_form = Some(true);
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
+    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&InboxMessagesReq {
+        since_date_inclusive_ms: Some(0),
+        or_with_extended_form: Some(true),
+        ..Default::default()
+    }));
 
     req.or_with_extended_form = None;
     req.report_tags_only_this_unit = Some(true);
@@ -10345,6 +10710,82 @@ async fn analytics_read_outcome_distinguishes_unconfigured_and_unavailable() {
     assert!(result.postgres_fallback_permit.is_some());
 }
 
+async fn seed_window_count_messages_3780(fixture: &RerAnalysisFixture) {
+    let db = &fixture.env.dbx;
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    let july = test_dt(2026, 7, 1, 0, 0);
+    let dates = [
+        test_dt(2026, 2, 2, 10, 0),
+        test_dt(2026, 5, 2, 10, 0),
+        july - chrono::Duration::microseconds(1),
+        july,
+        test_dt(2026, 8, 2, 10, 0),
+    ];
+    for date in dates {
+        let message = mk_analysis_message(
+            db,
+            "window3780",
+            "3780.1",
+            date,
+            &[&fixture.alpha],
+            &[fixture.network_wide.network.id],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_population_times(db, message.id, date, date)
+            .await
+            .unwrap();
+        set_message_post(db, message.id, "WindowPost")
+            .await
+            .unwrap();
+        set_message_callsigns(
+            db,
+            message.id,
+            serde_json::json!(["WindowCallsign"]),
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_tag::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            tag_id: Set(tag.id),
+            confidence: Set(1.0),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+    for (date, group, deleted) in [
+        (test_dt(2026, 5, 2, 10, 0), &fixture.secret_live, false),
+        (test_dt(2026, 5, 2, 10, 0), &fixture.alpha, true),
+        (test_dt(2026, 10, 1, 0, 0), &fixture.alpha, false),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            "window3780",
+            "3780.1",
+            date,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        set_message_population_times(db, message.id, date, date)
+            .await
+            .unwrap();
+        if deleted {
+            signal_message::Entity::update_many()
+                .col_expr(signal_message::Column::Deleted, Expr::value(true))
+                .filter(signal_message::Column::Id.eq(message.id))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn analysis_split_count_endpoints_preserve_totals_and_device_authorization(
@@ -10447,6 +10888,76 @@ async fn analysis_split_count_endpoints_preserve_totals_and_device_authorization
         };
         assert_eq!(result, expected, "{endpoint}");
     }
+    seed_window_count_messages_3780(&fixture).await;
+    for mode in [
+        AnalysisSearchMode::Fuzzy,
+        AnalysisSearchMode::Exact,
+        AnalysisSearchMode::Substring,
+    ] {
+        for basis in [
+            None,
+            Some(crate::user_settings::MessageTimeBasis::MessageCreation),
+        ] {
+            let mut baseline = analysis_stats_req0(&fixture);
+            baseline.search = Some("window3780".into());
+            baseline.search_mode = Some(mode);
+            baseline.message_time_basis = basis;
+            baseline.selected_groups =
+                Some(vec![fixture.alpha.signal_group.master_key.clone()]);
+            baseline.since_date_inclusive_ms =
+                test_dt(2026, 8, 2, 0, 0).and_utc().timestamp_millis();
+            baseline.till_date_noninclusive_ms =
+                test_dt(2026, 8, 3, 0, 0).and_utc().timestamp_millis();
+            let mut historical = baseline.clone();
+            historical.since_date_inclusive_ms =
+                test_dt(2026, 1, 1, 0, 0).and_utc().timestamp_millis();
+            historical.till_date_noninclusive_ms =
+                test_dt(2026, 10, 1, 0, 0).and_utc().timestamp_millis();
+            for endpoint in endpoints {
+                let uri = format!("/api/rer/analysis/stats/{endpoint}/count");
+                let baseline: serde_json::Value =
+                    actix_test::call_and_read_body_json(
+                        &app,
+                        actix_test::TestRequest::post()
+                            .uri(&uri)
+                            .cookie(cookie.clone())
+                            .set_json(&baseline)
+                            .to_request(),
+                    )
+                    .await;
+                let result: serde_json::Value =
+                    actix_test::call_and_read_body_json(
+                        &app,
+                        actix_test::TestRequest::post()
+                            .uri(&uri)
+                            .cookie(cookie.clone())
+                            .set_json(&historical)
+                            .to_request(),
+                    )
+                    .await;
+                match endpoint {
+                    "messages" => assert_eq!(
+                        result["count_selected"], 5,
+                        "{mode:?}/{basis:?}"
+                    ),
+                    "units/matches" => {
+                        for field in
+                            ["exact_matches_count", "non_exact_matches_count"]
+                        {
+                            assert_eq!(
+                                result[field].as_i64().unwrap(),
+                                baseline[field].as_i64().unwrap() * 5
+                            );
+                        }
+                    }
+                    _ => assert_eq!(
+                        result, baseline,
+                        "{endpoint}/{mode:?}/{basis:?}"
+                    ),
+                }
+            }
+        }
+    }
     set_devices_section_enabled(&fixture.env.dbx, true).await;
     req.selected_device_names = Some(vec!["restricted-device".to_string()]);
     for endpoint in endpoints {
@@ -10511,11 +11022,19 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
     first.unwrap();
     second.unwrap();
     third.unwrap();
-    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(maximum.load(Ordering::SeqCst), 3);
     assert_eq!(
         ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
         available
     );
+    maximum.store(0, Ordering::SeqCst);
+    let (first, second) = tokio::join!(
+        load(&req, "analysis stats groups count"),
+        load(&req, "analysis stats groups count"),
+    );
+    first.unwrap();
+    second.unwrap();
+    assert_eq!(maximum.load(Ordering::SeqCst), 1);
     load(&req, "analysis stats networks count").await.unwrap();
     maximum.store(0, Ordering::SeqCst);
     let mut other_req = req.clone();
@@ -10538,7 +11057,7 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
     first.unwrap();
     second.unwrap();
     third.unwrap();
-    assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    assert_eq!(maximum.load(Ordering::SeqCst), 3);
     assert_eq!(
         ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
         available
@@ -10547,8 +11066,7 @@ async fn analysis_split_count_fallbacks_share_capacity_and_release_it_between_wa
 
 #[tokio::test]
 #[serial]
-async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
-{
+async fn analysis_split_postgres_only_count_facets_do_not_block_each_other() {
     let fixture = mk_rer_analysis_fixture().await.unwrap();
     assert!(fixture.env.analytics.is_none());
     assert!(fixture.env.config.analytics.is_none());
@@ -10561,7 +11079,9 @@ async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
     let login = uuid::Uuid::new_v4();
     let available = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits();
 
-    for req in [req, search_req, creation_req] {
+    for (req, needs_capacity) in
+        [(req, false), (search_req, false), (creation_req, true)]
+    {
         let active = std::sync::atomic::AtomicUsize::new(0);
         let maximum = std::sync::atomic::AtomicUsize::new(0);
         let active = &active;
@@ -10576,11 +11096,13 @@ async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
                     panic!("PostgreSQL-only request used analytics")
                 },
                 |db| async move {
-                    assert_eq!(
-                        ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
-                            .available_permits(),
-                        available
-                    );
+                    let permits = ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE
+                        .available_permits();
+                    if needs_capacity {
+                        assert!(permits < available);
+                    } else {
+                        assert_eq!(permits, available);
+                    }
                     let concurrent = active.fetch_add(1, Ordering::SeqCst) + 1;
                     maximum.fetch_max(concurrent, Ordering::SeqCst);
                     db.execute_unprepared("select pg_sleep(0.02)")
@@ -10601,8 +11123,93 @@ async fn analysis_split_postgres_only_counts_serialize_without_outage_capacity()
         second.unwrap();
         third.unwrap();
         fourth.unwrap();
-        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+        assert_eq!(maximum.load(Ordering::SeqCst), 4);
+        assert_eq!(
+            ANALYTICS_POSTGRES_FALLBACK_SEMAPHORE.available_permits(),
+            available
+        );
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn network_activity_windows_leave_fallback_capacity_for_pages_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(
+        serde_json::from_value(serde_json::json!({
+            "pg_host":"unavailable", "pg_user":"unavailable",
+            "pg_password":"unavailable", "pg_dbname":"unavailable"
+        }))
+        .unwrap(),
+    );
+    let ready = tokio::sync::Barrier::new(3);
+    let release = tokio::sync::Notify::new();
+    crate::read_query::scope(
+        "network-window-capacity-3780".into(),
+        vec![crate::read_query::pool_identity(&env.dbx)],
+        async {
+            crate::read_query::set_login(uuid::Uuid::new_v4());
+            let ready = &ready;
+            let release = &release;
+            let window = || {
+                with_analytics_read_fallback(
+                    &env,
+                    ANALYTICS_NETWORK_ACTIVITY_OPERATION,
+                    true,
+                    |_db| async { panic!("unavailable analytics was queried") },
+                    |db| async move {
+                        crate::read_query::connection(&db)
+                            .query_one_raw(Statement::from_string(
+                                DbBackend::Postgres,
+                                "SELECT 42::bigint AS value",
+                            ))
+                            .await
+                            .c(h!())?;
+                        let released = release.notified();
+                        ready.wait().await;
+                        released.await;
+                        Ok::<_, AppError>(42i64)
+                    },
+                )
+            };
+            let page = async {
+                ready.wait().await;
+                let result = tokio::time::timeout(
+                    core::time::Duration::from_secs(1),
+                    with_analytics_read_fallback(
+                        &env,
+                        "network window concurrent page",
+                        true,
+                        |_db| async {
+                            panic!("unavailable analytics was queried")
+                        },
+                        |db| async move {
+                            let row = crate::read_query::connection(&db)
+                                .query_one_raw(Statement::from_string(
+                                    DbBackend::Postgres,
+                                    "SELECT 42::bigint AS value",
+                                ))
+                                .await
+                                .c(h!())?
+                                .c(h!())?;
+                            Ok::<_, AppError>(
+                                row.try_get::<i64>("", "value").c(h!())?,
+                            )
+                        },
+                    ),
+                )
+                .await;
+                release.notify_waiters();
+                result.unwrap().unwrap()
+            };
+            let (first, second, page) = tokio::join!(window(), window(), page);
+            assert_eq!(first.unwrap(), 42);
+            assert_eq!(second.unwrap(), 42);
+            assert_eq!(page, 42);
+        },
+    )
+    .await;
 }
 
 #[test]
@@ -10622,27 +11229,6 @@ fn analysis_split_count_failure_opens_the_circuit_for_later_dimensions() {
     assert!(analytics_retry_attempt(&units).is_none());
     let inbox = analytics_retry_state_for_operation(&states, "analysis inbox");
     assert!(analytics_retry_attempt(&inbox).is_some());
-}
-
-#[test]
-fn fallback_capacity_only_limits_analytics_incident_routes() {
-    for reason in [
-        "analytics_error",
-        "analytics_timeout",
-        "analytics_saturated",
-        "analytics_unhealthy",
-        "analytics_unavailable",
-        "attachment_history_incomplete",
-        "candidate_ordering_incomplete",
-        "candidate_revalidation_incomplete",
-        "circuit_open",
-        "postgres_tail_error",
-        "revalidation_error",
-    ] {
-        assert!(analytics_fallback_needs_capacity(reason));
-    }
-    assert!(!analytics_fallback_needs_capacity("query_policy"));
-    assert!(!analytics_fallback_needs_capacity("unconfigured"));
 }
 
 #[tokio::test]
@@ -10669,6 +11255,10 @@ async fn analytics_fallback_maps_capped_postgres_query_to_one_timeout_error() {
     let mut config =
         crate::config::read_config(crate::types::Mode::Test).unwrap();
     config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
+        search_statement_timeout_ms:
+            crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+        search_http_timeout_ms:
+            crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
         statement_timeout_ms: 25,
         report_worker_statement_timeout_ms: 25,
         lock_timeout_ms: 15,

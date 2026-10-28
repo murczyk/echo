@@ -151,7 +151,7 @@ export function useAnalysisDataMessageActions(params: Params) {
         const important = await importantRemove({ messageId });
 
         params.patchMessages((id, message) =>
-          id === messageId ? { ...message, important } : message,
+          id === messageId ? { ...message, important, aiImportant: false } : message,
         );
         if (params.queryState.orImportant) params.refreshMessageCounts();
       } catch (loadError) {

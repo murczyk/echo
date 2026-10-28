@@ -1106,7 +1106,7 @@ describe('AnalysisFiltersPanel', () => {
   it('shows the RER report filter only when enabled regardless of network visibility', async () => {
     const hidden = await renderComponent(buildProps());
     rendered.push(hidden);
-    expect(hidden.container.textContent).not.toContain('для звіту РЕР');
+    expect(hidden.container.textContent).not.toContain('Для звіту РЕР');
 
     for (const hideNetworks of [false, true]) {
       const updateQueryState = vi.fn();
@@ -1114,7 +1114,7 @@ describe('AnalysisFiltersPanel', () => {
         buildProps({ hideNetworks, rerReportFilterEnabled: true, updateQueryState }),
       );
       rendered.push(visible);
-      await setChecked(findLabelInput(visible.container, 'для звіту РЕР'), true);
+      await setChecked(findLabelInput(visible.container, 'Для звіту РЕР'), true);
 
       expect(updateQueryState).toHaveBeenCalledWith({
         onlyWithNetwork: true,

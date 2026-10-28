@@ -125,7 +125,17 @@ where
     };
 
     let body = message.body.clone().unwrap_or("".to_string());
-    if crate::rer_importer::multimessage::should_try_split_message(&body) {
+    // Messenger ingest messages are chat history: never split, and dated by
+    // their send timestamp rather than by dates mentioned in the text.
+    let is_messenger_ingest =
+        crate::messenger_ingest::datasource::is_messenger_ingest_message(
+            txn, &message,
+        )
+        .await
+        .c(h!())?;
+    if crate::rer_importer::multimessage::should_try_split_message(&body)
+        && !is_messenger_ingest
+    {
         let spawned = match datetime_override.as_ref() {
             Some(InboxDatetimeOverride::Historical {
                 reference_time, ..
@@ -157,10 +167,13 @@ where
         }
         _ => Local::now().with_timezone(&tz),
     };
-    let allow_kraken_audio =
-        message_has_other_interseption_group(txn, &message).await?;
-    let (mut m_dt, meow_format) =
-        extract_message_datetime(lnow, &body, allow_kraken_audio)?;
+    let (mut m_dt, meow_format) = if is_messenger_ingest {
+        (None, None)
+    } else {
+        let allow_kraken_audio =
+            message_has_other_interseption_group(txn, &message).await?;
+        extract_message_datetime(lnow, &body, allow_kraken_audio)?
+    };
     if m_dt.is_none() {
         if let Some(ref timestamp) = message.timestamp {
             let dt2: DateTime<Utc> =
@@ -482,6 +495,7 @@ where
                 .filter(signal_message::Column::Deleted.eq(false))
                 .filter(signal_group::Column::Deleted.eq(false))
                 .filter(signal_group::Column::Name.eq(group_name))
+                .filter(crate::datasource::native::external_group_condition())
                 .all(txn)
                 .await
                 .c(h!())?
@@ -1146,7 +1160,8 @@ where
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup_locked, find_test_datasource_group, mk_signal_message,
+        cleanup_locked, find_test_datasource_group, mk_datasource_group,
+        mk_signal_group, mk_signal_message,
     };
 
     #[test]
@@ -1413,6 +1428,69 @@ mod tests {
             pelengs[0].pelengation_object.as_deref(),
             Some("TYT назва: ретранслятор")
         );
+        assert_native_coordinate_message_stays_in_group(&env, body).await;
+    }
+
+    async fn assert_native_coordinate_message_stays_in_group(
+        env: &Env,
+        body: &str,
+    ) {
+        let mut config = env.config.clone();
+        config.signal_import_group_name = "Native import name collision".into();
+        let source = crate::datasource::native::load(&env.dbx).await.unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(format!(
+                    "{DATASOURCE_ECHO_NATIVE_GROUP_PREFIX}{}",
+                    Uuid::new_v4()
+                )),
+                name: Set(Some(config.signal_import_group_name.clone())),
+                datasource_id: Set(Some(source.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mapping = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                group_master_key: Set(group.master_key),
+                datasource_id: Set(source.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(mapping.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut cache = TopKCache::<String, String>::new(64);
+        construct_inbox_item(
+            env.settlements.clone(),
+            &env.dbx,
+            &env.rq,
+            &config,
+            message.id,
+            &mut cache,
+            None,
+        )
+        .await
+        .unwrap();
+        let saved = signal_message::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.datasource_group_id, Some(mapping.id));
+        assert_eq!(active_pelengs(message.id, &env.dbx).await.len(), 1);
     }
 
     #[tokio::test]

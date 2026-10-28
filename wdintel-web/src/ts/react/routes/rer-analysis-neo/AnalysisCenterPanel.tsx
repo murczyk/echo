@@ -131,6 +131,28 @@ export function AnalysisCenterPanel({
           : '')
       }
     >
+      {page.threadMode ? (
+        <section
+          aria-label="Перегляд ланцюжка"
+          className="mx-echo-sm mb-echo-sm flex flex-wrap items-center justify-between gap-echo-sm rounded-echo-sm border border-echo-divider bg-echo-text/5 p-echo-sm"
+        >
+          <div className="min-w-0">
+            <div className="text-echo-text">Ланцюжок</div>
+            <div className="text-echo-xs text-echo-text-muted">
+              Фільтри діють лише в цьому ланцюжку. Мапа, зведена таблиця, звіти й аналітика поки
+              недоступні.
+            </div>
+            {page.threadMode.deletedCount > 0 ? (
+              <div className="text-echo-xs text-echo-text-muted">
+                Видалено повідомлень: {page.threadMode.deletedCount}
+              </div>
+            ) : null}
+          </div>
+          <Button size="small" onClick={page.threadMode.exit}>
+            Вийти з ланцюжка
+          </Button>
+        </section>
+      ) : null}
       <Stack
         direction={isNarrowLayout ? 'row' : { xs: 'column', lg: 'row' }}
         alignItems={isNarrowLayout ? 'center' : { xs: 'stretch', lg: 'center' }}
@@ -238,6 +260,7 @@ export function AnalysisCenterPanel({
                   <Tab
                     key={tab}
                     id={summaryTabId}
+                    disabled={page.threadMode != null}
                     aria-controls={summaryPanelId}
                     value="summary"
                     icon={<Icon />}
@@ -252,6 +275,7 @@ export function AnalysisCenterPanel({
                 <Tab
                   key={tab}
                   id={mapTabId}
+                  disabled={page.threadMode != null}
                   aria-controls={mapPanelId}
                   value="map"
                   icon={<Icon />}
@@ -475,6 +499,7 @@ export function AnalysisCenterPanel({
             unitsMap={page.unitsMap}
             directMessageNavigation={page.directMessageNavigation}
             onLinkedMessageMounted={page.onLinkedMessageMounted}
+            loadedReplyTarget={page.loadedReplyTarget}
           />
         </Box>
 

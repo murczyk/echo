@@ -33,6 +33,7 @@ type Options = {
   loadingBeforeWindow: boolean;
   loadingAfterWindow: boolean;
   isLoading: boolean;
+  showLoadingSkeleton?: boolean;
   newestFirst: boolean;
   pageNavigationTarget: number | null;
   viewportPreservationKey: number;
@@ -54,6 +55,7 @@ export function useAnalysisMessageFeed({
   loadingBeforeWindow,
   loadingAfterWindow,
   isLoading,
+  showLoadingSkeleton = true,
   newestFirst,
   pageNavigationTarget,
   viewportPreservationKey,
@@ -104,21 +106,30 @@ export function useAnalysisMessageFeed({
         ? {
             messageId: directMessageNavigation.targetMessageId,
             active: directMessageNavigation.focusActive,
+            behavior: directMessageNavigation.scrollBehavior,
+            constrainToContent: directMessageNavigation.constrainToContent,
             onRelease: directMessageNavigation.onClearFocus,
           }
         : null,
     [
       directMessageNavigation?.targetMessageId,
       directMessageNavigation?.focusActive,
+      directMessageNavigation?.scrollBehavior,
+      directMessageNavigation?.constrainToContent,
       directMessageNavigation?.onClearFocus,
     ],
   );
   const displayedMessages = useMemo(
     () =>
-      directMessageNavigation?.contextLoading
+      directMessageNavigation?.contextLoading && showLoadingSkeleton
         ? messages.filter(([id]) => id === directMessageNavigation.targetMessageId)
         : messages,
-    [messages, directMessageNavigation?.contextLoading, directMessageNavigation?.targetMessageId],
+    [
+      messages,
+      directMessageNavigation?.contextLoading,
+      directMessageNavigation?.targetMessageId,
+      showLoadingSkeleton,
+    ],
   );
   const above = directMessageNavigation
     ? getFocusedLoadDirection('above', directMessageNavigation.newestFirst)
@@ -161,7 +172,10 @@ export function useAnalysisMessageFeed({
     onViewportCaptureChange,
     resetKey: scrollResetKey,
     initialPositioningReady: !directMessageNavigation?.contextLoading,
-    loadEdgesOnLayout: !isLoading && !directMessageNavigation?.contextLoading,
+    loadEdgesOnLayout:
+      !isLoading &&
+      !directMessageNavigation?.contextLoading &&
+      !directMessageNavigation?.focusActive,
     hasReachedStart: isLoading || !hasMoreAbove,
     onLoadOlder: directMessageNavigation
       ? (load(above) ?? (() => undefined))

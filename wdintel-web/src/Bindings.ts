@@ -345,6 +345,66 @@ export type ReportHistoryRow = {
   downloadAttempts: Array<ReportDownloadHistoryEntry>;
 };
 
+export type KpiPeriod = {
+  since: number;
+  until: number;
+};
+
+export type KpiCount = {
+  id: string;
+  label: string;
+  count: number;
+};
+
+export type KpiDuration = {
+  samples: number;
+  excluded: number;
+  medianSeconds: number | null;
+  p90Seconds: number | null;
+};
+
+export type KpiReportsRsp = {
+  period: KpiPeriod;
+  total: number;
+  done: number;
+  failed: number;
+  byKind: Array<KpiCount>;
+  byAuthor: Array<KpiCount>;
+  byDay: Array<KpiCount>;
+  generation: KpiDuration;
+};
+
+export type KpiNotificationsRsp = {
+  period: KpiPeriod;
+  total: number;
+  byStatus: Array<KpiCount>;
+  transport: KpiDuration;
+};
+
+export type KpiActivityRsp = {
+  period: KpiPeriod;
+  available: boolean;
+  reason: string | null;
+  observedFrom: string | null;
+  observedUntil: string | null;
+  accounts: number | null;
+  byDay: Array<KpiCount>;
+  byPage: Array<KpiCount>;
+  queueEnqueued: number;
+  queueDropped: number;
+  unmappedAccountGroups: number;
+};
+
+export type KpiRequestsRsp = {
+  period: KpiPeriod;
+  available: boolean;
+  reason: string | null;
+  total: number | null;
+  serverErrors: number | null;
+  clientErrors: number | null;
+  byStatus: Array<KpiCount>;
+};
+
 export type ReportHistoryLogEntry = {
   login: string;
   timestamp: string;
@@ -425,6 +485,7 @@ export type InboxMessage = {
   callsignsAlg2: Array<string>;
   checked: boolean;
   important: boolean;
+  aiImportant: boolean;
   bookmarked: boolean;
   timestamp: number | null;
   createdAt: number | null;
@@ -585,6 +646,40 @@ export type TagPresenceFilter =
   | 'WithTags'
   | 'WithoutTags'
 ;
+
+export type MessageReplyScreen =
+  | 'Duty'
+  | 'Analysis'
+;
+
+export type MessageRepliesReq = {
+  signalMessageIds: Array<number>;
+  screen: MessageReplyScreen;
+};
+
+export type MessageReply = {
+  id: number;
+  threadId: number;
+  originalSignalMessageId: number | null;
+  replySignalMessageId: number | null;
+  createdAt: number;
+  deleted: boolean;
+  originalDeleted: boolean;
+  replyDeleted: boolean;
+};
+
+export type CitedMessage = {
+  id: number;
+  timestamp: number | null;
+  createdAt: number;
+  preview: string;
+  href: string;
+};
+
+export type MessageRepliesRsp = {
+  replies: Array<MessageReply>;
+  replyMessages: Array<CitedMessage>;
+};
 
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
@@ -818,11 +913,17 @@ export type SignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
   colorKey: SignalGroupColor;
+};
+
+export type GroupCreationInfo = {
+  createdAt: number;
+  createdBy: string | null;
 };
 
 export type OrphanSignalGroupEntry = {
@@ -832,6 +933,7 @@ export type OrphanSignalGroupEntry = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   isArchived: boolean;
   datasourceId: number | null;
@@ -2168,6 +2270,7 @@ export type DeviceDetails = {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  audioForwardingConfigured: boolean;
 };
 
 export type DeviceUnitStat = {
@@ -2214,6 +2317,53 @@ export type UpdateDeviceReq = {
   name: string | null;
   aorIds: Array<number> | null;
   unitId: number | null;
+  audioForwarding: DeviceAudioForwardingChange | null;
+};
+
+export type DeviceAudioForwardingChange = {
+  version: string | null;
+  enabled: boolean;
+  addGroups: Array<string>;
+  removeGroups: Array<string>;
+};
+
+export type DeviceAudioForwardingGroup = {
+  masterKey: string;
+  name: string;
+  selected: boolean;
+};
+
+export type DeviceAudioForwardingSettings = {
+  version: string | null;
+  enabled: boolean;
+  groups: Array<DeviceAudioForwardingGroup>;
+};
+
+export type DeviceAudioForwardingEntry = {
+  deviceId: string;
+  deviceName: string;
+  deviceArchived: boolean;
+  groupMasterKey: string;
+  groupName: string;
+  enabled: boolean;
+  version: string;
+};
+
+export type ListDeviceAudioForwardingReq = {
+  cursor: [string, string] | null;
+};
+
+export type ListDeviceAudioForwardingRsp = {
+  items: Array<DeviceAudioForwardingEntry>;
+  nextCursor: [string, string] | null;
+  totalCount: number;
+  pageSize: number;
+};
+
+export type RemoveDeviceAudioForwardingReq = {
+  deviceId: string;
+  groupMasterKey: string;
+  version: string;
 };
 
 export type DeviceFileRoot = {
@@ -3263,6 +3413,7 @@ export type ZoneDatasourceGroup = {
   interseptionKind: InterseptionKind;
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
@@ -3285,6 +3436,7 @@ export type ZoneDatasourceGroupListRsp = {
 };
 
 export type ZoneDatasourceGroupAddReq = {
+  aiTranscriptAnalysisEnabled: boolean | null;
   zoneId: number;
   datasourceId: number;
   isSecret: boolean;
@@ -3304,6 +3456,7 @@ export type ZoneDatasourceGroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  aiTranscriptAnalysisEnabled: boolean | null;
   fetchNewMessages: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
@@ -4132,6 +4285,7 @@ export type DirectSubmitPayload = {
   retainedMediaIds: Array<string> | null;
   parentSignalMessageIds: Array<number>;
   copySourceSignalMessageIds: Array<number>;
+  engagedMessageId: number | null;
 };
 
 export type DirectSubmitAttachmentUpdates = {
@@ -6226,6 +6380,7 @@ export type AiCallsignTestMessageItem = {
 export type AiCallsignWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null;
 };
 
 export type AiCallsignPageRsp = {
@@ -6331,6 +6486,7 @@ export type SaveAiCallsignParsingReq = {
 export type SaveAiCallsignWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
 };
 
 export type SettlementAliasSettlement = {
@@ -6375,6 +6531,102 @@ export type AiSettlementEngineItem = {
   modelName: string;
 };
 
+export type AiTranscriptEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiTranscriptWorkerSettings = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiTranscriptResult = {
+  testMessageId: string;
+  aiEngineId: string;
+  important: boolean | null;
+  responseText: string;
+  error: string | null;
+  updatedAt: number | null;
+};
+
+export type AiTranscriptTestMessage = {
+  id: string;
+  message: string;
+  version: string;
+  results: Array<AiTranscriptResult>;
+};
+
+export type AiTranscriptVersion = {
+  id: string;
+  version: string;
+};
+
+export type AiTranscriptPage = {
+  prompt: string;
+  promptOverridden: boolean;
+  engines: Array<AiTranscriptEngineItem>;
+  messages: Array<AiTranscriptTestMessage>;
+  worker: AiTranscriptWorkerSettings;
+};
+
+export type AiTranscriptPrompt = {
+  prompt: string;
+  promptOverridden: boolean;
+};
+
+export type AiTranscriptMessageReq = {
+  id: string | null;
+  message: string;
+};
+
+export type AiTranscriptMessageIdReq = {
+  id: string;
+};
+
+export type AiTranscriptRunReq = {
+  prompt: string;
+  aiEngineIds: Array<string>;
+};
+
+export type AiTranscriptRunRsp = {
+  results: Array<AiTranscriptResult>;
+  messageVersions: Array<AiTranscriptVersion>;
+  engineVersions: Array<AiTranscriptVersion>;
+};
+
+export type AiTranscriptSaveReq = {
+  prompt: string;
+  results: Array<AiTranscriptResult>;
+  messageVersions: Array<AiTranscriptVersion>;
+  engineVersions: Array<AiTranscriptVersion>;
+};
+
+export type AiTranscriptQueueReq = {
+  beforeMessageId: number | null;
+};
+
+export type AiTranscriptQueueItem = {
+  messageId: number;
+  messageUuid: string | null;
+  messageUid: string | null;
+  groups: Array<string>;
+  createdAt: number;
+  state: string;
+  attempts: number;
+  nextAttemptAt: number;
+  completedAt: number | null;
+  important: boolean | null;
+  manualSuppressed: boolean;
+  lastError: string | null;
+};
+
+export type AiTranscriptQueueRsp = {
+  items: Array<AiTranscriptQueueItem>;
+  nextBeforeMessageId: number | null;
+};
+
 export type AiSettlementParseResultItem = {
   testMessageId: string;
   aiEngineId: string;
@@ -6400,6 +6652,7 @@ export type AiSettlementTestMessageVersionItem = {
 export type AiSettlementWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null;
   groupsExcept: boolean;
   groupMasterKeys: Array<string>;
 };
@@ -6455,6 +6708,7 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
   groupsExcept: boolean;
   groupMasterKeys: Array<string>;
 };
@@ -6468,6 +6722,7 @@ export type AiPositionEngineItem = {
 export type AiPositionWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null;
 };
 
 export type AiPositionPageRsp = {
@@ -6491,6 +6746,7 @@ export type AiPositionPromptState = {
 export type SaveAiPositionWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
 };
 
 export type TestAiPositionReq = {
@@ -7337,7 +7593,41 @@ export type GroupUpdateReq = {
   interseptionKind: InterseptionKind | null;
   disableNetworkAssignment: boolean | null;
   isAviationGroup: boolean | null;
+  aiTranscriptAnalysisEnabled: boolean | null;
   fetchNewMessages: boolean | null;
+};
+
+export type NativeGroupSettings = {
+  name: string;
+  colorKey: SignalGroupColor | null;
+  shortNote: string | null;
+  longNote: string | null;
+  isSecret: boolean;
+  userLogins: Array<string>;
+  organismIds: Array<number>;
+  adminLogins: Array<string>;
+  areaOfResponsibilityIds: Array<number>;
+  zoneIds: Array<number>;
+  interseptionKind: InterseptionKind;
+  disableNetworkAssignment: boolean;
+  isAviationGroup: boolean;
+  aiTranscriptAnalysisEnabled: boolean | null;
+};
+
+export type NativeGroupCreateReq = {
+  requestId: string;
+  settings: NativeGroupSettings;
+};
+
+export type NativeGroupUpdateReq = {
+  masterKey: string;
+  settings: NativeGroupSettings;
+};
+
+export type NativeGroupDetail = {
+  masterKey: string;
+  settings: NativeGroupSettings;
+  isArchived: boolean;
 };
 
 export type GroupEntryF1 = {
@@ -7471,6 +7761,8 @@ export type UserDutySettingsDto = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   mediaSummaryEnabled: boolean;
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;

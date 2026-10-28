@@ -48,6 +48,7 @@ type Props = Pick<
   | 'setIncludeOnlyNewFreqs'
   | 'updateQueryState'
 > & {
+  threadOnly?: boolean;
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
   filtersLoading: boolean;
@@ -223,6 +224,7 @@ function metadataFilterModeHint(mode: MetadataFilterMode): string {
 }
 
 export function AnalysisFiltersPanelSections({
+  threadOnly = false,
   counts,
   derived,
   expandedSections,
@@ -382,11 +384,13 @@ export function AnalysisFiltersPanelSections({
             <FormControlLabel
               control={
                 <Checkbox
+                  disabled={threadOnly}
                   checked={includeOnlyNewFreqs}
                   onChange={(_event, value) => setIncludeOnlyNewFreqs(value)}
                 />
               }
               label="Тільки нові частоти"
+              title={threadOnly ? 'Недоступно під час перегляду ланцюжка' : undefined}
               sx={compactCheckboxLabelSx}
             />
           </Stack>
@@ -403,14 +407,24 @@ export function AnalysisFiltersPanelSections({
         expanded={expandedSections.callsigns}
         onToggle={() => toggleSection('callsigns')}
       >
-        <CallsignFilterField
-          active={expandedSections.callsigns}
-          fallbackOptions={derived.callsignsOptions}
-          options={options}
-          queryState={queryState}
-          value={queryState.callsignsSelected}
-          onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
-        />
+        {threadOnly ? (
+          <AnalysisFilterField
+            label="Позивні"
+            options={derived.callsignsOptions}
+            value={queryState.callsignsSelected}
+            deferredCommit
+            onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
+          />
+        ) : (
+          <CallsignFilterField
+            active={expandedSections.callsigns}
+            fallbackOptions={derived.callsignsOptions}
+            options={options}
+            queryState={queryState}
+            value={queryState.callsignsSelected}
+            onChange={(callsignsSelected) => updateQueryState({ callsignsSelected })}
+          />
+        )}
       </FilterSection>
       {radioFeaturesAllowed && !hideNetworks ? (
         <FilterSection
@@ -703,7 +717,7 @@ export function AnalysisFiltersPanelSections({
                   }
                 />
               }
-              label="для звіту РЕР"
+              label="Для звіту РЕР"
               sx={compactCheckboxLabelSx}
             />
           ) : null}

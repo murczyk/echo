@@ -190,6 +190,7 @@ pub struct DeviceDetails {
     pub created_at: String,
     pub updated_at: String,
     pub archived_at: Option<String>,
+    pub audio_forwarding_configured: bool,
 }
 
 #[derive(
@@ -287,6 +288,9 @@ pub struct UpdateDeviceReq {
     pub aor_ids: RequiredPatch<Vec<i64>>,
     #[serde(default, skip_serializing_if = "NullablePatch::is_missing")]
     pub unit_id: NullablePatch<i64>,
+    pub audio_forwarding: Option<
+        crate::devices::audio::forwarding::types::DeviceAudioForwardingChange,
+    >,
 }
 
 mod domain {
@@ -316,6 +320,7 @@ mod domain {
         pub(in crate::devices) name: DevicePatchField<String>,
         pub(in crate::devices) aor_ids: DevicePatchField<Vec<i64>>,
         pub(in crate::devices) unit_id: DevicePatchField<Option<i64>>,
+        pub(in crate::devices) audio_forwarding: Option<crate::devices::audio::forwarding::types::DeviceAudioForwardingChange>,
     }
 
     impl UpdateDeviceCommand {
@@ -328,21 +333,16 @@ mod domain {
                     &self.custom_fields,
                     DevicePatchField::Value(_)
                 ),
-                analytical_data: matches!(
-                    &self.name,
-                    DevicePatchField::Value(_)
-                ) || matches!(
-                    &self.aor_ids,
-                    DevicePatchField::Value(_)
-                ) || matches!(
-                    &self.unit_id,
-                    DevicePatchField::Value(_)
-                ),
+                analytical_data: self.audio_forwarding.is_some()
+                    || matches!(&self.name, DevicePatchField::Value(_))
+                    || matches!(&self.aor_ids, DevicePatchField::Value(_))
+                    || matches!(&self.unit_id, DevicePatchField::Value(_)),
             }
         }
 
         pub(in crate::devices) fn is_structurally_empty(&self) -> bool {
-            matches!(&self.external_url, DevicePatchField::Missing)
+            self.audio_forwarding.is_none()
+                && matches!(&self.external_url, DevicePatchField::Missing)
                 && matches!(&self.name, DevicePatchField::Missing)
                 && matches!(&self.aor_ids, DevicePatchField::Missing)
                 && matches!(&self.unit_id, DevicePatchField::Missing)

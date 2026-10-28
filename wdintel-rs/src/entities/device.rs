@@ -32,6 +32,10 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::device_aor::Entity")]
     DeviceAor,
+    #[sea_orm(has_many = "super::device_audio_forwarding_group::Entity")]
+    DeviceAudioForwardingGroup,
+    #[sea_orm(has_one = "super::device_audio_forwarding_settings::Entity")]
+    DeviceAudioForwardingSettings,
     #[sea_orm(
         belongs_to = "super::login::Entity",
         from = "Column::CreatedBy",
@@ -61,6 +65,18 @@ pub enum Relation {
 impl Related<super::device_aor::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DeviceAor.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_group::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingGroup.def()
+    }
+}
+
+impl Related<super::device_audio_forwarding_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::DeviceAudioForwardingSettings.def()
     }
 }
 

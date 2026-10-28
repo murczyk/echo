@@ -1,7 +1,10 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
-import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import type {
+  MessageAttachmentPreviewMode,
+  MessageTextPreviewLineLimit,
+} from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsMessageCard } from './SettingsMessageCard';
@@ -38,8 +41,10 @@ export type SettingsDutySectionProps = {
   showClassicDutySetting: boolean;
   showClassicDuty: boolean;
   onShowClassicDutyChange: (value: boolean) => void;
-  collapseMediaPreviews: boolean;
-  onCollapseMediaPreviewsChange: (value: boolean) => void;
+  attachmentPreviewMode: MessageAttachmentPreviewMode;
+  largeMessageCardText: boolean;
+  onLargeMessageCardTextChange: (value: boolean) => void;
+  onAttachmentPreviewModeChange: (value: MessageAttachmentPreviewMode) => void;
 };
 
 export function SettingsDutySection({
@@ -65,8 +70,10 @@ export function SettingsDutySection({
   showClassicDutySetting,
   showClassicDuty,
   onShowClassicDutyChange,
-  collapseMediaPreviews,
-  onCollapseMediaPreviewsChange,
+  attachmentPreviewMode,
+  largeMessageCardText,
+  onLargeMessageCardTextChange,
+  onAttachmentPreviewModeChange,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -112,8 +119,10 @@ export function SettingsDutySection({
             onAiPositionHighlightsEnabledChange={onAiPositionHighlightsEnabledChange}
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
-            collapseMediaPreviews={collapseMediaPreviews}
-            onCollapseMediaPreviewsChange={onCollapseMediaPreviewsChange}
+            attachmentPreviewMode={attachmentPreviewMode}
+            largeMessageCardText={largeMessageCardText}
+            onLargeMessageCardTextChange={onLargeMessageCardTextChange}
+            onAttachmentPreviewModeChange={onAttachmentPreviewModeChange}
             loadInProgress={loadInProgress}
           />
 

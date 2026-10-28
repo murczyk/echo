@@ -180,6 +180,10 @@ pub mod test {
     async fn runtime_pool_uses_guardrails_and_operator_pool_remains_uncapped() {
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
+            search_statement_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+            search_http_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
             statement_timeout_ms: 25,
             report_worker_statement_timeout_ms: 25,
             lock_timeout_ms: 15,
@@ -227,6 +231,10 @@ pub mod test {
     async fn runtime_pool_exposes_application_name_in_pg_stat_activity() {
         let mut config = crate::config::read_config(Mode::Test).unwrap();
         config.postgres_runtime = Some(PostgresRuntimeConfig {
+            search_statement_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT,
+            search_http_timeout_ms:
+                crate::config::ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT,
             statement_timeout_ms: 100,
             report_worker_statement_timeout_ms: 200,
             lock_timeout_ms: 50,
@@ -316,6 +324,57 @@ insert into sigint_inbox_item values (1, '{"body":"test"}'), (1, null);
             )
             .await
             .unwrap();
+        }
+        migration.up(&manager).await.unwrap();
+        db.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn notification_index_recovery_validates_existing_definition_3826() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let db = crate::new_pg_pool_from_conn_string_with_max_connections(
+            mk_conn_string(&config),
+            1,
+        )
+        .await
+        .unwrap();
+        db.execute_unprepared(
+            r#"
+create temporary table messenger_alert_delivery (id bigint, created_at timestamp);
+insert into messenger_alert_delivery values (1, '2026-10-26'), (2, '2026-10-26');
+            "#,
+        )
+        .await
+        .unwrap();
+        let manager = SchemaManager::new(&db);
+        let migration = Migrator::migrations()
+            .into_iter()
+            .find(|migration| {
+                migration.name()
+                    == "m20261026_101819_messenger_alert_delivery_created_at_index"
+            })
+            .unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.up(&manager).await.unwrap();
+        migration.down(&manager).await.unwrap();
+        for definition in [
+            "(id)",
+            "using hash(created_at)",
+            "(created_at desc)",
+            "(created_at nulls first)",
+            "(created_at, id)",
+            "(created_at) include (id)",
+            "(created_at) where id > 0",
+            "((created_at + interval '1 second'))",
+        ] {
+            db.execute_unprepared(&format!(
+                "create index messenger_alert_delivery_created_at_idx on messenger_alert_delivery {definition}"
+            ))
+            .await
+            .unwrap();
+            let error = migration.up(&manager).await.unwrap_err();
+            assert!(error.to_string().contains("requires recovery"));
+            migration.down(&manager).await.unwrap();
         }
         migration.up(&manager).await.unwrap();
         db.close().await.unwrap();

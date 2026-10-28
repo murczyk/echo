@@ -352,9 +352,9 @@ describe('useAnalysisDataMessageActions', () => {
     },
   );
 
-  it('uses the authoritative aggregate importance returned by the server', async () => {
+  it('#3646 clears AI origin while preserving aggregate importance returned by the server', async () => {
     hoisted.importantRemove.mockResolvedValueOnce(true);
-    const apiRef = await renderHarness([[1, buildMessage({ important: true })]]);
+    const apiRef = await renderHarness([[1, buildMessage({ important: true, aiImportant: true })]]);
 
     await act(async () => {
       await apiRef.current!.onToggleMessageImportant(1, true);
@@ -363,6 +363,8 @@ describe('useAnalysisDataMessageActions', () => {
     expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
     expect(apiRef.current!.messages[0]?.[1].important).toBe(true);
     expect(apiRef.current!.mapOpenMessages[0]?.[1].important).toBe(true);
+    expect(apiRef.current!.messages[0]?.[1].aiImportant).toBe(false);
+    expect(apiRef.current!.mapOpenMessages[0]?.[1].aiImportant).toBe(false);
   });
 
   it.each([true, false])(

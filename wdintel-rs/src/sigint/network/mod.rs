@@ -4852,7 +4852,6 @@ async fn load_current_network_callsigns(
             .context(h!())?)
         },
         move |postgres_db| async move {
-            let exclude_network_callsign_activity = period_filter.is_some();
             Ok(load_callsigns(
                 &postgres_db,
                 &groups,
@@ -4861,7 +4860,7 @@ async fn load_current_network_callsigns(
                 include_activity_info,
                 section,
                 period_filter.as_ref(),
-                exclude_network_callsign_activity,
+                true,
             )
             .await
             .context(h!())?)

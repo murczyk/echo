@@ -10,6 +10,7 @@ async function installWorker(page: Page) {
   let settings: AiSettlementWorkerSettingsItem = {
     enabled: true,
     aiEngineId: 'engine-a',
+    fallbackAiEngineId: null,
     groupsExcept: false,
     groupMasterKeys: [],
   };
@@ -32,7 +33,7 @@ async function installWorker(page: Page) {
   await page.route('**/api/admin/ai-settlements/worker/save', async (route) => {
     const req: SaveAiSettlementWorkerSettingsReq = route.request().postDataJSON();
     saves.push(req);
-    settings = req;
+    settings = { ...req, fallbackAiEngineId: req.fallbackAiEngineId ?? null };
     await route.fulfill({ json: settings });
   });
   await page.goto('/admin/ai/settlements');
@@ -54,6 +55,7 @@ test('@regression #3383 saves only/except group restrictions and restores them o
   expect(saves[0]).toEqual({
     enabled: true,
     aiEngineId: 'engine-a',
+    fallbackAiEngineId: null,
     groupsExcept: false,
     groupMasterKeys: ['north'],
   });
@@ -73,6 +75,7 @@ test('@regression #3383 saves only/except group restrictions and restores them o
   expect(saves[1]).toEqual({
     enabled: true,
     aiEngineId: 'engine-a',
+    fallbackAiEngineId: null,
     groupsExcept: true,
     groupMasterKeys: ['north', 'south'],
   });

@@ -1,3 +1,4 @@
+import { notifyMessageReplyPoll } from '../shared/message-replies/events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -52,6 +53,7 @@ import type { DeviceAccess } from './useRerDutyPageSettings';
 import { useRerDutyTailPollRequests } from './useRerDutyTailPollRequests';
 import { useRerDutyPollingCoordinator } from './useRerDutyPollingCoordinator';
 import { useRerDutyCountSchedule } from './useRerDutyCountSchedule';
+import { searchRequestDeadlineMs } from '../../services/api/client';
 import { useRerDutyPollingFeedWork } from './useRerDutyPollingFeedWork';
 import {
   DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
@@ -145,6 +147,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       } | null>
     >
   >({});
+  const countControllersByFeedIdRef = useRef<Record<string, AbortController>>({});
+  const initialControllersByFeedIdRef = useRef<Record<string, AbortController>>({});
   const pollIntervalMs = getDutyPollIntervalMs(deps.pollIntervalSec);
   const [watchModeByFeedId, setWatchModeByFeedId] = useState<Record<string, boolean>>({});
   const [loadingNewerFeedIds, setLoadingNewerFeedIds] = useState<Set<string>>(new Set());
@@ -239,6 +243,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
 
   const resetTailState = useCallback((feedId: string) => {
+    initialControllersByFeedIdRef.current[feedId]?.abort();
+    delete initialControllersByFeedIdRef.current[feedId];
+    countControllersByFeedIdRef.current[feedId]?.abort();
+    delete countControllersByFeedIdRef.current[feedId];
+    delete countRequestPromiseByFeedIdRef.current[feedId];
     resetTailRequestsRef.current(feedId);
     delete newestExhaustedCursorByFeedIdRef.current[feedId];
     delete confirmedTailPreviewByFeedIdRef.current[feedId];
@@ -287,7 +296,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
   const markFeedReloadRequested = useCallback(
     (feedId: string, preserveUnread = false) => {
-      if (!preserveUnread) editReloadFeedIdsRef.current.delete(feedId);
+      if (preserveUnread) editReloadFeedIdsRef.current.add(feedId);
+      else editReloadFeedIdsRef.current.delete(feedId);
       loadGenerationByFeedIdRef.current = {
         ...loadGenerationByFeedIdRef.current,
         [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
@@ -658,6 +668,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       const cursor = unreadCursorByFeedIdRef.current[feedId] ?? null;
       const cursorId = cursor?.id ?? null;
       const requestSignature = buildFeedCountSignature(feed, freqs);
+      const controller = new AbortController();
+      countControllersByFeedIdRef.current[feedId] = controller;
       lastCountStartedAtByFeedIdRef.current[feedId] = performance.now();
       const requestPromise = (async () => {
         const finishDebugActivity = beginDutyScrollDebugActivity(
@@ -667,21 +679,22 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
+          const req = buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true });
           ({ quantity } = await withDutyFeedRequestDeadline(
-            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+            searchRequestDeadlineMs(req.search, DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS),
             (signal) =>
-              fetchInboxCount(
-                buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
-                { signal, headers: { 'x-echo-request-trigger': trigger } },
-              ),
+              fetchInboxCount(req, { signal, headers: { 'x-echo-request-trigger': trigger } }),
+            controller.signal,
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
+          if (controller.signal.aborted) return null;
           throw error;
         }
         const currentFeed = messageFeedsRef.current.find((x) => x.id === feedId);
         if (
+          controller.signal.aborted ||
           !currentFeed ||
           currentFeed.loading ||
           pendingReloadFeedIdsRef.current.has(feedId) ||
@@ -712,11 +725,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         () => {
           if (countRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
             delete countRequestPromiseByFeedIdRef.current[feedId];
+            delete countControllersByFeedIdRef.current[feedId];
           }
         },
         () => {
           if (countRequestPromiseByFeedIdRef.current[feedId] === requestPromise) {
             delete countRequestPromiseByFeedIdRef.current[feedId];
+            delete countControllersByFeedIdRef.current[feedId];
           }
         },
       );
@@ -742,6 +757,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     return () => {
+      Object.values(countControllersByFeedIdRef.current).forEach((controller) =>
+        controller.abort(),
+      );
+      Object.values(initialControllersByFeedIdRef.current).forEach((controller) =>
+        controller.abort(),
+      );
       Object.values(arrowResultTimeoutsRef.current).forEach(clearTimeout);
     };
   }, []);
@@ -759,6 +780,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const loadFeedInitialMessages = useRerDutyInitialLoad({
     messageFeeds,
     messageFeedsRef,
+    controllersByFeedIdRef: initialControllersByFeedIdRef,
     setMessageFeeds,
     setError,
     buildReqForFeed,
@@ -769,6 +791,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     clearFeedUnreadBaselines,
     completeFeedReload,
     setFeedUnreadCursor,
+    getFeedUnreadCursor: (feedId) => unreadCursorByFeedIdRef.current[feedId] ?? null,
     feedInitialTargetByFeedIdRef,
     installFeedUnreadCursorAndBaseline,
     recoverFeedUnreadBaselineAfterFailedLoad,
@@ -901,6 +924,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         automatic,
       );
       if (!eligibleFeeds.length) return;
+      notifyMessageReplyPoll('Duty');
       const cycle = beginDutyNotificationPollCycle();
       pollNotificationCyclesRef.current.add(cycle);
       const countTasks = eligibleFeeds.map(async (feed) => {

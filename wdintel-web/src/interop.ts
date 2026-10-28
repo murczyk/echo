@@ -55,6 +55,7 @@ import './ts/react/admin-unparsed-units-element';
 import './ts/react/admin-units-element';
 import './ts/react/admin-ai-callsigns-element';
 import './ts/react/admin-device-analytics-element';
+import './ts/react/transcription-forwarding-element';
 import './ts/react/admin-ai-agent-element';
 import './ts/react/ai-agent-chat-element';
 import './ts/react/my-reports-element';

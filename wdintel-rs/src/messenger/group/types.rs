@@ -4,6 +4,12 @@ use crate::types::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::ser::SerializeStruct;
 
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct GroupCreationInfo {
+    pub created_at: i64,
+    pub created_by: Option<String>,
+}
+
 #[derive(
     Elm,
     ElmEncode,
@@ -106,6 +112,7 @@ pub struct OrphanSignalGroupEntry {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
@@ -126,6 +133,7 @@ pub struct SignalGroupEntry {
     pub interseption_kind: InterseptionKind,
     pub disable_network_assignment: bool,
     pub is_aviation_group: bool,
+    pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
@@ -139,7 +147,7 @@ impl Serialize for OrphanSignalGroupEntry {
         S: serde::Serializer,
     {
         let mut state =
-            serializer.serialize_struct("OrphanSignalGroupEntry", 15)?;
+            serializer.serialize_struct("OrphanSignalGroupEntry", 17)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -153,6 +161,10 @@ impl Serialize for OrphanSignalGroupEntry {
             &self.disable_network_assignment,
         )?;
         state.serialize_field("is_aviation_group", &self.is_aviation_group)?;
+        state.serialize_field(
+            "ai_transcript_analysis_enabled",
+            &self.ai_transcript_analysis_enabled,
+        )?;
         state
             .serialize_field("fetch_new_messages", &self.fetch_new_messages)?;
         state.serialize_field(
@@ -178,7 +190,7 @@ impl Serialize for SignalGroupEntry {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("SignalGroupEntry", 12)?;
+        let mut state = serializer.serialize_struct("SignalGroupEntry", 14)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -192,6 +204,10 @@ impl Serialize for SignalGroupEntry {
             &self.disable_network_assignment,
         )?;
         state.serialize_field("is_aviation_group", &self.is_aviation_group)?;
+        state.serialize_field(
+            "ai_transcript_analysis_enabled",
+            &self.ai_transcript_analysis_enabled,
+        )?;
         state
             .serialize_field("fetch_new_messages", &self.fetch_new_messages)?;
         state.serialize_field(
@@ -321,6 +337,7 @@ mod tests {
             interseption_kind: InterseptionKind::InterseptionRer,
             disable_network_assignment: true,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
             group_stats: SignalGroupStats::default(),
             admin_data: None,
@@ -345,6 +362,7 @@ mod tests {
             interseption_kind: InterseptionKind::InterseptionOther,
             disable_network_assignment: false,
             is_aviation_group: false,
+            ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
             is_archived: false,
             datasource_id: Some(1),

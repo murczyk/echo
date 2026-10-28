@@ -12,6 +12,10 @@ pub async fn upsert_datasource(
     db: &DatabaseConnection,
     mut new_datasource: datasource::Model,
 ) -> anyhow::Result<(i64, i64)> {
+    anyhow::ensure!(
+        new_datasource.kind != crate::config::DATASOURCE_ECHO_NATIVE_KIND,
+        "Імпорт службового джерела Echo не підтримується"
+    );
     new_datasource.echo_client_lock_id = None;
     let existing_data_source = datasource::Entity::find()
         .filter(datasource::Column::Kind.eq(new_datasource.kind.clone()))
@@ -88,6 +92,12 @@ pub async fn upsert_signal_groups(
     groups: Vec<signal_group::Model>,
     target_datasource_id: i64,
 ) -> anyhow::Result<()> {
+    crate::datasource::native::require_external_datasource(
+        db,
+        target_datasource_id,
+    )
+    .await
+    .c(h!())?;
     let group_keys = groups.iter().map(|g| g.master_key.clone()).collect_vec();
     let existing_groups = signal_group::Entity::find()
         .filter(signal_group::Column::MasterKey.eq_any(group_keys))
@@ -104,6 +114,7 @@ pub async fn upsert_signal_groups(
             None => {
                 info!("inserting group {}", new_group.master_key);
                 let mut rec = new_group.into_active_model();
+                rec.datasource_id = Set(Some(target_datasource_id));
                 rec.created_at = NotSet;
                 match crate::messenger::group::add_group(rec, db)
                     .await
@@ -119,6 +130,7 @@ pub async fn upsert_signal_groups(
                             created_at: NotSet,
                             name: Set(inserted.name.clone().unwrap_or_default()),
                             deleted: NotSet,
+                            messenger_type: NotSet,
                         }
                         .insert(db)
                         .await
@@ -172,6 +184,7 @@ pub async fn upsert_signal_groups(
                         created_at: NotSet,
                         name: Set(name),
                         deleted: NotSet,
+                        messenger_type: NotSet,
                     }
                     .insert(db)
                     .await

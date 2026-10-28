@@ -1,8 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import React from 'react';
-import { act } from 'react';
+import { act, Children, cloneElement, isValidElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,6 +23,7 @@ const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() =>
 );
 
 vi.mock('@mui/material', () => ({
+  useMediaQuery: () => false,
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: ({ children, ...props }: { children: ReactNode } & Record<string, unknown>) => (
     <div {...props}>{children}</div>
@@ -76,15 +76,17 @@ vi.mock('@mui/material', () => ({
     value,
     onChange,
     children,
+    'aria-label': ariaLabel,
   }: {
     value?: unknown;
     onChange?: (_event: unknown, val: unknown) => void;
     children?: ReactNode;
+    'aria-label'?: string;
   }) => (
-    <div data-toggle-group={String(value)}>
-      {React.Children.map(children, (child) => {
-        if (!React.isValidElement(child)) return child;
-        return React.cloneElement(child as any, {
+    <div data-toggle-group={String(value)} aria-label={ariaLabel}>
+      {Children.map(children, (child) => {
+        if (!isValidElement(child)) return child;
+        return cloneElement(child as any, {
           onClick: () => onChange?.(new Event('click'), child.props.value),
         });
       })}
@@ -243,7 +245,8 @@ vi.mock('../../../services/api/user', () => ({
   saveUserSettings: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../services/api/user-settings', () => ({
+vi.mock('../../../services/api/user-settings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../services/api/user-settings')>()),
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: vi.fn().mockResolvedValue({
     tagsLayout: 'compact',
@@ -406,6 +409,78 @@ describe('SettingsNeoPage', () => {
     expect(container.querySelector('[data-toggle-value="interception"]')).toBeNull();
     expect(saveUserDutySettings).not.toHaveBeenCalled();
   });
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each(['duty', 'analysis'] as const)(
+    'persists the card text size from %s and defaults older settings to compact text',
+    async (section) => {
+      await act(async () => {
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const group = () => container.querySelector('[aria-label="Розмір тексту картки"]');
+      expect(group()?.getAttribute('data-toggle-group')).toBe('false');
+      for (const largeMessageCardText of [true, false]) {
+        const button = group()?.querySelector<HTMLButtonElement>(
+          `[data-toggle-value="${largeMessageCardText}"]`,
+        );
+        expect(button).not.toBeNull();
+        await act(async () => button!.click());
+        expect(saveUserDutySettings).toHaveBeenLastCalledWith(
+          expect.objectContaining({ largeMessageCardText }),
+        );
+        await act(async () => {
+          root.render(<SettingsNeoPage section={section === 'duty' ? 'analysis' : 'duty'} />);
+        });
+        expect(group()?.getAttribute('data-toggle-group')).toBe(String(largeMessageCardText));
+      }
+    },
+  );
+
+  // Regression: https://github.com/echoua/echo/issues/3324
+  it.each(['duty', 'analysis'] as const)(
+    'persists all attachment modes from %s and shares the selection across settings tabs',
+    async (section) => {
+      await act(async () => {
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(container.querySelector('[data-toggle-group="collapsed"]')).not.toBeNull();
+
+      for (const [mode, dutyCollapseMediaPreviews, largeMediaPreviews] of [
+        ['large', false, true],
+        ['compact', false, false],
+        ['collapsed', true, false],
+      ] as const) {
+        const button = container
+          .querySelector('fieldset')
+          ?.querySelector<HTMLButtonElement>(`[data-toggle-value="${mode}"]`);
+        expect(button).not.toBeNull();
+        const previousSaveCount = saveUserDutySettings.mock.calls.length;
+        await act(async () => {
+          button!.click();
+          await Promise.resolve();
+        });
+
+        expect(saveUserDutySettings).toHaveBeenCalledTimes(previousSaveCount + 1);
+        expect(saveUserDutySettings).toHaveBeenLastCalledWith(
+          expect.objectContaining({ dutyCollapseMediaPreviews, largeMediaPreviews }),
+        );
+        expect(container.querySelector(`fieldset [data-toggle-group="${mode}"]`)).not.toBeNull();
+        const preview = container.querySelector(`[data-attachment-preview-mock="${mode}"]`);
+        expect(preview !== null).toBe(mode !== 'collapsed');
+
+        await act(async () => {
+          root.render(<SettingsNeoPage section={section === 'duty' ? 'analysis' : 'duty'} />);
+        });
+        expect(container.querySelector(`fieldset [data-toggle-group="${mode}"]`)).not.toBeNull();
+        await act(async () => root.render(<SettingsNeoPage section={section} />));
+      }
+    },
+  );
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();
     const secondSave = deferred<void>();
@@ -454,6 +529,8 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      largeMediaPreviews: false,
+      largeMessageCardText: false,
       mediaSummaryEnabled: true,
       aiPositionHighlightsEnabled: false,
       messageAutoParseEnabled: false,

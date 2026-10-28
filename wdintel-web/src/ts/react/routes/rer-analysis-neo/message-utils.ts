@@ -43,7 +43,7 @@ export function buildNetworkDisplayMap(
 }
 
 export function buildSenderFilterOptions(
-  senders: AnalysisStatsSender[],
+  senders: Array<Pick<AnalysisStatsSender, 'uuid' | 'count'>>,
   profiles: Record<string, SignalProfileEntry | null>,
 ): AnalysisFilterOption[] {
   const nameCounts = senders.reduce<Record<string, number>>((counts, sender) => {

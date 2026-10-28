@@ -68,6 +68,8 @@ export type AnalysisDirectMessageNavigation = {
   totalCount: number;
   focusActive: boolean;
   highlightTarget?: boolean;
+  scrollBehavior?: ScrollBehavior;
+  constrainToContent?: boolean;
   contextLoading?: boolean;
   newestFirst: boolean;
   canLoadEarlier: boolean;
@@ -197,6 +199,7 @@ export function getAnalysisSidebarTabs(
 }
 
 export type AnalysisPageState = {
+  threadMode?: { deletedCount: number; exit: () => void } | null;
   radioFeaturesAllowed: boolean;
   authUserName: string | null;
   aorEntries: AnalysisAorEntry[];
@@ -265,6 +268,7 @@ export type AnalysisPageState = {
   loadingAfterWindow: boolean;
   directMessageLoading: boolean;
   directMessageNavigation: AnalysisDirectMessageNavigation | null;
+  loadedReplyTarget?: { messageId: number } | null;
   onLinkedMessageMounted: (messageId: number) => void;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
@@ -293,6 +297,8 @@ export type AnalysisPageState = {
   networkVisibilityReady: boolean;
   mediaSummaryEnabled?: boolean;
   collapseMediaPreviews: boolean;
+  largeMediaPreviews: boolean;
+  largeMessageCardText: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -323,6 +329,7 @@ export type AnalysisPageState = {
 };
 
 export type AnalysisPageActions = {
+  navigateReply: import('../shared/message-replies/MessageRepliesProvider').ReplyNavigation;
   applySavedFilter: (savedFilter: SavedFilter | null) => void;
   deleteLoadedSavedFilter: () => void;
   renameExistingSavedFilter: (name: string) => Promise<boolean>;

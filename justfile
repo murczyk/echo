@@ -247,7 +247,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -273,7 +273,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --ignore-tables spatial_ref_sys,seaql_migrations --with-serde both --tables analytics_tag,analytics_tag_test_file,device_audio,device_audio_asr_setting,device_audio_forwarding_outbox,device_audio_ingest,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_archive,file_content,file_content_upload,file_device_source_state,file_document,file_document_backfill,file_document_chunk,file_document_generation,file_document_job,file_document_position,file_document_revision_generation,file_entry,file_preview,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
@@ -1334,8 +1334,9 @@ deploy-from-local _server_pos="" server silent="false":
       export DEBIAN_FRONTEND=noninteractive
       cd /var/tmp
       timeout --foreground 1200s sudo env DEBIAN_FRONTEND=noninteractive \
-        apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew --no-download -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
-      rm -f './${REMOTE_DEB_NAME}'
+        flock --timeout 120 /var/lib/dpkg/lock-frontend \
+        dpkg --force-confnew --force-downgrade -i '${REMOTE_DEB_PATH}'
+      rm -f '${REMOTE_DEB_PATH}'
     "
     REMOTE_DEB_PATH=""
 

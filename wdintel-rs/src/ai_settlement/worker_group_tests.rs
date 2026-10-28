@@ -135,6 +135,7 @@ async fn restricts_new_and_queued_messages_by_group_membership_3383() {
                 except,
                 master_keys: keys.clone(),
             },
+            None,
         )
         .await
         .unwrap();
@@ -145,6 +146,10 @@ async fn restricts_new_and_queued_messages_by_group_membership_3383() {
             drain_eligible_jobs(&env.dbx, &current.group_filter).await,
             expected
         );
+        // Excluded retained jobs must not produce a false stalled-worker alert (#3888).
+        let monitoring =
+            crate::ai_worker::monitoring::load(&env.dbx).await.unwrap();
+        assert!(monitoring.settlement.oldest_pending_created_at_ms.is_none());
         ai_settlement_worker_job::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -204,6 +209,7 @@ async fn excludes_inactive_groups_and_rejects_invalid_selections_3383() {
             except: false,
             master_keys: vec![active.master_key.clone()],
         },
+        None,
     )
     .await
     .unwrap();
@@ -219,7 +225,8 @@ async fn excludes_inactive_groups_and_rejects_invalid_selections_3383() {
             GroupFilter {
                 except: true,
                 master_keys: vec![key]
-            }
+            },
+            None
         )
         .await
         .is_err());
@@ -298,6 +305,7 @@ async fn saving_group_filter_restarts_inflight_worker_request_3383() {
             except: false,
             master_keys: vec![second.master_key],
         },
+        None,
     )
     .await
     .unwrap();

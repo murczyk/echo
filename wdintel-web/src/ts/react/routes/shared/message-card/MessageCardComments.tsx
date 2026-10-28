@@ -59,8 +59,9 @@ export function MessageCardComments({
         minHeight: 27,
         py: 0,
         px: 0.5,
-        fontSize: '0.875rem',
-        fontWeight: 400,
+        fontSize: 'calc(1rem * 12 / 14)',
+        fontWeight: 500,
+        lineHeight: 'calc(16 / 12)',
         textTransform: 'none',
         color: 'var(--color-action)',
         '& .MuiButton-endIcon': { ml: 1, mr: 0, '& i': { fontSize: '0.875rem' } },
@@ -93,8 +94,8 @@ export function MessageCardComments({
         >
           <Typography
             variant="body2"
+            className="message-card-comment-author"
             sx={{
-              fontWeight: 700,
               overflowWrap: 'anywhere',
               whiteSpace: 'pre-wrap',
               minWidth: 0,
@@ -113,7 +114,8 @@ export function MessageCardComments({
           </Typography>
           <Typography
             variant="body2"
-            sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', lineHeight: 1.4, minWidth: 0 }}
+            className="message-card-secondary-text"
+            sx={{ overflowWrap: 'anywhere', whiteSpace: 'pre-wrap', minWidth: 0 }}
           >
             {comment.comment}
           </Typography>

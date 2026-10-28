@@ -116,6 +116,7 @@ async fn issue_3620_direct_parse_isolates_ai_and_preserves_results_on_failure()
         .await
         .unwrap();
     let settings = ai_callsign_settings::ActiveModel {
+        worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
         id: Set(crate::config::AI_CALLSIGN_SETTINGS_ID),
         prompt: Set("Extract callsigns for the UI fixture".into()),
         worker_enabled: Set(true),

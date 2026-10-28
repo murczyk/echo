@@ -916,6 +916,9 @@ where
 {
     let mut unreferenced = Vec::new();
     for media in media {
+        if crate::messenger::audio_ref::is_reference(media) {
+            continue;
+        }
         let Some(storage_key) = media.storage_key.as_deref() else {
             unreferenced.push(media.clone());
             continue;
@@ -938,6 +941,7 @@ where
 }
 
 pub async fn copy_signal_message_media<C>(
+    env: &crate::types::Env,
     dbx: &C,
     signal_message_id: i64,
     signal_message_uuid: Option<Uuid>,
@@ -946,8 +950,17 @@ pub async fn copy_signal_message_media<C>(
 where
     C: ConnectionTrait,
 {
+    crate::messenger::audio_ref::copy(
+        env,
+        dbx,
+        signal_message_id,
+        source_media,
+    )
+    .await
+    .c(h!())?;
     let media_models = source_media
         .iter()
+        .filter(|media| !crate::messenger::audio_ref::is_reference(media))
         .map(|media| {
             let storage_key = media.storage_key.clone().unwrap_or_else(|| {
                 crate::messenger::media::media_object_key(media)
@@ -1111,7 +1124,10 @@ where
                 .c(h!())?
                 .ok_or(AppError::NotFound)
                 .c(h!())?;
-        if payload.unit.as_deref() == source_inbox_item.unit_v2.as_deref() {
+        if payload.unit_id.is_none()
+            && !payload.create_unit
+            && payload.unit.as_deref() == source_inbox_item.unit_v2.as_deref()
+        {
             unit_source_ids.push(*source_signal_message_id);
         }
         if payload.full_body.as_deref() == source_message.body.as_deref()
@@ -1817,13 +1833,20 @@ where
         .c(h!())?
     {
         None => {
-            signal_profile::ActiveModel {
+            signal_profile::Entity::insert(signal_profile::ActiveModel {
                 uuid: Set(sender.clone()),
                 given_name: Set(Some(login_name)),
                 family_name: Set(None),
                 created_at: NotSet,
-            }
-            .insert(dbx)
+            })
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::column(
+                    signal_profile::Column::Uuid,
+                )
+                .do_nothing()
+                .to_owned(),
+            )
+            .exec_without_returning(dbx)
             .await
             .c(h!())?;
         }
