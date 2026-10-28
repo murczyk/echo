@@ -276,7 +276,7 @@ export function useRerDutyInitialLoad(params: Params) {
                   loading: false,
                   referenceTimeMs: Date.now(),
                   pendingNewerItems: [],
-                  evictedNewerTailId: null,
+                  evictedNewerTailId: initialTarget ? (historicalReadThrough?.id ?? null) : null,
                   historicalReadThrough:
                     preserveUnread && initialTarget
                       ? candidate.historicalReadThrough

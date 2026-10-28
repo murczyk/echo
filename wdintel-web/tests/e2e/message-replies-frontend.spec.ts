@@ -10,6 +10,50 @@ import {
   withReplyActors,
 } from './message-replies.fixtures';
 
+for (const laterMessageCount of [19, 59]) {
+  test(`@regression #3612 duty: the latest-message arrow keeps the newest reply after visiting its original across ${laterMessageCount + 1} messages`, async ({
+    browser,
+    baseURL,
+  }) => {
+    await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+      await page!.setViewportSize({ width: 1280, height: 900 });
+      const actor = await fixture.attach(page!, 'duty', 'user-1');
+      fixture.setPageLimit(20);
+      for (let i = 0; i < 40; i++) fixture.seed('user-2', `Earlier history ${i}`);
+      const original = fixture.seed('user-2', 'Original message in the second chunk');
+      for (let i = 0; i < laterMessageCount; i++) fixture.seed('user-2', `Later history ${i}`);
+      const newest = fixture.seed('user-1', 'Newest reply');
+      fixture.respondWithReplies([relation(1, original, newest)]);
+      await visit(actor);
+      await expect(row(actor, newest.id)).toBeInViewport();
+      await expect(row(actor, original.id)).toHaveCount(0);
+      await row(actor, newest.id).getByRole('link').filter({ hasText: original.text }).click();
+      await expect(row(actor, original.id)).toBeInViewport();
+      await expect(row(actor, original.id)).toHaveAttribute(
+        'data-message-feed-highlighted',
+        'true',
+      );
+      await page!.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
+      await expect(row(actor, newest.id)).toBeInViewport();
+      await expect(
+        await page!.evaluate(async (id) => {
+          const deadline = performance.now() + 2_000;
+          while (performance.now() < deadline) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            const target = document.querySelector(`[data-duty-message-id="${id}"]`);
+            const scroller = target?.closest('[data-message-feed-scroller]');
+            if (!target || !scroller) return false;
+            const card = target.getBoundingClientRect();
+            const viewport = scroller.getBoundingClientRect();
+            if (card.bottom <= viewport.top || card.top >= viewport.bottom) return false;
+          }
+          return true;
+        }, newest.id),
+      ).toBe(true);
+    });
+  });
+}
+
 test('@regression #3612 analysis: reply navigation keeps the newest message at the end without blank space', async ({
   browser,
   baseURL,
