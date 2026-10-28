@@ -167,6 +167,7 @@ main() {
   [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
     || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
   control_release=$(require_paired_control_release "$analytics_ssh_target")
+  SOURCE_RECONCILE_LOCK_WAIT_SECONDS=${SOURCE_RECONCILE_LOCK_WAIT_SECONDS:-300}
   acquire_source_reconcile_lock
 
   if [[ "$mode" == --manifest ]]; then

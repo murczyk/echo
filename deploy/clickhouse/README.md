@@ -1072,8 +1072,20 @@ The workflows then install the packaged exclusion file when its selected table
 set differs from `/etc/echo-peerdb/tables-exclude.txt`, run migrations once
 while workers are stopped, explicitly start the serialized analytics
 reconciler, and require the source reconciliation plus end-to-end health check
-to succeed after service startup. The default health deadline is 300 seconds
-and can be changed with
+to succeed after service startup. Post-migration verification first repairs
+already-published tables, reconciles newly created tables into the publication
+and mirror, then checks the complete manifest repair batch. New tables receive
+their initial snapshot before any later additive-schema repair is checked.
+If systemd skips the source reconciler because a unit condition is unmet,
+verification fails; inspect `systemctl cat echo-peerdb-table-reconcile.service`
+and its journal before retrying. Recovery guards such as
+`/etc/echo-peerdb/database-recovery` must be cleared deliberately after recovery
+is complete. The verifier leaves them in place. Targeted repairs wait up to
+300 seconds for the source table-selection lock instead of failing immediately
+when the background reconciler holds it. Override that bound with
+`SOURCE_RECONCILE_LOCK_WAIT_SECONDS` in `source.env`. A lock timeout stops the
+repair before any remote repair command runs. The default health deadline is
+300 seconds and can be changed with
 `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` in `source.env`. A direct
 `wdintel-rs migrate` refuses to run while the packaged and deployed exclusion
 sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.

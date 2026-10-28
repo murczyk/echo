@@ -5,8 +5,13 @@ set -euo pipefail
 TEST_DIR=$(cd "$(dirname "$0")" && pwd)
 SCRIPT_DIR=$(cd "$TEST_DIR/../bin" && pwd)
 case_dir=$(mktemp -d /tmp/echo-source-resnapshot-test.XXXXXX)
+holder_pid=
 
 cleanup() {
+  if [[ -n "$holder_pid" ]]; then
+    kill "$holder_pid" 2>/dev/null || true
+    wait "$holder_pid" 2>/dev/null || true
+  fi
   rm -rf -- "$case_dir"
 }
 trap cleanup EXIT
@@ -79,6 +84,7 @@ export ECHO_PEERDB_DEPLOYMENT_BASELINE_MANIFEST_FILE=$baseline_manifest
 export ECHO_PEERDB_LIB=$SCRIPT_DIR/lib.sh
 # shellcheck disable=SC1090
 source "$SCRIPT_DIR/source-resnapshot-table.sh"
+source_lock_function=$(declare -f acquire_source_reconcile_lock)
 
 expected=$'replicated_snapshot\tpublic.dependency\nempty_table_resnapshot\tpublic.empty\ncdc_additive\tpublic.messages\nreplicated_snapshot\tpublic.nonempty'
 [[ $(manifest_resnapshot_entries) == "$expected" ]]
@@ -121,5 +127,48 @@ if (main --manifest --published-only); then
   exit 1
 fi
 [[ ! -e "$case_dir/batch" ]]
+
+eval "$source_lock_function"
+SOURCE_RECONCILE_STATE_DIR=$case_dir/state
+SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
+mkdir "$SOURCE_RECONCILE_STATE_DIR"
+
+hold_source_lock() {
+  rm -f "$case_dir/lock-ready" "$case_dir/lock-released"
+  (
+    exec 9>"$SOURCE_RECONCILE_LOCK_FILE"
+    flock 9
+    touch "$case_dir/lock-ready"
+    sleep "$1"
+    touch "$case_dir/lock-released"
+  ) &
+  holder_pid=$!
+  for _ in $(seq 1 100); do
+    [[ -f "$case_dir/lock-ready" ]] && return 0
+    sleep 0.01
+  done
+  return 1
+}
+
+run_remote_batch() {
+  [[ -f "$case_dir/lock-released" ]] || exit 90
+  cat >"$case_dir/batch"
+}
+hold_source_lock 0.3
+(main --manifest)
+wait "$holder_pid"
+holder_pid=
+[[ $(cat "$case_dir/batch") == "$expected" ]]
+
+rm "$case_dir/batch"
+hold_source_lock 2
+if (SOURCE_RECONCILE_LOCK_WAIT_SECONDS=1 main --manifest) >"$case_dir/lock-timeout" 2>&1; then
+  printf 'busy source lock unexpectedly started targeted repairs\n' >&2
+  exit 1
+fi
+grep -q 'lock was not available within 1s' "$case_dir/lock-timeout"
+[[ ! -e "$case_dir/batch" ]]
+wait "$holder_pid"
+holder_pid=
 
 printf 'Source table resnapshot authorization tests passed\n'
