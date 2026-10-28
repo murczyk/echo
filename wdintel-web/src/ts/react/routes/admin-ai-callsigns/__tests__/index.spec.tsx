@@ -81,7 +81,7 @@ beforeEach(() => {
         results: [],
       },
     ],
-    worker: { enabled: false, aiEngineId: 'engine-a' },
+    worker: { enabled: false, fallbackAiEngineId: null, aiEngineId: 'engine-a' },
   });
   mocks.test.mockResolvedValue({ results: [testResult] });
   mocks.save.mockResolvedValue({

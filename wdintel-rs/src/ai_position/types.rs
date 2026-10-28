@@ -19,6 +19,7 @@ pub struct AiPositionEngineItem {
 pub struct AiPositionWorkerSettingsItem {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
+    pub fallback_ai_engine_id: Option<String>,
 }
 
 #[derive(
@@ -59,6 +60,11 @@ pub struct AiPositionPromptState {
 pub struct SaveAiPositionWorkerSettingsReq {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::ai_worker::deserialize_fallback_update"
+    )]
+    pub fallback_ai_engine_id: Option<Option<String>>,
 }
 
 #[derive(

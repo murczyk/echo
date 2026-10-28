@@ -23,6 +23,7 @@ pub mod ai_intel_report;
 pub mod ai_position;
 pub mod ai_settlement;
 pub mod ai_transcript_analysis;
+mod ai_worker;
 pub(crate) mod alpine;
 pub mod api_integrations;
 pub mod atak;

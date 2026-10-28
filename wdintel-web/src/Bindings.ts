@@ -6380,6 +6380,7 @@ export type AiCallsignTestMessageItem = {
 export type AiCallsignWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null;
 };
 
 export type AiCallsignPageRsp = {
@@ -6485,6 +6486,7 @@ export type SaveAiCallsignParsingReq = {
 export type SaveAiCallsignWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
 };
 
 export type SettlementAliasSettlement = {
@@ -6650,6 +6652,7 @@ export type AiSettlementTestMessageVersionItem = {
 export type AiSettlementWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null;
   groupsExcept: boolean;
   groupMasterKeys: Array<string>;
 };
@@ -6705,6 +6708,7 @@ export type SaveAiSettlementParsingReq = {
 export type SaveAiSettlementWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
   groupsExcept: boolean;
   groupMasterKeys: Array<string>;
 };
@@ -6718,6 +6722,7 @@ export type AiPositionEngineItem = {
 export type AiPositionWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null;
 };
 
 export type AiPositionPageRsp = {
@@ -6741,6 +6746,7 @@ export type AiPositionPromptState = {
 export type SaveAiPositionWorkerSettingsReq = {
   enabled: boolean;
   aiEngineId: string | null;
+  fallbackAiEngineId: string | null | null;
 };
 
 export type TestAiPositionReq = {

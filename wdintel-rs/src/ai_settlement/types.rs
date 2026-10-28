@@ -124,6 +124,7 @@ pub struct AiSettlementTestMessageVersionItem {
 pub struct AiSettlementWorkerSettingsItem {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
+    pub fallback_ai_engine_id: Option<String>,
     pub groups_except: bool,
     pub group_master_keys: Vec<String>,
 }
@@ -227,6 +228,11 @@ pub struct SaveAiSettlementParsingReq {
 pub struct SaveAiSettlementWorkerSettingsReq {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::ai_worker::deserialize_fallback_update"
+    )]
+    pub fallback_ai_engine_id: Option<Option<String>>,
     #[serde(default)]
     pub groups_except: bool,
     #[serde(default)]

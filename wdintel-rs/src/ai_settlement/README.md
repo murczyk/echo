@@ -64,3 +64,14 @@ processing; saving requires replacing or removing unavailable selections.
 
 Behavior coverage: `wdintel-rs/src/ai_settlement/worker_group_tests.rs` and
 `wdintel-web/tests/e2e/settlement-worker-groups.spec.ts`.
+
+## Worker reliability and monitoring
+
+The admin worker settings select a primary AI engine and an optional fallback.
+See [AI queue reliability](../ai_worker/README.md) for deadlines, failure and
+progress semantics, compatibility, and deployment requirements.
+
+Queue health is published in `POST /api/monitoring` under `ai.settlement`.
+Future recurring troubleshooting queries must publish their useful results
+there and extend Echo Sergeant's checks and README, following the
+[monitoring contract](../server/README.md).

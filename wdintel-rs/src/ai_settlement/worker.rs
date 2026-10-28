@@ -35,6 +35,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) struct WorkerConfig {
     pub prompt: String,
     pub ai_engine: ai_engine::Model,
+    fallback_ai_engine: Option<ai_engine::Model>,
     settings_updated_at: chrono::NaiveDateTime,
     group_filter: GroupFilter,
 }
@@ -178,47 +179,49 @@ async fn process_next(
         return Ok(true);
     };
     let body = message.body.unwrap_or_default();
-    let response = request_ai_response(
-        ai_client,
+    let settlements = match crate::ai_worker::with_fallback(
+        "settlement",
         &config.ai_engine,
-        vec![
-            AiEngineMessage {
-                role: AI_CHAT_ROLE_SYSTEM.to_string(),
-                content: config.prompt.clone(),
-            },
-            AiEngineMessage {
-                role: AI_CHAT_ROLE_USER.to_string(),
-                content: body.clone(),
-            },
-        ],
-    )
-    .await;
-    let settlements = match response {
-        Ok(response_text) => match parse_settlements(&response_text) {
-            Ok(settlements) => settlements,
-            Err(error) => {
-                fail_job(
-                    dbx,
-                    job.sigint_inbox_item_id,
-                    &body,
-                    &config,
-                    format!("{error:#}; відповідь ШІ: {response_text}"),
+        config.fallback_ai_engine.as_ref(),
+        |engine| {
+            let prompt = &config.prompt;
+            let body = &body;
+            async move {
+                let response = request_ai_response(
+                    ai_client,
+                    &engine,
+                    vec![
+                        AiEngineMessage {
+                            role: AI_CHAT_ROLE_SYSTEM.to_string(),
+                            content: prompt.clone(),
+                        },
+                        AiEngineMessage {
+                            role: AI_CHAT_ROLE_USER.to_string(),
+                            content: body.clone(),
+                        },
+                    ],
                 )
                 .await
-                .context(h!())?;
-                return Ok(true);
+                .c(h!())?;
+                parse_settlements(&response)
+                    .with_context(|| format!("відповідь ШІ: {response}"))
+                    .c(h!())
             }
         },
+    )
+    .await
+    {
+        Ok((settlements, _)) => settlements,
         Err(error) => {
             fail_job(
                 dbx,
                 job.sigint_inbox_item_id,
                 &body,
                 &config,
-                error.to_string(),
+                format!("{error:#}"),
             )
             .await
-            .context(h!())?;
+            .c(h!())?;
             return Ok(true);
         }
     };
@@ -238,7 +241,7 @@ async fn process_next(
                 job.sigint_inbox_item_id,
                 &body,
                 &config,
-                error.to_string(),
+                format!("{error:#}"),
             )
             .await
             .c(h!())?;
@@ -292,7 +295,15 @@ pub(crate) async fn load_worker_config(
                 .to_string(),
         })
         .context(h!())?;
+    let fallback_ai_engine = crate::ai_worker::load_fallback(
+        dbx,
+        ai_engine.id,
+        settings.worker_fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     Ok(Some(WorkerConfig {
+        fallback_ai_engine,
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
         settings_updated_at: settings.updated_at,
@@ -321,6 +332,34 @@ async fn load_next_job(
         .one(dbx)
         .await
         .c(h!())?)
+}
+
+pub(crate) async fn oldest_eligible_job_created_at<C: ConnectionTrait>(
+    db: &C,
+) -> anyhow::Result<Option<chrono::NaiveDateTime>> {
+    let settings =
+        ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
+            .one(db)
+            .await
+            .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(None);
+    };
+    let filter = GroupFilter::from_settings(&settings);
+    let mut jobs = ai_settlement_worker_job::Entity::find()
+        .select_only()
+        .column(ai_settlement_worker_job::Column::CreatedAt);
+    if let Some(condition) = filter.condition(Expr::col((
+        ai_settlement_worker_job::Entity,
+        ai_settlement_worker_job::Column::SigintInboxItemId,
+    ))) {
+        jobs = jobs.filter(condition);
+    }
+    jobs.order_by_asc(ai_settlement_worker_job::Column::CreatedAt)
+        .into_tuple::<chrono::NaiveDateTime>()
+        .one(db)
+        .await
+        .c(h!())
 }
 
 async fn complete_job(
@@ -426,6 +465,13 @@ async fn complete_job(
         .await
         .c(h!())?;
     }
+    crate::ai_worker::record_success(
+        &transaction,
+        "settlement",
+        sigint_inbox_item_id,
+    )
+    .await
+    .c(h!())?;
     delete_job(&transaction, sigint_inbox_item_id)
         .await
         .context(h!())?;
@@ -545,6 +591,14 @@ async fn fail_job(
     }
     let attempts = job.attempts + 1;
     let error_text = truncate_error(error_text);
+    crate::ai_worker::record_failure(
+        &transaction,
+        "settlement",
+        &sigint_inbox_item_id.to_string(),
+        &error_text,
+    )
+    .await
+    .c(h!())?;
     if attempts >= AI_SETTLEMENT_WORKER_MAX_ATTEMPTS {
         error!(
             "ai_settlement_worker dropped message_id={} after {} attempts: {}",
@@ -633,6 +687,76 @@ mod tests {
         IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
     };
 
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn fallback_recovered_settlement_job_persists_results_and_progress_3888(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let primary = crate::ai_worker::test_support::engine(
+            &env.dbx,
+            200,
+            "invalid JSON",
+            false,
+        )
+        .await;
+        let fallback = crate::ai_worker::test_support::engine(
+            &env.dbx,
+            200,
+            r#"{"settlements":["АРТІЛЬНЕ"]}"#,
+            false,
+        )
+        .await;
+        crate::ai_settlement::save_worker_settings(
+            &env.dbx,
+            true,
+            Some(primary.engine.id),
+            Default::default(),
+            Some(Some(fallback.engine.id)),
+        )
+        .await
+        .unwrap();
+        let item = crate::functest::tests::mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                reviewed: Set(Some(false)),
+                location: Set(None),
+                location_v2: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        super::enqueue_if_enabled(&env.dbx, item.id).await.unwrap();
+        let mut redis = env.redis.clone();
+        assert!(super::process_next(
+            &env.ai_engine_client,
+            &env.dbx,
+            &mut redis
+        )
+        .await
+        .unwrap());
+        let saved = sigint_inbox_item::Entity::find_by_id(item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.location.as_deref(), Some("АРТІЛЬНЕ"));
+        assert!(ai_settlement_worker_job::Entity::find_by_id(item.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
+        let monitoring =
+            crate::ai_worker::monitoring::load(&env.dbx).await.unwrap();
+        assert!(monitoring.settlement.last_completed_at_ms.is_some());
+        assert!(monitoring
+            .settlement
+            .latest_processed_entry_created_at_ms
+            .is_some());
+        assert_eq!(fallback.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn normalizes_ai_settlements() {
         assert_eq!(
@@ -679,6 +803,7 @@ mod tests {
             .await
             .unwrap();
         ai_settlement_settings::ActiveModel {
+            worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
             id: Set(AI_SETTLEMENT_SETTINGS_ID),
             prompt: Set("test prompt".to_string()),
             worker_enabled: Set(true),

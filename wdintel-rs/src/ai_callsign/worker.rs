@@ -31,6 +31,7 @@ use uuid::Uuid;
 pub(crate) struct WorkerConfig {
     pub prompt: String,
     pub ai_engine: ai_engine::Model,
+    pub fallback_ai_engine: Option<ai_engine::Model>,
 }
 
 struct CallsignJobState {
@@ -202,12 +203,11 @@ async fn process_next(
             .await
             .c(h!())?;
     let body = message.body.unwrap_or_default();
-    let callsigns = match super::parse_with_feedback(
+    let callsigns = match parse_with_config(
         ai_client,
         dbx,
         rq,
-        &config.ai_engine,
-        &config.prompt,
+        &config,
         &body,
         is_aviation_group,
     )
@@ -215,7 +215,7 @@ async fn process_next(
     {
         Ok(callsigns) => callsigns,
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await.c(h!())?;
+            fail_job(dbx, job, format!("{error:#}")).await.c(h!())?;
             return Ok(true);
         }
     };
@@ -232,7 +232,7 @@ async fn process_next(
     {
         Ok(changed) => changed,
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await.c(h!())?;
+            fail_job(dbx, job, format!("{error:#}")).await.c(h!())?;
             return Ok(true);
         }
     };
@@ -255,6 +255,37 @@ async fn process_next(
         }
     }
     Ok(true)
+}
+
+pub(crate) async fn parse_with_config<C: ConnectionTrait>(
+    ai_client: &crate::ai_engine::AiEngineClient,
+    db: &C,
+    rq: &reqwest::Client,
+    config: &WorkerConfig,
+    body: &str,
+    is_aviation_group: bool,
+) -> anyhow::Result<Vec<String>> {
+    let (callsigns, _) = crate::ai_worker::with_fallback(
+        "callsign",
+        &config.ai_engine,
+        config.fallback_ai_engine.as_ref(),
+        |engine| async move {
+            super::parse_with_feedback(
+                ai_client,
+                db,
+                rq,
+                &engine,
+                &config.prompt,
+                body,
+                is_aviation_group,
+            )
+            .await
+            .c(h!())
+        },
+    )
+    .await
+    .c(h!())?;
+    Ok(callsigns)
 }
 
 pub(crate) async fn load_worker_config(
@@ -283,7 +314,15 @@ pub(crate) async fn load_worker_config(
         .ok_or_else(|| AppError::BL {
             msg: "ШІ движок воркера позивних вимкнено або видалено".to_string(),
         })?;
+    let fallback_ai_engine = crate::ai_worker::load_fallback(
+        dbx,
+        ai_engine.id,
+        settings.worker_fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     Ok(Some(WorkerConfig {
+        fallback_ai_engine,
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
     }))
@@ -363,6 +402,15 @@ pub(crate) async fn complete_job(
                 .await
                 .context(h!())?;
             continue;
+        }
+        if run_id.is_none() {
+            crate::ai_worker::record_success(
+                &transaction,
+                "callsign",
+                sigint_inbox_item_id,
+            )
+            .await
+            .c(h!())?;
         }
         let changed = save_completed_job(
             &transaction,
@@ -498,6 +546,14 @@ async fn fail_job(
 ) -> Result<(), AppError> {
     let attempts = job.attempts + 1;
     let error_text = truncate_error(error_text);
+    crate::ai_worker::record_failure(
+        dbx,
+        "callsign",
+        &job.sigint_inbox_item_id.to_string(),
+        &error_text,
+    )
+    .await
+    .c(h!())?;
     if attempts >= AI_CALLSIGN_WORKER_MAX_ATTEMPTS {
         error!(
             "ai_callsign_worker dropped message_id={} after {} attempts: {}",
@@ -566,6 +622,10 @@ fn truncate_error(error: String) -> String {
         .take(AI_CALLSIGN_WORKER_MAX_ERROR_CHARS)
         .collect()
 }
+
+#[cfg(test)]
+#[path = "worker/fallback_tests.rs"]
+mod fallback_tests;
 
 #[cfg(test)]
 mod tests {

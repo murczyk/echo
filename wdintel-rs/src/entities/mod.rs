@@ -52,6 +52,7 @@ pub mod ai_transcript_analysis_job;
 pub mod ai_transcript_analysis_settings;
 pub mod ai_transcript_analysis_test_message;
 pub mod ai_transcript_analysis_test_result;
+pub mod ai_worker_progress;
 pub mod alert;
 pub mod aor_location_config;
 pub mod api_integration;

@@ -87,6 +87,9 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
+pub const AI_WORKER_PRIMARY_TIMEOUT_SECS: u64 = 20;
+pub const AI_WORKER_MONITORING_CACHE_TTL_SECS: u64 = 60;
+pub const AI_WORKER_FALLBACK_TIMEOUT_SECS: u64 = 20;
 pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
 pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GLM_5_3_COOLDOWN_SECS: u64 = 60;
@@ -1385,6 +1388,7 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+DELETE FROM ai_worker_progress;
 DELETE FROM ai_transcript_analysis_job;
 DELETE FROM ai_transcript_analysis_test_message;
 UPDATE ai_transcript_analysis_settings SET prompt='',worker_enabled=false,worker_ai_engine_id=null,revision=gen_random_uuid();

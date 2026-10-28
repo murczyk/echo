@@ -196,8 +196,15 @@ pub async fn save_ai_callsign_worker_settings(
     let req = req.into_inner();
     let ai_engine_id =
         validate_worker_engine(&env.dbx, req.enabled, req.ai_engine_id).await?;
-    let settings =
-        save_worker_settings(&env.dbx, req.enabled, ai_engine_id).await?;
+    let settings = save_worker_settings(
+        &env.dbx,
+        req.enabled,
+        ai_engine_id,
+        crate::ai_worker::parse_fallback_update(req.fallback_ai_engine_id)
+            .c(h!())?,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(worker_settings_item(&settings)))
 }
 
@@ -217,6 +224,7 @@ async fn load_page(
         AiCallsignWorkerSettingsItem {
             enabled: false,
             ai_engine_id: None,
+            fallback_ai_engine_id: None,
         },
     );
     let engines = ai_engine::Entity::find()
@@ -276,6 +284,9 @@ fn worker_settings_item(
     settings: &ai_callsign_settings::Model,
 ) -> AiCallsignWorkerSettingsItem {
     AiCallsignWorkerSettingsItem {
+        fallback_ai_engine_id: settings
+            .worker_fallback_ai_engine_id
+            .map(|id| id.to_string()),
         enabled: settings.worker_enabled,
         ai_engine_id: settings
             .worker_ai_engine_id
@@ -316,7 +327,25 @@ async fn save_worker_settings(
     dbx: &DatabaseConnection,
     enabled: bool,
     ai_engine_id: Option<Uuid>,
+    fallback_update: Option<Option<Uuid>>,
 ) -> Result<ai_callsign_settings::Model, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let existing =
+        ai_callsign_settings::Entity::find_by_id(AI_CALLSIGN_SETTINGS_ID)
+            .one(&transaction)
+            .await
+            .c(h!())?;
+    let fallback_ai_engine_id = fallback_update.unwrap_or(
+        existing.and_then(|settings| settings.worker_fallback_ai_engine_id),
+    );
+    crate::ai_worker::validate_selection(
+        &transaction,
+        enabled,
+        ai_engine_id,
+        fallback_ai_engine_id,
+    )
+    .await
+    .c(h!())?;
     let now = Utc::now().naive_utc();
     ai_callsign_settings::Entity::insert(ai_callsign_settings::ActiveModel {
         id: Set(AI_CALLSIGN_SETTINGS_ID),
@@ -324,26 +353,29 @@ async fn save_worker_settings(
         updated_at: Set(now),
         worker_enabled: Set(enabled),
         worker_ai_engine_id: Set(ai_engine_id),
+        worker_fallback_ai_engine_id: Set(fallback_ai_engine_id),
     })
     .on_conflict(
         OnConflict::column(ai_callsign_settings::Column::Id)
             .update_columns([
                 ai_callsign_settings::Column::WorkerEnabled,
                 ai_callsign_settings::Column::WorkerAiEngineId,
+                ai_callsign_settings::Column::WorkerFallbackAiEngineId,
                 ai_callsign_settings::Column::UpdatedAt,
             ])
             .to_owned(),
     )
-    .exec(dbx)
+    .exec(&transaction)
     .await
     .c(h!())?;
-    Ok(
+    let settings =
         ai_callsign_settings::Entity::find_by_id(AI_CALLSIGN_SETTINGS_ID)
-            .one(dbx)
+            .one(&transaction)
             .await
             .c(h!())?
-            .c(h!())?,
-    )
+            .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(settings)
 }
 
 pub(crate) fn effective_prompt(prompt: &str) -> &str {
@@ -756,6 +788,7 @@ async fn save_prompt(
     now: NaiveDateTime,
 ) -> Result<(), AppError> {
     ai_callsign_settings::Entity::insert(ai_callsign_settings::ActiveModel {
+        worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
         id: Set(AI_CALLSIGN_SETTINGS_ID),
         prompt: Set(prompt),
         updated_at: Set(now),
@@ -922,6 +955,7 @@ mod tests {
             .unwrap();
         let now = chrono::Utc::now().naive_utc();
         ai_callsign_settings::ActiveModel {
+            worker_fallback_ai_engine_id: sea_orm::ActiveValue::Set(None),
             id: Set(AI_CALLSIGN_SETTINGS_ID),
             prompt: Set("override".to_string()),
             updated_at: Set(now),
