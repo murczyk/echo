@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { RerDutyQueryStateWf as RerDutyFeedFilterState } from '../../../../Bindings';
+import { commitFeedWindowUpdate } from './feedWindowCommit';
 import { emptyFilter, filtersEqual, generateMessageFeedId, MAX_MESSAGE_FEEDS } from './utils';
 import type { MessageFeedState } from './utils';
 
@@ -27,7 +28,7 @@ export function useRerDutyFeedCrud(
       }
       const preserveUnread = options.preserveUnread && filtersEqual(currentFeed.filter, f);
       markFeedReloadRequested(feedId, preserveUnread);
-      setMessageFeeds((prev) => {
+      commitFeedWindowUpdate(setMessageFeeds, (prev) => {
         const w = prev.find((feed) => feed.id === feedId);
         if (!w || (!forceReload && filtersEqual(w.filter, f))) return prev;
         const filterChanged = !filtersEqual(w.filter, f);
