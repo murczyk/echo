@@ -33,6 +33,8 @@ interface ContextSettings {
   saveCheckpoint?: (summary: string) => Promise<void>;
   toolContextNeedsCompaction?: () => boolean;
   providerRequestMaxBytes?: number;
+  beforeProvider?: (purpose: "research" | "checkpoint", context: Context) => Context;
+  providerCompleted?: (purpose: "checkpoint", durationMs: number) => void;
 }
 
 const MAX_COMPACTION_PASSES = 3;
@@ -232,8 +234,11 @@ async function summarizeCheckpoint(
     if (runtime.checkpointCalls >= MAX_CHECKPOINT_CALLS)
       throw new ContextCompactionLimitError("checkpoint call budget exhausted");
     runtime.checkpointCalls += 1;
+    const prepared = settings.beforeProvider?.("checkpoint", context) ?? context;
     const startedAt = Date.now();
-    const response = await summarize(checkpointEngine, context, options);
+    const response = await summarize(checkpointEngine, prepared, options).finally(() => {
+      settings.providerCompleted?.("checkpoint", Date.now() - startedAt);
+    });
     console.error(JSON.stringify({
       event: "context_checkpoint",
       attempt: runtime.checkpointCalls,
@@ -513,6 +518,7 @@ export function installContextCompaction(
   };
   const previousStream = session.agent.streamFunction;
   session.agent.streamFunction = (selectedEngine, context, options) => {
+    context = settings.beforeProvider?.("research", context) ?? context;
     const requestedTokens = options?.maxTokens ?? selectedEngine.maxTokens;
     if (
       clampMaxTokensToContext(selectedEngine, context, requestedTokens) <

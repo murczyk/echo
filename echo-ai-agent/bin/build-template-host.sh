@@ -82,6 +82,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/context-compaction.ts" \
     "$BUNDLE_DIR/runner/work-memory.ts" \
     "$BUNDLE_DIR/runner/execution-policy.ts" \
+    "$BUNDLE_DIR/runner/flash-research.ts" \
     "$BUNDLE_DIR/runner/citations.ts" \
     "$BUNDLE_DIR/runner/attachments.ts" \
     "$BUNDLE_DIR/runner/devices.ts" \
