@@ -55,7 +55,6 @@ import {
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
-import type { MessageTimeBasis } from '../../../services/api/user-settings';
 import { useMessageCardDateDisplayMs } from './useMessageCardDateDisplayMs';
 
 dayjs.extend(customParseFormat);
@@ -1204,7 +1203,6 @@ export type MessageCardHeaderProps = {
   excludeMenuOptions?: MessageEntityExcludeMenuOption[];
   id: number;
   msg: InboxMessage;
-  messageTimeBasis?: MessageTimeBasis;
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   mapHref?: string;
@@ -1339,12 +1337,6 @@ export function MessageCardTimestampFooter({
   );
 }
 
-function formatCreationDateTime(createdAt: number | null | undefined): string {
-  return Number.isFinite(createdAt)
-    ? dayjs(createdAt).tz(APP_TIME_ZONE).format('DD.MM.YYYY, HH:mm')
-    : '—';
-}
-
 function formatAnalysisEventDateTime(msg: InboxMessage): string {
   const timestamp = msg.timestamp == null ? null : dayjs(msg.timestamp).tz(APP_TIME_ZONE);
   const parsedDate = dayjs(msg.date?.trim() ?? '', ['YYYY-MM-DD', 'DD.MM.YYYY'], true);
@@ -1368,7 +1360,6 @@ function MessageCardHeaderComponent({
   excludeMenuOptions = [],
   id,
   msg,
-  messageTimeBasis,
   copiedFeedbackId,
   etalonDisplayModel,
   mapHref,
@@ -1392,13 +1383,6 @@ function MessageCardHeaderComponent({
   const headerRowRef = useRef<HTMLDivElement | null>(null);
   const [compactActions, setCompactActions] = useState(false);
   const explicitUnit = etalonDisplayModel.headerUnit ?? '—';
-  const displaysCreationTime = messageTimeBasis === 'creation';
-  const timestampLabel = displaysCreationTime
-    ? 'Дата і час створення повідомлення'
-    : 'Дата і час перехоплення';
-  const timestampValue = displaysCreationTime
-    ? formatCreationDateTime(msg.createdAt)
-    : formatAnalysisEventDateTime(msg);
   const navigationMenuItems = buildMessageCardNavigationMenuItems(
     etalonDisplayModel.renderedNetworks,
     mapHref,
@@ -1413,10 +1397,13 @@ function MessageCardHeaderComponent({
       <div
         className="message-card-timestamp-item"
         data-message-card-timestamp-item="true"
-        title={timestampLabel}
+        title="Дата і час перехоплення"
       >
-        <TodayOutlinedIcon className="message-card-header-icon" titleAccess={timestampLabel} />
-        <HeaderText>{timestampValue}</HeaderText>
+        <TodayOutlinedIcon
+          className="message-card-header-icon"
+          titleAccess="Дата і час перехоплення"
+        />
+        <HeaderText>{formatAnalysisEventDateTime(msg)}</HeaderText>
       </div>
     </div>
   );
