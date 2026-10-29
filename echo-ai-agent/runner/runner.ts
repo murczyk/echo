@@ -76,7 +76,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.29.1";
+const HARNESS_RELEASE = "2026.10.29.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3042,6 +3042,43 @@ export async function recoverFinalOutputLimit(
   return true;
 }
 
+function providerFailureKind(value: string): string {
+  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
+    return "rate_limit";
+  if (
+    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
+      value,
+    )
+  )
+    return "authorization";
+  if (
+    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
+      value,
+    )
+  )
+    return "interrupted_stream";
+  return "provider_error";
+}
+
+function providerFailureDetail(value: unknown): string {
+  if (typeof value !== "string" || !value.trim())
+    return "unknown provider error";
+  const kind = providerFailureKind(value);
+  const code = value
+    .match(
+      /\b(rate_limit_exceeded|server_error|invalid_request_error|authentication_error|permission_denied|insufficient_quota|context_length_exceeded)\b/i,
+    )?.[0]
+    .toLowerCase();
+  const descriptions: Record<string, string> = {
+    rate_limit: "provider rate limit or model deployment cooldown",
+    authorization: "provider authorization rejected",
+    interrupted_stream:
+      "stream interrupted or ended before a terminal response event",
+    provider_error: "unclassified provider failure",
+  };
+  return `${kind}: ${descriptions[kind]}${code ? `; code=${code}` : ""}`;
+}
+
 export function validateFinalAssistantMessage(messages: unknown[]): void {
   const assistantMessage = lastAssistantMessage(messages);
   if (!assistantMessage) {
@@ -3055,7 +3092,9 @@ export function validateFinalAssistantMessage(messages: unknown[]): void {
     if (/context window|context length|input exceeds/i.test(errorMessage)) {
       throw new Error("provider context window exceeded");
     }
-    throw new Error("provider request failed");
+    throw new Error(
+      `provider request failed: ${providerFailureDetail(errorMessage)}`,
+    );
   }
   if (assistantMessage.stopReason === "aborted") {
     throw new Error("provider request aborted");

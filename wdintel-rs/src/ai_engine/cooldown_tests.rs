@@ -30,7 +30,7 @@ fn parses_provider_retry_after_headers() {
 
 #[tokio::test(start_paused = true)]
 async fn concurrent_callers_wait_for_the_longest_provider_cooldown() {
-    let cooldown = Arc::new(GlmCooldown::default());
+    let cooldown = Arc::new(ProviderCooldown::default());
     let started = Instant::now();
     cooldown
         .observe(StatusCode::TOO_MANY_REQUESTS, &header::HeaderMap::new())
@@ -64,7 +64,7 @@ async fn concurrent_callers_wait_for_the_longest_provider_cooldown() {
 
 #[tokio::test(start_paused = true)]
 async fn cooldown_survives_cancelled_waiters() {
-    let cooldown = GlmCooldown::default();
+    let cooldown = ProviderCooldown::default();
     cooldown
         .observe(StatusCode::TOO_MANY_REQUESTS, &headers("60"))
         .await

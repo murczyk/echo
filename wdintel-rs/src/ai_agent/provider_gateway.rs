@@ -166,8 +166,11 @@ async fn provider_call(
         authorization.ai_engine,
         body,
         streamed,
-        api,
-        deadline,
+        ProviderCallContext {
+            api,
+            deadline,
+            request_id: Some(authorization.request_id),
+        },
     )
     .await
 }
@@ -458,10 +461,19 @@ async fn proxy_provider_request(
         ai_engine,
         body,
         streamed,
-        ProviderApi::OpenaiCompletions,
-        None,
+        ProviderCallContext {
+            api: ProviderApi::OpenaiCompletions,
+            deadline: None,
+            request_id: None,
+        },
     )
     .await
+}
+
+struct ProviderCallContext {
+    api: ProviderApi,
+    deadline: Option<i64>,
+    request_id: Option<uuid::Uuid>,
 }
 
 async fn proxy_provider_call(
@@ -469,9 +481,13 @@ async fn proxy_provider_call(
     ai_engine: crate::entities::ai_engine::Model,
     body: Value,
     streamed: bool,
-    api: ProviderApi,
-    deadline: Option<i64>,
+    context: ProviderCallContext,
 ) -> Result<HttpResponse, AppError> {
+    let ProviderCallContext {
+        api,
+        deadline,
+        request_id,
+    } = context;
     let started_at = Instant::now();
     let reasoning_effort_present = body.get("reasoning_effort").is_some()
         || body.get("reasoning").is_some();
@@ -511,7 +527,7 @@ async fn proxy_provider_call(
         Ok(response) => response,
         Err(err) => {
             warn!(
-                "AI agent provider gateway transport failure timeout={} connect={} duration_ms={}",
+                "AI agent provider gateway transport failure request_id={request_id:?} timeout={} connect={} duration_ms={}",
                 err.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_timeout),
                 err.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_connect),
                 started_at.elapsed().as_millis()
@@ -533,7 +549,7 @@ async fn proxy_provider_call(
     if !status.is_success() {
         let metadata = read_provider_error_metadata(response).await;
         info!(
-            "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} reasoning_effort_present={} message_count={} request_bytes={} max_output_tokens={:?} error_type={:?} error_code={:?} error_param={:?} error_kind={:?} error_message={:?}",
+            "AI agent provider gateway response request_id={request_id:?} engine_id={} status={} duration_ms={} upstream_request_id={:?} reasoning_effort_present={} message_count={} request_bytes={} max_output_tokens={:?} error_type={:?} error_code={:?} error_param={:?} error_kind={:?} error_message={:?}",
             ai_engine.id,
             status,
             started_at.elapsed().as_millis(),
@@ -556,7 +572,7 @@ async fn proxy_provider_call(
         return Ok(provider_error(status, message));
     }
     info!(
-        "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} message_count={} request_bytes={} max_output_tokens={:?}",
+        "AI agent provider gateway response request_id={request_id:?} engine_id={} status={} duration_ms={} upstream_request_id={:?} message_count={} request_bytes={} max_output_tokens={:?}",
         ai_engine.id,
         status,
         started_at.elapsed().as_millis(),
@@ -620,7 +636,7 @@ async fn proxy_provider_call(
                 }
                 Err(err) => {
                     warn!(
-                        "AI agent provider gateway response stream failed engine_id={engine_id} timeout={} duration_ms={}",
+                        "AI agent provider gateway response stream failed request_id={request_id:?} engine_id={engine_id} timeout={} duration_ms={}",
                         err.is_timeout(),
                         started_at.elapsed().as_millis()
                     );
