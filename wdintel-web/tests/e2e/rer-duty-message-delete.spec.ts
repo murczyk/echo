@@ -152,3 +152,95 @@ for (const disableAutoScroll of [true, false]) {
       .toBeLessThanOrEqual(1);
   });
 }
+
+test('#3894 deleting a direct-link historical tail does not request empty newer pages @regression', async ({
+  page,
+}) => {
+  const uuid = '019a4aa8-0000-7000-8000-000000000041';
+  let deleted = false;
+  const newerSinceIds: number[] = [];
+  const response = (ids: number[]): InboxMessagesRspRaw => ({
+    inbox_items: ids
+      .filter((id) => !deleted || id !== 60)
+      .map((id) => [
+        id,
+        minimalInboxMessage({
+          messageUuid: id === 41 ? uuid : null,
+          text: `Historical message ${id} ${'History '.repeat(40)}`,
+          createdAt: 1_720_000_000_000 + id * 1_000,
+          timestamp: 1_720_000_000_000 + id * 1_000,
+          groupMasterKey: 'group-1',
+        }) as never,
+      ]),
+    callsigns: [],
+    signal_profiles: {},
+    signal_groups: [],
+    freq_pelengs_summary: null,
+    page_limit: 20,
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
+    inboxResponseForRequest: (body) => {
+      const request = body as { before_id_noninclusive?: number; since_id_noninclusive?: number };
+      if (request.before_id_noninclusive === 41)
+        return response(Array.from({ length: 20 }, (_, i) => i + 21));
+      if (request.since_id_noninclusive === 41)
+        return response(Array.from({ length: 19 }, (_, i) => i + 42));
+      if (request.since_id_noninclusive != null) {
+        newerSinceIds.push(request.since_id_noninclusive);
+        return response([]);
+      }
+      if (request.before_id_noninclusive != null) return response([]);
+      return response(Array.from({ length: 20 }, (_, i) => i + 41));
+    },
+  });
+  await page.route('**/api/rer-importer/inbox-item-context', (route) =>
+    route.fulfill({
+      json: {
+        message: response([41]).inbox_items[0],
+        group_master_keys: ['group-1'],
+        sigint_inbox_item_ids: [41],
+        since_ts: null,
+        till_ts: null,
+      },
+    }),
+  );
+  await page.route('**/api/rer-importer/messages-by-id-with-metadata', (route) =>
+    route.fulfill({ json: response([41]) }),
+  );
+  await page.route('**/api/rer-importer/delete-message', async (route) => {
+    deleted = true;
+    await route.fulfill({ json: null });
+  });
+  await page.goto(`/rer-duty-neo?m=${uuid}`);
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="41"]')).toBeInViewport();
+  await scroller.focus();
+  await scroller.press('End');
+  await expect(page.locator('[data-duty-message-id="60"]')).toBeInViewport();
+  await page
+    .locator('[data-duty-message-id="60"]')
+    .getByRole('button', { name: 'Більше дій' })
+    .click();
+  await page.getByRole('menuitem', { name: 'Видалити', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Видалити повідомлення?' });
+  await confirmation.getByRole('button', { name: 'Видалити', exact: true }).click();
+  await expect(confirmation).not.toBeVisible();
+  await expect(page.locator('[data-duty-message-id="60"]')).toHaveCount(0);
+  await expect(page.locator('[data-message-feed-skeleton="below"]')).toHaveCount(0);
+  await scroller.evaluate((element) => {
+    element.scrollTop = element.scrollHeight - element.clientHeight - 500;
+    element.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+  await page.getByRole('button', { name: 'Завантажити нові та перейти вниз' }).click();
+  await expect(page.locator('[data-duty-message-id="59"]')).toBeInViewport();
+  await expect
+    .poll(() =>
+      scroller.evaluate(
+        (element) => element.scrollHeight - element.clientHeight - element.scrollTop,
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+  expect(newerSinceIds).not.toContain(59);
+});

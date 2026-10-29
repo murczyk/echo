@@ -18,6 +18,10 @@ import {
   buildInboxReq,
   emptyFilter,
   feedIndicatorUnreadCount,
+  feedHasUnloadedEvictedNewerTail,
+  feedHasUnloadedHistoricalNewer,
+  feedHasUnrenderedHistoricalNewer,
+  historicalReadMessageIds,
   type MessageFeedState,
 } from '../utils';
 import { useRerDutyMessageActions } from '../useRerDutyMessageActions';
@@ -1165,6 +1169,90 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleDeleteConfirm();
     });
     expect(apiRef.current!.messageFeeds).toBe(initialFeeds);
+  });
+
+  for (const buffered of [false, true]) {
+    it(`#3894 reconciles a deleted ${buffered ? 'buffered' : 'loaded'} historical tail without losing another feed's history`, () => {
+      const older: [number, InboxMessage] = [20, buildMessage({ createdAtOrder: 200 })];
+      const boundary: [number, InboxMessage] = [10, buildMessage({ createdAtOrder: 300 })];
+      const historicalReadThrough = { id: 10, timestamp: 300 };
+      const offWindow = buildFeed({
+        id: 'historical-window',
+        items: [[1, buildMessage({ createdAtOrder: 100 })]],
+        historicalReadThrough,
+        evictedNewerTailId: 10,
+      });
+      const feeds = mergeUpdatedDutyFeedMessages(
+        [
+          buildFeed({
+            items: buffered ? [older] : [older, boundary],
+            pendingNewerItems: buffered ? [boundary] : [],
+            historicalReadThrough,
+            evictedNewerTailId: 10,
+          }),
+          offWindow,
+        ],
+        null,
+        [10],
+        [],
+      );
+      expect(feeds[0].historicalReadThrough).toEqual({ id: 20, timestamp: 200 });
+      expect(feeds[0].evictedNewerTailId).toBeNull();
+      expect(feedHasUnloadedHistoricalNewer(feeds[0])).toBe(false);
+      expect(feedHasUnrenderedHistoricalNewer(feeds[0])).toBe(false);
+      expect(feedHasUnloadedEvictedNewerTail(feeds[0])).toBe(false);
+      expect(feeds[1]).toBe(offWindow);
+      expect(feedHasUnloadedHistoricalNewer(feeds[1])).toBe(true);
+      expect(feedHasUnloadedEvictedNewerTail(feeds[1])).toBe(true);
+      expect(
+        historicalReadMessageIds(feeds[1], [[5, buildMessage({ createdAtOrder: 250 })]]),
+      ).toEqual([5]);
+    });
+  }
+
+  it('#3894 clears historical markers when the only loaded message is deleted', () => {
+    const feeds = mergeUpdatedDutyFeedMessages(
+      [
+        buildFeed({
+          items: [[1, buildMessage({ createdAtOrder: 100 })]],
+          historicalReadThrough: { id: 1, timestamp: 100 },
+          evictedNewerTailId: 1,
+        }),
+      ],
+      null,
+      [1],
+      [],
+    );
+    expect(feeds[0].historicalReadThrough).toBeNull();
+    expect(feeds[0].evictedNewerTailId).toBeNull();
+    expect(feedHasUnloadedHistoricalNewer(feeds[0])).toBe(false);
+    expect(feedHasUnloadedEvictedNewerTail(feeds[0])).toBe(false);
+  });
+
+  it('#3894 keeps post-link arrivals unread after deleting the historical boundary', () => {
+    const live: [number, InboxMessage] = [3, buildMessage({ createdAtOrder: 300 })];
+    const feeds = mergeUpdatedDutyFeedMessages(
+      [
+        buildFeed({
+          items: [
+            [1, buildMessage({ createdAtOrder: 100 })],
+            [2, buildMessage({ createdAtOrder: 200 })],
+            live,
+          ],
+          historicalReadThrough: { id: 2, timestamp: 200 },
+          evictedNewerTailId: 2,
+          readIds: new Set([1, 2]),
+          unreadCount: 1,
+        }),
+      ],
+      null,
+      [2],
+      [],
+    );
+    expect(feeds[0].historicalReadThrough).toEqual({ id: 1, timestamp: 100 });
+    expect(historicalReadMessageIds(feeds[0], [live])).toEqual([]);
+    expect(feeds[0].readIds).toEqual(new Set([1]));
+    expect(feeds[0].unreadCount).toBe(1);
   });
 
   it('#3894 preserves off-window unread identities when messages are updated, not deleted', () => {

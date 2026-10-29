@@ -1,4 +1,5 @@
 import type { InboxMessage } from '../../../../../Bindings';
+import { reconcileDeletedDutyFeedTailMarkers } from '../../rer-duty-neo/utils';
 
 export type MessageItem = [number, InboxMessage];
 
@@ -107,6 +108,7 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
       pendingNewerItems,
       readIds,
       unreadCount,
+      ...reconcileDeletedDutyFeedTailMarkers(feed, removedMessageIds, nextItems, pendingNewerItems),
       windowedUnreadItems:
         feedRuntime.windowedUnreadItems == null
           ? feedRuntime.windowedUnreadItems
