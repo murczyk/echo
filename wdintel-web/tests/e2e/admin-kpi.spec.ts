@@ -358,7 +358,19 @@ test('#3826 historical tabs use bounded periods and isolate unavailable sources 
     if (failRequests && period.since === NOW - 30 * DAY + SIX_HOURS) {
       return route.fulfill({ status: 500, body: 'History unavailable' });
     }
-    if (period.until === NOW) return route.fallback();
+    if (period.until === NOW) {
+      return route.fulfill({
+        json: {
+          period,
+          available: false,
+          reason: 'Немає записаних відповідей; покриття історії невідоме.',
+          total: 0,
+          serverErrors: 0,
+          clientErrors: 0,
+          byStatus: [],
+        },
+      });
+    }
     return route.fulfill({
       json: {
         period,
@@ -511,6 +523,141 @@ test('#3826 API-quality batches cancel on period changes and retain complete sna
     page.getByRole('button', { name: 'Повторити: якість API', exact: true }),
   ).toHaveCount(0);
 });
+
+test('#3826 API-quality totals reconcile across empty slices, boundaries, and exporter retries @regression', async ({
+  page,
+}) => {
+  await setup(page);
+  const since = NOW - 30 * DAY;
+  const events = [
+    { timestamp: since - 1000, id: 'before', status: '500' },
+    { timestamp: since, id: 'first', status: '200' },
+    { timestamp: since, id: 'first', status: '200' },
+    { timestamp: since + SIX_HOURS - 1000, id: 'before-boundary', status: '404' },
+    { timestamp: since + SIX_HOURS, id: 'boundary', status: '500' },
+    { timestamp: since + SIX_HOURS, id: 'boundary', status: '500' },
+    { timestamp: since + 2 * SIX_HOURS, id: 'later', status: '200' },
+    { timestamp: NOW - 1000, id: 'last', status: '404' },
+    { timestamp: NOW, id: 'after', status: '500' },
+  ];
+  let empty = false;
+  let calls = 0;
+  await page.route('**/api/kpi/requests', async (route) => {
+    calls += 1;
+    const period = route.request().postDataJSON();
+    const statuses = new Map<string, Set<string>>();
+    for (const event of empty ? [] : events) {
+      if (event.timestamp < period.since || event.timestamp >= period.until) continue;
+      const ids = statuses.get(event.status) ?? new Set<string>();
+      ids.add(event.id);
+      statuses.set(event.status, ids);
+    }
+    const byStatus = [...statuses].map(([id, ids]) => ({ id, label: id, count: ids.size }));
+    await route.fulfill({
+      json: {
+        period,
+        available: byStatus.length > 0,
+        reason: byStatus.length ? null : 'Немає записаних відповідей; покриття історії невідоме.',
+        total: byStatus.reduce((total, row) => total + row.count, 0),
+        serverErrors: statuses.get('500')?.size ?? 0,
+        clientErrors: statuses.get('404')?.size ?? 0,
+        byStatus,
+      },
+    });
+  });
+  await page.goto('/admin/kpi?tab=quality');
+  await expect(metric(page, 'Записані відповіді API')).toHaveText('5');
+  await expect(metric(page, 'Помилки сервера API')).toHaveText('1');
+  await expect(metric(page, 'Помилки клієнта API')).toHaveText('2');
+  await expect(metric(page, 'Частка відповідей з помилкою')).toHaveText('60.00%');
+  expect(calls).toBe(120);
+  const statuses = await openValues(page, 'Відповіді API за HTTP-статусом');
+  await expect(statuses.getByRole('row', { name: '200 2', exact: true })).toBeVisible();
+  await expect(statuses.getByRole('row', { name: '404 2', exact: true })).toBeVisible();
+  await expect(statuses.getByRole('row', { name: '500 1', exact: true })).toBeVisible();
+  empty = true;
+  await page.clock.setFixedTime(NOW + DAY);
+  await page.getByRole('button', { name: 'Оновити KPI', exact: true }).click();
+  const quality = page.getByRole('region', { name: 'Якість запитів API', exact: true });
+  await expect(quality).toContainText('Недоступно: Немає записаних відповідей');
+  await expect(metric(page, 'Записані відповіді API')).toHaveCount(0);
+  expect(calls).toBe(240);
+});
+
+for (const unavailableSlice of [0, 1]) {
+  test(`#3826 stops on an unavailable API-quality source at slice ${unavailableSlice} @regression`, async ({
+    page,
+  }) => {
+    await setup(page);
+    let calls = 0;
+    await page.route('**/api/kpi/requests', (route) => {
+      const period = route.request().postDataJSON();
+      if (calls++ === unavailableSlice) return route.fallback();
+      return route.fulfill({
+        json: {
+          period,
+          available: true,
+          reason: null,
+          total: 10,
+          serverErrors: 0,
+          clientErrors: 0,
+          byStatus: [{ id: '200', label: '200', count: 10 }],
+        },
+      });
+    });
+    await page.goto('/admin/kpi?tab=quality');
+    const quality = page.getByRole('region', { name: 'Якість запитів API', exact: true });
+    await expect(quality).toContainText('Недоступно: Greptime не налаштовано.');
+    await expect(quality).toContainText(new Date(NOW - 30 * DAY).toISOString());
+    await expect(quality).toContainText(new Date(NOW).toISOString());
+    await expect(metric(page, 'Записані відповіді API')).toHaveCount(0);
+    expect(calls).toBe(unavailableSlice + 1);
+  });
+}
+
+for (const action of ['refresh', 'tab exit']) {
+  test(`#3826 aborts the in-flight API-quality request on ${action} @regression`, async ({
+    page,
+  }) => {
+    await setup(page);
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    await page.route('**/api/kpi/requests', async (route) => {
+      if (calls++ === 0) await ready;
+      await route.fallback();
+    });
+    await page.goto('/admin/kpi?tab=quality');
+    await expect.poll(() => calls).toBe(1);
+    const aborted = page.waitForEvent('requestfailed', {
+      predicate: (request) => request.url().endsWith('/api/kpi/requests'),
+    });
+    try {
+      if (action === 'refresh') {
+        await page.clock.setFixedTime(NOW + DAY);
+        await page.getByRole('button', { name: 'Оновити KPI', exact: true }).click();
+      } else {
+        await page.getByRole('tab', { name: 'База користувачів', exact: true }).click();
+      }
+      expect((await aborted).failure()?.errorText).toContain('ERR_ABORTED');
+    } finally {
+      release();
+    }
+    if (action === 'refresh') {
+      await expect(
+        page.getByRole('region', { name: 'Якість запитів API', exact: true }),
+      ).toContainText('Недоступно: Greptime не налаштовано.');
+    } else {
+      await expect(metric(page, 'Облікові записи')).toHaveText('9');
+    }
+    await expect(
+      page.getByRole('button', { name: 'Повторити: якість API', exact: true }),
+    ).toHaveCount(0);
+    expect(calls).toBe(action === 'refresh' ? 2 : 1);
+  });
+}
 
 test('#3826 changed periods discard delayed history responses and retain failed snapshots @regression', async ({
   page,

@@ -37,6 +37,7 @@ export async function getKpiRequests(
       { since, until: Math.min(since + KPI_REQUESTS_CHUNK_MS, period.until) },
       { signal },
     );
+    if (!chunk.available && chunk.total === null) return { ...chunk, period };
     result.reason ??= chunk.reason;
     if (!chunk.available) continue;
     result.available = true;
