@@ -14,9 +14,15 @@ import type {
   SignalGroupEntry,
 } from '../../../../../Bindings';
 import { minimalInboxMessage } from '../inbox-message-mocks';
-import { buildInboxReq, emptyFilter, type MessageFeedState } from '../utils';
+import {
+  buildInboxReq,
+  emptyFilter,
+  feedIndicatorUnreadCount,
+  type MessageFeedState,
+} from '../utils';
 import { useRerDutyMessageActions } from '../useRerDutyMessageActions';
 import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
+import { mergeUpdatedDutyFeedMessages } from '../../shared/message-card/message-card-message-updates';
 
 const hoisted = vi.hoisted(() => ({
   deleteMessage: vi.fn(),
@@ -1004,6 +1010,112 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleDeleteConfirm();
     });
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
+  });
+
+  for (const eventFirst of [true, false]) {
+    for (const wasRead of [true, false]) {
+      it(`#3894 preserves remaining unread after deleting a ${wasRead ? 'read' : 'unread'} message with ${eventFirst ? 'event' : 'response'} first`, async () => {
+        const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+        const request = deferred<void>();
+        hoisted.deleteMessage.mockReturnValueOnce(request.promise);
+        const unrelatedFeed = buildFeed({ id: 'unrelated', items: [[9, buildMessage()]] });
+        await act(async () => {
+          root.render(
+            <TestHarness
+              apiRef={apiRef}
+              initialFeeds={[
+                buildFeed({
+                  items: [
+                    [1, buildMessage()],
+                    [2, buildMessage()],
+                  ],
+                  readIds: new Set(wasRead ? [1, 2] : [2]),
+                  unreadCount: wasRead ? 1 : 2,
+                  evictedNewerTailId: 3,
+                }),
+                buildFeed({
+                  id: 'other-loaded',
+                  items: [[1, buildMessage()]],
+                  pendingNewerItems: [[1, buildMessage()]],
+                  readIds: new Set(wasRead ? [] : [1]),
+                  unreadCount: wasRead ? 2 : 1,
+                }),
+                buildFeed({
+                  id: 'pending-only',
+                  items: [[2, buildMessage()]],
+                  pendingNewerItems: [[1, buildMessage()]],
+                  unreadCount: 2,
+                }),
+                unrelatedFeed,
+              ]}
+            />,
+          );
+        });
+        await act(async () => {
+          apiRef.current!.setDeleteConfirmId(1);
+          apiRef.current!.setDeleteConfirmFeedId('mf-0');
+        });
+        let confirmation!: Promise<void>;
+        await act(async () => {
+          confirmation = apiRef.current!.handleDeleteConfirm();
+        });
+        expect(apiRef.current!.messageFeeds[1].items.map(([id]) => id)).toEqual([1]);
+        const receiveEvent = (feedId = 'mf-0') =>
+          act(async () => {
+            apiRef.current!.setMessageFeeds((feeds) =>
+              mergeUpdatedDutyFeedMessages(feeds, feedId, [1], []),
+            );
+          });
+
+        if (eventFirst) {
+          await receiveEvent();
+          expect(apiRef.current!.messageFeeds[1].items.map(([id]) => id)).toEqual([1]);
+        }
+        await act(async () => {
+          request.resolve();
+          await confirmation;
+        });
+        const otherLoaded = apiRef.current!.messageFeeds[1];
+        expect(otherLoaded.items).toEqual([]);
+        expect(otherLoaded.pendingNewerItems).toEqual([]);
+        expect(otherLoaded.readIds).toEqual(new Set());
+        expect(otherLoaded.unreadCount).toBe(1);
+        const pendingOnly = apiRef.current!.messageFeeds[2];
+        expect(pendingOnly.items.map(([id]) => id)).toEqual([2]);
+        expect(pendingOnly.pendingNewerItems).toEqual([]);
+        expect(pendingOnly.unreadCount).toBe(1);
+        expect(apiRef.current!.messageFeeds[3]).toBe(unrelatedFeed);
+        const feedsAfterResponse = apiRef.current!.messageFeeds;
+        for (const { id } of feedsAfterResponse) await receiveEvent(id);
+        expect(apiRef.current!.messageFeeds).toBe(feedsAfterResponse);
+
+        const feed = apiRef.current!.messageFeeds[0];
+        expect(feed.items.map(([id]) => id)).toEqual([2]);
+        expect(feed.readIds).toEqual(new Set([2]));
+        expect(feed.unreadCount).toBe(1);
+        expect(feedIndicatorUnreadCount(feed)).toBe(1);
+      });
+    }
+  }
+
+  it('#3894 preserves all feeds when deletion fails', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    const initialFeeds = [
+      buildFeed({ items: [[1, buildMessage()]] }),
+      buildFeed({ id: 'pending-only', items: [], pendingNewerItems: [[1, buildMessage()]] }),
+    ];
+    hoisted.deleteMessage.mockRejectedValueOnce(new Error('Deletion failed'));
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} initialFeeds={initialFeeds} />);
+    });
+    await act(async () => {
+      apiRef.current!.setDeleteConfirmId(1);
+      apiRef.current!.setDeleteConfirmFeedId('mf-0');
+    });
+    await act(async () => {
+      await apiRef.current!.handleDeleteConfirm();
+    });
+    expect(apiRef.current!.messageFeeds).toBe(initialFeeds);
   });
 
   it('keeps saved-filter updates scoped to the feed that selected them', async () => {

@@ -36,7 +36,7 @@ function mergeUpdatedMessageItems(
 
 export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { id: string }>(
   currentFeeds: T[],
-  feedId: string,
+  feedId: string | null,
   requestedMessageIds: number[],
   updates: MessageItem[],
 ): T[] {
@@ -46,7 +46,7 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
   const updatesById = new Map<number, InboxMessage>(updates);
   let changed = false;
   const nextFeeds = currentFeeds.map((feed) => {
-    if (feed.id !== feedId) return feed;
+    if (feedId != null && feed.id !== feedId) return feed;
     const feedRuntime = feed as T & { readIds?: Set<number>; unreadCount?: number };
     const removedMessageIds = new Set<number>();
     const originalReadIds = feedRuntime.readIds instanceof Set ? feedRuntime.readIds : null;
