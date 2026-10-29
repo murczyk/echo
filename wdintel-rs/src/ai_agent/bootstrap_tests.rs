@@ -604,6 +604,22 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
     let mut config = env.config.clone();
     config.ai_agent_reasoning_presets_enabled = Some(true);
     config.ai_agent_reasoning_verified_engine_ids = Some(vec![engine.id]);
+    use crate::ai_agent::types::AiAgentReasoningPreset as Preset;
+    let mut flash = engine.clone();
+    flash.model_name = crate::config::AI_AGENT_GLM_FLASH.to_string();
+    for (preset, runtime, reserve) in [
+        (Preset::Fast, 120, 60),
+        (Preset::Balanced, 300, 120),
+        (Preset::Deep, 1800, 240),
+    ] {
+        let flash_policy = reasoning::resolve(&config, &flash, preset);
+        let original = reasoning::resolve(&config, &engine, preset);
+        assert_eq!(flash_policy.max_runtime_seconds, runtime, "#3572");
+        assert_eq!(flash_policy.finalization_seconds, reserve, "#3572");
+        assert_eq!(original.max_runtime_seconds, runtime, "#3572");
+        assert_eq!(original.finalization_seconds, reserve / 2, "#3572");
+        assert!(flash_policy.reasoning_effort.is_none());
+    }
     let policy = reasoning::resolve(
         &config,
         &engine,
@@ -1775,9 +1791,15 @@ async fn issue_3770_work_survives_cancellation_with_pagination_and_source_revali
         sequence: 2,
         kind: "checkpoint".to_string(),
         tool: None,
-        content: "Saved findings; next-page remains unread".to_string(),
+        content: serde_json::json!({
+            "research": {
+                "checklist": [{"task": "Summarize archive", "status": "pending"}],
+                "draft": format!("Saved findings [джерело](/rer-analysis-neo?m={})", source.id_uuid.unwrap()),
+                "gaps": ["next-page remains unread"]
+            },
+            "retrievals": [{"tool": "echo_inbox_messages", "query": {"search": "archive"}, "continuation": {"nextCursor": 42}}]
+        }).to_string(),
         covers_through: Some(1),
-        citations: vec![],
         ..record.clone()
     };
     work_memory::append_record(&env, &request, &checkpoint)
@@ -1854,6 +1876,17 @@ async fn issue_3770_work_survives_cancellation_with_pagination_and_source_revali
     );
     let recap = work_memory::initial_context(&env, &followup).await.unwrap();
     assert!(recap["recap"].as_str().unwrap().contains("Saved findings"));
+    assert!(
+        recap["recap"].as_str().unwrap().contains("nextCursor"),
+        "#3572"
+    );
+    assert!(
+        recap["recap"]
+            .as_str()
+            .unwrap()
+            .contains("Summarize archive"),
+        "#3572"
+    );
     assert!(recap["recap"].as_str().unwrap().contains("Newest evidence"));
     let last = work_memory::read_records(
         &env,

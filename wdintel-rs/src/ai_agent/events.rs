@@ -352,7 +352,10 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         if !metadata.coverage_limited
             || !matches!(
                 metadata.reason.as_str(),
-                "time_limit" | "tool_limit" | "context_limit"
+                "time_limit"
+                    | "tool_limit"
+                    | "context_limit"
+                    | "provider_error"
             )
         {
             return None;
@@ -601,10 +604,17 @@ mod tests {
         .unwrap();
         assert_eq!(payload["reason"], "context_limit");
         assert_eq!(payload["coverageLimited"], true);
-        assert!(normalize_runner_event(serde_json::json!({
+        let (_, payload) = normalize_runner_event(serde_json::json!({
             "type": "completion_metadata",
             "coverageLimited": true,
             "reason": "provider_error"
+        }))
+        .unwrap();
+        assert_eq!(payload["reason"], "provider_error", "#3572");
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "unknown_reason"
         }))
         .is_none());
     }
