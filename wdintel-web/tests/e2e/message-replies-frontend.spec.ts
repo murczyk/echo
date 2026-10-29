@@ -103,7 +103,7 @@ for (const screen of ['duty', 'analysis'] as const) {
           route.fulfill({ json: { ...user, roles: [role] } }),
         );
         await page!.setViewportSize({ width: 1920, height: 1000 });
-        await visit(actor);
+        await visit(actor, 'group-1', screen === 'analysis' ? '&filterPanelOpen=false' : '');
         const card = row(actor, source.id);
         await expect(card.getByRole('link').filter({ hasText: reply.text })).toBeVisible();
         await expect(
@@ -115,10 +115,9 @@ for (const screen of ['duty', 'analysis'] as const) {
         ).toHaveCount(0);
         await page!.setViewportSize({ width: 390, height: 844 });
         if (screen === 'analysis') {
-          for (const label of ['Закрити ліву панель', 'Закрити фільтри']) {
-            const close = page!.getByRole('button', { name: label, exact: true });
-            if (await close.isVisible()) await close.click();
-          }
+          const close = page!.getByRole('button', { name: 'Закрити ліву панель', exact: true });
+          await close.click();
+          await expect(close).not.toBeVisible();
         }
         await card.getByRole('button', { name: 'Більше дій', exact: true }).click();
         await expect(page!.getByRole('menu')).toBeVisible();

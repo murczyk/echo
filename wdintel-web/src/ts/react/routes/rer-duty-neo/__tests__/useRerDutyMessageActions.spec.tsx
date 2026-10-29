@@ -1046,6 +1046,32 @@ describe('useRerDutyMessageActions', () => {
                   pendingNewerItems: [[1, buildMessage()]],
                   unreadCount: 2,
                 }),
+                buildFeed({
+                  id: 'windowed-only',
+                  items: [],
+                  windowedUnreadItems: new Map([
+                    [1, 100],
+                    [9, 900],
+                  ]),
+                  unreadCount: 3,
+                  unresolvedUnreadCount: 1,
+                }),
+                buildFeed({
+                  id: 'unresolved-only',
+                  items: [],
+                  unresolvedUnreadIds: new Set([1, 9]),
+                  unreadCount: 3,
+                  unresolvedUnreadCount: 1,
+                }),
+                buildFeed({
+                  id: 'overlapping',
+                  items: [[1, buildMessage()]],
+                  pendingNewerItems: [[1, buildMessage()]],
+                  windowedUnreadItems: new Map([[1, 100]]),
+                  unresolvedUnreadIds: new Set([1]),
+                  readIds: new Set(wasRead ? [1] : []),
+                  unreadCount: wasRead ? 1 : 2,
+                }),
                 unrelatedFeed,
               ]}
             />,
@@ -1069,6 +1095,7 @@ describe('useRerDutyMessageActions', () => {
 
         if (eventFirst) {
           await receiveEvent();
+          await receiveEvent('windowed-only');
           expect(apiRef.current!.messageFeeds[1].items.map(([id]) => id)).toEqual([1]);
         }
         await act(async () => {
@@ -1084,7 +1111,23 @@ describe('useRerDutyMessageActions', () => {
         expect(pendingOnly.items.map(([id]) => id)).toEqual([2]);
         expect(pendingOnly.pendingNewerItems).toEqual([]);
         expect(pendingOnly.unreadCount).toBe(1);
-        expect(apiRef.current!.messageFeeds[3]).toBe(unrelatedFeed);
+        const windowedOnly = apiRef.current!.messageFeeds[3];
+        expect(windowedOnly.windowedUnreadItems).toEqual(new Map([[9, 900]]));
+        expect(windowedOnly.unreadCount).toBe(2);
+        expect(windowedOnly.unresolvedUnreadCount).toBe(1);
+        expect(feedIndicatorUnreadCount(windowedOnly)).toBe(2);
+        const unresolvedOnly = apiRef.current!.messageFeeds[4];
+        expect(unresolvedOnly.unresolvedUnreadIds).toEqual(new Set([9]));
+        expect(unresolvedOnly.unreadCount).toBe(2);
+        expect(unresolvedOnly.unresolvedUnreadCount).toBe(1);
+        expect(feedIndicatorUnreadCount(unresolvedOnly)).toBe(2);
+        const overlapping = apiRef.current!.messageFeeds[5];
+        expect(overlapping.items).toEqual([]);
+        expect(overlapping.pendingNewerItems).toEqual([]);
+        expect(overlapping.windowedUnreadItems).toEqual(new Map());
+        expect(overlapping.unresolvedUnreadIds).toEqual(new Set());
+        expect(overlapping.unreadCount).toBe(1);
+        expect(apiRef.current!.messageFeeds[6]).toBe(unrelatedFeed);
         const feedsAfterResponse = apiRef.current!.messageFeeds;
         for (const { id } of feedsAfterResponse) await receiveEvent(id);
         expect(apiRef.current!.messageFeeds).toBe(feedsAfterResponse);
@@ -1103,6 +1146,12 @@ describe('useRerDutyMessageActions', () => {
     const initialFeeds = [
       buildFeed({ items: [[1, buildMessage()]] }),
       buildFeed({ id: 'pending-only', items: [], pendingNewerItems: [[1, buildMessage()]] }),
+      buildFeed({
+        id: 'off-window',
+        items: [],
+        windowedUnreadItems: new Map([[1, 100]]),
+        unresolvedUnreadIds: new Set([1]),
+      }),
     ];
     hoisted.deleteMessage.mockRejectedValueOnce(new Error('Deletion failed'));
     await act(async () => {
@@ -1116,6 +1165,18 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleDeleteConfirm();
     });
     expect(apiRef.current!.messageFeeds).toBe(initialFeeds);
+  });
+
+  it('#3894 preserves off-window unread identities when messages are updated, not deleted', () => {
+    const feeds = [
+      buildFeed({
+        items: [],
+        windowedUnreadItems: new Map([[1, 100]]),
+        unresolvedUnreadIds: new Set([1]),
+        unreadCount: 1,
+      }),
+    ];
+    expect(mergeUpdatedDutyFeedMessages(feeds, 'mf-0', [1], [[1, buildMessage()]])).toBe(feeds);
   });
 
   it('keeps saved-filter updates scoped to the feed that selected them', async () => {

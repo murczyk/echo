@@ -47,7 +47,12 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
   let changed = false;
   const nextFeeds = currentFeeds.map((feed) => {
     if (feedId != null && feed.id !== feedId) return feed;
-    const feedRuntime = feed as T & { readIds?: Set<number>; unreadCount?: number };
+    const feedRuntime = feed as T & {
+      readIds?: Set<number>;
+      unreadCount?: number;
+      windowedUnreadItems?: Map<number, number>;
+      unresolvedUnreadIds?: Set<number>;
+    };
     const removedMessageIds = new Set<number>();
     const originalReadIds = feedRuntime.readIds instanceof Set ? feedRuntime.readIds : null;
     const nextItems = mergeUpdatedMessageItems(
@@ -64,7 +69,20 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
           removedMessageIds,
         )
       : feed.pendingNewerItems;
-    if (nextItems === feed.items && pendingNewerItems === feed.pendingNewerItems) return feed;
+    for (const id of requestedIds) {
+      if (
+        !updatesById.has(id) &&
+        (feedRuntime.windowedUnreadItems?.has(id) || feedRuntime.unresolvedUnreadIds?.has(id))
+      ) {
+        removedMessageIds.add(id);
+      }
+    }
+    if (
+      nextItems === feed.items &&
+      pendingNewerItems === feed.pendingNewerItems &&
+      removedMessageIds.size === 0
+    )
+      return feed;
     changed = true;
     if (removedMessageIds.size === 0) {
       return { ...feed, items: nextItems, pendingNewerItems };
@@ -89,6 +107,18 @@ export function mergeUpdatedDutyFeedMessages<T extends MessageFeedWithItems & { 
       pendingNewerItems,
       readIds,
       unreadCount,
+      windowedUnreadItems:
+        feedRuntime.windowedUnreadItems == null
+          ? feedRuntime.windowedUnreadItems
+          : new Map(
+              [...feedRuntime.windowedUnreadItems].filter(([id]) => !removedMessageIds.has(id)),
+            ),
+      unresolvedUnreadIds:
+        feedRuntime.unresolvedUnreadIds == null
+          ? feedRuntime.unresolvedUnreadIds
+          : new Set(
+              [...feedRuntime.unresolvedUnreadIds].filter((id) => !removedMessageIds.has(id)),
+            ),
     };
   });
 
