@@ -640,7 +640,7 @@ test('#3615 preserves native overflow scrolling over a message-card button @regr
 });
 
 // Regression: https://github.com/echoua/echo/issues/3546
-test('uses creation time for Duty ordering and display with an event-time Analysis preference @smoke @regression', async ({
+test('orders Duty by creation time while showing event and creation timestamps with an event-time Analysis preference @smoke @regression', async ({
   page,
 }) => {
   const createdAt = Date.UTC(2026, 8, 19, 8);
@@ -674,13 +674,17 @@ test('uses creation time for Duty ordering and display with an event-time Analys
     ),
   ).toEqual([2, 7, 9]);
   const firstHeaderTimestamp = rows.first().locator('[data-message-card-timestamp-item="true"]');
-  await expect(firstHeaderTimestamp).toHaveAttribute('title', 'Дата і час створення повідомлення');
-  await expect(firstHeaderTimestamp).toContainText('19.09.2026, 10:58');
+  await expect(firstHeaderTimestamp).toHaveAttribute('title', 'Дата і час перехоплення');
+  await expect(firstHeaderTimestamp).toContainText('19.09.2026, 11:02');
   await expect(rows.first().locator('[data-message-card-timestamp-footer="true"]')).toHaveAttribute(
     'data-message-card-timestamp-footer',
     'true',
   );
   await expect(rows.first().locator('[title="Час отримання повідомлення"]')).toBeVisible();
+  await expect(rows.first().locator('[title="Час отримання повідомлення"]')).toHaveAttribute(
+    'datetime',
+    '2026-09-19T07:58:00.000Z',
+  );
   expect(fixture.getLastInboxRequest()).toMatchObject({ sort_by: 'IMSCreatedAt' });
 });
 test('keeps a compact-tag reading anchor stable while prepending an older chunk', async ({

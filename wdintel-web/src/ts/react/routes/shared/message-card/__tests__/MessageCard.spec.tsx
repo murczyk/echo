@@ -793,7 +793,7 @@ describe('MessageCard', () => {
 
   // Regression: https://github.com/echoua/echo/issues/3515
   it.each(['interception', 'creation'] as const)(
-    '#3515 keeps receipt time when a date-only interception timestamp is selected (%s)',
+    '#3515 keeps date-only event metadata and receipt time independently of sorting (%s)',
     async (messageTimeBasis) => {
       const view = await renderCard({
         messageTimeBasis,
@@ -810,9 +810,7 @@ describe('MessageCard', () => {
         }),
       });
       const timestamp = view.container.querySelector('[data-message-card-timestamp-item="true"]');
-      expect(timestamp?.textContent).toContain(
-        messageTimeBasis === 'creation' ? '15.07.2026, 13:00' : '15.07.2026',
-      );
+      expect(timestamp?.querySelector('.message-card-text')?.textContent).toBe('15.07.2026');
       expect(timestamp?.textContent).not.toContain('12:00');
       expect(
         view.container.querySelector('[data-message-card-timestamp-footer="true"]')?.textContent,
@@ -831,12 +829,16 @@ describe('MessageCard', () => {
   );
 
   // Regression: https://github.com/echoua/echo/issues/3515
-  it.each(['interception', 'creation'] as const)(
-    '#3515 displays the selected absolute timestamp and independent receipt time in analysis (%s)',
-    async (messageTimeBasis) => {
+  it.each([
+    { displayMode: 'duty' as const, messageTimeBasis: 'creation' as const },
+    { displayMode: 'analysis' as const, messageTimeBasis: 'interception' as const },
+    { displayMode: 'analysis' as const, messageTimeBasis: 'creation' as const },
+  ])(
+    '#3515 displays event time and system creation time in $displayMode independently of $messageTimeBasis sorting',
+    async ({ displayMode, messageTimeBasis }) => {
       for (const isTimeNull of [true, false, null]) {
         const view = await renderCard({
-          displayMode: 'analysis',
+          displayMode,
           messageTimeBasis,
           referenceTimeMs: Date.UTC(2026, 6, 16, 21, 31),
           msg: buildMessage({
@@ -853,20 +855,12 @@ describe('MessageCard', () => {
           '[data-message-card-timestamp-item="true"]',
         );
         expect(timestamps).toHaveLength(1);
-        expect(timestamps[0]?.getAttribute('title')).toBe(
-          messageTimeBasis === 'creation'
-            ? 'Дата і час створення повідомлення'
-            : 'Дата і час перехоплення',
-        );
+        expect(timestamps[0]?.getAttribute('title')).toBe('Дата і час перехоплення');
         expect(timestamps[0]?.textContent).toContain(
-          messageTimeBasis === 'creation'
-            ? '17.07.2026, 00:30'
-            : isTimeNull
-              ? '14.07.2026'
-              : '14.07.2026, 08:45',
+          isTimeNull ? '14.07.2026' : '14.07.2026, 08:45',
         );
-        if (messageTimeBasis === 'interception' && isTimeNull)
-          expect(timestamps[0]?.textContent).not.toContain(':');
+        expect(timestamps[0]?.textContent).not.toContain('17.07.2026');
+        if (isTimeNull) expect(timestamps[0]?.textContent).not.toContain(':');
         expect(timestamps[0]?.querySelector('[data-testid="TodayOutlinedIcon"]')).not.toBeNull();
         expect(timestamps[0]?.querySelector('.message-card-header-icon')).not.toBeNull();
         expect(timestamps[0]?.querySelector('.message-card-timestamp-icon')).toBeNull();
@@ -894,13 +888,13 @@ describe('MessageCard', () => {
     expect(
       creationView.container.querySelector('[data-message-card-timestamp-item="true"]')
         ?.textContent,
-    ).toContain('—');
+    ).toContain('14.07.2026, 08:45');
     expect(
       creationView.container.querySelector('[data-message-card-timestamp-footer="true"]'),
     ).toBeNull();
 
     const interceptionView = await renderCard({
-      messageTimeBasis: 'interception',
+      messageTimeBasis: 'creation',
       referenceTimeMs: createdAt + 60_000,
       msg: buildMessage({ createdAt, timestamp: null, date: null, time: null, isTimeNull: false }),
     });

@@ -359,7 +359,6 @@ function MessageCardComponent({
     displayMode,
     id,
     msg,
-    messageTimeBasis,
     copiedFeedbackId,
     etalonDisplayModel: visibleEtalonDisplayModel,
     mapHref,

@@ -282,6 +282,8 @@ test.describe('message card Duty header @regression', () => {
     ).toBe(1);
     await expect(creationTimestamp).toHaveCSS('font-size', '12px');
     await expect(timestampItems).toHaveCount(1);
+    await expect(timestampItems).toHaveAttribute('title', 'Дата і час перехоплення');
+    await expect(timestampItems).toContainText('13.07.2026, 12:34');
     await expect(creationTimestamp).toBeVisible();
     await expect(expandLabel).toHaveCount(1);
     await expect(expandLabel).toBeHidden();
