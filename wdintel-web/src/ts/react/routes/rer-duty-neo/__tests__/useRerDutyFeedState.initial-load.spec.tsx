@@ -1270,6 +1270,62 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([2, 1]);
   });
 
+  it('#3923 removes the previous group window when the new group fails to load', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const reload = deferred<InboxMessagesRsp>('group reload');
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => reload.promise);
+    const groupFilter = { ...emptyFilter(), groupsSelected: ['avia-barrier'] };
+
+    await act(async () => {
+      apiRef.current!.applyFilter('mf-0', groupFilter);
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds[0].loading).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].items).toEqual([]);
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: ['avia-barrier'] }),
+      expect.anything(),
+    );
+
+    reload.reject(new Error('Service unavailable (503)'));
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current!.error).toBe('Service unavailable (503)');
+    expect(apiRef.current!.messageFeeds[0]).toMatchObject({
+      filter: groupFilter,
+      items: [],
+      pendingNewerItems: [],
+      loading: false,
+      unreadCount: 0,
+    });
+
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 60));
+    await act(async () => {
+      await apiRef.current!.loadFeedInitialMessages('mf-0');
+      await flushMicrotasks();
+    });
+    expect(apiRef.current!.error).toBeNull();
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 41),
+    );
+  });
+
+  it('#3923 preserves the current window when an edit refresh fails with unchanged filters', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const items = apiRef.current!.messageFeeds[0].items;
+    hoisted.fetchInboxMessages.mockRejectedValueOnce(new Error('refresh failed'));
+
+    await act(async () => {
+      apiRef.current!.applyFilter('mf-0', emptyFilter(), true, { preserveUnread: true });
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.error).toBe('refresh failed');
+    expect(apiRef.current!.messageFeeds[0].items).toBe(items);
+    expect(apiRef.current!.messageFeeds[0].loading).toBe(false);
+  });
+
   it('clears loading and surfaces an empty-feed reload failure', async () => {
     hoisted.fetchInboxMessages
       .mockResolvedValueOnce(inboxRsp([]))
@@ -1305,7 +1361,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
   });
 
-  it('keeps existing items visible while a filter reload is pending', async () => {
+  it('#3923 replaces the previous window after a filter change succeeds', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
     };
@@ -1334,7 +1390,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     });
 
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(true);
-    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([1]);
+    expect(apiRef.current?.messageFeeds[0]?.items).toEqual([]);
 
     await act(async () => {
       resolveReload(

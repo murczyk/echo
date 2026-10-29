@@ -25,25 +25,38 @@ export function useRerDutyFeedCrud(
         persistStateToUrl(messageFeeds);
         return;
       }
-      markFeedReloadRequested(feedId, options.preserveUnread);
+      const preserveUnread = options.preserveUnread && filtersEqual(currentFeed.filter, f);
+      markFeedReloadRequested(feedId, preserveUnread);
       setMessageFeeds((prev) => {
         const w = prev.find((feed) => feed.id === feedId);
         if (!w || (!forceReload && filtersEqual(w.filter, f))) return prev;
+        const filterChanged = !filtersEqual(w.filter, f);
         const next = prev.map((feed) =>
           feed.id === feedId
             ? {
                 ...feed,
+                ...(filterChanged
+                  ? {
+                      items: [],
+                      readIds: new Set<number>(),
+                      unreadCount: 0,
+                      unresolvedUnreadIds: new Set<number>(),
+                      unresolvedUnreadCount: 0,
+                      evictedNewerTailId: null,
+                      historicalReadThrough: null,
+                    }
+                  : {}),
                 filter: f,
                 loading: true,
                 loadingOlder: false,
                 hasReachedStart: false,
-                windowedUnreadItems: options.preserveUnread
+                windowedUnreadItems: preserveUnread
                   ? feed.windowedUnreadItems
                   : new Map<number, number>(),
                 adjacentFreqsRange: feed.adjacentFreqsRange,
                 highlightSignalsEnabled: feed.highlightSignalsEnabled,
                 onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
-                pendingNewerItems: options.preserveUnread ? feed.pendingNewerItems : [],
+                pendingNewerItems: preserveUnread ? feed.pendingNewerItems : [],
               }
             : feed,
         );
