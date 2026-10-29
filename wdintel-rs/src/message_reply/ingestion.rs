@@ -58,7 +58,10 @@ pub async fn record_source(
     inbox_message_id: i64,
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
-    super::lock_threads(db).await.c(h!())?;
+    super::lock_nodes(db, serde_json::json!([
+        {"kind": "message", "datasource": 0, "id": signal_message_id},
+        {"kind": "inbox", "datasource": datasource_id, "id": inbox_message_id},
+    ])).await.c(h!())?;
     let source = SourceRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"select s.original_inbox_message_id, s.original_outbox_message_id, s.deleted or coalesce(e.deleted, false) as deleted
@@ -72,19 +75,6 @@ pub async fn record_source(
     let Some(source) = source else {
         return Ok(());
     };
-    let mut lock_ids = vec![inbox_message_id];
-    lock_ids.extend(source.original_inbox_message_id);
-    lock_ids.sort_unstable();
-    lock_ids.dedup();
-    for id in lock_ids {
-        db.query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "select pg_advisory_xact_lock(hashtextextended($1, 0))",
-            vec![format!("message-reply:{datasource_id}:{id}").into()],
-        ))
-        .await
-        .c(h!())?;
-    }
     db.execute_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         r#"insert into message_reply_source (datasource_id, inbox_message_id, signal_message_id, original_inbox_message_id, original_outbox_message_id, deleted)
             values ($1, $2, $3, $4, $5, $6)

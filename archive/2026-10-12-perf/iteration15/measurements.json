@@ -1,0 +1,384 @@
+{
+  "issue": 3780,
+  "iteration": 15,
+  "date_utc": "2026-10-29",
+  "target": "echo-pivnich",
+  "remote_mutations": false,
+  "base_branch": "stable",
+  "base_commit": "c8cd0f079",
+  "release": {
+    "before": "0.1.1~rc.202610261229-1",
+    "before_commit": "3d7eb3e82",
+    "after": "0.1.1~rc.202610281539-1",
+    "api_start_utc": "09:06:23",
+    "worker_start_utc": "09:06:55"
+  },
+  "method": {
+    "http_scope": [
+      "/api/rer/analysis/%",
+      "/api/rer-importer/get-inbox%",
+      "/api/sigint/network-group-activity-summary%"
+    ],
+    "host_matching": "Pivnich public and Tailscale hostnames",
+    "http_counting": "Retained response events deduplicated by request ID within minute/path/status. No 500 in selected route scope. Old deadline completion gap remains.",
+    "native_scope": "All echo_gateway completed and exceptional query records; not HTTP counts.",
+    "probe_scope": "Captured native direct-unit count and equivalent single-predicate prototypes; administrative account; sequential read-only SQL, four threads, 8-second execution limit, 1-GiB memory cap.",
+    "probe_order": [
+      "baseline",
+      "single_message",
+      "single_inbox",
+      "single_inbox",
+      "single_message",
+      "baseline"
+    ],
+    "uncontrolled": [
+      "traffic",
+      "filters across HTTP/native comparison intervals",
+      "background work",
+      "cache state",
+      "historical edits between probes"
+    ],
+    "no_http_replay": true,
+    "no_cache_flush_or_log_flush": true,
+    "raw_terms_ids_sql_and_timestamps_published": false
+  },
+  "windows": [
+    {
+      "since_utc": "08:40",
+      "until_exclusive_utc": "08:50",
+      "release": "old",
+      "retained_http_responses": 11063,
+      "retained_http_503": 151,
+      "retained_http_500": 0,
+      "native": {
+        "completed": 7429,
+        "failed": 493,
+        "shared_memory_failures": 485,
+        "completed_query_seconds": 5078.5,
+        "read_rows": 132550029313
+      }
+    },
+    {
+      "since_utc": "08:50",
+      "until_exclusive_utc": "09:00",
+      "release": "old",
+      "retained_http_responses": 11251,
+      "retained_http_503": 299,
+      "retained_http_500": 0,
+      "native": {
+        "completed": 7355,
+        "failed": 608,
+        "shared_memory_failures": 602,
+        "completed_query_seconds": 5363.499999999999,
+        "read_rows": 137549434978
+      }
+    },
+    {
+      "since_utc": "09:10",
+      "until_exclusive_utc": "09:20",
+      "release": "new",
+      "retained_http_responses": 11041,
+      "retained_http_503": 62,
+      "retained_http_500": 0,
+      "native": {
+        "completed": 8105,
+        "failed": 261,
+        "shared_memory_failures": 261,
+        "completed_query_seconds": 5029.400000000001,
+        "read_rows": 134796498733
+      }
+    },
+    {
+      "since_utc": "09:20",
+      "until_exclusive_utc": "09:30",
+      "release": "new",
+      "retained_http_responses": 11168,
+      "retained_http_503": 288,
+      "retained_http_500": 0,
+      "native": {
+        "completed": 7425,
+        "failed": 445,
+        "shared_memory_failures": 445,
+        "completed_query_seconds": 5039.400000000001,
+        "read_rows": 134216323338
+      }
+    }
+  ],
+  "existing_unit_count_family": [
+    {
+      "period": "after",
+      "attempts": 117,
+      "failures": 32,
+      "seconds": 1001.17,
+      "read_rows": 29848589637,
+      "peak_memory": 270697793
+    },
+    {
+      "period": "before",
+      "attempts": 48,
+      "failures": 11,
+      "seconds": 465.36,
+      "read_rows": 12728042580,
+      "peak_memory": 270402919
+    }
+  ],
+  "unit_count_probes": [
+    {
+      "type": "ExceptionWhileProcessing",
+      "query_duration_ms": 8006,
+      "read_rows": 182252136,
+      "read_bytes": 6013568761,
+      "memory_usage": 224193196,
+      "exception_code": 159,
+      "variant": "baseline",
+      "result_count": null
+    },
+    {
+      "type": "QueryFinish",
+      "query_duration_ms": 7322,
+      "read_rows": 155394612,
+      "read_bytes": 5127532720,
+      "memory_usage": 163517529,
+      "exception_code": 0,
+      "variant": "single_message",
+      "result_count": 9
+    },
+    {
+      "type": "QueryFinish",
+      "query_duration_ms": 7023,
+      "read_rows": 155398515,
+      "read_bytes": 5127630826,
+      "memory_usage": 165626925,
+      "exception_code": 0,
+      "variant": "single_inbox",
+      "result_count": 9
+    },
+    {
+      "type": "QueryFinish",
+      "query_duration_ms": 6139,
+      "read_rows": 155388282,
+      "read_bytes": 5127293226,
+      "memory_usage": 153430451,
+      "exception_code": 0,
+      "variant": "single_inbox",
+      "result_count": 9
+    },
+    {
+      "type": "QueryFinish",
+      "query_duration_ms": 5099,
+      "read_rows": 155384503,
+      "read_bytes": 5127198625,
+      "memory_usage": 151558550,
+      "exception_code": 0,
+      "variant": "single_message",
+      "result_count": 9
+    },
+    {
+      "type": "QueryFinish",
+      "query_duration_ms": 6748,
+      "read_rows": 310665044,
+      "read_bytes": 10250973112,
+      "memory_usage": 254809715,
+      "exception_code": 0,
+      "variant": "baseline",
+      "result_count": 9
+    }
+  ],
+  "completed_probe_counts_and_earliest_timestamp_equal": true,
+  "heartbeat_failures": [
+    {
+      "utc": "09:12:09",
+      "read_rows": 2,
+      "tracked_memory_bytes": 39689,
+      "exception": "shared-user memory limit exceeded",
+      "recovered_utc": "09:12:32"
+    },
+    {
+      "utc": "09:18:53",
+      "read_rows": 3,
+      "tracked_memory_bytes": 38088,
+      "exception": "shared-user memory limit exceeded"
+    }
+  ],
+  "reply_lock": {
+    "migrations_applied_utc": "09:06:18",
+    "retry_sample_utc": "09:08–09:15",
+    "ingestion_retry_events": 58,
+    "distinct_queue_items": 56,
+    "operator_internal_error_events": 1,
+    "live_waiters_at_091824": 7,
+    "failed_queue_items_remaining_at_092036": 0,
+    "repaired_by_this_iteration": false
+  },
+  "resource_limits_changed": false,
+  "freshness_budget_changed": false,
+  "reply_component_discovery": {
+    "method": "read-only EXPLAIN ANALYZE BUFFERS TIMING OFF on existing Pivnich relations; no remote DDL or locks",
+    "initial_jit_execution_ms": 59.539,
+    "jit_disabled": {
+      "independent": {
+        "Planning Time": 10.818,
+        "Execution Time": 3.255,
+        "scans": [
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "message_reply",
+            "Actual Rows": 0.0,
+            "Actual Loops": 1
+          },
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "message_reply_source",
+            "Actual Rows": 0.0,
+            "Actual Loops": 1
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "signal_message",
+            "Actual Rows": 0,
+            "Actual Loops": 0
+          },
+          {
+            "Node Type": "Index Only Scan",
+            "Relation Name": "datasource_group",
+            "Actual Rows": 0,
+            "Actual Loops": 0
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "signal_message",
+            "Actual Rows": 0.0,
+            "Actual Loops": 1
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "datasource_group",
+            "Actual Rows": 0,
+            "Actual Loops": 0
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "echo_inbox_message",
+            "Actual Rows": 0,
+            "Actual Loops": 0
+          }
+        ],
+        "shared_hit_blocks": 21,
+        "shared_read_blocks": 0
+      },
+      "existing": {
+        "Planning Time": 5.97,
+        "Execution Time": 5.137,
+        "scans": [
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "message_reply",
+            "Actual Rows": 1.0,
+            "Actual Loops": 1
+          },
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "message_reply",
+            "Actual Rows": 0.67,
+            "Actual Loops": 6
+          },
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "message_reply_source",
+            "Actual Rows": 1.0,
+            "Actual Loops": 6
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "signal_message",
+            "Actual Rows": 1.0,
+            "Actual Loops": 2
+          },
+          {
+            "Node Type": "Index Only Scan",
+            "Relation Name": "datasource_group",
+            "Actual Rows": 1.0,
+            "Actual Loops": 2
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "signal_message",
+            "Actual Rows": 1.0,
+            "Actual Loops": 2
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "datasource_group",
+            "Actual Rows": 1.0,
+            "Actual Loops": 2
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "echo_inbox_message",
+            "Actual Rows": 1.0,
+            "Actual Loops": 2
+          }
+        ],
+        "shared_hit_blocks": 142,
+        "shared_read_blocks": 2
+      },
+      "largest_thread": {
+        "Planning Time": 4.751,
+        "Execution Time": 5.154,
+        "scans": [
+          {
+            "Node Type": "Seq Scan",
+            "Relation Name": "message_reply",
+            "Actual Rows": 25.0,
+            "Actual Loops": 1
+          },
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "message_reply",
+            "Actual Rows": 0.6,
+            "Actual Loops": 15
+          },
+          {
+            "Node Type": "Bitmap Heap Scan",
+            "Relation Name": "message_reply_source",
+            "Actual Rows": 1.33,
+            "Actual Loops": 15
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "signal_message",
+            "Actual Rows": 1.0,
+            "Actual Loops": 6
+          },
+          {
+            "Node Type": "Index Only Scan",
+            "Relation Name": "datasource_group",
+            "Actual Rows": 1.0,
+            "Actual Loops": 6
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "signal_message",
+            "Actual Rows": 1.0,
+            "Actual Loops": 6
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "datasource_group",
+            "Actual Rows": 1.0,
+            "Actual Loops": 6
+          },
+          {
+            "Node Type": "Index Scan",
+            "Relation Name": "echo_inbox_message",
+            "Actual Rows": 1.0,
+            "Actual Loops": 6
+          }
+        ],
+        "shared_hit_blocks": 348,
+        "shared_read_blocks": 11
+      }
+    },
+    "limitations": "single component-discovery reads only; not write/concurrent HTTP acceptance"
+  }
+}

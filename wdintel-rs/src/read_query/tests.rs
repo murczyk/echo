@@ -232,46 +232,6 @@ async fn source_read_admission_keeps_capacity_for_another_login_3780() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn search_probe_timeout_preserves_snapshot_and_query_settings_3780() {
-    let env = crate::functest::tests::cleanup().await.unwrap();
-    let transaction = begin(&env.dbx).await.unwrap();
-    let before = transaction.query_one_raw(Statement::from_string(
-        DbBackend::Postgres, "SELECT current_setting('statement_timeout') AS timeout, txid_current_snapshot()::text AS snapshot",
-    )).await.unwrap().unwrap();
-    let rows = transaction
-        .probe(
-            Statement::from_string(DbBackend::Postgres, "SELECT pg_sleep(1)"),
-            10,
-        )
-        .await
-        .unwrap();
-    assert!(rows.is_none());
-    let rows = transaction
-        .probe(
-            Statement::from_string(
-                DbBackend::Postgres,
-                "SELECT 42::bigint AS value",
-            ),
-            1_000,
-        )
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(rows[0].try_get::<i64>("", "value").unwrap(), 42);
-    let after = transaction.query_one_raw(Statement::from_string(
-        DbBackend::Postgres, "SELECT current_setting('statement_timeout') AS timeout, txid_current_snapshot()::text AS snapshot",
-    )).await.unwrap().unwrap();
-    for column in ["timeout", "snapshot"] {
-        assert_eq!(
-            before.try_get::<String>("", column).unwrap(),
-            after.try_get::<String>("", column).unwrap()
-        );
-    }
-    transaction.commit().await.unwrap();
-}
-
-#[tokio::test]
-#[serial_test::serial]
 async fn search_statement_budget_does_not_leak_to_ordinary_reads_3780() {
     let env = crate::functest::tests::cleanup().await.unwrap();
     let mut config = env.config.clone();
@@ -436,4 +396,14 @@ async fn historical_counts_leave_read_capacity_for_pages_3780() {
     })
     .await
     .unwrap();
+}
+
+fn is_statement_timeout(error: &anyhow::Error) -> bool {
+    error.chain().any(|error| {
+        let Some(DbErr::Query(RuntimeErr::SqlxError(error))) = error.downcast_ref::<DbErr>() else {
+            return false;
+        };
+        matches!(error.as_ref(), sqlx::Error::Database(error)
+            if error.code().as_deref() == Some("57014") && error.message().contains("statement timeout"))
+    })
 }

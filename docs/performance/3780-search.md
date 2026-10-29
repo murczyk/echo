@@ -40,7 +40,7 @@ excluded quoted phrases materialize date/access-eligible IDs first, select
 positive matches, then check exclusions only on those matches. Other filters
 remain in the outer query; this candidate scope never replaces authorization
 or removes a facet's own-filter rules. Longer and unbounded periods retain
-indexed match-set planning. Bounded complex Fuzzy and daily literal strategies
+indexed match-set planning. Bounded complex Fuzzy searches
 disable JIT locally inside a read-only transaction; the setting cannot leak
 to a pooled connection.
 
@@ -56,16 +56,16 @@ SQL slots per API process. Ordinary reads retain two slots per authenticated
 login and a ten-second admission/pool wait. Text-search counts additionally
 share four count slots, with two per login in a separate class; this leaves
 capacity for pages, including pages from the same login. At most four source
-search-count operations, two per login, traverse windows concurrently; additional
+search-count operations, two per login, execute concurrently; additional
 facets queue within their request budget. This lets admitted counts finish rather
-than interleaving every facet until all expire. SQL permits are released between
-historical windows; count-operation admission is separate from ordinary reads. Their admission and identical-count queue
+than interleaving every facet until all expire. SQL permits are released after each
+query; count-operation admission is separate from ordinary reads. Their admission and identical-count queue
 waits can use the remaining whole-request budget; acquiring a pooled connection
 still has a ten-second bound.
 
 The existing eight fallback-operation slots, limited to two per login, cover
 ordinary fallbacks and query-policy source routes. Search counts use the SQL
-count limits instead of holding an operation slot for their entire traversal.
+count limits instead of holding an operation slot for their entire request.
 Windowed network fallbacks likewise rely on statement admission and release
 capacity between days. Count coordination is keyed by operation, pool, login and filters: identical
 requests queue while unrelated facets can progress. Limits are process-local.
@@ -102,74 +102,45 @@ apply; the probe does not assume message IDs follow interception time.
 
 ## Historical text-search counts and pages
 
-Historical count windows run sequentially with independent read-only
-transactions. Historical data is considered sufficiently stable: small changes
-from imports or edits between windows are accepted. Message counts add across
-non-overlapping intervals; distinct facets union identities before counting.
-Groups retain missing-secret-group behavior, and each facet retains its own
-filter removal. Any failed window fails the complete count. Authorization,
-attachment revisions and freshness guards still apply.
+Historical source searches and counters execute over the complete requested
+period. They do not probe and then split into calendar months or days after a
+timeout. Expensive requests fail within their SQL/HTTP budgets instead of
+launching more scans. Existing message-ID batches for native memory bounds and
+network-activity aggregation remain separate from this policy.
 
-For bounded source text searches longer than three calendar months, first try
-the complete indexed count/key query with an eight-second probe. A fast or empty
-query finishes immediately. After a timeout, try disjoint windows capped at
-three calendar months, sequentially. If one also times out after eight seconds,
-use daily windows for it and the remaining period. Daily Exact/Substring
-queries materialize date-eligible IDs, match body and current attachments, then
-apply the original access/facet predicates. Body matching uses candidate inbox
-primary-key lookups; it does not repeat a global body GIN scan for every day.
-Daily SQL has an eight-second cap, reduced further by a smaller configured
-search statement budget. A failed daily query returns an error, not a subtotal.
-
-This is an adaptive access strategy, not a claim that three-month queries are
-always fast. The [measurements](../../archive/2026-10-12-perf/iteration13/findings.md)
-show repeated global index work increasing with smaller calendar windows;
-three-/four-month partitions performed better for one term, while another
-required date-first work at a much smaller span. One measured daily Exact
-prototype completed in 1.418 seconds, while a seven-day version still timed
-out. Full six-month HTTP latency under concurrent traffic remains a rollout
-measurement. Counts over shorter periods keep their existing query strategy.
-
-Paged source searches over these long bounded periods first probe the indexed
-query for 250 ms. On timeout they visit three-month windows in the requested
-time order, probing an ordered date-index scan for one second per window and
-using the indexed window query if that probe expires. They stop at 20 IDs.
-Interception, timestamp and creation ordering, timestamp/ID cursors, inclusive
-inbox bounds and exclusive analysis bounds are retained. ID selection and detail
-hydration share the existing repeatable-read snapshot. Unlimited reads retain
-their existing path. Sparse and empty searches must keep an index alternative:
-the measured empty control was 20 ms indexed but exceeded eight seconds ordered.
+Paged source searches select at most 20 IDs in the requested order, then hydrate
+those IDs in the same repeatable-read snapshot. Interception, timestamp and
+creation ordering, timestamp/ID cursors, inclusive inbox bounds and exclusive
+analysis bounds are retained. Count failures return errors, never partial totals.
+Groups retain missing-secret-group behavior; facets retain their own filter
+removal, authorization, attachment revision and freshness checks.
 
 ### Execution budgets
 
-Validated nonblank text filters select a search-specific policy. Ordinary reads
-keep the 60-second HTTP deadline and existing pool SQL settings. Search reads
-have a default 90-second statement budget and a ten-minute total HTTP budget,
-covering all windows, admission and count queues together. Local SQL settings
-are restored before pooled reuse. Cancellation still pins and cleans up the
-active source connection. React Analysis counts and Duty search requests allow
-605 seconds; their ordinary 35-/65-second deadlines remain unchanged. Filter
-reloads, feed removal and unmounting abort pending Duty page/count requests.
+Nonblank text searches default to the smaller of the ordinary source statement
+timeout and 30 seconds, with a 60-second total HTTP deadline, including
+admission and count queues. Local SQL settings are restored before pooled reuse.
+Cancellation still pins and cleans up the active source connection. React's
+605-second search allowance supports explicitly extended backend settings; the
+backend's shorter default determines when a request fails. Filter reloads, feed
+removal and unmounting abort pending Duty page/count requests.
 
-Optional settings in `config.toml` are backward compatible:
+Optional overrides in `config.toml` remain supported:
 
 ```toml
 [postgres_runtime]
-search_statement_timeout_ms = 90000
-search_http_timeout_ms = 600000
+search_statement_timeout_ms = 30000
+search_http_timeout_ms = 60000
 ```
 
 The HTTP budget must exceed the search statement budget and cannot exceed
-600,000 ms. Probe/window limits can shorten SQL budgets. Existing statement,
-lock, idle-transaction and worker settings keep their separate meanings. The
-search policy applies when `[postgres_runtime]` is absent as well.
-
-After approval naming the target, set the API nginx server's
-`proxy_read_timeout 605s;`, validate with `sudo nginx -t`, then apply with
-`sudo systemctl reload nginx`. This leaves five seconds beyond the maximum
-backend search budget for its timeout response. Other upstream proxies need
-at least the same allowance. These configuration changes require separate
-approval under `AGENTS.md`.
+600,000 ms. Existing SQL overrides of 60 seconds or more retain the previous
+600-second HTTP default when no HTTP override is supplied. An explicit HTTP
+override must exceed the SQL budget. Existing lock, idle-transaction and worker
+settings keep their separate meanings. The default policy also applies when `[postgres_runtime]`
+is absent. Longer budgets require an intentional operator override; proxy
+read deadlines must exceed the selected backend HTTP deadline. Any change to a
+real environment requires separate approval under `AGENTS.md`.
 
 ### Analytical literal search
 
@@ -378,10 +349,11 @@ predicates also need representative plan evidence before further optimization.
 
 For an analytics inbox request using direct unit IDs without the ordinary
 header/network unit branch, apply the same bounded unit membership predicate
-to both `sigint_inbox_item.id` and `signal_message.id`. Their join equates these
-IDs, so results and authorization are unchanged; filtering both inputs prevents
-the native join from first building a hash table over the full message history.
-Keep the extra predicate off the combined header-unit OR direct-ID branch.
+once, using `sigint_inbox_item.id`. Keep the message-ID range constraints on
+both `sigint_inbox_item.id` and `signal_message.id`. Their join equates these
+IDs; repeating the membership predicate for each side causes the gateway to
+scan the unit-link history twice. The combined header-unit OR direct-ID branch
+retains its original matching semantics.
 Nonempty, empty, denied and combined-unit cases are covered by the existing
 unit-ID regression. Gateway resource limits and resource-specific fallback are
 described in the [analytics operations guide](../../deploy/clickhouse/README.md#gateway-resource-limits).

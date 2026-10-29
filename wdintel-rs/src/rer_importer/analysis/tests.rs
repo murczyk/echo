@@ -3306,23 +3306,15 @@ async fn postgres_full_period_search_preserves_pages_counts_and_facets_3780() {
                         expected.push(other_frequency);
                     }
                     assert_full_period_search_results_3780(
-                        &fixture, &login.id, &req, expected.clone(),
-                    ).await;
-                    crate::attachments::search::in_source_count_window_async(
-                        assert_full_period_search_results_3780(&fixture, &login.id, &req, expected),
-                    ).await;
+                        &fixture, &login.id, &req, expected,
+                    )
+                    .await;
                 }
             }
         }
     }
     assert_attachment_search_without_inbox_3780(
         &fixture, &login.id, ids[1], date,
-    )
-    .await;
-    crate::attachments::search::in_source_count_window_async(
-        assert_attachment_search_without_inbox_3780(
-            &fixture, &login.id, ids[1], date,
-        ),
     )
     .await;
 }
@@ -12006,11 +11998,67 @@ async fn analytics_chunked_unit_id_candidates_3780_preserve_limits_and_access()
             .unwrap()
             .unwrap();
             assert_eq!(actual, expected);
+            if !nolimit {
+                assert_unit_id_digest_3780(&fixture, login, &req, total).await;
+            }
             assert_eq!(
                 candidate_queries.load(Ordering::SeqCst),
                 2,
                 "selected={selected_unit_ids:?}, denied={denied_unit_ids:?}"
             );
+        }
+    }
+}
+
+async fn assert_unit_id_digest_3780(
+    fixture: &RerAnalysisFixture,
+    login: uuid::Uuid,
+    req: &InboxMessagesReq,
+    expected_count: usize,
+) {
+    let split = test_dt(2026, 3, 2, 10, 0) + chrono::Duration::seconds(18);
+    for upper_bound in [None, Some(split)] {
+        let actual =
+            crate::rer_importer::inbox::query::load_analytics_inbox_digest(
+                &login,
+                &fixture.env,
+                req,
+                &fixture.env.dbx,
+                90_000,
+                upper_bound,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let mut reference_req = req.clone();
+        if let Some(upper_bound) = upper_bound {
+            reference_req.till_date_inclusive_ms =
+                Some(upper_bound.and_utc().timestamp_millis() - 1);
+        }
+        let source =
+            crate::rer_importer::inbox::query::build_inbox_digest_query(
+                &login,
+                &fixture.env,
+                &reference_req,
+            )
+            .await
+            .unwrap();
+        let expected = fixture
+            .env
+            .dbx
+            .query_one_raw(Statement::from_string(DbBackend::Postgres, source))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(actual.0, expected.try_get::<i64>("", "count").unwrap());
+        assert_eq!(
+            actual.1,
+            expected
+                .try_get::<Option<NaiveDateTime>>("", "first_element_ts")
+                .unwrap()
+        );
+        if upper_bound.is_none() {
+            assert_eq!(actual.0, expected_count as i64);
         }
     }
 }

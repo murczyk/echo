@@ -1427,6 +1427,14 @@ complete. Check useful completions, source 503s and source block work as well
 as native memory before accepting a canary. See the
 [Skhid investigation and diagnostic limits](../../archive/2026-10-12-perf/iteration7/findings.md).
 
+The end-to-end heartbeat probe retries gateway shared-user memory and concurrent
+query rejections within its existing probe deadline. Exhausting that deadline
+returns status 75 and updates only the diagnostic detail and LSNs, preserving
+the previous health decision and successful check time. Consumers still reject
+analytics when that timestamp exceeds their freshness budget; a rejected probe
+never renews it. Lost replication slots, stopped mirrors, unavailable services
+and other heartbeat read errors retain their immediate unhealthy decision.
+
 An application rollback may retain these limits. If an operator also needs to
 remove them, first restore the previous control bundle so reconciliation will
 not reapply them, then restore the gateway user's four prior setting values
