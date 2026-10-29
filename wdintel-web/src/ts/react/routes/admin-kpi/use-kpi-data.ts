@@ -27,9 +27,10 @@ async function loadReportCount() {
   return response.total;
 }
 
-export function useSnapshot<T>(load: () => Promise<T>, failureMessage: string) {
+export function useSnapshot<T>(load: (signal: AbortSignal) => Promise<T>, failureMessage: string) {
   const { notify } = usePowerSnackbar();
   const generation = useRef(0);
+  const controller = useRef<AbortController | null>(null);
   const [snapshot, setSnapshot] = useState<Snapshot<T>>({
     data: null,
     loading: true,
@@ -39,9 +40,12 @@ export function useSnapshot<T>(load: () => Promise<T>, failureMessage: string) {
 
   const reload = useCallback(async () => {
     const request = ++generation.current;
+    controller.current?.abort();
+    const currentController = new AbortController();
+    controller.current = currentController;
     setSnapshot((previous) => ({ ...previous, loading: true, error: null }));
     try {
-      const data = await load();
+      const data = await load(currentController.signal);
       if (request !== generation.current) return;
       setSnapshot({ data, loading: false, error: null, updatedAt: Date.now() });
     } catch (error) {
@@ -56,6 +60,7 @@ export function useSnapshot<T>(load: () => Promise<T>, failureMessage: string) {
     void reload();
     return () => {
       generation.current += 1;
+      controller.current?.abort();
     };
   }, [reload]);
 
