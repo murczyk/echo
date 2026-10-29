@@ -3211,7 +3211,7 @@ pub(super) async fn count_callsigns_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).context(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -3226,9 +3226,11 @@ pub(super) async fn count_callsigns_with_db(
             dt_since,
             dt_till,
             master_keys,
-        )?,
+        )
+        .context(h!())?,
     )
-    .await?;
+    .await
+    .context(h!())?;
     Ok(callsigns.len() as i64)
 }
 
@@ -6294,9 +6296,10 @@ async fn count_aors_with_db(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
 ) -> Result<i64, AppError> {
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).context(h!())?;
     let stmt =
-        build_aors_query(&req.0, &login_value, dt_since, dt_till, master_keys)?;
+        build_aors_query(&req.0, &login_value, dt_since, dt_till, master_keys)
+            .context(h!())?;
     let count = AorsRes::find_by_statement(stmt)
         .all(&crate::read_query::connection(db))
         .await

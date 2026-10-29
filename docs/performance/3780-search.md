@@ -40,7 +40,7 @@ excluded quoted phrases materialize date/access-eligible IDs first, select
 positive matches, then check exclusions only on those matches. Other filters
 remain in the outer query; this candidate scope never replaces authorization
 or removes a facet's own-filter rules. Longer and unbounded periods retain
-indexed match-set planning. Bounded complex Fuzzy and daily literal strategies
+indexed match-set planning. Bounded complex Fuzzy searches
 disable JIT locally inside a read-only transaction; the setting cannot leak
 to a pooled connection.
 
@@ -56,16 +56,16 @@ SQL slots per API process. Ordinary reads retain two slots per authenticated
 login and a ten-second admission/pool wait. Text-search counts additionally
 share four count slots, with two per login in a separate class; this leaves
 capacity for pages, including pages from the same login. At most four source
-search-count operations, two per login, traverse windows concurrently; additional
+search-count operations, two per login, execute concurrently; additional
 facets queue within their request budget. This lets admitted counts finish rather
-than interleaving every facet until all expire. SQL permits are released between
-historical windows; count-operation admission is separate from ordinary reads. Their admission and identical-count queue
+than interleaving every facet until all expire. SQL permits are released after each
+query; count-operation admission is separate from ordinary reads. Their admission and identical-count queue
 waits can use the remaining whole-request budget; acquiring a pooled connection
 still has a ten-second bound.
 
 The existing eight fallback-operation slots, limited to two per login, cover
 ordinary fallbacks and query-policy source routes. Search counts use the SQL
-count limits instead of holding an operation slot for their entire traversal.
+count limits instead of holding an operation slot for their entire request.
 Windowed network fallbacks likewise rely on statement admission and release
 capacity between days. Count coordination is keyed by operation, pool, login and filters: identical
 requests queue while unrelated facets can progress. Limits are process-local.
@@ -134,8 +134,9 @@ search_http_timeout_ms = 60000
 ```
 
 The HTTP budget must exceed the search statement budget and cannot exceed
-600,000 ms. An explicit SQL override of 60 seconds or more also requires an
-explicit, longer HTTP override. Existing lock, idle-transaction and worker
+600,000 ms. Existing SQL overrides of 60 seconds or more retain the previous
+600-second HTTP default when no HTTP override is supplied. An explicit HTTP
+override must exceed the SQL budget. Existing lock, idle-transaction and worker
 settings keep their separate meanings. The default policy also applies when `[postgres_runtime]`
 is absent. Longer budgets require an intentional operator override; proxy
 read deadlines must exceed the selected backend HTTP deadline. Any change to a

@@ -2101,7 +2101,15 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
                     .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT)
                     .min(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT)),
             search_http_timeout_ms: config.search_http_timeout_ms
-                .unwrap_or(ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT),
+                .unwrap_or_else(|| {
+                    if config.search_statement_timeout_ms.is_some_and(|timeout|
+                        timeout >= ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT)
+                    {
+                        ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX
+                    } else {
+                        ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT
+                    }
+                }),
             report_worker_statement_timeout_ms: config
                 .report_worker_statement_timeout_ms
                 .unwrap_or(
@@ -2692,6 +2700,18 @@ pg_dbname = "echo_analytics_gateway"
             postgres_runtime.statement_timeout_ms
         );
         assert_eq!(postgres_runtime.search_http_timeout_ms, 60_000);
+        for statement_ms in [60_000, 90_000, 599_999] {
+            let configured: TestPostgresRuntimeSection = toml::from_str(
+                &format!("[postgres_runtime]\nsearch_statement_timeout_ms = {statement_ms}\n"),
+            )
+            .unwrap();
+            let postgres_runtime = configured.postgres_runtime.unwrap();
+            assert_eq!(
+                postgres_runtime.search_statement_timeout_ms,
+                statement_ms
+            );
+            assert_eq!(postgres_runtime.search_http_timeout_ms, 600_000);
+        }
         for (ordinary, expected) in [(5_000, 5_000), (120_000, 30_000)] {
             let configured: TestPostgresRuntimeSection =
                 toml::from_str(&format!(

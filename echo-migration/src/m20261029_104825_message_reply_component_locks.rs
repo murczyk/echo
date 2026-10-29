@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -136,7 +142,7 @@ create trigger message_reply_source_lock before insert or update or delete on me
     for each row execute function message_reply_lock_row();
 create trigger message_reply_endpoint_before_lock before delete or update of deleted on signal_message
     for each row execute function message_reply_lock_row();
-        "#).await?;
+        "#).await.map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -160,7 +166,7 @@ end;
 $$;
 create trigger message_reply_lock before insert or update or delete on message_reply
     for each statement execute function message_reply_lock_statement();
-        "#).await?;
+        "#).await.map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }

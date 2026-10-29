@@ -44,7 +44,10 @@ Invalidations include a surviving member when the head has been physically delet
 mutations acquire transaction advisory locks for the affected connected messages,
 source inbox/outbox receipts, relationships and cached thread identities. They
 use the same database protocol for application calls, source writes, relationship
-triggers and endpoint deletion. Unrelated threads and zero-row relationship
+triggers and endpoint deletion. Reconciliation locks all processed candidates
+and the fallback before selecting the first active result, including duplicate
+promotion, so deletion during a lock wait cannot leave a stale canonical mapping.
+Unrelated threads and zero-row relationship
 updates do not share a global lock. Source receipt locks also protect parents
 that have not arrived yet; canonical-message locks coordinate deduplication across
 datasources. Locks are sorted, and discovery is repeated after waiting if the

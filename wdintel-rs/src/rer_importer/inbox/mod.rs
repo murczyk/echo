@@ -1608,15 +1608,17 @@ async fn query_inbox_digest(
         .await
         .c(h!())?
         .context(h!())?;
-    let first_element_ts =
-        query_res.try_get("", "first_element_ts").or_else(|_| {
+    let first_element_ts = query_res
+        .try_get("", "first_element_ts")
+        .or_else(|_| {
             query_res
                 .try_get::<Option<DateTime<Utc>>>("", "first_element_ts")
                 .map(|timestamp| {
                     timestamp.map(|timestamp| timestamp.naive_utc())
                 })
-        })?;
-    Ok((query_res.try_get("", "count")?, first_element_ts))
+        })
+        .c(h!())?;
+    Ok((query_res.try_get("", "count").c(h!())?, first_element_ts))
 }
 
 async fn query_inbox_digest_singleflight<F, Fut>(

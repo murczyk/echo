@@ -94,6 +94,93 @@ async fn stage_native(
 // https://github.com/echoua/echo/issues/3780
 #[tokio::test]
 #[serial_test::serial]
+async fn replies_3780_reconciliation_selected_active_results_after_lock_waits()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let datasource = mk_datasource(&env.dbx, Default::default()).await.unwrap();
+    let group = crate::functest::tests::mk_datasource_group(
+        &env.dbx,
+        crate::entities::datasource_group::ActiveModel {
+            datasource_id: Set(datasource.id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    for promotion in [false, true] {
+        let first = message(&env.dbx, login.id, "First result").await;
+        let second = message(&env.dbx, login.id, "Surviving result").await;
+        let txn = env.dbx.begin().await.unwrap();
+        let mut first = first.into_active_model();
+        first.datasource_group_id = Set(Some(group.id));
+        first.echo_inbox_message_id = Set(Some(1));
+        let first = first.update(&txn).await.unwrap();
+        stage_source(&txn, datasource.id, &native_snapshot(1, None))
+            .await
+            .unwrap();
+        record_source(&txn, datasource.id, 1, first.id)
+            .await
+            .unwrap();
+        txn.commit().await.unwrap();
+        let held = env.dbx.begin().await.unwrap();
+        super::lock_messages(&held, &[first.id]).await.unwrap();
+        let db = env.dbx.clone();
+        let mut reconciliation = tokio::spawn(async move {
+            let txn = db.begin().await.unwrap();
+            if promotion {
+                super::record_promoted_sources(
+                    &txn,
+                    &[first.id],
+                    second.id,
+                    &[first.id, second.id],
+                )
+                .await
+                .unwrap();
+            } else {
+                super::record_processed_source(
+                    &txn,
+                    datasource.id,
+                    1,
+                    second.id,
+                    &[first.id, second.id],
+                )
+                .await
+                .unwrap();
+            }
+            txn.commit().await.unwrap();
+        });
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            &mut reconciliation,
+        )
+        .await
+        .is_err());
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(first.id))
+            .exec(&held)
+            .await
+            .unwrap();
+        held.commit().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), reconciliation)
+            .await
+            .unwrap()
+            .unwrap();
+        let source = crate::entities::message_reply_source::Entity::find_by_id(
+            (datasource.id, 1),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(source.signal_message_id, Some(second.id));
+    }
+}
+
+// https://github.com/echoua/echo/issues/3780
+#[tokio::test]
+#[serial_test::serial]
 async fn replies_3780_unrelated_imports_and_threads_did_not_wait() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let login = find_test_login(&env.dbx).await.unwrap();
