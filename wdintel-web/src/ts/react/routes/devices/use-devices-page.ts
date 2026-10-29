@@ -430,7 +430,9 @@ export function useDevicesPage({ authUserRoles = [] }: { authUserRoles?: string[
       try {
         const device = await updateDevice(patch);
         setDevices((current) =>
-          current.map((item) => (item.id === device.id ? deviceDetailsToListItem(device) : item)),
+          current.map((item) =>
+            item.id === device.id ? deviceDetailsToListItem(device, item.stats) : item,
+          ),
         );
         setEditDevice(null);
         setEditForm(null);

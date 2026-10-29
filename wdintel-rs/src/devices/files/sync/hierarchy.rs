@@ -42,13 +42,28 @@ pub(super) struct ResolvedNewFileHierarchy {
     pub(super) parent_hierarchy_path: String,
 }
 
+/// Directory entries resolved for one hierarchy level, plus how many of them
+/// this transaction inserted.
+struct ResolvedDirectories<K> {
+    entries: HashMap<K, DirectoryParent>,
+    inserted_count: u64,
+}
+
+pub(super) struct ResolvedNewFileHierarchies {
+    pub(super) files: Vec<ResolvedNewFileHierarchy>,
+    pub(super) inserted_directory_count: u64,
+}
+
 pub(super) async fn resolve_new_file_hierarchies(
     transaction: &DatabaseTransaction,
     mutations: &[&PreparedFileMutation],
     now: NaiveDateTime,
-) -> Result<Vec<ResolvedNewFileHierarchy>, FilesystemError> {
+) -> Result<ResolvedNewFileHierarchies, FilesystemError> {
     let Some(first) = mutations.first() else {
-        return Ok(Vec::new());
+        return Ok(ResolvedNewFileHierarchies {
+            files: Vec::new(),
+            inserted_directory_count: 0,
+        });
     };
     let device_id = first.device_id;
     let mut max_directory_depth = 0;
@@ -64,18 +79,16 @@ pub(super) async fn resolve_new_file_hierarchies(
     }
 
     let roots = resolve_roots(transaction, mutations, now).await?;
+    let mut inserted_directory_count = roots.inserted_count;
     let mut root_ids = Vec::with_capacity(mutations.len());
     let mut parents = Vec::with_capacity(mutations.len());
     for mutation in mutations {
         let key = (mutation.device_id, mutation.source_path.root_name.clone());
-        let root = roots.get(&key).ok_or(FilesystemError::Invariant(
-            "mutation_root_resolution_failed",
-        ))?;
+        let root = roots.entries.get(&key).cloned().ok_or(
+            FilesystemError::Invariant("mutation_root_resolution_failed"),
+        )?;
         root_ids.push(root.entry_id);
-        parents.push(DirectoryParent {
-            entry_id: root.entry_id,
-            hierarchy_path: root.hierarchy_path.clone(),
-        });
+        parents.push(root);
     }
 
     for depth in 0..max_directory_depth {
@@ -87,6 +100,7 @@ pub(super) async fn resolve_new_file_hierarchies(
             now,
         )
         .await?;
+        inserted_directory_count += directories.inserted_count;
         for (index, mutation) in mutations.iter().enumerate() {
             if depth >= directory_depth(mutation)? {
                 continue;
@@ -97,7 +111,7 @@ pub(super) async fn resolve_new_file_hierarchies(
                 parents[index].entry_id,
                 component.clone(),
             );
-            parents[index] = directories.get(&key).cloned().ok_or(
+            parents[index] = directories.entries.get(&key).cloned().ok_or(
                 FilesystemError::Invariant(
                     "mutation_directory_resolution_failed",
                 ),
@@ -105,7 +119,7 @@ pub(super) async fn resolve_new_file_hierarchies(
         }
     }
 
-    Ok(root_ids
+    let files = root_ids
         .into_iter()
         .zip(parents)
         .map(|(root_id, parent)| ResolvedNewFileHierarchy {
@@ -113,14 +127,18 @@ pub(super) async fn resolve_new_file_hierarchies(
             parent_id: parent.entry_id,
             parent_hierarchy_path: parent.hierarchy_path,
         })
-        .collect())
+        .collect();
+    Ok(ResolvedNewFileHierarchies {
+        files,
+        inserted_directory_count,
+    })
 }
 
 async fn resolve_roots(
     transaction: &DatabaseTransaction,
     mutations: &[&PreparedFileMutation],
     now: NaiveDateTime,
-) -> Result<HashMap<(Uuid, String), super::super::RootEntry>, FilesystemError> {
+) -> Result<ResolvedDirectories<(Uuid, String)>, FilesystemError> {
     let mut inputs = BTreeMap::new();
     for mutation in mutations {
         let key = (mutation.device_id, mutation.source_path.root_name.clone());
@@ -133,32 +151,33 @@ async fn resolve_roots(
             ),
         });
     }
-    file_entry::Entity::insert_many(inputs.values().map(|input| {
-        directory_active_model(
-            input.candidate_id,
-            input.device_id,
-            None,
-            &input.name,
-            &input.hierarchy_path,
-            now,
+    let inserted_count =
+        file_entry::Entity::insert_many(inputs.values().map(|input| {
+            directory_active_model(
+                input.candidate_id,
+                input.device_id,
+                None,
+                &input.name,
+                &input.hierarchy_path,
+                now,
+            )
+        }))
+        .on_conflict(
+            OnConflict::columns([
+                file_entry::Column::DeviceId,
+                file_entry::Column::Name,
+            ])
+            .target_and_where(
+                file_entry::Column::ParentId
+                    .is_null()
+                    .and(file_entry::Column::ArchiveFileId.is_null()),
+            )
+            .do_nothing()
+            .to_owned(),
         )
-    }))
-    .on_conflict(
-        OnConflict::columns([
-            file_entry::Column::DeviceId,
-            file_entry::Column::Name,
-        ])
-        .target_and_where(
-            file_entry::Column::ParentId
-                .is_null()
-                .and(file_entry::Column::ArchiveFileId.is_null()),
-        )
-        .do_nothing()
-        .to_owned(),
-    )
-    .exec_without_returning(transaction)
-    .await
-    .map_err(map_database)?;
+        .exec_without_returning(transaction)
+        .await
+        .map_err(map_database)?;
     let root_keys = inputs.keys().cloned().collect::<Vec<_>>();
     let rows = file_entry::Entity::find()
         .filter(file_entry::Column::ArchiveFileId.is_null())
@@ -180,8 +199,12 @@ async fn resolve_roots(
     let mut roots = HashMap::with_capacity(rows.len());
     for row in rows {
         let root = map_root_model(row)?;
-        let key = (root.device_id, root.name.clone());
-        if !inputs.contains_key(&key) || roots.insert(key, root).is_some() {
+        let key = (root.device_id, root.name);
+        let parent = DirectoryParent {
+            entry_id: root.entry_id,
+            hierarchy_path: root.hierarchy_path,
+        };
+        if !inputs.contains_key(&key) || roots.insert(key, parent).is_some() {
             return Err(FilesystemError::Invariant(
                 "mutation_root_resolution_not_unique",
             ));
@@ -192,7 +215,10 @@ async fn resolve_roots(
             "mutation_root_resolution_failed",
         ));
     }
-    Ok(roots)
+    Ok(ResolvedDirectories {
+        entries: roots,
+        inserted_count,
+    })
 }
 
 async fn resolve_directory_depth(
@@ -201,7 +227,7 @@ async fn resolve_directory_depth(
     parents: &[DirectoryParent],
     depth: usize,
     now: NaiveDateTime,
-) -> Result<HashMap<(Uuid, Uuid, String), DirectoryParent>, FilesystemError> {
+) -> Result<ResolvedDirectories<(Uuid, Uuid, String)>, FilesystemError> {
     if mutations.len() != parents.len() {
         return Err(FilesystemError::Invariant(
             "mutation_hierarchy_parent_count_mismatch",
@@ -228,34 +254,38 @@ async fn resolve_directory_depth(
         });
     }
     if inputs.is_empty() {
-        return Ok(HashMap::new());
+        return Ok(ResolvedDirectories {
+            entries: HashMap::new(),
+            inserted_count: 0,
+        });
     }
-    file_entry::Entity::insert_many(inputs.values().map(|input| {
-        directory_active_model(
-            input.candidate_id,
-            input.device_id,
-            Some(input.parent_id),
-            &input.name,
-            &input.hierarchy_path,
-            now,
+    let inserted_count =
+        file_entry::Entity::insert_many(inputs.values().map(|input| {
+            directory_active_model(
+                input.candidate_id,
+                input.device_id,
+                Some(input.parent_id),
+                &input.name,
+                &input.hierarchy_path,
+                now,
+            )
+        }))
+        .on_conflict(
+            OnConflict::columns([
+                file_entry::Column::DeviceId,
+                file_entry::Column::ParentId,
+                file_entry::Column::Name,
+            ])
+            .target_and_where(
+                directory_kind_expr()
+                    .and(file_entry::Column::ParentId.is_not_null()),
+            )
+            .do_nothing()
+            .to_owned(),
         )
-    }))
-    .on_conflict(
-        OnConflict::columns([
-            file_entry::Column::DeviceId,
-            file_entry::Column::ParentId,
-            file_entry::Column::Name,
-        ])
-        .target_and_where(
-            directory_kind_expr()
-                .and(file_entry::Column::ParentId.is_not_null()),
-        )
-        .do_nothing()
-        .to_owned(),
-    )
-    .exec_without_returning(transaction)
-    .await
-    .map_err(map_database)?;
+        .exec_without_returning(transaction)
+        .await
+        .map_err(map_database)?;
     let directory_keys = inputs.keys().cloned().collect::<Vec<_>>();
     let rows = file_entry::Entity::find()
         .filter(file_entry::Column::ArchiveFileId.is_null())
@@ -299,7 +329,10 @@ async fn resolve_directory_depth(
             "mutation_directory_resolution_failed",
         ));
     }
-    Ok(directories)
+    Ok(ResolvedDirectories {
+        entries: directories,
+        inserted_count,
+    })
 }
 
 fn directory_active_model(

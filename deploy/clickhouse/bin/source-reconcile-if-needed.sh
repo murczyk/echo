@@ -29,6 +29,8 @@ fi
 if [[ "$desired_fingerprint" != "$publication_fingerprint" \
   || "$desired_fingerprint" != "$recorded_fingerprint" ]]; then
   log "Table-selection drift detected; starting coordinated reconciliation"
+  log "Repairing published-table schemas before automatic table reconciliation"
+  "$SCRIPT_DIR/source-resnapshot-table.sh" --manifest --published-only
   ECHO_PEERDB_RECONCILE_LOCK_HELD=true \
     "$SCRIPT_DIR/source-reconcile-tables.sh" --yes
 fi
