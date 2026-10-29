@@ -307,7 +307,9 @@ to the normal answer cap. Its failure cause survives SDK error conversion.
 Each tool response remains bounded. The retained tool allowance scales with the
 selected engine's context window, and nearing that allowance triggers a
 checkpoint even if provider token headroom remains. Discarded allowance is
-released after compaction. The runner
+released after compaction. The gateway also supplies its provider request-byte
+limit; primary requests and checkpoints reserve room for serialization overhead
+and compact before exceeding that transport limit. The runner
 also emits normalized
 `assistant_delta`, `progress`, `tool_start`, `tool_update`, `tool_end`, and
 `source` events. Progress-tool lifecycle events are suppressed because the tool

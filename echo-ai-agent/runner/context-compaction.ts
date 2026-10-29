@@ -32,11 +32,13 @@ interface ContextSettings {
   signal?: AbortSignal;
   saveCheckpoint?: (summary: string) => Promise<void>;
   toolContextNeedsCompaction?: () => boolean;
+  providerRequestMaxBytes?: number;
 }
 
 const MAX_COMPACTION_PASSES = 3;
 const MAX_CHECKPOINT_CALLS = 6;
 const CHECKPOINT_TARGET_WORDS = 1_000;
+const PROVIDER_REQUEST_ENVELOPE_RESERVE_BYTES = 64 * 1024;
 
 export class ContextCompactionLimitError extends Error {}
 export class ContextCheckpointProviderError extends Error {}
@@ -44,6 +46,20 @@ const CHECKPOINT_INSTRUCTIONS = `Create a concise evidence checkpoint so an Echo
 
 function llmContext(context: AgentContext): Context {
   return { ...context, messages: convertToLlm(context.messages) };
+}
+
+function providerRequestFits(context: Context, settings: ContextSettings): boolean {
+  if (settings.providerRequestMaxBytes === undefined) return true;
+  let bytes = Buffer.byteLength(JSON.stringify(context));
+  for (const message of context.messages) {
+    if (message.role !== "assistant") continue;
+    for (const block of message.content) {
+      if (block.type !== "toolCall") continue;
+      const argumentsJson = JSON.stringify(block.arguments);
+      bytes += Buffer.byteLength(JSON.stringify(argumentsJson)) - Buffer.byteLength(argumentsJson);
+    }
+  }
+  return bytes <= settings.providerRequestMaxBytes - PROVIDER_REQUEST_ENVELOPE_RESERVE_BYTES;
 }
 
 function entryMessages(entries: SessionEntry[]): AgentMessage[] {
@@ -310,7 +326,8 @@ async function compactOnce(
         checkpointEngine,
         summaryContext,
         checkpointTokens,
-      ) < checkpointTokens
+      ) < checkpointTokens ||
+      !providerRequestFits(summaryContext, settings)
     ) {
       cut = smallerCut(entries, cut);
       continue;
@@ -371,7 +388,8 @@ async function ensureContextInner(
     availableTokens(runtime, context);
   const fits = () =>
     available(context) >= settings.compactionReserveTokens &&
-    !settings.toolContextNeedsCompaction?.();
+    !settings.toolContextNeedsCompaction?.() &&
+    providerRequestFits(llmContext(context), settings);
   signal?.throwIfAborted();
   if (fits()) return context;
   onProgress();
@@ -381,6 +399,8 @@ async function ensureContextInner(
   }
   if (settings.toolContextNeedsCompaction?.())
     throw new ContextCompactionLimitError("tool context budget remains exhausted after compaction");
+  if (!providerRequestFits(llmContext(context), settings))
+    throw new ContextCompactionLimitError("provider request exceeds transport size after compaction");
   if (available(context) < settings.maxTokens)
     throw new ContextCompactionLimitError("provider context window exceeded after compaction");
   return context;
@@ -425,6 +445,8 @@ async function compactAllForOutputRetry(
   const maxTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
   if (clampMaxTokensToContext(checkpointEngine, context, maxTokens) < maxTokens)
     throw new ContextCompactionLimitError("output recovery evidence exceeds checkpoint context");
+  if (!providerRequestFits(context, settings))
+    throw new ContextCompactionLimitError("output recovery evidence exceeds provider request size");
   onProgress();
   const response = await summarizeCheckpoint(runtime, context, settings.signal);
   const summary = checkpointText(response);

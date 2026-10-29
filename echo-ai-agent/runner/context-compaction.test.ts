@@ -37,6 +37,8 @@ async function fixture(
     finalOutput?: string;
     contextWindow?: number;
     toolContextCharacters?: number;
+    providerRequestMaxBytes?: number;
+    evidenceText?: string;
   } = {
     maxTokens: 16_384,
     reserveTokens: 16_384,
@@ -64,6 +66,8 @@ async function fixture(
     try {
       let text = "";
       for await (const chunk of request) text += chunk;
+      if (checkpointSettings.providerRequestMaxBytes)
+        assert.ok(Buffer.byteLength(text) <= checkpointSettings.providerRequestMaxBytes);
       const body = JSON.parse(text);
       requests.push(body);
       const system = body.messages[0].content;
@@ -435,7 +439,7 @@ async function fixture(
             message_uid: `fixture-${id}`,
             text:
               `Alpha fixture ${id}: ` +
-              "Synthetic document event. ".repeat(65) +
+              (checkpointSettings.evidenceText ?? "Synthetic document event. ").repeat(65) +
               (index === 19 ? "Late-page Bravo received the documents." : ""),
             citation: `https://example.invalid/?m=fixture-${id}`,
           },
@@ -498,6 +502,7 @@ async function fixture(
       timeContext: { requestStartedAtUtc: "2026-10-09T04:38:34Z" },
       signal: cancellation.signal,
       toolContextNeedsCompaction: compact.needsCompaction,
+      providerRequestMaxBytes: checkpointSettings.providerRequestMaxBytes,
     },
     () => (progressCalls += 1),
     (messages) => {
@@ -544,6 +549,31 @@ for (const toolContextCharacters of [undefined, 192_000]) {
       assert.ok(value.checkpointCalls() > 0);
       assert.equal(value.resetCalls(), value.checkpointCalls());
       assert.ok(JSON.stringify(value.session.messages).includes(value.firstCitation));
+    } finally {
+      await value.close();
+    }
+  });
+}
+
+for (const [encoding, evidenceText] of [
+  ["ASCII", "Synthetic document event. "],
+  ["UTF-8", "Синтетичне повідомлення. "],
+]) {
+  test(`#3724 checkpoints large profiles before the gateway byte limit with ${encoding} evidence`, async () => {
+    const value = await fixture(110, "stop", false, 1, {
+      reserveTokens: 131_072,
+      contextWindow: 1_050_000,
+      providerRequestMaxBytes: 2 * 1024 * 1024,
+      evidenceText,
+    });
+    try {
+      await value.session.prompt(value.prompt);
+      validateFinalAssistantMessage(value.session.messages);
+      assert.deepEqual(value.errors, []);
+      assert.equal(value.contextFailure(), undefined);
+      assert.equal(value.cursors.length, 110);
+      assert.ok(value.checkpointCalls() > 0);
+      assert.equal(value.resetCalls(), value.checkpointCalls());
     } finally {
       await value.close();
     }

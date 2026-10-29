@@ -73,6 +73,7 @@ import { ContextCheckpointProviderError, ContextCompactionLimitError, installCon
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
 const HARNESS_RELEASE = "2026.10.29.1";
@@ -111,6 +112,7 @@ const RUNNER_PAYLOAD_FIELDS = new Set([
   "correlationHeader",
   "systemPrompt",
   "contextWindow",
+  "providerRequestMaxBytes",
   "maxTokens",
   "checkpointMaxTokens",
   "checkpointModelName",
@@ -183,6 +185,7 @@ interface RunnerPayload {
   correlationHeader?: string;
   systemPrompt?: string;
   contextWindow: number;
+  providerRequestMaxBytes?: number;
   maxTokens: number;
   checkpointMaxTokens: number;
   checkpointModelName?: string;
@@ -404,6 +407,9 @@ export function validatePayload(
     correlationHeader: value.correlationHeader as string | undefined,
     systemPrompt,
     contextWindow,
+    providerRequestMaxBytes: providerTransport === "echo_gateway"
+      ? validateInteger(value.providerRequestMaxBytes, 128 * 1024, 64 * 1024 * 1024, LEGACY_PROVIDER_REQUEST_MAX_BYTES)
+      : undefined,
     maxTokens,
     checkpointMaxTokens,
     checkpointModelName,
