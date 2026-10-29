@@ -64,6 +64,8 @@ export function useDutyFeedColumnActions(
       handleMessageBookmark,
       handleMessageImportant,
       handleMessageCopy,
+      setDeleteConfirmId,
+      setDeleteConfirmFeedId,
       applyFilter,
       handleToggleTag,
       cancelFollowTail,
@@ -114,6 +116,10 @@ export function useDutyFeedColumnActions(
       },
       onMessageEditReport: (reportId, sourceMessageId) => {
         deps.openReportEditor(feedId, reportId, sourceMessageId);
+      },
+      onMessageDelete: (messageId) => {
+        setDeleteConfirmId(messageId);
+        setDeleteConfirmFeedId(feedId);
       },
       onMessageExcludeEntity: (entity, value) =>
         applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
@@ -218,6 +224,7 @@ export function useDutyFeedColumnActions(
         latest().onMessageCreateReport(msgId, message, etalonDisplayModel, focusTarget),
       onMessageEditReport: (reportId, sourceMessageId) =>
         latest().onMessageEditReport(reportId, sourceMessageId),
+      onMessageDelete: (messageId) => latest().onMessageDelete(messageId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),
       onMessageEdit: (messageId, message, focusTarget) =>

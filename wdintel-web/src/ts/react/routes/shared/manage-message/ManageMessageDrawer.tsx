@@ -49,6 +49,7 @@ import {
   type ManageMessageEditorPresentation,
 } from './ManageMessageEditorSurface';
 import { AutoParseStatusIcon } from './AutoParseStatusIcon';
+import { ExpandableMessageTextField, MessageTextHeightToggle } from './ExpandableMessageTextField';
 import { MessageParserFeedbackProvider } from './MessageParserFeedback';
 import { FormSectionWrapper } from './drawer-sections/FormSectionWrapper';
 import { AttachmentsSection } from './drawer-sections/AttachmentsSection';
@@ -168,6 +169,16 @@ function ReportTextRow({
 }) {
   const { control } = useFormContext<MessageFormData>();
   const reportTextRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const originalTextId = useId();
+  const reportTextId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const textRows = expanded ? 12 : 6;
+  const textColumns =
+    presentation === 'embedded'
+      ? embeddedMainColumns === 2
+        ? 'repeat(2, minmax(0, 1fr))'
+        : 'minmax(0, 1fr)'
+      : { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' };
 
   useEffect(() => {
     if (busy) return;
@@ -181,12 +192,7 @@ function ReportTextRow({
       sx={{
         gridColumn: '1 / -1',
         display: 'grid',
-        gridTemplateColumns:
-          presentation === 'embedded'
-            ? embeddedMainColumns === 2
-              ? 'repeat(2, minmax(0, 1fr))'
-              : 'minmax(0, 1fr)'
-            : { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+        gridTemplateColumns: textColumns,
         gap: 3,
         minWidth: 0,
       }}
@@ -200,34 +206,61 @@ function ReportTextRow({
           deviceAccess={deviceAccess}
         />
       ) : null}
-      <TextField
-        label="Текст оригінального повідомлення"
-        value={originalText}
-        fullWidth
-        multiline
-        rows={6}
-        slotProps={{ input: { readOnly: true } }}
-      />
-      <Stack spacing={2}>
-        <Controller
-          name="full_body"
-          control={control}
-          render={({ field }) => (
+      <Stack spacing={2} sx={{ gridColumn: '1 / -1' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 0.5 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: textColumns, gap: 3, minWidth: 0 }}>
             <TextField
-              {...field}
-              label="Текст розвіддонесення"
+              id={originalTextId}
+              label="Текст оригінального повідомлення"
+              value={originalText}
               fullWidth
               multiline
-              rows={6}
-              required
-              autoFocus
-              inputRef={reportTextRef}
-              disabled={busy}
+              rows={textRows}
+              slotProps={{ input: { readOnly: true } }}
             />
-          )}
-        />
+            <Controller
+              name="full_body"
+              control={control}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  id={reportTextId}
+                  label="Текст розвіддонесення"
+                  fullWidth
+                  multiline
+                  rows={textRows}
+                  required
+                  autoFocus
+                  inputRef={reportTextRef}
+                  disabled={busy}
+                />
+              )}
+            />
+          </Box>
+          <MessageTextHeightToggle
+            expanded={expanded}
+            label="Текст розвіддонесення"
+            controls={`${originalTextId} ${reportTextId}`}
+            disabled={busy}
+            onToggle={() => setExpanded((value) => !value)}
+          />
+        </Box>
         {quickSuggestion.status !== 'idle' ? (
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mt: 1.5 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              alignSelf: 'flex-end',
+              gap: 1.5,
+              mt: 1.5,
+              width:
+                presentation === 'embedded'
+                  ? embeddedMainColumns === 2
+                    ? 'calc(50% - 12px)'
+                    : '100%'
+                  : { xs: '100%', md: 'calc(50% - 12px)' },
+            }}
+          >
             <Stack alignItems="center" spacing={0.5} sx={{ color: 'text.secondary', minWidth: 28 }}>
               <SmartToyOutlinedIcon
                 aria-label="ШІ пропозиція"
@@ -926,7 +959,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                                   name="full_body"
                                   control={methods.control}
                                   render={({ field }) => (
-                                    <TextField
+                                    <ExpandableMessageTextField
                                       {...field}
                                       onChange={(event) => {
                                         const value = event.target.value;
@@ -935,19 +968,10 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                                       }}
                                       label="Текст повідомлення"
                                       fullWidth
-                                      multiline
                                       rows={messageBodyRows}
+                                      minInputHeight={messageBodyMinHeight}
                                       inputRef={messageTextRef}
                                       disabled={busy}
-                                      sx={
-                                        messageBodyMinHeight != null
-                                          ? {
-                                              '& .MuiInputBase-root': {
-                                                minHeight: messageBodyMinHeight,
-                                              },
-                                            }
-                                          : undefined
-                                      }
                                     />
                                   )}
                                 />

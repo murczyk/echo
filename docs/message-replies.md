@@ -178,6 +178,12 @@ restarting on repeated navigation to the same message; the editor source outline
 Duty uses the originating column. Both screens constrain reply landings to loaded content,
 avoiding empty space under the newest reply. Analysis suppresses layout-triggered paging
 while a target is pinned; reader input releases the target.
+Duty's latest-message arrow releases the pinned reply target and retains the known
+newest boundary when opening an older reply window. It loads any missing newer
+messages and stays at the newest reply without returning to the original. Browser
+coverage in `wdintel-web/tests/e2e/message-replies-frontend.spec.ts` checks originals
+in the previous chunk and beyond the retained window, including two seconds of
+stable visibility after returning to the newest reply.
 Analysis uses its focused window without expanding the date range. Targets outside the current
 filters show `Поза поточними фільтрами` before clicking. The page batches
 candidate-only checks through the existing matching-filters API (100 IDs per

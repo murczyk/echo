@@ -22,6 +22,15 @@ function baseFeed(overrides: Partial<MessageFeedState> = {}): MessageFeedState {
   };
 }
 describe('feedListRenderStateEqual', () => {
+  it('#3894 refreshes newer-history controls when tail markers change without new rows', () => {
+    const prev = baseFeed({
+      historicalReadThrough: { id: 2, timestamp: 2 },
+      evictedNewerTailId: 2,
+    });
+    expect(feedListRenderStateEqual(prev, { ...prev, historicalReadThrough: null })).toBe(false);
+    expect(feedListRenderStateEqual(prev, { ...prev, evictedNewerTailId: null })).toBe(false);
+  });
+
   it('treats unread/read metadata-only updates as equal', () => {
     const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ createdAtOrder: 1 })]];
     const filter = emptyFilter();

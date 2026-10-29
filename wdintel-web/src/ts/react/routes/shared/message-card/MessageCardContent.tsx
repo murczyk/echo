@@ -968,7 +968,10 @@ export function MessageCardMessageBody({
   const hasVisibleDocumentContent = isDocumentVisible && hasDocumentAttachments;
   const hasVisibleAudioContent = isAudioVisible && audioAttachments.length > 0;
   const hasVisibleSummary = showSummaryCarousel && selectedSummaryMediaIdentity != null;
-  const hasExtendedForm = isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '';
+  const extendedForm = msg.extendedForm?.trim();
+  const hasExtendedForm =
+    Boolean(extendedForm) &&
+    !reports.some((report) => !report.isDeleted && report.text.trim() === extendedForm);
   const hasAttachmentContent =
     unpreviewableRawCoordinates != null ||
     attachmentCounters != null ||
@@ -1168,6 +1171,7 @@ export function MessageCardMessageBody({
               parents={parents}
               groupInfos={reportGroupInfos}
               onEdit={readOnly ? undefined : onEditReport}
+              legacyComment={extendedForm}
             />
             {hasExtendedForm ? (
               <div className="flex flex-row items-center gap-[6px] min-w-0">

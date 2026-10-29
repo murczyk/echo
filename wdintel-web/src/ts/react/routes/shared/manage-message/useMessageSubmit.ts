@@ -224,7 +224,7 @@ export function useMessageSubmit({
         call_group_name: metadata.call_group_name?.trim() || undefined,
         hash_id: metadata.hash_id?.trim() || undefined,
       }));
-      const recentValues = buildRecentValues(data, dmrRows);
+      const recentValues = buildRecentValues(data, dmrRows, cyberEchoEnabled);
       const unitSelection = compatibleMessageUnitSelection(data.unit, data.unitSelection);
 
       const payload = {
@@ -425,6 +425,7 @@ function buildRecentValues(
     call_group_name?: string | null;
     hash_id?: string | null;
   }>,
+  cyberEchoEnabled: boolean,
 ): Partial<RecentValues> {
   return {
     group:
@@ -450,6 +451,6 @@ function buildRecentValues(
     dmr_hash_id: dmrRows.flatMap((metadata) => (metadata.hash_id ? [metadata.hash_id] : [])),
     locations: data.locations ?? [],
     callsigns: data.callsigns ?? [],
-    deviceName: data.deviceName ? [data.deviceName] : [],
+    deviceName: cyberEchoEnabled ? (data.deviceName ? [data.deviceName] : []) : undefined,
   };
 }

@@ -77,10 +77,12 @@ function MessageSummaryDetails({
   summary,
   onEdit,
   isParent = false,
+  showFullText = false,
 }: {
   summary: IntelligenceReportSummary;
   onEdit?: () => void;
   isParent?: boolean;
+  showFullText?: boolean;
 }) {
   const textToShow = getSummaryDisplayText(summary);
 
@@ -103,7 +105,9 @@ function MessageSummaryDetails({
           <EditIcon aria-hidden />
         </button>
       ) : null}
-      <span className="line-clamp-3 min-w-0 whitespace-pre-wrap wrap-break-word overflow-hidden">
+      <span
+        className={`${showFullText ? '' : 'line-clamp-3 '}min-w-0 whitespace-pre-wrap wrap-break-word overflow-hidden`}
+      >
         {textToShow}
       </span>
     </div>
@@ -162,11 +166,13 @@ export function MessageCardIntelligenceReports({
   parents,
   groupInfos,
   onEdit,
+  legacyComment,
 }: {
   reports: IntelligenceReportSummary[];
   parents: IntelligenceReportSummary[];
   groupInfos: Record<string, SignalGroupEntry>;
   onEdit?: (reportId: number) => void;
+  legacyComment?: string;
 }) {
   const visibleParents = parents.filter((parent) => parent.isAccessible && !parent.isDeleted);
   const visibleReports = reports.filter((report) => !report.isDeleted);
@@ -215,6 +221,7 @@ export function MessageCardIntelligenceReports({
                   <MessageSummaryDetails
                     summary={currentReport}
                     onEdit={editReport ? () => editReport(currentReport.id) : undefined}
+                    showFullText={currentReport.text.trim() === legacyComment}
                   />
                 </article>
               );

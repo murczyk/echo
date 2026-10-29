@@ -5,6 +5,7 @@ import {
   installAnalysisNeoApiMocks,
 } from './analysis-neo.fixtures';
 import { clickCreateMessage, openCreateMessageDrawer } from './image-editor-drawer.fixtures';
+import { systemSettingsCurrentResponse } from './fixture-responses';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
@@ -271,6 +272,76 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
   });
 
   for (const host of ['duty', 'analysis'] as const satisfies ManageMessageDrawerHost[]) {
+    test(`#3894 ${host} remembers a cleared device name after creating and reopening @regression`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() => {
+        if (!localStorage.getItem('cyberEcho_recentMessageFields')) {
+          localStorage.setItem(
+            'cyberEcho_recentMessageFields',
+            JSON.stringify({ deviceName: ['Попередній пристрій'] }),
+          );
+        }
+      });
+      if (host === 'duty') {
+        await installRerDutyShortStateMocks(page, {
+          signalGroups: ['e2e-group'],
+          userRoles: ['Rer', 'Admin'],
+        });
+      } else {
+        await installAnalysisNeoApiMocks(page, {
+          signalGroups: ['e2e-group'],
+          userRoles: ['Rer', 'Admin'],
+        });
+      }
+      await page.route('**/api/system-settings/current', (route) =>
+        route.fulfill({
+          json: { ...systemSettingsCurrentResponse(), devices_section_enabled: true },
+        }),
+      );
+      await page.route('**/api/sigint/device-name/search*', (route) =>
+        route.fulfill({ json: { devices: [] } }),
+      );
+      await page.route('**/api/sigint/device-name/create', (route) =>
+        route.fulfill({ json: { device: { id: 71, name: 'Новий пристрій' } } }),
+      );
+      await page.route('**/api/1.1/submit-direct', (route) =>
+        route.fulfill({ json: { signal_message_id: 701 } }),
+      );
+
+      await page.goto(`/rer-${host === 'duty' ? 'duty' : 'analysis'}-neo`);
+      await clickCreateMessage(page, host);
+      const editor = page.locator('[data-manage-message-presentation]');
+      const device = editor.getByRole('combobox', { name: 'Назва пристрою' });
+      await expect(device).toHaveValue('Попередній пристрій');
+      await editor.getByRole('combobox', { name: 'Група', exact: true }).click();
+      await page.getByRole('option', { name: 'e2e-group', exact: true }).click();
+
+      for (const name of ['', 'Новий пристрій']) {
+        await device.fill(name);
+        await editor.getByRole('textbox', { name: 'Текст повідомлення' }).fill('Нове повідомлення');
+        const submitted = page.waitForResponse('**/api/1.1/submit-direct');
+        await editor.getByRole('button', { name: 'Створити', exact: true }).click();
+        expect((await submitted).request().postDataJSON().device_name_id).toBe(
+          name ? 71 : undefined,
+        );
+        await expect(editor.getByRole('textbox', { name: 'Текст повідомлення' })).toHaveValue('');
+        await editor.getByRole('button', { name: 'Закрити', exact: true }).click();
+        await expect(editor).toHaveCount(0);
+        await clickCreateMessage(page, host);
+        await expect(device).toHaveValue(name);
+        await page.reload();
+        await clickCreateMessage(page, host);
+        await expect(device).toHaveValue(name);
+      }
+
+      await device.fill('');
+      await device.click();
+      await expect(
+        page.getByRole('option', { name: 'Попередній пристрій', exact: true }),
+      ).toBeVisible();
+    });
+
     for (const hideNetworks of [true, false]) {
       test(`#3598 ${host} editor network field follows hideNetworks=${hideNetworks}`, async ({
         page,

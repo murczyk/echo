@@ -18,6 +18,7 @@ import {
   DUTY_FEED_UNREAD_PREFETCH_MIN,
   DUTY_FEED_MESSAGE_WINDOW_LIMIT,
   emptyFilter,
+  feedHasUnloadedEvictedNewerTail,
   feedIndicatorUnreadCount,
   feedLoadedUnreadCount,
   feedPendingNewerUnreadCount,
@@ -623,6 +624,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feed.unreadCount).toBe(4);
     expect(feed.unresolvedUnreadIds).toEqual(new Set([79, 80, 81, 82]));
     expect(feed.readIds.has(21)).toBe(true);
+    expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(true);
   });
 
   it('loads a direct-link target with an exact pagination cursor', async () => {

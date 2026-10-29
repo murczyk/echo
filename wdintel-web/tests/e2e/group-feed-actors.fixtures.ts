@@ -314,13 +314,16 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
               : 0;
         const response = {
           inbox_items: ordered
-            .slice(start, target >= 0 ? target + pageLimit + 1 : start + pageLimit)
+            .slice(
+              start,
+              target >= 0 ? target + pageLimit + 1 : body.nolimit ? undefined : start + pageLimit,
+            )
             .map((message) => [message.id, inboxMessage(message)]),
           callsigns: [],
           signal_profiles: {},
           signal_groups: [],
           freq_pelengs_summary: null,
-          page_limit: pageLimit,
+          page_limit: body.nolimit ? null : pageLimit,
           around_message_messages_before: target >= 0 ? target : null,
           around_message_messages_after: target >= 0 ? ordered.length - target - 1 : null,
         };

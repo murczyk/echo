@@ -4,10 +4,7 @@ import { isNullOrUndefined } from './utils/misc';
 import { createRoot, Root } from 'react-dom/client';
 import { useNeoMuiTheme } from './mui-theme';
 import { PowerSnackbarProvider } from './components/PowerSnackbar';
-import {
-  POWER_DUTY_SNACKBAR_CLEARANCE,
-  POWER_FLOATING_CONTROL_RIGHT_CLEARANCE,
-} from './routes/shared/manage-message/floating-control-geometry';
+import { POWER_DUTY_SNACKBAR_CLEARANCE } from './routes/shared/manage-message/floating-control-geometry';
 
 import { RerDutyNeoPage } from './routes/rer-duty-neo';
 
@@ -24,10 +21,7 @@ function RerDutyNeoRoot({ authUserName }: { authUserName: string | null }) {
 
   return (
     <ThemeProvider theme={theme}>
-      <PowerSnackbarProvider
-        bottomInset={POWER_DUTY_SNACKBAR_CLEARANCE}
-        rightInset={POWER_FLOATING_CONTROL_RIGHT_CLEARANCE}
-      >
+      <PowerSnackbarProvider bottomInset={POWER_DUTY_SNACKBAR_CLEARANCE}>
         <RerDutyNeoPage key={authUserName ?? 'anonymous'} authUserName={authUserName} />
       </PowerSnackbarProvider>
     </ThemeProvider>

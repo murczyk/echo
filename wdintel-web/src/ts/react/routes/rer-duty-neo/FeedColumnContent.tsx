@@ -160,6 +160,7 @@ type DutyMessageCardItemProps = {
     focusTarget: HTMLElement,
   ) => void;
   onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
+  onMessageDelete: (messageId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
@@ -201,6 +202,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   onMessageCopy,
   onMessageCreateReport,
   onMessageEditReport,
+  onMessageDelete,
   onMessageExcludeEntity,
   onMessageToggleTag,
   onMessageEdit,
@@ -295,6 +297,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
         onMessageCreateReport(id, msg, visibleEtalonDisplayModel, focusTarget)
       }
       onEditReport={(reportId) => onMessageEditReport(reportId, id)}
+      onDelete={() => onMessageDelete(id)}
       onExcludeMessageEntity={(entity, value) => onMessageExcludeEntity(entity, value)}
       onToggleTag={(tagId) => onMessageToggleTag(id, tagId)}
       onEditDetails={(focusTarget) => onMessageEdit(id, msg, focusTarget)}
@@ -346,6 +349,7 @@ type DutyMessageListProps = {
     focusTarget: HTMLElement,
   ) => void;
   onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
+  onMessageDelete: (messageId: number) => void;
   onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
   onMessageToggleTag: (msgId: number, tagId: number) => void;
   onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;
@@ -391,6 +395,7 @@ const DutyMessageList = memo(
     onMessageCopy,
     onMessageCreateReport,
     onMessageEditReport,
+    onMessageDelete,
     onMessageExcludeEntity,
     onMessageToggleTag,
     onMessageEdit,
@@ -443,6 +448,7 @@ const DutyMessageList = memo(
                   onMessageCopy={onMessageCopy}
                   onMessageCreateReport={onMessageCreateReport}
                   onMessageEditReport={onMessageEditReport}
+                  onMessageDelete={onMessageDelete}
                   onMessageExcludeEntity={onMessageExcludeEntity}
                   onMessageToggleTag={onMessageToggleTag}
                   onMessageEdit={onMessageEdit}
@@ -495,6 +501,7 @@ const DutyMessageList = memo(
     prev.onMessageCopy === next.onMessageCopy &&
     prev.onMessageCreateReport === next.onMessageCreateReport &&
     prev.onMessageEditReport === next.onMessageEditReport &&
+    prev.onMessageDelete === next.onMessageDelete &&
     prev.onMessageExcludeEntity === next.onMessageExcludeEntity &&
     prev.onMessageToggleTag === next.onMessageToggleTag &&
     prev.onMessageEdit === next.onMessageEdit &&
@@ -697,6 +704,7 @@ export const FeedColumnContent = memo(
       onMessageCopy,
       onMessageCreateReport,
       onMessageEditReport,
+      onMessageDelete,
       onMessageExcludeEntity,
       onMessageToggleTag,
       onMessageEdit,
@@ -768,6 +776,7 @@ export const FeedColumnContent = memo(
     const stableOnMessageCopy = useStableCallback(onMessageCopy);
     const stableOnMessageCreateReport = useStableCallback(onMessageCreateReport);
     const stableOnMessageEditReport = useStableCallback(onMessageEditReport);
+    const stableOnMessageDelete = useStableCallback(onMessageDelete);
     const stableOnMessageExcludeEntity = useStableCallback(onMessageExcludeEntity);
     const stableOnMessageToggleTag = useStableCallback(onMessageToggleTag);
     const stableOnMessageEdit = useStableCallback(onMessageEdit);
@@ -842,6 +851,7 @@ export const FeedColumnContent = memo(
           onMessageCopy={stableOnMessageCopy}
           onMessageCreateReport={stableOnMessageCreateReport}
           onMessageEditReport={stableOnMessageEditReport}
+          onMessageDelete={stableOnMessageDelete}
           onMessageExcludeEntity={stableOnMessageExcludeEntity}
           onMessageToggleTag={stableOnMessageToggleTag}
           onMessageEdit={stableOnMessageEdit}
@@ -1004,6 +1014,7 @@ export const FeedColumnContent = memo(
       prevActions.onMessageCopy !== nextActions.onMessageCopy ||
       prevActions.onMessageCreateReport !== nextActions.onMessageCreateReport ||
       prevActions.onMessageEditReport !== nextActions.onMessageEditReport ||
+      prevActions.onMessageDelete !== nextActions.onMessageDelete ||
       prevActions.onMessageExcludeEntity !== nextActions.onMessageExcludeEntity ||
       prevActions.onMessageToggleTag !== nextActions.onMessageToggleTag ||
       prevActions.onMessageEdit !== nextActions.onMessageEdit ||

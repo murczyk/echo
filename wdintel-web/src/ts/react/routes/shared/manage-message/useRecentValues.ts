@@ -21,6 +21,8 @@ export type RecentValues = {
   deviceName: string[];
 };
 
+type StoredRecentValues = RecentValues & { lastDeviceName?: string };
+
 const DEFAULT_VALUES: RecentValues = {
   freq: [],
   post: [],
@@ -40,14 +42,14 @@ const DEFAULT_VALUES: RecentValues = {
 };
 
 export function useRecentValues() {
-  const [recentValues, setRecentValues] = useState<RecentValues>(() => {
+  const [recentValues, setRecentValues] = useState<StoredRecentValues>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const fields: unknown = JSON.parse(stored);
-        const values = { ...DEFAULT_VALUES };
+        const values: StoredRecentValues = { ...DEFAULT_VALUES };
         if (fields && typeof fields === 'object') {
-          for (const key of Object.keys(values) as Array<keyof RecentValues>) {
+          for (const key of Object.keys(DEFAULT_VALUES) as Array<keyof RecentValues>) {
             const entries = fields[key];
             if (Array.isArray(entries)) {
               values[key] = entries
@@ -56,6 +58,9 @@ export function useRecentValues() {
                 )
                 .slice(0, MAX_ITEMS);
             }
+          }
+          if ('lastDeviceName' in fields && typeof fields.lastDeviceName === 'string') {
+            values.lastDeviceName = fields.lastDeviceName;
           }
         }
         return values;
@@ -70,6 +75,14 @@ export function useRecentValues() {
     setRecentValues((prev) => {
       const updated = { ...prev };
       let changed = false;
+
+      if (newValues.deviceName !== undefined) {
+        const lastDeviceName = newValues.deviceName[0] ?? '';
+        if (lastDeviceName !== prev.lastDeviceName) {
+          updated.lastDeviceName = lastDeviceName;
+          changed = true;
+        }
+      }
 
       (Object.keys(newValues) as Array<keyof RecentValues>).forEach((key) => {
         const valuesToAdd = newValues[key];

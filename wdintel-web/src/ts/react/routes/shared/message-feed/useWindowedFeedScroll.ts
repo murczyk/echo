@@ -413,16 +413,20 @@ export function useWindowedFeedScroll({
     ],
   );
 
-  const onReaderScrollStart = useCallback(() => {
-    viewport.release();
+  const releaseMessageFocus = useCallback(() => {
     if (focusRef.current?.active && releasedFocusRef.current !== focusRef.current.messageId) {
       releasedFocusRef.current = focusRef.current.messageId;
       focusRef.current.onRelease?.();
     }
+  }, []);
+
+  const onReaderScrollStart = useCallback(() => {
+    viewport.release();
+    releaseMessageFocus();
     stopDirectItemTracking();
     stopPendingAnchorRestore();
     anchors.captureAnchorSnapshot(true);
-  }, [anchors, stopDirectItemTracking, stopPendingAnchorRestore, viewport]);
+  }, [anchors, releaseMessageFocus, stopDirectItemTracking, stopPendingAnchorRestore, viewport]);
   useMessageFeedInput({
     refs,
     anchors,
@@ -558,14 +562,15 @@ export function useWindowedFeedScroll({
   );
 
   const scrollToBottom = useCallback<WindowedFeedScrollHandle['scrollToBottom']>(
-    (behavior, intent, navigation) => {
+    (behavior, intent = ScrollNavigationIntent.Explicit, navigation) => {
+      if (intent === ScrollNavigationIntent.Explicit) releaseMessageFocus();
       stopDirectItemTracking();
       stopPendingAnchorRestore();
       viewport.release();
       if (intent === ScrollNavigationIntent.Explicit) refs.hasInitialScrolledRef.current = true;
       follow.scrollToBottom(behavior, intent, undefined, navigation);
     },
-    [follow, refs, stopDirectItemTracking, stopPendingAnchorRestore, viewport],
+    [follow, refs, releaseMessageFocus, stopDirectItemTracking, stopPendingAnchorRestore, viewport],
   );
   const getItemElement = useCallback(
     (id: number) => refs.itemRefsRef.current.get(id) ?? null,
