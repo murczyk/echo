@@ -1,5 +1,6 @@
 use crate::location::SettlementDetails;
 
+#[cfg(test)]
 pub fn format_location(location: &str) -> String {
     format!("|{}|", location.to_uppercase())
 }

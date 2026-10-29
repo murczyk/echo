@@ -73,9 +73,10 @@ import { ContextCheckpointProviderError, ContextCompactionLimitError, installCon
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.11.2";
+const HARNESS_RELEASE = "2026.10.29.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -83,6 +84,7 @@ const INBOX_TEXT_MAX_CHARACTERS = 6_000;
 const INBOX_IMAGE_TEXT_MAX_CHARACTERS = 4_000;
 const TOOL_RESPONSE_MAX_CHARACTERS = 96_000;
 const TOOL_CONTEXT_MAX_CHARACTERS = 192_000;
+const TOOL_CONTEXT_CHARACTERS_PER_TOKEN = 4;
 const TOOL_DEFAULT_MAX_ITEMS = 64;
 const PROVIDER_ID = "echo-vllm";
 const VLLM_BASE_URL = "http://127.0.0.1:18000/v1";
@@ -110,6 +112,7 @@ const RUNNER_PAYLOAD_FIELDS = new Set([
   "correlationHeader",
   "systemPrompt",
   "contextWindow",
+  "providerRequestMaxBytes",
   "maxTokens",
   "checkpointMaxTokens",
   "checkpointModelName",
@@ -182,6 +185,7 @@ interface RunnerPayload {
   correlationHeader?: string;
   systemPrompt?: string;
   contextWindow: number;
+  providerRequestMaxBytes?: number;
   maxTokens: number;
   checkpointMaxTokens: number;
   checkpointModelName?: string;
@@ -403,6 +407,9 @@ export function validatePayload(
     correlationHeader: value.correlationHeader as string | undefined,
     systemPrompt,
     contextWindow,
+    providerRequestMaxBytes: providerTransport === "echo_gateway"
+      ? validateInteger(value.providerRequestMaxBytes, 128 * 1024, 64 * 1024 * 1024, LEGACY_PROVIDER_REQUEST_MAX_BYTES)
+      : undefined,
     maxTokens,
     checkpointMaxTokens,
     checkpointModelName,
@@ -2022,6 +2029,15 @@ export function compactToolResponse(
   }
 }
 
+export function createContextToolResponseCompactor(contextWindow: number) {
+  return createToolResponseCompactor(
+    Math.max(
+      TOOL_CONTEXT_MAX_CHARACTERS,
+      contextWindow * TOOL_CONTEXT_CHARACTERS_PER_TOKEN,
+    ),
+  );
+}
+
 export function createToolResponseCompactor(
   maxTotalCharacters = TOOL_CONTEXT_MAX_CHARACTERS,
   maxResponseCharacters = TOOL_RESPONSE_MAX_CHARACTERS,
@@ -2030,7 +2046,10 @@ export function createToolResponseCompactor(
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
   maxItems: number,
-) => string) & { reset: (messages: unknown[]) => void } {
+) => string) & {
+  reset: (messages: unknown[]) => void;
+  needsCompaction: () => boolean;
+} {
   let remainingCharacters = maxTotalCharacters;
   let remainingInvocations = maxInvocations;
   const compact = (route: Pick<SkillDefinition, "skill" | "requestKind">, value: unknown, maxItems: number) => {
@@ -2060,6 +2079,10 @@ export function createToolResponseCompactor(
     }, 0);
     remainingCharacters = Math.max(0, maxTotalCharacters - retained);
   };
+  compact.needsCompaction = () =>
+    remainingCharacters <
+    Math.min(maxResponseCharacters, maxTotalCharacters / 2) +
+      Math.max(0, remainingInvocations - 1) * 2;
   return compact;
 }
 
@@ -3019,6 +3042,43 @@ export async function recoverFinalOutputLimit(
   return true;
 }
 
+function providerFailureKind(value: string): string {
+  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
+    return "rate_limit";
+  if (
+    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
+      value,
+    )
+  )
+    return "authorization";
+  if (
+    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
+      value,
+    )
+  )
+    return "interrupted_stream";
+  return "provider_error";
+}
+
+function providerFailureDetail(value: unknown): string {
+  if (typeof value !== "string" || !value.trim())
+    return "unknown provider error";
+  const kind = providerFailureKind(value);
+  const code = value
+    .match(
+      /\b(rate_limit_exceeded|server_error|invalid_request_error|authentication_error|permission_denied|insufficient_quota|context_length_exceeded)\b/i,
+    )?.[0]
+    .toLowerCase();
+  const descriptions: Record<string, string> = {
+    rate_limit: "provider rate limit or model deployment cooldown",
+    authorization: "provider authorization rejected",
+    interrupted_stream:
+      "stream interrupted or ended before a terminal response event",
+    provider_error: "unclassified provider failure",
+  };
+  return `${kind}: ${descriptions[kind]}${code ? `; code=${code}` : ""}`;
+}
+
 export function validateFinalAssistantMessage(messages: unknown[]): void {
   const assistantMessage = lastAssistantMessage(messages);
   if (!assistantMessage) {
@@ -3032,7 +3092,9 @@ export function validateFinalAssistantMessage(messages: unknown[]): void {
     if (/context window|context length|input exceeds/i.test(errorMessage)) {
       throw new Error("provider context window exceeded");
     }
-    throw new Error("provider request failed");
+    throw new Error(
+      `provider request failed: ${providerFailureDetail(errorMessage)}`,
+    );
   }
   if (assistantMessage.stopReason === "aborted") {
     throw new Error("provider request aborted");
@@ -3261,7 +3323,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         throw error;
       }
     };
-    const compactResponse = createToolResponseCompactor();
+    const compactResponse = createContextToolResponseCompactor(payload.contextWindow);
     const deliveredCitationsThisTurn: MessageCitation[] = [];
     const recordSources = (citations: MessageCitation[]) => {
       deliveredCitationsThisTurn.push(...citations);
@@ -3376,7 +3438,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     );
     const contextCompaction = installContextCompaction(
       session,
-      { ...payload, checkpointEngine, signal: researchSignal, saveCheckpoint: journal ? (summary) => journal.checkpoint(summary) : undefined },
+      { ...payload, checkpointEngine, signal: researchSignal, saveCheckpoint: journal ? (summary) => journal.checkpoint(summary) : undefined, toolContextNeedsCompaction: compactResponse.needsCompaction },
       () =>
         emit({
           type: "progress",

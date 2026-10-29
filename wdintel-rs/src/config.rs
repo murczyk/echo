@@ -93,7 +93,7 @@ pub const AI_WORKER_FALLBACK_TIMEOUT_SECS: u64 = 20;
 pub const AI_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_ENGINE_GLM_5_3_MODEL: &str = "glm-5.3";
 pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
-pub const AI_ENGINE_GLM_5_3_COOLDOWN_SECS: u64 = 60;
+pub const AI_ENGINE_GOVERNMENT_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
 pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
 pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
@@ -508,7 +508,7 @@ pub const AI_AGENT_REASONING_PURPOSE_HEADER: &str = "x-echo-ai-purpose";
 pub const AI_AGENT_OPENAI_GPT_6_LUNA: &str = "gpt-6-luna";
 pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.11.2";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.10.29.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
@@ -1141,6 +1141,11 @@ pub const MESSENGER_MEDIA_THUMBNAIL_ORPHAN_CLEANUP_INTERVAL_SECS: u64 = 15 * 60;
 pub const MESSENGER_MEDIA_THUMBNAIL_ORPHAN_QUERY_BATCH_SIZE: usize = 1_000;
 pub const MESSENGER_MEDIA_THUMBNAIL_MAX_TOTAL_SIZE_BYTES: u64 =
     2 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_IMAGE_THUMBNAIL_MAX_TOTAL_SIZE_BYTES: u64 =
+    2 * 1024 * 1024 * 1024;
+pub const MESSENGER_MEDIA_IMAGE_THUMBNAIL_SHORT_SIDE_PX: u32 = 300;
+pub const MESSENGER_MEDIA_IMAGE_THUMBNAIL_BACKFILL_CHECKPOINT_KEY: &str =
+    "oneoff_image_thumbnail_backfill";
 pub const MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS: u64 = 120;
 pub const MESSENGER_MEDIA_THUMBNAIL_TEMP_TTL_SECS: u64 = 2 * 60 * 60;
 pub const MESSENGER_MEDIA_THUMBNAIL_ORPHAN_SOURCE_TTL_SECS: u64 = 2 * 60 * 60;

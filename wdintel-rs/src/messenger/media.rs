@@ -856,7 +856,7 @@ async fn stage_media_attachment(
     s3_config: &crate::config::S3Config,
     storage_config: &storage::S3Config,
     deletion: UploadedAttachmentDeletion,
-    persisted_id: Option<Uuid>,
+    existing_media: Option<&signal_message_media::Model>,
     require_editable_image: bool,
 ) -> Result<Option<StagedMediaAttachment>, AppError> {
     let source_lease = crate::sigint::file_upload::lock_uploaded_source(
@@ -891,7 +891,7 @@ async fn stage_media_attachment(
         prepared.probed_content_type,
     );
     let storage_id = Uuid::now_v7();
-    let id = persisted_id.unwrap_or(storage_id);
+    let id = existing_media.map_or(storage_id, |media| media.id);
     let file_ext = (!ext.is_empty()).then_some(ext);
     let file_name = fallback_file_name(
         attachment.name.as_deref(),
@@ -915,6 +915,7 @@ async fn stage_media_attachment(
         file_ext.as_deref(),
         file_name.as_deref(),
     );
+    let is_image = is_image_content_type(&content_type);
     let size_bytes = prepared.size_bytes;
     let is_encrypted = prepared.is_encrypted;
     if let Err(err) = upload_prepared_attachment(
@@ -930,7 +931,13 @@ async fn stage_media_attachment(
         delete_staged_storage_key_best_effort(config, s3, &storage_key).await;
         return Err(err);
     }
-    let mut thumbnail_source_lease = None;
+    let thumbnail_source_lease = (is_video || is_image).then(|| {
+        crate::messenger::media_thumbnail::ThumbnailSourceLease::new(id)
+    });
+    if let Some(existing_media) = existing_media {
+        delete_local_media_files(std::slice::from_ref(existing_media), config)
+            .await;
+    }
     let mut retains_thumbnail_source = false;
     crate::messenger::media_local_cache::stage_upload_best_effort(
         config,
@@ -941,10 +948,7 @@ async fn stage_media_attachment(
         source_lease.is_some(),
     )
     .await;
-    if is_video {
-        thumbnail_source_lease = Some(
-            crate::messenger::media_thumbnail::ThumbnailSourceLease::new(id),
-        );
+    if is_video || is_image {
         match crate::messenger::media_thumbnail::stage_upload_thumbnail_source_file(
             config,
             id,
@@ -1002,7 +1006,7 @@ pub async fn replace_media_attachment(
         s3_config,
         &storage_config,
         deletion,
-        Some(existing.id),
+        Some(existing),
         true,
     )
     .await
@@ -1029,7 +1033,6 @@ pub async fn replace_media_attachment(
         deletion,
     };
     let attachment = &staged.attachments[0];
-    delete_local_media_files(std::slice::from_ref(existing), config).await;
     let result = async {
         signal_message_media::Entity::delete_by_id(existing.id)
             .exec(txn)
@@ -1485,6 +1488,20 @@ pub fn is_video_media(media: &signal_message_media::Model) -> bool {
         media.file_ext.as_deref(),
         media.file_name.as_deref(),
     )
+}
+
+pub fn is_image_media(media: &signal_message_media::Model) -> bool {
+    is_image_content_type(&media.content_type)
+}
+
+pub fn is_image_content_type(content_type: &str) -> bool {
+    content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("image/")
 }
 
 fn is_encryption_excluded_metadata(
@@ -2148,6 +2165,13 @@ insert into system_settings (
             crate::messenger::media_thumbnail::media_thumbnail_path(
                 &config, media_id,
             );
+        let thumbnail_source_path =
+            crate::messenger::media_cache::media_cache_dir(&config)
+                .join(crate::config::MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME)
+                .join(format!(
+                    "{media_id}{}",
+                    crate::config::MESSENGER_MEDIA_THUMBNAIL_SOURCE_FILE_SUFFIX
+                ));
         tokio::fs::create_dir_all(cache_path.parent().unwrap())
             .await
             .unwrap();
@@ -2175,6 +2199,22 @@ insert into system_settings (
         .unwrap();
         assert!(!cache_path.exists());
         assert!(!thumbnail_path.exists());
+        assert_eq!(
+            tokio::fs::read(&thumbnail_source_path).await.unwrap(),
+            replacement_bytes
+        );
+        let mut recovery_env = (*fixture.env).clone();
+        recovery_env.config = config.clone();
+        assert!(!crate::messenger::media_thumbnail::ensure_image_thumbnail(
+            &recovery_env,
+            &existing,
+        )
+        .await
+        .unwrap());
+        assert_eq!(
+            tokio::fs::read(&thumbnail_source_path).await.unwrap(),
+            replacement_bytes
+        );
         tokio::fs::write(&cache_path, b"old-content").await.unwrap();
         tokio::fs::write(&thumbnail_path, [0xff, 0xd8, 0xff, 0xd9])
             .await

@@ -8,59 +8,67 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test(start_paused = true)]
-async fn glm_cooldown_is_shared_across_engine_rows_and_respects_deadlines() {
-    let client =
-        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
-    let engine = ai_engine::Model {
-        id: uuid::Uuid::new_v4(),
-        name: "Government GLM".to_string(),
-        url: AI_GOV_UA_API_BASE.to_string(),
-        token: None,
-        model_name: AI_ENGINE_GLM_5_3_MODEL.to_string(),
-        created_at: chrono::Utc::now().naive_utc(),
-        updated_at: chrono::Utc::now().naive_utc(),
-        enabled: true,
-        callsign_enabled: true,
-        ocr_enabled: false,
-        ocr_request_profile: "openai_vision".to_string(),
-    };
-    let other_engine = ai_engine::Model {
-        id: uuid::Uuid::new_v4(),
-        name: "Another government GLM".to_string(),
-        ..engine.clone()
-    };
-    client
-        .glm_cooldown
-        .observe(
-            reqwest::StatusCode::TOO_MANY_REQUESTS,
-            &reqwest::header::HeaderMap::new(),
-        )
-        .await
-        .unwrap();
-    let started = tokio::time::Instant::now();
-    for (engine, responses) in [
-        (&engine, false),
-        (&other_engine, false),
-        (&other_engine, true),
-    ] {
-        let request_started = tokio::time::Instant::now();
-        let error = if responses {
-            client
-                .send_responses(engine, json!({}), Duration::from_secs(10))
-                .await
-        } else {
-            client
-                .send(engine, json!({}), Duration::from_secs(10))
-                .await
+async fn issue_3913_government_cooldown_is_shared_across_engine_rows_and_respects_deadlines(
+) {
+    for model_name in [AI_ENGINE_GLM_5_3_MODEL, "gpt-6.1-sol"] {
+        let client =
+            AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+        let engine = ai_engine::Model {
+            id: uuid::Uuid::new_v4(),
+            name: "Government GLM".to_string(),
+            url: AI_GOV_UA_API_BASE.to_string(),
+            token: None,
+            model_name: model_name.to_string(),
+            created_at: chrono::Utc::now().naive_utc(),
+            updated_at: chrono::Utc::now().naive_utc(),
+            enabled: true,
+            callsign_enabled: true,
+            ocr_enabled: false,
+            ocr_request_profile: "openai_vision".to_string(),
+        };
+        let other_engine = ai_engine::Model {
+            id: uuid::Uuid::new_v4(),
+            name: "Another government GLM".to_string(),
+            ..engine.clone()
+        };
+        client
+            .government_cooldown(&engine.model_name)
+            .await
+            .observe(
+                reqwest::StatusCode::TOO_MANY_REQUESTS,
+                &reqwest::header::HeaderMap::new(),
+            )
+            .await
+            .unwrap();
+        let started = tokio::time::Instant::now();
+        for (engine, responses) in [
+            (&engine, false),
+            (&other_engine, false),
+            (&other_engine, true),
+        ] {
+            let request_started = tokio::time::Instant::now();
+            let error = if responses {
+                client
+                    .send_responses(engine, json!({}), Duration::from_secs(10))
+                    .await
+            } else {
+                client
+                    .send(engine, json!({}), Duration::from_secs(10))
+                    .await
+            }
+            .unwrap_err();
+            assert!(error
+                .chain()
+                .any(|error| error.is::<tokio::time::error::Elapsed>()));
+            assert_eq!(request_started.elapsed(), Duration::from_secs(10));
         }
-        .unwrap_err();
-        assert!(error
-            .chain()
-            .any(|error| error.is::<tokio::time::error::Elapsed>()));
-        assert_eq!(request_started.elapsed(), Duration::from_secs(10));
+        client
+            .government_cooldown(&engine.model_name)
+            .await
+            .wait()
+            .await;
+        assert_eq!(started.elapsed(), Duration::from_secs(60));
     }
-    client.glm_cooldown.wait().await;
-    assert_eq!(started.elapsed(), Duration::from_secs(60));
 }
 
 fn settings_request(secret: Option<&str>) -> SaveAiGovUaSettingsReq {
@@ -382,4 +390,30 @@ fn government_compatibility_preserves_legacy_and_tool_image_schema_payloads() {
         assert!(!is_government_url(url));
     }
     assert!(is_government_url(AI_GOV_UA_API_BASE));
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_3913_government_cooldowns_are_model_scoped_and_survive_cancelled_waiters(
+) {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let cooldown = client.government_cooldown("gpt-6.1-sol").await;
+    cooldown
+        .observe(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            &reqwest::header::HeaderMap::new(),
+        )
+        .await
+        .unwrap();
+    let same = client.government_cooldown("gpt-6.1-sol").await;
+    assert!(Arc::ptr_eq(&cooldown, &same));
+    let other = client.government_cooldown("glm-5.3").await;
+    let started = tokio::time::Instant::now();
+    other.wait().await;
+    assert_eq!(started.elapsed(), Duration::ZERO);
+    let waiting = tokio::spawn(async move { same.wait().await });
+    tokio::task::yield_now().await;
+    waiting.abort();
+    cooldown.wait().await;
+    assert_eq!(started.elapsed(), Duration::from_secs(60));
 }

@@ -991,7 +991,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.11.2",
+    harnessRelease: "2026.10.29.2",
   });
 });
 
@@ -1672,4 +1672,116 @@ test('#3064 attachment tools reject arbitrary routes and malformed selectors', a
   assert.throws(() => attachmentRequest('attachmentSearch', { url: 'http://localhost' }));
   assert.throws(() => validateSkill({ method: 'POST', path: '/api/admin/attachments/settings', skill: 'attachment_search', label: 'Search', requestKind: 'attachmentSearch' }));
   assert.deepEqual(attachmentRequest('attachmentSearch', { query: 'позиції', limit: 5 }), { query: 'позиції', limit: 5 });
+});
+
+test("#3913 retains allowlisted provider failures after HTTP 200 SSE", async () => {
+  const { completeSimple } = await import("@earendil-works/pi-ai/compat");
+  const engine = {
+    id: "fixture",
+    name: "fixture",
+    api: "openai-responses" as const,
+    provider: "fixture",
+    baseUrl: "https://fixture.invalid/v1",
+    reasoning: true,
+    input: ["text" as const],
+    contextWindow: 65536,
+    maxTokens: 8192,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+  for (const terminal of ["response.failed", "error", "truncated"]) {
+    const event =
+      terminal === "response.failed"
+        ? {
+            type: terminal,
+            response: {
+              status: "failed",
+              error: {
+                code: "rate_limit_exceeded",
+                message: "No deployments available; token=secret-value",
+              },
+            },
+          }
+        : {
+            type: terminal,
+            code: "server_error",
+            message: "upstream unavailable; Bearer secret-value",
+          };
+    const response = await completeSimple(
+      engine,
+      {
+        messages: [
+          { role: "user", content: "private prompt", timestamp: Date.now() },
+        ],
+      },
+      {
+        apiKey: "fixture",
+        fetch: async () =>
+          new Response(
+            terminal === "truncated"
+              ? ""
+              : `event: ${terminal}\ndata: ${JSON.stringify(event)}\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          ),
+      },
+    );
+    assert.equal(response.stopReason, "error");
+    assert.throws(
+      () => validateFinalAssistantMessage([response]),
+      (error: Error) => {
+        assert.match(error.message, /provider request failed:/);
+        assert.match(
+          error.message,
+          terminal === "truncated"
+            ? /terminal response event/
+            : /rate_limit_exceeded|server_error/,
+        );
+        assert.doesNotMatch(error.message, /secret-value|private prompt/);
+        return true;
+      },
+    );
+  }
+});
+
+test("#3913 persists only allowlisted diagnostics even for unlabelled provider payload excerpts", () => {
+  for (const secret of [
+    "Bearer confidential",
+    "messages[0].content=confidential",
+    "Unlabelled confidential excerpt from user input",
+    "api_key=confidential",
+    "cookie=confidential",
+    "sk-confidential",
+    "B".repeat(43),
+    'prompt="confidential"',
+  ]) {
+    assert.throws(
+      () =>
+        validateFinalAssistantMessage([
+          {
+            role: "assistant",
+            stopReason: "error",
+            content: [],
+            errorMessage: `server_error: ${secret}\nprivate response body`,
+          },
+        ]),
+      (error: Error) => {
+        assert.doesNotMatch(
+          error.message,
+          /confidential|private response body|B{43}/,
+        );
+        return true;
+      },
+    );
+  }
+  assert.throws(
+    () =>
+      validateFinalAssistantMessage([
+        {
+          role: "assistant",
+          stopReason: "error",
+          content: [],
+          errorMessage: "x".repeat(10000),
+        },
+      ]),
+    (error: Error) => error.message.length < 1100,
+  );
 });

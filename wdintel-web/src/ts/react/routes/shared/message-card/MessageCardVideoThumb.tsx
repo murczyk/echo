@@ -43,7 +43,7 @@ function requestWasAborted(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
 
-function useThumbnailRequestActivation() {
+export function useThumbnailRequestActivation() {
   const targetRef = useRef<HTMLButtonElement | null>(null);
   const [isActive, setIsActive] = useState(false);
 
@@ -66,7 +66,7 @@ function useThumbnailRequestActivation() {
   return { targetRef, isActive };
 }
 
-function useVideoThumbnail(thumbnailSrc: string, isActive: boolean) {
+export function useMediaThumbnail(thumbnailSrc: string, isActive: boolean) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [state, setState] = useState<VideoThumbnailState>(
     thumbnailSrc === '' ? 'failed' : 'loading',
@@ -182,7 +182,7 @@ export function MessageCardVideoThumb({
   const thumbnailSrc = mediaId === '' ? '' : mediaAttachmentThumbnailUrl(mediaId);
   const canOpen = fullVideoHref.trim() !== '';
   const thumbnailRequest = useThumbnailRequestActivation();
-  const thumbnail = useVideoThumbnail(thumbnailSrc, thumbnailRequest.isActive);
+  const thumbnail = useMediaThumbnail(thumbnailSrc, thumbnailRequest.isActive);
   const showThumbnail = thumbnail.state === 'loaded';
 
   return (

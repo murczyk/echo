@@ -1,6 +1,8 @@
 use crate::config::{
-    Config, MESSENGER_MEDIA_THUMBNAIL_DIR_MODE,
-    MESSENGER_MEDIA_THUMBNAIL_DIR_NAME, MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN,
+    Config, MESSENGER_MEDIA_IMAGE_THUMBNAIL_MAX_TOTAL_SIZE_BYTES,
+    MESSENGER_MEDIA_IMAGE_THUMBNAIL_SHORT_SIDE_PX,
+    MESSENGER_MEDIA_THUMBNAIL_DIR_MODE, MESSENGER_MEDIA_THUMBNAIL_DIR_NAME,
+    MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN,
     MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER,
     MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS,
     MESSENGER_MEDIA_THUMBNAIL_FILE_MODE, MESSENGER_MEDIA_THUMBNAIL_FILE_SUFFIX,
@@ -36,8 +38,8 @@ use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::media::{
-    ensure_media_access, is_video_media, media_object_key,
-    stream_plaintext_media_range,
+    ensure_media_access, is_image_content_type, is_image_media, is_video_media,
+    media_object_key, stream_plaintext_media_range,
 };
 use crate::messenger::media_cache;
 use crate::storage;
@@ -520,6 +522,9 @@ async fn recover_missing_thumbnail_locked(
     env: &Env,
     media: &signal_message_media::Model,
 ) -> Result<(), AppError> {
+    if thumbnail_source_is_active(media.id) {
+        return Ok(());
+    }
     let Some(media) = signal_message_media::Entity::find_by_id(media.id)
         .one(&env.dbx)
         .await
@@ -527,7 +532,7 @@ async fn recover_missing_thumbnail_locked(
     else {
         return Ok(());
     };
-    if !is_video_media(&media) {
+    if !is_video_media(&media) && !is_image_media(&media) {
         return Ok(());
     }
 
@@ -558,6 +563,23 @@ async fn recover_missing_thumbnail_locked(
         recover_plaintext_thumbnail(env, &media, &thumbnail_path, expected_size)
             .await
     }
+}
+
+pub async fn ensure_image_thumbnail(
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> Result<bool, AppError> {
+    if !is_image_media(media) {
+        return Ok(false);
+    }
+    let operation = ThumbnailOperation::new(media.id);
+    let _operation_guard = operation.lock().await;
+    recover_missing_thumbnail_locked(env, media).await.c(h!())?;
+    Ok(
+        jpeg_file_is_ready(&media_thumbnail_path(&env.config, media.id))
+            .await
+            .c(h!())?,
+    )
 }
 
 pub fn media_thumbnail_path(config: &Config, media_id: Uuid) -> PathBuf {
@@ -1204,7 +1226,7 @@ pub async fn generate_thumbnail_from_source_file(
         if jpeg_file_is_ready(&thumbnail_path).await? {
             return Ok(());
         }
-        generate_thumbnail(source_path, &thumbnail_path, media_id).await
+        generate_thumbnail(source_path, &thumbnail_path, media_id, false).await
     })
     .await
 }
@@ -1221,6 +1243,7 @@ async fn generate_thumbnail_from_bytes_in_paths(
             thumbnail_path,
             media_id,
             data,
+            false,
         )
         .await
     })
@@ -1232,6 +1255,7 @@ async fn generate_thumbnail_from_bytes_locked(
     thumbnail_path: &Path,
     media_id: Uuid,
     data: &[u8],
+    is_image: bool,
 ) -> Result<(), AppError> {
     if jpeg_file_is_ready(thumbnail_path).await? {
         return Ok(());
@@ -1246,7 +1270,7 @@ async fn generate_thumbnail_from_bytes_locked(
     .await?;
     write_private_file(&mut source, data).await?;
     drop(source);
-    generate_thumbnail(&source_path, thumbnail_path, media_id).await
+    generate_thumbnail(&source_path, thumbnail_path, media_id, is_image).await
 }
 
 async fn recover_encrypted_thumbnail(
@@ -1257,7 +1281,13 @@ async fn recover_encrypted_thumbnail(
 ) -> Result<(), AppError> {
     if media_cache::should_cache_media(media.size_bytes) {
         let cache_path = media_cache::ensure_media_cached(env, media).await?;
-        return generate_thumbnail(&cache_path, thumbnail_path, media.id).await;
+        return generate_thumbnail(
+            &cache_path,
+            thumbnail_path,
+            media.id,
+            is_image_media(media),
+        )
+        .await;
     }
 
     let s3_config = env.config.s3_config.as_ref().ok_or(AppError::BL {
@@ -1287,6 +1317,7 @@ async fn recover_encrypted_thumbnail(
         thumbnail_path,
         media.id,
         &data,
+        is_image_media(media),
     )
     .await
 }
@@ -1318,7 +1349,13 @@ async fn recover_plaintext_thumbnail(
     .await?;
     write_plaintext_thumbnail_source(env, media, destination, expected_size)
         .await?;
-    generate_thumbnail(&source_path, thumbnail_path, media.id).await
+    generate_thumbnail(
+        &source_path,
+        thumbnail_path,
+        media.id,
+        is_image_media(media),
+    )
+    .await
 }
 
 async fn write_plaintext_thumbnail_source(
@@ -1680,7 +1717,7 @@ async fn cleanup_orphaned_thumbnail_files(env: &Env) -> Result<(), AppError> {
     }
     thumbnails.sort_by_key(|thumbnail| std::cmp::Reverse(thumbnail.changed));
 
-    let mut retained_size = 0_u64;
+    let mut retained_size = [0_u64; 2];
     let now = SystemTime::now();
     let mut thumbnails = thumbnails.into_iter();
     loop {
@@ -1732,25 +1769,27 @@ async fn read_completed_thumbnail_batch(
 async fn cleanup_completed_thumbnail_batch(
     env: &Env,
     thumbnails: Vec<CompletedThumbnailEntry>,
-    retained_size: &mut u64,
+    retained_size: &mut [u64; 2],
     now: SystemTime,
 ) -> Result<(), AppError> {
-    let existing_media_ids = signal_message_media::Entity::find()
+    let media_types = signal_message_media::Entity::find()
         .select_only()
         .column(signal_message_media::Column::Id)
+        .column(signal_message_media::Column::ContentType)
         .filter(
             signal_message_media::Column::Id
                 .is_in(thumbnails.iter().map(|thumbnail| thumbnail.media_id)),
         )
-        .into_tuple::<Uuid>()
+        .into_tuple::<(Uuid, String)>()
         .all(&env.dbx)
         .await
         .c(h!())?
         .into_iter()
-        .collect::<HashSet<_>>();
+        .map(|(id, content_type)| (id, is_image_content_type(&content_type)))
+        .collect::<HashMap<_, _>>();
     clean_completed_thumbnail_entries(
         thumbnails,
-        &existing_media_ids,
+        &media_types,
         retained_size,
         now,
     )
@@ -1760,24 +1799,34 @@ async fn cleanup_completed_thumbnail_batch(
 
 async fn clean_completed_thumbnail_entries(
     thumbnails: Vec<CompletedThumbnailEntry>,
-    existing_media_ids: &HashSet<Uuid>,
-    retained_size: &mut u64,
+    media_types: &HashMap<Uuid, bool>,
+    retained_size: &mut [u64; 2],
     _now: SystemTime,
 ) {
     for thumbnail in thumbnails {
+        let is_image = media_types
+            .get(&thumbnail.media_id)
+            .copied()
+            .unwrap_or(false);
+        let budget_index = usize::from(is_image);
+        let size_limit = if is_image {
+            MESSENGER_MEDIA_IMAGE_THUMBNAIL_MAX_TOTAL_SIZE_BYTES
+        } else {
+            MESSENGER_MEDIA_THUMBNAIL_MAX_TOTAL_SIZE_BYTES
+        };
         let is_active = thumbnail_source_is_active(thumbnail.media_id);
         if is_active {
-            *retained_size = retained_size.saturating_add(thumbnail.size);
+            retained_size[budget_index] =
+                retained_size[budget_index].saturating_add(thumbnail.size);
             continue;
         }
-        let is_orphaned = !existing_media_ids.contains(&thumbnail.media_id);
-        let exceeds_size_limit = retained_size
+        let is_orphaned = !media_types.contains_key(&thumbnail.media_id);
+        let exceeds_size_limit = retained_size[budget_index]
             .checked_add(thumbnail.size)
-            .is_none_or(|size| {
-                size > MESSENGER_MEDIA_THUMBNAIL_MAX_TOTAL_SIZE_BYTES
-            });
+            .is_none_or(|size| size > size_limit);
         if !is_orphaned && !exceeds_size_limit {
-            *retained_size = retained_size.saturating_add(thumbnail.size);
+            retained_size[budget_index] =
+                retained_size[budget_index].saturating_add(thumbnail.size);
             continue;
         }
         let description = if is_orphaned {
@@ -1792,7 +1841,8 @@ async fn clean_completed_thumbnail_entries(
         )
         .await;
         if !removed {
-            *retained_size = retained_size.saturating_add(thumbnail.size);
+            retained_size[budget_index] =
+                retained_size[budget_index].saturating_add(thumbnail.size);
             continue;
         }
         info!(
@@ -1847,6 +1897,9 @@ async fn process_thumbnail_source(
     }
     let operation = ThumbnailOperation::new(media_id);
     let _operation_guard = operation.lock().await;
+    if thumbnail_source_is_active(media_id) {
+        return;
+    }
     match generate_staged_thumbnail_locked(env, media_id, &source_path).await {
         Ok(()) => {
             retries.remove(&media_id);
@@ -1893,6 +1946,9 @@ async fn process_thumbnail_source_reference(
     }
     let operation = ThumbnailOperation::new(media_id);
     let _operation_guard = operation.lock().await;
+    if thumbnail_source_is_active(media_id) {
+        return;
+    }
     match generate_referenced_thumbnail_locked(env, media_id, &reference_path)
         .await
     {
@@ -2094,7 +2150,7 @@ async fn generate_staged_thumbnail_locked(
         }
         return Ok(());
     };
-    if !is_video_media(&media) {
+    if !is_video_media(&media) && !is_image_media(&media) {
         remove_file_if_present(source_path).await?;
         return Ok(());
     }
@@ -2112,7 +2168,13 @@ async fn generate_staged_thumbnail_locked(
         remove_file_if_present(source_path).await?;
         return Ok(());
     }
-    generate_thumbnail(source_path, &thumbnail_path, media_id).await?;
+    generate_thumbnail(
+        source_path,
+        &thumbnail_path,
+        media_id,
+        is_image_media(&media),
+    )
+    .await?;
     remove_file_if_present(source_path).await
 }
 
@@ -2147,7 +2209,7 @@ async fn generate_referenced_thumbnail_locked(
         }
         return Ok(());
     };
-    if !is_video_media(&media) {
+    if !is_video_media(&media) && !is_image_media(&media) {
         return finalize_thumbnail_source_reference_locked(
             &thumbnail_source_dir(&env.config),
             reference_path,
@@ -2172,8 +2234,13 @@ async fn generate_referenced_thumbnail_locked(
 
     let thumbnail_path = media_thumbnail_path(&env.config, media_id);
     if !jpeg_file_is_ready(&thumbnail_path).await? {
-        generate_thumbnail(&reference.source_path, &thumbnail_path, media_id)
-            .await?;
+        generate_thumbnail(
+            &reference.source_path,
+            &thumbnail_path,
+            media_id,
+            is_image_media(&media),
+        )
+        .await?;
     }
     finalize_thumbnail_source_reference_locked(
         &thumbnail_source_dir(&env.config),
@@ -2212,6 +2279,7 @@ async fn generate_thumbnail(
     input_path: &Path,
     thumbnail_path: &Path,
     media_id: Uuid,
+    is_image: bool,
 ) -> Result<(), AppError> {
     let _generation_permit = THUMBNAIL_GENERATION_SEMAPHORE
         .clone()
@@ -2225,7 +2293,7 @@ async fn generate_thumbnail(
 
     let status = match tokio::time::timeout(
         Duration::from_secs(MESSENGER_MEDIA_THUMBNAIL_FFMPEG_TIMEOUT_SECS),
-        build_thumbnail_command(input_path, &temp_path).status(),
+        build_thumbnail_command(input_path, &temp_path, is_image).status(),
     )
     .await
     {
@@ -2261,8 +2329,20 @@ async fn generate_thumbnail(
     temp_file.publish(thumbnail_path).await
 }
 
-fn build_thumbnail_command(input_path: &Path, output_path: &Path) -> Command {
+fn build_thumbnail_command(
+    input_path: &Path,
+    output_path: &Path,
+    is_image: bool,
+) -> Command {
     let mut command = Command::new(MESSENGER_MEDIA_THUMBNAIL_FFMPEG_BIN);
+    let filter = if is_image {
+        format!(
+            "scale={0}:{0}:force_original_aspect_ratio=increase",
+            MESSENGER_MEDIA_IMAGE_THUMBNAIL_SHORT_SIDE_PX
+        )
+    } else {
+        MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER.to_string()
+    };
     command
         .kill_on_drop(true)
         .stdin(Stdio::null())
@@ -2278,7 +2358,7 @@ fn build_thumbnail_command(input_path: &Path, output_path: &Path) -> Command {
         .arg("-map")
         .arg("0:v:0")
         .arg("-vf")
-        .arg(MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FILTER)
+        .arg(filter)
         .arg("-frames:v")
         .arg("1")
         .arg("-an")
@@ -2566,6 +2646,9 @@ async fn schedule_thumbnail_recovery_if_needed(
     env: &actix_web::web::Data<Env>,
     media: &signal_message_media::Model,
 ) -> Result<ThumbnailGenerationStatus, AppError> {
+    if thumbnail_source_is_active(media.id) {
+        return Ok(ThumbnailGenerationStatus::Pending);
+    }
     if let Some(failures) = thumbnail_recovery_terminal_failures(media.id) {
         return Ok(ThumbnailGenerationStatus::Failed(failures));
     }
@@ -2602,7 +2685,7 @@ pub async fn messenger_media_thumbnail(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
-    if !is_video_media(&media) {
+    if !is_video_media(&media) && !is_image_media(&media) {
         return Err(AppError::NotFound);
     }
     ensure_media_access(&env.dbx, &login, media.signal_message_id).await?;
@@ -3255,11 +3338,11 @@ mod tests {
             fs::write(&entry.path, b"jpeg").await.unwrap();
         }
         let active_lease = ThumbnailSourceLease::new(active_id);
-        let mut retained_size = 0;
+        let mut retained_size = [0, 0];
 
         clean_completed_thumbnail_entries(
             entries,
-            &HashSet::from([existing_id]),
+            &HashMap::from([(existing_id, false)]),
             &mut retained_size,
             SystemTime::now(),
         )
@@ -3269,6 +3352,38 @@ mod tests {
         assert!(media_thumbnail_file_exists(temp_dir.path(), active_id));
         assert!(!media_thumbnail_file_exists(temp_dir.path(), orphaned_id));
         drop(active_lease);
+    }
+
+    #[tokio::test]
+    async fn image_thumbnail_budget_does_not_evict_video_thumbnails() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let video_id = Uuid::new_v4();
+        let image_id = Uuid::new_v4();
+        let entries = [video_id, image_id]
+            .into_iter()
+            .map(|media_id| CompletedThumbnailEntry {
+                media_id,
+                path: temp_dir.path().join(format!("{media_id}.jpg")),
+                size: MESSENGER_MEDIA_THUMBNAIL_MAX_TOTAL_SIZE_BYTES,
+                changed: SystemTime::now(),
+            })
+            .collect::<Vec<_>>();
+        for entry in &entries {
+            fs::write(&entry.path, b"jpeg").await.unwrap();
+        }
+        let media_types = HashMap::from([(video_id, false), (image_id, true)]);
+        let mut retained_size = [0, 0];
+
+        clean_completed_thumbnail_entries(
+            entries,
+            &media_types,
+            &mut retained_size,
+            SystemTime::now(),
+        )
+        .await;
+
+        assert!(media_thumbnail_file_exists(temp_dir.path(), video_id));
+        assert!(media_thumbnail_file_exists(temp_dir.path(), image_id));
     }
 
     fn media_thumbnail_file_exists(directory: &Path, media_id: Uuid) -> bool {
@@ -3295,6 +3410,7 @@ mod tests {
         let command = build_thumbnail_command(
             Path::new("/tmp/input.mp4"),
             Path::new("/tmp/output.jpg"),
+            false,
         );
         let args = command
             .as_std()
@@ -3305,6 +3421,26 @@ mod tests {
         assert!(args.windows(2).any(|args| args == ["-i", "/tmp/input.mp4"]));
         assert!(args.windows(2).any(|args| args == ["-frames:v", "1"]));
         assert_eq!(args.last().map(String::as_str), Some("/tmp/output.jpg"));
+    }
+
+    #[test]
+    fn image_thumbnail_command_scales_the_short_side_to_300_pixels() {
+        let command = build_thumbnail_command(
+            Path::new("/tmp/input.png"),
+            Path::new("/tmp/output.jpg"),
+            true,
+        );
+        let args = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert!(args.windows(2).any(|args| {
+            args == [
+                "-vf",
+                "scale=300:300:force_original_aspect_ratio=increase",
+            ]
+        }));
     }
 
     #[test]
