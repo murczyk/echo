@@ -75,7 +75,8 @@ const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.11.2";
+const PROVIDER_FAILURE_MAX_CHARACTERS = 1000;
+const HARNESS_RELEASE = "2026.10.29.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3019,6 +3020,48 @@ export async function recoverFinalOutputLimit(
   return true;
 }
 
+function providerFailureKind(value: string): string {
+  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
+    return "rate_limit";
+  if (
+    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
+      value,
+    )
+  )
+    return "authorization";
+  if (
+    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
+      value,
+    )
+  )
+    return "interrupted_stream";
+  return "provider_error";
+}
+
+function providerFailureDetail(value: unknown): string {
+  if (typeof value !== "string" || !value.trim())
+    return "unknown provider error";
+  const detail = value
+    .replace(
+      /(["']?(?:prompt|input|messages|content|request_body)["']?\s*[:=]).*/gi,
+      "$1[REDACTED]",
+    )
+    .replace(/\bBearer\s+[^\s"']+/gi, "Bearer [REDACTED]")
+    .replace(
+      /(bootstrap_?token|authorization|cookie|api[_-]?key|password|token)(["']?\s*[:=]\s*["']?)[^\r\n]+/gi,
+      "$1$2[REDACTED]",
+    )
+    .replace(/\bsk-[A-Za-z0-9_-]+/g, "[REDACTED]")
+    .replace(
+      /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g,
+      "[REDACTED]",
+    )
+    .replace(/https?:\/\/[^\s"']+/g, "[provider URL]")
+    .split(/[\r\n]/, 1)[0]
+    .slice(0, PROVIDER_FAILURE_MAX_CHARACTERS);
+  return `${providerFailureKind(value)}: ${detail}`;
+}
+
 export function validateFinalAssistantMessage(messages: unknown[]): void {
   const assistantMessage = lastAssistantMessage(messages);
   if (!assistantMessage) {
@@ -3032,7 +3075,9 @@ export function validateFinalAssistantMessage(messages: unknown[]): void {
     if (/context window|context length|input exceeds/i.test(errorMessage)) {
       throw new Error("provider context window exceeded");
     }
-    throw new Error("provider request failed");
+    throw new Error(
+      `provider request failed: ${providerFailureDetail(errorMessage)}`,
+    );
   }
   if (assistantMessage.stopReason === "aborted") {
     throw new Error("provider request aborted");

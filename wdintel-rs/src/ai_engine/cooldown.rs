@@ -1,15 +1,17 @@
-use crate::{config::AI_ENGINE_GLM_5_3_COOLDOWN_SECS, h, types::ShortContext};
+use crate::{
+    config::AI_ENGINE_GOVERNMENT_COOLDOWN_SECS, h, types::ShortContext,
+};
 use chrono::{DateTime, Utc};
 use reqwest::{header, StatusCode};
 use std::time::Duration;
 use tokio::{sync::Mutex, time::Instant};
 
 #[derive(Default)]
-pub(super) struct GlmCooldown {
+pub(super) struct ProviderCooldown {
     retry_at: Mutex<Option<Instant>>,
 }
 
-impl GlmCooldown {
+impl ProviderCooldown {
     pub(super) async fn wait(&self) {
         loop {
             let retry_at = {
@@ -45,7 +47,7 @@ impl GlmCooldown {
 }
 
 fn retry_after(headers: &header::HeaderMap, now: DateTime<Utc>) -> Duration {
-    let fallback = Duration::from_secs(AI_ENGINE_GLM_5_3_COOLDOWN_SECS);
+    let fallback = Duration::from_secs(AI_ENGINE_GOVERNMENT_COOLDOWN_SECS);
     let Some(value) = headers
         .get(header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
