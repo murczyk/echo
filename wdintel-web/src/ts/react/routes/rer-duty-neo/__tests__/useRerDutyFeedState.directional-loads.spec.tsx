@@ -20,6 +20,8 @@ import {
   emptyFilter,
   feedIndicatorUnreadCount,
   feedHasUnloadedEvictedNewerTail,
+  feedHasUnloadedHistoricalNewer,
+  feedHasUnrenderedHistoricalNewer,
   feedLoadedUnreadCount,
   feedNeedsUnreadPrefetch,
   feedPendingNewerUnreadCount,
@@ -165,7 +167,7 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       expect(apiRef.current!.messageFeeds[0]).toMatchObject({ evictedNewerTailId: null });
     });
 
-    it('#3496 clears a deleted evicted-tail boundary after newer catch-up is exhausted', async () => {
+    it('#3496 #3894 clears a deleted historical and evicted-tail boundary after newer catch-up is exhausted', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
       };
@@ -175,6 +177,14 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
       await act(async () => root.render(<TestHarness apiRef={apiRef} />));
       await act(async () => flushMicrotasks());
+      await act(async () =>
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({
+            ...feed,
+            historicalReadThrough: { id: 60, timestamp: 6000 },
+          })),
+        ),
+      );
 
       await act(async () => {
         await apiRef.current!.loadFeedOlderMessages('mf-0');
@@ -194,9 +204,16 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       const feed = apiRef.current!.messageFeeds[0];
       expect(feed.evictedNewerTailId).toBeNull();
       expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
+      expect(feed.historicalReadThrough).toEqual({ id: 59, timestamp: 5900 });
+      expect(feedHasUnloadedHistoricalNewer(feed)).toBe(false);
+      expect(feed.unreadCount).toBe(0);
+      await act(async () =>
+        apiRef.current!.flushPendingNewerMessages('mf-0', { urgent: true, allowWindowTrim: true }),
+      );
+      expect(feedHasUnrenderedHistoricalNewer(apiRef.current!.messageFeeds[0])).toBe(false);
     });
 
-    it('#3496 clears a deleted evicted-tail boundary after an exhaustive newer request', async () => {
+    it('#3496 #3894 clears a deleted historical and evicted-tail boundary after an exhaustive newer request', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
       };
@@ -205,6 +222,14 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(41, 59));
       await act(async () => root.render(<TestHarness apiRef={apiRef} />));
       await act(async () => flushMicrotasks());
+      await act(async () =>
+        apiRef.current!.setMessageFeeds((feeds) =>
+          feeds.map((feed) => ({
+            ...feed,
+            historicalReadThrough: { id: 60, timestamp: 6000 },
+          })),
+        ),
+      );
 
       await act(async () => {
         await apiRef.current!.loadFeedOlderMessages('mf-0');
@@ -219,6 +244,9 @@ describe('useRerDutyFeedState — directional loading and races', () => {
       expect(feed.pendingNewerItems?.at(-1)?.[0]).toBe(59);
       expect(feed.evictedNewerTailId).toBeNull();
       expect(feedHasUnloadedEvictedNewerTail(feed)).toBe(false);
+      expect(feed.historicalReadThrough).toEqual({ id: 59, timestamp: 5900 });
+      expect(feedHasUnloadedHistoricalNewer(feed)).toBe(false);
+      expect(feed.unreadCount).toBe(0);
     });
 
     it('#3780 aborts an older search after a filter reload invalidates the request', async () => {

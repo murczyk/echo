@@ -310,7 +310,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -356,7 +355,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={[buildFeed('feed-1')]}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -381,7 +379,6 @@ describe('RerDutyNeoWorkspace', () => {
           )}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -430,7 +427,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -464,7 +460,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -484,7 +479,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -525,7 +519,6 @@ describe('RerDutyNeoWorkspace', () => {
             messageFeeds={messageFeeds}
             narrowScreen={false}
             onSelectFeed={() => {}}
-            showLoadingBackdrop={false}
           />,
         );
       });
@@ -621,7 +614,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -649,7 +641,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -668,7 +659,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -698,7 +688,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
         />,
       );
     });
@@ -742,7 +731,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
           editorOpen
           editorEmbeddedOpen
         />,
@@ -791,7 +779,6 @@ describe('RerDutyNeoWorkspace', () => {
           messageFeeds={messageFeeds}
           narrowScreen={false}
           onSelectFeed={() => {}}
-          showLoadingBackdrop={false}
           editorOpen={editorOpen}
           editorEmbeddedOpen={editorEmbeddedOpen}
         />,

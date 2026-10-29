@@ -1,4 +1,4 @@
-import { Backdrop, Box, ButtonBase, CircularProgress, Skeleton, Tooltip } from '@mui/material';
+import { Box, ButtonBase, Skeleton, Tooltip } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
@@ -232,7 +232,6 @@ type RerDutyNeoWorkspaceProps = {
   messageFeeds: MessageFeedState[];
   narrowScreen: boolean;
   onSelectFeed: Dispatch<SetStateAction<string | null>>;
-  showLoadingBackdrop: boolean;
   editorOpen?: boolean;
   editorEmbeddedOpen?: boolean;
 };
@@ -247,7 +246,6 @@ export function RerDutyNeoWorkspace({
   messageFeeds,
   narrowScreen,
   onSelectFeed,
-  showLoadingBackdrop,
   editorOpen = false,
   editorEmbeddedOpen = false,
 }: RerDutyNeoWorkspaceProps) {
@@ -514,22 +512,6 @@ export function RerDutyNeoWorkspace({
           </Box>
         </Box>
       )}
-      <Backdrop
-        open={showLoadingBackdrop}
-        sx={{
-          position: 'absolute',
-          inset: 0,
-          /**
-           * Keep the refresh overlay behind the feed filter/notification popovers so users can still
-           * adjust or cancel filters while newer messages are loading.
-           */
-          zIndex: 1,
-          color: 'primary.light',
-          backgroundColor: 'rgba(7, 10, 14, 0.42)',
-        }}
-      >
-        <CircularProgress color="inherit" />
-      </Backdrop>
     </Box>
   );
 }

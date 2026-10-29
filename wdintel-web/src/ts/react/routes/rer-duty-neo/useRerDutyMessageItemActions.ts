@@ -24,6 +24,7 @@ import { addPalitraHighlightBlacklistEntry } from '../../services/api/palitra';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
 import { notifyMessageCopySuccess } from '../shared/message-card/message-card-copy-feedback';
+import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import {
   hasBotTag,
@@ -191,17 +192,7 @@ export function useRerDutyMessageItemActions(params: Params) {
     if (deleteConfirmId == null || deleteConfirmFeedId == null) return;
     try {
       await deleteMessage({ id: deleteConfirmId });
-      setMessageFeeds((prev) =>
-        prev.map((w) => {
-          if (w.id !== deleteConfirmFeedId) return w;
-          const newItems = w.items.filter(([id]) => id !== deleteConfirmId);
-          const newReadIds = new Set([...w.readIds].filter((id) => id !== deleteConfirmId));
-          const unreadCount = w.readIds.has(deleteConfirmId)
-            ? w.unreadCount
-            : Math.max(0, w.unreadCount - 1);
-          return { ...w, items: newItems, readIds: newReadIds, unreadCount };
-        }),
-      );
+      setMessageFeeds((feeds) => mergeUpdatedDutyFeedMessages(feeds, null, [deleteConfirmId], []));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

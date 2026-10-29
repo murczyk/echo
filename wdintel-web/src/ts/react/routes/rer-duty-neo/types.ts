@@ -117,6 +117,7 @@ export type FeedColumnModel = {
       focusTarget: HTMLElement,
     ) => void;
     onMessageEditReport: (reportId: number, sourceMessageId: number) => void;
+    onMessageDelete: (messageId: number) => void;
     onMessageExcludeEntity: (entity: MessageEntityFilterKind, value: string) => void;
     onMessageToggleTag: (msgId: number, tagId: number) => void;
     onMessageEdit: (messageId: number, message: InboxMessage, focusTarget?: HTMLElement) => void;

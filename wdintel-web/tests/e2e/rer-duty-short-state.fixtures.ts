@@ -4,6 +4,7 @@ import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-
 import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
+  userRoles?: string[];
   enableAudioTranscription?: boolean;
   dutyExcludeMenuEnabled?: boolean;
   analysisAorFilterEnabled?: boolean;
@@ -52,11 +53,11 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
   });
 }
 
-function emptyUserResponse(rerReportEligible = false) {
+function emptyUserResponse(rerReportEligible = false, roles = ['Rer', 'Admin']) {
   return {
     id: 'operator',
     name: 'operator',
-    roles: ['Rer', 'Admin'],
+    roles,
     sigint_zone_id: null,
     organism_id: null,
     delta_login: null,
@@ -186,7 +187,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user') {
-      await fulfillJson(route, emptyUserResponse(options.rerReportEligible));
+      await fulfillJson(route, emptyUserResponse(options.rerReportEligible, options.userRoles));
       return;
     }
 

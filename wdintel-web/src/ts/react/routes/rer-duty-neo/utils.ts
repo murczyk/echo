@@ -1182,6 +1182,48 @@ export function historicalReadMessageIds(feed: MessageFeedState, items: MessageI
     .map(([id]) => id);
 }
 
+export function latestMessageCursorAtOrBefore(
+  items: MessageItem[],
+  boundary: MessageCursor,
+): MessageCursor | null {
+  let latest: MessageCursor | null = null;
+  for (const [id, message] of items) {
+    const cursor = messageOrderCursor(id, message);
+    if (
+      compareMessageTuple(cursor, boundary) <= 0 &&
+      (latest == null || compareMessageTuple(cursor, latest) > 0)
+    )
+      latest = cursor;
+  }
+  return latest;
+}
+
+export function reconcileDeletedDutyFeedTailMarkers(
+  feed: Pick<
+    MessageFeedState,
+    'items' | 'pendingNewerItems' | 'historicalReadThrough' | 'evictedNewerTailId'
+  >,
+  deletedIds: Set<number>,
+  items: MessageItem[],
+  pendingNewerItems: MessageItem[] = [],
+): Pick<MessageFeedState, 'historicalReadThrough' | 'evictedNewerTailId'> {
+  const loadedIds = new Set([...feed.items, ...(feed.pendingNewerItems ?? [])].map(([id]) => id));
+  const wasLoadedAndDeleted = (id: number | null | undefined) =>
+    id != null && deletedIds.has(id) && loadedIds.has(id);
+  return {
+    historicalReadThrough:
+      feed.historicalReadThrough != null && wasLoadedAndDeleted(feed.historicalReadThrough.id)
+        ? latestMessageCursorAtOrBefore(
+            [...items, ...pendingNewerItems],
+            feed.historicalReadThrough,
+          )
+        : feed.historicalReadThrough,
+    evictedNewerTailId: wasLoadedAndDeleted(feed.evictedNewerTailId)
+      ? null
+      : feed.evictedNewerTailId,
+  };
+}
+
 /** Flush off-DOM pending newer rows into the visible window. */
 export function flushPendingNewerItems(
   feed: MessageFeedState,
@@ -1216,6 +1258,8 @@ export function feedListRenderStateEqual(prev: MessageFeedState, next: MessageFe
     (prev.id === next.id &&
       prev.groupScopeMasterKey === next.groupScopeMasterKey &&
       prev.items === next.items &&
+      prev.evictedNewerTailId === next.evictedNewerTailId &&
+      prev.historicalReadThrough === next.historicalReadThrough &&
       prev.loading === next.loading &&
       prev.loadingOlder === next.loadingOlder &&
       prev.hasReachedStart === next.hasReachedStart &&

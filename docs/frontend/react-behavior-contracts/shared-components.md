@@ -31,6 +31,7 @@
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** none.
 - **Responsive and keyboard requirements:** existing alert role and dismissal controls remain available.
+- **Placement:** snackbars are centered at the bottom of the viewport, with responsive width limits and safe-area-aware bottom spacing. Browser coverage: `wdintel-web/tests/e2e/rer-duty-scroll-stability.spec.ts`.
 - **Known race/idempotency constraints:** a stale exit callback must not replace the currently owned queued notification.
 - **Source implementation:** `src/ts/react/components/PowerSnackbar.tsx`
 - **Existing test(s):** `wdintel-web/src/ts/react/components/__tests__/PowerSnackbar.spec.tsx`

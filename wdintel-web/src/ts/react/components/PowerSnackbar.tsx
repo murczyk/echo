@@ -45,11 +45,9 @@ const DEFAULT_DESKTOP_INSET = 24;
 export function PowerSnackbarProvider({
   children,
   bottomInset,
-  rightInset,
 }: {
   children: ReactNode;
   bottomInset?: number | string;
-  rightInset?: number | string;
 }) {
   const nextIdRef = useRef(0);
   const [current, setCurrent] = useState<QueuedNotification | null>(null);
@@ -108,20 +106,10 @@ export function PowerSnackbarProvider({
           sm: `calc(${DEFAULT_DESKTOP_INSET}px + env(safe-area-inset-bottom, 0px))`,
         }
       : `calc(${inset(bottomInset)} + env(safe-area-inset-bottom, 0px))`;
-  const right =
-    rightInset === undefined
-      ? {
-          xs: `calc(${DEFAULT_NARROW_INSET}px + env(safe-area-inset-right, 0px))`,
-          sm: `calc(${DEFAULT_DESKTOP_INSET}px + env(safe-area-inset-right, 0px))`,
-        }
-      : `calc(${inset(rightInset)} + env(safe-area-inset-right, 0px))`;
-  const maxWidth =
-    rightInset === undefined
-      ? {
-          xs: 'calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))',
-          sm: 'min(520px, calc(100vw - 48px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
-        }
-      : `min(520px, calc(100vw - ${inset(rightInset)} - ${DEFAULT_NARROW_INSET}px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))`;
+  const maxWidth = {
+    xs: 'calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))',
+    sm: 'min(520px, calc(100vw - 48px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
+  };
   const maxHeight =
     bottomInset === undefined
       ? {
@@ -140,15 +128,16 @@ export function PowerSnackbarProvider({
           <Snackbar
             key={current.id}
             open={open}
-            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
             autoHideDuration={current.durationMs ?? DEFAULT_DURATION_MS[current.severity]}
             onClose={handleClose}
             slotProps={{ transition: { onExited: () => handleExited(current.id) } }}
             sx={{
               bottom,
-              right,
-              left: 'auto',
-              width: 'fit-content',
+              right: 'auto',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'max-content',
               maxWidth,
               maxHeight,
               '& .MuiAlert-root': {

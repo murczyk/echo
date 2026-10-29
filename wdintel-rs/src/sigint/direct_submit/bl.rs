@@ -2039,6 +2039,60 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_3894_unit_header_does_not_create_linked_comment() {
+        let env = cleanup().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        system_settings::ActiveModel {
+            sigint_comment_parsing_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        for unit in ["50 обрБпС", "51 пдп 3 пдб 515"] {
+            let body =
+                format!("{unit}\n28.10.2026, 17:00\n- Тестове повідомлення.");
+            let parsed = parse_signal_message(
+                &login,
+                &env,
+                DirectSubmitParsePayload {
+                    full_body: body.clone(),
+                    include_ai_callsigns: false,
+                    signal_group_master_key: Some(
+                        TEST_SIGNAL_GROUP_KEY.to_string(),
+                    ),
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(parsed.comment, None);
+            assert_eq!(parsed.text, "- Тестове повідомлення.");
+
+            let mut payload = direct_submit_payload(&parsed.text);
+            payload.full_body = Some(body);
+            payload.comment = parsed.comment;
+            let created =
+                submit_signal_message(&login, &env, payload).await.unwrap();
+            let messages = crate::rer_importer::inbox::messages_by_id_bl(
+                &login,
+                &vec![login],
+                &env,
+                &[created.signal_message_id],
+                &crate::rer_importer::types::InboxMessagesReq::default(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0].1.extended_form, None);
+            assert!(messages[0].1.intelligence_reports.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn direct_submit_parse_suggests_inbox_fields() {
         let env = cleanup().await.unwrap();
         let body = "01.04.2023_15:00 F=411,7500(МГЦ)\n49.12345, 37.12345\nID➡️:110(ЯРУС)\nID(CG)⬅️:50(СВЕТЛЫЙ)\nТекст повідомлення";

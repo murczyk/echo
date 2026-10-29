@@ -15,6 +15,7 @@ import {
   feedNewerSinceId,
   feedPendingNewerItems,
   historicalReadMessageIds,
+  latestMessageCursorAtOrBefore,
   mergePendingNewerItems,
   messageOrderCursor,
   messageOrderTimestamp,
@@ -542,6 +543,26 @@ export function useRerDutyDirectionalLoads(params: Params) {
             latestFeed.evictedNewerTailId != null &&
             (response.inboxItems.length === 0 ||
               (requestNolimit && !responseIncludesEvictedNewerTail));
+          const historicalBoundary = latestFeed.historicalReadThrough;
+          if (
+            historicalBoundary != null &&
+            (response.inboxItems.length === 0 || requestNolimit) &&
+            !response.inboxItems.some(([id]) => id === historicalBoundary.id)
+          ) {
+            const historicalReadThrough = latestMessageCursorAtOrBefore(
+              [...latestFeed.items, ...pendingBefore, ...response.inboxItems],
+              historicalBoundary,
+            );
+            if (historicalReadThrough?.id !== historicalBoundary.id) {
+              runParams.setMessageFeeds((previous) =>
+                previous.map((feed) =>
+                  feed.id === feedId && feed.historicalReadThrough === historicalBoundary
+                    ? { ...feed, historicalReadThrough }
+                    : feed,
+                ),
+              );
+            }
+          }
           operation.newerResult = {
             ok: true,
             addedCount,

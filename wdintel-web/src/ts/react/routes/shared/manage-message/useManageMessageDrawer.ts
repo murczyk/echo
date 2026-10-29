@@ -470,7 +470,9 @@ export function useManageMessageDrawer({
       date: dayjs(),
       time: null,
       signalGroupMasterKey: initialGroupMasterKey ? '' : (recentValuesRef.current.group[0] ?? ''),
-      deviceName: cyberEchoEnabled ? (recentValuesRef.current.deviceName[0] ?? '') : '',
+      deviceName: cyberEchoEnabled
+        ? (recentValuesRef.current.lastDeviceName ?? recentValuesRef.current.deviceName[0] ?? '')
+        : '',
       unit: defaultRecentUnitRef.current?.name ?? '',
       unitSelection: defaultRecentUnitRef.current,
     }),

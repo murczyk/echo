@@ -132,17 +132,33 @@ fn is_top_header_or_context_line(
     anchor: usize,
 ) -> bool {
     is_header_line(lines[idx])
-        || is_pre_datetime_location_header_line(lines, idx, anchor)
+        || is_pre_datetime_context_line(lines, idx, anchor)
 }
 
-fn is_pre_datetime_location_header_line(
+fn is_pre_datetime_context_line(
     lines: &[&str],
     idx: usize,
     anchor: usize,
 ) -> bool {
     idx < anchor
-        && has_radio_header_before(lines, idx)
-        && is_location_header_line(lines[idx])
+        && (is_unit_name_header_line(lines[idx])
+            || has_radio_header_before(lines, idx)
+                && is_location_header_line(lines[idx]))
+}
+
+fn is_unit_name_header_line(line: &str) -> bool {
+    let remainder = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut remainder =
+        crate::unit::apply_unit_name_fixes_case_insensitive(remainder);
+    let units =
+        crate::unit::parse_library_unit_typed_segments_any_order(&remainder);
+    if units.is_empty() {
+        return false;
+    }
+    for (_, unit) in units {
+        remainder = remainder.replace(&unit.to_lowercase(), "");
+    }
+    !remainder.chars().any(char::is_alphabetic)
 }
 
 fn has_radio_header_before(lines: &[&str], idx: usize) -> bool {
@@ -464,7 +480,7 @@ fn pre_datetime_context_line_indices(lines: &[&str]) -> BTreeSet<usize> {
         .iter()
         .enumerate()
         .filter_map(|(i, _l)| {
-            is_pre_datetime_location_header_line(lines, i, anchor).then_some(i)
+            is_pre_datetime_context_line(lines, i, anchor).then_some(i)
         })
         .collect()
 }
@@ -1243,6 +1259,85 @@ mod tests {
 
         let res = extract_text_without_top_comment(body).unwrap();
         assert_eq!(res.body, "МИРНЫЙ");
+    }
+
+    #[test]
+    fn issue_3894_unit_name_before_datetime_is_not_a_comment() {
+        for unit in [
+            "50 обрБпС",
+            "51 пдп 3 пдб 515",
+            "  50   обрБпС  ",
+            "123 ц МТЗ",
+            "123 Ц МТЗ",
+            "123 ц мтз",
+            "123 Ц мТз",
+            "  123   ц  МТЗ  ",
+            "  123   Ц  МТЗ  ",
+            "123 цМТЗ",
+            "1 брз (тер)",
+            "1 БРЗ (ТЕР)",
+            "1 БрЗ (ТеР)",
+            "1 брз",
+            "123 цМТЗ 1 брз (тер)",
+            "123 Ц МТЗ 1 БРЗ (ТЕР)",
+        ] {
+            let body =
+                format!("{unit}\n28.10.2026, 17:00\n- Тестове повідомлення.");
+            assert_eq!(
+                parse_comments(&body),
+                ParsedComments::default(),
+                "{unit}"
+            );
+            assert_eq!(
+                extract_text_without_top_comment(&body).unwrap().body,
+                "- Тестове повідомлення."
+            );
+        }
+    }
+
+    #[test]
+    fn issue_3894_unit_headers_preserve_actual_comments() {
+        for comment in [
+            "Важлива примітка",
+            "50 обрБпС змінила позицію",
+            "ППО",
+            "Днепр",
+            "Ветераны",
+            "515",
+            "1 абр БМ",
+            "1 абрБМ",
+            "1 АБР БМ",
+            "1 АБРБМ",
+            "123 цМТЗ 1 абр БМ 1 брз (тер)",
+            "123 ц МТЗ змінив позицію",
+            "123 Ц МТЗ змінив позицію",
+            "123 Ц МТЗ 1 АБР БМ 1 БРЗ (ТЕР)",
+            "1 абр БМ змінила позицію",
+            "1 брз (тер) змінила позицію",
+            "1 БРЗ (ТЕР) змінила позицію",
+        ] {
+            let body = format!("{comment}\n50 обрБпС\n28.10.2026, 17:00\n- Тестове повідомлення.");
+            assert_eq!(parse_comments(&body).top.as_deref(), Some(comment));
+            assert_eq!(
+                extract_text_without_top_comment(&body).unwrap().body,
+                "- Тестове повідомлення."
+            );
+        }
+        for unit in [
+            "50 обрБпС",
+            "123 ц МТЗ",
+            "123 Ц МТЗ",
+            "123 ц мтз",
+            "1 абр БМ",
+            "1 АБР БМ",
+            "1 брз (тер)",
+            "1 БРЗ (ТЕР)",
+        ] {
+            let body = format!(
+                "Коментар: {unit}\n28.10.2026, 17:00\n- Тестове повідомлення."
+            );
+            assert_eq!(parse_comments(&body).bottom.as_deref(), Some(unit));
+        }
     }
 
     #[test]
