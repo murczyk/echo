@@ -17,6 +17,7 @@ import { installContextCompaction } from "./context-compaction.ts";
 import { assistantSnapshotEvent } from "./citations.ts";
 import {
   createToolResponseCompactor,
+  createContextToolResponseCompactor,
   recoverFinalOutputLimit,
   validateFinalAssistantMessage,
   validatePayload,
@@ -34,6 +35,8 @@ async function fixture(
     reserveTokens: number;
     modelName?: string;
     finalOutput?: string;
+    contextWindow?: number;
+    toolContextCharacters?: number;
   } = {
     maxTokens: 16_384,
     reserveTokens: 16_384,
@@ -296,7 +299,7 @@ async function fixture(
               name: "fixture",
               reasoning: false,
               input: ["text"],
-              contextWindow: 65_536,
+              contextWindow: checkpointSettings.contextWindow ?? 65_536,
               maxTokens: primaryMaxTokens,
               cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             },
@@ -410,7 +413,11 @@ async function fixture(
     ),
   });
   await resourceLoader.reload();
-  const compact = createToolResponseCompactor();
+  const compact = checkpointSettings.toolContextCharacters
+    ? createToolResponseCompactor(checkpointSettings.toolContextCharacters)
+    : checkpointSettings.contextWindow
+      ? createContextToolResponseCompactor(checkpointSettings.contextWindow)
+      : createToolResponseCompactor();
   const tool = defineTool({
     name: "echo_inbox_messages",
     label: "Read fixture page",
@@ -490,6 +497,7 @@ async function fixture(
       providerApiKey: "fixture",
       timeContext: { requestStartedAtUtc: "2026-10-09T04:38:34Z" },
       signal: cancellation.signal,
+      toolContextNeedsCompaction: compact.needsCompaction,
     },
     () => (progressCalls += 1),
     (messages) => {
@@ -518,6 +526,28 @@ async function fixture(
       await rm(directory, { recursive: true, force: true });
     },
   };
+}
+
+for (const toolContextCharacters of [undefined, 192_000]) {
+  test(`#3724 paginates beyond the old tool budget with 256k context${toolContextCharacters ? " and early tool-budget compaction" : ""}`, async () => {
+    const value = await fixture(30, "stop", false, 1, {
+      reserveTokens: 32_768,
+      contextWindow: 262_144,
+      toolContextCharacters,
+    });
+    try {
+      await value.session.prompt(value.prompt);
+      validateFinalAssistantMessage(value.session.messages);
+      assert.deepEqual(value.errors, []);
+      assert.equal(value.contextFailure(), undefined);
+      assert.equal(value.cursors.length, 30);
+      assert.ok(value.checkpointCalls() > 0);
+      assert.equal(value.resetCalls(), value.checkpointCalls());
+      assert.ok(JSON.stringify(value.session.messages).includes(value.firstCitation));
+    } finally {
+      await value.close();
+    }
+  });
 }
 
 test("#3724 preserves answer headroom while reasoning checkpoints exceed the answer output limit", async () => {

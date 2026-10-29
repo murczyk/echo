@@ -31,6 +31,7 @@ interface ContextSettings {
   timeContext?: unknown;
   signal?: AbortSignal;
   saveCheckpoint?: (summary: string) => Promise<void>;
+  toolContextNeedsCompaction?: () => boolean;
 }
 
 const MAX_COMPACTION_PASSES = 3;
@@ -368,13 +369,18 @@ async function ensureContextInner(
   const { settings, onProgress } = runtime;
   const available = (context: AgentContext) =>
     availableTokens(runtime, context);
+  const fits = () =>
+    available(context) >= settings.compactionReserveTokens &&
+    !settings.toolContextNeedsCompaction?.();
   signal?.throwIfAborted();
-  if (available(context) >= settings.compactionReserveTokens) return context;
+  if (fits()) return context;
   onProgress();
   for (let attempt = 0; attempt < MAX_COMPACTION_PASSES; attempt += 1) {
     context = await compactOnce(runtime, context, signal, pending);
-    if (available(context) >= settings.compactionReserveTokens) return context;
+    if (fits()) return context;
   }
+  if (settings.toolContextNeedsCompaction?.())
+    throw new ContextCompactionLimitError("tool context budget remains exhausted after compaction");
   if (available(context) < settings.maxTokens)
     throw new ContextCompactionLimitError("provider context window exceeded after compaction");
   return context;

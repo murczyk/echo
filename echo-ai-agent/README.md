@@ -304,8 +304,10 @@ deadline and limits. Its focused synthesis prompt preserves tenant instructions,
 request time, scope and citation rules without the tool workflow guidance.
 Checkpoint generation has a separate `checkpointMaxTokens` output cap, defaulting
 to the normal answer cap. Its failure cause survives SDK error conversion.
-Each tool response and retained tool context remain bounded, with discarded
-allowance released after compaction. The runner
+Each tool response remains bounded. The retained tool allowance scales with the
+selected engine's context window, and nearing that allowance triggers a
+checkpoint even if provider token headroom remains. Discarded allowance is
+released after compaction. The runner
 also emits normalized
 `assistant_delta`, `progress`, `tool_start`, `tool_update`, `tool_end`, and
 `source` events. Progress-tool lifecycle events are suppressed because the tool
