@@ -702,7 +702,7 @@ mod tests {
                 if activity.request_path != path {
                     continue;
                 }
-                if activity.event_type == "error" {
+                if activity.event_type == "response" {
                     recorded_status = activity.response_status;
                 }
                 let _: () =

@@ -213,7 +213,10 @@ export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;
 
-export function resolveMediaAttachmentId(attachment: MessageMediaInfo): string {
+export function resolveMediaAttachmentId(attachment: {
+  id?: string | null;
+  href?: string | null;
+}): string {
   const id = String(attachment.id ?? '').trim();
   if (id !== '') return id;
   const match = MESSENGER_MEDIA_PATH_RE.exec(String(attachment.href ?? ''));

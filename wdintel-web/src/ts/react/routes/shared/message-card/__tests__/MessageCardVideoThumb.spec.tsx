@@ -79,6 +79,7 @@ vi.mock('@mui/icons-material/PlayArrow', () => ({
 }));
 
 import { MessageCardVideoThumb } from '../MessageCardVideoThumb';
+import { MessageCardImageThumb } from '../MessageCardImageThumb';
 
 function buildAttachment(overrides: Partial<MessageMediaInfo> = {}): MessageMediaInfo {
   return {
@@ -121,7 +122,30 @@ async function renderThumb(attachment: MessageMediaInfo) {
   return { container, root, onOpen };
 }
 
-describe('MessageCardVideoThumb', () => {
+async function renderImageThumb() {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <MessageCardImageThumb
+        image={{
+          id: 'image-1',
+          href: '/api/messenger/media/image-1',
+          fileName: 'image.png',
+        }}
+        index={0}
+        variant="single"
+        onOpen={() => {}}
+        isDownloadStarting={() => false}
+        onDownloadStart={() => true}
+      />,
+    );
+  });
+  return { container, root };
+}
+
+describe('Message card media thumbnails', () => {
   beforeEach(() => {
     authRedirectMocks.emitUnauthorizedEvent.mockReset();
     vi.stubGlobal('fetch', vi.fn());
@@ -152,6 +176,47 @@ describe('MessageCardVideoThumb', () => {
       container.querySelector('img')?.dispatchEvent(new Event('load', { bubbles: true }));
     });
     expect(container.querySelector('[data-video-thumb-state="loaded"]')).not.toBeNull();
+    root.unmount();
+  });
+  it('requests a prepared image thumbnail without fetching the original image', async () => {
+    vi.mocked(fetch).mockResolvedValue(thumbnailResponse(200));
+    const { container, root } = await renderImageThumb();
+
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/messenger/media/image-1/thumbnail',
+      expect.objectContaining({ cache: 'no-store', credentials: 'same-origin' }),
+    );
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('a[download]')?.getAttribute('href')).toBe(
+      '/api/messenger/media/image-1',
+    );
+    root.unmount();
+  });
+  it('uses the original image when thumbnail generation fails', async () => {
+    vi.mocked(fetch).mockResolvedValue(thumbnailResponse(422));
+    const { container, root } = await renderImageThumb();
+
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      '/api/messenger/media/image-1',
+    );
+    root.unmount();
+  });
+  it('uses the original image when its thumbnail stays pending', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockResolvedValue(thumbnailResponse(202));
+    const { container, root } = await renderImageThumb();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      '/api/messenger/media/image-1',
+    );
+    const requests = vi.mocked(fetch).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(fetch).toHaveBeenCalledTimes(requests);
     root.unmount();
   });
   it('waits until the thumbnail is near the viewport before fetching', async () => {

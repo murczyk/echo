@@ -83,6 +83,23 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded.
 
+## Image thumbnail loading
+
+- **Status:** intentional behavior (#3356)
+- **Behavior ID:** `react-message-card-image-thumbnail-loading`
+- **Affected route/component:** message-card image thumbnails
+- **User role or permission:** users able to view an image attachment
+- **Preconditions:** an image has a messenger media ID
+- **User action or external event:** the card approaches the viewport or thumbnail generation fails
+- **Expected observable result:** the card requests the authenticated JPEG thumbnail; opening and downloading still use the original image. Missing, failed, or still-loading thumbnails after 30 seconds fall back to the original image.
+- **Loading/empty/error/success behavior:** the loading skeleton remains until the thumbnail or fallback original loads; a broken image shows an error tile.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** uses `/api/messenger/media/{id}/thumbnail`; images without a messenger media ID keep their original-image behavior.
+- **Responsive and keyboard requirements:** existing card controls remain unchanged.
+- **Known race/idempotency constraints:** offscreen cards do not request thumbnail bytes; returning to view can retry pending thumbnails.
+- **Source implementation:** `MessageCardImageThumb.tsx`, `MessageCardVideoThumb.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCardVideoThumb.spec.tsx`
+
 ## OCR and media-summary response safety
 
 - **Status:** inferred characterization
