@@ -37,6 +37,7 @@ pub struct Model {
     pub hard_expires_at: DateTimeWithTimeZone,
     pub spool_removed_at: Option<DateTimeWithTimeZone>,
     pub next_cleanup_at: Option<DateTimeWithTimeZone>,
+    pub stats_epoch: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

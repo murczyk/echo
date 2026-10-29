@@ -700,6 +700,8 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
                 .to_string(),
             "m20261019_101619_file_archive_registry".to_string(),
             "m20261023_071318_device_audio_forwarding".to_string(),
+            "m20261024_090745_device_content_stats".to_string(),
+            "m20261024_090746_device_content_stats_pending_index".to_string(),
         ]
     );
 }
@@ -1347,6 +1349,7 @@ async fn assert_file_content_schema(connection: &DatabaseConnection) {
                 "timestamp with time zone",
                 "timestamptz",
             ),
+            ("stats_epoch", "NO", Some("0"), "bigint", "int8"),
         ],
     )
     .await;
@@ -1553,6 +1556,10 @@ order by tablename, indexname
             (
                 "file_content_upload",
                 "file_content_upload_reserved_count_idx",
+            ),
+            (
+                "file_content_upload",
+                "file_content_upload_stats_pending_idx",
             ),
             (
                 "file_content_upload",

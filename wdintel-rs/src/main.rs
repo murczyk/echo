@@ -1043,6 +1043,16 @@ pub struct OneoffRecoverDeviceAudioTranscriptionPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-rebuild-device-stats\n  wdintel-rs --mode=live oneoff-rebuild-device-stats --device-id <uuid> --device-id <uuid>"
+)]
+pub struct OneoffRebuildDeviceStatsPs {
+    /// Device to rebuild; repeat for several. All devices when omitted.
+    #[arg(long = "device-id")]
+    pub device_ids: Vec<Uuid>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessAudioTranscriberPs {
     #[arg(long)]
     pub source_id: Uuid,
@@ -1276,6 +1286,8 @@ enum Cmd {
     OneoffRecoverDeviceAudioTranscription(
         OneoffRecoverDeviceAudioTranscriptionPs,
     ),
+    /// Rebuilds device stats one device at a time (all devices by default).
+    OneoffRebuildDeviceStats(OneoffRebuildDeviceStatsPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
@@ -2215,6 +2227,9 @@ async fn async_main(
         }
         Cmd::OneoffRecoverDeviceAudioTranscription(ps) => {
             devices::audio::transcription::recover_oneoff(mode, ps).await
+        }
+        Cmd::OneoffRebuildDeviceStats(ps) => {
+            devices::files::stats::rebuild_oneoff(mode, ps).await
         }
         Cmd::OneoffRequeueAudioTranscriber(ps) => {
             transcriber::backfill::requeue_terminal(mode, ps).await
