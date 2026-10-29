@@ -105,8 +105,24 @@ pub fn list_battalions() -> &'static BTreeSet<String> {
 }
 
 pub fn apply_unit_name_fixes(text: String) -> String {
-    let mut text = text;
-    for (old, new) in list_fixes() {
+    apply_unit_name_fixes_from(text, list_fixes())
+}
+
+pub fn apply_unit_name_fixes_case_insensitive(text: String) -> String {
+    lazy_static! {
+        static ref FIXES: BTreeMap<String, String> = list_fixes()
+            .iter()
+            .map(|(old, new)| (old.to_lowercase(), new.to_lowercase()))
+            .collect();
+    }
+    apply_unit_name_fixes_from(text.to_lowercase(), &FIXES)
+}
+
+fn apply_unit_name_fixes_from(
+    mut text: String,
+    fixes: &BTreeMap<String, String>,
+) -> String {
+    for (old, new) in fixes {
         if !text.contains(old) {
             continue;
         }

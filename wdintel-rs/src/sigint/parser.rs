@@ -149,7 +149,7 @@ fn is_pre_datetime_context_line(
 fn is_unit_name_header_line(line: &str) -> bool {
     let remainder = line.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut remainder =
-        crate::unit::apply_unit_name_fixes(remainder).to_lowercase();
+        crate::unit::apply_unit_name_fixes_case_insensitive(remainder);
     let units =
         crate::unit::parse_library_unit_typed_segments_any_order(&remainder);
     if units.is_empty() {
@@ -1268,11 +1268,18 @@ mod tests {
             "51 пдп 3 пдб 515",
             "  50   обрБпС  ",
             "123 ц МТЗ",
+            "123 Ц МТЗ",
+            "123 ц мтз",
+            "123 Ц мТз",
             "  123   ц  МТЗ  ",
+            "  123   Ц  МТЗ  ",
             "123 цМТЗ",
             "1 брз (тер)",
+            "1 БРЗ (ТЕР)",
+            "1 БрЗ (ТеР)",
             "1 брз",
             "123 цМТЗ 1 брз (тер)",
+            "123 Ц МТЗ 1 БРЗ (ТЕР)",
         ] {
             let body =
                 format!("{unit}\n28.10.2026, 17:00\n- Тестове повідомлення.");
@@ -1299,10 +1306,15 @@ mod tests {
             "515",
             "1 абр БМ",
             "1 абрБМ",
+            "1 АБР БМ",
+            "1 АБРБМ",
             "123 цМТЗ 1 абр БМ 1 брз (тер)",
             "123 ц МТЗ змінив позицію",
+            "123 Ц МТЗ змінив позицію",
+            "123 Ц МТЗ 1 АБР БМ 1 БРЗ (ТЕР)",
             "1 абр БМ змінила позицію",
             "1 брз (тер) змінила позицію",
+            "1 БРЗ (ТЕР) змінила позицію",
         ] {
             let body = format!("{comment}\n50 обрБпС\n28.10.2026, 17:00\n- Тестове повідомлення.");
             assert_eq!(parse_comments(&body).top.as_deref(), Some(comment));
@@ -1311,8 +1323,16 @@ mod tests {
                 "- Тестове повідомлення."
             );
         }
-        for unit in ["50 обрБпС", "123 ц МТЗ", "1 абр БМ", "1 брз (тер)"]
-        {
+        for unit in [
+            "50 обрБпС",
+            "123 ц МТЗ",
+            "123 Ц МТЗ",
+            "123 ц мтз",
+            "1 абр БМ",
+            "1 АБР БМ",
+            "1 брз (тер)",
+            "1 БРЗ (ТЕР)",
+        ] {
             let body = format!(
                 "Коментар: {unit}\n28.10.2026, 17:00\n- Тестове повідомлення."
             );
