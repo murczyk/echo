@@ -170,6 +170,9 @@ pub(super) async fn requests(
         result.reason = Some(
             "Немає записаних відповідей; покриття історії невідоме.".into(),
         );
+        result.total = Some(0);
+        result.server_errors = Some(0);
+        result.client_errors = Some(0);
         return Ok(result);
     }
     let mut total = 0;
