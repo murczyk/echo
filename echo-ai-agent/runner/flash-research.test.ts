@@ -83,6 +83,16 @@ function stream(
 
 for (const scenario of [
   "selective",
+  "retry-length",
+  "retry-citation",
+  "retry-stream",
+  "retry-empty",
+  "retry-deadline",
+  "long-evidence",
+  "large-draft",
+  "pagination-guard",
+  "refresh-final",
+  "synthesis-cancel",
   "pagination",
   "follow-up",
   "incomplete",
@@ -110,7 +120,14 @@ for (const scenario of [
     const queries: any[] = [];
     const errors: unknown[] = [];
     const calls: { name: string; args: any }[] = [];
-    const plan = () => calls.push({ name: "update_research", args: initial });
+    const pagination = ["pagination", "refresh-required"].includes(scenario)
+      ? { paginationReason: "User requested every archive record." }
+      : {};
+    const plan = () =>
+      calls.push({
+        name: "update_research",
+        args: { ...initial, ...pagination },
+      });
     const read = (args: any = { period }) =>
       calls.push({ name: "echo_inbox_messages", args });
     const refresh = () =>
@@ -119,7 +136,15 @@ for (const scenario of [
         args:
           scenario === "incomplete"
             ? { ...updated, gaps: ["Earlier records remain unread"] }
-            : updated,
+            : {
+                ...updated,
+                ...pagination,
+                ...(scenario === "large-draft"
+                  ? {
+                      draft: `## Archive\n\n- ${"Botanical findings. ".repeat(180)} ${draft}`,
+                    }
+                  : {}),
+              },
       });
     if (scenario === "plan-required") read();
     plan();
@@ -140,6 +165,7 @@ for (const scenario of [
       refresh();
     } else {
       read();
+      if (scenario === "pagination-guard") read({ period, cursor: 20 });
       if (
         ![
           "no-draft",
@@ -157,6 +183,7 @@ for (const scenario of [
         refresh();
       }
     }
+    if (scenario === "refresh-final") read({ period, search: "late survey" });
     if (scenario === "empty-refresh")
       calls.push({ name: "update_research", args: initial });
     if (scenario === "tool-limit") {
@@ -228,6 +255,10 @@ for (const scenario of [
                   message_uuid: `archive-${index + 1}`,
                   text:
                     "The archive received a botanical survey. " +
+                    (scenario === "long-evidence"
+                      ? "Archive context. ".repeat(100) +
+                        "TAIL_FACT: the greenhouse reopened. "
+                      : "") +
                     (scenario === "checkpoint-failure"
                       ? "Synthetic archive text. ".repeat(240)
                       : ""),
@@ -276,9 +307,28 @@ for (const scenario of [
           if (scenario === "user-map")
             assert.ok(JSON.stringify(body).includes(`echo-map:${mapId}`));
           synthesisCalls++;
-          assert.equal(synthesisCalls, 1);
-          assert.ok((body.max_tokens ?? body.max_completion_tokens) <= 2048);
+          assert.ok(synthesisCalls <= 2);
+          assert.ok((body.max_tokens ?? body.max_completion_tokens) <= 8192);
           assert.ok(!body.tools?.length);
+          if (scenario === "refresh-final")
+            assert.ok(JSON.stringify(body).includes("LATEST_DRAFT"));
+          if (scenario === "long-evidence")
+            assert.ok(JSON.stringify(body).includes("TAIL_FACT"));
+          if (scenario === "synthesis-cancel") process.emit("SIGTERM");
+          if (synthesisCalls === 1) {
+            if (scenario === "retry-deadline") clockOffset += 61_000;
+            if (["retry-length", "retry-deadline"].includes(scenario))
+              return stream("UNFINISHED", undefined, "length");
+            if (scenario === "retry-citation")
+              return stream("Invalid [source](/rer-analysis-neo?m=missing)");
+            if (scenario === "retry-empty") return stream("");
+            if (scenario === "retry-stream")
+              return new Response(
+                'data: {"choices":[{"index":0,"delta":{"content":"UNFINISHED"}}]}\n\ndata: [DONE]\n\n',
+                { headers: { "content-type": "text/event-stream" } },
+              );
+          }
+
           assert.ok(!JSON.stringify(body).includes("UNFINISHED_CHECKPOINT"));
           if (scenario === "denied" || scenario === "filtered")
             return Response.json(
@@ -291,9 +341,12 @@ for (const scenario of [
               { status: scenario === "denied" ? 403 : 400 },
             );
           if (
-            ["synthesis-failure", "empty-refresh", "no-draft"].includes(
-              scenario,
-            )
+            [
+              "synthesis-failure",
+              "empty-refresh",
+              "no-draft",
+              "large-draft",
+            ].includes(scenario)
           )
             return stream("UNFINISHED_ANSWER", undefined, "length");
           if (scenario === "invalid-synthesis")
@@ -348,6 +401,18 @@ for (const scenario of [
               },
             });
           }
+        }
+        if (
+          scenario === "refresh-final" &&
+          body.messages.at(-1)?.role === "user" &&
+          JSON.stringify(body.messages.at(-1)?.content).includes(
+            "Before final synthesis",
+          )
+        ) {
+          return stream("", {
+            name: "update_research",
+            args: { ...updated, draft: `LATEST_DRAFT ${draft}` },
+          });
         }
         const call = calls.shift();
         return stream("PRIVATE_RESEARCH_NARRATION", call);
@@ -442,7 +507,13 @@ for (const scenario of [
       (event) => event.type === "assistant_snapshot",
     )?.text;
     if (
-      ["denied", "filtered", "persistence-failure", "cancel"].includes(scenario)
+      [
+        "denied",
+        "filtered",
+        "persistence-failure",
+        "cancel",
+        "synthesis-cancel",
+      ].includes(scenario)
     ) {
       assert.equal(answer, undefined);
       if (scenario === "cancel" || scenario === "persistence-failure")
@@ -450,6 +521,31 @@ for (const scenario of [
       return;
     }
     assert.ok(answer);
+    const diagnostics = events.filter(
+      (event) => event.type === "completion_diagnostic",
+    );
+    assert.ok(diagnostics.some((event) => event.stage === "answer"));
+    if (
+      [
+        "retry-length",
+        "retry-citation",
+        "retry-empty",
+        "retry-stream",
+      ].includes(scenario)
+    ) {
+      assert.equal(synthesisCalls, 2);
+      assert.equal(diagnostics.at(-1).outcome, "complete");
+    }
+    if (scenario === "retry-deadline") {
+      assert.equal(synthesisCalls, 1);
+      assert.equal(diagnostics.at(-1).outcome, "fallback");
+    }
+    if (scenario === "pagination-guard") assert.equal(queries.length, 1);
+    if (scenario === "large-draft") {
+      assert.ok(answer.length > 3000);
+      assert.ok(answer.startsWith("## Archive"));
+    }
+
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
