@@ -88,7 +88,8 @@ pub(super) fn handler(
             pending_expires_in: DEVICE_AUDIO_PENDING_TTL,
             completed_expires_in: DEVICE_AUDIO_COMPLETED_TTL,
         },
-    ))
+    )
+    .with_finalization_database(runtime.file_database().c(h!())?.clone()))
 }
 
 pub(super) async fn open_completed(
@@ -96,18 +97,53 @@ pub(super) async fn open_completed(
     actor_id: Uuid,
     device_id: Uuid,
     upload_url: &str,
-) -> anyhow::Result<(TusUpload, impl Send + Sync + 'static)> {
+) -> anyhow::Result<(
+    TusUpload,
+    crate::sigint::file_upload::lifecycle::UploadLock,
+)> {
+    let (upload, guard) =
+        lock_completed(runtime, actor_id, device_id, upload_url, None)
+            .await
+            .c(h!())?;
+    validate_locked_source(&upload).await.c(h!())?;
+    Ok((upload, guard))
+}
+
+pub(super) async fn lock_completed(
+    runtime: &DeviceAudioRuntime,
+    actor_id: Uuid,
+    device_id: Uuid,
+    upload_url: &str,
+    deadline: Option<std::time::Instant>,
+) -> anyhow::Result<(
+    TusUpload,
+    crate::sigint::file_upload::lifecycle::UploadLock,
+)> {
     let handler = handler(runtime, device_id).c(h!())?;
+    let handler = match deadline {
+        Some(deadline) => handler.with_source_lock_deadline(deadline),
+        None => handler,
+    };
     let upload = resolve_completed(&handler, actor_id, device_id, upload_url)
         .await
         .c(h!())?;
-    let guard =
-        crate::sigint::file_upload::lock_uploaded_source(&upload.file_path)
+    let guard = match deadline {
+        Some(deadline) => {
+            crate::sigint::file_upload::lock_uploaded_source_until(
+                &upload.file_path,
+                deadline,
+            )
             .await
             .c(h!())?
-            .ok_or(crate::error::AppError::NotFound)
-            .c(h!())?;
-    validate_locked_source(&upload).await.c(h!())?;
+        }
+        None => {
+            crate::sigint::file_upload::lock_uploaded_source(&upload.file_path)
+                .await
+                .c(h!())?
+        }
+    }
+    .ok_or(crate::error::AppError::NotFound)
+    .c(h!())?;
     Ok((upload, guard))
 }
 

@@ -1,4 +1,7 @@
 use super::*;
+use crate::devices::upload_finalization::resources::{
+    OperationGuard, ResourceGuard, ResourceKind,
+};
 use sha2::{Digest, Sha256};
 use tokio::sync::OwnedSemaphorePermit;
 
@@ -11,13 +14,35 @@ pub(super) struct SourceFingerprint {
 pub(super) struct PreparedSource {
     pub fingerprint: SourceFingerprint,
     pub bytes: actix_web::web::Bytes,
-    pub admission: Arc<OwnedSemaphorePermit>,
+    pub admission: OperationGuard,
+}
+
+pub(super) struct StorageAdmission {
+    encryption: Option<ResourceGuard>,
+    readback: Option<ResourceGuard>,
+}
+
+pub(super) async fn reserve_storage(
+    runtime: &DeviceAudioRuntime,
+) -> anyhow::Result<StorageAdmission> {
+    let encryption = runtime
+        .finalization_slot(ResourceKind::Encryption)
+        .await
+        .c(h!())?;
+    let readback = runtime
+        .finalization_slot(ResourceKind::Readback)
+        .await
+        .c(h!())?;
+    Ok(StorageAdmission {
+        encryption,
+        readback,
+    })
 }
 
 pub(super) async fn prepare_source(
     path: PathBuf,
     size: u64,
-    admission: Arc<OwnedSemaphorePermit>,
+    admission: OperationGuard,
 ) -> anyhow::Result<PreparedSource> {
     validate_size(size).c(h!())?;
     tokio::task::spawn_blocking(move || {
@@ -49,6 +74,7 @@ pub(super) async fn store_and_verify(
     runtime: Arc<DeviceAudioRuntime>,
     key: String,
     source: PreparedSource,
+    capacity: StorageAdmission,
 ) -> anyhow::Result<()> {
     validate_size(source.fingerprint.size_bytes).c(h!())?;
     runtime.byte_store().c(h!())?;
@@ -59,16 +85,23 @@ pub(super) async fn store_and_verify(
             fingerprint,
             admission,
         } = source;
-        let _admission = admission;
-        crate::storage::upload_encrypted_to_s3_with_operator(
+        let StorageAdmission {
+            encryption: encryption_slot,
+            readback,
+        } = capacity;
+        let encryption: OperationGuard =
+            Arc::new((admission.clone(), encryption_slot));
+        crate::storage::upload_encrypted_to_s3_with_admission(
             &Some(store.operator.clone()),
             &store.config,
             &store.strongbox_key,
             &key,
             bytes,
+            Some(encryption.clone()),
         )
         .await
         .c(h!())?;
+        drop(encryption);
         let permit = runtime
             .decrypt_permits
             .clone()
@@ -76,7 +109,8 @@ pub(super) async fn store_and_verify(
             .await
             .map_err(|_| unavailable("audio decryption is unavailable"))
             .c(h!())?;
-        verified_content_with_permit(runtime, key, fingerprint, permit)
+        let admission: OperationGuard = Arc::new((admission, readback, permit));
+        verified_content_with_admission(runtime, key, fingerprint, admission)
             .await
             .c(h!())?;
         Ok(())
@@ -110,9 +144,18 @@ pub(super) async fn verified_content_with_permit(
     expected: SourceFingerprint,
     permit: OwnedSemaphorePermit,
 ) -> anyhow::Result<Vec<u8>> {
+    verified_content_with_admission(runtime, key, expected, Arc::new(permit))
+        .await
+}
+
+async fn verified_content_with_admission(
+    runtime: Arc<DeviceAudioRuntime>,
+    key: String,
+    expected: SourceFingerprint,
+    permit: OperationGuard,
+) -> anyhow::Result<Vec<u8>> {
     tokio::spawn(async move {
         let store = runtime.byte_store().c(h!())?;
-        let permit = Arc::new(permit);
         let plaintext = crate::storage::download_and_decrypt_with_admission(
             &store.operator,
             &store.config,

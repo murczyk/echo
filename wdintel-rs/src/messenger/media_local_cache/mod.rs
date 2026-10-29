@@ -138,6 +138,11 @@ pub(crate) async fn ready_object(
         .c(h!())
 }
 
+enum StageSource<'a> {
+    Path { path: &'a Path, sealed: bool },
+    OpenFile(Option<fs::File>),
+}
+
 pub(crate) async fn retain_object_best_effort(
     config: &Config,
     key: &str,
@@ -146,11 +151,52 @@ pub(crate) async fn retain_object_best_effort(
     source: &Path,
     published_at: i64,
 ) {
+    retain_source_best_effort(
+        config,
+        key,
+        size,
+        encrypted,
+        StageSource::Path {
+            path: source,
+            sealed: true,
+        },
+        published_at,
+    )
+    .await;
+}
+
+pub(crate) async fn retain_open_object_best_effort(
+    config: &Config,
+    key: &str,
+    size: i64,
+    encrypted: bool,
+    source: Option<fs::File>,
+    published_at: i64,
+) {
+    retain_source_best_effort(
+        config,
+        key,
+        size,
+        encrypted,
+        StageSource::OpenFile(source),
+        published_at,
+    )
+    .await;
+}
+
+async fn retain_source_best_effort(
+    config: &Config,
+    key: &str,
+    size: i64,
+    encrypted: bool,
+    source: StageSource<'_>,
+    published_at: i64,
+) {
     if !enabled(config) {
         return;
     }
     let result = async {
-        stage_upload(config, key, size, encrypted, source, true)
+        stage_from_source(config, key, size, encrypted, source)
             .await
             .c(h!())?;
         pin_object(
@@ -195,6 +241,27 @@ async fn stage_upload(
     source: &Path,
     sealed: bool,
 ) -> Result<()> {
+    stage_from_source(
+        config,
+        key,
+        size,
+        encrypted,
+        StageSource::Path {
+            path: source,
+            sealed,
+        },
+    )
+    .await
+    .c(h!())
+}
+
+async fn stage_from_source(
+    config: &Config,
+    key: &str,
+    size: i64,
+    encrypted: bool,
+    source: StageSource<'_>,
+) -> Result<()> {
     files::ensure_root(config).await.c(h!())?;
     let entry =
         Entry::new(config, key, u64::try_from(size).c(h!())?, encrypted)
@@ -207,9 +274,18 @@ async fn stage_upload(
         files::reserve(config, &entry, entry.size).await.c(h!())?;
     let temporary = TemporaryFile(entry.path("original.tmp"));
     files::remove_if_present(&temporary.0).await.c(h!())?;
-    stage_source(source, &temporary.0, entry.size, sealed)
-        .await
-        .c(h!())?;
+    match source {
+        StageSource::Path { path, sealed } => {
+            stage_source(path, &temporary.0, entry.size, sealed)
+                .await
+                .c(h!())?;
+        }
+        StageSource::OpenFile(source) => {
+            stage_open_source(source, &temporary.0, entry.size)
+                .await
+                .c(h!())?;
+        }
+    }
     fs::rename(&temporary.0, entry.path("original"))
         .await
         .c(h!())?;
@@ -258,6 +334,35 @@ async fn stage_source(
         .open(source)
         .await
         .c(h!())?;
+    let mut source = source.take(expected_size.saturating_add(1));
+    let mut target = files::create_private_file(target).await.c(h!())?;
+    let copied = tokio::io::copy(&mut source, &mut target).await.c(h!())?;
+    if copied != expected_size {
+        bail!("local attachment cache size mismatch")
+    }
+    target.sync_all().await.c(h!())
+}
+
+async fn stage_open_source(
+    source: Option<fs::File>,
+    target: &Path,
+    expected_size: u64,
+) -> Result<()> {
+    let Some(source) = source else {
+        if expected_size != 0 {
+            bail!("local attachment source is unavailable");
+        }
+        return files::create_private_file(target)
+            .await
+            .c(h!())?
+            .sync_all()
+            .await
+            .c(h!());
+    };
+    let metadata = source.metadata().await.c(h!())?;
+    if !metadata.is_file() || metadata.len() != expected_size {
+        bail!("local attachment source changed before cache staging");
+    }
     let mut source = source.take(expected_size.saturating_add(1));
     let mut target = files::create_private_file(target).await.c(h!())?;
     let copied = tokio::io::copy(&mut source, &mut target).await.c(h!())?;

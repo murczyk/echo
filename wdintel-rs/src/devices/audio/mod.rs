@@ -1,9 +1,15 @@
+mod async_adoption;
+pub(in crate::devices) mod async_cleanup;
+mod async_finalizer;
+mod async_ingest;
+mod async_publication;
 mod bl;
 mod content;
 pub(crate) use content::message_representation;
 mod cursor;
 pub(crate) mod forwarding;
-mod ingest;
+pub(in crate::devices) mod ingest;
+pub(crate) mod pin;
 mod preparation;
 mod probe;
 mod query;
@@ -19,6 +25,9 @@ pub(crate) use upload::routes as upload_routes;
 pub(crate) fn routes() -> impl actix_web::dev::HttpServiceFactory {
     (
         actix_web::web::resource("/api/device/audio/receive")
+            .wrap(actix_web::middleware::from_fn(
+                crate::devices::upload_finalization::ingress::audio,
+            ))
             .route(actix_web::web::post().to(receive_http)),
         actix_web::web::resource("/api/device/audio/list")
             .route(actix_web::web::post().to(list_http)),
@@ -97,10 +106,10 @@ async fn detail_http(
 async fn receive_http(
     env: actix_web::web::Data<crate::types::Env>,
     user: actix_identity::Identity,
-    request: actix_web::web::Json<types::ReceiveDeviceAudioReq>,
+    request: actix_web::web::Json<types::ReceiveDeviceAudioBody>,
 ) -> Result<HttpResponse, DeviceAudioHttpError> {
     let actor_id = crate::users::login_id_from_identity(&user).c(h!())?;
-    let request = request.into_inner();
+    let request = request.into_inner().0;
     let command = types::ReceiveDeviceAudioCommand {
         device_id: crate::devices::types::parse_uuid(&request.device_id),
         upload_url: request.upload_url,
@@ -111,6 +120,16 @@ async fn receive_http(
         .c(h!())?
         .with_timezone(&chrono::Utc),
     };
+    if request.async_finalization {
+        return Ok(
+            match async_ingest::receive(&env, actor_id, command).await {
+                Ok(response) => response,
+                Err(error) => async_ingest::no_store(
+                    DeviceAudioHttpError::from(error).error_response(),
+                ),
+            },
+        );
+    }
     match receive(&env.device_audio, actor_id, command)
         .await
         .c(h!())?
@@ -334,7 +353,9 @@ pub(crate) struct DeviceAudioRuntime {
     dbx: DatabaseConnection,
     files: Option<FileRegistryDb>,
     storage: Option<DeviceAudioByteStore>,
+    managed_storage: Option<Arc<crate::storage::finalization::ManagedStorage>>,
     storage_dir: PathBuf,
+    finalization_settings: crate::types::DeviceUploadFinalizationSettings,
     receive_permits: Arc<Semaphore>,
     probe_permits: Arc<Semaphore>,
     decrypt_permits: Arc<Semaphore>,
@@ -367,11 +388,29 @@ pub(crate) fn build_runtime(
             None
         }
     });
+    let managed_storage = storage.as_ref().and_then(|store| {
+        match crate::storage::finalization::ManagedStorage::new(
+            store.config.clone(),
+            &store.strongbox_key,
+        ) {
+            Ok(storage) => Some(Arc::new(storage)),
+            Err(error) => {
+                log::warn!("managed audio storage unavailable: {error:#}");
+                None
+            }
+        }
+    });
     Arc::new(DeviceAudioRuntime {
+        managed_storage,
         dbx: dbx.clone(),
         files: files.cloned(),
         storage,
         storage_dir: PathBuf::from(&config.storage_dir),
+        finalization_settings: config
+            .device_upload_finalization
+            .clone()
+            .filter(crate::types::DeviceUploadFinalizationSettings::is_valid)
+            .unwrap_or_default(),
         receive_permits: Arc::new(Semaphore::new(
             DEVICE_AUDIO_RECEIVE_CONCURRENCY,
         )),
@@ -426,6 +465,20 @@ fn unavailable(message: &str) -> AppError {
 }
 
 impl DeviceAudioRuntime {
+    async fn finalization_slot(
+        &self,
+        kind: crate::devices::upload_finalization::resources::ResourceKind,
+    ) -> anyhow::Result<
+        Option<crate::devices::upload_finalization::resources::ResourceGuard>,
+    > {
+        crate::devices::upload_finalization::resources::legacy_slot_with_settings(
+            &self.storage_dir,
+            self.file_database().c(h!())?,
+            &self.finalization_settings,
+            kind,
+        ).await.map_err(|_| unavailable("finalization resources are busy").into())
+    }
+
     fn file_database(&self) -> anyhow::Result<&DatabaseConnection> {
         let files = self
             .files

@@ -38,10 +38,15 @@ mod m20261016_165725_device_audio_transcription_pending;
 
 mod m20261016_172538_retire_device_audio_asr_executor;
 
+mod m20261014_182354_device_upload_finalization;
 mod m20261017_101924_drop_device_audio_transcription_backfill;
 mod m20261019_101619_file_archive_registry;
 mod m20261024_090745_device_content_stats;
 mod m20261024_090746_device_content_stats_pending_index;
+mod m20261027_092423_failed_finalization_cleanup;
+mod m20261027_093747_file_finalization_ownership;
+mod m20261027_112601_synchronous_finalization_adoption;
+mod m20261028_153759_finalization_terminal_metrics;
 
 pub struct Migrator;
 
@@ -102,6 +107,11 @@ impl MigratorTrait for Migrator {
             Box::new(m20261023_071318_device_audio_forwarding::Migration),
             Box::new(m20261024_090745_device_content_stats::Migration),
             Box::new(m20261024_090746_device_content_stats_pending_index::Migration),
+            Box::new(m20261014_182354_device_upload_finalization::Migration),
+            Box::new(m20261027_092423_failed_finalization_cleanup::Migration),
+            Box::new(m20261027_093747_file_finalization_ownership::Migration),
+            Box::new(m20261027_112601_synchronous_finalization_adoption::Migration),
+            Box::new(m20261028_153759_finalization_terminal_metrics::Migration),
         ]
     }
 }

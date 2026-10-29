@@ -209,6 +209,23 @@ async fn cleanup_attempt(
     candidate: &device_audio_ingest::Model,
     hooks: &CleanupHooks,
 ) -> anyhow::Result<&'static str> {
+    if let Some((job, _)) =
+        crate::devices::upload_finalization::query::read_audio_job(
+            runtime.file_database().c(h!())?,
+            candidate.device_id,
+            candidate.tus_upload_id,
+        )
+        .await
+        .c(h!())?
+    {
+        if !job.is_sync_adoption()
+            || job.audio_id != Some(candidate.audio_id)
+            || job.created_by_login_id != candidate.actor_id
+            || candidate.status != "ready"
+        {
+            return Ok("deferred");
+        }
+    }
     let source = match cleanup_source(runtime, candidate).await {
         Ok(source) => source,
         Err(error) if busy(&error) => return Ok("deferred"),
@@ -298,6 +315,12 @@ async fn claim_deleting(
         .c(h!())?
         .is_some()
     {
+        return Ok(None);
+    }
+    let owned: bool = sqlx::query_scalar("select exists(select 1 from device_upload_finalization_job where kind='audio' and source_identity=$1)")
+        .bind(format!("{}/{}", attempt.device_id, attempt.tus_upload_id))
+        .fetch_one(runtime.file_database().c(h!())?.get_postgres_connection_pool()).await.c(h!())?;
+    if owned {
         return Ok(None);
     }
     let now = Utc::now();

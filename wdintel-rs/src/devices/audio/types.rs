@@ -229,12 +229,47 @@ pub struct DeviceAudioPreparation {
 #[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReceiveDeviceAudioReq {
+    #[serde(default)]
+    pub async_finalization: bool,
     #[serde(deserialize_with = "deserialize_canonical_uuid")]
     pub device_id: String,
     pub upload_url: String,
     pub name: String,
     #[serde(deserialize_with = "deserialize_recording_start")]
     pub recording_started_at: String,
+}
+
+pub(super) struct ReceiveDeviceAudioBody(pub ReceiveDeviceAudioReq);
+
+impl<'de> Deserialize<'de> for ReceiveDeviceAudioBody {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Self, D::Error> {
+        struct ObjectVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for ObjectVisitor {
+            type Value = ReceiveDeviceAudioBody;
+
+            fn expecting(
+                &self,
+                formatter: &mut std::fmt::Formatter,
+            ) -> std::fmt::Result {
+                formatter.write_str("an audio receive request object")
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                map: M,
+            ) -> Result<Self::Value, M::Error> {
+                ReceiveDeviceAudioReq::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )
+                .map(ReceiveDeviceAudioBody)
+            }
+        }
+
+        deserializer.deserialize_map(ObjectVisitor)
+    }
 }
 
 fn deserialize_recording_start<'de, D: serde::Deserializer<'de>>(

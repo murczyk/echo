@@ -7,6 +7,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use crate::devices::upload_finalization::ingress::{self, AdmissionOutcome};
 use crate::error::AppError;
 use crate::tus::{format_upload_expires, TUS_VERSION};
 
@@ -36,6 +37,7 @@ pub(crate) struct ContentError {
     code: Option<&'static str>,
     headers: Vec<(HeaderName, String)>,
     app_error: Option<AppError>,
+    finalization_outcome: Option<AdmissionOutcome>,
 }
 
 impl ContentError {
@@ -66,6 +68,7 @@ impl ContentError {
             code,
             headers: Vec::new(),
             app_error: None,
+            finalization_outcome: None,
         }
     }
 
@@ -95,6 +98,7 @@ impl ContentError {
             code: None,
             headers: Vec::new(),
             app_error: Some(error),
+            finalization_outcome: None,
         }
     }
 
@@ -111,12 +115,21 @@ impl ContentError {
         self
     }
 
+    pub(crate) fn with_finalization_outcome(
+        mut self,
+        outcome: AdmissionOutcome,
+    ) -> Self {
+        self.finalization_outcome = Some(outcome);
+        self
+    }
+
     fn domain(status: StatusCode, code: &'static str) -> Self {
         Self {
             status,
             code: Some(code),
             headers: Vec::new(),
             app_error: None,
+            finalization_outcome: None,
         }
     }
 }
@@ -257,6 +270,7 @@ fn render_error(error: ContentError) -> HttpResponse {
         code,
         headers,
         app_error,
+        finalization_outcome,
     } = error;
     let mut response = if let Some(app_error) = app_error {
         app_error.error_response()
@@ -269,6 +283,9 @@ fn render_error(error: ContentError) -> HttpResponse {
         if let Ok(value) = HeaderValue::from_str(&value) {
             response.headers_mut().insert(name, value);
         }
+    }
+    if let Some(outcome) = finalization_outcome {
+        return ingress::mark_response(response, outcome);
     }
     response
 }

@@ -7338,7 +7338,8 @@ deviceAudioPreparationStateEncoder enum =
             Json.Encode.string "failed"
 
 type alias ReceiveDeviceAudioReq =
-    { deviceId : String
+    { asyncFinalization : Bool
+    , deviceId : String
     , uploadUrl : String
     , name : String
     , recordingStartedAt : String
@@ -7348,12 +7349,191 @@ type alias ReceiveDeviceAudioReq =
 receiveDeviceAudioReqEncoder : ReceiveDeviceAudioReq -> Json.Encode.Value
 receiveDeviceAudioReqEncoder struct =
     Json.Encode.object
-        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        [ ( "async_finalization", (Json.Encode.bool) struct.asyncFinalization )
+        , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "upload_url", (Json.Encode.string) struct.uploadUrl )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "recording_started_at", (Json.Encode.string) struct.recordingStartedAt )
         ]
 
+
+type alias CompleteDeviceFileUploadReq =
+    { asyncFinalization : Bool
+    }
+
+
+completeDeviceFileUploadReqEncoder : CompleteDeviceFileUploadReq -> Json.Encode.Value
+completeDeviceFileUploadReqEncoder struct =
+    Json.Encode.object
+        [ ( "async_finalization", (Json.Encode.bool) struct.asyncFinalization )
+        ]
+
+
+type FinalizationKind
+    = FinalizationFileKind
+    | FinalizationAudioKind
+
+
+finalizationKindEncoder : FinalizationKind -> Json.Encode.Value
+finalizationKindEncoder enum =
+    case enum of
+        FinalizationFileKind ->
+            Json.Encode.string "file"
+        FinalizationAudioKind ->
+            Json.Encode.string "audio"
+
+type alias QueuedAcknowledgement =
+    { status : QueuedStatus
+    , jobId : String
+    }
+
+
+queuedAcknowledgementEncoder : QueuedAcknowledgement -> Json.Encode.Value
+queuedAcknowledgementEncoder struct =
+    Json.Encode.object
+        [ ( "status", (queuedStatusEncoder) struct.status )
+        , ( "job_id", (Json.Encode.string) struct.jobId )
+        ]
+
+
+type QueuedStatus
+    = FinalizationQueuedAcknowledgement
+
+
+queuedStatusEncoder : QueuedStatus -> Json.Encode.Value
+queuedStatusEncoder enum =
+    case enum of
+        FinalizationQueuedAcknowledgement ->
+            Json.Encode.string "queued"
+
+type FinalizationStatus
+    = FinalizationQueued
+    | FinalizationProcessing
+    | FinalizationRetryWait
+    | FinalizationOutcomeUnknown
+    | FinalizationCompleted
+    | FinalizationFailed
+
+
+finalizationStatusEncoder : FinalizationStatus -> Json.Encode.Value
+finalizationStatusEncoder enum =
+    case enum of
+        FinalizationQueued ->
+            Json.Encode.string "queued"
+        FinalizationProcessing ->
+            Json.Encode.string "processing"
+        FinalizationRetryWait ->
+            Json.Encode.string "retry_wait"
+        FinalizationOutcomeUnknown ->
+            Json.Encode.string "outcome_unknown"
+        FinalizationCompleted ->
+            Json.Encode.string "completed"
+        FinalizationFailed ->
+            Json.Encode.string "failed"
+
+type alias FinalizationJobSnapshot =
+    { jobId : String
+    , kind : FinalizationKind
+    , status : FinalizationStatus
+    , createdAt : String
+    , updatedAt : String
+    , finishedAt : Maybe (String)
+    , retryAfterSeconds : Maybe (Int)
+    , result : Maybe (FinalizationResult)
+    , error : Maybe (FinalizationError)
+    }
+
+
+finalizationJobSnapshotEncoder : FinalizationJobSnapshot -> Json.Encode.Value
+finalizationJobSnapshotEncoder struct =
+    Json.Encode.object
+        [ ( "job_id", (Json.Encode.string) struct.jobId )
+        , ( "kind", (finalizationKindEncoder) struct.kind )
+        , ( "status", (finalizationStatusEncoder) struct.status )
+        , ( "created_at", (Json.Encode.string) struct.createdAt )
+        , ( "updated_at", (Json.Encode.string) struct.updatedAt )
+        , ( "finished_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.finishedAt )
+        , ( "retry_after_seconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.retryAfterSeconds )
+        , ( "result", (Maybe.withDefault Json.Encode.null << Maybe.map (finalizationResultEncoder)) struct.result )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (finalizationErrorEncoder)) struct.error )
+        ]
+
+
+type FinalizationResult
+    = FinalizationFileResult (FinalizationFileReceipt)
+    | FinalizationAudioResult (ReceiveDeviceAudioRsp)
+
+
+finalizationResultEncoder : FinalizationResult -> Json.Encode.Value
+finalizationResultEncoder enum =
+    case enum of
+        FinalizationFileResult inner ->
+            finalizationFileReceiptEncoder inner
+        FinalizationAudioResult inner ->
+            receiveDeviceAudioRspEncoder inner
+
+type alias FinalizationFileReceipt =
+    { uploadId : String
+    , fileId : String
+    , revision : Int
+    , status : CompletedStatus
+    }
+
+
+finalizationFileReceiptEncoder : FinalizationFileReceipt -> Json.Encode.Value
+finalizationFileReceiptEncoder struct =
+    Json.Encode.object
+        [ ( "upload_id", (Json.Encode.string) struct.uploadId )
+        , ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "status", (completedStatusEncoder) struct.status )
+        ]
+
+
+type CompletedStatus
+    = FinalizationFileCompleted
+
+
+completedStatusEncoder : CompletedStatus -> Json.Encode.Value
+completedStatusEncoder enum =
+    case enum of
+        FinalizationFileCompleted ->
+            Json.Encode.string "completed"
+
+type alias FinalizationError =
+    { code : String
+    , message : String
+    , action : FinalizationAction
+    }
+
+
+finalizationErrorEncoder : FinalizationError -> Json.Encode.Value
+finalizationErrorEncoder struct =
+    Json.Encode.object
+        [ ( "code", (Json.Encode.string) struct.code )
+        , ( "message", (Json.Encode.string) struct.message )
+        , ( "action", (finalizationActionEncoder) struct.action )
+        ]
+
+
+type FinalizationAction
+    = FinalizationRetryPoll
+    | FinalizationNewUpload
+    | FinalizationCorrectRequest
+    | FinalizationContactOperator
+
+
+finalizationActionEncoder : FinalizationAction -> Json.Encode.Value
+finalizationActionEncoder enum =
+    case enum of
+        FinalizationRetryPoll ->
+            Json.Encode.string "retry_poll"
+        FinalizationNewUpload ->
+            Json.Encode.string "new_upload"
+        FinalizationCorrectRequest ->
+            Json.Encode.string "correct_request"
+        FinalizationContactOperator ->
+            Json.Encode.string "contact_operator"
 
 type alias ReceiveDeviceAudioRsp =
     { audio : DeviceAudio
@@ -24215,11 +24395,214 @@ deviceAudioPreparationStateDecoder =
 receiveDeviceAudioReqDecoder : Json.Decode.Decoder ReceiveDeviceAudioReq
 receiveDeviceAudioReqDecoder =
     Json.Decode.succeed ReceiveDeviceAudioReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "async_finalization" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_url" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "recording_started_at" (Json.Decode.string)))
 
+
+completeDeviceFileUploadReqDecoder : Json.Decode.Decoder CompleteDeviceFileUploadReq
+completeDeviceFileUploadReqDecoder =
+    Json.Decode.succeed CompleteDeviceFileUploadReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "async_finalization" (Json.Decode.bool)))
+
+
+finalizationKindDecoder : Json.Decode.Decoder FinalizationKind
+finalizationKindDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "file" ->
+                            Json.Decode.succeed FinalizationFileKind
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "audio" ->
+                            Json.Decode.succeed FinalizationAudioKind
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+queuedAcknowledgementDecoder : Json.Decode.Decoder QueuedAcknowledgement
+queuedAcknowledgementDecoder =
+    Json.Decode.succeed QueuedAcknowledgement
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (queuedStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "job_id" (Json.Decode.string)))
+
+
+queuedStatusDecoder : Json.Decode.Decoder QueuedStatus
+queuedStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed FinalizationQueuedAcknowledgement
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+finalizationStatusDecoder : Json.Decode.Decoder FinalizationStatus
+finalizationStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "queued" ->
+                            Json.Decode.succeed FinalizationQueued
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "processing" ->
+                            Json.Decode.succeed FinalizationProcessing
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_wait" ->
+                            Json.Decode.succeed FinalizationRetryWait
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "outcome_unknown" ->
+                            Json.Decode.succeed FinalizationOutcomeUnknown
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "completed" ->
+                            Json.Decode.succeed FinalizationCompleted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "failed" ->
+                            Json.Decode.succeed FinalizationFailed
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+finalizationJobSnapshotDecoder : Json.Decode.Decoder FinalizationJobSnapshot
+finalizationJobSnapshotDecoder =
+    Json.Decode.succeed FinalizationJobSnapshot
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "job_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (finalizationKindDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (finalizationStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "finished_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retry_after_seconds" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "result" (Json.Decode.nullable (finalizationResultDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (finalizationErrorDecoder))))
+
+
+finalizationResultDecoder : Json.Decode.Decoder FinalizationResult
+finalizationResultDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.map FinalizationFileResult (finalizationFileReceiptDecoder)
+    , Json.Decode.map FinalizationAudioResult (receiveDeviceAudioRspDecoder)
+        ]
+
+finalizationFileReceiptDecoder : Json.Decode.Decoder FinalizationFileReceipt
+finalizationFileReceiptDecoder =
+    Json.Decode.succeed FinalizationFileReceipt
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "upload_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (completedStatusDecoder)))
+
+
+completedStatusDecoder : Json.Decode.Decoder CompletedStatus
+completedStatusDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "completed" ->
+                            Json.Decode.succeed FinalizationFileCompleted
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+finalizationErrorDecoder : Json.Decode.Decoder FinalizationError
+finalizationErrorDecoder =
+    Json.Decode.succeed FinalizationError
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "code" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "action" (finalizationActionDecoder)))
+
+
+finalizationActionDecoder : Json.Decode.Decoder FinalizationAction
+finalizationActionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "retry_poll" ->
+                            Json.Decode.succeed FinalizationRetryPoll
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "new_upload" ->
+                            Json.Decode.succeed FinalizationNewUpload
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "correct_request" ->
+                            Json.Decode.succeed FinalizationCorrectRequest
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "contact_operator" ->
+                            Json.Decode.succeed FinalizationContactOperator
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 receiveDeviceAudioRspDecoder : Json.Decode.Decoder ReceiveDeviceAudioRsp
 receiveDeviceAudioRspDecoder =

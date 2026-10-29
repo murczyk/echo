@@ -1,4 +1,6 @@
-mod finalizer;
+pub(in crate::devices) mod async_cleanup;
+mod async_finalizer;
+pub(in crate::devices) mod finalizer;
 pub(in crate::devices) mod local_cache;
 mod preview;
 mod preview_cache;
@@ -32,8 +34,11 @@ use self::repository::{
     CreateOutcome, NewUpload, RevalidateOutcome, Upload, UploadStatus,
 };
 use self::spool::{AcquireError, AppendError, LockedSpool, Spool};
-use crate::config::{Config, ContentLimitsConfig};
+use crate::config::{
+    Config, ContentLimitsConfig, DEVICE_UPLOAD_FINALIZATION_COMPLETE_BODY_BYTES,
+};
 use crate::devices::config::*;
+use crate::devices::upload_finalization::types::CompleteDeviceFileUploadReq;
 use crate::error::AppError;
 use crate::file_registry::FileRegistryDb;
 use crate::h;
@@ -53,6 +58,7 @@ pub(crate) struct DeviceFileContentRuntime {
     spool: Spool,
     storage: Operator,
     storage_config: S3Config,
+    managed_storage: Arc<crate::storage::finalization::ManagedStorage>,
     strongbox_key: String,
     file_registry_db: FileRegistryDb,
     finalization_permits: Arc<Semaphore>,
@@ -145,6 +151,13 @@ async fn try_build_runtime(
         config: limits.clone(),
         spool,
         storage: s3,
+        managed_storage: Arc::new(
+            crate::storage::finalization::ManagedStorage::new(
+                storage_config.clone(),
+                &raw_s3.strongbox_key,
+            )
+            .map_err(|error| AppError::from(error.context(h!())))?,
+        ),
         storage_config,
         strongbox_key: raw_s3.strongbox_key.clone(),
         file_registry_db: file_registry_db.clone(),
@@ -165,19 +178,30 @@ pub(crate) async fn runtime_for_test(
     storage: Operator,
     metrics: Option<crate::telemetry::Metrics>,
 ) -> Arc<DeviceFileContentRuntime> {
+    let strongbox_key = crate::storage::generate_strongbox_key_b64();
+    let storage_config = S3Config {
+        bucket: "device-content-test".to_owned(),
+        region: String::new(),
+        endpoint: String::new(),
+        access_key_id: String::new(),
+        secret_access_key: String::new(),
+        prefix: String::new(),
+    };
+    let managed_storage = Arc::new(
+        crate::storage::finalization::ManagedStorage::for_test(
+            storage.clone(),
+            storage_config.clone(),
+            &strongbox_key,
+        )
+        .unwrap(),
+    );
     Arc::new(DeviceFileContentRuntime {
         config: ContentLimitsConfig::default(),
         spool: Spool::for_test(spool_root).await.unwrap(),
         storage,
-        storage_config: S3Config {
-            bucket: "device-content-test".to_string(),
-            region: String::new(),
-            endpoint: String::new(),
-            access_key_id: String::new(),
-            secret_access_key: String::new(),
-            prefix: String::new(),
-        },
-        strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        storage_config,
+        strongbox_key,
+        managed_storage,
         file_registry_db,
         finalization_permits: Arc::new(Semaphore::new(
             DEVICE_FILE_CONTENT_FINALIZATION_MAX_CONCURRENT,
@@ -194,7 +218,11 @@ pub(crate) fn routes() -> impl HttpServiceFactory {
         read::download_content,
         preview::media_content,
         reuse::routes(),
-        web::resource(COMPLETE_PATH).route(web::route().to(complete)),
+        web::resource(COMPLETE_PATH)
+            .wrap(actix_web::middleware::from_fn(
+                crate::devices::upload_finalization::ingress::file,
+            ))
+            .route(web::route().to(complete)),
         web::resource(COLLECTION_PATH).route(web::route().to(collection)),
         web::resource(RESOURCE_PATH).route(web::route().to(resource)),
     )
@@ -358,6 +386,25 @@ async fn resource_inner(
     )
     .await
     .map_err(|error| ContentError::from_app(error.c(h!())))?;
+    if crate::devices::upload_finalization::query::file_source_is_pinned(
+        runtime.file_registry_db.connection(),
+        upload.id,
+    )
+    .await
+    .map_err(|error| repository_unavailable(error.context(h!())))?
+    {
+        return if method == Method::HEAD {
+            Ok(head_response(
+                &upload,
+                locked
+                    .offset()
+                    .map_err(|error| spool_unavailable(error.context(h!())))?,
+                false,
+            ))
+        } else {
+            Err(ContentError::conflict("upload_finalization_owned"))
+        };
+    }
     let upload = match repository::revalidate_open(
         runtime.file_registry_db.connection(),
         &upload,
@@ -420,6 +467,18 @@ async fn complete_inner(
     .await
     .map_err(|error| repository_unavailable(error.context(h!())))?
     .ok_or_else(ContentError::not_found)?;
+    let asynchronous = if request.method() == Method::POST {
+        parse_complete_payload(&request, &mut payload).await
+    } else {
+        Ok(false)
+    };
+    if matches!(asynchronous, Ok(true)) {
+        return complete_async(&env, runtime, login_id, &upload)
+            .await
+            .map_err(|error| {
+                error.header(header::CACHE_CONTROL, "private, no-store")
+            });
+    }
     crate::devices::access::authorize_file_sync_snapshot(
         &env.dbx,
         &login_id,
@@ -430,14 +489,13 @@ async fn complete_inner(
     if request.method() != Method::POST {
         return Err(ContentError::method_not_allowed());
     }
-    if upload.status == UploadStatus::Completed {
-        ensure_empty_payload(request.headers(), &mut payload).await?;
-        return completed_replay(runtime, upload.id).await;
-    }
-    if upload.status != UploadStatus::Open {
+    if !matches!(upload.status, UploadStatus::Open | UploadStatus::Completed) {
         return Err(ContentError::gone(upload.status.code()));
     }
-    ensure_empty_payload(request.headers(), &mut payload).await?;
+    asynchronous?;
+    if upload.status == UploadStatus::Completed {
+        return completed_replay(runtime, upload.id).await;
+    }
     let permit = match finalizer::acquire_permit(runtime).await {
         Ok(permit) => permit,
         Err(error) => {
@@ -454,7 +512,7 @@ async fn complete_inner(
             return Ok(HttpResponse::Ok().json(content));
         }
     };
-    let locked = acquire_spool(runtime, upload.id).await?;
+    let locked = acquire_spool(runtime, upload.id).await;
     crate::devices::access::authorize_file_sync_snapshot(
         &env.dbx,
         &login_id,
@@ -462,6 +520,8 @@ async fn complete_inner(
     )
     .await
     .map_err(|error| ContentError::from_app(error.c(h!())))?;
+    let locked = locked?;
+    finalizer::ensure_sync_source_available(runtime, &upload).await?;
     let upload = match repository::revalidate_open(
         runtime.file_registry_db.connection(),
         &upload,
@@ -499,6 +559,168 @@ async fn complete_inner(
         finalizer::finalize(&env, runtime, login_id, upload, &locked, permit)
             .await?;
     Ok(HttpResponse::Ok().json(content))
+}
+
+async fn complete_async(
+    env: &Env,
+    runtime: &DeviceFileContentRuntime,
+    actor: Uuid,
+    upload: &Upload,
+) -> Result<HttpResponse, ContentError> {
+    use crate::devices::upload_finalization::{
+        self,
+        ingress::{self, AdmissionOutcome},
+        types::*,
+    };
+    let db = runtime.file_registry_db.connection();
+    if let Some(response) = replay_file(env, runtime, actor, upload).await? {
+        return Ok(ingress::mark_response(
+            response,
+            AdmissionOutcome::Replayed,
+        ));
+    }
+    upload_finalization::authorize_write(
+        env,
+        actor,
+        upload.device_id,
+        FinalizationKind::FinalizationFileKind,
+    )
+    .await
+    .map_err(ContentError::from_app)?;
+    let settings = env
+        .config
+        .device_upload_finalization
+        .clone()
+        .unwrap_or_default();
+    if !settings.enabled
+        || !settings.is_valid()
+        || env.config.storage_dir.is_empty()
+    {
+        return Err(ContentError::unavailable(
+            "async_finalization_unavailable",
+            DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
+        ));
+    }
+    if upload.status != UploadStatus::Open {
+        return Err(ContentError::gone(upload.status.code()));
+    }
+    let deadline = std::time::Instant::now()
+        + std::time::Duration::from_millis(settings.source_lock_millis);
+    let locked = runtime
+        .spool
+        .acquire_until(upload.id, deadline)
+        .await
+        .map_err(spool_acquire_error);
+    if let Some(response) = replay_file(env, runtime, actor, upload).await? {
+        return Ok(ingress::mark_response(
+            response,
+            AdmissionOutcome::Replayed,
+        ));
+    }
+    upload_finalization::authorize_write(
+        env,
+        actor,
+        upload.device_id,
+        FinalizationKind::FinalizationFileKind,
+    )
+    .await
+    .map_err(ContentError::from_app)?;
+    let locked = locked?;
+    if upload.upload_length > runtime.config.upload_max_bytes {
+        return Err(ContentError::payload_too_large(Some("upload_too_large")));
+    }
+    if locked
+        .offset()
+        .map_err(|error| spool_unavailable(error.context(h!())))?
+        != upload.upload_length
+    {
+        return Err(ContentError::conflict("upload_incomplete"));
+    }
+    locked
+        .make_durable(upload.upload_length)
+        .await
+        .map_err(|error| spool_unavailable(error.context(h!())))?;
+    upload_finalization::fault::point("file_source_durable", upload.id).await;
+    upload_finalization::authorize_write(
+        env,
+        actor,
+        upload.device_id,
+        FinalizationKind::FinalizationFileKind,
+    )
+    .await
+    .map_err(ContentError::from_app)?;
+    let snapshot = repository::admit_file(db, upload, actor, &settings).await?;
+    upload_finalization::fault::point("file_admission_committed", upload.id)
+        .await;
+    Ok(async_file_response(snapshot))
+}
+
+async fn replay_file(
+    env: &Env,
+    runtime: &DeviceFileContentRuntime,
+    actor: Uuid,
+    upload: &Upload,
+) -> Result<Option<HttpResponse>, ContentError> {
+    use crate::devices::upload_finalization::{self, query, types::*};
+    let db = runtime.file_registry_db.connection();
+    if let Some((job, _)) = query::read_file_job(db, upload.id)
+        .await
+        .map_err(|error| repository_unavailable(error.context(h!())))?
+    {
+        let snapshot = upload_finalization::get_snapshot(env, job.id, actor)
+            .await
+            .map_err(ContentError::from_app)?;
+        return Ok(Some(async_file_response(snapshot)));
+    }
+    let owned: bool = sqlx::query_scalar("select exists(select 1 from file_content_upload where id=$1 and created_by_login_id=$2)")
+        .bind(upload.id).bind(actor).fetch_one(db.get_postgres_connection_pool()).await
+        .map_err(|error| repository_unavailable(error.into()))?;
+    if !owned {
+        return Err(ContentError::not_found());
+    }
+    if repository::reconcile_publication(db, upload.id)
+        .await
+        .map_err(|error| repository_unavailable(error.context(h!())))?
+        .is_none()
+    {
+        return Ok(None);
+    }
+    upload_finalization::authorize_read(
+        env,
+        actor,
+        upload.device_id,
+        FinalizationKind::FinalizationFileKind,
+    )
+    .await
+    .map_err(ContentError::from_app)?;
+    let snapshot = repository::adopt_completed_file(db, upload, actor)
+        .await
+        .map_err(|error| repository_unavailable(error.context(h!())))?;
+    Ok(Some(async_file_response(snapshot)))
+}
+
+fn async_file_response(
+    snapshot: crate::devices::upload_finalization::types::FinalizationJobSnapshot,
+) -> HttpResponse {
+    use crate::devices::upload_finalization::{self, types::*};
+    if matches!(
+        snapshot.status,
+        FinalizationStatus::FinalizationCompleted
+            | FinalizationStatus::FinalizationFailed
+    ) {
+        return upload_finalization::status_response(Ok(snapshot));
+    }
+    HttpResponse::Accepted()
+        .insert_header((
+            header::LOCATION,
+            format!("/api/device/upload-finalization-jobs/{}", snapshot.job_id),
+        ))
+        .insert_header((header::RETRY_AFTER, "1"))
+        .insert_header((header::CACHE_CONTROL, "private, no-store"))
+        .json(QueuedAcknowledgement {
+            status: QueuedStatus::FinalizationQueuedAcknowledgement,
+            job_id: snapshot.job_id,
+        })
 }
 
 async fn patch(
@@ -611,7 +833,15 @@ async fn delete(
         runtime.metrics.as_ref(),
     )
     .await
-    .map_err(|error| repository_unavailable(error.context(h!())))?;
+    .map_err(|error| {
+        if error.downcast_ref::<crate::devices::upload_finalization::types::FinalizationFailure>()
+            == Some(&crate::devices::upload_finalization::types::FinalizationFailure::SourceOwned)
+        {
+            ContentError::conflict("upload_finalization_owned")
+        } else {
+            repository_unavailable(error.context(h!()))
+        }
+    })?;
     drop(locked);
     match outcome {
         RevalidateOutcome::Terminal(UploadStatus::Aborted) => {
@@ -777,6 +1007,50 @@ fn parse_uuid(value: &str) -> Result<Uuid, ContentError> {
     Uuid::parse_str(value).map_err(|_| ContentError::not_found())
 }
 
+async fn parse_complete_payload(
+    request: &HttpRequest,
+    payload: &mut web::Payload,
+) -> Result<bool, ContentError> {
+    if protocol::content_length(request.headers()).is_some_and(|length| {
+        length > DEVICE_UPLOAD_FINALIZATION_COMPLETE_BODY_BYTES as u64
+    }) {
+        return Err(ContentError::payload_too_large(None));
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = payload.next().await {
+        let chunk = chunk.map_err(|error| {
+            ContentError::from_app(
+                AppError::PayloadError { source: error }.c(h!()),
+            )
+        })?;
+        if chunk.len()
+            > DEVICE_UPLOAD_FINALIZATION_COMPLETE_BODY_BYTES - body.len()
+        {
+            return Err(ContentError::payload_too_large(None));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    if body.is_empty() {
+        return Ok(false);
+    }
+    let content_type = request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next());
+    if !content_type.is_some_and(|value| {
+        value.trim().eq_ignore_ascii_case("application/json")
+    }) {
+        return Err(ContentError::unsupported_media_type());
+    }
+    if body.iter().find(|byte| !byte.is_ascii_whitespace()) != Some(&b'{') {
+        return Err(ContentError::bad_request("invalid_finalization_request"));
+    }
+    serde_json::from_slice::<CompleteDeviceFileUploadReq>(&body)
+        .map(|request| request.async_finalization)
+        .map_err(|_| ContentError::bad_request("invalid_finalization_request"))
+}
+
 async fn ensure_empty_payload(
     headers: &actix_web::http::header::HeaderMap,
     payload: &mut web::Payload,
@@ -805,15 +1079,17 @@ async fn acquire_spool(
         .spool
         .acquire(upload_id)
         .await
-        .map_err(|error| match error {
-            AcquireError::Busy => ContentError::unavailable(
-                "upload_busy",
-                DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
-            ),
-            AcquireError::Internal(error) => {
-                spool_unavailable(error.context(h!()))
-            }
-        })
+        .map_err(spool_acquire_error)
+}
+
+fn spool_acquire_error(error: AcquireError) -> ContentError {
+    match error {
+        AcquireError::Busy => ContentError::unavailable(
+            "upload_busy",
+            DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
+        ),
+        AcquireError::Internal(error) => spool_unavailable(error.context(h!())),
+    }
 }
 
 async fn cleanup_created_lock(locked: &LockedSpool) {

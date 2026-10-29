@@ -163,6 +163,16 @@ async fn cleanup_one(
     else {
         return Ok(());
     };
+    if crate::devices::upload_finalization::query::read_file_job(
+        runtime.file_registry_db.connection(),
+        upload_id,
+    )
+    .await
+    .context(h!())?
+    .is_some_and(|(job, _)| !job.is_sync_adoption())
+    {
+        return Ok(());
+    }
     let now = Utc::now().fixed_offset();
     let expired = repository::expire_if_due(
         runtime.file_registry_db.connection(),
@@ -235,4 +245,21 @@ pub(crate) async fn cleanup_one_for_test(
     upload_id: uuid::Uuid,
 ) -> Result<()> {
     cleanup_one(env, runtime, upload_id).await
+}
+
+pub(crate) async fn run_finalization_cleanup_nofail(
+    env: std::sync::Arc<Env>,
+    runtime: std::sync::Arc<DeviceFileContentRuntime>,
+    cancellation: CancellationToken,
+) {
+    super::async_cleanup::run_nofail(env, runtime, cancellation).await;
+}
+
+#[cfg(test)]
+pub(crate) async fn cleanup_finalization_for_test(
+    env: &Env,
+    runtime: &DeviceFileContentRuntime,
+    job: uuid::Uuid,
+) -> Result<()> {
+    super::async_cleanup::cleanup_source(env, runtime, job).await
 }

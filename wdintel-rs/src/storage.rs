@@ -1,5 +1,6 @@
 use crate::config::get_assets_folder;
 use crate::config::S3_MEDIA_ROOT_PREFIX;
+use crate::devices::upload_finalization::resources::{self, OperationGuard};
 use crate::entities::signal_message_media;
 use crate::error::AppError;
 use crate::h;
@@ -46,6 +47,7 @@ static SMALL_OBJECT_DECRYPT_SEMAPHORE: LazyLock<Arc<Semaphore>> = LazyLock::new(
 struct PlaintextUploadWriter {
     writer: Option<opendal::Writer>,
     remote_key: String,
+    admission: Option<OperationGuard>,
 }
 
 impl PlaintextUploadWriter {
@@ -53,6 +55,7 @@ impl PlaintextUploadWriter {
         Self {
             writer: Some(writer),
             remote_key,
+            admission: None,
         }
     }
 
@@ -83,13 +86,15 @@ impl Drop for PlaintextUploadWriter {
             return;
         };
         let remote_key = self.remote_key.clone();
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        if tokio::runtime::Handle::try_current().is_err() {
             warn!(
                 "could not schedule cancellation cleanup for plaintext upload {remote_key}: no Tokio runtime"
             );
             return;
-        };
-        drop(runtime.spawn(async move {
+        }
+        let admission = self.admission.take();
+        drop(resources::spawn_child_task(async move {
+            let _admission = admission;
             if let Err(error) = writer.abort().await {
                 warn!(
                     "failed to abort cancelled plaintext upload for {remote_key}: {error:#?}"
@@ -203,6 +208,24 @@ impl S3Config {
 
 /// Build an S3 operator from configuration
 pub fn build_s3_operator(config: &S3Config) -> Result<Operator, AppError> {
+    let b = s3_builder(config).c(h!())?;
+    // Add OpenDAL retry layer: 3 retries with exponential backoff to soften S3 throttling
+    let retry = opendal::layers::RetryLayer::new()
+        .with_min_delay(Duration::from_secs(1))
+        .with_factor(2.0)
+        .with_jitter()
+        .with_max_times(3)
+        .with_notify(|_err: &opendal::Error, _dur: Duration| {});
+    let op = Operator::new(b)
+        .map_err(|e| AppError::BL {
+            msg: format!("s3 store build error: {e}"),
+        })?
+        .layer(retry)
+        .finish();
+    Ok(op)
+}
+
+fn s3_builder(config: &S3Config) -> Result<opendal::services::S3, AppError> {
     use opendal::services::S3;
     if config.bucket.trim().is_empty() {
         return Err(AppError::BL {
@@ -222,20 +245,7 @@ pub fn build_s3_operator(config: &S3Config) -> Result<Operator, AppError> {
     if !config.secret_access_key.trim().is_empty() {
         b = b.secret_access_key(&config.secret_access_key);
     }
-    // Add OpenDAL retry layer: 3 retries with exponential backoff to soften S3 throttling
-    let retry = opendal::layers::RetryLayer::new()
-        .with_min_delay(Duration::from_secs(1))
-        .with_factor(2.0)
-        .with_jitter()
-        .with_max_times(3)
-        .with_notify(|_err: &opendal::Error, _dur: Duration| {});
-    let op = Operator::new(b)
-        .map_err(|e| AppError::BL {
-            msg: format!("s3 store build error: {e}"),
-        })?
-        .layer(retry)
-        .finish();
-    Ok(op)
+    Ok(b)
 }
 
 /// Decode a base64-encoded encryption key
@@ -275,6 +285,25 @@ pub async fn upload_encrypted_to_s3_with_operator(
     rel_path: &str,
     data: web::Bytes,
 ) -> Result<(), AppError> {
+    upload_encrypted_to_s3_with_admission(
+        op,
+        config,
+        strongbox_key_b64,
+        rel_path,
+        data,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn upload_encrypted_to_s3_with_admission(
+    op: &Option<Operator>,
+    config: &S3Config,
+    strongbox_key_b64: &str,
+    rel_path: &str,
+    data: web::Bytes,
+    admission: Option<OperationGuard>,
+) -> Result<(), AppError> {
     let Some(op) = op else {
         return Err(AppError::BL {
             msg: "S3 is not configured for encrypted upload".to_string(),
@@ -287,7 +316,7 @@ pub async fn upload_encrypted_to_s3_with_operator(
         key,
         aad(&config.bucket, &remote_key),
         UPLOAD_ENCRYPT_SEMAPHORE.clone(),
-        None,
+        admission.clone(),
     )
     .await
     .c(h!())?;
@@ -322,7 +351,7 @@ async fn encrypt_upload(
     key: Key,
     object_aad: String,
     semaphore: Arc<Semaphore>,
-    finalization_guard: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
+    finalization_guard: Option<OperationGuard>,
 ) -> Result<(Vec<u8>, tokio::sync::OwnedSemaphorePermit), AppError> {
     let permit = semaphore.acquire_owned().await.c(h!())?;
     run_upload_cpu(permit, move || {
@@ -340,6 +369,7 @@ async fn encrypt_upload(
 async fn hash_upload_chunk(
     sha256: Sha256,
     chunk: web::Bytes,
+    admission: Option<OperationGuard>,
 ) -> Result<(Sha256, web::Bytes), AppError> {
     let permit = UPLOAD_ENCRYPT_SEMAPHORE
         .clone()
@@ -347,6 +377,7 @@ async fn hash_upload_chunk(
         .await
         .c(h!())?;
     let (result, _permit) = run_upload_cpu(permit, move || {
+        let _admission = admission;
         let mut sha256 = sha256;
         sha256.update(&chunk);
         Ok((sha256, chunk))
@@ -535,7 +566,7 @@ pub(crate) async fn upload_device_content_encrypted(
     strongbox_key_b64: &str,
     full_key: &str,
     data: web::Bytes,
-    finalization_guard: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
+    finalization_guard: Option<OperationGuard>,
 ) -> Result<(), AppError> {
     if !config.prefix.is_empty() {
         return Err(AppError::BL {
@@ -548,7 +579,7 @@ pub(crate) async fn upload_device_content_encrypted(
         key,
         aad(&config.bucket, full_key),
         UPLOAD_ENCRYPT_SEMAPHORE.clone(),
-        finalization_guard,
+        finalization_guard.clone(),
     )
     .await
     .c(h!())?;
@@ -568,6 +599,7 @@ pub(crate) async fn upload_device_content_encrypted(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn upload_device_content_plaintext(
     op: &Operator,
     config: &S3Config,
@@ -575,6 +607,27 @@ pub(crate) async fn upload_device_content_plaintext(
     file: tokio::fs::File,
     expected_size: u64,
     expected_sha256: &[u8; 32],
+) -> Result<(), DeviceContentUploadError> {
+    upload_device_content_plaintext_with_admission(
+        op,
+        config,
+        full_key,
+        file,
+        expected_size,
+        expected_sha256,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn upload_device_content_plaintext_with_admission(
+    op: &Operator,
+    config: &S3Config,
+    full_key: &str,
+    file: tokio::fs::File,
+    expected_size: u64,
+    expected_sha256: &[u8; 32],
+    admission: Option<OperationGuard>,
 ) -> Result<(), DeviceContentUploadError> {
     if !config.prefix.is_empty() {
         return Err(DeviceContentUploadError::Internal(AppError::BL {
@@ -588,6 +641,7 @@ pub(crate) async fn upload_device_content_plaintext(
         .c(h!())
         .map_err(|error| DeviceContentUploadError::Internal(error.into()))?;
     let mut writer = PlaintextUploadWriter::new(writer, full_key.to_string());
+    writer.admission = admission.clone();
     let read_limit = expected_size.checked_add(1).ok_or_else(|| {
         DeviceContentUploadError::Internal(AppError::BL {
             msg: "device content read limit overflowed".to_string(),
@@ -617,9 +671,10 @@ pub(crate) async fn upload_device_content_plaintext(
                     msg: "device content byte count overflowed".to_string(),
                 })
             })?;
-        let (next_sha256, chunk) = hash_upload_chunk(sha256, chunk)
-            .await
-            .map_err(DeviceContentUploadError::Internal)?;
+        let (next_sha256, chunk) =
+            hash_upload_chunk(sha256, chunk, admission.clone())
+                .await
+                .map_err(DeviceContentUploadError::Internal)?;
         sha256 = next_sha256;
         if let Err(error) = writer.writer().write(chunk).await.c(h!()) {
             let _ = writer.abort().await;
@@ -841,7 +896,7 @@ pub(crate) async fn download_and_decrypt_with_admission(
     rel_path: &str,
     download_timeout: Duration,
     max_size: u64,
-    permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    permit: OperationGuard,
 ) -> Result<Vec<u8>, AppError> {
     let remote_key = config.prefixed_key(rel_path);
     let key = key_from_b64(strongbox_key_b64).c(h!())?;
@@ -873,7 +928,7 @@ async fn decrypt_known_object(
     config: &S3Config,
     object_size: u64,
     download_timeout: Option<Duration>,
-    decrypt_permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    decrypt_permit: OperationGuard,
 ) -> Result<Vec<u8>, AppError> {
     let download =
         download_s3_object_with_known_size(op, remote_key, object_size);
@@ -1707,3 +1762,10 @@ mod upload_runtime_tests {
         assert_eq!(semaphore.available_permits(), 2);
     }
 }
+
+#[allow(
+    dead_code,
+    reason = "Managed storage is consumed by subsequent finalization adapters"
+)]
+#[path = "storage_finalization.rs"]
+pub(crate) mod finalization;

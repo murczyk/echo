@@ -89,6 +89,23 @@ const FILE_ANALYSIS_RUN_DURATION_BUCKETS_SECS: &[f64] = &[
     0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 900.0, 3_600.0, 10_800.0,
 ];
 
+pub(crate) const UPLOAD_FINALIZATION_JOBS: &str =
+    "echo.device_upload.finalization.jobs";
+pub(crate) const UPLOAD_FINALIZATION_OLDEST_AGE: &str =
+    "echo.device_upload.finalization.oldest.age";
+pub(crate) const UPLOAD_FINALIZATION_RETAINED_BYTES: &str =
+    "echo.device_upload.finalization.retained_bytes";
+pub(crate) const UPLOAD_FINALIZATION_CREDITS: &str =
+    "echo.device_upload.finalization.write_credits";
+pub(crate) const UPLOAD_FINALIZATION_CREDIT_SATURATED: &str =
+    "echo.device_upload.finalization.write_credits.saturated";
+pub(crate) const UPLOAD_FINALIZATION_EVENTS: &str =
+    "echo.device_upload.finalization.events.count";
+pub(crate) const UPLOAD_FINALIZATION_DURATION: &str =
+    "echo.device_upload.finalization.duration";
+pub(crate) const UPLOAD_FINALIZATION_EXPORTER: &str =
+    "echo.device_upload.finalization.exporter.active";
+
 const MESSENGER_INGESTED_COUNT: &str = "echo.messenger.ingested.count";
 const MESSENGER_PROCESSING_COUNT: &str = "echo.messenger.processing.count";
 const MESSENGER_PROCESSING_LATENCY: &str = "echo.messenger.processing.latency";
@@ -123,6 +140,14 @@ impl FileAnalysisDbOperation {
 #[derive(Clone)]
 pub struct Metrics {
     provider: SdkMeterProvider,
+    upload_finalization_jobs: Gauge<u64>,
+    upload_finalization_oldest_age: Gauge<f64>,
+    upload_finalization_retained_bytes: Gauge<u64>,
+    upload_finalization_credits: Gauge<u64>,
+    upload_finalization_credit_saturated: Gauge<u64>,
+    upload_finalization_events: Counter<u64>,
+    upload_finalization_duration: Histogram<f64>,
+    upload_finalization_exporter: Gauge<u64>,
     synchronized_files: Counter<u64>,
     sync_batches: Counter<u64>,
     sync_duration: Histogram<f64>,
@@ -391,8 +416,50 @@ impl Metrics {
             .with_description("OCR storage admission deferrals")
             .with_unit("1")
             .build();
+        let upload_finalization_jobs = meter
+            .u64_gauge(UPLOAD_FINALIZATION_JOBS)
+            .with_description(
+                "Current durable finalization jobs by kind and state",
+            )
+            .with_unit("1")
+            .build();
+        let upload_finalization_oldest_age = meter.f64_gauge(UPLOAD_FINALIZATION_OLDEST_AGE)
+            .with_description("Age since admission of the oldest finalization job by kind and state").with_unit("s").build();
+        let upload_finalization_retained_bytes = meter
+            .u64_gauge(UPLOAD_FINALIZATION_RETAINED_BYTES)
+            .with_description(
+                "Reserved source bytes awaiting confirmed cleanup",
+            )
+            .with_unit("By")
+            .build();
+        let upload_finalization_credits = meter
+            .u64_gauge(UPLOAD_FINALIZATION_CREDITS)
+            .with_description("Unresolved storage write credits held globally")
+            .with_unit("1")
+            .build();
+        let upload_finalization_credit_saturated = meter
+            .u64_gauge(UPLOAD_FINALIZATION_CREDIT_SATURATED)
+            .with_description(
+                "Whether all unresolved storage write credits are held",
+            )
+            .with_unit("1")
+            .build();
+        let upload_finalization_events = meter.u64_counter(UPLOAD_FINALIZATION_EVENTS)
+            .with_description("Finalization admission, attempt, retry, reconciliation and failure outcomes").with_unit("1").build();
+        let upload_finalization_duration = meter.f64_histogram(UPLOAD_FINALIZATION_DURATION)
+            .with_description("Finalization admission, processing attempt and end-to-end completion durations").with_unit("s").build();
+        let upload_finalization_exporter = meter.u64_gauge(UPLOAD_FINALIZATION_EXPORTER)
+            .with_description("Whether this process owns the global finalization gauge exporter").with_unit("1").build();
         Self {
             provider,
+            upload_finalization_jobs,
+            upload_finalization_oldest_age,
+            upload_finalization_retained_bytes,
+            upload_finalization_credits,
+            upload_finalization_credit_saturated,
+            upload_finalization_events,
+            upload_finalization_duration,
+            upload_finalization_exporter,
             synchronized_files,
             sync_batches,
             sync_duration,
@@ -427,6 +494,103 @@ impl Metrics {
             media_summary_coordinate_drops,
             ocr_storage_deferrals,
         }
+    }
+
+    pub(crate) fn record_upload_finalization_admission(
+        &self,
+        kind: &'static str,
+        outcome: &'static str,
+        duration: Duration,
+    ) {
+        if !matches!(kind, "file" | "audio")
+            || !matches!(
+                outcome,
+                "accepted"
+                    | "replayed"
+                    | "rejected"
+                    | "capacity_unavailable"
+                    | "unavailable"
+                    | "forbidden"
+                    | "invalid_request"
+            )
+        {
+            return;
+        }
+        self.record_upload_finalization_event(kind, "admission", outcome);
+        self.record_upload_finalization_duration(
+            kind,
+            "admission",
+            outcome,
+            duration.as_secs_f64(),
+        );
+    }
+
+    pub(crate) fn record_upload_finalization_event(
+        &self,
+        kind: &'static str,
+        event: &'static str,
+        outcome: &'static str,
+    ) {
+        self.upload_finalization_events.add(
+            1,
+            &[
+                KeyValue::new("kind", kind),
+                KeyValue::new("event", event),
+                KeyValue::new("outcome", outcome),
+            ],
+        );
+    }
+
+    pub(crate) fn record_upload_finalization_duration(
+        &self,
+        kind: &'static str,
+        phase: &'static str,
+        outcome: &'static str,
+        seconds: f64,
+    ) {
+        self.upload_finalization_duration.record(
+            seconds.max(0.0),
+            &[
+                KeyValue::new("kind", kind),
+                KeyValue::new("phase", phase),
+                KeyValue::new("outcome", outcome),
+            ],
+        );
+    }
+
+    pub(crate) fn record_upload_finalization_jobs(
+        &self,
+        kind: &'static str,
+        state: &'static str,
+        count: u64,
+        oldest_age: f64,
+    ) {
+        let attributes =
+            [KeyValue::new("kind", kind), KeyValue::new("state", state)];
+        self.upload_finalization_jobs.record(count, &attributes);
+        self.upload_finalization_oldest_age
+            .record(oldest_age.max(0.0), &attributes);
+    }
+
+    pub(crate) fn record_upload_finalization_budget(
+        &self,
+        kind: &'static str,
+        bytes: u64,
+        credits: u64,
+        saturated: bool,
+    ) {
+        let attributes = [KeyValue::new("kind", kind)];
+        self.upload_finalization_retained_bytes
+            .record(bytes, &attributes);
+        self.upload_finalization_credits
+            .record(credits, &attributes);
+        self.upload_finalization_credit_saturated
+            .record(u64::from(saturated), &attributes);
+    }
+
+    pub(crate) fn record_upload_finalization_exporter(&self, active: bool) {
+        self.upload_finalization_exporter
+            .record(u64::from(active), &[]);
     }
 
     pub(crate) fn record_ocr_storage_deferral(&self) {
@@ -737,6 +901,18 @@ impl Metrics {
 fn metrics_view(instrument: &Instrument) -> Option<Stream> {
     let (allowed_attributes, boundaries): (&[&'static str], Option<&[f64]>) =
         match instrument.name() {
+            UPLOAD_FINALIZATION_JOBS | UPLOAD_FINALIZATION_OLDEST_AGE => {
+                (&["kind", "state"], None)
+            }
+            UPLOAD_FINALIZATION_RETAINED_BYTES
+            | UPLOAD_FINALIZATION_CREDITS
+            | UPLOAD_FINALIZATION_CREDIT_SATURATED => (&["kind"], None),
+            UPLOAD_FINALIZATION_EVENTS => (&["kind", "event", "outcome"], None),
+            UPLOAD_FINALIZATION_DURATION => (
+                &["kind", "phase", "outcome"],
+                Some(FILE_ANALYSIS_RUN_DURATION_BUCKETS_SECS),
+            ),
+            UPLOAD_FINALIZATION_EXPORTER => (&[], None),
             DEVICE_FILES_SYNCHRONIZED_COUNT => (&["operation"], None),
             DEVICE_FILES_SYNC_BATCHES_COUNT => (&[], None),
             DEVICE_FILES_SYNC_DURATION => {

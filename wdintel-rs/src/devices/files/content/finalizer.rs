@@ -17,6 +17,11 @@ use crate::devices::config::{
     DEVICE_FILE_CONTENT_FINALIZATION_WAIT_MILLIS,
     DEVICE_FILE_CONTENT_STORAGE_RETRY_AFTER_SECS,
 };
+use crate::devices::upload_finalization::{
+    resources::{self, OperationGuard, ResourceKind},
+    types::{FinalizationFailure, FinalizationKind},
+};
+use crate::error::AppError;
 use crate::h;
 use crate::types::{warn, Env};
 
@@ -59,6 +64,72 @@ pub(crate) async fn finalize(
     spool: &LockedSpool,
     permit: Arc<tokio::sync::OwnedSemaphorePermit>,
 ) -> Result<CompletedContent, ContentError> {
+    ensure_sync_source_available(runtime, &upload).await?;
+    let slot = match resources::legacy_slot(env, ResourceKind::File).await {
+        Ok(slot) => slot,
+        Err(error) => {
+            return refresh_retryable_upload(
+                runtime,
+                &upload,
+                shared_resource_unavailable(error.context(h!())),
+            )
+            .await;
+        }
+    };
+    let operation: OperationGuard = Arc::new((spool.clone(), permit, slot));
+    let env = env.clone();
+    let runtime = runtime.clone();
+    let spool = spool.clone();
+    tokio::spawn(async move {
+        finalize_owned(&env, &runtime, login_id, upload, &spool, operation)
+            .await
+    })
+    .await
+    .map_err(|error| {
+        ContentError::from_app(AppError::from(
+            anyhow::Error::new(error).context(h!()),
+        ))
+    })?
+}
+
+pub(super) async fn ensure_sync_source_available(
+    runtime: &DeviceFileContentRuntime,
+    upload: &Upload,
+) -> Result<(), ContentError> {
+    resources::ensure_source_available(
+        runtime.file_registry_db.connection(),
+        FinalizationKind::FinalizationFileKind,
+        &upload.id.to_string(),
+    )
+    .await
+    .map_err(|error| shared_resource_unavailable(error.context(h!())))
+}
+
+fn shared_resource_unavailable(error: anyhow::Error) -> ContentError {
+    if matches!(
+        error.downcast_ref::<FinalizationFailure>(),
+        Some(
+            FinalizationFailure::SourceOwned
+                | FinalizationFailure::CapacityUnavailable
+        )
+    ) {
+        return finalization_busy();
+    }
+    warn!("device content finalization resource unavailable: {error:#?}");
+    ContentError::unavailable(
+        "finalization_unavailable",
+        DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
+    )
+}
+
+async fn finalize_owned(
+    env: &Env,
+    runtime: &DeviceFileContentRuntime,
+    login_id: Uuid,
+    upload: Upload,
+    spool: &LockedSpool,
+    operation: OperationGuard,
+) -> Result<CompletedContent, ContentError> {
     let offset = match spool.offset() {
         Ok(offset) => offset,
         Err(error) => {
@@ -77,7 +148,6 @@ pub(crate) async fn finalize(
     let probe = match read_probe(runtime, spool, &upload).await {
         Ok(probe) => probe,
         Err(error) if error.is_unavailable() => {
-            drop(permit);
             return refresh_retryable_upload(runtime, &upload, error).await;
         }
         Err(error) => return Err(error),
@@ -88,12 +158,25 @@ pub(crate) async fn finalize(
             &probe,
         );
     let upload_result = if encrypt {
-        upload_encrypted(runtime, spool, &upload, permit.clone()).await
+        let encryption =
+            match resources::legacy_slot(env, ResourceKind::Encryption).await {
+                Ok(encryption) => encryption,
+                Err(error) => {
+                    return refresh_retryable_upload(
+                        runtime,
+                        &upload,
+                        shared_resource_unavailable(error.context(h!())),
+                    )
+                    .await;
+                }
+            };
+        let admission: OperationGuard =
+            Arc::new((operation.clone(), encryption));
+        upload_encrypted(runtime, spool, &upload, admission).await
     } else {
-        upload_plaintext(runtime, spool, &upload).await
+        upload_plaintext(runtime, spool, &upload, operation.clone()).await
     };
     if let Err(error) = upload_result {
-        drop(permit);
         return handle_storage_failure(runtime, &upload, error).await;
     }
 
@@ -122,7 +205,6 @@ pub(crate) async fn finalize(
         Err(error) => {
             warn!("device content publication failed: {error:#?}");
             record_failure(runtime);
-            drop(permit);
             safe_delete_object(runtime, &upload).await;
             return refresh_retryable_upload(
                 runtime,
@@ -138,17 +220,14 @@ pub(crate) async fn finalize(
     let completed = match publish {
         PublishOutcome::Completed(completed) => completed,
         PublishOutcome::Terminal(status) => {
-            drop(permit);
             safe_delete_object(runtime, &upload).await;
             return Err(terminal_error(status));
         }
         PublishOutcome::ContentAlreadyCommitted => {
-            drop(permit);
             safe_delete_object(runtime, &upload).await;
             return Err(ContentError::conflict("content_already_committed"));
         }
         PublishOutcome::Missing => {
-            drop(permit);
             safe_delete_object(runtime, &upload).await;
             return Err(ContentError::not_found());
         }
@@ -168,7 +247,6 @@ pub(crate) async fn finalize(
                     completed
                 }
                 Ok(None) => {
-                    drop(permit);
                     return refresh_retryable_upload(
                         runtime,
                         &upload,
@@ -180,7 +258,6 @@ pub(crate) async fn finalize(
                     .await;
                 }
                 Err(error) => {
-                    drop(permit);
                     warn!("failed to reconcile device content publication: {error:#?}");
                     return Err(ContentError::unavailable(
                         "publication_outcome_unknown",
@@ -190,7 +267,7 @@ pub(crate) async fn finalize(
             }
         }
     };
-    drop(permit);
+    drop(operation);
     super::local_cache::retain_upload_best_effort(env, &upload, spool).await;
     cleanup_completed(runtime, spool, &upload).await;
     Ok(completed)
@@ -233,7 +310,7 @@ async fn upload_encrypted(
     runtime: &DeviceFileContentRuntime,
     spool: &LockedSpool,
     upload: &Upload,
-    permit: Arc<tokio::sync::OwnedSemaphorePermit>,
+    admission: OperationGuard,
 ) -> Result<(), StorageFailure> {
     let mut data = Vec::with_capacity(
         usize::try_from(upload.upload_length).map_err(|error| {
@@ -256,9 +333,9 @@ async fn upload_encrypted(
     if u64::try_from(data.len()).ok() != Some(upload.upload_length) {
         return Err(StorageFailure::Sha256Mismatch);
     }
-    let hashing_permit = permit.clone();
+    let hashing_admission = admission.clone();
     let (data, digest) = tokio::task::spawn_blocking(move || {
-        let _permit = hashing_permit;
+        let _admission = hashing_admission;
         let digest: [u8; 32] = Sha256::digest(&data).into();
         (data, digest)
     })
@@ -275,7 +352,7 @@ async fn upload_encrypted(
         &runtime.strongbox_key,
         &upload.object_key,
         data.into(),
-        Some(permit),
+        Some(admission),
     )
     .await
     .map_err(|error| {
@@ -287,18 +364,20 @@ async fn upload_plaintext(
     runtime: &DeviceFileContentRuntime,
     spool: &LockedSpool,
     upload: &Upload,
+    admission: OperationGuard,
 ) -> Result<(), StorageFailure> {
     let file = spool
         .open_source()
         .map_err(|error| StorageFailure::Internal(error.context(h!())))?
         .ok_or(StorageFailure::SourceMissing)?;
-    crate::storage::upload_device_content_plaintext(
+    crate::storage::upload_device_content_plaintext_with_admission(
         &runtime.storage,
         &runtime.storage_config,
         &upload.object_key,
         file,
         upload.upload_length,
         &upload.expected_sha256,
+        Some(admission),
     )
     .await
     .map_err(|error| match error {
@@ -501,4 +580,12 @@ enum StorageFailure {
     Sha256Mismatch,
     SourceMissing,
     Internal(anyhow::Error),
+}
+
+pub(crate) async fn finalize_claim(
+    env: &Env,
+    runtime: &DeviceFileContentRuntime,
+    claim: crate::devices::upload_finalization::types::ClaimedFinalizationJob,
+) -> anyhow::Result<()> {
+    super::async_finalizer::execute(env, runtime, claim).await
 }

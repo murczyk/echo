@@ -1,5 +1,8 @@
 use super::types::{ReceiveDeviceAudioCommand, ReceiveDeviceAudioOutcome};
 use super::*;
+use crate::devices::upload_finalization::resources::{
+    OperationGuard, ResourceKind,
+};
 use crate::file_registry::entities::device_audio_ingest;
 use crate::sigint::file_upload::tus::TusUpload;
 use chrono::SubsecRound;
@@ -43,42 +46,73 @@ pub(super) async fn receive_with_hooks(
     validate_command(&command).c(h!())?;
     command.recording_started_at =
         command.recording_started_at.trunc_subsecs(6);
-    let db = runtime.file_database().c(h!())?;
-    if let Some(attempt) =
-        query::find_attempt(db, &command.upload_url).await.c(h!())?
+    if let Some(outcome) =
+        known_outcome(&runtime, actor, &command).await.c(h!())?
     {
-        query::check_attempt(&attempt, actor, &command).c(h!())?;
-        if attempt.status == "ready" {
-            query::own_ready(db, &attempt).await.c(h!())?;
-            return Ok(ReceiveDeviceAudioOutcome::Duplicate);
-        }
-        if attempt.status == "deleting" {
-            return Err(query::rejected());
-        }
+        return Ok(outcome);
     }
     runtime.byte_store().c(h!())?;
-    let admission = Arc::new(
-        tokio::time::timeout(
-            Duration::from_secs(DEVICE_AUDIO_RECEIVE_WAIT_SECS),
-            runtime.receive_permits.clone().acquire_owned(),
-        )
+    let admission = tokio::time::timeout(
+        Duration::from_secs(DEVICE_AUDIO_RECEIVE_WAIT_SECS),
+        runtime.receive_permits.clone().acquire_owned(),
+    )
+    .await
+    .map_err(|_| unavailable("audio receive timed out"))
+    .c(h!())?
+    .map_err(|_| unavailable("audio receive is unavailable"))
+    .c(h!())?;
+    let slot = runtime
+        .finalization_slot(ResourceKind::Audio)
         .await
-        .map_err(|_| unavailable("audio receive timed out"))
-        .c(h!())?
-        .map_err(|_| unavailable("audio receive is unavailable"))
-        .c(h!())?,
-    );
-    let (source, guard) = upload::open_completed(
+        .c(h!())?;
+    let admission: OperationGuard = Arc::new((admission, slot));
+    let locked = upload::open_completed(
         &runtime,
         actor,
         command.device_id,
         &command.upload_url,
     )
-    .await
-    .c(h!())?;
+    .await;
+    authorize_source(&runtime, actor, command.device_id)
+        .await
+        .c(h!())?;
+    if let Some(outcome) =
+        known_outcome(&runtime, actor, &command).await.c(h!())?
+    {
+        return Ok(outcome);
+    }
+    let (source, guard) = locked.c(h!())?;
     finalize_owned(runtime, actor, command, source, guard, admission, hooks)
         .await
         .c(h!())?
+}
+
+async fn known_outcome(
+    runtime: &DeviceAudioRuntime,
+    actor: Uuid,
+    command: &ReceiveDeviceAudioCommand,
+) -> anyhow::Result<Option<ReceiveDeviceAudioOutcome>> {
+    if let Some(outcome) =
+        super::async_ingest::synchronous_outcome(runtime, actor, command)
+            .await
+            .c(h!())?
+    {
+        return Ok(Some(outcome));
+    }
+    let db = runtime.file_database().c(h!())?;
+    if let Some(attempt) =
+        query::find_attempt(db, &command.upload_url).await.c(h!())?
+    {
+        query::check_attempt(&attempt, actor, command).c(h!())?;
+        if attempt.status == "ready" {
+            query::own_ready(db, &attempt).await.c(h!())?;
+            return Ok(Some(ReceiveDeviceAudioOutcome::Duplicate));
+        }
+        if attempt.status == "deleting" {
+            return Err(query::rejected());
+        }
+    }
+    Ok(None)
 }
 
 fn finalize_owned(
@@ -87,11 +121,13 @@ fn finalize_owned(
     command: ReceiveDeviceAudioCommand,
     source: TusUpload,
     guard: impl Send + Sync + 'static,
-    admission: Arc<tokio::sync::OwnedSemaphorePermit>,
+    admission: OperationGuard,
     hooks: IngestHooks,
 ) -> tokio::task::JoinHandle<anyhow::Result<ReceiveDeviceAudioOutcome>> {
     tokio::spawn(async move {
         let _admission = admission.clone();
+        let guard = Arc::new(guard);
+        let admission: OperationGuard = Arc::new((admission, guard.clone()));
         let attempt =
             query::reserve_attempt(&runtime, actor, &command, &source)
                 .await
@@ -127,7 +163,9 @@ fn finalize_owned(
     })
 }
 
-fn validate_command(command: &ReceiveDeviceAudioCommand) -> anyhow::Result<()> {
+pub(super) fn validate_command(
+    command: &ReceiveDeviceAudioCommand,
+) -> anyhow::Result<()> {
     if command.name.is_empty()
         || command.name.len() > DEVICE_AUDIO_MAX_NAME_BYTES
         || command.name.contains('\0')
@@ -168,7 +206,7 @@ async fn finalize(
     command: &ReceiveDeviceAudioCommand,
     source: &TusUpload,
     attempt: &device_audio_ingest::Model,
-    admission: Arc<tokio::sync::OwnedSemaphorePermit>,
+    admission: OperationGuard,
     hooks: IngestHooks,
 ) -> anyhow::Result<ReceiveDeviceAudioOutcome> {
     if attempt.status == "ready" {
@@ -177,10 +215,14 @@ async fn finalize(
     if attempt.status != "finalizing" {
         return Err(query::rejected());
     }
-    let media =
-        probe::probe(&runtime, &source.file_path, command.recording_started_at)
-            .await
-            .c(h!())?;
+    let media = probe::probe_with_admission(
+        &runtime,
+        &source.file_path,
+        command.recording_started_at,
+        Some(admission.clone()),
+    )
+    .await
+    .c(h!())?;
     let prepared = storage::prepare_source(
         source.file_path.clone(),
         source.upload_length,
@@ -188,6 +230,7 @@ async fn finalize(
     )
     .await
     .c(h!())?;
+    let capacity = storage::reserve_storage(&runtime).await.c(h!())?;
     query::allow_store(&runtime, attempt, prepared.fingerprint, &media)
         .await
         .c(h!())?;
@@ -199,6 +242,7 @@ async fn finalize(
         runtime.clone(),
         attempt.storage_key.clone(),
         prepared,
+        capacity,
     )
     .await
     .c(h!())?;
@@ -264,4 +308,14 @@ pub(super) async fn consume_source(
         anyhow::bail!("invalid audio source cleanup path");
     }
     query::record_consumed(runtime, id).await.c(h!())
+}
+
+pub(in crate::devices) async fn finalize_claim(
+    env: &crate::types::Env,
+    runtime: &DeviceAudioRuntime,
+    claim: crate::devices::upload_finalization::types::ClaimedFinalizationJob,
+) -> anyhow::Result<()> {
+    super::async_finalizer::execute(env, runtime, claim)
+        .await
+        .c(h!())
 }

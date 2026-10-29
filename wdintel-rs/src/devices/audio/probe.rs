@@ -5,6 +5,9 @@ use super::{
     DEVICE_AUDIO_MICROSECONDS_PER_SECOND, DEVICE_AUDIO_MIN_TIMESTAMP_US,
     DEVICE_AUDIO_PROBE_OUTPUT_BYTES, DEVICE_AUDIO_PROCESS_READ_BYTES,
 };
+use crate::devices::upload_finalization::resources::{
+    self, OperationGuard, ResourceGuard, ResourceKind,
+};
 use crate::h;
 use crate::types::ShortContext;
 use chrono::{DateTime, Utc};
@@ -27,6 +30,36 @@ pub(super) async fn probe(
     source: &Path,
     start: DateTime<Utc>,
 ) -> anyhow::Result<ProbedAudio> {
+    probe_with_admission(runtime, source, start, None).await
+}
+
+pub(super) async fn probe_with_admission(
+    runtime: &DeviceAudioRuntime,
+    source: &Path,
+    start: DateTime<Utc>,
+    admission: Option<OperationGuard>,
+) -> anyhow::Result<ProbedAudio> {
+    checked_recording_end(start, 1).c(h!())?;
+    let slot = if admission.is_some() {
+        runtime
+            .finalization_slot(ResourceKind::Decode)
+            .await
+            .c(h!())?
+    } else {
+        None
+    };
+    probe_with_resources(runtime, source, start, admission, slot)
+        .await
+        .c(h!())
+}
+
+pub(super) async fn probe_with_resources(
+    runtime: &DeviceAudioRuntime,
+    source: &Path,
+    start: DateTime<Utc>,
+    admission: Option<OperationGuard>,
+    slot: Option<ResourceGuard>,
+) -> anyhow::Result<ProbedAudio> {
     checked_recording_end(start, 1).c(h!())?;
     let permit = runtime
         .probe_permits
@@ -36,8 +69,8 @@ pub(super) async fn probe(
         .map_err(|_| unavailable("audio decoder is unavailable"))
         .c(h!())?;
     let source = source.to_path_buf();
-    tokio::spawn(async move {
-        let _permit = permit;
+    resources::spawn_child_task(async move {
+        let _guards = (permit, slot, admission);
         probe_owned(&source, start).await
     })
     .await
@@ -56,6 +89,8 @@ async fn run_media_process(
     decode: bool,
     timeout: Duration,
 ) -> anyhow::Result<ProcessOutput> {
+    let shutdown = resources::shutdown_cancellation();
+    anyhow::ensure!(!shutdown.is_cancelled(), "finalization shutdown");
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -68,26 +103,37 @@ async fn run_media_process(
         .take()
         .ok_or_else(|| anyhow::anyhow!("missing decoder stderr"))
         .c(h!())?;
-    let stderr = tokio::spawn(capture_stderr(stderr));
+    let stderr = resources::spawn_child_task(capture_stderr(stderr));
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| anyhow::anyhow!("missing decoder stdout"))
         .c(h!())?;
-    let output = read_output(stdout, decode, timeout).await;
+    let output = tokio::select! {
+        result = read_output(stdout, decode, timeout) => result,
+        _ = shutdown.cancelled() => Err(anyhow::anyhow!("finalization shutdown")),
+    };
     if output.is_err() {
         let _ = child.start_kill();
     }
     let deadline = output
         .as_ref()
         .map_or_else(|_| Instant::now() + timeout, |(_, last)| *last + timeout);
-    let status = match tokio::time::timeout_at(deadline, child.wait()).await {
-        Ok(status) => status.c(h!())?,
-        Err(error) => {
+    let status = tokio::select! {
+        status = tokio::time::timeout_at(deadline, child.wait()) => {
+            match status {
+                Ok(status) => status.c(h!())?,
+                Err(error) => {
+                    let _ = child.start_kill();
+                    child.wait().await.c(h!())?;
+                    stderr.await.c(h!())?.c(h!())?;
+                    return Err(error).c(h!());
+                }
+            }
+        }
+        _ = shutdown.cancelled() => {
             let _ = child.start_kill();
-            child.wait().await.c(h!())?;
-            stderr.await.c(h!())?.c(h!())?;
-            return Err(error).c(h!());
+            child.wait().await.c(h!())?
         }
     };
     let stderr = stderr.await.c(h!())?.c(h!())?;

@@ -1,6 +1,6 @@
 //! Device-owned admission and local application of native transcription results.
 mod admission;
-mod guards;
+pub(super) mod guards;
 mod interactive;
 mod reconcile;
 mod settings;

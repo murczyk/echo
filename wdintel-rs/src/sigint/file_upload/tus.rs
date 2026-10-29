@@ -17,7 +17,7 @@ use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use uuid::Uuid;
 
@@ -57,6 +57,8 @@ pub struct TusHandler {
     pub(super) upload_dir: PathBuf,
     pub(super) config: TusConfig,
     prefix: String,
+    finalization_db: Option<sea_orm::DatabaseConnection>,
+    source_lock_deadline: Option<Instant>,
 }
 
 #[derive(Debug, Clone)]
@@ -204,6 +206,126 @@ impl TusHandler {
             upload_dir,
             config,
             prefix,
+            finalization_db: None,
+            source_lock_deadline: None,
+        }
+    }
+
+    pub(crate) fn with_finalization_database(
+        mut self,
+        db: sea_orm::DatabaseConnection,
+    ) -> Self {
+        self.finalization_db = Some(db);
+        self
+    }
+
+    pub(crate) fn with_source_lock_deadline(
+        mut self,
+        deadline: Instant,
+    ) -> Self {
+        self.source_lock_deadline = Some(deadline);
+        self
+    }
+
+    async fn acquire_source(
+        &self,
+        file_id: Uuid,
+    ) -> anyhow::Result<UploadLock> {
+        match self.source_lock_deadline {
+            Some(deadline) => {
+                UploadLock::acquire_until(&self.upload_dir, file_id, deadline)
+                    .await
+                    .c(h!())
+            }
+            None => {
+                UploadLock::acquire(&self.upload_dir, file_id).await.c(h!())
+            }
+        }
+    }
+
+    async fn finalization_pin(
+        &self,
+        actor: Uuid,
+        upload: Uuid,
+        size: u64,
+    ) -> Result<bool, AppError> {
+        self.finalization_pin_inner(actor, upload, size)
+            .await
+            .map_err(|error| {
+                log::warn!("audio TUS ownership check deferred: {error:#}");
+                AppError::ServiceUnavailable {
+                    msg: "upload ownership is temporarily unavailable".into(),
+                    retry_after_secs: 1,
+                }
+            })
+    }
+
+    async fn finalization_pin_inner(
+        &self,
+        actor: Uuid,
+        upload: Uuid,
+        size: u64,
+    ) -> anyhow::Result<bool> {
+        let Some(device) =
+            crate::devices::audio::pin::audio_device(&self.upload_dir)
+        else {
+            return Ok(false);
+        };
+        let marker =
+            crate::devices::audio::pin::read_marker(&self.upload_dir, upload)
+                .c(h!())?;
+        let Some(db) = &self.finalization_db else {
+            anyhow::ensure!(
+                !crate::devices::audio::pin::protects(&self.upload_dir, upload)
+                    .c(h!())?,
+                "audio ownership unavailable"
+            );
+            return Ok(false);
+        };
+        let job = crate::devices::upload_finalization::query::read_audio_job(
+            db, device, upload,
+        )
+        .await
+        .c(h!())?;
+        match (marker, job) {
+            (None, None) => {
+                anyhow::ensure!(
+                    !crate::devices::audio::pin::protects(
+                        &self.upload_dir,
+                        upload
+                    )
+                    .c(h!())?,
+                    "audio ownership unavailable"
+                );
+                Ok(false)
+            }
+            (None, Some((job, _))) if job.is_sync_adoption() => {
+                anyhow::ensure!(
+                    job.created_by_login_id == actor
+                        && u64::try_from(job.source_size_bytes).ok()
+                            == Some(size)
+                        && !crate::devices::audio::pin::protects(
+                            &self.upload_dir,
+                            upload
+                        )
+                        .c(h!())?,
+                    "audio synchronous adoption ownership unavailable"
+                );
+                Ok(false)
+            }
+            (Some(marker), Some((job, _))) => {
+                anyhow::ensure!(
+                    marker.matches(&job)
+                        && job.created_by_login_id == actor
+                        && u64::try_from(job.source_size_bytes).ok()
+                            == Some(size),
+                    "audio pin does not match accepted source"
+                );
+                Ok(true)
+            }
+            _ => {
+                Err(anyhow::anyhow!("audio finalization ownership unavailable"))
+            }
         }
     }
 
@@ -264,7 +386,8 @@ impl TusHandler {
                         self.build_status_response(StatusCode::NOT_FOUND)
                     );
                 }
-                match UploadLock::acquire(&self.upload_dir, file_id)
+                match self
+                    .acquire_source(file_id)
                     .await
                     .c(h!())
                     .map_err(AppError::from)
@@ -288,6 +411,16 @@ impl TusHandler {
             }
             _ => None,
         };
+        if let Some((file_id, size)) =
+            request_file.as_deref().and_then(parse_request_file)
+        {
+            if *method != Method::OPTIONS
+                && self.finalization_pin(*login, file_id, size).await.c(h!())?
+                && matches!(*method, Method::PATCH | Method::DELETE)
+            {
+                return Ok(self.build_status_response(StatusCode::CONFLICT));
+            }
+        }
         match (method.clone(), request_file) {
             (Method::HEAD, Some(request_file)) => {
                 self.process_head_request(login, headers, &request_file)
@@ -333,9 +466,7 @@ impl TusHandler {
         {
             return Ok(None);
         }
-        let _lock = UploadLock::acquire(&self.upload_dir, file_id)
-            .await
-            .c(h!())?;
+        let _lock = self.acquire_source(file_id).await.c(h!())?;
         self.open_completed_file(login, request_file).await
     }
 
@@ -649,7 +780,12 @@ impl TusHandler {
             .open_tus_upload(file_id, login, upload_length, file_path)
             .await
             .context(h!())?;
-        if tus_upload.expires > now {
+        if self
+            .finalization_pin(*login, file_id, upload_length)
+            .await
+            .c(h!())?
+            || tus_upload.expires > now
+        {
             Ok(Some(tus_upload))
         } else {
             lifecycle::remove_artifacts(
@@ -700,7 +836,7 @@ impl TusHandler {
         }
 
         for pending in [true, false] {
-            let Some((file_path, _file_id, upload_length)) = self
+            let Some((file_path, file_id, upload_length)) = self
                 .parse_request_file_path(login, request_file, pending)
                 .await?
             else {
@@ -708,7 +844,13 @@ impl TusHandler {
             };
             match tokio::fs::symlink_metadata(&file_path).await {
                 Ok(metadata) if metadata.is_file() => {
-                    if self.has_expired(&metadata, pending).c(h!())? {
+                    let pinned = self
+                        .finalization_pin(*login, file_id, upload_length)
+                        .await
+                        .c(h!())?;
+                    if !pinned
+                        && self.has_expired(&metadata, pending).c(h!())?
+                    {
                         lifecycle::remove_artifacts(
                             &self.upload_dir,
                             &file_path,
@@ -721,8 +863,14 @@ impl TusHandler {
                     }
                     let mut builder = HttpResponse::NoContent();
                     self.add_head_options_response_headers(&mut builder);
-                    self.add_expires_header(&metadata, pending, &mut builder)
+                    if !pinned {
+                        self.add_expires_header(
+                            &metadata,
+                            pending,
+                            &mut builder,
+                        )
                         .context(h!())?;
+                    }
                     builder.insert_header((
                         HEADER_NAME_UPLOAD_OFFSET,
                         metadata.len().to_string(),
@@ -1462,7 +1610,7 @@ pub(super) fn login_dir(login: &uuid::Uuid) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(login.as_bytes())
 }
 
-pub(super) fn parse_request_file(request_file: &str) -> Option<(Uuid, u64)> {
+pub(crate) fn parse_request_file(request_file: &str) -> Option<(Uuid, u64)> {
     let (file_id, upload_length) = request_file.split_once('.')?;
     if upload_length.is_empty()
         || !upload_length.bytes().all(|byte| byte.is_ascii_digit())

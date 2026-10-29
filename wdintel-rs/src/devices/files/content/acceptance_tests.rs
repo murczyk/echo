@@ -30,11 +30,13 @@ use crate::devices::config::{
 use crate::devices::ROLE_CYBER;
 use crate::entities::{device, login, organism, system_settings};
 use crate::file_registry::entities::{
-    file_content, file_content_upload, file_device_source_state, file_entry,
+    device_upload_finalization_attempt, device_upload_finalization_budget,
+    device_upload_finalization_job, file_content, file_content_upload,
+    file_content_upload_object, file_device_source_state, file_entry,
     file_revision, sea_orm_active_enums::FileEntryKind,
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
-use crate::types::Env;
+use crate::types::{DeviceUploadFinalizationSettings, Env};
 
 #[path = "archive_access_tests.rs"]
 mod archive_access_tests;
@@ -259,6 +261,7 @@ macro_rules! app {
                 .wrap(IdentityMiddleware::default())
                 .wrap(SessionMiddleware::new(session, Key::generate()))
                 .route("/test/login/{login}", web::post().to(sign_in))
+                .configure(crate::devices::upload_finalization::config)
                 .service(crate::devices::files::content::routes()),
         )
         .await
@@ -291,6 +294,12 @@ mod preview_tests;
 #[path = "local_cache_tests.rs"]
 mod local_cache_tests;
 
+#[path = "async_replay_tests.rs"]
+mod async_replay_tests;
+
+#[path = "async_recovery_tests.rs"]
+mod async_recovery_tests;
+
 async fn assert_error(
     error: protocol::ContentError,
     expected: StatusCode,
@@ -308,6 +317,2176 @@ async fn assert_error(
             code
         );
     }
+}
+
+async fn assert_no_finalization_jobs(fixture: &Fixture) {
+    assert!(device_upload_finalization_job::Entity::find()
+        .all(fixture.db())
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+async fn assert_finalization_source_unpublished(
+    fixture: &Fixture,
+    upload: &Upload,
+    expected_bytes: &[u8],
+) {
+    assert_eq!(
+        fixture.persisted(upload).await.status,
+        crate::file_registry::entities::sea_orm_active_enums::FileContentUploadStatus::Open
+    );
+    assert!(file_content::Entity::find_by_id((
+        upload.file_id,
+        upload.revision
+    ))
+    .one(fixture.db())
+    .await
+    .unwrap()
+    .is_none());
+    assert_eq!(
+        std::fs::read(fixture.spool.path().join(format!("{}.data", upload.id)))
+            .unwrap(),
+        expected_bytes
+    );
+}
+
+fn async_file_env(env: &Env, fixture: &Fixture, enabled: bool) -> Arc<Env> {
+    let mut env = env.clone();
+    env.device_file_content = Some(fixture.runtime.clone());
+    env.config.storage_dir = fixture.spool.path().display().to_string();
+    env.config.device_upload_finalization =
+        Some(DeviceUploadFinalizationSettings {
+            enabled,
+            file_slots: 1,
+            encryption_slots: 1,
+            readback_slots: 1,
+            ..Default::default()
+        });
+    Arc::new(env)
+}
+
+async fn admit_file_source(fixture: &Fixture, upload: &Upload) -> Uuid {
+    use crate::devices::upload_finalization::{
+        admission,
+        types::{FinalizationCommand, FinalizationTarget},
+    };
+
+    let source = fixture.runtime.spool.acquire(upload.id).await.unwrap();
+    source.make_durable(upload.upload_length).await.unwrap();
+    admission::admit(
+        fixture.db(),
+        &FinalizationCommand {
+            created_by_login_id: fixture.login.id,
+            device_id: fixture.device.id,
+            source_size_bytes: upload.upload_length as i64,
+            source_locator: Some(format!("{}.data", upload.id)),
+            target: FinalizationTarget::File {
+                upload_id: upload.id,
+                file_id: upload.file_id,
+                revision: upload.revision,
+            },
+        },
+        &DeviceUploadFinalizationSettings {
+            enabled: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap()
+    .job_id
+}
+
+async fn assert_file_job_reserved(
+    fixture: &Fixture,
+    upload: &Upload,
+    job_id: Uuid,
+) {
+    let job = device_upload_finalization_job::Entity::find_by_id(job_id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(job.kind, "file");
+    assert_eq!(job.source_identity, upload.id.to_string());
+    assert_eq!(job.created_by_login_id, fixture.login.id);
+    assert_eq!(job.device_id, fixture.device.id);
+    assert_eq!(job.file_upload_id, Some(upload.id));
+    assert_eq!(job.file_id, Some(upload.file_id));
+    assert_eq!(job.revision, Some(upload.revision));
+    assert_eq!(job.source_size_bytes, upload.upload_length as i64);
+    assert_eq!(job.source_release_state, "held");
+    assert!(job.source_released_at.is_none());
+    assert!(job.quota_released_at.is_none());
+    assert_eq!(job.status, "queued");
+    assert!(job.result.is_none());
+    assert!(job.finished_at.is_none());
+    assert!(job.active_attempt_id.is_none());
+    for scope in [
+        "global:file".to_owned(),
+        format!("actor:{}:file", fixture.login.id),
+    ] {
+        let budget =
+            device_upload_finalization_budget::Entity::find_by_id(scope)
+                .one(fixture.db())
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(budget.reserved_jobs, 1);
+        assert_eq!(budget.reserved_source_bytes, upload.upload_length as i64);
+        assert_eq!(budget.unresolved_writes, 0);
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_acceptance_commits_ownership_without_heavy_slots_or_hashing(
+) {
+    use crate::devices::upload_finalization::resources::{self, ResourceKind};
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let file = fixture.file("async-admission").await;
+    let upload = fixture.upload(&file, b"expected").await;
+    drop(fixture.seed_bytes(&upload, b"tampered").await);
+    let before = fixture.persisted(&upload).await;
+    let _permits = fixture
+        .runtime
+        .finalization_permits
+        .clone()
+        .acquire_many_owned(
+            fixture.runtime.config.finalization_max_concurrent as u32,
+        )
+        .await
+        .unwrap();
+    let _slots: Vec<_> = [
+        ResourceKind::File,
+        ResourceKind::Encryption,
+        ResourceKind::Readback,
+    ]
+    .into_iter()
+    .map(|kind| {
+        resources::try_acquire_file(fixture.spool.path(), kind, 1)
+            .unwrap()
+            .unwrap()
+    })
+    .collect();
+    let mut accepted_job = None;
+    for enabled in [true, false] {
+        let env = async_file_env(&env, &fixture, enabled);
+        let app = app!(env);
+        let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+        let started = Instant::now();
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&format!(
+                        "{}/complete",
+                        super::resource_location(upload.id)
+                    ))
+                    .cookie(cookie)
+                    .insert_header(("tus-resumable", "1.0.0"))
+                    .set_json(json!({ "async_finalization": true }))
+                    .to_request(),
+            ),
+        )
+        .await
+        .expect("async admission waited for a heavy execution slot");
+        let elapsed = started.elapsed();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        eprintln!(
+            "UPLOAD_METRIC async_file_admission enabled={enabled} replay={} elapsed_ms={} held_slots=file,encryption,readback legacy_permits_held={} no_hash_admission=true storage_fixture=memory",
+            !enabled,
+            elapsed.as_millis(),
+            fixture.runtime.config.finalization_max_concurrent,
+        );
+        assert_eq!(response.headers().get("tus-resumable").unwrap(), "1.0.0");
+        assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "1");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "private, no-store"
+        );
+        let location =
+            response.headers().get(header::LOCATION).unwrap().clone();
+        let body: Value = test::read_body_json(response).await;
+        let job_id = Uuid::parse_str(body["job_id"].as_str().unwrap()).unwrap();
+        assert_eq!(body, json!({ "status": "queued", "job_id": job_id }));
+        assert_eq!(
+            location.to_str().unwrap(),
+            format!("/api/device/upload-finalization-jobs/{job_id}")
+        );
+        if let Some(original) = accepted_job {
+            assert_eq!(job_id, original);
+        }
+        accepted_job = Some(job_id);
+        assert_file_job_reserved(&fixture, &upload, job_id).await;
+        assert_finalization_source_unpublished(&fixture, &upload, b"tampered")
+            .await;
+        assert_eq!(
+            fixture.persisted(&upload).await.hard_expires_at,
+            before.hard_expires_at
+        );
+        assert!(fixture.runtime.storage.list("").await.unwrap().is_empty());
+    }
+    assert_eq!(
+        device_upload_finalization_job::Entity::find()
+            .all(fixture.db())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_acceptance_rejects_incomplete_oversized_and_stale_sources(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    for (name, bytes, status, code) in [
+        ("incomplete", b"part".as_slice(), 409, "upload_incomplete"),
+        (
+            "oversized",
+            b"too many bytes".as_slice(),
+            409,
+            "upload_incomplete",
+        ),
+        ("stale", b"complete".as_slice(), 410, "upload_stale"),
+    ] {
+        let file = fixture.file(name).await;
+        let upload = fixture.upload(&file, b"complete").await;
+        let path = fixture.spool.path().join(format!("{}.data", upload.id));
+        std::fs::write(&path, bytes).unwrap();
+        if name == "stale" {
+            resync_file(&env, &fixture, &file).await;
+        }
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .set_json(json!({ "async_finalization": true }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status().as_u16(), status, "{name}");
+        assert!(!response.headers().contains_key(header::LOCATION));
+        assert_eq!(
+            test::read_body_json::<Value, _>(response).await["code"],
+            code
+        );
+        assert_no_finalization_jobs(&fixture).await;
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+        assert!(file_content::Entity::find_by_id((file.id, 1))
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .is_none());
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_acceptance_owns_zero_byte_source_without_data_file()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("empty-async").await;
+    let upload = fixture.upload(&file, b"").await;
+    assert!(!fixture
+        .spool
+        .path()
+        .join(format!("{}.data", upload.id))
+        .exists());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("{}/complete", super::resource_location(upload.id)))
+            .cookie(cookie)
+            .insert_header(("tus-resumable", "1.0.0"))
+            .set_json(json!({ "async_finalization": true }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let body: Value = test::read_body_json(response).await;
+    let job_id = Uuid::parse_str(body["job_id"].as_str().unwrap()).unwrap();
+    assert_file_job_reserved(&fixture, &upload, job_id).await;
+    let locked = fixture.runtime.spool.acquire(upload.id).await.unwrap();
+    assert_eq!(locked.offset().unwrap(), 0);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_pin_rejects_patch_and_delete_with_admission_disabled(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let file = fixture.file("pinned-source").await;
+    let upload = fixture.upload(&file, b"retained").await;
+    drop(fixture.seed_bytes(&upload, b"retained").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let before = fixture.persisted(&upload).await;
+    let env = async_file_env(&env, &fixture, false);
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    for method in [Method::PATCH, Method::DELETE] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::default()
+                .method(method.clone())
+                .uri(&super::resource_location(upload.id))
+                .cookie(cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .insert_header(("upload-offset", "8"))
+                .insert_header((
+                    header::CONTENT_TYPE,
+                    "application/offset+octet-stream",
+                ))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CONFLICT, "{method}");
+        assert_eq!(fixture.persisted(&upload).await, before);
+        assert_finalization_source_unpublished(&fixture, &upload, b"retained")
+            .await;
+        assert_file_job_reserved(&fixture, &upload, job_id).await;
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_pin_survives_hard_expiry_head_and_cleanup() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut fixture = Fixture::new(&env).await;
+    let limits = &mut Arc::get_mut(&mut fixture.runtime).unwrap().config;
+    limits.upload_idle_ttl_secs = 3;
+    limits.upload_max_lifetime_secs = 3;
+    let file = fixture.file("pinned-expiry").await;
+    let upload = fixture.upload(&file, b"retained").await;
+    drop(fixture.seed_bytes(&upload, b"retained").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let until_expiry = (upload.hard_expires_at - Utc::now().fixed_offset())
+        .to_std()
+        .expect("fixture expired before admission");
+    tokio::time::sleep(until_expiry + std::time::Duration::from_millis(20))
+        .await;
+    let env = async_file_env(&env, &fixture, false);
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::default()
+            .method(Method::HEAD)
+            .uri(&super::resource_location(upload.id))
+            .cookie(cookie)
+            .insert_header(("tus-resumable", "1.0.0"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers().get("upload-offset").unwrap(), "8");
+    worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
+        .await
+        .unwrap();
+    assert_finalization_source_unpublished(&fixture, &upload, b"retained")
+        .await;
+    assert_eq!(
+        fixture.persisted(&upload).await.hard_expires_at,
+        upload.hard_expires_at
+    );
+    assert_file_job_reserved(&fixture, &upload, job_id).await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_pin_retains_stale_filesync_source_during_cleanup() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let file = fixture.file("pinned-filesync").await;
+    let upload = fixture.upload(&file, b"revision one").await;
+    drop(fixture.seed_bytes(&upload, b"revision one").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let ((), cleanup) = tokio::join!(
+        resync_file(&env, &fixture, &file),
+        worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id),
+    );
+    cleanup.unwrap();
+    worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read(fixture.spool.path().join(format!("{}.data", upload.id)))
+            .unwrap(),
+        b"revision one"
+    );
+    let persisted = fixture.persisted(&upload).await;
+    assert_eq!(
+        persisted.status,
+        crate::file_registry::entities::sea_orm_active_enums::FileContentUploadStatus::Stale
+    );
+    assert!(persisted.spool_removed_at.is_none());
+    assert_eq!(persisted.hard_expires_at, upload.hard_expires_at);
+    assert_file_job_reserved(&fixture, &upload, job_id).await;
+}
+
+async fn claim_file_job(
+    fixture: &Fixture,
+    job_id: Uuid,
+) -> crate::devices::upload_finalization::types::ClaimedFinalizationJob {
+    use crate::devices::upload_finalization::{
+        types::FinalizationKind,
+        worker::{claim_due, ClaimLane},
+    };
+
+    let claim = claim_due(
+        fixture.db(),
+        FinalizationKind::FinalizationFileKind,
+        Uuid::new_v4(),
+        ClaimLane::Work,
+        60,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(claim.job_id, job_id);
+    claim
+}
+
+async fn assert_selected_file_bytes(
+    fixture: &Fixture,
+    upload: &Upload,
+    job_id: Uuid,
+    bytes: &[u8],
+) {
+    let content = file_content::Entity::find_by_id((upload.file_id, 1))
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    let provenance = file_content_upload_object::Entity::find_by_id(upload.id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    let attempt = device_upload_finalization_attempt::Entity::find_by_id(
+        provenance.attempt_id.unwrap(),
+    )
+    .one(fixture.db())
+    .await
+    .unwrap()
+    .unwrap();
+    let file = file_entry::Entity::find_by_id(upload.file_id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(attempt.job_id, job_id);
+    assert_eq!(attempt.phase, "selected");
+    assert!(attempt.verified_at.is_some());
+    assert!(!attempt.write_credit_held);
+    assert_eq!(content.upload_id, Some(upload.id));
+    assert_eq!(content.object_key, attempt.object_key);
+    assert_eq!(content.object_key, provenance.object_key);
+    assert_ne!(content.object_key, upload.object_key);
+    assert_eq!(
+        file.content_path.as_deref(),
+        Some(content.object_key.as_str())
+    );
+    assert_eq!(content.source_size_bytes, bytes.len() as i64);
+    assert_eq!(content.source_sha256, Sha256::digest(bytes).to_vec());
+    assert!(content.is_encrypted);
+    let downloaded =
+        crate::storage::download_and_decrypt_from_s3_with_operator(
+            &Some(fixture.runtime.storage.clone()),
+            &Some(fixture.runtime.storage_config.clone()),
+            &fixture.runtime.strongbox_key,
+            &content.object_key,
+        )
+        .await
+        .unwrap();
+    assert_eq!(downloaded, bytes);
+    finalizer::safe_delete_object(&fixture.runtime, upload).await;
+    assert!(fixture
+        .runtime
+        .storage
+        .stat(&content.object_key)
+        .await
+        .is_ok());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_worker_publishes_exact_receipt_and_empty_content() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    for (name, bytes) in [
+        ("worker-content", b"original async content".as_slice()),
+        ("worker-empty", b"".as_slice()),
+    ] {
+        let file = fixture.file(name).await;
+        let upload = fixture.upload(&file, bytes).await;
+        if !bytes.is_empty() {
+            drop(fixture.seed_bytes(&upload, bytes).await);
+        }
+        let job_id = admit_file_source(&fixture, &upload).await;
+        let claim = claim_file_job(&fixture, job_id).await;
+        finalizer::finalize_claim(&env, &fixture.runtime, claim)
+            .await
+            .unwrap();
+        let job = device_upload_finalization_job::Entity::find_by_id(job_id)
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "completed");
+        assert!(job.finished_at.is_some());
+        assert!(job.winning_attempt_id.is_some());
+        assert_eq!(fixture.persisted(&upload).await.status, crate::file_registry::entities::sea_orm_active_enums::FileContentUploadStatus::Completed);
+        assert_selected_file_bytes(&fixture, &upload, job_id, bytes).await;
+        let receipt = json!({
+            "upload_id": upload.id,
+            "file_id": file.id,
+            "revision": 1,
+            "status": "completed",
+        });
+        resync_file(&env, &fixture, &file).await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .set_json(json!({ "async_finalization": true }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = test::read_body_json(response).await;
+        assert_eq!(body["job_id"], json!(job_id));
+        assert_eq!(body["status"], "completed");
+        assert_eq!(body["result"], receipt);
+        assert!(body["error"].is_null());
+        assert!(body["retry_after_seconds"].is_null());
+        let after = device_upload_finalization_job::Entity::find_by_id(job_id)
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.result, job.result);
+        assert_eq!(after.winning_attempt_id, job.winning_attempt_id);
+        assert_eq!(after.attempt_count, 1);
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_worker_rejects_digest_without_publication() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("worker-digest").await;
+    let upload = fixture.upload(&file, b"good").await;
+    drop(fixture.seed_bytes(&upload, b"evil").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let claim = claim_file_job(&fixture, job_id).await;
+    let _ = finalizer::finalize_claim(&env, &fixture.runtime, claim).await;
+    let job = device_upload_finalization_job::Entity::find_by_id(job_id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(job.status, "failed");
+    assert_eq!(job.error_code.as_deref(), Some("source_digest_mismatch"));
+    assert_eq!(job.error_action.as_deref(), Some("new_upload"));
+    assert!(job.finished_at.is_some());
+    assert!(job.result.is_none());
+    assert!(job.winning_attempt_id.is_none());
+    assert!(fixture.runtime.storage.list("").await.unwrap().is_empty());
+    assert!(file_content::Entity::find_by_id((file.id, 1))
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .is_none());
+    assert!(file_content_upload_object::Entity::find_by_id(upload.id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_worker_keeps_source_when_storage_write_is_uncertain()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut fixture = Fixture::new(&env).await;
+    let storage_root = tempfile::tempdir().unwrap();
+    let unavailable_root = storage_root.path().join("unavailable");
+    std::fs::create_dir(&unavailable_root).unwrap();
+    let storage = opendal::Operator::new(
+        opendal::services::Fs::default()
+            .root(unavailable_root.to_str().unwrap()),
+    )
+    .unwrap()
+    .finish();
+    std::fs::remove_dir(&unavailable_root).unwrap();
+    std::fs::write(&unavailable_root, b"not a directory").unwrap();
+    let runtime = Arc::get_mut(&mut fixture.runtime).unwrap();
+    runtime.managed_storage = Arc::new(
+        crate::storage::finalization::ManagedStorage::for_test(
+            storage.clone(),
+            runtime.storage_config.clone(),
+            &runtime.strongbox_key,
+        )
+        .unwrap(),
+    );
+    runtime.storage = storage;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("worker-unknown").await;
+    let upload = fixture.upload(&file, b"retained").await;
+    drop(fixture.seed_bytes(&upload, b"retained").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let claim = claim_file_job(&fixture, job_id).await;
+    let _ = finalizer::finalize_claim(&env, &fixture.runtime, claim).await;
+    let job = device_upload_finalization_job::Entity::find_by_id(job_id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(job.status, "outcome_unknown");
+    assert_eq!(job.error_code.as_deref(), Some("storage_outcome_unknown"));
+    assert_eq!(job.error_action.as_deref(), Some("retry_poll"));
+    assert!(job.finished_at.is_none());
+    assert!(job.result.is_none());
+    assert_eq!(job.source_release_state, "held");
+    assert!(job.source_released_at.is_none());
+    assert!(job.quota_released_at.is_none());
+    let attempt = device_upload_finalization_attempt::Entity::find_by_id(
+        job.active_attempt_id.unwrap(),
+    )
+    .one(fixture.db())
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(attempt.write_intent_at.is_some());
+    assert!(attempt.write_credit_held);
+    assert!(attempt.verified_at.is_none());
+    worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
+        .await
+        .unwrap();
+    assert_finalization_source_unpublished(&fixture, &upload, b"retained")
+        .await;
+}
+
+async fn seed_corrupt_file_attempt(
+    fixture: &Fixture,
+    upload: &Upload,
+    claim: &crate::devices::upload_finalization::types::ClaimedFinalizationJob,
+    acknowledged: bool,
+) -> Uuid {
+    use crate::devices::upload_finalization::{
+        query, recovery,
+        types::{FinalizationFailure, WriteResolution},
+    };
+
+    let attempt_id = query::create_attempt(fixture.db(), claim, true)
+        .await
+        .unwrap();
+    assert!(query::prepare_attempt(
+        fixture.db(),
+        claim,
+        attempt_id,
+        upload.upload_length as i64,
+        &upload.expected_sha256,
+        None,
+    )
+    .await
+    .unwrap());
+    assert!(
+        query::record_write_intent(fixture.db(), claim, attempt_id, 4)
+            .await
+            .unwrap()
+    );
+    let attempt =
+        device_upload_finalization_attempt::Entity::find_by_id(attempt_id)
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .unwrap();
+    crate::storage::upload_encrypted_to_s3_with_operator(
+        &Some(fixture.runtime.storage.clone()),
+        &fixture.runtime.storage_config,
+        &fixture.runtime.strongbox_key,
+        &attempt.object_key,
+        web::Bytes::from_static(b"corrupt content"),
+    )
+    .await
+    .unwrap();
+    if acknowledged {
+        assert!(query::record_write_resolution(
+            fixture.db(),
+            claim,
+            attempt_id,
+            WriteResolution::Acknowledged,
+        )
+        .await
+        .unwrap());
+        assert!(query::release_write_credit(fixture.db(), attempt_id)
+            .await
+            .unwrap());
+    }
+    assert!(recovery::schedule_retry(
+        fixture.db(),
+        claim,
+        &FinalizationFailure::StorageOutcomeUnknown,
+        true,
+        1,
+    )
+    .await
+    .unwrap());
+    sqlx::query("update device_upload_finalization_job set next_run_at=clock_timestamp()-interval '1 second' where id=$1")
+        .bind(claim.job_id)
+        .execute(fixture.db().get_postgres_connection_pool())
+        .await
+        .unwrap();
+    attempt_id
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_worker_reconciles_full_remote_digest_before_publication(
+) {
+    use crate::devices::upload_finalization::{
+        types::FinalizationKind,
+        worker::{claim_due, ClaimLane},
+    };
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    for acknowledged in [true, false] {
+        let file = fixture.file("remote-corruption").await;
+        let upload = fixture.upload(&file, b"correct content").await;
+        drop(fixture.seed_bytes(&upload, b"correct content").await);
+        let job_id = admit_file_source(&fixture, &upload).await;
+        let claim = claim_file_job(&fixture, job_id).await;
+        let attempt_id =
+            seed_corrupt_file_attempt(&fixture, &upload, &claim, acknowledged)
+                .await;
+        let claim = claim_due(
+            fixture.db(),
+            FinalizationKind::FinalizationFileKind,
+            Uuid::new_v4(),
+            ClaimLane::Reconcile,
+            60,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(claim.job_id, job_id);
+        let _ = finalizer::finalize_claim(&env, &fixture.runtime, claim).await;
+        let job = device_upload_finalization_job::Entity::find_by_id(job_id)
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(job.result.is_none());
+        assert!(job.winning_attempt_id.is_none());
+        assert!(file_content::Entity::find_by_id((file.id, 1))
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .is_none());
+        assert!(file_content_upload_object::Entity::find_by_id(upload.id)
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .is_none());
+        let attempt =
+            device_upload_finalization_attempt::Entity::find_by_id(attempt_id)
+                .one(fixture.db())
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(attempt.verified_at.is_none());
+        assert_ne!(attempt.phase, "selected");
+        assert_eq!(attempt.write_credit_held, !acknowledged);
+        assert_eq!(job.status, "outcome_unknown");
+        assert_eq!(job.error_action.as_deref(), Some("retry_poll"));
+        assert!(job.finished_at.is_none());
+        assert!(job.lease_owner.is_none());
+        assert!(job.lease_until.is_none());
+        assert_eq!(job.source_release_state, "held");
+        assert_eq!(job.active_attempt_id, Some(attempt_id));
+        worker::cleanup_one_for_test(&env, &fixture.runtime, upload.id)
+            .await
+            .unwrap();
+        assert_finalization_source_unpublished(
+            &fixture,
+            &upload,
+            b"correct content",
+        )
+        .await;
+        sqlx::query("update device_upload_finalization_job set next_run_at=clock_timestamp()+interval '1 day' where id=$1")
+            .bind(job_id)
+            .execute(fixture.db().get_postgres_connection_pool())
+            .await
+            .unwrap();
+    }
+}
+
+async fn persisted_file_job(
+    fixture: &Fixture,
+    job_id: Uuid,
+) -> device_upload_finalization_job::Model {
+    device_upload_finalization_job::Entity::find_by_id(job_id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+async fn assert_file_budget(fixture: &Fixture, jobs: i64, bytes: i64) {
+    for scope in [
+        "global:file".to_owned(),
+        format!("actor:{}:file", fixture.login.id),
+    ] {
+        let budget =
+            device_upload_finalization_budget::Entity::find_by_id(scope)
+                .one(fixture.db())
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(budget.reserved_jobs, jobs);
+        assert_eq!(budget.reserved_source_bytes, bytes);
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_cleanup_retries_source_removal_before_releasing_quota(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("cleanup-retry").await;
+    let upload = fixture.upload(&file, b"retained").await;
+    drop(fixture.seed_bytes(&upload, b"retained").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let claim = claim_file_job(&fixture, job_id).await;
+    finalizer::finalize_claim(&env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    let completed = persisted_file_job(&fixture, job_id).await;
+    assert_eq!(completed.status, "completed");
+    assert_eq!(completed.source_release_state, "release_pending");
+    assert_file_budget(&fixture, 1, 8).await;
+    let data = fixture.spool.path().join(format!("{}.data", upload.id));
+    let retained = fixture.spool.path().join(format!("{}.retained", upload.id));
+    std::fs::rename(&data, &retained).unwrap();
+    std::fs::create_dir(&data).unwrap();
+    assert!(worker::cleanup_finalization_for_test(
+        &env,
+        &fixture.runtime,
+        job_id
+    )
+    .await
+    .is_err());
+    let after_failure = persisted_file_job(&fixture, job_id).await;
+    assert_eq!(after_failure.result, completed.result);
+    assert_eq!(after_failure.source_release_state, "release_pending");
+    assert!(after_failure.source_released_at.is_none());
+    assert!(after_failure.quota_released_at.is_none());
+    assert!(fixture.persisted(&upload).await.spool_removed_at.is_none());
+    assert_file_budget(&fixture, 1, 8).await;
+    assert_eq!(std::fs::read(&retained).unwrap(), b"retained");
+    std::fs::remove_dir(&data).unwrap();
+    std::fs::rename(&retained, &data).unwrap();
+    for _ in 0..2 {
+        worker::cleanup_finalization_for_test(&env, &fixture.runtime, job_id)
+            .await
+            .unwrap();
+        assert!(!data.exists());
+        let released = persisted_file_job(&fixture, job_id).await;
+        assert_eq!(released.status, "completed");
+        assert_eq!(released.result, completed.result);
+        assert_eq!(released.winning_attempt_id, completed.winning_attempt_id);
+        assert_eq!(released.source_release_state, "released");
+        assert!(released.source_released_at.is_some());
+        assert!(released.quota_released_at.is_some());
+        assert!(fixture.persisted(&upload).await.spool_removed_at.is_some());
+        assert_file_budget(&fixture, 0, 0).await;
+    }
+    assert_selected_file_bytes(&fixture, &upload, job_id, b"retained").await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_cleanup_keeps_selected_object_and_late_write_tombstone(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("cleanup-object").await;
+    let upload = fixture.upload(&file, b"selected").await;
+    drop(fixture.seed_bytes(&upload, b"selected").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let claim = claim_file_job(&fixture, job_id).await;
+    finalizer::finalize_claim(&env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    let completed = persisted_file_job(&fixture, job_id).await;
+    let canonical = device_upload_finalization_attempt::Entity::find()
+        .all(fixture.db())
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|attempt| {
+            attempt.job_id == job_id && attempt.origin == "legacy_cleanup"
+        })
+        .unwrap();
+    assert_eq!(canonical.phase, "retired");
+    assert_eq!(canonical.object_key, upload.object_key);
+    for _ in 0..2 {
+        fixture
+            .runtime
+            .storage
+            .write(&canonical.object_key, b"late write".to_vec())
+            .await
+            .unwrap();
+        assert!(fixture
+            .runtime
+            .managed_storage
+            .cleanup_retired(
+                fixture.db(),
+                canonical.id,
+                std::time::Duration::from_secs(5)
+            )
+            .await
+            .unwrap());
+        assert_eq!(
+            fixture
+                .runtime
+                .storage
+                .stat(&canonical.object_key)
+                .await
+                .unwrap_err()
+                .kind(),
+            opendal::ErrorKind::NotFound
+        );
+        let retired = device_upload_finalization_attempt::Entity::find_by_id(
+            canonical.id,
+        )
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(retired.late_write_possible);
+        assert!(retired.cleanup_confirmed_at.is_some());
+        assert!(retired.cleanup_next_at.is_some());
+    }
+    assert!(!fixture
+        .runtime
+        .managed_storage
+        .cleanup_retired(
+            fixture.db(),
+            completed.winning_attempt_id.unwrap(),
+            std::time::Duration::from_secs(5)
+        )
+        .await
+        .unwrap());
+    assert_selected_file_bytes(&fixture, &upload, job_id, b"selected").await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_failed_cleanup_preserves_terminal_replay_and_sync_gone(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("failed-cleanup").await;
+    let upload = fixture.upload(&file, b"good").await;
+    drop(fixture.seed_bytes(&upload, b"evil").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let claim = claim_file_job(&fixture, job_id).await;
+    finalizer::finalize_claim(&env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    assert_eq!(persisted_file_job(&fixture, job_id).await.status, "failed");
+    assert_file_budget(&fixture, 1, 4).await;
+    worker::cleanup_finalization_for_test(&env, &fixture.runtime, job_id)
+        .await
+        .unwrap();
+    assert_file_budget(&fixture, 0, 0).await;
+    assert!(!fixture
+        .spool
+        .path()
+        .join(format!("{}.data", upload.id))
+        .exists());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    for asynchronous in [false, true] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .set_json(json!({"async_finalization": asynchronous}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            response.status(),
+            if asynchronous {
+                StatusCode::OK
+            } else {
+                StatusCode::GONE
+            }
+        );
+        let body: Value = test::read_body_json(response).await;
+        if asynchronous {
+            assert_eq!(body["job_id"], json!(job_id));
+            assert_eq!(body["status"], "failed");
+            assert_eq!(body["error"]["code"], "source_digest_mismatch");
+        } else {
+            assert_eq!(body, json!({"code": "upload_rejected"}));
+        }
+    }
+    assert_eq!(persisted_file_job(&fixture, job_id).await.attempt_count, 1);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_http_acceptance_runs_to_completion_without_polling()
+{
+    use tokio_util::sync::CancellationToken;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut fixture = Fixture::new(&env).await;
+    Arc::get_mut(&mut fixture.runtime)
+        .unwrap()
+        .config
+        .cleanup_poll_interval_secs = 1;
+    let mut env = async_file_env(&env, &fixture, true);
+    Arc::get_mut(&mut env)
+        .unwrap()
+        .config
+        .device_upload_finalization
+        .as_mut()
+        .unwrap()
+        .poll_seconds = 1;
+    let file = fixture.file("autonomous-http").await;
+    let upload = fixture.upload(&file, b"autonomous").await;
+    drop(fixture.seed_bytes(&upload, b"autonomous").await);
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("{}/complete", super::resource_location(upload.id)))
+            .cookie(cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .set_json(json!({"async_finalization": true}))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let body: Value = test::read_body_json(response).await;
+    let job_id = Uuid::parse_str(body["job_id"].as_str().unwrap()).unwrap();
+    let cancellation = CancellationToken::new();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    let background =
+        tokio::spawn(crate::devices::upload_finalization::worker::run_files(
+            env.clone(),
+            fixture.runtime.clone(),
+            cancellation.clone(),
+        ));
+    let completed = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        async {
+            loop {
+                let job = persisted_file_job(&fixture, job_id).await;
+                assert_ne!(job.status, "failed", "{:?}", job.error_code);
+                if job.status == "completed" && job.quota_released_at.is_some()
+                {
+                    break job;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        },
+    )
+    .await
+    .expect(
+        "registered worker did not publish and clean the HTTP-accepted source",
+    );
+    cancellation.cancel();
+    tokio::time::timeout(std::time::Duration::from_secs(5), background)
+        .await
+        .unwrap()
+        .unwrap();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri(&location)
+            .cookie(cookie)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let body: Value = test::read_body_json(response).await;
+    assert_eq!(body["status"], "completed");
+    assert_eq!(
+        body["result"],
+        json!({"upload_id": upload.id, "file_id": file.id, "revision": 1, "status": "completed"})
+    );
+    assert_eq!(completed.attempt_count, 1);
+    assert!(!fixture
+        .spool
+        .path()
+        .join(format!("{}.data", upload.id))
+        .exists());
+    assert_file_budget(&fixture, 0, 0).await;
+    assert_selected_file_bytes(&fixture, &upload, job_id, b"autonomous").await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_failure_retires_inherited_canonical_object() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("legacy-canonical-failure").await;
+    let upload = fixture.upload(&file, b"good").await;
+    drop(fixture.seed_bytes(&upload, b"evil").await);
+    fixture
+        .runtime
+        .storage
+        .write(&upload.object_key, b"interrupted legacy write".to_vec())
+        .await
+        .unwrap();
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let claim = claim_file_job(&fixture, job_id).await;
+    finalizer::finalize_claim(&env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    let failed = persisted_file_job(&fixture, job_id).await;
+    assert_eq!(failed.status, "failed");
+    assert_eq!(failed.error_code.as_deref(), Some("source_digest_mismatch"));
+    assert!(failed.winning_attempt_id.is_none());
+    let canonical = device_upload_finalization_attempt::Entity::find()
+        .all(fixture.db()).await.unwrap().into_iter()
+        .find(|attempt| attempt.job_id == job_id && attempt.origin == "legacy_cleanup")
+        .expect("failed async job left inherited canonical object without durable cleanup ownership");
+    assert_eq!(canonical.object_key, upload.object_key);
+    assert_eq!(canonical.phase, "retired");
+    assert!(canonical.late_write_possible);
+    assert!(fixture
+        .runtime
+        .managed_storage
+        .cleanup_retired(
+            fixture.db(),
+            canonical.id,
+            std::time::Duration::from_secs(5)
+        )
+        .await
+        .unwrap());
+    assert_eq!(
+        fixture
+            .runtime
+            .storage
+            .stat(&upload.object_key)
+            .await
+            .unwrap_err()
+            .kind(),
+        opendal::ErrorKind::NotFound
+    );
+    assert!(file_content_upload_object::Entity::find_by_id(upload.id)
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .is_none());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_missing_source_keeps_ownership_until_access_recovers(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    let file = fixture.file("temporarily-missing-source").await;
+    let upload = fixture.upload(&file, b"retained").await;
+    drop(fixture.seed_bytes(&upload, b"retained").await);
+    let job_id = admit_file_source(&fixture, &upload).await;
+    let data = fixture.spool.path().join(format!("{}.data", upload.id));
+    let hidden = fixture
+        .spool
+        .path()
+        .join(format!("{}.unavailable", upload.id));
+    std::fs::rename(&data, &hidden).unwrap();
+    let claim = claim_file_job(&fixture, job_id).await;
+    finalizer::finalize_claim(&env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    let deferred = persisted_file_job(&fixture, job_id).await;
+    assert_eq!(deferred.status, "retry_wait");
+    assert_eq!(deferred.error_action.as_deref(), Some("retry_poll"));
+    assert!(deferred.finished_at.is_none());
+    assert_eq!(deferred.source_release_state, "held");
+    assert!(deferred.quota_released_at.is_none());
+    worker::cleanup_finalization_for_test(&env, &fixture.runtime, job_id)
+        .await
+        .unwrap();
+    assert_file_budget(&fixture, 1, 8).await;
+    assert_eq!(std::fs::read(&hidden).unwrap(), b"retained");
+    assert_eq!(fixture.persisted(&upload).await.status, crate::file_registry::entities::sea_orm_active_enums::FileContentUploadStatus::Open);
+    std::fs::rename(&hidden, &data).unwrap();
+    sqlx::query("update device_upload_finalization_job set next_run_at=clock_timestamp()-interval '1 second' where id=$1")
+        .bind(job_id).execute(fixture.db().get_postgres_connection_pool()).await.unwrap();
+    let claim = claim_file_job(&fixture, job_id).await;
+    finalizer::finalize_claim(&env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    assert_eq!(
+        persisted_file_job(&fixture, job_id).await.status,
+        "completed"
+    );
+    assert_selected_file_bytes(&fixture, &upload, job_id, b"retained").await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_foreign_actor_cannot_probe_source_or_admission_state(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let other = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("upload-other-{}", Uuid::new_v4())),
+            roles: Set(json!([ROLE_CYBER])),
+            organism_id: Set(fixture.login.organism_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    crate::devices::access::authorize_file_sync_snapshot(
+        &env.dbx,
+        &other.id,
+        fixture.device.id,
+    )
+    .await
+    .unwrap();
+    for (enabled, name) in [
+        (true, "incomplete"),
+        (false, "disabled"),
+        (true, "rejected"),
+    ] {
+        let file = fixture.file(name).await;
+        let upload = fixture.upload(&file, b"retained").await;
+        drop(
+            fixture
+                .seed_bytes(
+                    &upload,
+                    if name == "incomplete" {
+                        b"part"
+                    } else {
+                        b"retained"
+                    },
+                )
+                .await,
+        );
+        if name == "rejected" {
+            repository::transition_open(
+                fixture.db(),
+                &upload,
+                UploadStatus::Rejected,
+                Utc::now().fixed_offset(),
+                None,
+            )
+            .await
+            .unwrap();
+        }
+        let before = fixture.persisted(&upload).await;
+        let env = async_file_env(&env, &fixture, enabled);
+        let app = app!(env);
+        let cookie: Cookie<'static> = cookie!(app, other.id);
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie)
+                .insert_header(("tus-resumable", "1.0.0"))
+                .set_json(json!({"async_finalization": true}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{name}");
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "private, no-store"
+        );
+        assert_eq!(
+            test::read_body_json::<Value, _>(response).await,
+            json!({"code": "not_found"})
+        );
+        assert_eq!(fixture.persisted(&upload).await, before);
+        assert_no_finalization_jobs(&fixture).await;
+    }
+}
+
+async fn block_s3_delete(
+    listener: tokio::net::TcpListener,
+    entered: tokio::sync::oneshot::Sender<String>,
+    release: tokio::sync::oneshot::Receiver<()>,
+) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let (mut connection, _) = listener.accept().await.unwrap();
+    let mut request = Vec::new();
+    let mut buffer = [0; 1024];
+    loop {
+        let read = connection.read(&mut buffer).await.unwrap();
+        assert!(read > 0, "S3 request ended before headers");
+        request.extend_from_slice(&buffer[..read]);
+        assert!(
+            request.len() <= 64 * 1024,
+            "S3 request headers exceeded limit"
+        );
+        if request.windows(4).any(|part| part == b"\r\n\r\n") {
+            break;
+        }
+    }
+    let request = String::from_utf8(request).unwrap();
+    entered
+        .send(request.lines().next().unwrap().to_owned())
+        .unwrap();
+    let _ = release.await;
+    let _ = connection.write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await;
+}
+
+async fn failed_file_job(
+    env: &Env,
+    fixture: &Fixture,
+    name: &str,
+) -> (Upload, Uuid) {
+    let file = fixture.file(name).await;
+    let upload = fixture.upload(&file, b"good").await;
+    drop(fixture.seed_bytes(&upload, b"evil").await);
+    let job = admit_file_source(fixture, &upload).await;
+    let claim = claim_file_job(fixture, job).await;
+    finalizer::finalize_claim(env, &fixture.runtime, claim)
+        .await
+        .unwrap();
+    assert_eq!(persisted_file_job(fixture, job).await.status, "failed");
+    (upload, job)
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_source_cleanup_progresses_while_remote_delete_blocks(
+) {
+    use tokio_util::sync::CancellationToken;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut fixture = Fixture::new(&env).await;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let remote =
+        tokio::spawn(block_s3_delete(listener, entered_tx, release_rx));
+    let runtime = Arc::get_mut(&mut fixture.runtime).unwrap();
+    runtime.config.cleanup_poll_interval_secs = 1;
+    runtime.managed_storage = Arc::new(
+        crate::storage::finalization::ManagedStorage::new(
+            crate::storage::S3Config {
+                endpoint,
+                region: "us-east-1".to_owned(),
+                access_key_id: "fixture-access".to_owned(),
+                secret_access_key: "fixture-secret".to_owned(),
+                ..runtime.storage_config.clone()
+            },
+            &runtime.strongbox_key,
+        )
+        .unwrap(),
+    );
+    let mut env = async_file_env(&env, &fixture, true);
+    Arc::get_mut(&mut env)
+        .unwrap()
+        .config
+        .device_upload_finalization
+        .as_mut()
+        .unwrap()
+        .file_phase_seconds = 60;
+    let (first, first_job) =
+        failed_file_job(&env, &fixture, "blocked-delete").await;
+    let cancellation = CancellationToken::new();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    let cleanup = tokio::spawn(worker::run_finalization_cleanup_nofail(
+        env.clone(),
+        fixture.runtime.clone(),
+        cancellation.clone(),
+    ));
+    let request =
+        tokio::time::timeout(std::time::Duration::from_secs(10), entered_rx)
+            .await
+            .expect("retired canonical cleanup never reached S3")
+            .unwrap();
+    assert!(
+        request.starts_with("DELETE "),
+        "unexpected S3 request: {request}"
+    );
+    assert!(
+        request.contains(&first.id.to_string()),
+        "wrong cleanup key: {request}"
+    );
+    let (second, second_job) =
+        failed_file_job(&env, &fixture, "independent-source").await;
+    let removed =
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                let first = persisted_file_job(&fixture, first_job).await;
+                let second = persisted_file_job(&fixture, second_job).await;
+                if first.quota_released_at.is_some()
+                    && second.quota_released_at.is_some()
+                {
+                    break second;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        })
+        .await;
+    cancellation.cancel();
+    let stopped =
+        tokio::time::timeout(std::time::Duration::from_secs(5), cleanup).await;
+    release_tx.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), remote)
+        .await
+        .unwrap()
+        .unwrap();
+    stopped
+        .expect("cleanup did not cancel its blocked DELETE")
+        .unwrap();
+    let removed = removed.expect(
+        "remote DELETE blocked independent source removal and quota release",
+    );
+    assert_eq!(removed.source_release_state, "released");
+    assert!(removed.source_released_at.is_some());
+    assert!(!fixture
+        .spool
+        .path()
+        .join(format!("{}.data", second.id))
+        .exists());
+    assert!(fixture.persisted(&second).await.spool_removed_at.is_some());
+    assert_file_budget(&fixture, 0, 0).await;
+    let attempts = device_upload_finalization_attempt::Entity::find()
+        .all(fixture.db())
+        .await
+        .unwrap();
+    let pending = attempts
+        .iter()
+        .find(|attempt| {
+            attempt.job_id == first_job && attempt.origin == "legacy_cleanup"
+        })
+        .unwrap();
+    assert!(pending.cleanup_confirmed_at.is_none());
+    assert!(pending.cleanup_next_at.is_some());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase4_async_file_cleanup_rejects_replaced_spool_root_until_restored()
+{
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let env = async_file_env(&env, &fixture, true);
+    for failed in [false, true] {
+        let file = fixture
+            .file(if failed {
+                "failed-root"
+            } else {
+                "completed-root"
+            })
+            .await;
+        let upload = fixture.upload(&file, b"good").await;
+        let bytes = if failed { b"evil" } else { b"good" };
+        drop(fixture.seed_bytes(&upload, bytes).await);
+        let job = admit_file_source(&fixture, &upload).await;
+        let claim = claim_file_job(&fixture, job).await;
+        finalizer::finalize_claim(&env, &fixture.runtime, claim)
+            .await
+            .unwrap();
+        let terminal = persisted_file_job(&fixture, job).await;
+        assert_eq!(
+            terminal.status,
+            if failed { "failed" } else { "completed" }
+        );
+        assert_eq!(terminal.source_release_state, "release_pending");
+        let retained = tempfile::tempdir().unwrap();
+        let original = retained.path().join("original-spool");
+        std::fs::rename(fixture.spool.path(), &original).unwrap();
+        std::fs::create_dir(fixture.spool.path()).unwrap();
+        drop(fixture.runtime.spool.acquire(upload.id).await.unwrap());
+        for _ in 0..2 {
+            let _ = worker::cleanup_finalization_for_test(
+                &env,
+                &fixture.runtime,
+                job,
+            )
+            .await;
+            let deferred = persisted_file_job(&fixture, job).await;
+            assert_eq!(deferred.source_release_state, "release_pending");
+            assert!(deferred.source_released_at.is_none());
+            assert!(deferred.quota_released_at.is_none());
+            assert_eq!(deferred.result, terminal.result);
+            assert!(fixture
+                .persisted(&upload)
+                .await
+                .spool_removed_at
+                .is_none());
+            assert_file_budget(&fixture, 1, 4).await;
+            assert_eq!(
+                std::fs::read(original.join(format!("{}.data", upload.id)))
+                    .unwrap(),
+                bytes
+            );
+        }
+        std::fs::remove_dir_all(fixture.spool.path()).unwrap();
+        std::fs::rename(&original, fixture.spool.path()).unwrap();
+        for _ in 0..2 {
+            worker::cleanup_finalization_for_test(&env, &fixture.runtime, job)
+                .await
+                .unwrap();
+            let released = persisted_file_job(&fixture, job).await;
+            assert_eq!(released.status, terminal.status);
+            assert_eq!(released.result, terminal.result);
+            assert_eq!(released.source_release_state, "released");
+            assert!(released.source_released_at.is_some());
+            assert!(released.quota_released_at.is_some());
+            assert!(!fixture
+                .spool
+                .path()
+                .join(format!("{}.data", upload.id))
+                .exists());
+            assert_file_budget(&fixture, 0, 0).await;
+        }
+    }
+}
+
+#[actix_web::test]
+async fn phase4_async_file_locked_cleanup_keeps_original_directory_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let active = directory.path().join("active");
+    let original = directory.path().join("original");
+    let spool = super::Spool::for_test(active.clone()).await.unwrap();
+    let upload_id = Uuid::new_v4();
+    let source = spool.acquire(upload_id).await.unwrap();
+    source
+        .append(
+            stream::iter([Ok(bytes::Bytes::from_static(b"owned source"))]),
+            0,
+            12,
+        )
+        .await
+        .unwrap();
+    source.make_durable(12).await.unwrap();
+    std::fs::rename(&active, &original).unwrap();
+    std::fs::create_dir(&active).unwrap();
+    let replacement_data = active.join(format!("{upload_id}.data"));
+    let replacement_lock = active.join(format!("{upload_id}.lock"));
+    std::fs::write(&replacement_data, b"unrelated replacement source").unwrap();
+    std::fs::write(&replacement_lock, b"unrelated replacement lock").unwrap();
+    source.remove_durable_source().await.unwrap();
+    assert!(
+        !original.join(format!("{upload_id}.data")).exists(),
+        "cleanup reported durable removal while leaving the accepted bytes behind"
+    );
+    assert_eq!(
+        std::fs::read(&replacement_data).unwrap(),
+        b"unrelated replacement source"
+    );
+    assert_eq!(
+        std::fs::read(&replacement_lock).unwrap(),
+        b"unrelated replacement lock"
+    );
+    assert!(original.join(format!("{upload_id}.lock")).exists());
+    assert!(source.open_source().unwrap().is_none());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_sync_defaults_preserve_original_receipt() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    Arc::get_mut(&mut env).unwrap().device_file_content =
+        Some(fixture.runtime.clone());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let cases = [
+        ("empty", String::new(), ""),
+        ("object", "{}".to_owned(), ""),
+        ("false", r#"{"async_finalization":false}"#.to_owned(), ""),
+        ("limit", format!("{}{{}}", " ".repeat(1022)), ""),
+        ("query-only", String::new(), "?async_finalization=true"),
+    ];
+    for (name, payload, query) in cases {
+        let file = fixture.file(name).await;
+        let upload = fixture.upload(&file, b"original content").await;
+        drop(fixture.seed_bytes(&upload, b"original content").await);
+        let receipt = json!({
+            "upload_id": upload.id,
+            "file_id": file.id,
+            "revision": 1,
+            "status": "completed",
+        });
+        for replay in [false, true] {
+            let mut request = test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete{query}",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .set_payload(payload.clone());
+            if !payload.is_empty() {
+                request = request
+                    .insert_header((header::CONTENT_TYPE, "application/json"));
+            }
+            let response = test::call_service(&app, request.to_request()).await;
+            assert_eq!(response.status(), StatusCode::OK, "{name}: {replay}");
+            assert_eq!(
+                response.headers().get("tus-resumable").unwrap(),
+                "1.0.0"
+            );
+            assert!(!response.headers().contains_key(header::LOCATION));
+            assert_eq!(
+                test::read_body_json::<Value, _>(response).await,
+                receipt
+            );
+            assert!(file_content::Entity::find_by_id((file.id, 1))
+                .one(fixture.db())
+                .await
+                .unwrap()
+                .is_some());
+            assert_no_finalization_jobs(&fixture).await;
+            if !replay {
+                resync_file(&env, &fixture, &file).await;
+            }
+        }
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_true_unavailable_preserves_source() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    Arc::get_mut(&mut env).unwrap().device_file_content =
+        Some(fixture.runtime.clone());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let file = fixture.file("async-unavailable").await;
+    let upload = fixture.upload(&file, b"retained source").await;
+    drop(fixture.seed_bytes(&upload, b"retained source").await);
+    let before = fixture.persisted(&upload).await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("{}/complete", super::resource_location(upload.id)))
+            .cookie(cookie)
+            .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .set_payload(r#"{"async_finalization":true}"#)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers().get("tus-resumable").unwrap(), "1.0.0");
+    assert!(
+        response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    assert!(!response.headers().contains_key(header::LOCATION));
+    let body: Value = test::read_body_json(response).await;
+    assert!(body["code"].as_str().is_some_and(|code| !code.is_empty()));
+    assert!(body.get("job_id").is_none());
+    assert!(body.get("status").is_none());
+    assert_eq!(fixture.persisted(&upload).await, before);
+    assert_finalization_source_unpublished(
+        &fixture,
+        &upload,
+        b"retained source",
+    )
+    .await;
+    assert_no_finalization_jobs(&fixture).await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_rejects_invalid_json_without_acceptance() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    Arc::get_mut(&mut env).unwrap().device_file_content =
+        Some(fixture.runtime.clone());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let file = fixture.file("strict-complete-json").await;
+    let upload = fixture.upload(&file, b"unpublished").await;
+    drop(fixture.seed_bytes(&upload, b"unpublished").await);
+    let before = fixture.persisted(&upload).await;
+    for payload in [
+        r#"{"async_finalization":null}"#,
+        r#"{"async_finalization":"true"}"#,
+        r#"{"async_finalization":1}"#,
+        r#"{"async_finalization":0}"#,
+        r#"{"async_finalization":[]}"#,
+        r#"{"async_finalization":{}}"#,
+        r#"{"async_finalization":true,"unknown":false}"#,
+        r#"{"unknown":false}"#,
+        r#"{"async_finalization":true,"async_finalization":false}"#,
+        r#"{"async_finalization":true"#,
+        r#"{"async_finalization":false}{}"#,
+        "null",
+        "true",
+        "[]",
+        " ",
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie.clone())
+                .insert_header(("tus-resumable", "1.0.0"))
+                .insert_header((header::CONTENT_TYPE, "application/json"))
+                .set_payload(payload)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{payload}");
+        assert_eq!(response.headers().get("tus-resumable").unwrap(), "1.0.0");
+        let body: Value = test::read_body_json(response).await;
+        assert!(body["code"].is_string(), "{payload}: {body}");
+        assert!(body.get("job_id").is_none(), "{payload}: {body}");
+        assert_eq!(fixture.persisted(&upload).await, before, "{payload}");
+        assert_finalization_source_unpublished(
+            &fixture,
+            &upload,
+            b"unpublished",
+        )
+        .await;
+        assert_no_finalization_jobs(&fixture).await;
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_enforces_json_size_and_content_type() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    Arc::get_mut(&mut env).unwrap().device_file_content =
+        Some(fixture.runtime.clone());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let file = fixture.file("complete-envelope").await;
+    let upload = fixture.upload(&file, b"unpublished").await;
+    drop(fixture.seed_bytes(&upload, b"unpublished").await);
+    let before = fixture.persisted(&upload).await;
+    let cases = [
+        (
+            Some("application/json"),
+            format!("{}{{}}", " ".repeat(1023)),
+            413,
+        ),
+        (None, "{}".to_owned(), 415),
+        (Some("text/plain"), "{}".to_owned(), 415),
+        (Some("application/octet-stream"), "{}".to_owned(), 415),
+    ];
+    for (content_type, payload, expected) in cases {
+        let mut request = test::TestRequest::post()
+            .uri(&format!("{}/complete", super::resource_location(upload.id)))
+            .cookie(cookie.clone())
+            .insert_header(("tus-resumable", "1.0.0"))
+            .set_payload(payload);
+        if let Some(content_type) = content_type {
+            request =
+                request.insert_header((header::CONTENT_TYPE, content_type));
+        }
+        let response = test::call_service(&app, request.to_request()).await;
+        assert_eq!(response.status().as_u16(), expected, "{content_type:?}");
+        assert_eq!(response.headers().get("tus-resumable").unwrap(), "1.0.0");
+        assert_eq!(fixture.persisted(&upload).await, before);
+        assert_finalization_source_unpublished(
+            &fixture,
+            &upload,
+            b"unpublished",
+        )
+        .await;
+        assert_no_finalization_jobs(&fixture).await;
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_preserves_tus_and_incomplete_errors() {
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    Arc::get_mut(&mut env).unwrap().device_file_content =
+        Some(fixture.runtime.clone());
+    let app = app!(env);
+    let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+    let file = fixture.file("complete-errors").await;
+    let upload = fixture.upload(&file, b"incomplete").await;
+    let before = fixture.persisted(&upload).await;
+    for payload in ["", r#"{"async_finalization":false}"#] {
+        for version in [None, Some("0.2.2"), Some("1.0.0")] {
+            let mut request = test::TestRequest::post()
+                .uri(&format!(
+                    "{}/complete",
+                    super::resource_location(upload.id)
+                ))
+                .cookie(cookie.clone())
+                .insert_header((header::CONTENT_TYPE, "application/json"))
+                .set_payload(payload);
+            if let Some(version) = version {
+                request = request.insert_header(("tus-resumable", version));
+            }
+            let response = test::call_service(&app, request.to_request()).await;
+            let valid_version = version == Some("1.0.0");
+            assert_eq!(
+                response.status(),
+                if valid_version {
+                    StatusCode::CONFLICT
+                } else {
+                    StatusCode::PRECONDITION_FAILED
+                },
+                "{version:?}: {payload}"
+            );
+            assert_eq!(
+                response.headers().get("tus-resumable").unwrap(),
+                "1.0.0"
+            );
+            if !valid_version {
+                assert_eq!(
+                    response.headers().get("tus-version").unwrap(),
+                    "1.0.0"
+                );
+            }
+            assert_eq!(
+                test::read_body_json::<Value, _>(response).await,
+                json!({ "code": if valid_version { "upload_incomplete" } else { "unsupported_tus_version" } })
+            );
+            assert_eq!(fixture.persisted(&upload).await, before);
+            assert_no_finalization_jobs(&fixture).await;
+        }
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_active_job_blocks_sync_when_admission_disabled()
+{
+    use crate::devices::upload_finalization::{
+        admission,
+        types::{FinalizationCommand, FinalizationTarget},
+    };
+    use crate::types::DeviceUploadFinalizationSettings;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let file = fixture.file("async-owned").await;
+    let upload = fixture.upload(&file, b"owned source").await;
+    drop(fixture.seed_bytes(&upload, b"owned source").await);
+    let settings = DeviceUploadFinalizationSettings {
+        enabled: true,
+        ..Default::default()
+    };
+    let job = admission::admit(
+        fixture.db(),
+        &FinalizationCommand {
+            created_by_login_id: fixture.login.id,
+            device_id: fixture.device.id,
+            source_size_bytes: upload.upload_length as i64,
+            source_locator: Some(format!("{}.data", upload.id)),
+            target: FinalizationTarget::File {
+                upload_id: upload.id,
+                file_id: file.id,
+                revision: 1,
+            },
+        },
+        &settings,
+    )
+    .await
+    .unwrap();
+    let original_job =
+        device_upload_finalization_job::Entity::find_by_id(job.job_id)
+            .one(fixture.db())
+            .await
+            .unwrap()
+            .unwrap();
+    for enabled in [true, false] {
+        let mut env = env.as_ref().clone();
+        env.device_file_content = Some(fixture.runtime.clone());
+        env.config.device_upload_finalization =
+            Some(DeviceUploadFinalizationSettings {
+                enabled,
+                ..settings.clone()
+            });
+        let env = Arc::new(env);
+        let app = app!(env);
+        let cookie: Cookie<'static> = cookie!(app, fixture.login.id);
+        for payload in ["", r#"{"async_finalization":false}"#] {
+            let started = Instant::now();
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&format!(
+                        "{}/complete",
+                        super::resource_location(upload.id)
+                    ))
+                    .cookie(cookie.clone())
+                    .insert_header(("tus-resumable", "1.0.0"))
+                    .insert_header((header::CONTENT_TYPE, "application/json"))
+                    .set_payload(payload)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(
+                response.status(),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "enabled={enabled}: {payload}"
+            );
+            assert!(started.elapsed().as_secs() < 2);
+            assert!(
+                response
+                    .headers()
+                    .get(header::RETRY_AFTER)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .parse::<u64>()
+                    .unwrap()
+                    > 0
+            );
+            assert_finalization_source_unpublished(
+                &fixture,
+                &upload,
+                b"owned source",
+            )
+            .await;
+            assert_eq!(
+                device_upload_finalization_job::Entity::find_by_id(job.job_id)
+                    .one(fixture.db())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                original_job
+            );
+        }
+    }
+}
+
+fn available_finalization_file_slots(root: &std::path::Path) -> usize {
+    use crate::devices::upload_finalization::resources::{self, ResourceKind};
+
+    let count =
+        crate::types::DeviceUploadFinalizationSettings::default().file_slots;
+    let mut guards = Vec::new();
+    while let Some(guard) =
+        resources::try_acquire(root, ResourceKind::File, count).unwrap()
+    {
+        guards.push(guard);
+    }
+    guards.len()
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_cancelled_waiter_retains_source_and_file_slot() {
+    use sea_orm::{DbBackend, Statement};
+    use std::time::Duration;
+
+    let (mut env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let resource_root = tempfile::tempdir().unwrap();
+    Arc::get_mut(&mut env).unwrap().config.storage_dir =
+        resource_root.path().display().to_string();
+    Arc::get_mut(&mut env)
+        .unwrap()
+        .config
+        .device_upload_finalization = None;
+    let initial_slots = available_finalization_file_slots(resource_root.path());
+    let file = fixture.file("cancelled-publication").await;
+    let upload = fixture.upload(&file, b"owned until publication").await;
+    let locked = fixture
+        .seed_bytes(&upload, b"owned until publication")
+        .await;
+    let barrier = fixture.db().begin().await.unwrap();
+    let blocker: i32 = barrier
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select pg_backend_pid() as blocker from file_entry where id = $1 for update",
+            [file.id.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "blocker")
+        .unwrap();
+    let mut finalization = Box::pin(finalize(
+        &env,
+        &fixture.runtime,
+        fixture.login.id,
+        upload.clone(),
+        &locked,
+    ));
+    let publication_blocked = async {
+        loop {
+            let stored = fixture
+                .runtime
+                .storage
+                .stat(&upload.object_key)
+                .await
+                .is_ok();
+            let blocked: bool = barrier
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "select exists(select 1 from pg_stat_activity where datname = current_database() and $1 = any(pg_blocking_pids(pid))) as blocked",
+                    [blocker.into()],
+                ))
+                .await
+                .unwrap()
+                .unwrap()
+                .try_get("", "blocked")
+                .unwrap();
+            if stored && blocked {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    let reached_publication = tokio::select! {
+        _ = &mut finalization => false,
+        result = tokio::time::timeout(Duration::from_secs(5), publication_blocked) => result.is_ok(),
+    };
+    drop(finalization);
+    drop(locked);
+    let source_lock = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(fixture.spool.path().join(format!("{}.lock", upload.id)))
+        .unwrap();
+    let source_lock_held = matches!(
+        fs2::FileExt::try_lock_exclusive(&source_lock),
+        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+    );
+    drop(source_lock);
+    let remaining_slots =
+        available_finalization_file_slots(resource_root.path());
+    barrier.rollback().await.unwrap();
+    let completed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let persisted = fixture.persisted(&upload).await;
+            if persisted.status
+                == crate::file_registry::entities::sea_orm_active_enums::FileContentUploadStatus::Completed
+                && persisted.spool_removed_at.is_some()
+                && available_finalization_file_slots(resource_root.path())
+                    == initial_slots
+            {
+                break persisted;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    let released_slots =
+        available_finalization_file_slots(resource_root.path());
+    eprintln!(
+        "UPLOAD_METRIC cancellation_publication_barrier={reached_publication} source_lock_retained={source_lock_held} initial_slots={initial_slots} cancelled_slots={remaining_slots} released_slots={released_slots} completed={}",
+        completed.is_ok()
+    );
+    assert!(
+        reached_publication,
+        "must cancel after storage, during blocked publication"
+    );
+    assert!(
+        source_lock_held,
+        "detached finalization must retain the source flock"
+    );
+    assert_eq!(
+        remaining_slots + 1,
+        initial_slots,
+        "detached finalization must retain one shared File slot"
+    );
+    assert!(
+        completed.is_ok(),
+        "detached finalization must publish, clean its source and release its File slot"
+    );
+    assert_eq!(released_slots, initial_slots);
+    assert!(!fixture
+        .spool
+        .path()
+        .join(format!("{}.data", upload.id))
+        .exists());
+    assert!(file_content::Entity::find_by_id((file.id, 1))
+        .one(fixture.db())
+        .await
+        .unwrap()
+        .is_some());
 }
 
 #[actix_web::test]
@@ -1237,6 +3416,7 @@ async fn acceptance_open_http_error_matrix_and_concurrent_patch_recovery() {
             .uri(&format!("{path}/complete"))
             .cookie(cookie.clone())
             .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header((header::CONTENT_TYPE, "application/json"))
             .set_payload("unexpected")
             .to_request(),
     )
@@ -1757,6 +3937,7 @@ async fn acceptance_nonempty_complete_is_rejected_after_concurrent_publication()
             .uri(&format!("{}/complete", super::resource_location(upload.id)))
             .cookie(cookie)
             .insert_header(("tus-resumable", "1.0.0"))
+            .insert_header((header::CONTENT_TYPE, "application/json"))
             .set_payload("unexpected body")
             .to_request(),
     );
@@ -3446,3 +5627,12 @@ async fn acceptance_historical_endpoint_matrix_rechecks_access_and_source() {
         }
     }
 }
+
+#[path = "security_tests.rs"]
+mod security_tests;
+
+#[path = "capacity_tests.rs"]
+mod capacity_tests;
+
+#[path = "review_fix_tests.rs"]
+mod review_fix_tests;

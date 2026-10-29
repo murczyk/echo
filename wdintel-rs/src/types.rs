@@ -317,3 +317,106 @@ impl<K: Eq + Hash + Clone, V> TopKCache<K, V> {
         }
     }
 }
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct DeviceUploadFinalizationSettings {
+    pub enabled: bool,
+    pub file_global_jobs: u32,
+    pub file_actor_jobs: u32,
+    pub audio_global_jobs: u32,
+    pub audio_actor_jobs: u32,
+    pub file_global_bytes: u64,
+    pub file_actor_bytes: u64,
+    pub audio_global_bytes: u64,
+    pub audio_actor_bytes: u64,
+    pub file_slots: usize,
+    pub audio_slots: usize,
+    pub decode_slots: usize,
+    pub readback_slots: usize,
+    pub encryption_slots: usize,
+    pub file_unresolved_writes: u32,
+    pub audio_unresolved_writes: u32,
+    pub poll_seconds: u64,
+    pub lease_seconds: u64,
+    pub heartbeat_seconds: u64,
+    pub retry_min_seconds: u64,
+    pub retry_max_seconds: u64,
+    pub file_phase_seconds: u64,
+    pub audio_phase_seconds: u64,
+    pub source_lock_millis: u64,
+    pub shutdown_grace_seconds: u64,
+}
+
+impl Default for DeviceUploadFinalizationSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            file_global_jobs: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_GLOBAL_JOBS,
+            file_actor_jobs: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_ACTOR_JOBS,
+            audio_global_jobs: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_GLOBAL_JOBS,
+            audio_actor_jobs: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_ACTOR_JOBS,
+            file_global_bytes: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_GLOBAL_BYTES,
+            file_actor_bytes: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_ACTOR_BYTES,
+            audio_global_bytes: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_GLOBAL_BYTES,
+            audio_actor_bytes: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_ACTOR_BYTES,
+            file_slots: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_SLOTS,
+            audio_slots: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_SLOTS,
+            decode_slots: crate::config::DEVICE_UPLOAD_FINALIZATION_DECODE_SLOTS,
+            readback_slots: crate::config::DEVICE_UPLOAD_FINALIZATION_READBACK_SLOTS,
+            encryption_slots: crate::config::DEVICE_UPLOAD_FINALIZATION_ENCRYPTION_SLOTS,
+            file_unresolved_writes: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_UNRESOLVED_WRITES,
+            audio_unresolved_writes: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_UNRESOLVED_WRITES,
+            poll_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_POLL_SECONDS,
+            lease_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_LEASE_SECONDS,
+            heartbeat_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_HEARTBEAT_SECONDS,
+            retry_min_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_RETRY_MIN_SECONDS,
+            retry_max_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_RETRY_MAX_SECONDS,
+            file_phase_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_FILE_PHASE_SECONDS,
+            audio_phase_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_AUDIO_PHASE_SECONDS,
+            source_lock_millis: crate::config::DEVICE_UPLOAD_FINALIZATION_SOURCE_LOCK_MILLIS,
+            shutdown_grace_seconds: crate::config::DEVICE_UPLOAD_FINALIZATION_SHUTDOWN_GRACE_SECONDS,
+        }
+    }
+}
+
+impl DeviceUploadFinalizationSettings {
+    pub(crate) fn is_valid(&self) -> bool {
+        self.file_global_jobs > 0
+            && self.file_actor_jobs > 0
+            && self.audio_global_jobs > 0
+            && self.audio_actor_jobs > 0
+            && self.file_global_bytes > 0
+            && self.file_actor_bytes > 0
+            && self.audio_global_bytes > 0
+            && self.audio_actor_bytes > 0
+            && self.file_slots > 0
+            && self.audio_slots > 0
+            && self.decode_slots > 0
+            && self.readback_slots > 0
+            && self.encryption_slots > 0
+            && self.file_unresolved_writes > 0
+            && self.audio_unresolved_writes > 0
+            && self.poll_seconds > 0
+            && self.lease_seconds > 0
+            && self.heartbeat_seconds > 0
+            && self.retry_min_seconds > 0
+            && self.retry_max_seconds > 0
+            && self.file_phase_seconds > 0
+            && self.audio_phase_seconds > 0
+            && self.source_lock_millis > 0
+            && self.source_lock_millis
+                <= crate::config::DEVICE_UPLOAD_FINALIZATION_SOURCE_LOCK_MILLIS
+            && self.shutdown_grace_seconds > 0
+            && self.heartbeat_seconds < self.lease_seconds
+            && self.retry_min_seconds <= self.retry_max_seconds
+            && self.retry_max_seconds
+                <= crate::config::DEVICE_UPLOAD_FINALIZATION_POLL_MAX_SECONDS
+            && self.shutdown_grace_seconds
+                < crate::config::DEVICE_UPLOAD_FINALIZATION_STOP_TIMEOUT_SECONDS
+            && self.file_global_bytes <= i64::MAX as u64
+            && self.file_actor_bytes <= i64::MAX as u64
+            && self.audio_global_bytes <= i64::MAX as u64
+            && self.audio_actor_bytes <= i64::MAX as u64
+    }
+}

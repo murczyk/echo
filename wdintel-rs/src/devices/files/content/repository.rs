@@ -4,15 +4,32 @@ use sea_orm::{
     ConnectionTrait, DatabaseBackend, DatabaseConnection, DatabaseTransaction,
     FromQueryResult, QueryResult, Statement, TransactionTrait,
 };
+use sqlx::{PgConnection, Row};
 use std::time::Instant;
 use uuid::Uuid;
 
+use super::protocol::ContentError;
 use crate::config::ContentLimitsConfig;
+use crate::devices::upload_finalization::{
+    admission,
+    ingress::AdmissionOutcome,
+    query,
+    types::{
+        ClaimedFinalizationJob, CompletedStatus, FinalizationCommand,
+        FinalizationFailure, FinalizationFileReceipt, FinalizationJobSnapshot,
+        FinalizationKind, FinalizationResult, FinalizationTarget,
+        VerifiedFinalizationObject,
+    },
+};
 use crate::h;
+use crate::types::{DeviceUploadFinalizationSettings, ShortContext};
 use log::warn;
 
-const RESERVATION_LOCK_SQL: &str =
-    "select pg_advisory_xact_lock(hashtextextended('echo:device-file-content-reservation', 0))";
+#[cfg(test)]
+#[path = "async_publication_tests.rs"]
+mod async_publication_tests;
+
+const RESERVATION_LOCK_SQL: &str = "select pg_advisory_xact_lock(hashtextextended('echo:device-file-content-reservation', 0))";
 
 #[derive(FromQueryResult)]
 pub(in crate::devices) struct PublishedContent {
@@ -226,7 +243,10 @@ async fn create_or_replay_in(
             .context(h!())?
     {
         request.now = time_after_wait(requested_at, started).context(h!())?;
-        return Ok(replay_outcome(upload, &request));
+        let pinned = source_is_pinned_on(transaction, upload.id)
+            .await
+            .context(h!())?;
+        return Ok(replay_outcome(upload, &request, pinned));
     }
 
     transaction
@@ -254,7 +274,10 @@ async fn create_or_replay_in(
             .context(h!())?
     {
         request.now = time_after_wait(requested_at, started).context(h!())?;
-        return Ok(replay_outcome(upload, &request));
+        let pinned = source_is_pinned_on(transaction, upload.id)
+            .await
+            .context(h!())?;
+        return Ok(replay_outcome(upload, &request, pinned));
     }
 
     let quota = load_quota(transaction, request.created_by_login_id)
@@ -420,7 +443,11 @@ async fn revalidate_open_in(
             Some(UploadStatus::Stale),
         ));
     }
-    if now >= upload.expires_at || now >= upload.hard_expires_at {
+    if (now >= upload.expires_at || now >= upload.hard_expires_at)
+        && !source_is_pinned_on(transaction, upload.id)
+            .await
+            .context(h!())?
+    {
         transition_open_in(transaction, upload.id, UploadStatus::Expired, now)
             .await
             .context(h!())?;
@@ -466,6 +493,13 @@ pub(super) async fn refresh_open(
     let now = time_after_wait(now, started).context(h!())?;
     let outcome = match outcome {
         RevalidateOutcome::Open(upload) => {
+            if source_is_pinned_on(&transaction, upload.id)
+                .await
+                .context(h!())?
+            {
+                transaction.commit().await.context(h!())?;
+                return Ok(RevalidateOutcome::Open(upload));
+            }
             let expires_at = std::cmp::min(
                 deadline_after(now, config.upload_idle_ttl_secs)
                     .context(h!())?,
@@ -530,6 +564,14 @@ pub(crate) async fn transition_open(
         revalidate_open_in(&transaction, known, now, started)
             .await
             .context(h!())?;
+    if status == UploadStatus::Aborted {
+        anyhow::ensure!(
+            !source_is_pinned_on(&transaction, known.id)
+                .await
+                .context(h!())?,
+            crate::devices::upload_finalization::types::FinalizationFailure::SourceOwned
+        );
+    }
     let now = time_after_wait(now, started).context(h!())?;
     let outcome = match outcome {
         RevalidateOutcome::Open(upload) => {
@@ -582,6 +624,394 @@ pub(crate) async fn publish(
                 .context("commit content publication")
                 .context(h!()),
         )),
+    }
+}
+
+pub(crate) async fn publish_file_in(
+    transaction: &mut PgConnection,
+    claim: &ClaimedFinalizationJob,
+    verified: &VerifiedFinalizationObject,
+) -> Result<CompletedContent> {
+    let upload = lock_file_publication(transaction, claim)
+        .await
+        .context(h!())?;
+    validate_file_attempt(transaction, claim, verified, &upload)
+        .await
+        .context(h!())?;
+    write_file_publication(transaction, &upload, verified)
+        .await
+        .context(h!())?;
+    super::super::archive::enqueue::ensure_sqlx_in(
+        transaction,
+        upload.device_id,
+        upload.file_id,
+        upload.revision,
+    )
+    .await
+    .context(h!())?;
+    retire_canonical_allocation(transaction, claim, &upload)
+        .await
+        .context(h!())?;
+    let receipt = CompletedContent {
+        upload_id: upload.id,
+        file_id: upload.file_id,
+        revision: upload.revision,
+        status: "completed",
+    };
+    complete_file_job(transaction, claim, verified, &receipt)
+        .await
+        .context(h!())?;
+    Ok(receipt)
+}
+
+struct LockedAsyncUpload {
+    id: Uuid,
+    device_id: Uuid,
+    file_id: Uuid,
+    revision: i64,
+    created_by_login_id: Uuid,
+    source_size_bytes: i64,
+    expected_sha256: Vec<u8>,
+    object_key: String,
+    status: UploadStatus,
+    expired: bool,
+}
+
+async fn lock_async_target(
+    transaction: &mut PgConnection,
+    file_id: Uuid,
+) -> Result<Option<LockedTarget>> {
+    let row = sqlx::query("select device_id,kind::text as kind,revision,content_path from file_entry where id=$1 for update")
+        .bind(file_id).fetch_optional(transaction).await.c(h!())?;
+    row.map(|row| {
+        Ok(LockedTarget {
+            device_id: row.try_get("device_id").c(h!())?,
+            kind: row.try_get("kind").c(h!())?,
+            revision: row.try_get("revision").c(h!())?,
+            content_path: row.try_get("content_path").c(h!())?,
+        })
+    })
+    .transpose()
+}
+
+async fn lock_async_upload(
+    transaction: &mut PgConnection,
+    upload_id: Uuid,
+) -> Result<Option<LockedAsyncUpload>> {
+    let row = sqlx::query("select id,device_id,file_id,revision,created_by_login_id,upload_length,expected_sha256,object_key,status::text as status,(expires_at<=clock_timestamp() or hard_expires_at<=clock_timestamp()) as expired from file_content_upload where id=$1 for update")
+        .bind(upload_id).fetch_optional(transaction).await.c(h!())?;
+    row.map(|row| {
+        let status: String = row.try_get("status").c(h!())?;
+        Ok(LockedAsyncUpload {
+            id: row.try_get("id").c(h!())?,
+            device_id: row.try_get("device_id").c(h!())?,
+            file_id: row.try_get("file_id").c(h!())?,
+            revision: row.try_get("revision").c(h!())?,
+            created_by_login_id: row.try_get("created_by_login_id").c(h!())?,
+            source_size_bytes: row.try_get("upload_length").c(h!())?,
+            expected_sha256: row.try_get("expected_sha256").c(h!())?,
+            object_key: row.try_get("object_key").c(h!())?,
+            status: UploadStatus::try_from(status.as_str()).context(h!())?,
+            expired: row.try_get("expired").c(h!())?,
+        })
+    })
+    .transpose()
+}
+
+async fn lock_file_publication(
+    transaction: &mut PgConnection,
+    claim: &ClaimedFinalizationJob,
+) -> Result<LockedAsyncUpload> {
+    anyhow::ensure!(
+        claim.kind == FinalizationKind::FinalizationFileKind,
+        FinalizationFailure::StaleClaim
+    );
+    let identity = sqlx::query("select file_id,file_upload_id from device_upload_finalization_job where id=$1 and kind='file'")
+        .bind(claim.job_id).fetch_optional(&mut *transaction).await.c(h!())?
+        .ok_or(FinalizationFailure::StaleClaim).context(h!())?;
+    let file_id: Uuid = identity.try_get("file_id").c(h!())?;
+    let upload_id: Uuid = identity.try_get("file_upload_id").c(h!())?;
+    let target = lock_async_target(transaction, file_id)
+        .await
+        .context(h!())?
+        .ok_or(FinalizationFailure::TargetUnavailable)
+        .context(h!())?;
+    let upload = lock_async_upload(transaction, upload_id)
+        .await
+        .context(h!())?
+        .ok_or(FinalizationFailure::TargetUnavailable)
+        .context(h!())?;
+    anyhow::ensure!(
+        query::lock_claim(transaction, claim).await.context(h!())?,
+        FinalizationFailure::StaleClaim
+    );
+    anyhow::ensure!(
+        target.device_id == upload.device_id && target.kind == "file",
+        FinalizationFailure::TargetUnavailable
+    );
+    anyhow::ensure!(
+        target.revision == Some(upload.revision)
+            && upload.status != UploadStatus::Stale,
+        FinalizationFailure::TargetRevisionChanged
+    );
+    anyhow::ensure!(
+        upload.status == UploadStatus::Open && target.content_path.is_none(),
+        FinalizationFailure::TargetUnavailable
+    );
+    let published: bool = sqlx::query_scalar("select exists(select 1 from file_content where file_id=$1 and revision=$2)")
+        .bind(upload.file_id).bind(upload.revision).fetch_one(transaction).await.c(h!())?;
+    anyhow::ensure!(!published, FinalizationFailure::TargetUnavailable);
+    Ok(upload)
+}
+
+async fn validate_file_attempt(
+    transaction: &mut PgConnection,
+    claim: &ClaimedFinalizationJob,
+    verified: &VerifiedFinalizationObject,
+    upload: &LockedAsyncUpload,
+) -> Result<()> {
+    let attempt = sqlx::query("select a.object_key,a.source_size_bytes,a.source_sha256,a.is_encrypted from device_upload_finalization_attempt a join device_upload_finalization_job j on j.id=a.job_id where a.id=$1 and a.job_id=$2 and a.origin='async' and a.kind='file' and a.phase='verified' and a.verified_at is not null and a.retired_at is null and a.file_upload_id=$3 and j.active_attempt_id=a.id and j.status='processing' for update of a")
+        .bind(verified.attempt_id).bind(claim.job_id).bind(upload.id)
+        .fetch_optional(transaction).await.c(h!())?
+        .ok_or(FinalizationFailure::StaleClaim).context(h!())?;
+    anyhow::ensure!(
+        verified.audio.is_none()
+            && verified.source_size_bytes == upload.source_size_bytes
+            && verified.source_sha256.as_slice() == upload.expected_sha256
+            && attempt.try_get::<String, _>("object_key").c(h!())?
+                == verified.object_key
+            && attempt.try_get::<i64, _>("source_size_bytes").c(h!())?
+                == verified.source_size_bytes
+            && attempt.try_get::<Vec<u8>, _>("source_sha256").c(h!())?
+                == verified.source_sha256
+            && attempt.try_get::<bool, _>("is_encrypted").c(h!())?
+                == verified.is_encrypted,
+        FinalizationFailure::SourceDigestMismatch
+    );
+    Ok(())
+}
+
+async fn write_file_publication(
+    transaction: &mut PgConnection,
+    upload: &LockedAsyncUpload,
+    verified: &VerifiedFinalizationObject,
+) -> Result<()> {
+    sqlx::query("insert into file_content_upload_object(upload_id,file_id,object_key,source_size_bytes,source_sha256,is_encrypted,attempt_id) values($1,$2,$3,$4,$5,$6,$7)")
+        .bind(upload.id).bind(upload.file_id).bind(&verified.object_key)
+        .bind(verified.source_size_bytes).bind(verified.source_sha256.as_slice())
+        .bind(verified.is_encrypted).bind(verified.attempt_id)
+        .execute(&mut *transaction).await.c(h!())?;
+    sqlx::query("insert into file_content(file_id,revision,upload_id,object_key,source_size_bytes,source_sha256,is_encrypted,created_at) values($1,$2,$3,$4,$5,$6,$7,clock_timestamp())")
+        .bind(upload.file_id).bind(upload.revision).bind(upload.id).bind(&verified.object_key)
+        .bind(verified.source_size_bytes).bind(verified.source_sha256.as_slice()).bind(verified.is_encrypted)
+        .execute(&mut *transaction).await.c(h!())?;
+    sqlx::query("update file_entry set content_path=$2 where id=$1")
+        .bind(upload.file_id)
+        .bind(&verified.object_key)
+        .execute(&mut *transaction)
+        .await
+        .c(h!())?;
+    sqlx::query("update file_content_upload set status='completed',next_cleanup_at=clock_timestamp() where id=$1")
+        .bind(upload.id).execute(&mut *transaction).await.c(h!())?;
+    sqlx::query("update device_upload_finalization_attempt set phase='selected',updated_at=clock_timestamp() where id=$1")
+        .bind(verified.attempt_id).execute(transaction).await.c(h!())?;
+    Ok(())
+}
+
+async fn retire_canonical_allocation(
+    transaction: &mut PgConnection,
+    claim: &ClaimedFinalizationJob,
+    upload: &LockedAsyncUpload,
+) -> Result<()> {
+    sqlx::query("insert into device_upload_finalization_attempt(id,job_id,kind,origin,ordinal,lease_epoch,file_upload_id,device_id,object_key,is_encrypted,source_size_bytes,phase,retired_at,cleanup_next_at,late_write_possible) values($1,$2,'file','legacy_cleanup',(select coalesce(max(ordinal),0)+1 from device_upload_finalization_attempt where job_id=$2),$3,$4,$5,$6,false,$7,'retired',clock_timestamp(),clock_timestamp(),true)")
+        .bind(Uuid::now_v7()).bind(claim.job_id).bind(claim.lease_epoch)
+        .bind(upload.id).bind(upload.device_id).bind(&upload.object_key).bind(upload.source_size_bytes)
+        .execute(transaction).await.c(h!())?;
+    Ok(())
+}
+
+async fn complete_file_job(
+    transaction: &mut PgConnection,
+    claim: &ClaimedFinalizationJob,
+    verified: &VerifiedFinalizationObject,
+    receipt: &CompletedContent,
+) -> Result<()> {
+    let result = serde_json::json!({"version": 1, "value": receipt});
+    let changed = sqlx::query("update device_upload_finalization_job set status='completed',winning_attempt_id=$4,result=$5,finished_at=clock_timestamp(),updated_at=clock_timestamp(),lease_owner=null,lease_until=null,error_code=null,error_message=null,error_action=null,source_release_state='release_pending' where id=$1 and lease_owner=$2 and lease_epoch=$3 and lease_until>clock_timestamp() and status='processing'")
+        .bind(claim.job_id).bind(claim.owner).bind(claim.lease_epoch).bind(verified.attempt_id).bind(result)
+        .execute(transaction).await.c(h!())?;
+    anyhow::ensure!(
+        changed.rows_affected() == 1,
+        FinalizationFailure::StaleClaim
+    );
+    Ok(())
+}
+
+pub(crate) async fn admit_file(
+    db: &DatabaseConnection,
+    known: &Upload,
+    actor: Uuid,
+    settings: &DeviceUploadFinalizationSettings,
+) -> std::result::Result<FinalizationJobSnapshot, ContentError> {
+    let mut transaction = db
+        .get_postgres_connection_pool()
+        .begin()
+        .await
+        .c(h!())
+        .map_err(super::repository_unavailable)?;
+    let target = lock_async_target(&mut transaction, known.file_id)
+        .await
+        .context(h!())
+        .map_err(super::repository_unavailable)?
+        .ok_or_else(ContentError::not_found)?;
+    let upload = lock_async_upload(&mut transaction, known.id)
+        .await
+        .context(h!())
+        .map_err(super::repository_unavailable)?
+        .ok_or_else(ContentError::not_found)?;
+    validate_file_admission(&target, &upload, known, actor)?;
+    let exists: bool = sqlx::query_scalar("select exists(select 1 from file_content where file_id=$1 and revision=$2)")
+        .bind(upload.file_id).bind(upload.revision).fetch_one(&mut *transaction).await
+        .c(h!()).map_err(super::repository_unavailable)?;
+    if exists {
+        return Err(ContentError::conflict("content_already_committed"));
+    }
+    let command = file_command(&upload, actor);
+    let snapshot = admission::admit_in(&mut transaction, &command, settings)
+        .await
+        .context(h!())
+        .map_err(file_admission_error)?;
+    transaction
+        .commit()
+        .await
+        .c(h!())
+        .map_err(super::repository_unavailable)?;
+    Ok(snapshot)
+}
+
+pub(crate) async fn adopt_completed_file(
+    db: &DatabaseConnection,
+    known: &Upload,
+    actor: Uuid,
+) -> Result<FinalizationJobSnapshot> {
+    let mut transaction =
+        db.get_postgres_connection_pool().begin().await.c(h!())?;
+    lock_async_target(&mut transaction, known.file_id)
+        .await
+        .c(h!())?;
+    let upload = lock_async_upload(&mut transaction, known.id)
+        .await
+        .c(h!())?
+        .context(h!())?;
+    anyhow::ensure!(
+        upload.created_by_login_id == actor,
+        FinalizationFailure::SourceOwned
+    );
+    let command = file_command(&upload, actor);
+    if let Some(snapshot) = admission::replay_in(&mut transaction, &command)
+        .await
+        .c(h!())?
+    {
+        transaction.commit().await.c(h!())?;
+        return Ok(snapshot);
+    }
+    let proven: bool = sqlx::query_scalar("select exists(select 1 from file_content c join file_content_upload_object o on o.upload_id=c.upload_id and o.file_id=c.file_id and o.object_key=c.object_key where c.upload_id=$1 and c.file_id=$2 and c.revision=$3 and o.attempt_id is null and o.object_key=$4)")
+        .bind(upload.id).bind(upload.file_id).bind(upload.revision).bind(&upload.object_key)
+        .fetch_one(&mut *transaction).await.c(h!())?;
+    anyhow::ensure!(
+        upload.status == UploadStatus::Completed && proven,
+        FinalizationFailure::CommandConflict
+    );
+    let result =
+        FinalizationResult::FinalizationFileResult(FinalizationFileReceipt {
+            upload_id: upload.id,
+            file_id: upload.file_id,
+            revision: upload.revision,
+            status: CompletedStatus::FinalizationFileCompleted,
+        });
+    let snapshot =
+        admission::adopt_completed_in(&mut transaction, &command, &result)
+            .await
+            .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(snapshot)
+}
+
+fn file_command(
+    upload: &LockedAsyncUpload,
+    actor: Uuid,
+) -> FinalizationCommand {
+    FinalizationCommand {
+        created_by_login_id: actor,
+        device_id: upload.device_id,
+        source_size_bytes: upload.source_size_bytes,
+        source_locator: (upload.source_size_bytes != 0)
+            .then(|| format!("{}.data", upload.id)),
+        target: FinalizationTarget::File {
+            upload_id: upload.id,
+            file_id: upload.file_id,
+            revision: upload.revision,
+        },
+    }
+}
+
+fn validate_file_admission(
+    target: &LockedTarget,
+    upload: &LockedAsyncUpload,
+    known: &Upload,
+    actor: Uuid,
+) -> std::result::Result<(), ContentError> {
+    if upload.created_by_login_id != actor
+        || upload.device_id != known.device_id
+        || upload.file_id != known.file_id
+        || target.device_id != known.device_id
+        || target.kind != "file"
+    {
+        return Err(ContentError::not_found());
+    }
+    if upload.status == UploadStatus::Completed || target.content_path.is_some()
+    {
+        return Err(ContentError::conflict("content_already_committed"));
+    }
+    if upload.status != UploadStatus::Open {
+        return Err(ContentError::gone(upload.status.code()));
+    }
+    if target.revision != Some(upload.revision)
+        || upload.revision != known.revision
+    {
+        return Err(ContentError::gone(UploadStatus::Stale.code()));
+    }
+    if upload.expired {
+        return Err(ContentError::gone(UploadStatus::Expired.code()));
+    }
+    if upload.source_size_bytes as u64 != known.upload_length
+        || upload.expected_sha256 != known.expected_sha256
+    {
+        return Err(ContentError::conflict("upload_metadata_mismatch"));
+    }
+    Ok(())
+}
+
+fn file_admission_error(error: anyhow::Error) -> ContentError {
+    match error.downcast_ref::<FinalizationFailure>() {
+        Some(FinalizationFailure::SourceOwned) => ContentError::not_found(),
+        Some(FinalizationFailure::CommandConflict) => {
+            ContentError::conflict("command_conflict")
+        }
+        Some(FinalizationFailure::CapacityUnavailable) => {
+            ContentError::unavailable(
+                "finalization_unavailable",
+                crate::devices::config::DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
+            )
+            .with_finalization_outcome(AdmissionOutcome::CapacityUnavailable)
+        }
+        Some(FinalizationFailure::DependencyUnavailable) => {
+            ContentError::unavailable(
+                "finalization_unavailable",
+                crate::devices::config::DEVICE_FILE_CONTENT_BUSY_RETRY_AFTER_SECS,
+            )
+        }
+        _ => super::repository_unavailable(error),
     }
 }
 
@@ -761,6 +1191,7 @@ select id, next_cleanup_at
 from file_content_upload
 where next_cleanup_at <= $1
   and (next_cleanup_at, id) > ($2, $3)
+  and finalization_job_id is null
 order by next_cleanup_at, id
 limit $4
 "#,
@@ -771,6 +1202,7 @@ limit $4
 select id, next_cleanup_at
 from file_content_upload
 where next_cleanup_at <= $1
+  and finalization_job_id is null
 order by next_cleanup_at, id
 limit $2
 "#,
@@ -805,6 +1237,11 @@ update file_content_upload
 set status = 'expired', next_cleanup_at = $2
 where id = $1 and status = 'open'
   and (expires_at <= $2 or hard_expires_at <= $2)
+  and not exists (
+      select 1 from device_upload_finalization_job j
+      where j.kind = 'file' and j.source_identity = $1::uuid::text
+        and j.file_upload_id = $1 and j.source_release_state <> 'released'
+  )
 "#,
             [upload_id.into(), now.into()],
         ))
@@ -849,6 +1286,11 @@ with candidate as materialized (
     select status
     from file_content_upload
     where id = $1
+      and not exists (
+          select 1 from device_upload_finalization_job j
+          where j.kind = 'file' and j.source_identity = $1::uuid::text
+            and j.file_upload_id = $1 and j.source_release_state <> 'released'
+      )
       and (
           (status = 'open' and (expires_at <= $2 or hard_expires_at <= $2))
           or (status <> 'open' and next_cleanup_at is not null)
@@ -908,6 +1350,11 @@ delete from file_content_upload u
 where u.id = $1
   and u.status in ('aborted', 'expired', 'stale', 'rejected')
   and not exists (select 1 from file_content c where c.upload_id = u.id)
+  and not exists (
+      select 1 from device_upload_finalization_job j
+      where j.kind = 'file' and j.source_identity = u.id::text
+        and j.file_upload_id = u.id
+  )
 "#,
         [upload_id.into()],
     ))
@@ -1071,15 +1518,13 @@ select
     coalesce(sum(upload_length) filter (
         where spool_removed_at is null and created_by_login_id = $1
     ), 0)::bigint as creator_reserved_bytes,
+    count(*)::bigint as reserved_count,
     count(*) filter (
-        where spool_removed_at is null or status <> 'completed'
-    )::bigint as reserved_count,
-    count(*) filter (
-        where (spool_removed_at is null or status <> 'completed')
-          and created_by_login_id = $1
+        where created_by_login_id = $1
     )::bigint as creator_reserved_count
 from file_content_upload
-where spool_removed_at is null or status <> 'completed'
+where spool_removed_at is null
+   or (status <> 'completed' and finalization_job_id is null)
 "#,
             [creator.into()],
         ))
@@ -1142,16 +1587,34 @@ fn quota_rejection(
     }
 }
 
-fn replay_outcome(upload: Upload, request: &NewUpload) -> CreateOutcome {
+fn replay_outcome(
+    upload: Upload,
+    request: &NewUpload,
+    pinned: bool,
+) -> CreateOutcome {
     if upload.upload_length == request.upload_length
         && upload.expected_sha256 == request.expected_sha256
-        && request.now < upload.expires_at
-        && request.now < upload.hard_expires_at
+        && (pinned
+            || (request.now < upload.expires_at
+                && request.now < upload.hard_expires_at))
     {
         CreateOutcome::Replayed(upload)
     } else {
         CreateOutcome::InProgress(upload)
     }
+}
+
+async fn source_is_pinned_on<C: ConnectionTrait>(
+    db: &C,
+    upload_id: Uuid,
+) -> Result<bool> {
+    let row = db.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select exists(select 1 from device_upload_finalization_job where kind='file' and source_identity=$1::uuid::text and file_upload_id=$1 and source_release_state<>'released') as pinned",
+        [upload_id.into()],
+    ))
+    .await.c(h!())?.context(h!())?;
+    row.try_get("", "pinned").c(h!())
 }
 
 async fn transition_open_in<C: ConnectionTrait>(

@@ -1,7 +1,7 @@
 use crate::users::ensure_base_role;
 use crate::users::login_id_from_identity;
 pub mod fallback;
-mod lifecycle;
+pub(crate) mod lifecycle;
 pub mod tus;
 
 #[cfg(test)]
@@ -133,7 +133,14 @@ pub(crate) async fn remove_consumed_upload(
 pub(crate) async fn lock_uploaded_source(
     path: &std::path::Path,
 ) -> anyhow::Result<Option<lifecycle::UploadLock>> {
-    lifecycle::lock_source(path).await.c(h!())
+    lifecycle::lock_source(path, None).await.c(h!())
+}
+
+pub(crate) async fn lock_uploaded_source_until(
+    path: &std::path::Path,
+    deadline: std::time::Instant,
+) -> anyhow::Result<Option<lifecycle::UploadLock>> {
+    lifecycle::lock_source(path, Some(deadline)).await.c(h!())
 }
 
 #[cfg(test)]

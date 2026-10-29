@@ -1,6 +1,9 @@
+use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{FileExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -19,9 +22,10 @@ pub(crate) struct Spool {
     root: Arc<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct LockedSpool {
     lock: Arc<File>,
+    directory: Arc<File>,
     lock_path: PathBuf,
     data_path: PathBuf,
     created_lock: bool,
@@ -114,6 +118,14 @@ impl Spool {
     ) -> std::result::Result<LockedSpool, AcquireError> {
         let deadline = Instant::now()
             + Duration::from_millis(DEVICE_FILE_CONTENT_LOCK_WAIT_MILLIS);
+        self.acquire_until(upload_id, deadline).await
+    }
+
+    pub(crate) async fn acquire_until(
+        &self,
+        upload_id: Uuid,
+        deadline: Instant,
+    ) -> std::result::Result<LockedSpool, AcquireError> {
         let lock = self
             .open_lock(upload_id)
             .map_err(|error| AcquireError::Internal(error.context(h!())))?;
@@ -124,9 +136,14 @@ impl Spool {
                     if Instant::now() >= deadline {
                         return Err(AcquireError::Busy);
                     }
-                    tokio::time::sleep(Duration::from_millis(
-                        DEVICE_FILE_CONTENT_LOCK_RETRY_MILLIS,
-                    ))
+                    tokio::time::sleep(
+                        Duration::from_millis(
+                            DEVICE_FILE_CONTENT_LOCK_RETRY_MILLIS,
+                        )
+                        .min(
+                            deadline.saturating_duration_since(Instant::now()),
+                        ),
+                    )
                     .await;
                 }
                 Err(error) => {
@@ -165,8 +182,23 @@ impl Spool {
             })
             .context(h!())?;
         let lock = open_regular(&lock_path, true, true, false).context(h!())?;
+        let directory = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(self.root.as_ref())
+            .context(h!())?;
+        let current = open_regular_in(&directory, &lock_path)
+            .context(h!())?
+            .metadata()
+            .context(h!())?;
+        let held = lock.metadata().context(h!())?;
+        anyhow::ensure!(
+            (current.dev(), current.ino()) == (held.dev(), held.ino()),
+            "spool directory changed while acquiring source"
+        );
         Ok(LockedSpool {
             lock: Arc::new(lock),
+            directory: Arc::new(directory),
             lock_path,
             data_path,
             created_lock,
@@ -191,7 +223,7 @@ impl LockedSpool {
     }
 
     pub(crate) fn offset(&self) -> Result<u64> {
-        match open_regular(&self.data_path, false, false, false) {
+        match open_regular_in(&self.directory, &self.data_path) {
             Ok(file) => Ok(file
                 .metadata()
                 .context("read spool metadata")
@@ -319,15 +351,73 @@ impl LockedSpool {
     }
 
     pub(crate) fn open_source(&self) -> Result<Option<tokio::fs::File>> {
-        match open_regular(&self.data_path, false, false, false) {
+        match open_regular_in(&self.directory, &self.data_path) {
             Ok(file) => Ok(Some(tokio::fs::File::from_std(file))),
             Err(error) if is_not_found(&error) => Ok(None),
             Err(error) => Err(error.context(h!())),
         }
     }
 
+    pub(crate) fn open_durable_source(
+        &self,
+    ) -> Result<Option<tokio::fs::File>> {
+        verify_source_marker(&self.lock, &self.data_path).context(h!())?;
+        self.open_source().context(h!())
+    }
+
     pub(super) fn source_path(&self) -> &Path {
         &self.data_path
+    }
+
+    pub(crate) async fn make_durable(
+        &self,
+        expected_length: u64,
+    ) -> Result<()> {
+        let path = self.data_path.clone();
+        let lock = self.lock.clone();
+        let directory = self.directory.clone();
+        self.run(move || {
+            match open_regular_in(&directory, &path) {
+                Ok(file) => {
+                    anyhow::ensure!(
+                        file.metadata().context(h!())?.len() == expected_length,
+                        "source length changed"
+                    );
+                    file.sync_all().context(h!())?;
+                }
+                Err(error) if expected_length == 0 && is_not_found(&error) => {}
+                Err(error) => return Err(error).context(h!()),
+            }
+            let marker = path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .context(h!())?;
+            lock.write_all_at(marker.as_bytes(), 0).context(h!())?;
+            lock.set_len(u64::try_from(marker.len()).context(h!())?)
+                .context(h!())?;
+            lock.sync_all().context(h!())?;
+            directory.sync_all().context(h!())?;
+            File::open(path.parent().and_then(Path::parent).context(h!())?)
+                .context(h!())?
+                .sync_all()
+                .context(h!())?;
+            Ok(())
+        })
+        .await
+        .context(h!())
+    }
+
+    pub(crate) async fn remove_durable_source(&self) -> Result<()> {
+        let path = self.data_path.clone();
+        let lock = self.lock.clone();
+        let directory = self.directory.clone();
+        self.run(move || {
+            verify_source_marker(&lock, &path).context(h!())?;
+            remove_in(&directory, &path).context(h!())?;
+            directory.sync_all().context(h!())
+        })
+        .await
+        .context(h!())
     }
 
     pub(crate) async fn truncate(&self, offset: u64) -> Result<()> {
@@ -401,6 +491,67 @@ fn validate_directory(path: &Path) -> Result<()> {
             "device content spool is not a regular directory: {}",
             path.display()
         ));
+    }
+    Ok(())
+}
+
+fn verify_source_marker(lock: &File, path: &Path) -> Result<()> {
+    let marker = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .context(h!())?;
+    anyhow::ensure!(
+        lock.metadata().context(h!())?.len() == marker.len() as u64,
+        "accepted source ownership marker is unavailable"
+    );
+    let mut recorded = vec![0; marker.len()];
+    lock.read_exact_at(&mut recorded, 0).context(h!())?;
+    anyhow::ensure!(
+        recorded == marker.as_bytes(),
+        "accepted source ownership marker changed"
+    );
+    Ok(())
+}
+
+fn relative_name(path: &Path) -> Result<CString> {
+    CString::new(path.file_name().context(h!())?.as_bytes()).context(h!())
+}
+
+fn open_regular_in(directory: &File, path: &Path) -> Result<File> {
+    let name = relative_name(path).context(h!())?;
+    // The directory and NUL-terminated name remain alive throughout openat.
+    let descriptor = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY
+                | libc::O_CLOEXEC
+                | libc::O_NOFOLLOW
+                | libc::O_NONBLOCK,
+        )
+    };
+    if descriptor < 0 {
+        return Err(io::Error::last_os_error()).context(h!());
+    }
+    // A successful openat transfers this new descriptor to File.
+    let file = unsafe { File::from_raw_fd(descriptor) };
+    anyhow::ensure!(
+        file.metadata().context(h!())?.is_file(),
+        "spool source is not a regular file"
+    );
+    Ok(file)
+}
+
+fn remove_in(directory: &File, path: &Path) -> Result<()> {
+    let name = relative_name(path).context(h!())?;
+    // Relative unlink uses the directory paired with the held source lock.
+    let removed =
+        unsafe { libc::unlinkat(directory.as_raw_fd(), name.as_ptr(), 0) };
+    if removed < 0 {
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::NotFound {
+            return Err(error).context(h!());
+        }
     }
     Ok(())
 }

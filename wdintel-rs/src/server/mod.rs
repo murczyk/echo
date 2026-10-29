@@ -166,6 +166,10 @@ async fn new_env_from_config(
         s3.as_ref(),
         metrics.clone(),
     );
+    crate::devices::upload_finalization::configured_settings(
+        &config,
+        file_registry_db.is_some(),
+    );
     let mut replicas = vec![];
     if let Some(replica_configs) = config.replicas.clone() {
         for replica in replica_configs {
@@ -1090,6 +1094,70 @@ fn spawn_background_workers(
     spawn_signal_media_conversion_worker(bg_set, env);
 }
 
+fn spawn_upload_finalization_workers(
+    env: Arc<Env>,
+    cancellation: CancellationToken,
+    finalization_tasks: &mut JoinSet<()>,
+) {
+    if env.file_registry_db.is_none() {
+        return;
+    }
+    if env.metrics.is_some() {
+        let metrics_env = env.clone();
+        let metrics_cancellation = cancellation.clone();
+        spawn_named_worker(
+            "device_upload_finalization_metrics",
+            finalization_tasks,
+            async move {
+                crate::devices::upload_finalization::metrics::run_nofail(
+                    metrics_env,
+                    metrics_cancellation,
+                )
+                .await;
+            },
+        );
+    }
+    let audio_env = env.clone();
+    let audio_runtime = env.device_audio.clone();
+    let audio_cancellation = cancellation.clone();
+    spawn_named_worker(
+        "device_audio_finalization",
+        finalization_tasks,
+        async move {
+            crate::devices::upload_finalization::worker::run_audio(
+                audio_env,
+                audio_runtime,
+                audio_cancellation,
+            )
+            .await;
+        },
+    );
+    if let Some(runtime) = env.device_file_content.clone() {
+        spawn_named_worker(
+            "device_file_finalization",
+            finalization_tasks,
+            async move {
+                crate::devices::upload_finalization::worker::run_files(
+                    env,
+                    runtime,
+                    cancellation,
+                )
+                .await;
+            },
+        );
+    }
+}
+
+async fn drain_upload_finalization_workers(
+    finalization_tasks: &mut JoinSet<()>,
+) {
+    while let Some(result) = finalization_tasks.join_next().await {
+        if let Err(error) = result {
+            warn!("device upload finalization worker failed during drain: {error:#}");
+        }
+    }
+}
+
 fn spawn_vault_background_workers(env: Arc<Env>, bg_set: &mut JoinSet<()>) {
     if let Some(secret_config) = env.config.vault_config.clone() {
         spawn_named_worker("secret_worker", bg_set, async move {
@@ -1528,6 +1596,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::complete_sync_session)
             .service(crate::devices::files::sync_session_items)
             .service(crate::devices::files::content::routes())
+            .configure(crate::devices::upload_finalization::config)
             .service(crate::devices::files::preview::routes())
             .service(crate::devices::files::archive::routes())
             .service(crate::devices::analytics::list_tags)
@@ -1880,6 +1949,7 @@ pub async fn main_server(
             .await;
         },
     );
+    let mut finalization_tasks: JoinSet<()> = JoinSet::new();
     let session_env = env.clone();
     let token_session = cancel_token.clone();
     spawn_named_worker(
@@ -1924,15 +1994,22 @@ pub async fn main_server(
                 env.clone(),
                 &mut background_tasks,
             ),
-            Mode::Test | Mode::Debug => spawn_background_workers(
-                mode,
-                env.clone(),
-                cancel_token.clone(),
-                shutdown_handle.clone(),
-                true,
-                false,
-                &mut background_tasks,
-            ),
+            Mode::Test | Mode::Debug => {
+                spawn_background_workers(
+                    mode,
+                    env.clone(),
+                    cancel_token.clone(),
+                    shutdown_handle.clone(),
+                    true,
+                    false,
+                    &mut background_tasks,
+                );
+                spawn_upload_finalization_workers(
+                    env.clone(),
+                    cancel_token.clone(),
+                    &mut finalization_tasks,
+                );
+            }
         }
     } else {
         info!("Background workers are disabled in server mode={mode}");
@@ -2066,6 +2143,7 @@ pub async fn main_server(
                 cancel_token.cancel();
             }
         }
+        drain_upload_finalization_workers(&mut finalization_tasks).await;
     }).await.c(h!());
     while let Some(result) = audio_tasks.join_next().await {
         result.c(h!())?;
@@ -2087,6 +2165,7 @@ pub async fn main_bgworker(
         .c(h!())?;
     crate::migration::request_analytics_table_reconciliation().await;
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    let mut finalization_tasks: JoinSet<()> = JoinSet::new();
     let mut transcriber_tasks: JoinSet<()> = JoinSet::new();
     spawn_background_workers(
         mode,
@@ -2102,6 +2181,11 @@ pub async fn main_bgworker(
         env.clone(),
         cancel_token.clone(),
         false,
+    );
+    spawn_upload_finalization_workers(
+        env.clone(),
+        cancel_token.clone(),
+        &mut finalization_tasks,
     );
     let transcriber_worker_id = Uuid::now_v7();
     info!(
@@ -2154,23 +2238,25 @@ pub async fn main_bgworker(
             }
 
             cancel_token.cancel();
-            let drain = async {
-                while transcriber_tasks.join_next().await.is_some() {}
-            };
-            if tokio::time::timeout(
-                core::time::Duration::from_secs(
-                    ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS,
-                ),
-                drain,
-            )
-            .await
-            .is_err()
-            {
-                warn!(
-                    "audio transcription drain exceeded {} seconds",
-                    ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS
-                );
-            }
+            tokio::join!(
+                drain_upload_finalization_workers(&mut finalization_tasks),
+                async {
+                    let drain = async {
+                        while transcriber_tasks.join_next().await.is_some() {}
+                    };
+                    if tokio::time::timeout(
+                        core::time::Duration::from_secs(
+                            ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS,
+                        ),
+                        drain,
+                    ).await.is_err() {
+                        warn!(
+                            "audio transcription drain exceeded {} seconds",
+                            ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS
+                        );
+                    }
+                },
+            );
         })
         .await
         .c(h!())?;
