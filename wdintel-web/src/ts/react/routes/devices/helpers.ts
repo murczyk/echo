@@ -6,6 +6,7 @@ import type {
   DeviceDetails,
   DeviceListItem,
   DeviceListSortBy,
+  DeviceStats,
   DeviceUnitStat,
   ListDevicesReq,
   Unit,
@@ -13,6 +14,11 @@ import type {
 } from '../../../../Bindings';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
 import { HttpRequestError } from '../../services/api/client';
+import {
+  buildDeviceRecentActivity,
+  formatDeviceBytes,
+  type DeviceRecentActivity,
+} from './device-activity';
 import type { SelectedSidebarUnitFilter, UnitHierarchyFilter } from '../rer-callsigns-neo/types';
 
 export type DeviceArchivedFilterValue = 'active' | 'archived' | 'all';
@@ -53,10 +59,14 @@ export type DeviceRowView = DeviceListItem & {
   updatedAtLabel: string;
   createdAtLabel: string;
   archivedAtLabel: string;
+  /** `null` when stats are unavailable. */
+  activity: DeviceRecentActivity | null;
+  sizeLabel: string;
 };
 
 export const DEVICES_LIST_PAGE_SIZE = 100;
-export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [{ id: 'updatedAt', desc: true }];
+// Empty sorting falls back to the server default (`updated_at_desc`).
+export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [];
 const DEVICE_UNIT_HIERARCHY_KEYS = [
   'armyRegion',
   'militaryDistrict',
@@ -202,10 +212,15 @@ export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
     updatedAtLabel: formatDeviceDateTime(device.updatedAt),
     createdAtLabel: formatDeviceDateTime(device.createdAt),
     archivedAtLabel: formatDeviceDateTime(device.archivedAt),
+    activity: device.stats ? buildDeviceRecentActivity(device.stats) : null,
+    sizeLabel: device.stats ? formatDeviceBytes(BigInt(device.stats.contentBytes)) : '—',
   };
 }
 
-export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
+export function deviceDetailsToListItem(
+  device: DeviceDetails,
+  stats: DeviceStats | null,
+): DeviceListItem {
   return {
     id: device.id,
     name: device.name,
@@ -216,6 +231,7 @@ export function deviceDetailsToListItem(device: DeviceDetails): DeviceListItem {
     createdAt: device.createdAt,
     updatedAt: device.updatedAt,
     archivedAt: device.archivedAt,
+    stats,
   };
 }
 

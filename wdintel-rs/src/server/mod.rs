@@ -1517,6 +1517,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::files::sessions::get)
             .service(crate::devices::files::sessions::summaries)
             .service(crate::devices::files::subtree_counts)
+            .service(crate::devices::files::rebuild_stats)
             .service(crate::devices::files::browse)
             .service(crate::devices::files::search)
             .service(crate::devices::files::journal)

@@ -157,7 +157,12 @@ pub fn resolve(
         checkpoint_effort: lowest.map(str::to_owned),
         synthesis_effort: lowest.map(str::to_owned),
         max_runtime_seconds,
-        finalization_seconds,
+        finalization_seconds: if name == config::AI_AGENT_GLM_FLASH {
+            finalization_seconds
+                * config::AI_AGENT_GLM_FLASH_FINALIZATION_MULTIPLIER
+        } else {
+            finalization_seconds
+        },
     }
 }
 

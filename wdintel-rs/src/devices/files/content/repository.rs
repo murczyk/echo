@@ -701,6 +701,14 @@ where id = $1 and status = 'open'
     )
     .await
     .context(h!())?;
+    super::super::stats::record_content_completed_in(
+        transaction,
+        upload.device_id,
+        upload.id,
+        now,
+    )
+    .await
+    .context(h!())?;
     Ok((
         PublishOutcome::Completed(completed(&upload)),
         Some(UploadStatus::Completed),

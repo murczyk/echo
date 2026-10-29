@@ -1800,6 +1800,7 @@ type alias InboxMessagesReq =
     , selectedUnitIds : Maybe (List (Int))
     , deniedUnitIds : Maybe (List (Int))
     , selectedLocations : Maybe (List (String))
+    , deniedLocations : Maybe (List (String))
     , selectedDeviceNames : Maybe (List (String))
     , deniedDeviceNames : Maybe (List (String))
     , nolimit : Maybe (Bool)
@@ -1870,6 +1871,7 @@ inboxMessagesReqEncoder struct =
         , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
         , ( "denied_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedUnitIds )
         , ( "selected_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedLocations )
+        , ( "denied_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedLocations )
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
         , ( "denied_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedDeviceNames )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
@@ -3524,6 +3526,9 @@ type alias RerDutyQueryStateWf =
     , selectedDeviceNames : Maybe (List (String))
     , deniedDeviceNames : Maybe (List (String))
     , unitsExactMatchOnly : Maybe (Bool)
+    , locationsSelected : Maybe (List (String))
+    , locationsDenied : Maybe (List (String))
+    , includePelengLocations : Maybe (Bool)
     , lastViewedMessageId : Maybe (Int)
     , highlightKeywordsEnabled : Maybe (Bool)
     , highlightKeywordSetId : Maybe (Int)
@@ -3548,6 +3553,9 @@ rerDutyQueryStateWfEncoder struct =
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
         , ( "denied_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedDeviceNames )
         , ( "units_exact_match_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unitsExactMatchOnly )
+        , ( "locations_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.locationsSelected )
+        , ( "locations_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.locationsDenied )
+        , ( "include_peleng_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includePelengLocations )
         , ( "last_viewed_message_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastViewedMessageId )
         , ( "highlight_keywords_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.highlightKeywordsEnabled )
         , ( "highlight_keyword_set_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.highlightKeywordSetId )
@@ -5824,6 +5832,72 @@ deviceStatusCountsEncoder struct =
         ]
 
 
+type alias DeviceExtensionStat =
+    { extension : String
+    , contentCount : Int
+    , contentBytes : Int
+    , lastContentAt : String
+    }
+
+
+deviceExtensionStatEncoder : DeviceExtensionStat -> Json.Encode.Value
+deviceExtensionStatEncoder struct =
+    Json.Encode.object
+        [ ( "extension", (Json.Encode.string) struct.extension )
+        , ( "content_count", (Json.Encode.int) struct.contentCount )
+        , ( "content_bytes", (Json.Encode.int) struct.contentBytes )
+        , ( "last_content_at", (Json.Encode.string) struct.lastContentAt )
+        ]
+
+
+type alias DeviceDayStat =
+    { day : String
+    , extension : String
+    , contentCount : Int
+    , contentBytes : Int
+    }
+
+
+deviceDayStatEncoder : DeviceDayStat -> Json.Encode.Value
+deviceDayStatEncoder struct =
+    Json.Encode.object
+        [ ( "day", (Json.Encode.string) struct.day )
+        , ( "extension", (Json.Encode.string) struct.extension )
+        , ( "content_count", (Json.Encode.int) struct.contentCount )
+        , ( "content_bytes", (Json.Encode.int) struct.contentBytes )
+        ]
+
+
+type alias DeviceStats =
+    { directoryCount : Int
+    , fileCount : Int
+    , contentCount : Int
+    , contentBytes : Int
+    , firstContentAt : Maybe (String)
+    , lastContentAt : Maybe (String)
+    , contentPending : Bool
+    , backfilledAt : Maybe (String)
+    , extensions : List (DeviceExtensionStat)
+    , days : List (DeviceDayStat)
+    }
+
+
+deviceStatsEncoder : DeviceStats -> Json.Encode.Value
+deviceStatsEncoder struct =
+    Json.Encode.object
+        [ ( "directory_count", (Json.Encode.int) struct.directoryCount )
+        , ( "file_count", (Json.Encode.int) struct.fileCount )
+        , ( "content_count", (Json.Encode.int) struct.contentCount )
+        , ( "content_bytes", (Json.Encode.int) struct.contentBytes )
+        , ( "first_content_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.firstContentAt )
+        , ( "last_content_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastContentAt )
+        , ( "content_pending", (Json.Encode.bool) struct.contentPending )
+        , ( "backfilled_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.backfilledAt )
+        , ( "extensions", (Json.Encode.list (deviceExtensionStatEncoder)) struct.extensions )
+        , ( "days", (Json.Encode.list (deviceDayStatEncoder)) struct.days )
+        ]
+
+
 type alias DeviceListItem =
     { id : String
     , name : Maybe (String)
@@ -5834,6 +5908,7 @@ type alias DeviceListItem =
     , createdAt : String
     , updatedAt : String
     , archivedAt : Maybe (String)
+    , stats : Maybe (DeviceStats)
     }
 
 
@@ -5849,6 +5924,7 @@ deviceListItemEncoder struct =
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
         , ( "archived_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.archivedAt )
+        , ( "stats", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceStatsEncoder)) struct.stats )
         ]
 
 
@@ -6444,6 +6520,38 @@ countDeviceFileSubtreesRspEncoder : CountDeviceFileSubtreesRsp -> Json.Encode.Va
 countDeviceFileSubtreesRspEncoder struct =
     Json.Encode.object
         [ ( "counts", (Json.Encode.list (deviceFileSubtreeCountEncoder)) struct.counts )
+        ]
+
+
+type alias RebuildDeviceStatsReq =
+    { deviceId : String
+    }
+
+
+rebuildDeviceStatsReqEncoder : RebuildDeviceStatsReq -> Json.Encode.Value
+rebuildDeviceStatsReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias RebuildDeviceStatsRsp =
+    { directoryCount : Int
+    , fileCount : Int
+    , contentCount : Int
+    , contentBytes : Int
+    , batchCount : Int
+    }
+
+
+rebuildDeviceStatsRspEncoder : RebuildDeviceStatsRsp -> Json.Encode.Value
+rebuildDeviceStatsRspEncoder struct =
+    Json.Encode.object
+        [ ( "directory_count", (Json.Encode.int) struct.directoryCount )
+        , ( "file_count", (Json.Encode.int) struct.fileCount )
+        , ( "content_count", (Json.Encode.int) struct.contentCount )
+        , ( "content_bytes", (Json.Encode.int) struct.contentBytes )
+        , ( "batch_count", (Json.Encode.int) struct.batchCount )
         ]
 
 
@@ -8035,6 +8143,7 @@ type alias DeviceAnalyticsSummaryRsp =
     , filesWithContentCount : Int
     , analyzedFileCount : Int
     , items : List (DeviceAnalyticsSummaryItem)
+    , stats : Maybe (DeviceStats)
     }
 
 
@@ -8045,6 +8154,7 @@ deviceAnalyticsSummaryRspEncoder struct =
         , ( "files_with_content_count", (Json.Encode.int) struct.filesWithContentCount )
         , ( "analyzed_file_count", (Json.Encode.int) struct.analyzedFileCount )
         , ( "items", (Json.Encode.list (deviceAnalyticsSummaryItemEncoder)) struct.items )
+        , ( "stats", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceStatsEncoder)) struct.stats )
         ]
 
 
@@ -20676,6 +20786,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
@@ -21715,6 +21826,51 @@ rerDutyQueryStateWfDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
             (\fields ->
                 case Dict.get "units_exact_match_only" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.bool)) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "locations_selected" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "locations_denied" fields of
+                    Nothing ->
+                        Json.Decode.succeed Nothing
+
+                    Just value ->
+                        case Json.Decode.decodeValue (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))) value of
+                            Ok decoded ->
+                                Json.Decode.succeed decoded
+
+                            Err error ->
+                                Json.Decode.fail (Json.Decode.errorToString error)
+            )
+            (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
+            (\fields ->
+                case Dict.get "include_peleng_locations" fields of
                     Nothing ->
                         Json.Decode.succeed Nothing
 
@@ -23041,6 +23197,39 @@ deviceStatusCountsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived" (Json.Decode.int)))
 
 
+deviceExtensionStatDecoder : Json.Decode.Decoder DeviceExtensionStat
+deviceExtensionStatDecoder =
+    Json.Decode.succeed DeviceExtensionStat
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_bytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_content_at" (Json.Decode.string)))
+
+
+deviceDayStatDecoder : Json.Decode.Decoder DeviceDayStat
+deviceDayStatDecoder =
+    Json.Decode.succeed DeviceDayStat
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "day" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extension" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_bytes" (Json.Decode.int)))
+
+
+deviceStatsDecoder : Json.Decode.Decoder DeviceStats
+deviceStatsDecoder =
+    Json.Decode.succeed DeviceStats
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "directory_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_bytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_content_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_content_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_pending" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "backfilled_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extensions" (Json.Decode.list (deviceExtensionStatDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "days" (Json.Decode.list (deviceDayStatDecoder))))
+
+
 deviceListItemDecoder : Json.Decode.Decoder DeviceListItem
 deviceListItemDecoder =
     Json.Decode.succeed DeviceListItem
@@ -23053,6 +23242,7 @@ deviceListItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stats" (Json.Decode.nullable (deviceStatsDecoder))))
 
 
 deviceDetailsDecoder : Json.Decode.Decoder DeviceDetails
@@ -23191,6 +23381,16 @@ removeDeviceAudioForwardingReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
+
+
+rebuildDeviceStatsRspDecoder : Json.Decode.Decoder RebuildDeviceStatsRsp
+rebuildDeviceStatsRspDecoder =
+    Json.Decode.succeed RebuildDeviceStatsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "directory_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_bytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "batch_count" (Json.Decode.int)))
 
 
 deviceFileRootDecoder : Json.Decode.Decoder DeviceFileRoot
@@ -24512,6 +24712,7 @@ deviceAnalyticsSummaryRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "files_with_content_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analyzed_file_count" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (deviceAnalyticsSummaryItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stats" (Json.Decode.nullable (deviceStatsDecoder))))
 
 
 deviceAnalyticsFilesReqDecoder : Json.Decode.Decoder DeviceAnalyticsFilesReq

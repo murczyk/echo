@@ -322,6 +322,73 @@ fn prepare_payload(
     Ok(payload)
 }
 
+pub fn completion_diagnostic(event: &Value) -> Option<Value> {
+    if event.get("type")?.as_str()? != "completion_diagnostic" {
+        return None;
+    }
+    let stage = event.get("stage")?.as_str()?;
+    if !matches!(stage, "research" | "synthesis" | "answer") {
+        return None;
+    }
+    let outcome = event.get("outcome")?.as_str()?;
+    if !matches!(
+        outcome,
+        "complete"
+            | "output_limit"
+            | "empty"
+            | "provider_error"
+            | "transient_error"
+            | "aborted"
+            | "authorization"
+            | "content_filter"
+            | "no_evidence"
+            | "citation_rejected"
+            | "fallback"
+            | "inability"
+            | "tool_error"
+            | "context_limit"
+            | "time_limit"
+            | "tool_limit"
+    ) {
+        return None;
+    }
+    let mut diagnostic =
+        serde_json::json!({ "stage": stage, "outcome": outcome });
+    for key in ["stopReason", "rawStopReason"] {
+        if let Some(value) = event.get(key).and_then(Value::as_str) {
+            if matches!(
+                value,
+                "stop"
+                    | "length"
+                    | "toolUse"
+                    | "tool_calls"
+                    | "error"
+                    | "aborted"
+                    | "content_filter"
+                    | "end_turn"
+                    | "unknown"
+            ) {
+                diagnostic[key] = Value::String(value.to_string());
+            }
+        }
+    }
+    for key in [
+        "inputTokens",
+        "outputTokens",
+        "textCharacters",
+        "toolCalls",
+        "durationMs",
+        "remainingMs",
+        "maxTokens",
+        "attempt",
+    ] {
+        if let Some(value) = event.get(key).and_then(Value::as_u64) {
+            diagnostic[key] = Value::from(value);
+        }
+    }
+    Some(diagnostic)
+}
+
 pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
     let event_type = event
         .get("eventType")
@@ -352,7 +419,10 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
         if !metadata.coverage_limited
             || !matches!(
                 metadata.reason.as_str(),
-                "time_limit" | "tool_limit" | "context_limit"
+                "time_limit"
+                    | "tool_limit"
+                    | "context_limit"
+                    | "provider_error"
             )
         {
             return None;
@@ -546,6 +616,28 @@ mod tests {
     }
 
     #[test]
+    fn issue_3572_kept_completion_diagnostics_private_and_allowlisted() {
+        let event = serde_json::json!({
+            "type": "completion_diagnostic", "stage": "synthesis",
+            "outcome": "output_limit", "stopReason": "length",
+            "rawStopReason": "secret provider response", "outputTokens": 8192,
+            "inputTokens": "secret", "remainingMs": -1,
+            "text": "private research", "arguments": {"token": "secret"}
+        });
+        assert_eq!(
+            completion_diagnostic(&event).unwrap(),
+            serde_json::json!({
+                "stage": "synthesis", "outcome": "output_limit",
+                "stopReason": "length", "outputTokens": 8192
+            })
+        );
+        assert!(normalize_runner_event(event).is_none());
+        assert!(completion_diagnostic(&serde_json::json!({
+            "type": "completion_diagnostic", "stage": "secret", "outcome": "complete"
+        })).is_none());
+    }
+
+    #[test]
     fn snapshot_replaces_text_and_drops_empty_or_oversized_payloads() {
         let (_, payload) = normalize_runner_event(serde_json::json!({
             "type": "assistant_snapshot",
@@ -601,10 +693,17 @@ mod tests {
         .unwrap();
         assert_eq!(payload["reason"], "context_limit");
         assert_eq!(payload["coverageLimited"], true);
-        assert!(normalize_runner_event(serde_json::json!({
+        let (_, payload) = normalize_runner_event(serde_json::json!({
             "type": "completion_metadata",
             "coverageLimited": true,
             "reason": "provider_error"
+        }))
+        .unwrap();
+        assert_eq!(payload["reason"], "provider_error", "#3572");
+        assert!(normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "unknown_reason"
         }))
         .is_none());
     }

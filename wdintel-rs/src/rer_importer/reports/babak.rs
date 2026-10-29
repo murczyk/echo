@@ -1465,7 +1465,9 @@ fn babak_candidate_streams_are_eligible(
     {
         effective.filter_tags_option = None;
     }
-    if effective.selected_locations.is_none() {
+    if effective.selected_locations.is_none()
+        && effective.denied_locations.is_none()
+    {
         effective.include_peleng_locations = None;
     }
     effective.report_tags_only_this_unit = effective
@@ -1530,6 +1532,7 @@ fn normalize_empty_candidate_collections(req: &mut InboxMessagesReq) {
         selected_unit_ids,
         denied_unit_ids,
         selected_locations,
+        denied_locations,
         selected_device_names,
         selected_tags,
         denied_tags,
@@ -1704,6 +1707,12 @@ async fn load_babak_candidate_page_for_groups(
     query = filter_selected_locations(
         query,
         &req.selected_locations,
+        req.include_peleng_locations.unwrap_or(false),
+    )
+    .context(h!())?;
+    query = filter_denied_locations(
+        query,
+        &req.denied_locations,
         req.include_peleng_locations.unwrap_or(false),
     )
     .context(h!())?;

@@ -31,11 +31,16 @@ interface ContextSettings {
   timeContext?: unknown;
   signal?: AbortSignal;
   saveCheckpoint?: (summary: string) => Promise<void>;
+  toolContextNeedsCompaction?: () => boolean;
+  providerRequestMaxBytes?: number;
+  beforeProvider?: (purpose: "research" | "checkpoint", context: Context) => Context;
+  providerCompleted?: (purpose: "checkpoint", durationMs: number) => void;
 }
 
 const MAX_COMPACTION_PASSES = 3;
 const MAX_CHECKPOINT_CALLS = 6;
 const CHECKPOINT_TARGET_WORDS = 1_000;
+const PROVIDER_REQUEST_ENVELOPE_RESERVE_BYTES = 64 * 1024;
 
 export class ContextCompactionLimitError extends Error {}
 export class ContextCheckpointProviderError extends Error {}
@@ -43,6 +48,20 @@ const CHECKPOINT_INSTRUCTIONS = `Create a concise evidence checkpoint so an Echo
 
 function llmContext(context: AgentContext): Context {
   return { ...context, messages: convertToLlm(context.messages) };
+}
+
+function providerRequestFits(context: Context, settings: ContextSettings): boolean {
+  if (settings.providerRequestMaxBytes === undefined) return true;
+  let bytes = Buffer.byteLength(JSON.stringify(context));
+  for (const message of context.messages) {
+    if (message.role !== "assistant") continue;
+    for (const block of message.content) {
+      if (block.type !== "toolCall") continue;
+      const argumentsJson = JSON.stringify(block.arguments);
+      bytes += Buffer.byteLength(JSON.stringify(argumentsJson)) - Buffer.byteLength(argumentsJson);
+    }
+  }
+  return bytes <= settings.providerRequestMaxBytes - PROVIDER_REQUEST_ENVELOPE_RESERVE_BYTES;
 }
 
 function entryMessages(entries: SessionEntry[]): AgentMessage[] {
@@ -215,8 +234,11 @@ async function summarizeCheckpoint(
     if (runtime.checkpointCalls >= MAX_CHECKPOINT_CALLS)
       throw new ContextCompactionLimitError("checkpoint call budget exhausted");
     runtime.checkpointCalls += 1;
+    const prepared = settings.beforeProvider?.("checkpoint", context) ?? context;
     const startedAt = Date.now();
-    const response = await summarize(checkpointEngine, context, options);
+    const response = await summarize(checkpointEngine, prepared, options).finally(() => {
+      settings.providerCompleted?.("checkpoint", Date.now() - startedAt);
+    });
     console.error(JSON.stringify({
       event: "context_checkpoint",
       attempt: runtime.checkpointCalls,
@@ -309,7 +331,8 @@ async function compactOnce(
         checkpointEngine,
         summaryContext,
         checkpointTokens,
-      ) < checkpointTokens
+      ) < checkpointTokens ||
+      !providerRequestFits(summaryContext, settings)
     ) {
       cut = smallerCut(entries, cut);
       continue;
@@ -368,13 +391,21 @@ async function ensureContextInner(
   const { settings, onProgress } = runtime;
   const available = (context: AgentContext) =>
     availableTokens(runtime, context);
+  const fits = () =>
+    available(context) >= settings.compactionReserveTokens &&
+    !settings.toolContextNeedsCompaction?.() &&
+    providerRequestFits(llmContext(context), settings);
   signal?.throwIfAborted();
-  if (available(context) >= settings.compactionReserveTokens) return context;
+  if (fits()) return context;
   onProgress();
   for (let attempt = 0; attempt < MAX_COMPACTION_PASSES; attempt += 1) {
     context = await compactOnce(runtime, context, signal, pending);
-    if (available(context) >= settings.compactionReserveTokens) return context;
+    if (fits()) return context;
   }
+  if (settings.toolContextNeedsCompaction?.())
+    throw new ContextCompactionLimitError("tool context budget remains exhausted after compaction");
+  if (!providerRequestFits(llmContext(context), settings))
+    throw new ContextCompactionLimitError("provider request exceeds transport size after compaction");
   if (available(context) < settings.maxTokens)
     throw new ContextCompactionLimitError("provider context window exceeded after compaction");
   return context;
@@ -419,6 +450,8 @@ async function compactAllForOutputRetry(
   const maxTokens = settings.checkpointMaxTokens ?? settings.maxTokens;
   if (clampMaxTokensToContext(checkpointEngine, context, maxTokens) < maxTokens)
     throw new ContextCompactionLimitError("output recovery evidence exceeds checkpoint context");
+  if (!providerRequestFits(context, settings))
+    throw new ContextCompactionLimitError("output recovery evidence exceeds provider request size");
   onProgress();
   const response = await summarizeCheckpoint(runtime, context, settings.signal);
   const summary = checkpointText(response);
@@ -485,6 +518,7 @@ export function installContextCompaction(
   };
   const previousStream = session.agent.streamFunction;
   session.agent.streamFunction = (selectedEngine, context, options) => {
+    context = settings.beforeProvider?.("research", context) ?? context;
     const requestedTokens = options?.maxTokens ?? selectedEngine.maxTokens;
     if (
       clampMaxTokensToContext(selectedEngine, context, requestedTokens) <

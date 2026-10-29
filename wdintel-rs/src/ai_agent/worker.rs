@@ -706,6 +706,7 @@ async fn run_request_inner(
             "echoPublicHost": env.config.public_host,
             "modelName": ai_engine.model_name,
             "contextWindow": runtime_profile.context_window_tokens,
+            "providerRequestMaxBytes": (provider_transport == access::AgentProviderTransport::EchoGateway).then_some(crate::config::AI_AGENT_PROVIDER_REQUEST_MAX_BYTES),
             "maxTokens": runtime_profile.max_output_tokens,
             "checkpointMaxTokens": checkpoint_max_tokens,
             "compactionReserveTokens": runtime_profile.compaction_reserve_tokens,
@@ -804,6 +805,10 @@ async fn run_request_inner(
                             msg: "AI agent runner output exceeded the configured limit"
                                 .to_string(),
                         });
+                    }
+                    if let Some(diagnostic) = events::completion_diagnostic(&event) {
+                        info!("AI agent completion request_id={} diagnostic={diagnostic}", request.id);
+                        continue;
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
                         if event_type == "completion_metadata" {

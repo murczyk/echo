@@ -445,6 +445,9 @@ fn short_state_filter(
         selected_device_names: None,
         denied_device_names: None,
         units_exact_match_only: None,
+        locations_selected: None,
+        locations_denied: None,
+        include_peleng_locations: None,
         last_viewed_message_id: None,
         highlight_keywords_enabled: None,
         highlight_keyword_set_id: None,
@@ -692,7 +695,7 @@ async fn mk_analysis_message_with_location(
     )
     .await
     .context(h!())?;
-    mk_sigint_inbox_item(
+    let inbox_item = mk_sigint_inbox_item(
         db,
         sigint_inbox_item::ActiveModel {
             id: Set(signal_message.id),
@@ -705,6 +708,14 @@ async fn mk_analysis_message_with_location(
             )),
             ..Default::default()
         },
+    )
+    .await
+    .context(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        db,
+        inbox_item.id,
+        inbox_item.id_uuid,
+        location_v2,
     )
     .await
     .context(h!())?;
@@ -12903,6 +12914,294 @@ async fn echo_3461_inbox_device_filters_include_exclude_and_keep_nulls() {
     )
     .await;
     assert_eq!(include_and_exclude, vec![alpha_message.id]);
+}
+
+struct LocationFilterMessages {
+    location_a: i64,
+    location_b: i64,
+    null_location: i64,
+    null_location_null_freq: i64,
+    peleng_freq: i64,
+}
+
+async fn clear_message_freq(db: &DatabaseConnection, message_id: i64) {
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.freq = Set(None);
+    inbox_item.update(db).await.unwrap();
+}
+
+async fn mk_location_filter_message(
+    fixture: &RerAnalysisFixture,
+    label: &str,
+    freq: &str,
+    minute: u32,
+    location_v2: Option<&str>,
+) -> i64 {
+    let db = &fixture.env.dbx;
+    let datetime = test_dt(2026, 3, 1, 8, minute);
+    let message = mk_analysis_message_with_location(
+        db,
+        label,
+        freq,
+        datetime,
+        &[&fixture.alpha],
+        &[],
+        false,
+        location_v2,
+    )
+    .await
+    .unwrap();
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.update(db).await.unwrap();
+    message.id
+}
+
+async fn mk_location_filter_messages(
+    fixture: &RerAnalysisFixture,
+) -> LocationFilterMessages {
+    let db = &fixture.env.dbx;
+    let location_a = crate::location::utils::format_location("Location A");
+    let location_b = crate::location::utils::format_location("Location B");
+    mk_freq_location(
+        db,
+        freq_location::ActiveModel {
+            freq: Set("3308.4".to_string()),
+            location: Set("Location A".to_string()),
+            created_at: Set(test_dt(2026, 3, 1, 7, 0)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let null_location_null_freq = mk_location_filter_message(
+        fixture,
+        "echo-3308-null-freq",
+        "3308.5",
+        5,
+        None,
+    )
+    .await;
+    clear_message_freq(db, null_location_null_freq).await;
+    LocationFilterMessages {
+        location_a: mk_location_filter_message(
+            fixture,
+            "echo-3308-a",
+            "3308.1",
+            1,
+            Some(&location_a),
+        )
+        .await,
+        location_b: mk_location_filter_message(
+            fixture,
+            "echo-3308-b",
+            "3308.2",
+            2,
+            Some(&location_b),
+        )
+        .await,
+        null_location: mk_location_filter_message(
+            fixture,
+            "echo-3308-null",
+            "3308.3",
+            3,
+            None,
+        )
+        .await,
+        null_location_null_freq,
+        peleng_freq: mk_location_filter_message(
+            fixture,
+            "echo-3308-peleng",
+            "3308.4",
+            4,
+            None,
+        )
+        .await,
+    }
+}
+
+fn location_filter_base_req(fixture: &RerAnalysisFixture) -> InboxMessagesReq {
+    InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        nolimit: Some(true),
+        ..Default::default()
+    }
+}
+
+fn strings(values: &[&str]) -> Option<Vec<String>> {
+    Some(values.iter().map(|value| (*value).to_owned()).collect())
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_denied_location_keeps_null_locations() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let unfiltered =
+        inbox_map_item_ids(&fixture.env, &login_id, &base_req).await;
+    let empty_list = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: Some(vec![]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(empty_list, unfiltered);
+
+    let denied_a = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["Location A"]),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(!denied_a.contains(&messages.location_a));
+    assert!(denied_a.contains(&messages.location_b));
+    assert!(denied_a.contains(&messages.null_location));
+    assert!(denied_a.contains(&messages.null_location_null_freq));
+    assert!(denied_a.contains(&messages.peleng_freq));
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_denied_empty_location_excludes_null_locations() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+
+    let denied_empty = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&[""]),
+            ..location_filter_base_req(&fixture)
+        },
+    )
+    .await;
+    let mut expected = vec![messages.location_a, messages.location_b];
+    expected.sort();
+    let mut denied_empty = denied_empty;
+    denied_empty.sort();
+    assert_eq!(denied_empty, expected);
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_denied_peleng_location_keeps_null_freqs() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+
+    let denied_a = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["Location A"]),
+            include_peleng_locations: Some(true),
+            ..location_filter_base_req(&fixture)
+        },
+    )
+    .await;
+    assert!(!denied_a.contains(&messages.location_a));
+    assert!(!denied_a.contains(&messages.peleng_freq));
+    assert!(denied_a.contains(&messages.location_b));
+    assert!(denied_a.contains(&messages.null_location));
+    assert!(denied_a.contains(&messages.null_location_null_freq));
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_inbox_selected_and_denied_locations_combine() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let selected_and_denied = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&["Location A", "Location B"]),
+            denied_locations: strings(&["Location B"]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert_eq!(selected_and_denied, vec![messages.location_a]);
+
+    let selected_empty_denied_peleng = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&[""]),
+            denied_locations: strings(&["Location A"]),
+            include_peleng_locations: Some(true),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(selected_empty_denied_peleng.contains(&messages.null_location));
+    assert!(selected_empty_denied_peleng
+        .contains(&messages.null_location_null_freq));
+    assert!(!selected_empty_denied_peleng.contains(&messages.peleng_freq));
+    assert!(!selected_empty_denied_peleng.contains(&messages.location_a));
+    assert!(!selected_empty_denied_peleng.contains(&messages.location_b));
+}
+
+#[tokio::test]
+#[serial]
+async fn echo_3308_location_wildcards_match_literally() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let test_identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let messages = mk_location_filter_messages(&fixture).await;
+    let base_req = location_filter_base_req(&fixture);
+
+    let denied_wildcards = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            denied_locations: strings(&["%", "_"]),
+            ..base_req.clone()
+        },
+    )
+    .await;
+    assert!(denied_wildcards.contains(&messages.location_a));
+    assert!(denied_wildcards.contains(&messages.location_b));
+
+    let selected_wildcards = inbox_map_item_ids(
+        &fixture.env,
+        &login_id,
+        &InboxMessagesReq {
+            selected_locations: strings(&["%", "_"]),
+            ..base_req
+        },
+    )
+    .await;
+    assert!(!selected_wildcards.contains(&messages.location_a));
+    assert!(!selected_wildcards.contains(&messages.location_b));
 }
 
 #[tokio::test]

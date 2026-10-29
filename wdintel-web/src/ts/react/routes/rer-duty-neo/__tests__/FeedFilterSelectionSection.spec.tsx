@@ -292,6 +292,32 @@ describe('FeedFilterSelectionSection', () => {
     });
   });
 
+  it('forwards onOpen to the autocomplete', () => {
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    const onOpen = vi.fn();
+    act(() => {
+      root.render(
+        <FeedFilterSelectionSection
+          title="Локації"
+          mode="include"
+          onModeChange={vi.fn()}
+          value={[]}
+          onValueChange={vi.fn()}
+          options={[]}
+          getOptionLabel={(option: string) => option}
+          onOpen={onOpen}
+        />,
+      );
+    });
+
+    act(() => {
+      (latestAutocompleteProps() as unknown as { onOpen: () => void }).onOpen();
+    });
+    expect(onOpen).toHaveBeenCalledOnce();
+    act(() => root.unmount());
+  });
+
   it('keeps the groups menu open and clears its query after each selection', () => {
     const container = document.createElement('div');
     const root = createRoot(container);

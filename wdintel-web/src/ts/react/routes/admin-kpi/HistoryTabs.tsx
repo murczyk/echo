@@ -155,7 +155,7 @@ export function ActivityHistory({ period }: { period: KpiPeriod }) {
 }
 
 function RequestHistory({ period }: { period: KpiPeriod }) {
-  const load = useCallback(() => getKpiRequests(period), [period]);
+  const load = useCallback((signal: AbortSignal) => getKpiRequests(period, signal), [period]);
   const snapshot = useSnapshot(load, 'Не вдалося завантажити якість API');
   const data = snapshot.data;
   const percentage = data?.total

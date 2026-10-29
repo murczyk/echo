@@ -1,0 +1,89 @@
+# Budget-aware GLM Flash research
+
+Only `glm-5.3-flash-uncensored` uses this workflow. The selected provider and total
+Fast/Balanced/Deep deadlines remain 120/300/1800 seconds. Flash reserves
+60/120/240 seconds of those deadlines for synthesis. Without presets, its existing
+ten-minute deadline is retained with a two-minute synthesis reserve; final
+generation keeps the legacy gateway's authorized `research` purpose.
+
+Before retrieval, Flash saves a short checklist with `update_research`. Broad
+summaries start with a sample, then use focused searches chosen from the request
+and observed evidence. Continuing unfiltered inbox pagination requires a specific
+coverage requirement in `update_research.paginationReason`; explicit exhaustive
+requests retain pagination. Existing
+scope, permission, citation, and search-semantics guidance still applies.
+
+After at most four retrieval attempts, another state update is required. State
+contains task status, a cited Markdown answer draft (up to 8,000 characters)
+and coverage gaps; it must not
+contain hidden reasoning or deliberation. Queries and returned continuation
+cursors are recorded automatically. Completed updates use the existing work
+journal's checkpoint records, with no new storage or container filesystem tool.
+When work memory is enabled, follow-ups receive the compact state through the
+existing conversation-isolated, access-revalidated recap. Detailed records remain
+available through the existing work tools. Formatting-only follow-ups reuse the
+previous answer and citations without fetching more records. With work memory disabled, state is
+retained only for the active request.
+
+Every provider turn receives private remaining research/total time, tool allowance
+and estimated context headroom. A warning requests completion before the research
+boundary. Observed provider durations prevent starting a research or checkpoint
+call that would consume the remaining research allowance. Transitions happen
+between completed tool rounds; deadline timers and cancellation remain backstops.
+
+Synthesis uses the same context-aware evidence packing as other engines and at
+most 8,192 output tokens, bounded by the configured output cap. It preserves
+full records when they fit rather than cutting each source to a fixed prefix.
+The compact saved draft is included once. A truncated, empty, interrupted or
+citation-invalid completion may receive one corrective attempt if its observed
+duration plus a safety margin fits the remaining finalization allowance.
+The retry asks for a shorter complete answer or corrected exact citations;
+authorization failures, filtering and cancellation remain terminal.
+Intermediate assistant text and private-tool events never
+enter the streamed answer; public progress and source activity remain visible.
+An unfinished synthesis uses the latest completed draft only if its links still
+validate against the available citations. Without a validated draft, it returns a
+short inability notice. Answers grounded solely in user-provided text need no
+invented citation, and registered map links remain supported. It never
+substitutes raw source excerpts. Unread cursors,
+incomplete tasks or remaining gaps produce a brief coverage qualification.
+Authorization failures, content filters, cancellation and persistence failures
+retain their fail-closed behavior.
+
+Regressions: `echo-ai-agent/runner/flash-research.test.ts` exercises the actual
+runner against deterministic provider and neutral botanical-archive fixtures,
+including selective retrieval, long pagination, saved-state reuse, partial
+coverage, timing, tool exhaustion and failure paths. Existing work-memory backend
+regressions verify conversation isolation and source revocation. These fixtures
+verify harness control flow, not live-provider answer quality.
+
+## Completion diagnostics
+
+The runner emits private `completion_diagnostic` frames for research turns,
+synthesis attempts and the selected answer. The worker logs only allowlisted
+stage/outcome/finish-reason values and numeric usage, duration and remaining
+budget fields, correlated with the request ID. These frames are never stored as
+chat events or sent to the frontend. Source text, tool arguments, credentials
+and hidden reasoning are excluded. This also records successful requests that
+returned a fallback draft instead of a completed synthesis.
+
+## Live evaluation
+
+`evals/flash-completion.mjs` runs the actual harness with local, neutral botanical
+archive tools and real provider inference. No production Echo tools or database
+writes are used. Supply a private JSON profile file containing `engine`, `url`,
+`token`, `context` and `maxTokens`; do not commit credentials or evaluation logs.
+
+```sh
+node --experimental-strip-types echo-ai-agent/evals/flash-completion.mjs \
+  echo-ai-agent/runner/runner.ts /private/profiles.json \
+  glm-5.3-flash-uncensored grouped balanced
+```
+
+Scenarios are `grouped`, `long`, `attachments`, `exhaustive` and `followup`;
+presets are `fast`,
+`balanced` and `deep`. Run the same fixture against the base runner and Sol for
+comparison. Results contain provider finish reasons, usage, selected-answer
+outcome, retrievals and the synthetic answer. Compare substantive coverage,
+valid citations, readable groups and deadline compliance; a scripted provider
+fixture alone does not establish model behavior.

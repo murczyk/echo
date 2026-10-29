@@ -330,6 +330,12 @@ export const adminDatabaseSubs: Menu[] = [
     activeName: 'tags-neo',
     label: 'Теги',
   },
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/kpi' },
+    activeName: 'kpi',
+    label: 'KPI',
+  },
 ];
 
 export const adminSubs: Menu[] = [
@@ -399,11 +405,5 @@ export const adminSubs: Menu[] = [
         label: 'Імпорт Delta',
       },
     ],
-  },
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/kpi' },
-    activeName: 'kpi',
-    label: 'KPI',
   },
 ];

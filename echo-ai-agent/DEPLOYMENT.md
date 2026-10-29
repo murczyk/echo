@@ -223,3 +223,67 @@ sources, labels, full previews, analysis links, follow-up requests, and reload.
 Keep production prompts, message bodies, credentials, and raw evaluation output
 outside Git. A copied database restore discards AI conversation/runtime records:
 export replay inputs first and retain the local agent profile during restore.
+
+## Government provider cooldowns (release 2026.10.29.2)
+
+After HTTP 429, government inference calls sharing a model wait for the longest
+active `Retry-After` (seconds or HTTP date), defaulting to 60 seconds when absent
+or invalid. Different models have independent cooldowns. Waiting consumes the
+existing request deadline; cancellation does not clear the shared cooldown.
+The runner retains its two retries and never switches models automatically.
+
+Admin technical errors retain an allowlisted provider category and known error code, including
+failures delivered inside HTTP-200 event streams. Arbitrary provider error text
+is never persisted because it may contain submitted input. Gateway failure logs include
+the Echo request ID; HTTP 200 alone does not establish successful generation.
+Provider availability is external: retries can still exhaust the request budget.
+
+Deploy the matching Echo build before upgrading the selected namespace with
+`just ai-control-panel upgrade --host <approved-host> --release 2026.10.29.2`.
+Run its `--dry-run` first, and wait for queued/running requests to finish.
+Deployments, namespace upgrades, and live inference tests each require explicit
+approval naming the operation and environment, including staging.
+Retain prior containers and recovery journals; follow the
+[control panel recovery procedure](CONTROL_PANEL.md#upgrade-and-recovery) only
+within approved scope. Do not downgrade shared infrastructure as a retry fix.
+
+## GLM Flash research (release 2026.10.29.3)
+
+Only `glm-5.3-flash-uncensored` uses the budget-aware research workflow described
+in [Flash research](FLASH_RESEARCH.md). No migration, provider change or preset
+configuration change is required. Deploy the matching application first.
+For the authorized Kharkiv rollout, preview and then upgrade only its namespace:
+
+```sh
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.3 --dry-run
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.3
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  scan --host echo-kharkiv2 --json
+```
+
+Confirm API/background/report service health and running build identity, matching
+required/container harness releases, and successful authenticated connection
+checks in the upgrade journal. Preserve other namespace pins, retained templates,
+backup containers and recovery journals. A failed upgrade stops the rollout;
+recovery outside the approved operation requires separate approval.
+
+## GLM Flash completion (release 2026.10.29.4)
+
+This release increases final synthesis to at most 8,192 tokens and adds one
+budget-bounded corrective attempt. It keeps the selected provider and all time
+presets unchanged. Deploy the matching application before upgrading agents so
+private completion diagnostics are logged by the backend.
+
+```sh
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.4 --dry-run
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.4
+```
+
+Verify the running application revision, service health, release match and
+authenticated agent connection. Keep prior containers and rollout journals;
+verify other namespace selections remain unchanged. See
+[Flash completion diagnostics](FLASH_RESEARCH.md#completion-diagnostics).

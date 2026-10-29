@@ -199,6 +199,7 @@ pub(super) async fn load_summaries(
             files_with_content_count: row.try_get::<i64>("", "with_content").c(h!())?.try_into().c(h!())?,
             analyzed_file_count: row.try_get::<i64>("", "analyzed").c(h!())?.try_into().c(h!())?,
             items: serde_json::from_value(row.try_get("", "items").c(h!())?).c(h!())?,
+            stats: None,
         },
     })).collect()
 }

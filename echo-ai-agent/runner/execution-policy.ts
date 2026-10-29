@@ -38,6 +38,7 @@ export const PURPOSE_HEADER = "x-echo-ai-purpose";
 export function validateExecutionPolicy(
   value: unknown,
   deadline: unknown,
+  flash = false,
 ): ExecutionPolicy | undefined {
   if (value === undefined) {
     if (deadline !== undefined)
@@ -59,7 +60,7 @@ export function validateExecutionPolicy(
       policy.synthesisEffort,
     ].every((effort) => EFFORTS.has(effort)) ||
     policy.maxRuntimeSeconds !== limits[0] ||
-    policy.finalizationSeconds !== limits[1] ||
+    policy.finalizationSeconds !== limits[1] * (flash ? 2 : 1) ||
     !Number.isSafeInteger(deadline) ||
     (deadline as number) < 1
   ) {
@@ -68,7 +69,7 @@ export function validateExecutionPolicy(
   return { ...policy };
 }
 
-export type ResearchLimitReason = "time_limit" | "tool_limit" | "context_limit";
+export type ResearchLimitReason = "time_limit" | "tool_limit" | "context_limit" | "provider_error";
 
 export class ResearchBudget {
   readonly research = new AbortController();
@@ -76,6 +77,7 @@ export class ResearchBudget {
   reason: ResearchLimitReason | undefined;
   private researchTimer: ReturnType<typeof setTimeout>;
   private finalizationTimer: ReturnType<typeof setTimeout>;
+  private finalizationDeadlineAt: number;
 
   readonly policy: ExecutionPolicy;
   readonly deadlineAt: number;
@@ -87,6 +89,7 @@ export class ResearchBudget {
   ) {
     this.policy = policy;
     this.deadlineAt = deadlineAt;
+    this.finalizationDeadlineAt = deadlineAt - FINALIZATION_CLEANUP_MS;
     this.researchTimer = setTimeout(
       () => {
         this.limit("time_limit");
@@ -106,10 +109,23 @@ export class ResearchBudget {
     this.research.signal.throwIfAborted();
   }
 
+  remainingResearchMs(): number {
+    return this.reason ? 0 : Math.max(0, this.remainingTotalMs() - this.policy.finalizationSeconds * 1000);
+  }
+
+  remainingTotalMs(): number {
+    return Math.max(0, this.deadlineAt - Date.now());
+  }
+
+  remainingFinalizationMs(): number {
+    return this.finalization.signal.aborted ? 0 : Math.max(0, this.finalizationDeadlineAt - Date.now());
+  }
+
   limit(reason: ResearchLimitReason): void {
     if (!this.reason) {
       this.reason = reason;
       clearTimeout(this.finalizationTimer);
+      this.finalizationDeadlineAt = Math.min(this.deadlineAt - FINALIZATION_CLEANUP_MS, Date.now() + this.policy.finalizationSeconds * 1000);
       this.finalizationTimer = setTimeout(
         () => this.finalization.abort(),
         Math.max(0, Math.min(
@@ -198,30 +214,134 @@ export function isProviderAuthorizationError(error: unknown): boolean {
   );
 }
 
-export async function synthesizeBudgetEvidence(
-  options: {
-    engine: Model<Api>;
-    apiKey: string;
-    policy: ExecutionPolicy;
-    systemPrompt: string;
-    prompt: string;
-    evidence: BudgetEvidence;
-    checkpoint?: string;
-    maxTokens: number;
-    signal: AbortSignal;
-  },
-  summarize: typeof completeSimple = completeSimple,
-): Promise<string | null> {
-  const { engine, policy, signal } = options;
-  if (signal.aborted) return null;
+export type CompletionStatus =
+  | "complete"
+  | "output_limit"
+  | "empty"
+  | "provider_error"
+  | "transient_error"
+  | "aborted"
+  | "authorization"
+  | "content_filter"
+  | "no_evidence"
+  | "citation_rejected";
+export interface CompletionDiagnostic {
+  stage: "research" | "synthesis" | "answer";
+  outcome:
+    | CompletionStatus
+    | "fallback"
+    | "inability"
+    | "tool_error"
+    | "context_limit"
+    | "time_limit"
+    | "tool_limit";
+  stopReason?: string;
+  rawStopReason?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  textCharacters?: number;
+  toolCalls?: number;
+  durationMs?: number;
+  remainingMs?: number;
+  maxTokens?: number;
+  attempt?: number;
+}
+
+export function completionFailure(error: unknown): CompletionStatus {
+  if (isProviderAuthorizationError(error)) return "authorization";
+  const message = String(error ?? "");
+  if (/content_filter/i.test(message)) return "content_filter";
+  if (
+    /429|rate.?limit|\b50[0234]\b|stream ended|interrupted|terminated|connection|network|fetch failed|timeout/i.test(
+      message,
+    )
+  )
+    return "transient_error";
+  return "provider_error";
+}
+
+export function providerCompletion(
+  response: any,
+): Omit<CompletionDiagnostic, "stage"> {
+  const text =
+    response?.content
+      ?.filter((item: any) => item.type === "text")
+      .map((item: any) => item.text)
+      .join("") ?? "";
+  const knownStops = [
+    "stop",
+    "length",
+    "toolUse",
+    "tool_calls",
+    "error",
+    "aborted",
+    "content_filter",
+    "end_turn",
+  ];
+  const failure = completionFailure(response?.errorMessage);
+  const outcome =
+    failure === "authorization" || failure === "content_filter"
+      ? failure
+      : response?.stopReason === "length"
+        ? "output_limit"
+        : response?.stopReason === "aborted"
+          ? "aborted"
+          : response?.stopReason === "error"
+            ? failure
+            : response?.stopReason === "stop" ||
+                response?.stopReason === "toolUse"
+              ? text.trim() ||
+                response?.content?.some((item: any) => item.type === "toolCall")
+                ? "complete"
+                : "empty"
+              : "provider_error";
+  return {
+    outcome,
+    stopReason: knownStops.includes(response?.stopReason)
+      ? response.stopReason
+      : "unknown",
+    rawStopReason: knownStops.includes(response?.rawStopReason)
+      ? response.rawStopReason
+      : "unknown",
+    inputTokens: response?.usage?.input,
+    outputTokens: response?.usage?.output,
+    textCharacters: text.length,
+    toolCalls:
+      response?.content?.filter((item: any) => item.type === "toolCall")
+        .length ?? 0,
+  };
+}
+
+type SynthesisOptions = {
+  engine: Model<Api>;
+  apiKey: string;
+  policy: ExecutionPolicy;
+  systemPrompt: string;
+  prompt: string;
+  evidence: BudgetEvidence;
+  checkpoint?: string;
+  maxTokens: number;
+  signal: AbortSignal;
+  prepareContext?: (context: Context) => Context;
+  purpose?: "research" | "synthesis";
+  allowUserEvidence?: boolean;
+  onOutcome?: (outcome: CompletionDiagnostic) => void;
+};
+
+function synthesisContext(options: SynthesisOptions): Context | null {
   const records = evidenceRecords(options.evidence);
-  if (!records.length && !options.evidence.saved?.length) return null;
+  if (
+    !records.length &&
+    !options.evidence.saved?.length &&
+    !options.allowUserEvidence
+  )
+    return null;
   const messages: Context["messages"] = [
     { role: "user", content: options.prompt, timestamp: Date.now() },
   ];
   const context: Context = { systemPrompt: options.systemPrompt, messages };
   let remaining =
-    engine.contextWindow -
+    options.engine.contextWindow -
     options.maxTokens -
     2048 -
     estimateTokens(messages[0]) -
@@ -238,7 +358,10 @@ export async function synthesizeBudgetEvidence(
       messages.push(checkpoint);
     }
   }
-  const saved = (options.evidence.saved ?? []).map((record) => ({ savedEvidence: record.text, citations: record.citations }));
+  const saved = (options.evidence.saved ?? []).map((record) => ({
+    savedEvidence: record.text,
+    citations: record.citations,
+  }));
   for (const record of [...records, ...saved].reverse()) {
     const message = {
       role: "user" as const,
@@ -250,7 +373,32 @@ export async function synthesizeBudgetEvidence(
     remaining -= tokens;
     messages.push(message);
   }
-  if (messages.length === 1) return null;
+  if (messages.length === 1 && !options.allowUserEvidence) return null;
+  return context;
+}
+
+export async function synthesizeBudgetEvidence(
+  options: SynthesisOptions,
+  summarize: typeof completeSimple = completeSimple,
+): Promise<string | null> {
+  const { engine, policy, signal } = options;
+  const startedAt = Date.now();
+  const report = (outcome: Omit<CompletionDiagnostic, "stage">) =>
+    options.onOutcome?.({
+      ...outcome,
+      stage: "synthesis",
+      durationMs: Date.now() - startedAt,
+      maxTokens: options.maxTokens,
+    });
+  if (signal.aborted) {
+    report({ outcome: "aborted" });
+    return null;
+  }
+  const context = synthesisContext(options);
+  if (!context) {
+    report({ outcome: "no_evidence" });
+    return null;
+  }
   let onAbort: () => void = () => undefined;
   const aborted = new Promise<null>((resolve) => {
     onAbort = () => resolve(null);
@@ -260,31 +408,40 @@ export async function synthesizeBudgetEvidence(
   try {
     response = await Promise.race([
       aborted,
-      summarize(engine, context, {
+      summarize(engine, options.prepareContext?.(context) ?? context, {
         apiKey: options.apiKey,
         maxTokens: options.maxTokens,
         reasoning:
           policy.synthesisEffort && policy.synthesisEffort !== "none"
             ? (policy.synthesisEffort as "low" | "medium" | "high" | "max")
             : undefined,
-        headers: { [PURPOSE_HEADER]: "synthesis" },
+        headers: { [PURPOSE_HEADER]: options.purpose ?? "synthesis" },
         maxRetries: 0,
         signal,
         cacheRetention: "none",
       }),
     ]);
   } catch (error) {
+    report({ outcome: signal.aborted ? "aborted" : completionFailure(error) });
     if (isProviderAuthorizationError(error))
       throw new SynthesisAuthorizationError(
         "Provider authorization failed during final synthesis",
       );
     if (/content_filter/i.test(String(error)))
-      throw new SynthesisContentFilterError("Provider filtered final synthesis");
+      throw new SynthesisContentFilterError(
+        "Provider filtered final synthesis",
+      );
     throw error;
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
-  if (!response || signal.aborted) return null;
+  if (!response || signal.aborted) {
+    report({ outcome: "aborted" });
+    return null;
+  }
+  const outcome = providerCompletion(response);
+  if (response.stopReason === "toolUse") outcome.outcome = "provider_error";
+  report(outcome);
   if (isProviderAuthorizationError(response.errorMessage)) {
     throw new SynthesisAuthorizationError(
       "Provider authorization failed during final synthesis",

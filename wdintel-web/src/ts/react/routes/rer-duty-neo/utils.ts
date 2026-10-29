@@ -53,6 +53,8 @@ export const PAGE_ID = 'rer-duty-neo';
 /** Safety poll; inbox-change events trigger an immediate coalesced check. */
 export const INBOX_COUNT_POLL_INTERVAL_MS = 5000;
 export const MAX_MESSAGE_FEEDS = 4;
+/** Look-back for "Локації" suggestions; it limits suggestions only, not what can be filtered. */
+export const DUTY_LOCATIONS_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 
 export type TagsLayoutVariant = 'full' | 'compact' | 'hidden';
 
@@ -198,6 +200,9 @@ export function emptyFilter(): RerDutyFeedFilterState {
     selectedUnitIds: null,
     deniedUnitIds: null,
     unitsExactMatchOnly: false,
+    locationsSelected: null,
+    locationsDenied: null,
+    includePelengLocations: null,
     lastViewedMessageId: null,
     highlightKeywordsEnabled: null,
     highlightKeywordSetId: null,
@@ -221,6 +226,8 @@ export function hasActiveFeedFilter(filter: RerDutyFeedFilterState): boolean {
       filter.deniedUnitIds,
       filter.selectedDeviceNames,
       filter.deniedDeviceNames,
+      filter.locationsSelected,
+      filter.locationsDenied,
     ].some((values) => (values?.length ?? 0) > 0) || filter.unitsExactMatchOnly === true
   );
 }
@@ -322,6 +329,9 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.selectedDeviceNames, b.selectedDeviceNames) &&
     optArrEqual(a.deniedDeviceNames, b.deniedDeviceNames) &&
     (a.unitsExactMatchOnly ?? false) === (b.unitsExactMatchOnly ?? false) &&
+    optArrEqual(a.locationsSelected, b.locationsSelected) &&
+    optArrEqual(a.locationsDenied, b.locationsDenied) &&
+    (a.includePelengLocations ?? false) === (b.includePelengLocations ?? false) &&
     a.highlightKeywordSetId === b.highlightKeywordSetId
   );
 }
@@ -377,6 +387,8 @@ export function buildInboxReq(opts: {
     (value) => !isCanonicalUnitIdValue(value),
   );
   const deniedLegacyUnits = (f.unitsDenied ?? []).filter((value) => !isCanonicalUnitIdValue(value));
+  const selectedLocations = emptyArrToNull(f.locationsSelected);
+  const deniedLocations = emptyArrToNull(f.locationsDenied);
   // send empty arrays as null (backend treats null/undefined vs [] differently)
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
@@ -401,7 +413,8 @@ export function buildInboxReq(opts: {
     deniedDeviceNames: emptyArrToNull(f.deniedDeviceNames),
     deniedUnits: emptyArrToNull(deniedLegacyUnits),
     deniedUnitIds: emptyArrToNull(deniedUnitIds),
-    selectedLocations: null,
+    selectedLocations,
+    deniedLocations,
     nolimit: opts.nolimit ?? null,
     orWithExtendedForm: null,
     loadLatest: opts.loadLatest ?? null,
@@ -435,7 +448,8 @@ export function buildInboxReq(opts: {
     sortBy: 'IMSCreatedAt',
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
-    includePelengLocations: null,
+    includePelengLocations:
+      selectedLocations || deniedLocations ? (f.includePelengLocations ?? null) : null,
     unitsExactMatchOnly:
       selectedLegacyUnits.length + deniedLegacyUnits.length > 0
         ? (f.unitsExactMatchOnly ?? null)

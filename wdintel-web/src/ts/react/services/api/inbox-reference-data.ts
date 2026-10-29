@@ -105,12 +105,9 @@ export async function getLatestFrequencies(): Promise<string[]> {
   return Array.isArray(raw) ? raw : [];
 }
 
-/** Posts list for duty filter (from analysis stats). */
-export async function getPostsList(options?: RequestOptions): Promise<string[]> {
-  const now = Date.now();
-  const sinceMs = now - 14 * 24 * 60 * 60 * 1000;
-  const tillMs = now + 24 * 60 * 60 * 1000;
-  const body: AnalysisStatsReq = {
+/** Analysis stats request for `[sinceMs, tillMs)` with every filter unset. */
+export function emptyAnalysisStatsReq(sinceMs: number, tillMs: number): AnalysisStatsReq {
+  return {
     sinceDateInclusiveMs: sinceMs,
     tillDateNoninclusiveMs: tillMs,
     selectedGroups: null,
@@ -149,6 +146,14 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
     reportTagsOnlyThisUnit: null,
     messageTimeBasis: null,
   };
+}
+
+/** Posts list for duty filter (from analysis stats). */
+export async function getPostsList(options?: RequestOptions): Promise<string[]> {
+  const now = Date.now();
+  const sinceMs = now - 14 * 24 * 60 * 60 * 1000;
+  const tillMs = now + 24 * 60 * 60 * 1000;
+  const body = emptyAnalysisStatsReq(sinceMs, tillMs);
   const snakeBody = transformCamelToSnake<AnalysisStatsReq>(body);
   const raw = await postJson<PostStatsRsp>('/api/rer/analysis/stats/posts', snakeBody, options);
   const posts = raw?.posts ?? [];

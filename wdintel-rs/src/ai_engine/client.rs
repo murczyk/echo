@@ -1,4 +1,4 @@
-use super::{cooldown::GlmCooldown, gov};
+use super::{cooldown::ProviderCooldown, gov};
 use crate::config::{
     AI_AGENT_OPENAI_GPT_6_LUNA, AI_AGENT_OPENAI_GPT_6_SOL,
     AI_ENGINE_GLM_5_3_MODEL, AI_ENGINE_REQUEST_TIMEOUT_SEC, AI_GOV_UA_API_BASE,
@@ -10,6 +10,7 @@ use crate::h;
 use crate::types::{info, Deserialize, ShortContext};
 use sea_orm::DatabaseConnection;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
@@ -20,7 +21,7 @@ pub struct AiEngineClient {
     dbx: DatabaseConnection,
     secret_key: Option<String>,
     token: Mutex<Option<CachedToken>>,
-    glm_cooldown: Arc<GlmCooldown>,
+    government_cooldowns: Arc<Mutex<HashMap<String, Arc<ProviderCooldown>>>>,
     preview_settings: Option<ai_gov_ua_settings::Model>,
     #[cfg(test)]
     token_endpoint: Option<Url>,
@@ -52,7 +53,7 @@ impl AiEngineClient {
             dbx,
             secret_key,
             token: Mutex::new(None),
-            glm_cooldown: Arc::default(),
+            government_cooldowns: Arc::default(),
             preview_settings: None,
             #[cfg(test)]
             token_endpoint: None,
@@ -65,7 +66,7 @@ impl AiEngineClient {
             dbx: self.dbx.clone(),
             secret_key: self.secret_key.clone(),
             token: Mutex::new(None),
-            glm_cooldown: self.glm_cooldown.clone(),
+            government_cooldowns: self.government_cooldowns.clone(),
             preview_settings: Some(settings),
             #[cfg(test)]
             token_endpoint: self.token_endpoint.clone(),
@@ -101,26 +102,27 @@ impl AiEngineClient {
         timeout: Duration,
         responses: bool,
     ) -> anyhow::Result<reqwest::Response> {
-        if !is_government_glm(engine) {
+        if !is_government_url(&engine.url) {
             return self
                 .send_agent_request_inner(engine, body, timeout, responses)
                 .await
                 .c(h!());
         }
+        let cooldown = self.government_cooldown(&engine.model_name).await;
         let deadline = tokio::time::Instant::now() + timeout;
         tokio::time::timeout_at(deadline, async {
-            self.glm_cooldown.wait().await;
+            cooldown.wait().await;
             let timeout =
                 deadline.saturating_duration_since(tokio::time::Instant::now());
             anyhow::ensure!(
                 !timeout.is_zero(),
-                "GLM request deadline elapsed during provider cooldown"
+                "Government provider request deadline elapsed during provider cooldown"
             );
             let response = self
                 .send_agent_request_inner(engine, body, timeout, responses)
                 .await
                 .c(h!())?;
-            self.glm_cooldown
+            cooldown
                 .observe(response.status(), response.headers())
                 .await
                 .c(h!())?;
@@ -128,6 +130,18 @@ impl AiEngineClient {
         })
         .await
         .c(h!())?
+    }
+
+    async fn government_cooldown(
+        &self,
+        model_name: &str,
+    ) -> Arc<ProviderCooldown> {
+        self.government_cooldowns
+            .lock()
+            .await
+            .entry(model_name.to_owned())
+            .or_default()
+            .clone()
     }
 
     async fn send_agent_request_inner(

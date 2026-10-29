@@ -703,6 +703,7 @@ export type InboxMessagesReq = {
   selectedUnitIds: Array<number> | null;
   deniedUnitIds: Array<number> | null;
   selectedLocations: Array<string> | null;
+  deniedLocations: Array<string> | null;
   selectedDeviceNames: Array<string> | null;
   deniedDeviceNames: Array<string> | null;
   nolimit: boolean | null;
@@ -1378,6 +1379,9 @@ export type RerDutyQueryStateWf = {
   selectedDeviceNames: Array<string> | null;
   deniedDeviceNames: Array<string> | null;
   unitsExactMatchOnly: boolean | null;
+  locationsSelected: Array<string> | null;
+  locationsDenied: Array<string> | null;
+  includePelengLocations: boolean | null;
   lastViewedMessageId: number | null;
   highlightKeywordsEnabled: boolean | null;
   highlightKeywordSetId: number | null;
@@ -2246,6 +2250,33 @@ export type DeviceStatusCounts = {
   archived: number;
 };
 
+export type DeviceExtensionStat = {
+  extension: string;
+  contentCount: number;
+  contentBytes: number;
+  lastContentAt: string;
+};
+
+export type DeviceDayStat = {
+  day: string;
+  extension: string;
+  contentCount: number;
+  contentBytes: number;
+};
+
+export type DeviceStats = {
+  directoryCount: number;
+  fileCount: number;
+  contentCount: number;
+  contentBytes: number;
+  firstContentAt: string | null;
+  lastContentAt: string | null;
+  contentPending: boolean;
+  backfilledAt: string | null;
+  extensions: Array<DeviceExtensionStat>;
+  days: Array<DeviceDayStat>;
+};
+
 export type DeviceListItem = {
   id: string;
   name: string | null;
@@ -2256,6 +2287,7 @@ export type DeviceListItem = {
   createdAt: string;
   updatedAt: string;
   archivedAt: string | null;
+  stats: DeviceStats | null;
 };
 
 export type DeviceDetails = {
@@ -2494,6 +2526,18 @@ export type CountDeviceFileSubtreesReq = {
 
 export type CountDeviceFileSubtreesRsp = {
   counts: Array<DeviceFileSubtreeCount>;
+};
+
+export type RebuildDeviceStatsReq = {
+  deviceId: string;
+};
+
+export type RebuildDeviceStatsRsp = {
+  directoryCount: number;
+  fileCount: number;
+  contentCount: number;
+  contentBytes: number;
+  batchCount: number;
 };
 
 export type BrowseDeviceFilesReq = {
@@ -3101,6 +3145,7 @@ export type DeviceAnalyticsSummaryRsp = {
   filesWithContentCount: number;
   analyzedFileCount: number;
   items: Array<DeviceAnalyticsSummaryItem>;
+  stats: DeviceStats | null;
 };
 
 export type DeviceAnalyticsFilesReq = {

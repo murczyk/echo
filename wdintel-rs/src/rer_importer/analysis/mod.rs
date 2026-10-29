@@ -2038,47 +2038,139 @@ where
     Q: QueryFilter,
 {
     if let Some(selected_locations) = selected_locations.as_ref() {
-        if !selected_locations.is_empty() {
-            let mut nonempty_locations = vec![];
-            let mut expressions = vec![];
-            let mut include_empty = false;
-            for location in selected_locations {
-                if location_is_empty(location) {
-                    include_empty = true;
-                } else {
-                    nonempty_locations.push(location.clone());
-                    let loc = format_location(location);
-                    expressions.push(sea_orm::ColumnTrait::contains(
-                        &sigint_inbox_item::Column::LocationV2,
-                        loc,
-                    ));
-                }
-            }
-            if include_peleng_locations && !nonempty_locations.is_empty() {
-                expressions.push(
-                    sigint_inbox_item::Column::Freq.in_subquery(
-                        Query::select()
-                            .column(freq_location::Column::Freq)
-                            .from(freq_location::Entity)
-                            .and_where(
-                                freq_location::Column::Location
-                                    .eq_any(nonempty_locations),
-                            )
-                            .to_owned(),
-                    ),
-                )
-            }
-            if include_empty {
-                expressions
-                    .push(sigint_inbox_item::Column::LocationV2.is_null());
-            }
-            let expr = expressions.into_iter().reduce(|a, b| a.or(b));
-            if let Some(expr) = expr {
-                return Ok(q.filter(expr));
-            }
+        if let Some(expr) =
+            locations_match_expr(selected_locations, include_peleng_locations)
+        {
+            return Ok(q.filter(expr));
         }
     }
     Ok(q)
+}
+
+pub fn filter_denied_locations<Q>(
+    q: Q,
+    denied_locations: &Option<Vec<String>>,
+    include_peleng_locations: bool,
+) -> anyhow::Result<Q>
+where
+    Q: QueryFilter,
+{
+    if let Some(denied_locations) = denied_locations.as_ref() {
+        if let Some(expr) =
+            locations_denied_expr(denied_locations, include_peleng_locations)
+        {
+            return Ok(q.filter(expr));
+        }
+    }
+    Ok(q)
+}
+
+fn locations_match_expr(
+    locations: &[String],
+    include_peleng_locations: bool,
+) -> Option<SimpleExpr> {
+    let (include_empty, nonempty_locations) = split_empty_locations(locations);
+    let mut expressions = vec![];
+    if !nonempty_locations.is_empty() {
+        expressions.push(Expr::exists(settlement_texts_exist_query(
+            &nonempty_locations,
+        )));
+        if include_peleng_locations {
+            expressions.push(
+                sigint_inbox_item::Column::Freq.in_subquery(
+                    peleng_location_freqs_query(nonempty_locations),
+                ),
+            );
+        }
+    }
+    if include_empty {
+        expressions.push(Expr::exists(settlement_rows_exist_query()).not());
+    }
+    expressions.into_iter().reduce(|a, b| a.or(b))
+}
+
+/// A named exclusion is `NOT EXISTS` on settlement text, so messages with no
+/// settlement rows stay in the result. Excluding the empty location requires
+/// a settlement row instead.
+fn locations_denied_expr(
+    locations: &[String],
+    include_peleng_locations: bool,
+) -> Option<SimpleExpr> {
+    let (deny_empty, nonempty_locations) = split_empty_locations(locations);
+    let mut expressions = vec![];
+    if !nonempty_locations.is_empty() {
+        expressions.push(
+            Expr::exists(settlement_texts_exist_query(&nonempty_locations))
+                .not(),
+        );
+        if include_peleng_locations {
+            expressions.push(sigint_inbox_item::Column::Freq.is_null().or(
+                sigint_inbox_item::Column::Freq.not_in_subquery(
+                    peleng_location_freqs_query(nonempty_locations),
+                ),
+            ));
+        }
+    }
+    if deny_empty {
+        expressions.push(Expr::exists(settlement_rows_exist_query()));
+    }
+    expressions.into_iter().reduce(|a, b| a.and(b))
+}
+
+fn split_empty_locations(locations: &[String]) -> (bool, Vec<String>) {
+    let mut nonempty_locations = vec![];
+    let mut include_empty = false;
+    for location in locations {
+        if location_is_empty(location) {
+            include_empty = true;
+        } else {
+            nonempty_locations.push(location.clone());
+        }
+    }
+    (include_empty, nonempty_locations)
+}
+
+fn settlement_rows_exist_query() -> SelectStatement {
+    Query::select()
+        .expr(Expr::value(1))
+        .from(sigint_inbox_item_settlement::Entity)
+        .and_where(settlement_item_matches_inbox_item())
+        .to_owned()
+}
+
+fn settlement_texts_exist_query(locations: &[String]) -> SelectStatement {
+    let texts = locations
+        .iter()
+        .map(|location| location.trim().to_uppercase())
+        .collect::<Vec<_>>();
+    Query::select()
+        .expr(Expr::value(1))
+        .from(sigint_inbox_item_settlement::Entity)
+        .and_where(settlement_item_matches_inbox_item())
+        .and_where(
+            Expr::col((
+                sigint_inbox_item_settlement::Entity,
+                sigint_inbox_item_settlement::Column::SettlementText,
+            ))
+            .is_in(texts),
+        )
+        .to_owned()
+}
+
+fn settlement_item_matches_inbox_item() -> SimpleExpr {
+    Expr::col((
+        sigint_inbox_item_settlement::Entity,
+        sigint_inbox_item_settlement::Column::ItemId,
+    ))
+    .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id))
+}
+
+fn peleng_location_freqs_query(locations: Vec<String>) -> SelectStatement {
+    Query::select()
+        .column(freq_location::Column::Freq)
+        .from(freq_location::Entity)
+        .and_where(freq_location::Column::Location.eq_any(locations))
+        .to_owned()
 }
 
 pub fn filter_selected_callsigns<Q>(
