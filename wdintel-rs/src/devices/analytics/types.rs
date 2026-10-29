@@ -1,3 +1,4 @@
+use crate::devices::files::types::DeviceStats;
 use chrono::{DateTime, FixedOffset};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
@@ -607,6 +608,8 @@ pub struct DeviceAnalyticsSummaryRsp {
     pub files_with_content_count: u64,
     pub analyzed_file_count: u64,
     pub items: Vec<DeviceAnalyticsSummaryItem>,
+    /// Device-wide stats; `None` for sync session summaries.
+    pub stats: Option<DeviceStats>,
 }
 
 #[derive(

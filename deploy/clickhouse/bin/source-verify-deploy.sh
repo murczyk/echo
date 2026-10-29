@@ -103,16 +103,28 @@ reconcile_source_tables() {
     attempt=$((attempt + 1))
   done
 
+  if [[ $(sudo systemctl show echo-peerdb-table-reconcile.service \
+    --property ConditionResult --value) != yes ]]; then
+    print_reconciliation_failure \
+      "SOURCE TABLE RECONCILIATION WAS SKIPPED" \
+      "systemd did not run source table reconciliation. Inspect the service's unit conditions before retrying." \
+      "$(reconciliation_log)"
+    return 1
+  fi
+
   if ((attempt > 1)); then
     log "Source table reconciliation succeeded on attempt $attempt/$reconcile_retry_attempts"
   fi
 }
 
-log "Running manifest-authorized targeted table repairs"
-"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest
+log "Repairing published-table schemas before source table reconciliation"
+"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest --published-only
 
 log "Waiting for source table reconciliation"
 reconcile_source_tables
+
+log "Running manifest-authorized targeted table repairs"
+"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest
 
 deadline=$((SECONDS + health_timeout))
 while ((SECONDS < deadline)); do

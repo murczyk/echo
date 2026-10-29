@@ -67,6 +67,12 @@ export function useFeedFilterSavedFiltersViewModel(
         JSON.stringify(loadedFilterNormalized.unitsSelected ?? []) &&
       JSON.stringify(filterState.unitsDenied ?? []) ===
         JSON.stringify(loadedFilterNormalized.unitsDenied ?? []) &&
+      JSON.stringify(filterState.locationsSelected ?? []) ===
+        JSON.stringify(loadedFilterNormalized.locationsSelected ?? []) &&
+      JSON.stringify(filterState.locationsDenied ?? []) ===
+        JSON.stringify(loadedFilterNormalized.locationsDenied ?? []) &&
+      (filterState.includePelengLocations ?? false) ===
+        (loadedFilterNormalized.includePelengLocations ?? false) &&
       (toggles.unitsExactMatchOnly ?? false) ===
         (loadedFilterNormalized.unitsExactMatchOnly ?? false)
     );

@@ -1443,15 +1443,18 @@ mod mapping_tests {
         );
 
         assert_eq!(
-            serde_json::to_value(map_device_list(ListDevicesResult {
-                devices: vec![device_state()],
-                total: 1,
-                has_more: false,
-                status_counts: DomainStatusCounts {
-                    active: 0,
-                    archived: 1,
+            serde_json::to_value(map_device_list(
+                ListDevicesResult {
+                    devices: vec![device_state()],
+                    total: 1,
+                    has_more: false,
+                    status_counts: DomainStatusCounts {
+                        active: 0,
+                        archived: 1,
+                    },
                 },
-            }))
+                None
+            ))
             .unwrap(),
             json!({
                 "list": [{
@@ -1463,7 +1466,8 @@ mod mapping_tests {
                     "archived": true,
                     "created_at": "2026-07-23T09:10:11Z",
                     "updated_at": "2026-07-23T09:10:11Z",
-                    "archived_at": "2026-07-23T09:10:11Z"
+                    "archived_at": "2026-07-23T09:10:11Z",
+                    "stats": null
                 }],
                 "total": 1,
                 "has_more": false,

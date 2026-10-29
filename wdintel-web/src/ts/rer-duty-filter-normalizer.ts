@@ -58,6 +58,10 @@ export function normalizeRerDutyQueryStateWf(raw: Record<string, unknown>): RerD
     deniedDeviceNames: readFilterValues(raw, ['deniedDeviceNames', 'denied_device_names']),
     unitsExactMatchOnly: (raw.unitsExactMatchOnly ?? raw.units_exact_match_only ?? false) as
       boolean | null,
+    locationsSelected: readFilterValues(raw, ['locationsSelected', 'locations_selected']),
+    locationsDenied: readFilterValues(raw, ['locationsDenied', 'locations_denied']),
+    includePelengLocations: (raw.includePelengLocations ?? raw.include_peleng_locations ?? null) as
+      boolean | null,
     lastViewedMessageId: (raw.lastViewedMessageId ?? raw.last_viewed_message_id ?? null) as
       number | null,
     highlightKeywordsEnabled: (raw.highlightKeywordsEnabled ??

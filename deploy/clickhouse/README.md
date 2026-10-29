@@ -1042,8 +1042,13 @@ it from the repository.
 Table creation does not require that explicit command. The source timer
 compares all current non-excluded PostgreSQL tables with the publication and a
 fingerprint recorded after the last complete reconciliation. A mismatch runs
-the same locked, coordinated operation. The bgworker merely requests the
-oneshot after migrations and never waits for PeerDB or ClickHouse. If the
+manifest-authorized repairs for already-published tables before the same
+coordinated operation. The repair subprocess inherits the source lock, so it
+does not wait for its parent. This lets the background reconciler resolve
+schema drift before strict gateway checks, even when it acquires the lock
+before the deployment verifier. Repair failures preserve the recorded
+fingerprint and stop before table-selection changes. The bgworker merely
+requests the oneshot after migrations and never waits for PeerDB or ClickHouse. If the
 analytics container is unavailable, Echo starts normally and analytical
 requests fall back to PostgreSQL; the timer retries every minute. A failed
 reconciliation does not update the fingerprint, so it cannot be mistaken for
@@ -1072,8 +1077,20 @@ The workflows then install the packaged exclusion file when its selected table
 set differs from `/etc/echo-peerdb/tables-exclude.txt`, run migrations once
 while workers are stopped, explicitly start the serialized analytics
 reconciler, and require the source reconciliation plus end-to-end health check
-to succeed after service startup. The default health deadline is 300 seconds
-and can be changed with
+to succeed after service startup. Post-migration verification first repairs
+already-published tables, reconciles newly created tables into the publication
+and mirror, then checks the complete manifest repair batch. New tables receive
+their initial snapshot before any later additive-schema repair is checked.
+If systemd skips the source reconciler because a unit condition is unmet,
+verification fails; inspect `systemctl cat echo-peerdb-table-reconcile.service`
+and its journal before retrying. Recovery guards such as
+`/etc/echo-peerdb/database-recovery` must be cleared deliberately after recovery
+is complete. The verifier leaves them in place. Targeted repairs wait up to
+300 seconds for the source table-selection lock instead of failing immediately
+when the background reconciler holds it. Override that bound with
+`SOURCE_RECONCILE_LOCK_WAIT_SECONDS` in `source.env`. A lock timeout stops the
+repair before any remote repair command runs. The default health deadline is
+300 seconds and can be changed with
 `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` in `source.env`. A direct
 `wdintel-rs migrate` refuses to run while the packaged and deployed exclusion
 sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
@@ -1119,6 +1136,10 @@ rebuild declare `replicated_snapshot` with `"targeted_resnapshot": true`; the
 same helper validates additive-only drift and rebuilds only the preserved table
 mapping. Automatic repairs consider manifest-authorized tables and preserved
 retry state.
+When historical migrations authorize both `cdc_additive` and a targeted
+`replicated_snapshot` for one table, deployment selects `replicated_snapshot`
+to cover both migrations. Matching raw schemas still skip the snapshot; other
+strategy conflicts and mismatched retry strategies remain errors.
 Deployment repairs the complete batch under one analytics reconciliation lock,
 then refreshes current-state views, compares gateway foreign tables and
 compatibility views, including grants and view security options, with the source

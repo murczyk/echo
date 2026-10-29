@@ -1,5 +1,9 @@
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   CircularProgress,
   Dialog,
@@ -20,7 +24,18 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { isAbortError, isUnauthorizedError } from '../../../services/api/client';
-import { getDeviceAnalyticsSummary, reanalyzeDevice } from '../../../services/api/devices';
+import {
+  getDeviceAnalyticsSummary,
+  reanalyzeDevice,
+  rebuildDeviceStats,
+} from '../../../services/api/devices';
+import { DeviceStatsViews } from '../../devices/components/DeviceStatsViews';
+import {
+  countDeviceFileTypes,
+  formatDeviceBytes,
+  formatDeviceCount,
+  isDeviceStatsIncomplete,
+} from '../../devices/device-activity';
 import { DeviceAnalyticsTagFilterControls } from '../../device-files/components/DeviceAnalyticsTagFilterControls';
 import { toDeviceFileLoadError } from '../../device-files/helpers';
 import type { DeviceAnalyticsTagFilter, DeviceFileLoadError } from '../../device-files/types';
@@ -61,6 +76,12 @@ export function DeviceAnalyticsPanel({
   const [reanalysisError, setReanalysisError] = useState<string | null>(null);
   useDeviceFileErrorNotification(reanalysisError);
   const [reanalysisDialogOpen, setReanalysisDialogOpen] = useState(false);
+  const [rebuildingStats, setRebuildingStats] = useState(false);
+  const [statsRebuildMessage, setStatsRebuildMessage] = useState<string | null>(null);
+  const [statsRebuildError, setStatsRebuildError] = useState<string | null>(null);
+  useDeviceFileErrorNotification(statsRebuildError);
+  const [statsRebuildDialogOpen, setStatsRebuildDialogOpen] = useState(false);
+  const [statsExpanded, setStatsExpanded] = useState(true);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -103,6 +124,8 @@ export function DeviceAnalyticsPanel({
     setLoading(enabled);
     setReanalysisMessage(null);
     setReanalysisDialogOpen(false);
+    setStatsRebuildMessage(null);
+    setStatsRebuildDialogOpen(false);
     if (enabled) void loadSummary();
     return () => abortRef.current?.abort();
   }, [deviceId, syncId, enabled, loadSummary, refreshVersion]);
@@ -144,6 +167,32 @@ export function DeviceAnalyticsPanel({
     }
   };
 
+  const rebuildStats = async () => {
+    setStatsRebuildDialogOpen(false);
+    setRebuildingStats(true);
+    setStatsRebuildError(null);
+    setStatsRebuildMessage(null);
+    try {
+      const rsp = await rebuildDeviceStats({ deviceId });
+      setStatsRebuildMessage(
+        `Статистику перераховано: ${formatDeviceCount(BigInt(rsp.contentCount))} завантажень, ` +
+          `${formatDeviceBytes(BigInt(rsp.contentBytes))}; ` +
+          `${formatDeviceCount(BigInt(rsp.fileCount))} файлів, ` +
+          `${formatDeviceCount(BigInt(rsp.directoryCount))} тек.`,
+      );
+      void loadSummary();
+    } catch (rebuildError) {
+      const message = toDeviceFileLoadError(
+        rebuildError,
+        'Не вдалося перерахувати статистику',
+      ).message;
+      setStatsRebuildError(message);
+      setStatsRebuildMessage(message);
+    } finally {
+      setRebuildingStats(false);
+    }
+  };
+
   return (
     <Box
       component="section"
@@ -173,6 +222,32 @@ export function DeviceAnalyticsPanel({
             onClick={() => void scheduleReanalysis()}
           >
             Запустити аналіз
+          </PowerButton>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={statsRebuildDialogOpen} onClose={() => setStatsRebuildDialogOpen(false)}>
+        <DialogTitle>Перерахувати статистику пристрою?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Статистику завантажень буде обнулено й перераховано з усіх файлів пристрою. Поки
+            перерахунок триває, показники будуть неповними. Нові завантаження не блокуються.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions
+          className={mobile ? '!flex-col-reverse !items-stretch gap-echo-sm !p-echo-lg' : undefined}
+        >
+          <PowerButton
+            className={mobile ? '!m-0 !min-h-echo-control-lg' : undefined}
+            onClick={() => setStatsRebuildDialogOpen(false)}
+          >
+            Скасувати
+          </PowerButton>
+          <PowerButton
+            className={mobile ? '!m-0 !min-h-echo-control-lg' : undefined}
+            variant="contained"
+            onClick={() => void rebuildStats()}
+          >
+            Перерахувати
           </PowerButton>
         </DialogActions>
       </Dialog>
@@ -206,15 +281,29 @@ export function DeviceAnalyticsPanel({
               <RefreshIcon fontSize="small" />
             </PowerIconButton>
             {isAdmin ? (
-              <PowerButton
-                size="small"
-                variant="outlined"
-                style={{ whiteSpace: 'normal' }}
-                disabled={reanalyzing}
-                onClick={() => setReanalysisDialogOpen(true)}
-              >
-                {reanalyzing ? 'Запуск…' : 'Запустити повторний аналіз пристрою'}
-              </PowerButton>
+              <Stack spacing={0.5} alignItems="stretch">
+                <PowerButton
+                  size="small"
+                  variant="outlined"
+                  style={{ whiteSpace: 'normal' }}
+                  disabled={reanalyzing}
+                  onClick={() => setReanalysisDialogOpen(true)}
+                >
+                  {reanalyzing ? 'Запуск…' : 'Запустити повторний аналіз пристрою'}
+                </PowerButton>
+                <PowerButton
+                  size="small"
+                  variant="outlined"
+                  style={{ whiteSpace: 'normal' }}
+                  disabled={rebuildingStats}
+                  startIcon={
+                    rebuildingStats ? <CircularProgress size={14} color="inherit" /> : undefined
+                  }
+                  onClick={() => setStatsRebuildDialogOpen(true)}
+                >
+                  {rebuildingStats ? 'Перерахунок…' : 'Перерахувати статистику пристрою'}
+                </PowerButton>
+              </Stack>
             ) : null}
           </Stack>
         </Stack>
@@ -222,6 +311,15 @@ export function DeviceAnalyticsPanel({
         {reanalysisMessage !== null ? (
           <PowerAlert severity="info" autoHideDuration={null}>
             {reanalysisMessage}
+          </PowerAlert>
+        ) : null}
+
+        {statsRebuildMessage !== null ? (
+          <PowerAlert
+            severity={statsRebuildError === null ? 'success' : 'error'}
+            autoHideDuration={null}
+          >
+            {statsRebuildMessage}
           </PowerAlert>
         ) : null}
 
@@ -251,6 +349,50 @@ export function DeviceAnalyticsPanel({
               </Typography>
             </Paper>
           </Stack>
+        ) : null}
+
+        {summary?.stats ? (
+          <Accordion
+            expanded={statsExpanded}
+            onChange={(_, nextExpanded) => setStatsExpanded(nextExpanded)}
+            disableGutters
+            variant="outlined"
+            data-testid="device-analytics-activity"
+            sx={{ minWidth: 0, '&:before': { display: 'none' } }}
+          >
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              aria-controls="device-analytics-stats-content"
+              id="device-analytics-stats-header"
+            >
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                useFlexGap
+                flexWrap="wrap"
+                alignItems={{ sm: 'center' }}
+                sx={{ minWidth: 0, width: '100%', pr: 1 }}
+              >
+                <Typography fontWeight={600}>Статистика завантажень</Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: { sm: 'auto' }, textAlign: { sm: 'right' } }}
+                >
+                  Тек: <b>{formatDeviceCount(BigInt(summary.stats.directoryCount))}</b> · Файлів:{' '}
+                  <b>{formatDeviceCount(BigInt(summary.filesWithContentCount))}</b> · Типів:{' '}
+                  <b>{countDeviceFileTypes(summary.stats)}</b> · Розмір:{' '}
+                  <b>{formatDeviceBytes(BigInt(summary.stats.contentBytes))}</b>
+                  {isDeviceStatsIncomplete(summary.stats, summary.totalFileCount)
+                    ? ' · статистика неповна'
+                    : ''}
+                </Typography>
+              </Stack>
+            </AccordionSummary>
+            <AccordionDetails id="device-analytics-stats-content" sx={{ pt: 0 }}>
+              <DeviceStatsViews stats={summary.stats} />
+            </AccordionDetails>
+          </Accordion>
         ) : null}
 
         <DeviceAnalyticsTagFilterControls

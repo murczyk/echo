@@ -20,6 +20,7 @@ cat >"$case_dir/migration-impact.json" <<'JSON'
 {"migrations":{"repair":{"changes":[
 {"table":"public.sigint_network","strategy":"replicated_snapshot","targeted_resnapshot":true},
 {"table":"public.signal_group","strategy":"replicated_snapshot","targeted_resnapshot":true},
+{"table":"public.signal_group","strategy":"cdc_additive"},
 {"table":"public.user_settings","strategy":"replicated_snapshot","targeted_resnapshot":true}
 ]}},"dependencies":{}}
 JSON
@@ -83,6 +84,7 @@ grep -q 'unfinished attachment history copy' "$case_dir/history-rejection.log"
 clear_state_mapping public.attachment_document
 if (resnapshot_batch <<<'replicated_snapshot public.unknown') >/dev/null 2>&1; then exit 1; fi
 if (resnapshot_batch <<<$'replicated_snapshot\tpublic.unknown') >/dev/null 2>&1; then exit 1; fi
+if (resnapshot_batch <<<$'cdc_additive\tpublic.signal_group') >/dev/null 2>&1; then exit 1; fi
 printf 'legacy\n' >>"$case_dir/raw/user_settings"
 if (resnapshot_batch <<<"$entries") >/dev/null 2>&1; then exit 1; fi
 [[ ! -s "$operations" ]]

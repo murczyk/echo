@@ -404,6 +404,11 @@ record_source_deployment_manifest_baseline() {
 }
 
 acquire_source_reconcile_lock() {
+  if [[ ${ECHO_PEERDB_RECONCILE_LOCK_HELD:-false} == true \
+    && /proc/$$/fd/9 -ef "$SOURCE_RECONCILE_LOCK_FILE" ]]; then
+    return 0
+  fi
+
   local wait_seconds=${SOURCE_RECONCILE_LOCK_WAIT_SECONDS:-0}
   [[ "$wait_seconds" =~ ^[0-9]+$ ]] \
     || die "SOURCE_RECONCILE_LOCK_WAIT_SECONDS must be a non-negative integer"

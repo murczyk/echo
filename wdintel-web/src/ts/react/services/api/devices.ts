@@ -39,6 +39,8 @@ import type {
   ReanalyzeAllRsp,
   ReanalyzeDeviceReq,
   ReanalyzeDeviceRsp,
+  RebuildDeviceStatsReq,
+  RebuildDeviceStatsRsp,
   GetAnalysisRunReq,
   GetAnalysisRunRsp,
   ListAnalysisRunsReq,
@@ -276,6 +278,14 @@ export async function reanalyzeDevice(
     options,
   );
   return transformSnakeToCamel<ReanalyzeDeviceRsp>(data);
+}
+
+export async function rebuildDeviceStats(
+  req: RebuildDeviceStatsReq,
+  options?: RequestOptions,
+): Promise<RebuildDeviceStatsRsp> {
+  const data = await postJson('/api/device/stats/rebuild', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<RebuildDeviceStatsRsp>(data);
 }
 
 export async function reanalyzeAll(options?: RequestOptions): Promise<ReanalyzeAllRsp> {

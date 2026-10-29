@@ -388,6 +388,16 @@ pub struct OneoffBackfillInboxUnitLinksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffRecalculateHistoricSettlementsPs {
+    /// Resume after this inbox item id (exclusive).
+    #[arg(long, default_value_t = 0)]
+    pub after_id: i64,
+    /// Stop after scanning this many inbox items.
+    #[arg(long)]
+    pub limit: Option<u64>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffLinkInboxSettlementsPs {
     /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00` or `2026-08-18 00:00:00`
     #[arg(long)]
@@ -1033,6 +1043,16 @@ pub struct OneoffRecoverDeviceAudioTranscriptionPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-rebuild-device-stats\n  wdintel-rs --mode=live oneoff-rebuild-device-stats --device-id <uuid> --device-id <uuid>"
+)]
+pub struct OneoffRebuildDeviceStatsPs {
+    /// Device to rebuild; repeat for several. All devices when omitted.
+    #[arg(long = "device-id")]
+    pub device_ids: Vec<Uuid>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessAudioTranscriberPs {
     #[arg(long)]
     pub source_id: Uuid,
@@ -1237,6 +1257,10 @@ enum Cmd {
     /// Recalculates settlement links, including existing links, in the selected time range (today by default).
     #[command(visible_alias = "oneoff-recalculate-inbox-settlements")]
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
+    /// Create settlement rows from `location_v2` for messages that have none.
+    OneoffRecalculateHistoricSettlements(
+        OneoffRecalculateHistoricSettlementsPs,
+    ),
     OneoffAddMissingSettlements,
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillPelengBattleLineDistance(
@@ -1262,6 +1286,8 @@ enum Cmd {
     OneoffRecoverDeviceAudioTranscription(
         OneoffRecoverDeviceAudioTranscriptionPs,
     ),
+    /// Rebuilds device stats one device at a time (all devices by default).
+    OneoffRebuildDeviceStats(OneoffRebuildDeviceStatsPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
@@ -2082,6 +2108,12 @@ async fn async_main(
             )
             .await
         }
+        Cmd::OneoffRecalculateHistoricSettlements(ps) => {
+            battle_line::settlement_queue::oneoff_recalculate_historic_settlements(
+                mode, &ps,
+            )
+            .await
+        }
         Cmd::OneoffAddMissingSettlements => {
             settlement::oneoff::oneoff_add_missing_settlements(mode).await
         }
@@ -2195,6 +2227,9 @@ async fn async_main(
         }
         Cmd::OneoffRecoverDeviceAudioTranscription(ps) => {
             devices::audio::transcription::recover_oneoff(mode, ps).await
+        }
+        Cmd::OneoffRebuildDeviceStats(ps) => {
+            devices::files::stats::rebuild_oneoff(mode, ps).await
         }
         Cmd::OneoffRequeueAudioTranscriber(ps) => {
             transcriber::backfill::requeue_terminal(mode, ps).await

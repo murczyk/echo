@@ -22,7 +22,16 @@ import { useDevicesPage } from './use-devices-page';
 import { useDeviceMobileLayout } from './use-device-mobile-layout';
 
 const columnOrder = buildDefaultColumnOrder({
-  dataColumnIds: ['name', 'aors', 'unit', 'createdBy', 'createdAt', 'updatedAt', 'lifecycle'],
+  dataColumnIds: [
+    'name',
+    'aors',
+    'unit',
+    'createdBy',
+    'createdAt',
+    'activity',
+    'size',
+    'lifecycle',
+  ],
   withRowNumbers: true,
   withRowActions: true,
 });
@@ -31,7 +40,8 @@ const defaultColumnVisibility = {
   name: true,
   aors: true,
   unit: true,
-  updatedAt: true,
+  activity: true,
+  size: true,
   createdBy: true,
   createdAt: true,
   lifecycle: true,
