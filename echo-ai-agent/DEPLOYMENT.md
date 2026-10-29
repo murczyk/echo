@@ -268,3 +268,22 @@ required/container harness releases, and successful authenticated connection
 checks in the upgrade journal. Preserve other namespace pins, retained templates,
 backup containers and recovery journals. A failed upgrade stops the rollout;
 recovery outside the approved operation requires separate approval.
+
+## GLM Flash completion (release 2026.10.29.4)
+
+This release increases final synthesis to at most 8,192 tokens and adds one
+budget-bounded corrective attempt. It keeps the selected provider and all time
+presets unchanged. Deploy the matching application before upgrading agents so
+private completion diagnostics are logged by the backend.
+
+```sh
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.4 --dry-run
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.4
+```
+
+Verify the running application revision, service health, release match and
+authenticated agent connection. Keep prior containers and rollout journals;
+verify other namespace selections remain unchanged. See
+[Flash completion diagnostics](FLASH_RESEARCH.md#completion-diagnostics).
