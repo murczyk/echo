@@ -3,12 +3,21 @@ import { defineTool, estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { Context } from "@earendil-works/pi-ai/compat";
 import { citationHref, type MessageCitation } from "./citations.ts";
 import { fileCitationHref, type FileCitation } from "./devices.ts";
-import type { ExecutionPolicy, ResearchBudget } from "./execution-policy.ts";
+import {
+  synthesizeBudgetEvidence,
+  SynthesisAuthorizationError,
+  SynthesisContentFilterError,
+  providerCompletion,
+  type CompletionDiagnostic,
+  type CompletionStatus,
+  type ExecutionPolicy,
+  type ResearchBudget,
+} from "./execution-policy.ts";
 import type { WorkJournal } from "./work-memory.ts";
 
 export const FLASH_ENGINE = "glm-5.3-flash-uncensored";
 export const RESEARCH_TOOL_NAME = "update_research";
-export const FLASH_SYNTHESIS_TOKENS = 2048;
+export const FLASH_SYNTHESIS_TOKENS = 8192;
 export const FLASH_INABILITY =
   "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
@@ -23,9 +32,8 @@ export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
 const REFRESH_RETRIEVALS = 4;
 const TURN_MARGIN_MS = 1000;
 const WARNING_MS = 10_000;
-const EVIDENCE_CHARACTERS = 1200;
 
-export const FLASH_GUIDANCE = `Before retrieval, call update_research with a short task checklist. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read an initial sample to orient focused searches; do not automatically page through the entire dataset. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps after at most four retrieval calls, and before finishing research. Actual queries and continuation cursors are tracked automatically. Reuse relevant compact saved findings in follow-ups and fetch detailed saved records only when needed. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Use report_progress for ordinary public progress. Answer concisely with inline citations and a brief coverage qualification when needed.`;
+export const FLASH_GUIDANCE = `Before retrieval, call update_research with a short task checklist. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination without recording a concrete coverage need in paginationReason; explicit exhaustive requests may continue pagination. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps after at most four retrieval calls, and before finishing research. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Use report_progress for ordinary public progress. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
 
 const RESEARCH_PARAMETERS = Type.Object(
   {
@@ -44,10 +52,17 @@ const RESEARCH_PARAMETERS = Type.Object(
       { minItems: 1, maxItems: 4 },
     ),
     draft: Type.String({
-      maxLength: 2000,
+      maxLength: 8000,
       description:
-        "Concise user-facing factual answer. Cite retrieved facts with exact inline source citations; user-provided facts need no invented citation. Empty before supporting evidence exists. No reasoning or research narration.",
+        "Complete user-facing Markdown answer, grouped by the requested entities with headings and short bullets. Keep factual detail rather than squeezing all groups into one paragraph. Cite retrieved facts with exact inline source citations; user-provided facts need no invented citation. Empty before supporting evidence exists. No reasoning or research narration.",
     }),
+    paginationReason: Type.Optional(
+      Type.String({
+        maxLength: 200,
+        description:
+          "Factual coverage requirement for continuing unfiltered pagination, such as the user explicitly requesting every record. Empty for ordinary broad summaries; use focused searches after the first sample.",
+      }),
+    ),
     gaps: Type.Array(Type.String({ minLength: 1, maxLength: 160 }), {
       maxItems: 4,
     }),
@@ -117,10 +132,17 @@ export class FlashResearch {
   private researchStartedAt?: number;
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
+  private readonly diagnostic: (event: CompletionDiagnostic) => void;
+  usedFallback = false;
 
-  constructor(sources: () => Sources, journal?: WorkJournal) {
+  constructor(
+    sources: () => Sources,
+    journal?: WorkJournal,
+    diagnostic: (event: CompletionDiagnostic) => void = () => {},
+  ) {
     this.sources = sources;
     this.journal = journal;
+    this.diagnostic = diagnostic;
   }
 
   tool(countInvocation: () => void) {
@@ -152,9 +174,18 @@ export class FlashResearch {
     });
   }
 
-  beforeRetrieval(): void {
+  beforeRetrieval(tool?: string, query?: Record<string, unknown>): void {
     if (!this.state || this.retrievals >= REFRESH_RETRIEVALS)
       throw new Error("Call update_research before further retrieval");
+    if (
+      tool === "inbox_messages" &&
+      !query?.search &&
+      query?.before_id_noninclusive != null &&
+      !this.state.paginationReason?.trim()
+    )
+      throw new Error(
+        "After the initial sample, use focused searches. Before continuing unfiltered pagination, save the specific coverage requirement in update_research.paginationReason.",
+      );
     this.retrievals += 1;
   }
 
@@ -232,10 +263,130 @@ export class FlashResearch {
     );
   }
 
-  researchCompleted(): void {
+  researchCompleted(message?: unknown, budget?: ResearchBudget): void {
     if (this.researchStartedAt === undefined) return;
-    this.completed("research", Date.now() - this.researchStartedAt);
+    const durationMs = Date.now() - this.researchStartedAt;
+    this.completed("research", durationMs);
+    this.diagnostic({
+      stage: "research",
+      ...providerCompletion(message),
+      durationMs,
+      remainingMs: budget?.remainingTotalMs(),
+    });
     this.researchStartedAt = undefined;
+  }
+
+  shouldRefreshDraft(budget: ResearchBudget): boolean {
+    return (
+      this.retrievals > 0 &&
+      budget.remainingResearchMs() >
+        2 * Math.max(0, ...this.observedMs.values()) + TURN_MARGIN_MS
+    );
+  }
+
+  async complete(
+    options: Parameters<typeof synthesizeBudgetEvidence>[0],
+    budget: ResearchBudget,
+  ): Promise<string> {
+    let correction = "";
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const result = await this.synthesisAttempt(
+        { ...options, systemPrompt: options.systemPrompt + correction },
+        budget,
+        attempt,
+      );
+      if (result.answer && !options.signal.aborted) {
+        this.diagnostic({
+          stage: "answer",
+          outcome: "complete",
+          attempt,
+          textCharacters: result.answer.length,
+        });
+        return result.answer;
+      }
+      if (
+        attempt === 2 ||
+        options.signal.aborted ||
+        budget.remainingFinalizationMs() <=
+          result.durationMs * 1.25 + TURN_MARGIN_MS ||
+        ![
+          "output_limit",
+          "empty",
+          "transient_error",
+          "citation_rejected",
+        ].includes(result.outcome)
+      )
+        break;
+      correction = this.correctionInstructions(result.outcome);
+    }
+    this.usedFallback = true;
+    const answer = this.fallback();
+    this.diagnostic({
+      stage: "answer",
+      outcome: answer === FLASH_INABILITY ? "inability" : "fallback",
+      textCharacters: answer.length,
+      remainingMs: budget.remainingFinalizationMs(),
+    });
+    return answer;
+  }
+
+  private async synthesisAttempt(
+    options: Parameters<typeof synthesizeBudgetEvidence>[0],
+    budget: ResearchBudget,
+    attempt: number,
+  ): Promise<{
+    answer?: string;
+    outcome: CompletionStatus;
+    durationMs: number;
+  }> {
+    let outcome: CompletionStatus = "provider_error";
+    let durationMs = 0;
+    const candidate = await synthesizeBudgetEvidence({
+      ...options,
+      onOutcome: (event) => {
+        outcome = event.outcome as CompletionStatus;
+        durationMs = event.durationMs ?? 0;
+        this.diagnostic({
+          ...event,
+          attempt,
+          remainingMs: budget.remainingFinalizationMs(),
+        });
+      },
+    }).catch((error) => {
+      if (
+        error instanceof SynthesisAuthorizationError ||
+        error instanceof SynthesisContentFilterError
+      )
+        throw error;
+      return null;
+    });
+    const answer = validatedFlashAnswer(candidate, this.sources());
+    if (candidate && !answer) {
+      outcome = "citation_rejected";
+      this.diagnostic({
+        stage: "synthesis",
+        outcome,
+        attempt,
+        durationMs,
+        remainingMs: budget.remainingFinalizationMs(),
+      });
+    }
+    return { answer, outcome, durationMs };
+  }
+
+  private correctionInstructions(outcome: CompletionStatus): string {
+    return outcome === "citation_rejected"
+      ? `\nThe previous synthesis did not pass citation validation. Write the answer again using only these exact source and registered artifact links: ${JSON.stringify(this.allowedLinks())}. Keep citations beside each supported claim; do not invent URLs.`
+      : "\nThe previous synthesis did not complete. Produce a complete shorter answer now, at most 500 words, with headings and cited bullets. Include only the most relevant supported findings; omit preamble and research narration.";
+  }
+
+  private allowedLinks(): string[] {
+    const sources = this.sources();
+    return [
+      ...sources.citations.map(citationHref),
+      ...sources.fileCitations.map(fileCitationHref),
+      ...(sources.links ?? []),
+    ];
   }
 
   beforeProvider(
@@ -288,33 +439,4 @@ export class FlashResearch {
       systemPrompt: `${context.systemPrompt}\nPrivate budget status (never quote in the answer): ${JSON.stringify(status)}`,
     };
   }
-}
-
-export function compactFlashEvidence<
-  T extends {
-    messages: { text: string }[];
-    files: { text: string }[];
-    saved?: { text: string; citations: string[] }[];
-  },
->(evidence: T, state?: string): T {
-  return {
-    ...evidence,
-    messages: evidence.messages.map((message) => ({
-      ...message,
-      text: message.text.slice(0, EVIDENCE_CHARACTERS),
-    })),
-    files: evidence.files.map((file) => ({
-      ...file,
-      text: file.text.slice(0, EVIDENCE_CHARACTERS),
-    })),
-    saved: state
-      ? [
-          { text: state, citations: [] },
-          ...(evidence.saved ?? []).map((record) => ({
-            ...record,
-            text: record.text.slice(0, EVIDENCE_CHARACTERS),
-          })),
-        ]
-      : evidence.saved,
-  };
 }

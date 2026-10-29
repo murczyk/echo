@@ -1,5 +1,5 @@
 import { WORK_APPEND_PATH, WORK_RECORD_MAX_BYTES, WORK_PARAMETERS, WORK_DESCRIPTIONS, WorkJournal, WorkPersistenceError, validateWorkMemory, recalledEvidence, type WorkMemoryContext } from "./work-memory.ts";
-import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_INABILITY, RESEARCH_TOOL_NAME, FlashResearch, compactFlashEvidence, validatedFlashAnswer } from "./flash-research.ts";
+import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_INABILITY, RESEARCH_TOOL_NAME, FlashResearch } from "./flash-research.ts";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
@@ -77,7 +77,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.29.3";
+const HARNESS_RELEASE = "2026.10.29.4";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2493,12 +2493,12 @@ function createRouteTools(
       prepareArguments: (args: unknown) => normalizeToolArguments(args) as any,
       execute: async (_toolCallId, params, signal, onUpdate) => {
         countInvocation();
-        research?.beforeRetrieval();
         const requestBody = routeRequestBody(
           route,
           params,
           payload.timeContext!,
         );
+        research?.beforeRetrieval(route.skill, requestBody);
         const currentActivity = activity.start(route, requestBody);
         onUpdate?.({
           content: [],
@@ -3182,11 +3182,11 @@ async function completeLimitedResearch(options: {
     options.cancellation,
     budget.finalization.signal,
   ]);
-  const candidate = await synthesizeBudgetEvidence({
+  const synthesis: Parameters<typeof synthesizeBudgetEvidence>[0] = {
     engine: options.selectedEngine,
     apiKey: payload.providerApiKey ?? "echo-local-tokenless",
     policy: budget.policy,
-    systemPrompt: outputRetrySystemPrompt(payload),
+    systemPrompt: outputRetrySystemPrompt(payload) + (options.research ? " Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph." : ""),
     prompt: JSON.stringify({
       conversation: payload.history
         .slice(-4)
@@ -3194,24 +3194,27 @@ async function completeLimitedResearch(options: {
       request: payload.prompt,
       ...(options.research ? { maps: mapRegistry.list().map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
-    evidence: options.research ? compactFlashEvidence(evidence, options.research.compactEvidence()) : evidence,
+    evidence,
     checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
     maxTokens: options.research ? Math.min(FLASH_SYNTHESIS_TOKENS, payload.maxTokens) : payload.maxTokens,
     signal,
     purpose: options.research && !payload.executionPolicy ? "research" : "synthesis",
     allowUserEvidence: Boolean(options.research),
     prepareContext: options.research ? (context) => options.research!.beforeProvider("synthesis", context, budget, options.toolRemaining ?? 0, payload.contextWindow, Math.min(FLASH_SYNTHESIS_TOKENS, payload.maxTokens)) : undefined,
-  }).catch((error) => {
-    if (error instanceof SynthesisAuthorizationError || error instanceof SynthesisContentFilterError) throw error;
-    return null;
-  });
+  };
+  const candidate = options.research
+    ? await options.research.complete(synthesis, budget)
+    : await synthesizeBudgetEvidence(synthesis).catch((error) => {
+        if (error instanceof SynthesisAuthorizationError || error instanceof SynthesisContentFilterError) throw error;
+        return null;
+      });
   if (options.cancellation.aborted) return;
   const availableCitations = citationsForCanonical(
     deliveredCitationsThisTurn,
     payload.history.flatMap((entry) => entry.citations ?? []),
   );
   const text = options.research
-    ? validatedFlashAnswer(candidate, { citations: availableCitations, fileCitations: [...deliveredFiles.values()], links: mapRegistry.list().map(({ id }) => `echo-map:${id}`) }) ?? options.research.fallback()
+    ? candidate ?? options.research.fallback()
     : chooseBudgetAnswer(candidate, evidence, availableCitations, deliveredFiles.keys());
   if (options.research) publishReferencedDrafts(text, mapRegistry, emit);
   const maps = mapRegistry.list();
@@ -3220,7 +3223,7 @@ async function completeLimitedResearch(options: {
       stripUnpublishedMapLinks(preserveMapReferences("", text, maps), maps),
       deliveredFiles.values(),
     );
-  const coverageLimited = Boolean(budget.reason) || Boolean(options.research?.hasGaps());
+  const coverageLimited = Boolean(budget.reason) || Boolean(options.research?.hasGaps()) || Boolean(options.research?.usedFallback);
   const notice = options.research
     ? coverageLimited ? "Охоплення джерел неповне; відповідь містить лише підтверджені зібрані дані." : ""
     : budget.reason === "context_limit"
@@ -3242,6 +3245,26 @@ async function completeLimitedResearch(options: {
     coverageLimited: true,
     reason: budget.reason,
   });
+}
+
+async function refreshFlashDraft(
+  session: AgentSession,
+  research: FlashResearch,
+  budget: ResearchBudget,
+): Promise<void> {
+  if (!research.shouldRefreshDraft(budget)) return;
+  const tools = session.agent.state.tools;
+  session.agent.state.tools = tools.filter(
+    (tool) => tool.name === RESEARCH_TOOL_NAME,
+  );
+  try {
+    await session.prompt(
+      "Before final synthesis, call update_research once to save the latest supported answer as Markdown with exact citations and remaining coverage gaps. Include the findings from the latest retrievals. No further retrieval is needed.",
+      { expandPromptTemplates: false, source: "rpc" },
+    );
+  } finally {
+    session.agent.state.tools = tools;
+  }
 }
 
 export async function runAgent(payload: RunnerPayload): Promise<void> {
@@ -3378,6 +3401,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
     const research = payload.modelName === FLASH_ENGINE ? new FlashResearch(
       () => ({ citations: [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])], fileCitations: [...deliveredFiles.values()], links: mapRegistry.list().map(({ id }) => `echo-map:${id}`) }),
       journal,
+      (event) => emit({ type: "completion_diagnostic", ...event }),
     ) : undefined;
     const tools = [
       ...(research ? [research.tool(countInvocation)] : []),
@@ -3452,7 +3476,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         }),
       ),
       (message) => {
-        research?.researchCompleted();
+        research?.researchCompleted(message, budget);
         currentTurnAssistantMessages.push(message);
         const errorMessage = (message as { errorMessage?: string })?.errorMessage;
         if (research && /content_filter/i.test(errorMessage ?? ""))
@@ -3516,6 +3540,12 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       assertResearch();
       if (contextCompaction.failure()) throw contextCompaction.failure();
       if (research && budget) {
+        validateFinalAssistantMessage(currentTurnAssistantMessages);
+        await refreshFlashDraft(session, research, budget);
+        if (journal?.failure) throw journal.failure;
+        if (authorizationFailure) throw authorizationFailure;
+        if (contentFilterFailure) throw contentFilterFailure;
+        if (cancelled) return;
         validateFinalAssistantMessage(currentTurnAssistantMessages);
         await completeLimitedResearch({ payload, budget, selectedEngine: selectedModel,
           evidence: { messages: [...deliveredMessages.values()], files: [...deliveredFileSections.values()], saved: savedEvidence },
@@ -3651,6 +3681,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         budget?.limit("tool_limit");
       if (error instanceof ContextCompactionLimitError)
         budget?.limit("context_limit");
+      if (research) emit({ type: "completion_diagnostic", stage: "research", outcome: budget?.reason ?? (toolLimitError ? "tool_error" : "provider_error"), remainingMs: budget?.remainingTotalMs() });
       if (research && !budget?.reason) budget?.limit("provider_error");
       if (!budget?.reason) throw error;
       emitAssistant.current = false;
