@@ -41,7 +41,10 @@ export function MessageCardImageThumb({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const mediaId = resolveMediaAttachmentId(image);
-  const thumbnailUrl = mediaId === '' ? '' : mediaAttachmentThumbnailUrl(mediaId);
+  const thumbnailUrl =
+    mediaId !== '' && image.href.startsWith('/api/messenger/media/')
+      ? mediaAttachmentThumbnailUrl(mediaId)
+      : '';
   const thumbnailRequest = useThumbnailRequestActivation();
   const [timedOutThumbnailUrl, setTimedOutThumbnailUrl] = useState<string | null>(null);
   const thumbnailTimedOut = timedOutThumbnailUrl === thumbnailUrl;
