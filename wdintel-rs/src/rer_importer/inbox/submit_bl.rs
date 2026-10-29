@@ -81,6 +81,9 @@ pub(crate) async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
+    let item = parse_missing_submit_unit(env, txn, &groups, item)
+        .await
+        .c(h!())?;
     submit_inbox_item_with_groups(
         env.as_ref(),
         txn,
@@ -92,6 +95,49 @@ pub(crate) async fn submit_generic_inbox_item(
         false,
     )
     .await
+}
+
+async fn parse_missing_submit_unit(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    groups: &[(String, i64)],
+    mut item: InboxSubmitItem,
+) -> anyhow::Result<InboxSubmitItem> {
+    if crate::inbox::unit_resolution::has_resolved_unit_text(
+        txn,
+        item.unit.as_deref(),
+        item.unit.as_deref(),
+    )
+    .await
+    .c(h!())?
+    {
+        return Ok(item);
+    }
+    let body = super::normalized_optional_string(item.full_body.as_deref())
+        .or_else(|| super::normalized_optional_string(item.text.as_deref()))
+        .c(h!())?
+        .replace("\r\n", "\n");
+    let aor_id = match groups.first() {
+        Some((master_key, _)) => {
+            crate::messenger::group::resolve_group_aor_id(txn, master_key)
+                .await
+                .c(h!())?
+        }
+        None => None,
+    };
+    let (parsed, unit_v2) = crate::unit::parse_message_unit(
+        txn,
+        env.settlements.clone(),
+        &body,
+        super::submit_item_callsigns(&item),
+        aor_id,
+    )
+    .await
+    .c(h!())?;
+    if let Some(unit) = unit_v2.or(parsed.unit) {
+        item.unit = Some(unit);
+    }
+    Ok(item)
 }
 
 pub(crate) async fn submit_inbox_item_with_groups(
@@ -419,4 +465,204 @@ async fn prepare_inbox_submit_item(
         tag_ids,
         operator_tags,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
+    use crate::entities::{sigint_inbox_item, sigint_inbox_item_unit};
+    use crate::functest::tests::{
+        cleanup_locked, find_test_datasource, find_test_login, mk_sigint_unit,
+    };
+    use serde_json::json;
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3920_generic_submit_parsed_missing_and_unresolved_units() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let env_data = Data::from(env.clone());
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let label = "24 обБпС рБпЛА вБпЛА КТ";
+        let unit = seed_submit_unit(
+            &env,
+            "взвБпЛА КТ рБпЛА 24 обБпС 7 дшд",
+            "",
+            label,
+        )
+        .await;
+        let supplied_label = "Лейбл 3920";
+        let supplied =
+            seed_submit_unit(&env, "3920 мсп", "3920 мсп", supplied_label)
+                .await;
+        let body = format!("{label} | 2026-10-29\r\n17-45\r\n- С тест");
+        let parsed = crate::sigint::direct_submit::bl::parse_signal_message(
+            &login.id,
+            &env,
+            crate::sigint::direct_submit::types::DirectSubmitParsePayload {
+                full_body: body.clone(),
+                signal_group_master_key: None,
+                include_ai_callsigns: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(parsed.unit_v2.as_deref(), Some(unit.name.as_str()));
+        let cases = [
+            (json!({}), Some(unit.name.as_str()), Some(unit.id)),
+            (
+                json!({"unit": null}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"unit": "  "}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"unit": "Невідомий 3920"}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": null, "text": body}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"full_body": "  ", "text": body}),
+                Some(unit.name.as_str()),
+                Some(unit.id),
+            ),
+            (
+                json!({"unit": supplied.name}),
+                Some(supplied.name.as_str()),
+                Some(supplied.id),
+            ),
+            (
+                json!({"unit": supplied_label}),
+                Some(supplied_label),
+                Some(supplied.id),
+            ),
+            (
+                json!({"unit": " 3920   МСП "}),
+                Some(" 3920   МСП "),
+                Some(supplied.id),
+            ),
+            (
+                json!({"unit": "3920 мсп, невідомий підрозділ"}),
+                Some("3920 мсп, невідомий підрозділ"),
+                Some(supplied.id),
+            ),
+            (
+                json!({"full_body": "Звичайне повідомлення", "unit": "Невідомий 3920"}),
+                Some("Невідомий 3920"),
+                None,
+            ),
+            (
+                json!({"full_body": "Звичайне повідомлення", "text": body}),
+                None,
+                None,
+            ),
+            (
+                json!({"full_body": "98765 мсп | 2026-10-29\n- С тест"}),
+                Some("98765 мсп"),
+                None,
+            ),
+            (json!({"full_body": "Звичайне повідомлення"}), None, None),
+        ];
+        for (overrides, expected_unit, expected_id) in cases {
+            let mut request = json!({
+                "full_body": body,
+                "text": "Явний текст 3920",
+                "timestamp": "2026-10-29T12:00:00Z",
+                "freq": "145.5000",
+                "locations": ["Невідома локація 3920"],
+                "group_names": ["SC1"],
+            });
+            request
+                .as_object_mut()
+                .unwrap()
+                .extend(overrides.as_object().unwrap().clone());
+            assert_submitted_unit(
+                &env_data,
+                &datasource,
+                &login.id,
+                request,
+                expected_unit,
+                expected_id,
+            )
+            .await;
+        }
+    }
+
+    async fn seed_submit_unit(
+        env: &Env,
+        name: &str,
+        regiment: &str,
+        label: &str,
+    ) -> crate::entities::sigint_unit::Model {
+        let unit = mk_sigint_unit(
+            &env.dbx,
+            crate::entities::sigint_unit::ActiveModel {
+                name: Set(name.to_string()),
+                regiment: Set(regiment.to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::sigint::unit::labels::insert_label(&env.dbx, unit.id, label)
+            .await
+            .unwrap();
+        unit
+    }
+
+    async fn assert_submitted_unit(
+        env: &Data<Env>,
+        datasource: &datasource::Model,
+        login: &uuid::Uuid,
+        request: serde_json::Value,
+        expected_unit: Option<&str>,
+        expected_id: Option<i64>,
+    ) {
+        let item = serde_json::from_value(request.clone()).unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let submitted = submit_generic_inbox_item(
+            env,
+            &txn,
+            datasource,
+            login,
+            &vec![*login],
+            item,
+        )
+        .await
+        .unwrap();
+        let stored = sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.unit_v2.as_deref(), expected_unit, "{request}");
+        assert_eq!(stored.freq.as_deref(), Some("145.5000"));
+        assert_eq!(stored.location.as_deref(), Some("Невідома локація 3920"));
+        let links = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(stored.id))
+            .filter(
+                sigint_inbox_item_unit::Column::Kind
+                    .eq(SigintInboxItemUnitKind::Parsed),
+            )
+            .all(&txn)
+            .await
+            .unwrap();
+        assert_eq!(
+            links.iter().map(|link| link.unit_id).collect::<Vec<_>>(),
+            expected_id.into_iter().collect::<Vec<_>>(),
+            "{request}"
+        );
+        txn.rollback().await.unwrap();
+    }
 }
