@@ -15,7 +15,6 @@ use crate::rer_importer::report_chunking::{
     restrict_inbox_report_to_message_ids, ReportPeriodChunk, ReportPeriodEnd,
 };
 use crate::types::*;
-use crate::utils::dt_from_millis;
 use chrono::prelude::*;
 use rer_importer::body_noheader::extract_text;
 // Import necessary items from rust_xlsxwriter
@@ -624,6 +623,104 @@ fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
     .context(h!())?)
 }
 
+async fn filter_interception_report_period(
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+    query: Select<signal_message::Entity>,
+) -> anyhow::Result<Select<signal_message::Entity>> {
+    let mut pagination_req = req.clone();
+    if period_end == ReportPeriodEnd::NonInclusive {
+        pagination_req.till_date_inclusive_ms = None;
+    }
+    let mut query = rer_importer::inbox::query::get_pagination_filters(
+        env,
+        &pagination_req,
+        query,
+    )
+    .await
+    .c(h!())?;
+    if let Some(till) = report_chunk_exclusive_till(req, period_end).c(h!())? {
+        query = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                query.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                query.filter(signal_message::Column::Timestamp.lt(till))
+            }
+            InboxMessagesSortBy::IMSCreatedAt => {
+                query.filter(signal_message::Column::CreatedAt.lt(till))
+            }
+        };
+    }
+    Ok(query)
+}
+
+async fn interception_report_candidate_query(
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+    sigint_groups: &[String],
+    candidate_ids: Option<&[i64]>,
+) -> anyhow::Result<Select<signal_message::Entity>> {
+    let mut query = SignalMessage::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .inner_join(sigint_inbox_item::Entity)
+        .inner_join(datasource_group::Entity)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(sigint_groups.to_vec()),
+        );
+    if let Some(candidate_ids) = candidate_ids {
+        query = restrict_inbox_report_to_message_ids(query, candidate_ids);
+    }
+    let query = filter_interception_report_period(env, req, period_end, query)
+        .await
+        .c(h!())?;
+    filter_selected_groups_and_senders_with_access(
+        query,
+        &req.selected_groups,
+        &req.selected_senders,
+        sigint_groups,
+    )
+    .c(h!())
+}
+
+fn interception_report_messages_query(
+    candidate_alias: Alias,
+) -> Select<signal_message::Entity> {
+    let messages = SignalMessage::find()
+        .select_only()
+        .columns([
+            signal_message::Column::Id,
+            signal_message::Column::Body,
+            signal_message::Column::CreatedAt,
+            signal_message::Column::Timestamp,
+            signal_message::Column::DatasourceGroupId,
+            signal_message::Column::MessageUid,
+        ])
+        .filter(
+            Expr::col((signal_message::Entity, signal_message::Column::Id))
+                .equals((candidate_alias.clone(), signal_message::Column::Id)),
+        )
+        // Keep message lookups downstream of the bounded candidate list.
+        .offset(0)
+        .into_query();
+    let mut query = SignalMessage::find();
+    QueryTrait::query(&mut query)
+        .from_clear()
+        .from(candidate_alias)
+        .join_lateral(
+            JoinType::InnerJoin,
+            messages,
+            signal_message::Entity,
+            Expr::value(true),
+        );
+    query
+}
+
 async fn build_inbox_messages_report_sql(
     login: &uuid::Uuid,
     env: &Env,
@@ -679,7 +776,22 @@ async fn build_inbox_messages_report_sql(
         crate::messenger::group::get_identity_sigint_groups(&read_db, login)
             .await
             .c(h!())?;
-    let mut q = SignalMessage::find()
+    let candidate_query = interception_report_candidate_query(
+        env,
+        req,
+        period_end,
+        &sigint_groups,
+        candidate_ids,
+    )
+    .await
+    .c(h!())?;
+    let candidate_alias = Alias::new("interception_report_candidates");
+    let candidate_cte = CommonTableExpression::new()
+        .table_name(candidate_alias.clone())
+        .query(candidate_query.into_query())
+        .materialized(true)
+        .to_owned();
+    let mut q = interception_report_messages_query(candidate_alias)
         .select_only()
         .inner_join(sigint_inbox_item::Entity)
         .column(sigint_inbox_item::Column::Datetime)
@@ -794,50 +906,12 @@ async fn build_inbox_messages_report_sql(
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(sigint_inbox_item::Column::Coords)
-        .group_by(sigint_important::Column::SignalMessageId)
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .eq_any(sigint_groups.clone()),
-        );
+        .group_by(sigint_important::Column::SignalMessageId);
     let linked_message_ids = linked_intel_product_message_ids_query();
     q = q
         .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
-    if let Some(candidate_ids) = candidate_ids {
-        q = restrict_inbox_report_to_message_ids(q, candidate_ids);
-    }
-
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
-    }
-
-    let mut pagination_req = req.clone();
-    if period_end == ReportPeriodEnd::NonInclusive {
-        pagination_req.till_date_inclusive_ms = None;
-    }
-    q = rer_importer::inbox::query::get_pagination_filters(
-        env,
-        &pagination_req,
-        q.clone(),
-    )
-    .await
-    .c(h!())?;
-    if period_end == ReportPeriodEnd::NonInclusive {
-        let till = req.till_date_inclusive_ms.ok_or_else(|| AppError::BL {
-            msg: "Until date must be specified".to_string(),
-        })?;
-        let till = dt_from_millis(till)?;
-        q = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
-            InboxMessagesSortBy::IMSDatetime => {
-                q.filter(sigint_inbox_item::Column::Datetime.lt(till))
-            }
-            InboxMessagesSortBy::IMSTimestamp => {
-                q.filter(signal_message::Column::Timestamp.lt(till))
-            }
-            InboxMessagesSortBy::IMSCreatedAt => {
-                q.filter(signal_message::Column::CreatedAt.lt(till))
-            }
-        };
     }
 
     if req.only_show_unprocessed == Some(true) {
@@ -846,12 +920,6 @@ async fn build_inbox_messages_report_sql(
     if req.checked_only == Some(true) {
         q = q.filter(sigint_inbox_item::Column::Checked.eq(Some(true)));
     }
-    let q = filter_selected_groups_and_senders_with_access(
-        q,
-        &req.selected_groups,
-        &req.selected_senders,
-        &sigint_groups,
-    )?;
     let q = filter_denied_senders(q, &req.denied_senders)?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
@@ -966,15 +1034,12 @@ async fn build_inbox_messages_report_sql(
         // emulate NULLS FIRST: order nulls before non-nulls
         .to_owned();
 
-    dedup_q = rer_importer::inbox::query::get_pagination_filter_real_lower_bound_stmt(env, req, dedup_q)
-        .await
-        .context(h!())?;
     dedup_q = rer_importer::inbox::query::get_bl_ordering_stmt(req, dedup_q)
         .await
         .context(h!())?;
 
-    // Step 3: Combine CTEs and main query, add filter by initial window values and business logic ordering
     let combined_query = Query::with()
+        .cte(candidate_cte)
         .cte(inbox_cte)
         .cte(primary_callsigns_cte)
         .clone()
@@ -1336,18 +1401,21 @@ mod tests {
         linked_intel_product_message_ids_query,
         load_interception_report_chunk_postgres,
         merge_interception_report_chunk, select_report_message_body,
-        sort_interception_report_messages, InboxMessage, PostgresQueryBuilder,
+        sort_interception_report_messages, Expr, InboxMessage,
+        PostgresQueryBuilder,
     };
     use crate::entities::{
-        datasource_group, device_name, prelude::SignalMessage,
-        sigint_inbox_item, signal_message, signal_message_group,
+        datasource_group, device_name, prelude::SignalMessage, sigint_comment,
+        sigint_inbox_item, sigint_inbox_item_tag, signal_message,
+        signal_message_group,
     };
     use crate::functest::tests::*;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
     use crate::rer_importer::types::{InboxMessagesReq, InboxMessagesSortBy};
     use chrono::NaiveDateTime;
     use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, DbBackend, EntityTrait, QueryTrait,
+        ActiveModelTrait, ActiveValue::Set, ColumnTrait, DbBackend,
+        EntityTrait, QueryFilter, QueryTrait,
     };
     use serial_test::serial;
     use std::collections::HashSet;
@@ -1891,6 +1959,152 @@ y:73-71279
         .await
         .unwrap();
         message.id
+    }
+
+    async fn seed_scoped_interception_messages(
+        env: &crate::types::Env,
+        datasource_group: &datasource_group::Model,
+        since: NaiveDateTime,
+    ) -> Vec<i64> {
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let tag = mk_tag(&env.dbx, Default::default()).await.unwrap();
+        let till = since + chrono::Duration::hours(1);
+        let mut message_ids = Vec::new();
+        for (body, dt, sender, commented) in [
+            ("since", since, "selected", true),
+            ("till", till, "selected", true),
+            (
+                "before",
+                since - chrono::Duration::seconds(1),
+                "selected",
+                true,
+            ),
+            ("other sender", since, "other", true),
+            ("without comment", since, "selected", false),
+        ] {
+            let message_id = seed_interception_device_message(
+                env,
+                datasource_group,
+                None,
+                body,
+                dt,
+            )
+            .await;
+            mk_sigint_inbox_item_tag(
+                &env.dbx,
+                sigint_inbox_item_tag::ActiveModel {
+                    sigint_inbox_item_id: Set(message_id),
+                    tag_id: Set(tag.id),
+                    login_id: Set(Some(login.id)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            signal_message_group::Entity::update_many()
+                .col_expr(
+                    signal_message_group::Column::Sender,
+                    Expr::value(sender),
+                )
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .eq(message_id),
+                )
+                .exec(&env.dbx)
+                .await
+                .unwrap();
+            if commented {
+                mk_sigint_comment(
+                    &env.dbx,
+                    sigint_comment::ActiveModel {
+                        signal_message_id: Set(message_id),
+                        login_id: Set(login.id),
+                        comment: Set("Manual report comment".to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            message_ids.push(message_id);
+        }
+        message_ids
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn interception_scoped_query_preserves_period_sender_and_comments() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let since = chrono::NaiveDate::from_ymd_opt(2026, 4, 1)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let message_ids =
+            seed_scoped_interception_messages(&env, &datasource_group, since)
+                .await;
+        let interception_since = crate::inbox::datetime::from_date_time_text(
+            Some(&since.date().to_string()),
+            Some(&since.time().to_string()),
+        )
+        .unwrap()
+        .unwrap();
+        for sort_by in [None, Some(InboxMessagesSortBy::IMSCreatedAt)] {
+            let since = if sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
+                since
+            } else {
+                interception_since
+            };
+            let till = since + chrono::Duration::hours(1);
+            for period_end in
+                [ReportPeriodEnd::Inclusive, ReportPeriodEnd::NonInclusive]
+            {
+                let messages = load_interception_report_chunk_postgres(
+                    &login.id,
+                    &env,
+                    &InboxMessagesReq {
+                        since_date_inclusive_ms: Some(
+                            since.and_utc().timestamp_millis(),
+                        ),
+                        till_date_inclusive_ms: Some(
+                            till.and_utc().timestamp_millis(),
+                        ),
+                        selected_groups: Some(vec![datasource_group
+                            .group_master_key
+                            .clone()]),
+                        selected_senders: Some(vec!["selected".to_string()]),
+                        or_with_extended_form: Some(true),
+                        without_model_tags: Some(true),
+                        report_tags_only_this_unit: Some(true),
+                        nolimit: Some(true),
+                        sort_by,
+                        ..Default::default()
+                    },
+                    period_end,
+                    None,
+                )
+                .await
+                .unwrap();
+                let expected = if period_end == ReportPeriodEnd::Inclusive {
+                    vec![message_ids[0], message_ids[1]]
+                } else {
+                    vec![message_ids[0]]
+                };
+                assert_eq!(
+                    messages
+                        .iter()
+                        .map(|message| message.message_id)
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "{sort_by:?}, {period_end:?}",
+                );
+                assert!(messages.iter().all(|message| {
+                    message.comment.as_deref() == Some("Manual report comment")
+                }));
+            }
+        }
     }
 
     #[tokio::test]
