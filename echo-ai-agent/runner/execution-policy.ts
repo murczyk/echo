@@ -38,6 +38,7 @@ export const PURPOSE_HEADER = "x-echo-ai-purpose";
 export function validateExecutionPolicy(
   value: unknown,
   deadline: unknown,
+  flash = false,
 ): ExecutionPolicy | undefined {
   if (value === undefined) {
     if (deadline !== undefined)
@@ -59,7 +60,7 @@ export function validateExecutionPolicy(
       policy.synthesisEffort,
     ].every((effort) => EFFORTS.has(effort)) ||
     policy.maxRuntimeSeconds !== limits[0] ||
-    policy.finalizationSeconds !== limits[1] ||
+    policy.finalizationSeconds !== limits[1] * (flash ? 2 : 1) ||
     !Number.isSafeInteger(deadline) ||
     (deadline as number) < 1
   ) {
@@ -68,7 +69,7 @@ export function validateExecutionPolicy(
   return { ...policy };
 }
 
-export type ResearchLimitReason = "time_limit" | "tool_limit" | "context_limit";
+export type ResearchLimitReason = "time_limit" | "tool_limit" | "context_limit" | "provider_error";
 
 export class ResearchBudget {
   readonly research = new AbortController();
@@ -104,6 +105,14 @@ export class ResearchBudget {
     if (Date.now() >= this.deadlineAt - this.policy.finalizationSeconds * 1000)
       this.limit("time_limit");
     this.research.signal.throwIfAborted();
+  }
+
+  remainingResearchMs(): number {
+    return this.reason ? 0 : Math.max(0, this.remainingTotalMs() - this.policy.finalizationSeconds * 1000);
+  }
+
+  remainingTotalMs(): number {
+    return Math.max(0, this.deadlineAt - Date.now());
   }
 
   limit(reason: ResearchLimitReason): void {
@@ -209,13 +218,16 @@ export async function synthesizeBudgetEvidence(
     checkpoint?: string;
     maxTokens: number;
     signal: AbortSignal;
+    prepareContext?: (context: Context) => Context;
+    purpose?: "research" | "synthesis";
+    allowUserEvidence?: boolean;
   },
   summarize: typeof completeSimple = completeSimple,
 ): Promise<string | null> {
   const { engine, policy, signal } = options;
   if (signal.aborted) return null;
   const records = evidenceRecords(options.evidence);
-  if (!records.length && !options.evidence.saved?.length) return null;
+  if (!records.length && !options.evidence.saved?.length && !options.allowUserEvidence) return null;
   const messages: Context["messages"] = [
     { role: "user", content: options.prompt, timestamp: Date.now() },
   ];
@@ -250,7 +262,7 @@ export async function synthesizeBudgetEvidence(
     remaining -= tokens;
     messages.push(message);
   }
-  if (messages.length === 1) return null;
+  if (messages.length === 1 && !options.allowUserEvidence) return null;
   let onAbort: () => void = () => undefined;
   const aborted = new Promise<null>((resolve) => {
     onAbort = () => resolve(null);
@@ -260,14 +272,14 @@ export async function synthesizeBudgetEvidence(
   try {
     response = await Promise.race([
       aborted,
-      summarize(engine, context, {
+      summarize(engine, options.prepareContext?.(context) ?? context, {
         apiKey: options.apiKey,
         maxTokens: options.maxTokens,
         reasoning:
           policy.synthesisEffort && policy.synthesisEffort !== "none"
             ? (policy.synthesisEffort as "low" | "medium" | "high" | "max")
             : undefined,
-        headers: { [PURPOSE_HEADER]: "synthesis" },
+        headers: { [PURPOSE_HEADER]: options.purpose ?? "synthesis" },
         maxRetries: 0,
         signal,
         cacheRetention: "none",

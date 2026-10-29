@@ -246,3 +246,25 @@ approval naming the operation and environment, including staging.
 Retain prior containers and recovery journals; follow the
 [control panel recovery procedure](CONTROL_PANEL.md#upgrade-and-recovery) only
 within approved scope. Do not downgrade shared infrastructure as a retry fix.
+
+## GLM Flash research (release 2026.10.29.3)
+
+Only `glm-5.3-flash-uncensored` uses the budget-aware research workflow described
+in [Flash research](FLASH_RESEARCH.md). No migration, provider change or preset
+configuration change is required. Deploy the matching application first.
+For the authorized Kharkiv rollout, preview and then upgrade only its namespace:
+
+```sh
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.3 --dry-run
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  upgrade --host echo-kharkiv2 --release 2026.10.29.3
+just ai-control-panel --agent-host echo@echo-ai-agents-ua.eagle-atria.ts.net \
+  scan --host echo-kharkiv2 --json
+```
+
+Confirm API/background/report service health and running build identity, matching
+required/container harness releases, and successful authenticated connection
+checks in the upgrade journal. Preserve other namespace pins, retained templates,
+backup containers and recovery journals. A failed upgrade stops the rollout;
+recovery outside the approved operation requires separate approval.
