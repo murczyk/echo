@@ -223,3 +223,26 @@ sources, labels, full previews, analysis links, follow-up requests, and reload.
 Keep production prompts, message bodies, credentials, and raw evaluation output
 outside Git. A copied database restore discards AI conversation/runtime records:
 export replay inputs first and retain the local agent profile during restore.
+
+## Government provider cooldowns (release 2026.10.29.2)
+
+After HTTP 429, government inference calls sharing a model wait for the longest
+active `Retry-After` (seconds or HTTP date), defaulting to 60 seconds when absent
+or invalid. Different models have independent cooldowns. Waiting consumes the
+existing request deadline; cancellation does not clear the shared cooldown.
+The runner retains its two retries and never switches models automatically.
+
+Admin technical errors retain an allowlisted provider category and known error code, including
+failures delivered inside HTTP-200 event streams. Arbitrary provider error text
+is never persisted because it may contain submitted input. Gateway failure logs include
+the Echo request ID; HTTP 200 alone does not establish successful generation.
+Provider availability is external: retries can still exhaust the request budget.
+
+Deploy the matching Echo build before upgrading the selected namespace with
+`just ai-control-panel upgrade --host <approved-host> --release 2026.10.29.2`.
+Run its `--dry-run` first, and wait for queued/running requests to finish.
+Deployments, namespace upgrades, and live inference tests each require explicit
+approval naming the operation and environment, including staging.
+Retain prior containers and recovery journals; follow the
+[control panel recovery procedure](CONTROL_PANEL.md#upgrade-and-recovery) only
+within approved scope. Do not downgrade shared infrastructure as a retry fix.
