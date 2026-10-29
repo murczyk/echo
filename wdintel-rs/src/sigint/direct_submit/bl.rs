@@ -336,36 +336,16 @@ where
         crate::location::peleng::filter_allowed_peleng_coords(coords, dbx)
             .await
             .c(h!())?;
-    let unit_and_location = crate::unit::parser::extract_unit_with_aor(
+    let (unit_and_location, unit_v2) = crate::unit::parse_message_unit(
+        dbx,
         env.settlements.clone(),
         body,
         callsigns.clone(),
         aor_id,
     )
+    .await
     .c(h!())?;
     let unit: Option<String> = unit_and_location.unit;
-    let unit_v2 = match &unit {
-        Some(unit) => crate::inbox::parse_unit_v2(dbx, unit).await.c(h!())?,
-        None => None,
-    };
-    let unit_v2 = match crate::inbox::unit_resolution::resolve_sigint_unit_id(
-        dbx,
-        None,
-        unit.as_deref(),
-    )
-    .await
-    .c(h!())?
-    {
-        Some(unit_id) => {
-            crate::entities::sigint_unit::Entity::find_by_id(unit_id)
-                .one(dbx)
-                .await
-                .c(h!())?
-                .map(|unit| unit.name)
-                .or(unit_v2)
-        }
-        None => unit_v2,
-    };
     let comment_parsing_enabled =
         crate::system_settings::sigint_comment_parsing_enabled(&env.dbx)
             .await
