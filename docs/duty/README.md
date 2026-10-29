@@ -10,8 +10,8 @@ Issue: [#3059](https://github.com/echoua/echo/issues/3059).
 
 Regression: [#3546](https://github.com/echoua/echo/issues/3546).
 
-Duty Neo always uses message creation time. This is a feed invariant, not a user
-preference. Analysis alone retains the event/creation-time choice; its saved
+Duty Neo always orders and filters by message creation time. This is a feed
+invariant, not a user preference. Analysis alone retains the event/creation-time choice; its saved
 `messageSortBy` setting must never change or reload Duty feeds.
 
 - Every Duty inbox/count request uses `IMSCreatedAt`, including date filters,
@@ -20,11 +20,12 @@ preference. Analysis alone retains the event/creation-time choice; its saved
   Local sorting, pagination/unread cursors, pending buffers, and notification
   selection use `createdAtOrder` (microseconds), falling back only to
   `createdAt * 1000` for older payloads. Event time is never an ordering fallback.
-- Cards use creation time for the primary absolute header timestamp. Their independent
-  receipt-time footer also uses `createdAt`: `HH:mm` today, `DD.MM, HH:mm` on other
-  dates this year, and `DD.MM.YYYY, HH:mm` in other years (Kyiv calendar).
-  The header date always includes the year. Event dates remain message metadata, and editing an
-  event date cannot move a card in the feed.
+- Cards always show the message's event date/time in the header, independently of
+  sorting. Their system creation-time footer uses `createdAt`: `HH:mm` today,
+  `DD.MM, HH:mm` on other dates this year, and `DD.MM.YYYY, HH:mm` in other years
+  (Kyiv calendar). The header date always includes the year; date-only events
+  omit the time. Event dates remain message metadata, and editing an event date
+  cannot move a card in the feed.
 - The sorting chooser exists only under Settings → Analysis. Existing Analysis
   preferences and its shared API/storage field are preserved.
 

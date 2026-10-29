@@ -16,7 +16,7 @@ async function setupAnalysisNeoPage(
 // Regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke @regression', () => {
   for (const messageSortBy of ['interception', 'creation'] as const) {
-    test(`shows the selected Analysis timestamp and receipt time at wide and narrow card widths (${messageSortBy})`, async ({
+    test(`shows event and system creation times at wide and narrow card widths with ${messageSortBy} sorting`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -33,13 +33,11 @@ test.describe('@smoke @regression', () => {
 
       const card = page.locator(`[data-message-id="${messageId}"]`);
       const timestamp = card.locator('[data-message-card-timestamp-item="true"]');
-      const expected =
-        messageSortBy === 'creation'
-          ? ['Дата і час створення повідомлення', '17.07.2026, 03:30']
-          : ['Дата і час перехоплення', '14.07.2026, 08:45'];
-      await expect(timestamp).toHaveAttribute('title', expected[0]);
-      await expect(timestamp).toContainText(expected[1]);
-      await expect(card.locator('[title="Час отримання повідомлення"]')).toBeVisible();
+      const receiptTime = card.locator('[title="Час отримання повідомлення"]');
+      await expect(timestamp).toHaveAttribute('title', 'Дата і час перехоплення');
+      await expect(timestamp).toContainText('14.07.2026, 08:45');
+      await expect(receiptTime).toBeVisible();
+      await expect(receiptTime).toHaveAttribute('datetime', '2026-07-17T00:30:00.000Z');
       await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
         'position',
         'static',
@@ -50,8 +48,9 @@ test.describe('@smoke @regression', () => {
         const item = element.closest<HTMLElement>('.message-card-item');
         if (item) item.style.width = '330px';
       });
-      await expect(timestamp).toContainText(expected[1]);
-      await expect(card.locator('[title="Час отримання повідомлення"]')).toBeVisible();
+      await expect(timestamp).toContainText('14.07.2026, 08:45');
+      await expect(receiptTime).toBeVisible();
+      await expect(receiptTime).toHaveAttribute('datetime', '2026-07-17T00:30:00.000Z');
       await expect(card.locator('[data-message-card-timestamp-footer="true"]')).toHaveCSS(
         'position',
         'static',
