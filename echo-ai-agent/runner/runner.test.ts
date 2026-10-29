@@ -1674,7 +1674,7 @@ test('#3064 attachment tools reject arbitrary routes and malformed selectors', a
   assert.deepEqual(attachmentRequest('attachmentSearch', { query: 'позиції', limit: 5 }), { query: 'позиції', limit: 5 });
 });
 
-test("#3913 retains redacted provider failures after HTTP 200 SSE", async () => {
+test("#3913 retains allowlisted provider failures after HTTP 200 SSE", async () => {
   const { completeSimple } = await import("@earendil-works/pi-ai/compat");
   const engine = {
     id: "fixture",
@@ -1742,9 +1742,11 @@ test("#3913 retains redacted provider failures after HTTP 200 SSE", async () => 
   }
 });
 
-test("#3913 bounds technical errors and removes embedded credentials and payloads", () => {
+test("#3913 persists only allowlisted diagnostics even for unlabelled provider payload excerpts", () => {
   for (const secret of [
     "Bearer confidential",
+    "messages[0].content=confidential",
+    "Unlabelled confidential excerpt from user input",
     "api_key=confidential",
     "cookie=confidential",
     "sk-confidential",

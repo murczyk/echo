@@ -232,8 +232,9 @@ or invalid. Different models have independent cooldowns. Waiting consumes the
 existing request deadline; cancellation does not clear the shared cooldown.
 The runner retains its two retries and never switches models automatically.
 
-Admin technical errors retain a bounded, redacted provider reason, including
-failures delivered inside HTTP-200 event streams. Gateway failure logs include
+Admin technical errors retain an allowlisted provider category and known error code, including
+failures delivered inside HTTP-200 event streams. Arbitrary provider error text
+is never persisted because it may contain submitted input. Gateway failure logs include
 the Echo request ID; HTTP 200 alone does not establish successful generation.
 Provider availability is external: retries can still exhaust the request budget.
 

@@ -76,7 +76,6 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const PROVIDER_FAILURE_MAX_CHARACTERS = 1000;
 const HARNESS_RELEASE = "2026.10.29.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
@@ -3064,25 +3063,20 @@ function providerFailureKind(value: string): string {
 function providerFailureDetail(value: unknown): string {
   if (typeof value !== "string" || !value.trim())
     return "unknown provider error";
-  const detail = value
-    .replace(
-      /(["']?(?:prompt|input|messages|content|request_body)["']?\s*[:=]).*/gi,
-      "$1[REDACTED]",
-    )
-    .replace(/\bBearer\s+[^\s"']+/gi, "Bearer [REDACTED]")
-    .replace(
-      /(bootstrap_?token|authorization|cookie|api[_-]?key|password|token)(["']?\s*[:=]\s*["']?)[^\r\n]+/gi,
-      "$1$2[REDACTED]",
-    )
-    .replace(/\bsk-[A-Za-z0-9_-]+/g, "[REDACTED]")
-    .replace(
-      /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g,
-      "[REDACTED]",
-    )
-    .replace(/https?:\/\/[^\s"']+/g, "[provider URL]")
-    .split(/[\r\n]/, 1)[0]
-    .slice(0, PROVIDER_FAILURE_MAX_CHARACTERS);
-  return `${providerFailureKind(value)}: ${detail}`;
+  const kind = providerFailureKind(value);
+  const code = value
+    .match(
+      /\b(rate_limit_exceeded|server_error|invalid_request_error|authentication_error|permission_denied|insufficient_quota|context_length_exceeded)\b/i,
+    )?.[0]
+    .toLowerCase();
+  const descriptions: Record<string, string> = {
+    rate_limit: "provider rate limit or model deployment cooldown",
+    authorization: "provider authorization rejected",
+    interrupted_stream:
+      "stream interrupted or ended before a terminal response event",
+    provider_error: "unclassified provider failure",
+  };
+  return `${kind}: ${descriptions[kind]}${code ? `; code=${code}` : ""}`;
 }
 
 export function validateFinalAssistantMessage(messages: unknown[]): void {
