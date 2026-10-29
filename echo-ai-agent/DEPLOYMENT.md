@@ -224,7 +224,7 @@ Keep production prompts, message bodies, credentials, and raw evaluation output
 outside Git. A copied database restore discards AI conversation/runtime records:
 export replay inputs first and retain the local agent profile during restore.
 
-## Government provider cooldowns (release 2026.10.29.1)
+## Government provider cooldowns (release 2026.10.29.2)
 
 After HTTP 429, government inference calls sharing a model wait for the longest
 active `Retry-After` (seconds or HTTP date), defaulting to 60 seconds when absent
@@ -238,7 +238,7 @@ the Echo request ID; HTTP 200 alone does not establish successful generation.
 Provider availability is external: retries can still exhaust the request budget.
 
 Deploy the matching Echo build before upgrading the selected namespace with
-`just ai-control-panel upgrade --host <approved-host> --release 2026.10.29.1`.
+`just ai-control-panel upgrade --host <approved-host> --release 2026.10.29.2`.
 Run its `--dry-run` first, and wait for queued/running requests to finish.
 Deployments, namespace upgrades, and live inference tests each require explicit
 approval naming the operation and environment, including staging.
