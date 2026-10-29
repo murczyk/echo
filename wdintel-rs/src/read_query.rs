@@ -46,7 +46,6 @@ impl Default for SearchTimeouts {
 
 tokio::task_local! {
     static READ_CONTEXT: ReadContext;
-    static STATEMENT_BUDGET_MS: u64;
 }
 
 static SOURCE_READS: once_cell::sync::Lazy<Arc<Semaphore>> =
@@ -112,24 +111,6 @@ pub(crate) fn queue_timeout_ms() -> u64 {
     } else {
         ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS
     }
-}
-
-pub(crate) async fn with_statement_budget<T>(
-    timeout_ms: u64,
-    future: impl Future<Output = T>,
-) -> T {
-    STATEMENT_BUDGET_MS.scope(timeout_ms, future).await
-}
-
-pub(crate) async fn probe(
-    db: &DatabaseConnection,
-    statement: Statement,
-    timeout_ms: u64,
-) -> anyhow::Result<Option<Vec<QueryResult>>> {
-    let transaction = begin(db).await.c(h!())?;
-    let rows = transaction.probe(statement, timeout_ms).await.c(h!())?;
-    transaction.commit().await.c(h!())?;
-    Ok(rows)
 }
 
 pub(crate) fn set_search(search: &Option<String>) {
@@ -488,47 +469,6 @@ async fn read_lease(
 }
 
 impl ReadTransaction {
-    pub(crate) async fn probe(
-        &self,
-        statement: Statement,
-        timeout_ms: u64,
-    ) -> anyhow::Result<Option<Vec<QueryResult>>> {
-        let mut lease = self.lease.lock().await;
-        let connection = &mut **lease.connection.as_mut().c(h!())?;
-        sqlx::query(sqlx::AssertSqlSafe("SAVEPOINT echo_search_probe"))
-            .execute(&mut *connection)
-            .await
-            .map_err(query_error)
-            .c(h!())?;
-        let started = Instant::now();
-        let result = read_rows_inner(
-            connection,
-            statement,
-            false,
-            true,
-            Some(timeout_ms),
-        )
-        .await;
-        sqlx::query(sqlx::AssertSqlSafe(
-            "ROLLBACK TO SAVEPOINT echo_search_probe",
-        ))
-        .execute(&mut *connection)
-        .await
-        .map_err(query_error)
-        .c(h!())?;
-        sqlx::query(sqlx::AssertSqlSafe("RELEASE SAVEPOINT echo_search_probe"))
-            .execute(connection)
-            .await
-            .map_err(query_error)
-            .c(h!())?;
-        log::info!(target: "analytics_route", "request_id={} stage=source_probe outcome={} elapsed_ms={} budget_ms={timeout_ms}", request_id(), if result.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
-        match result {
-            Ok(rows) => Ok(Some(rows)),
-            Err(error) if is_statement_timeout(&error) => Ok(None),
-            Err(error) => Err(error).c(h!()),
-        }
-    }
-
     pub(crate) async fn commit(self) -> anyhow::Result<()> {
         let mut lease = self.lease.into_inner();
         sqlx::query(sqlx::AssertSqlSafe("COMMIT"))
@@ -620,7 +560,7 @@ async fn read_rows(
 ) -> anyhow::Result<Vec<QueryResult>> {
     let started = Instant::now();
     let result =
-        read_rows_inner(connection, statement, one, in_transaction, None).await;
+        read_rows_inner(connection, statement, one, in_transaction).await;
     log::info!(target: "analytics_route", "request_id={} stage=source_sql outcome={} elapsed_ms={}", request_id(), if result.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
     result
 }
@@ -630,18 +570,9 @@ async fn read_rows_inner(
     statement: Statement,
     one: bool,
     in_transaction: bool,
-    timeout_ms: Option<u64>,
 ) -> anyhow::Result<Vec<QueryResult>> {
     let scoped = statement.sql.contains(ANALYSIS_SOURCE_SEARCH_SQL_HINT);
-    let requested_timeout = timeout_ms
-        .or_else(|| STATEMENT_BUDGET_MS.try_with(|timeout| *timeout).ok());
-    let search_timeout =
-        match (requested_timeout, search_statement_timeout_ms()) {
-            (Some(requested), Some(configured)) => {
-                Some(std::cmp::min(requested, configured))
-            }
-            (requested, configured) => requested.or(configured),
-        };
+    let search_timeout = search_statement_timeout_ms();
     let local_settings = scoped || search_timeout.is_some();
     if local_settings && !in_transaction {
         sqlx::query(sqlx::AssertSqlSafe("BEGIN READ ONLY"))
@@ -691,16 +622,6 @@ async fn read_rows_inner(
             .c(h!())?;
     }
     Ok(rows.into_iter().map(Into::into).collect())
-}
-
-fn is_statement_timeout(error: &anyhow::Error) -> bool {
-    error.chain().any(|error| {
-        let Some(DbErr::Query(RuntimeErr::SqlxError(error))) = error.downcast_ref::<DbErr>() else {
-            return false;
-        };
-        matches!(error.as_ref(), sqlx::Error::Database(error)
-            if error.code().as_deref() == Some("57014") && error.message().contains("statement timeout"))
-    })
 }
 
 impl ReadConnection<'_> {

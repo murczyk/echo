@@ -1758,12 +1758,9 @@ pub const ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT: u32 = 16;
 pub const ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT: usize = 8;
 pub const ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS: u64 = 250;
 pub const ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS: i64 = 7;
-pub const ANALYSIS_SOURCE_SEARCH_WINDOW_MONTHS: u32 = 3;
-pub const ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 90_000;
-pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT: u64 = 600_000;
+pub const ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 30_000;
+pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT: u64 = 60_000;
 pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX: u64 = 600_000;
-pub const ANALYSIS_SEARCH_INDEXED_PAGE_PROBE_TIMEOUT_MS: u64 = 250;
-pub const ANALYSIS_SEARCH_ORDERED_PAGE_PROBE_TIMEOUT_MS: u64 = 1_000;
 pub const ANALYSIS_SOURCE_SEARCH_SQL_HINT: &str =
     "/* echo_scoped_source_search */";
 pub const ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS: u64 = 10_000;
@@ -1773,9 +1770,6 @@ pub const ANALYSIS_SOURCE_COUNT_MAX_CONCURRENT: usize = 4;
 pub const ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN: usize = 2;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT: usize = 4;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN: usize = 2;
-pub const ANALYSIS_SOURCE_COUNT_PROBE_TIMEOUT_MS: u64 = 8_000;
-pub const ANALYSIS_SOURCE_COUNT_WINDOW_TIMEOUT_MS: u64 = 8_000;
-pub const ANALYSIS_SOURCE_COUNT_WINDOW_DAYS: i64 = 1;
 pub const ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYSIS_SOURCE_READ_QUEUE_ERROR: &str =
     "analysis source read admission exhausted";
@@ -2103,7 +2097,9 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
                 .statement_timeout_ms
                 .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT),
             search_statement_timeout_ms: config.search_statement_timeout_ms
-                .unwrap_or(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT),
+                .unwrap_or_else(|| config.statement_timeout_ms
+                    .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT)
+                    .min(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT)),
             search_http_timeout_ms: config.search_http_timeout_ms
                 .unwrap_or(ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT),
             report_worker_statement_timeout_ms: config
@@ -2692,6 +2688,25 @@ pg_dbname = "echo_analytics_gateway"
             POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT
         );
         assert_eq!(
+            postgres_runtime.search_statement_timeout_ms,
+            postgres_runtime.statement_timeout_ms
+        );
+        assert_eq!(postgres_runtime.search_http_timeout_ms, 60_000);
+        for (ordinary, expected) in [(5_000, 5_000), (120_000, 30_000)] {
+            let configured: TestPostgresRuntimeSection =
+                toml::from_str(&format!(
+                    "[postgres_runtime]\nstatement_timeout_ms = {ordinary}\n"
+                ))
+                .unwrap();
+            assert_eq!(
+                configured
+                    .postgres_runtime
+                    .unwrap()
+                    .search_statement_timeout_ms,
+                expected
+            );
+        }
+        assert_eq!(
             postgres_runtime.report_worker_statement_timeout_ms,
             POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT
         );
@@ -2730,7 +2745,7 @@ search_http_timeout_ms = 600001
 "#,
             r#"
 [postgres_runtime]
-search_http_timeout_ms = 90000
+search_http_timeout_ms = 30000
 "#,
         ] {
             let error = toml::from_str::<TestPostgresRuntimeSection>(input)

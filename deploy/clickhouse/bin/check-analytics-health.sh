@@ -142,6 +142,7 @@ source_lsn=$(source_psql -Atq -v ON_ERROR_STOP=1 \
 
 deadline=$((SECONDS + probe_timeout))
 confirmed_flush_lsn=
+probe_error_detail=
 while ((SECONDS < deadline)); do
   slot_state=$(source_psql -Atq -F '|' -v ON_ERROR_STOP=1 \
     -v slot="$slot_name" \
@@ -156,6 +157,7 @@ SQL
   [[ "$wal_status" != lost && -n "$wal_status" ]] \
     || fail_health "replication slot is missing or lost" \
       "$source_lsn" "$confirmed_flush_lsn"
+  probe_error_detail=
   destination_visible=$(gateway_psql -Atq -v ON_ERROR_STOP=1 \
     -v nonce="$nonce" \
     -v source_updated_at="$source_updated_at" <<'SQL' 2>"$health_error_file"
@@ -169,8 +171,14 @@ WHERE singleton
 SQL
   ) || {
     report_transient_health_error
-    fail_health "could not read replicated analytics heartbeat" \
-      "$source_lsn" "$confirmed_flush_lsn"
+    if grep -Eiq \
+      'User memory limit exceeded|Memory limit \(for user\) exceeded|Too many simultaneous queries' \
+      "$health_error_file"; then
+      probe_error_detail="analytics heartbeat read was rejected by gateway resource limits"
+    else
+      fail_health "could not read replicated analytics heartbeat" \
+        "$source_lsn" "$confirmed_flush_lsn"
+    fi
   }
   if [[ "$destination_visible" == t ]]; then
     if ! "$SCRIPT_DIR/reconcile-if-needed.sh" --check; then
@@ -185,7 +193,7 @@ SQL
   sleep 2
 done
 
-detail="source heartbeat was not visible through ClickHouse within ${probe_timeout}s"
+detail=${probe_error_detail:-"source heartbeat was not visible through ClickHouse within ${probe_timeout}s"}
 # Preserve the last successful check time so each consumer's configured
 # freshness budget, rather than the shorter probe timeout, decides when to
 # reject analytics reads.

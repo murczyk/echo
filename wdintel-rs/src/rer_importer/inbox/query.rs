@@ -863,7 +863,6 @@ async fn build_unit_filtered_inbox_digest_query(
     created_at_lower_bound: Option<NaiveDateTime>,
     created_at_upper_bound: Option<NaiveDateTime>,
     unit_lookup_strategy: InboxUnitLookupStrategy,
-    window: Option<crate::rer_importer::search_windows::SearchWindow>,
 ) -> Result<String, AppError> {
     let purpose = if inbox_count_uses_indexed_query(req) {
         InboxQueryPurpose::IndexedDigest
@@ -872,8 +871,7 @@ async fn build_unit_filtered_inbox_digest_query(
     };
     if inbox_period_unit_filters_supported(req) {
         if let Some((dt_since, dt_till)) = inbox_unit_filter_period(req)? {
-            let mut candidate_req =
-                inbox_request_for_window(req, window).c(h!())?;
+            let mut candidate_req = req.clone();
             candidate_req.selected_units = None;
             candidate_req.denied_units = None;
             if created_at_lower_bound.is_some() {
@@ -901,16 +899,13 @@ async fn build_unit_filtered_inbox_digest_query(
                 candidates,
                 created_at_lower_bound,
                 created_at_upper_bound,
-            )
-            .apply_if(window, |query, window| {
-                inbox_window_filter(req, query, window)
-            });
+            );
             return build_period_unit_filtered_inbox_digest(
                 req, candidates, dt_since, dt_till,
             );
         }
     }
-    let mut candidate_req = inbox_request_for_window(req, window).c(h!())?;
+    let mut candidate_req = req.clone();
     candidate_req.selected_units = None;
     candidate_req.denied_units = None;
     candidate_req.selected_unit_ids = None;
@@ -943,9 +938,6 @@ async fn build_unit_filtered_inbox_digest_query(
         created_at_lower_bound,
         created_at_upper_bound,
     )
-    .apply_if(window, |query, window| {
-        inbox_window_filter(req, query, window)
-    })
     .select_only()
     .column_as(Expr::cust("COUNT(*)"), "count")
     .column_as(
@@ -953,49 +945,6 @@ async fn build_unit_filtered_inbox_digest_query(
         "first_element_ts",
     );
     Ok(render_inbox_digest_query(query))
-}
-
-fn inbox_request_for_window(
-    req: &InboxMessagesReq,
-    window: Option<crate::rer_importer::search_windows::SearchWindow>,
-) -> anyhow::Result<InboxMessagesReq> {
-    let mut req = req.clone();
-    if let Some(window) = window {
-        req.since_date_inclusive_ms =
-            Some(window.since.and_utc().timestamp_millis());
-        let till = window.till.and_utc().timestamp_millis();
-        req.till_date_inclusive_ms =
-            Some(if dt_from_millis(till).c(h!())? < window.till {
-                till.checked_add(1).c(h!())?
-            } else {
-                till
-            });
-    }
-    Ok(req)
-}
-
-pub(super) async fn build_windowed_inbox_digest_query(
-    login: &uuid::Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    window: crate::rer_importer::search_windows::SearchWindow,
-    correlated: bool,
-) -> Result<String, AppError> {
-    Ok(build_inbox_digest_query_with_created_at_bounds(
-        login,
-        env,
-        req,
-        None,
-        None,
-        if correlated {
-            InboxUnitLookupStrategy::Correlated
-        } else {
-            InboxUnitLookupStrategy::Default
-        },
-        Some(window),
-    )
-    .await
-    .c(h!())?)
 }
 
 fn apply_inbox_created_at_bounds(
@@ -1037,7 +986,6 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     created_at_lower_bound: Option<NaiveDateTime>,
     created_at_upper_bound: Option<NaiveDateTime>,
     unit_lookup_strategy: InboxUnitLookupStrategy,
-    window: Option<crate::rer_importer::search_windows::SearchWindow>,
 ) -> Result<String, AppError> {
     if inbox_count_has_unit_filter(req) {
         return Ok(build_unit_filtered_inbox_digest_query(
@@ -1047,7 +995,6 @@ async fn build_inbox_digest_query_with_created_at_bounds(
             created_at_lower_bound,
             created_at_upper_bound,
             unit_lookup_strategy,
-            window,
         )
         .await
         .context(h!())?);
@@ -1057,7 +1004,7 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     } else {
         InboxQueryPurpose::Digest
     };
-    let mut candidate_req = inbox_request_for_window(req, window).c(h!())?;
+    let mut candidate_req = req.clone();
     if created_at_lower_bound.is_some() {
         candidate_req.search = None;
     }
@@ -1080,9 +1027,6 @@ async fn build_inbox_digest_query_with_created_at_bounds(
         created_at_lower_bound,
         created_at_upper_bound,
     )
-    .apply_if(window, |query, window| {
-        inbox_window_filter(req, query, window)
-    })
     .select_only()
     .column_as(Expr::cust("COUNT(*)"), "count")
     .column_as(
@@ -1105,7 +1049,6 @@ pub(crate) async fn build_inbox_digest_query(
         None,
         None,
         InboxUnitLookupStrategy::Default,
-        None,
     )
     .await
     .context(h!())?)
@@ -1123,7 +1066,6 @@ pub(crate) async fn build_correlated_inbox_digest_query(
         None,
         None,
         InboxUnitLookupStrategy::Correlated,
-        None,
     )
     .await
     .context(h!())?)
@@ -1142,7 +1084,6 @@ pub(crate) async fn build_postgres_fresh_tail_inbox_digest_query(
         Some(created_at_lower_bound),
         None,
         InboxUnitLookupStrategy::Correlated,
-        None,
     )
     .await
     .context(h!())?)
@@ -1870,16 +1811,6 @@ async fn build_analytics_filtered_inbox_query_with_filters(
         req.units_exact_match_only.unwrap_or(false),
         &req.selected_unit_ids,
     );
-    let query = if !resolved_units.selected.present {
-        query.apply_if(
-            req.selected_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
-            |query, ids| {
-                query.filter(analytics_message_has_linked_unit_ids(ids, &scope))
-            },
-        )
-    } else {
-        query
-    };
     let query =
         apply_resolved_analytics_aor_filter(query, resolved_aors, &scope);
     Ok((query, has_unit_filters))
@@ -2482,8 +2413,8 @@ where
     finish_inbox_query(dbx, login, req, q, true).await
 }
 
-pub(crate) async fn load_postgres_inbox_page_ids(
-    dbx: &crate::read_query::ReadTransaction,
+pub(crate) async fn load_postgres_inbox_page_ids<C: ConnectionTrait>(
+    dbx: &C,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
@@ -2508,183 +2439,7 @@ pub(crate) async fn load_postgres_inbox_page_ids(
     .await
     .c(h!())?
     .limit(INBOX_MESSAGES_PAGE_LIMIT as u64);
-    if let Some(windows) = inbox_search_windows(req).c(h!())? {
-        if let Some(rows) = dbx
-            .probe(
-                query.build(DbBackend::Postgres),
-                crate::config::ANALYSIS_SEARCH_INDEXED_PAGE_PROBE_TIMEOUT_MS,
-            )
-            .await
-            .c(h!())?
-        {
-            return rows
-                .into_iter()
-                .map(|row| row.try_get("", "id").c(h!()))
-                .collect();
-        }
-        return load_windowed_inbox_page_ids(
-            dbx,
-            login,
-            env,
-            req,
-            internal_lower_bound,
-            query,
-            windows,
-        )
-        .await
-        .c(h!());
-    }
     query.into_tuple::<i64>().all(dbx).await.c(h!())
-}
-
-pub(super) fn inbox_search_windows(
-    req: &InboxMessagesReq,
-) -> anyhow::Result<Option<crate::rer_importer::search_windows::SearchWindows>>
-{
-    let (Some(since), Some(till)) =
-        (req.since_date_inclusive_ms, req.till_date_inclusive_ms)
-    else {
-        return Ok(None);
-    };
-    let since = dt_from_millis(since).c(h!())?;
-    let till = dt_from_millis(till)
-        .c(h!())?
-        .checked_add_signed(Duration::microseconds(1))
-        .c(h!())?;
-    let descending = req.load_latest == Some(true)
-        || req.newest_first == Some(true)
-        || req.before_id_noninclusive.is_some();
-    Ok(
-        crate::rer_importer::search_windows::SearchWindows::for_search(
-            &req.search,
-            since,
-            till,
-            descending,
-        ),
-    )
-}
-
-fn inbox_window_filter(
-    req: &InboxMessagesReq,
-    query: Select<signal_message::Entity>,
-    window: crate::rer_importer::search_windows::SearchWindow,
-) -> Select<signal_message::Entity> {
-    let sort = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
-    let column = match sort {
-        InboxMessagesSortBy::IMSDatetime => {
-            sigint_inbox_item::Column::Datetime.into_simple_expr()
-        }
-        InboxMessagesSortBy::IMSTimestamp => {
-            signal_message::Column::Timestamp.into_simple_expr()
-        }
-        InboxMessagesSortBy::IMSCreatedAt => signal_message_created_at_expr(),
-    };
-    query
-        .filter(column.clone().gte(window.since))
-        .filter(column.lt(window.till))
-}
-
-async fn load_windowed_inbox_page_ids(
-    dbx: &crate::read_query::ReadTransaction,
-    login: &uuid::Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    internal_lower_bound: Option<NaiveDateTime>,
-    query: Select<signal_message::Entity>,
-    windows: crate::rer_importer::search_windows::SearchWindows,
-) -> anyhow::Result<Vec<i64>> {
-    let ordered = build_filtered_inbox_query_with_scope(
-        dbx,
-        login,
-        env,
-        req,
-        None,
-        internal_lower_bound,
-        InboxQueryPurpose::Hydration,
-        InboxUnitLookupStrategy::Correlated,
-    )
-    .await
-    .c(h!())?
-    .select_only()
-    .column(signal_message::Column::Id)
-    .filter(
-        Expr::col((signal_message::Entity, signal_message::Column::Id))
-            .equals((Alias::new("ordered_source"), Alias::new("id"))),
-    )
-    .offset(0);
-    let mut ids = Vec::new();
-    for window in windows {
-        let remaining = INBOX_MESSAGES_PAGE_LIMIT - ids.len();
-        let statement =
-            build_ordered_window_page(req, ordered.clone(), window, remaining);
-        let rows = match dbx
-            .probe(
-                statement,
-                crate::config::ANALYSIS_SEARCH_ORDERED_PAGE_PROBE_TIMEOUT_MS,
-            )
-            .await
-            .c(h!())?
-        {
-            Some(rows) => rows,
-            None => dbx
-                .query_all_raw(
-                    inbox_window_filter(req, query.clone(), window)
-                        .limit(remaining as u64)
-                        .build(DbBackend::Postgres),
-                )
-                .await
-                .c(h!())?,
-        };
-        for row in rows {
-            ids.push(row.try_get("", "id").c(h!())?);
-        }
-        if ids.len() == INBOX_MESSAGES_PAGE_LIMIT {
-            break;
-        }
-    }
-    Ok(ids)
-}
-
-fn build_ordered_window_page(
-    req: &InboxMessagesReq,
-    matching: Select<signal_message::Entity>,
-    window: crate::rer_importer::search_windows::SearchWindow,
-    limit: usize,
-) -> Statement {
-    let alias = Alias::new("ordered_source");
-    let sort = req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime);
-    let column = Alias::new(match sort {
-        InboxMessagesSortBy::IMSDatetime => "datetime",
-        InboxMessagesSortBy::IMSTimestamp => "timestamp",
-        InboxMessagesSortBy::IMSCreatedAt => "created_at",
-    });
-    let descending = req.load_latest == Some(true)
-        || req.newest_first == Some(true)
-        || req.before_id_noninclusive.is_some();
-    let order = if descending { Order::Desc } else { Order::Asc };
-    let mut query = Query::select();
-    query.column((alias.clone(), Alias::new("id")));
-    match sort {
-        InboxMessagesSortBy::IMSDatetime => {
-            query.from_as(sigint_inbox_item::Entity, alias.clone());
-        }
-        _ => {
-            query.from_as(signal_message::Entity, alias.clone());
-        }
-    }
-    query
-        .join_lateral(
-            JoinType::InnerJoin,
-            matching.into_query(),
-            Alias::new("ordered_match"),
-            Expr::value(true),
-        )
-        .and_where(Expr::col((alias.clone(), column.clone())).gte(window.since))
-        .and_where(Expr::col((alias.clone(), column.clone())).lt(window.till))
-        .order_by((alias.clone(), column), order.clone())
-        .order_by((alias, Alias::new("id")), order)
-        .limit(limit as u64);
-    DbBackend::Postgres.build(&query)
 }
 
 pub(crate) async fn build_inbox_page_details_query<C: ConnectionTrait>(
@@ -3589,37 +3344,9 @@ pub fn build_inbox_metadata_lateral_query() -> SelectStatement {
 mod tests {
     use super::*;
 
-    async fn window_reference_query(
-        db: &crate::read_query::ReadTransaction,
-        login: &uuid::Uuid,
-        env: &Env,
-        req: &InboxMessagesReq,
-    ) -> Select<signal_message::Entity> {
-        let query = build_filtered_inbox_query_with_scope(
-            db,
-            login,
-            env,
-            req,
-            None,
-            None,
-            InboxQueryPurpose::Candidates,
-            InboxUnitLookupStrategy::Default,
-        )
-        .await
-        .unwrap();
-        get_bl_ordering_select(
-            req,
-            query.select_only().column(signal_message::Column::Id),
-        )
-        .await
-        .unwrap()
-        .limit(INBOX_MESSAGES_PAGE_LIMIT as u64)
-    }
-
     #[tokio::test]
     #[serial_test::serial]
-    async fn source_window_pages_preserve_partial_empty_windows_and_cursors_3780(
-    ) {
+    async fn full_period_pages_preserved_sparse_results_and_cursors_3780() {
         use crate::functest::tests::*;
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap().id;
@@ -3632,6 +3359,7 @@ mod tests {
                 .unwrap()
         };
         let mut recent_ids = Vec::new();
+        let mut expected = Vec::new();
         for index in 0..32 {
             let datetime = date(if index < 9 { 8 } else { 5 }, 15)
                 + Duration::microseconds(index % 3);
@@ -3669,6 +3397,7 @@ mod tests {
             )
             .await
             .unwrap();
+            expected.push((datetime, message.id));
             if index < 9 {
                 recent_ids.push(message.id);
             }
@@ -3702,6 +3431,14 @@ mod tests {
                     .await
                     .unwrap();
             }
+            if empty_recent {
+                for (datetime, id) in &mut expected {
+                    if recent_ids.contains(id) {
+                        *datetime = date(5, 15);
+                    }
+                }
+            }
+            expected.sort_unstable();
             for sort in [
                 InboxMessagesSortBy::IMSDatetime,
                 InboxMessagesSortBy::IMSTimestamp,
@@ -3721,60 +3458,41 @@ mod tests {
                         newest_first: Some(newest),
                         ..Default::default()
                     };
-                    let mut digest = (0, None);
-                    for window in inbox_search_windows(&req).unwrap().unwrap() {
-                        let sql = crate::attachments::search::in_source_count_window_async(
-                            build_windowed_inbox_digest_query(&login, &env, &req, window, false),
-                        ).await.unwrap();
-                        let next = super::super::query_inbox_digest(
-                            env.dbx.clone(),
-                            sql,
-                        )
-                        .await
-                        .unwrap();
-                        digest =
-                            super::super::merge_inbox_digests(digest, next)
-                                .unwrap();
-                    }
                     let sql = build_inbox_digest_query(&login, &env, &req)
                         .await
                         .unwrap();
-                    assert_eq!(
-                        digest,
+                    let digest =
                         super::super::query_inbox_digest(env.dbx.clone(), sql)
                             .await
-                            .unwrap()
-                    );
+                            .unwrap();
                     assert_eq!(digest.0, 32);
                     let transaction =
                         crate::read_query::begin(&env.dbx).await.unwrap();
                     let mut seen = BTreeSet::new();
                     for page in 0..2 {
-                        let indexed = window_reference_query(
-                            &transaction,
-                            &login,
-                            &env,
-                            &req,
-                        )
-                        .await;
-                        let expected = indexed
-                            .clone()
-                            .into_tuple::<i64>()
-                            .all(&transaction)
-                            .await
-                            .unwrap();
-                        let ids = load_windowed_inbox_page_ids(
+                        let ordered: Vec<_> = if newest {
+                            expected.iter().rev().map(|(_, id)| *id).collect()
+                        } else {
+                            expected.iter().map(|(_, id)| *id).collect()
+                        };
+                        let page_expected: Vec<_> = ordered
+                            .into_iter()
+                            .skip(page * 20)
+                            .take(20)
+                            .collect();
+                        let ids = load_postgres_inbox_page_ids(
                             &transaction,
                             &login,
                             &env,
                             &req,
                             None,
-                            indexed,
-                            inbox_search_windows(&req).unwrap().unwrap(),
                         )
                         .await
                         .unwrap();
-                        assert_eq!(ids, expected, "{sort:?}, newest={newest}, empty={empty_recent}, page={page}");
+                        assert_eq!(
+                            ids, page_expected,
+                            "{sort:?}, newest={newest}, empty={empty_recent}, page={page}"
+                        );
                         assert_eq!(ids.len(), if page == 0 { 20 } else { 12 });
                         for id in &ids {
                             assert!(seen.insert(*id));

@@ -5,16 +5,6 @@ use sea_orm::{
     Value,
 };
 
-tokio::task_local! {
-    static SOURCE_COUNT_WINDOW: bool;
-}
-
-pub(crate) async fn in_source_count_window_async<T>(
-    future: impl std::future::Future<Output = T>,
-) -> T {
-    SOURCE_COUNT_WINDOW.scope(true, future).await
-}
-
 fn bind(values: &mut Vec<Value>, value: impl Into<Value>) -> String {
     values.push(value.into());
     format!("${}", values.len())
@@ -627,21 +617,11 @@ pub(crate) fn use_source_search_scope(
     let (Some(since), Some(till)) = (scope.since, scope.till) else {
         return Ok(false);
     };
-    if search_mode.unwrap_or_default() != AnalysisSearchMode::Fuzzy {
-        return Ok(SOURCE_COUNT_WINDOW
-            .try_with(|enabled| *enabled)
-            .unwrap_or(false)
-            && till - since
-                <= chrono::Duration::days(
-                    i64::from(
-                        crate::config::ANALYSIS_SOURCE_SEARCH_WINDOW_MONTHS,
-                    ) * 31,
-                ));
-    }
-    if till - since
-        > chrono::Duration::days(
-            crate::config::ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS,
-        )
+    if search_mode.unwrap_or_default() != AnalysisSearchMode::Fuzzy
+        || till - since
+            > chrono::Duration::days(
+                crate::config::ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS,
+            )
     {
         return Ok(false);
     }
@@ -661,12 +641,7 @@ pub(crate) fn scoped_analysis_message_filter(
     scope: &super::analytics::SearchCoverageScope<'_>,
 ) -> anyhow::Result<SimpleExpr> {
     let mut values = Vec::new();
-    let literal = search_mode.unwrap_or_default() != AnalysisSearchMode::Fuzzy;
-    let scope_sql = if literal {
-        source_literal_date_scope(scope, &mut values)
-    } else {
-        source_search_scope(scope, &mut values)
-    };
+    let scope_sql = source_search_scope(scope, &mut values);
     let predicates = search_predicates(
         query,
         "signal_message.id",
@@ -690,39 +665,10 @@ pub(crate) fn scoped_analysis_message_filter(
     } else {
         predicates.exclusions.join(" and ")
     };
-    let inbox_join = if literal {
-        "left join lateral (select id,body_noheader from sigint_inbox_item where id=signal_message.id offset 0) sigint_inbox_item on true"
-    } else {
-        "left join sigint_inbox_item on sigint_inbox_item.id=signal_message.id"
-    };
     Ok(Expr::cust_with_values(
-        format!("{} signal_message.id in (with source_search_scope as materialized ({scope_sql}), source_search_matches as materialized (select signal_message.id from source_search_scope signal_message {inbox_join} where {matches}) select signal_message.id from source_search_matches signal_message {inbox_join} where {exclusions})", crate::config::ANALYSIS_SOURCE_SEARCH_SQL_HINT),
+        format!("{} signal_message.id in (with source_search_scope as materialized ({scope_sql}), source_search_matches as materialized (select signal_message.id from source_search_scope signal_message left join sigint_inbox_item on sigint_inbox_item.id=signal_message.id where {matches}) select signal_message.id from source_search_matches signal_message left join sigint_inbox_item on sigint_inbox_item.id=signal_message.id where {exclusions})", crate::config::ANALYSIS_SOURCE_SEARCH_SQL_HINT),
         values,
     ))
-}
-
-fn source_literal_date_scope(
-    scope: &super::analytics::SearchCoverageScope<'_>,
-    values: &mut Vec<Value>,
-) -> String {
-    use super::analytics::SearchTimeBasis;
-    let (table, column) = match scope.time_basis {
-        SearchTimeBasis::Interception => ("sigint_inbox_item", "datetime"),
-        SearchTimeBasis::Timestamp => ("signal_message", "timestamp"),
-        SearchTimeBasis::Creation => ("signal_message", "created_at"),
-    };
-    let mut filters = Vec::new();
-    if let Some(since) = scope.since {
-        filters.push(format!("{column}>={}", bind(values, since)));
-    }
-    if let Some(till) = scope.till {
-        filters.push(format!(
-            "{column}{}{}",
-            if scope.till_inclusive { "<=" } else { "<" },
-            bind(values, till)
-        ));
-    }
-    format!("select id from {table} where {}", filters.join(" and "))
 }
 
 fn source_search_scope(
