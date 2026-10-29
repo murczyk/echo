@@ -3192,11 +3192,14 @@ async function completeLimitedResearch(options: {
         .slice(-4)
         .map(({ role, content }) => ({ role, content })),
       request: payload.prompt,
+      ...(options.research ? { maps: mapRegistry.list().map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence: options.research ? compactFlashEvidence(evidence, options.research.compactEvidence()) : evidence,
     checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
     maxTokens: options.research ? Math.min(FLASH_SYNTHESIS_TOKENS, payload.maxTokens) : payload.maxTokens,
     signal,
+    purpose: options.research && !payload.executionPolicy ? "research" : "synthesis",
+    allowUserEvidence: Boolean(options.research),
     prepareContext: options.research ? (context) => options.research!.beforeProvider("synthesis", context, budget, options.toolRemaining ?? 0, payload.contextWindow, Math.min(FLASH_SYNTHESIS_TOKENS, payload.maxTokens)) : undefined,
   }).catch((error) => {
     if (error instanceof SynthesisAuthorizationError || error instanceof SynthesisContentFilterError) throw error;
@@ -3208,8 +3211,9 @@ async function completeLimitedResearch(options: {
     payload.history.flatMap((entry) => entry.citations ?? []),
   );
   const text = options.research
-    ? validatedFlashAnswer(candidate, { citations: availableCitations, fileCitations: [...deliveredFiles.values()] }) ?? options.research.fallback()
+    ? validatedFlashAnswer(candidate, { citations: availableCitations, fileCitations: [...deliveredFiles.values()], links: mapRegistry.list().map(({ id }) => `echo-map:${id}`) }) ?? options.research.fallback()
     : chooseBudgetAnswer(candidate, evidence, availableCitations, deliveredFiles.keys());
+  if (options.research) publishReferencedDrafts(text, mapRegistry, emit);
   const maps = mapRegistry.list();
   const finalize = (text: string) =>
     stripUnknownFileCitations(
@@ -3372,7 +3376,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       for (let offset = 0; offset < payload.workMemory.fileCitations.length; offset += 100) emit({ type: "file_citations", citations: payload.workMemory.fileCitations.slice(offset, offset + 100) });
     }
     const research = payload.modelName === FLASH_ENGINE ? new FlashResearch(
-      () => ({ citations: [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])], fileCitations: [...deliveredFiles.values()] }),
+      () => ({ citations: [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])], fileCitations: [...deliveredFiles.values()], links: mapRegistry.list().map(({ id }) => `echo-map:${id}`) }),
       journal,
     ) : undefined;
     const tools = [

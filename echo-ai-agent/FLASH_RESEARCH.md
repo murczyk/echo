@@ -3,7 +3,8 @@
 Only `glm-5.3-flash-uncensored` uses this workflow. The selected provider and total
 Fast/Balanced/Deep deadlines remain 120/300/1800 seconds. Flash reserves
 60/120/240 seconds of those deadlines for synthesis. Without presets, its existing
-ten-minute deadline is retained with a two-minute synthesis reserve.
+ten-minute deadline is retained with a two-minute synthesis reserve; final
+generation keeps the legacy gateway's authorized `research` purpose.
 
 Before retrieval, Flash saves a short checklist with `update_research`. Broad
 summaries start with a sample, then use focused searches chosen from the request
@@ -31,7 +32,9 @@ configured output cap. Intermediate assistant text and private-tool events never
 enter the streamed answer; public progress and source activity remain visible.
 An unfinished synthesis uses the latest completed draft only if its links still
 validate against the available citations. Without a validated draft, it returns a
-short inability notice. It never substitutes raw source excerpts. Unread cursors,
+short inability notice. Answers grounded solely in user-provided text need no
+invented citation, and registered map links remain supported. It never
+substitutes raw source excerpts. Unread cursors,
 incomplete tasks or remaining gaps produce a brief coverage qualification.
 Authorization failures, content filters, cancellation and persistence failures
 retain their fail-closed behavior.

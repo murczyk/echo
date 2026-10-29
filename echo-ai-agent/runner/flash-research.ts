@@ -46,7 +46,7 @@ const RESEARCH_PARAMETERS = Type.Object(
     draft: Type.String({
       maxLength: 2000,
       description:
-        "Concise user-facing factual answer with exact inline source citations; empty before evidence exists. No reasoning or research narration.",
+        "Concise user-facing factual answer. Cite retrieved facts with exact inline source citations; user-provided facts need no invented citation. Empty before supporting evidence exists. No reasoning or research narration.",
     }),
     gaps: Type.Array(Type.String({ minLength: 1, maxLength: 160 }), {
       maxItems: 4,
@@ -56,7 +56,11 @@ const RESEARCH_PARAMETERS = Type.Object(
 );
 
 type ResearchUpdate = Static<typeof RESEARCH_PARAMETERS>;
-type Sources = { citations: MessageCitation[]; fileCitations: FileCitation[] };
+type Sources = {
+  citations: MessageCitation[];
+  fileCitations: FileCitation[];
+  links?: string[];
+};
 type Retrieval = {
   tool: string;
   query: unknown;
@@ -75,8 +79,12 @@ export function validatedFlashAnswer(
   const links = [...text.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)].map(
     (match) => match[1],
   );
-  if (!links.some((href) => allowed.has(href))) return undefined;
-  if (links.some((href) => !allowed.has(href))) return undefined;
+  if (allowed.size && !links.some((href) => allowed.has(href)))
+    return undefined;
+  if (
+    links.some((href) => !allowed.has(href) && !sources.links?.includes(href))
+  )
+    return undefined;
   // Reject bare or malformed source links as well as invented Markdown links.
   const withoutLinks = text.replace(/\[[^\]]*\]\([^\s)]+\)/g, "");
   if (
@@ -128,7 +136,7 @@ export class FlashResearch {
         const draft = validatedFlashAnswer(update.draft, this.sources());
         if (update.draft.trim() && !draft)
           throw new Error(
-            "Draft must use only exact available inline citations",
+            "Draft must use only available source citations and registered map links",
           );
         const saved = { ...update, draft: draft ?? this.draft ?? "" };
         const content = this.serialize(saved);
@@ -210,10 +218,10 @@ export class FlashResearch {
 
   hasGaps(): boolean {
     return (
-      !this.state ||
-      this.state.gaps.length > 0 ||
-      this.state.checklist.some((item) => item.status !== "done") ||
-      [...this.unread.values()].some(Boolean)
+      (this.state
+        ? this.state.gaps.length > 0 ||
+          this.state.checklist.some((item) => item.status !== "done")
+        : this.ledger.length > 0) || [...this.unread.values()].some(Boolean)
     );
   }
 

@@ -101,6 +101,8 @@ for (const scenario of [
   "plan-required",
   "refresh-required",
   "legacy",
+  "user-text",
+  "user-map",
 ]) {
   test(`#3572 Flash harness: ${scenario}`, async (t) => {
     const events: any[] = [];
@@ -125,7 +127,9 @@ for (const scenario of [
       name: "report_progress",
       args: { summary: "Reviewing botanical archive records." },
     });
-    if (scenario === "follow-up") {
+    if (["user-text", "user-map"].includes(scenario)) {
+      calls.length = 0;
+    } else if (scenario === "follow-up") {
       refresh();
     } else if (scenario === "pagination" || scenario === "refresh-required") {
       for (let page = 0; page < 10; page++) {
@@ -162,6 +166,7 @@ for (const scenario of [
           args: { summary: "Grouping verified archive records." },
         });
     }
+    let mapId = "";
     let researchCalls = 0;
     let synthesisCalls = 0;
     let checkpoints = 0;
@@ -233,6 +238,18 @@ for (const scenario of [
             page_limit: 20,
           });
         }
+        if (path === "/api/ai-agent/maps/prepare")
+          return Response.json({
+            records: JSON.parse(init.body).records.map((record: any) => ({
+              ...record,
+              originalX: record.x,
+              originalY: record.y,
+              platformType: "CAPDOC",
+              latitude: 50,
+              longitude: 30,
+              warnings: [],
+            })),
+          });
         assert.ok(path.endsWith("/chat/completions"));
         const body = JSON.parse(init.body);
         const purpose = new Headers(init.headers).get("x-echo-ai-purpose");
@@ -242,7 +259,22 @@ for (const scenario of [
           assert.equal(scenario, "checkpoint-failure");
           return stream("UNFINISHED_CHECKPOINT", undefined, "length");
         }
-        if (purpose === "synthesis") {
+        if (scenario === "legacy" && purpose !== "research")
+          return Response.json(
+            {
+              error: {
+                message:
+                  "403 Forbidden: legacy grant requires research purpose",
+              },
+            },
+            { status: 403 },
+          );
+        if (
+          purpose === "synthesis" ||
+          (scenario === "legacy" && !body.tools?.length)
+        ) {
+          if (scenario === "user-map")
+            assert.ok(JSON.stringify(body).includes(`echo-map:${mapId}`));
           synthesisCalls++;
           assert.equal(synthesisCalls, 1);
           assert.ok((body.max_tokens ?? body.max_completion_tokens) <= 2048);
@@ -268,7 +300,13 @@ for (const scenario of [
             return stream(
               `${draft} Invented [джерело](/rer-analysis-neo?m=missing)`,
             );
-          return stream(draft);
+          return stream(
+            scenario === "user-text"
+              ? "The botanical survey is ready."
+              : scenario === "user-map"
+                ? `[мапа](echo-map:${mapId})`
+                : draft,
+          );
         }
         assert.equal(purpose, "research");
         researchCalls++;
@@ -281,6 +319,36 @@ for (const scenario of [
           calls[0]?.name === "echo_inbox_messages"
         )
           clockOffset += 31_000;
+        if (scenario === "user-map") {
+          if (researchCalls === 1)
+            return stream("PRIVATE_RESEARCH_NARRATION", {
+              name: "echo_map_create",
+              args: { title: "Botanical sites", isMain: true },
+            });
+          if (researchCalls === 2) {
+            mapId = JSON.parse(
+              body.messages.findLast((message: any) => message.role === "tool")
+                .content,
+            ).id;
+            return stream("PRIVATE_RESEARCH_NARRATION", {
+              name: "echo_map_append",
+              args: {
+                id: mapId,
+                records: [
+                  {
+                    name: "Orchard",
+                    sidc: "",
+                    coordinateSystem: "latlon",
+                    x: "50",
+                    y: "30",
+                    comments: [],
+                    sources: [],
+                  },
+                ],
+              },
+            });
+          }
+        }
         const call = calls.shift();
         return stream("PRIVATE_RESEARCH_NARRATION", call);
       } catch (error) {
@@ -292,9 +360,13 @@ for (const scenario of [
       const payload = validatePayload(
         {
           prompt:
-            scenario === "pagination"
-              ? "Read every archive record and summarize them."
-              : "Summarize today's archive records.",
+            scenario === "user-text"
+              ? "Translate into English: Ботанічне дослідження готове."
+              : scenario === "user-map"
+                ? "Make a map of Orchard at latitude 50, longitude 30."
+                : scenario === "pagination"
+                  ? "Read every archive record and summarize them."
+                  : "Summarize today's archive records.",
           modelName: FLASH_ENGINE,
           providerTransport: "echo_gateway",
           providerApiKey: "fixture-capability",
@@ -321,6 +393,24 @@ for (const scenario of [
               : { citations: [], fileCitations: [] }),
           },
           skills: [
+            ...(scenario === "user-map"
+              ? [
+                  {
+                    method: "POST",
+                    path: "/api/ai-agent/maps/prepare",
+                    skill: "map_prepare",
+                    label: "Prepare map",
+                    requestKind: "mapRecords",
+                  },
+                  {
+                    method: "POST",
+                    path: "/api/ai-agent/maps/get",
+                    skill: "map_get",
+                    label: "Read map",
+                    requestKind: "mapDocument",
+                  },
+                ]
+              : []),
             {
               method: "POST",
               path: "/api/signal/inbox/messages",
@@ -363,7 +453,15 @@ for (const scenario of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
-    else assert.ok(answer.includes(citation));
+    else if (scenario === "user-text")
+      assert.equal(answer.trim(), "The botanical survey is ready.");
+    else if (scenario === "user-map") {
+      assert.ok(answer.includes(`](echo-map:${mapId})`));
+      assert.equal(
+        events.filter((event) => event.type === "map_artifact").length,
+        1,
+      );
+    } else assert.ok(answer.includes(citation));
     if (scenario === "selective" || scenario === "legacy") {
       assert.equal(queries.length, 2);
       assert.equal(queries[0].search, undefined);
@@ -398,7 +496,9 @@ for (const scenario of [
     const checkpointsSaved = saved.filter(
       (record) => record.kind === "checkpoint",
     );
-    assert.ok(checkpointsSaved.length);
+    if (["user-text", "user-map"].includes(scenario))
+      assert.equal(queries.length, 0);
+    else assert.ok(checkpointsSaved.length);
     if (scenario === "selective") {
       const latest = JSON.parse(checkpointsSaved.at(-1).content);
       assert.equal(latest.retrievals.length, 2);
