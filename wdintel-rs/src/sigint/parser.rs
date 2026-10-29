@@ -147,11 +147,9 @@ fn is_pre_datetime_context_line(
 }
 
 fn is_unit_name_header_line(line: &str) -> bool {
-    let mut remainder = line
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase();
+    let remainder = line.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut remainder =
+        crate::unit::apply_unit_name_fixes(remainder).to_lowercase();
     let units =
         crate::unit::parse_library_unit_typed_segments_any_order(&remainder);
     if units.is_empty() {
@@ -1265,8 +1263,17 @@ mod tests {
 
     #[test]
     fn issue_3894_unit_name_before_datetime_is_not_a_comment() {
-        for unit in ["50 обрБпС", "51 пдп 3 пдб 515", "  50   обрБпС  "]
-        {
+        for unit in [
+            "50 обрБпС",
+            "51 пдп 3 пдб 515",
+            "  50   обрБпС  ",
+            "123 ц МТЗ",
+            "  123   ц  МТЗ  ",
+            "123 цМТЗ",
+            "1 брз (тер)",
+            "1 брз",
+            "123 цМТЗ 1 брз (тер)",
+        ] {
             let body =
                 format!("{unit}\n28.10.2026, 17:00\n- Тестове повідомлення.");
             assert_eq!(
@@ -1290,6 +1297,12 @@ mod tests {
             "Днепр",
             "Ветераны",
             "515",
+            "1 абр БМ",
+            "1 абрБМ",
+            "123 цМТЗ 1 абр БМ 1 брз (тер)",
+            "123 ц МТЗ змінив позицію",
+            "1 абр БМ змінила позицію",
+            "1 брз (тер) змінила позицію",
         ] {
             let body = format!("{comment}\n50 обрБпС\n28.10.2026, 17:00\n- Тестове повідомлення.");
             assert_eq!(parse_comments(&body).top.as_deref(), Some(comment));
@@ -1298,9 +1311,13 @@ mod tests {
                 "- Тестове повідомлення."
             );
         }
-        let body =
-            "Коментар: 50 обрБпС\n28.10.2026, 17:00\n- Тестове повідомлення.";
-        assert_eq!(parse_comments(body).bottom.as_deref(), Some("50 обрБпС"));
+        for unit in ["50 обрБпС", "123 ц МТЗ", "1 абр БМ", "1 брз (тер)"]
+        {
+            let body = format!(
+                "Коментар: {unit}\n28.10.2026, 17:00\n- Тестове повідомлення."
+            );
+            assert_eq!(parse_comments(&body).bottom.as_deref(), Some(unit));
+        }
     }
 
     #[test]

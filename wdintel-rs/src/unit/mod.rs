@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 mod const_units;
 pub mod parser;
 
-pub(crate) use const_units::UnitType;
+pub(crate) use const_units::{apply_unit_name_fixes, UnitType};
 
 type UnitRegexCache = OnceLock<Result<Vec<Regex>, String>>;
 
