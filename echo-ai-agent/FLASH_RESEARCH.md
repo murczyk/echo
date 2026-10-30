@@ -102,6 +102,10 @@ node --experimental-strip-types echo-ai-agent/evals/flash-completion.mjs \
   glm-5.3-flash-uncensored grouped balanced
 ```
 
+When comparing GLM-5.3 or Gemma against a base runner built before they used this
+workflow, add `1` as a final argument: that runner accepts the doubled synthesis
+reserve only for Flash.
+
 Scenarios are `grouped`, `long`, `attachments`, `exhaustive` and `followup`;
 presets are `fast`,
 `balanced` and `deep`. Run the same fixture against the base runner and Sol for

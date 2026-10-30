@@ -128,6 +128,9 @@ type Sources = {
   citations: MessageCitation[];
   fileCitations: FileCitation[];
   links?: string[];
+  // False when this request retrieved nothing, so an answer built only from the user's
+  // own text may cite nothing even if earlier turns of the conversation did.
+  citationRequired?: boolean;
 };
 type Retrieval = {
   tool: string;
@@ -147,7 +150,11 @@ export function validatedFlashAnswer(
   const links = [...text.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)].map(
     (match) => match[1],
   );
-  if (allowed.size && !links.some((href) => allowed.has(href)))
+  if (
+    allowed.size &&
+    sources.citationRequired !== false &&
+    !links.some((href) => allowed.has(href))
+  )
     return undefined;
   if (
     links.some((href) => !allowed.has(href) && !sources.links?.includes(href))
@@ -225,7 +232,7 @@ export class FlashResearch {
       executionMode: "sequential",
       execute: async (_id, update) => {
         countInvocation();
-        const draft = validatedFlashAnswer(update.draft, this.sources());
+        const draft = validatedFlashAnswer(update.draft, this.currentSources());
         if (update.draft.trim() && !draft)
           throw new Error(
             "Draft must use only available source citations and registered map links",
@@ -294,6 +301,10 @@ export class FlashResearch {
     );
   }
 
+  private currentSources(): Sources {
+    return { ...this.sources(), citationRequired: this.ledger.length > 0 };
+  }
+
   private serialize(state: ResearchUpdate): string {
     return JSON.stringify({ research: state, retrievals: this.ledger });
   }
@@ -312,7 +323,7 @@ export class FlashResearch {
 
   fallback(): string {
     return (
-      validatedFlashAnswer(this.draft ?? null, this.sources()) ??
+      validatedFlashAnswer(this.draft ?? null, this.currentSources()) ??
       FLASH_INABILITY
     );
   }
@@ -430,7 +441,7 @@ export class FlashResearch {
         throw error;
       return null;
     });
-    const answer = validatedFlashAnswer(candidate, this.sources());
+    const answer = validatedFlashAnswer(candidate, this.currentSources());
     if (candidate && !answer) {
       outcome = "citation_rejected";
       this.diagnostic({

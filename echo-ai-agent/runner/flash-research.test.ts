@@ -127,6 +127,7 @@ const scenarios = [
   "api-failure",
   "legacy",
   "user-text",
+  "user-text-history",
   "user-map",
 ];
 
@@ -178,7 +179,7 @@ for (const [scenario, modelName] of [
       name: "report_progress",
       args: { summary: "Reviewing botanical archive records." },
     });
-    if (["user-text", "user-map"].includes(scenario)) {
+    if (["user-text", "user-text-history", "user-map"].includes(scenario)) {
       calls.length = 0;
     } else if (scenario === "follow-up") {
       refresh();
@@ -429,7 +430,7 @@ for (const [scenario, modelName] of [
               `${draft} Invented [джерело](/rer-analysis-neo?m=missing)`,
             );
           return stream(
-            scenario === "user-text"
+            scenario.startsWith("user-text")
               ? "The botanical survey is ready."
               : scenario === "user-map"
                 ? `[мапа](echo-map:${mapId})`
@@ -526,7 +527,7 @@ for (const [scenario, modelName] of [
       const payload = validatePayload(
         {
           prompt:
-            scenario === "user-text"
+            scenario.startsWith("user-text")
               ? "Translate into English: Ботанічне дослідження готове."
               : scenario === "user-map"
                 ? "Make a map of Orchard at latitude 50, longitude 30."
@@ -539,6 +540,18 @@ for (const [scenario, modelName] of [
           echoPublicHost: "echo.example.test",
           bootstrapToken: "A".repeat(43),
           correlationId,
+          // An earlier cited answer must not demand citations for a source-free follow-up.
+          ...(scenario === "user-text-history"
+            ? {
+                history: [
+                  {
+                    role: "assistant",
+                    content: `Earlier answer ${draft}`,
+                    citations: sources.citations,
+                  },
+                ],
+              }
+            : {}),
           contextWindow: 65_536,
           maxTokens: 8192,
           checkpointMaxTokens: 8192,
@@ -701,7 +714,7 @@ for (const [scenario, modelName] of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
-    else if (scenario === "user-text")
+    else if (scenario.startsWith("user-text"))
       assert.equal(answer.trim(), "The botanical survey is ready.");
     else if (scenario === "user-map") {
       assert.ok(answer.includes(`](echo-map:${mapId})`));
@@ -807,7 +820,7 @@ for (const [scenario, modelName] of [
     const checkpointsSaved = saved.filter(
       (record) => record.kind === "checkpoint",
     );
-    if (["user-text", "user-map"].includes(scenario))
+    if (["user-text", "user-text-history", "user-map"].includes(scenario))
       assert.equal(queries.length, 0);
     else if (scenario === "pagination-recovery-no-memory")
       assert.equal(checkpointsSaved.length, 0);
