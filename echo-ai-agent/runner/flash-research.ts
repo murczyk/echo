@@ -17,6 +17,10 @@ import type { WorkJournal } from "./work-memory.ts";
 
 export const FLASH_ENGINE = "glm-5.3-flash-uncensored";
 export const RESEARCH_TOOL_NAME = "update_research";
+export const FLASH_RESEARCH_UPDATE_REQUIRED =
+  "Call update_research before further retrieval";
+export const FLASH_RESEARCH_PAGINATION_REQUIRED =
+  "After the initial sample, use focused searches. Before continuing unfiltered pagination, save the specific coverage requirement in update_research.paginationReason.";
 export const FLASH_SYNTHESIS_TOKENS = 8192;
 export const FLASH_INABILITY =
   "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
@@ -127,6 +131,7 @@ export class FlashResearch {
   private draft?: string;
   private retrievals = 0;
   private retrievalBatchAllowed = true;
+  private paginationUpdateRequired = false;
   private readonly ledger: Retrieval[] = [];
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
@@ -168,6 +173,7 @@ export class FlashResearch {
         if (draft) this.draft = draft;
         this.retrievals = 0;
         this.retrievalBatchAllowed = true;
+        this.paginationUpdateRequired = false;
         return {
           content: [{ type: "text", text: "Research state saved privately." }],
           details: {},
@@ -177,21 +183,21 @@ export class FlashResearch {
   }
 
   get updateRequired(): boolean {
-    return this.retrievals >= REFRESH_RETRIEVALS;
+    return this.paginationUpdateRequired || this.retrievals >= REFRESH_RETRIEVALS;
   }
 
   beforeRetrieval(tool?: string, query?: Record<string, unknown>): void {
     if (!this.state || !this.retrievalBatchAllowed)
-      throw new Error("Call update_research before further retrieval");
+      throw new Error(FLASH_RESEARCH_UPDATE_REQUIRED);
     if (
       tool === "inbox_messages" &&
       !query?.search &&
       query?.before_id_noninclusive != null &&
       !this.state.paginationReason?.trim()
-    )
-      throw new Error(
-        "After the initial sample, use focused searches. Before continuing unfiltered pagination, save the specific coverage requirement in update_research.paginationReason.",
-      );
+    ) {
+      this.paginationUpdateRequired = true;
+      throw new Error(FLASH_RESEARCH_PAGINATION_REQUIRED);
+    }
     this.retrievals += 1;
   }
 
@@ -435,6 +441,7 @@ export class FlashResearch {
       toolRemaining,
       estimatedContextHeadroomTokens: headroom,
       updateRequired: !this.state || this.updateRequired,
+      paginationUpdateRequired: this.paginationUpdateRequired,
       warning:
         remainingMs !== undefined &&
         remainingMs <= Math.max(WARNING_MS, expectedMs * 2 + TURN_MARGIN_MS)

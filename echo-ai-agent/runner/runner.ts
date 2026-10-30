@@ -1,5 +1,5 @@
 import { WORK_APPEND_PATH, WORK_RECORD_MAX_BYTES, WORK_PARAMETERS, WORK_DESCRIPTIONS, WorkJournal, WorkPersistenceError, validateWorkMemory, recalledEvidence, type WorkMemoryContext } from "./work-memory.ts";
-import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_INABILITY, RESEARCH_TOOL_NAME, FlashResearch } from "./flash-research.ts";
+import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_INABILITY, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_TOOL_NAME, FlashResearch } from "./flash-research.ts";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
@@ -77,7 +77,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.30.1";
+const HARNESS_RELEASE = "2026.10.30.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2470,6 +2470,18 @@ function activityMessages(skill: string, delivered: unknown): JsonObject[] {
   );
 }
 
+function routeToolRequestBody(
+  ...args: Parameters<typeof routeRequestBody>
+): unknown {
+  try {
+    return routeRequestBody(...args);
+  } catch (error) {
+    throw new Error(
+      `Invalid Echo tool arguments: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
 function createRouteTools(
   payload: RunnerPayload,
   authentication: EchoAuthentication,
@@ -2493,7 +2505,7 @@ function createRouteTools(
       prepareArguments: (args: unknown) => normalizeToolArguments(args) as any,
       execute: async (_toolCallId, params, signal, onUpdate) => {
         countInvocation();
-        const requestBody = routeRequestBody(
+        const requestBody = routeToolRequestBody(
           route,
           params,
           payload.timeContext!,
@@ -2756,7 +2768,10 @@ export function normalizedToolLifecycleEvent(
         toolLabel,
         is_error: Boolean(event.isError),
         ...(event.isError
-          ? { errorSummary: toolErrorSummary(event.toolName, event.result) }
+          ? {
+              errorSummary: toolErrorSummary(event.toolName, event.result),
+              errorReason: toolErrorReason(event.result),
+            }
           : {}),
       };
     default:
@@ -2827,9 +2842,26 @@ function toolResultText(result: unknown): string {
   return Array.isArray(content) ? content.map((item) => String(item?.text ?? "")).join("\n") : "";
 }
 
+export function toolErrorReason(result: unknown): string {
+  const text = toolResultText(result);
+  if (text === FLASH_RESEARCH_UPDATE_REQUIRED)
+    return "research_checkpoint_required";
+  if (text === FLASH_RESEARCH_PAGINATION_REQUIRED)
+    return "research_pagination_required";
+  if (/^Echo returned HTTP \d{3}(?::|$)/.test(text)) return "http_error";
+  if (/^Validation failed for tool|^Invalid Echo tool arguments:/.test(text))
+    return "invalid_arguments";
+  if (/^(Operation aborted|This operation was aborted)$/.test(text))
+    return "cancelled";
+  if (/^fetch failed$/.test(text)) return "network_error";
+  return "tool_error";
+}
+
 export function toolErrorSummary(toolName: unknown, result: unknown): string {
-  if (toolResultText(result) === "Call update_research before further retrieval")
+  if (toolErrorReason(result) === "research_checkpoint_required")
     return "Потрібно зберегти проміжні результати аналізу перед наступним пошуком.";
+  if (toolErrorReason(result) === "research_pagination_required")
+    return "Потрібно уточнити необхідність перегляду наступної добірки перед продовженням пошуку.";
   if (typeof toolName !== "string" || !toolName.startsWith("echo_map_")) return ROUTE_TOOL_ERROR;
   // Classify the diagnostic itself, not the valid example appended to it.
   const text = toolResultText(result).split("Приклад")[0];
@@ -2952,6 +2984,68 @@ function sessionProgress(event: any): JsonObject | null {
   }
 }
 
+function createToolEventPublisher(
+  toolLabels: ReadonlyMap<string, string>,
+  emitEvent: (event: JsonObject) => void,
+  privatePagination: boolean,
+) {
+  const activityLabels = new Map<string, string>();
+  const pendingStarts = new Map<string, JsonObject>();
+  return (event: any) => {
+    const deferred = pendingStarts.get(event.toolCallId);
+    const failed = event.type === "tool_execution_end" && event.isError;
+    const handledPrivately = Boolean(
+      failed &&
+      deferred &&
+      privatePagination &&
+      toolErrorReason(event.result) === "research_pagination_required",
+    );
+    if (failed) {
+      const status = /^Echo returned HTTP (\d{3})(?::|$)/.exec(
+        toolResultText(event.result),
+      );
+      emitEvent({
+        type: "tool_diagnostic",
+        tool:
+          toolLabels.has(event.toolName) &&
+          ![PROGRESS_TOOL_NAME, RESEARCH_TOOL_NAME].includes(event.toolName)
+            ? event.toolName
+            : "unknown",
+        reason: toolErrorReason(event.result),
+        handledPrivately,
+        ...(status ? { httpStatus: Number(status[1]) } : {}),
+      });
+    }
+    if (handledPrivately) {
+      pendingStarts.delete(event.toolCallId);
+      return;
+    }
+    const normalized = normalizedToolLifecycleEvent(
+      event,
+      toolLabels,
+      activityLabels,
+    );
+    if (!normalized) return;
+    if (
+      event.type === "tool_execution_start" &&
+      privatePagination &&
+      event.toolName === "echo_inbox_messages"
+    ) {
+      pendingStarts.set(event.toolCallId, normalized);
+      return;
+    }
+    if (deferred) {
+      pendingStarts.delete(event.toolCallId);
+      emitEvent(deferred);
+    }
+    if (typeof normalized.toolLabel === "string")
+      activityLabels.set(event.toolCallId, normalized.toolLabel);
+    emitEvent(normalized);
+    if (event.type === "tool_execution_end")
+      activityLabels.delete(event.toolCallId);
+  };
+}
+
 export function subscribeToEvents(
   session: any,
   toolLabels: ReadonlyMap<string, string>,
@@ -2959,8 +3053,9 @@ export function subscribeToEvents(
   captureAssistantMessage: (message: unknown) => void,
   emitAssistant: () => boolean,
   emitEvent: (event: JsonObject) => void = emit,
+  privatePagination = false,
 ): () => void {
-  const activityLabels = new Map<string, string>();
+  const publishToolEvent = createToolEventPublisher(toolLabels, emitEvent, privatePagination);
   return session.subscribe((event: any) => {
     if (emitAssistant()) {
       const progress = sessionProgress(event);
@@ -2986,16 +3081,7 @@ export function subscribeToEvents(
       case "tool_execution_update":
       case "tool_execution_end":
         observeToolLifecycle(event);
-        const normalized = normalizedToolLifecycleEvent(
-          event,
-          toolLabels,
-          activityLabels,
-        );
-        if (normalized) {
-          if (typeof normalized.toolLabel === "string")
-            activityLabels.set(event.toolCallId, normalized.toolLabel);
-          emitEvent(normalized);
-        }
+        publishToolEvent(event);
         break;
     }
   });
@@ -3500,6 +3586,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         if (research && event.type === "tool_start") delete event.arguments;
         emit(event);
       },
+      Boolean(research),
     );
     const contextCompaction = installContextCompaction(
       session,
