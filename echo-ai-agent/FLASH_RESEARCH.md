@@ -13,8 +13,12 @@ coverage requirement in `update_research.paginationReason`; explicit exhaustive
 requests retain pagination. Existing
 scope, permission, citation, and search-semantics guidance still applies.
 
-After at most four retrieval attempts, another state update is required. State
-contains task status, a cited Markdown answer draft (up to 8,000 characters)
+After four retrieval attempts, the next research turn is restricted to
+`update_research` with a forced tool choice. An already admitted tool batch
+finishes before this boundary, including calls beyond the fourth retrieval.
+Retrieval resumes only after a successful state update; a rejected or failed
+update does not reopen it. The initial-plan and pagination checks still apply.
+State contains task status, a cited Markdown answer draft (up to 8,000 characters)
 and coverage gaps; it must not
 contain hidden reasoning or deliberation. Queries and returned continuation
 cursors are recorded automatically. Completed updates use the existing work

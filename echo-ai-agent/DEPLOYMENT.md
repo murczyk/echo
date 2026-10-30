@@ -287,3 +287,18 @@ Verify the running application revision, service health, release match and
 authenticated agent connection. Keep prior containers and rollout journals;
 verify other namespace selections remain unchanged. See
 [Flash completion diagnostics](FLASH_RESEARCH.md#completion-diagnostics).
+
+## GLM Flash checkpoint batches (release 2026.10.30.1)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.10.30.1`,
+previewing with `--dry-run` first. This release requires no migration or provider
+change. It preserves other namespace selections and accepts prior runners.
+
+Verify matching application/container releases and authenticated connection
+checks. Exercise a Flash request with more than four retrievals, including a
+batch that crosses the fourth call: every admitted retrieval must complete, the
+next research turn must save its private state, and retrieval must then resume.
+Public activity must contain no private state or checkpoint prerequisite errors.
+Retain the prior containers and rollout journal for the control panel's recovery
+procedure; recovery beyond the approved operation requires separate approval.
