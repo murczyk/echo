@@ -273,19 +273,24 @@ fn inbox_candidates_use_indexed_search(
     {
         return Ok(false);
     }
-    Ok(m_str_trim(&req.search)
-        .map(|search| {
-            message_search_strategy(
-                &search,
-                req.search_mode,
-                correlated_terms,
-                scope,
-                Some(source_scope),
-            )
-        })
-        .transpose()
-        .c(h!())?
-        == Some(MessageSearchStrategy::Indexed))
+    let Some(search) = m_str_trim(&req.search) else {
+        return Ok(false);
+    };
+    let parts =
+        crate::rer_importer::analysis::search::parse_search_parts(&search)
+            .c(h!())?;
+    if parts.ts_query.trim().is_empty() {
+        return Ok(false);
+    }
+    Ok(message_search_strategy(
+        &search,
+        req.search_mode,
+        correlated_terms,
+        scope,
+        Some(source_scope),
+    )
+    .c(h!())?
+        == MessageSearchStrategy::Indexed)
 }
 
 fn uses_inbox_candidate_range(

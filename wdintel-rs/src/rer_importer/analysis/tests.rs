@@ -2843,9 +2843,12 @@ async fn indexed_fuzzy_inbox_pages_preserve_full_period_matches_3780() {
         .unwrap();
     }
     for newest in [false, true] {
-        for (search, count) in
-            [("Берез", 31), ("коридор", 1), ("absent3780", 0)]
-        {
+        for (search, count) in [
+            ("Берез", 31),
+            ("\"Береза\"", 31),
+            ("коридор", 1),
+            ("absent3780", 0),
+        ] {
             let mut req = InboxMessagesReq {
                 since_date_inclusive_ms: Some(
                     test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
@@ -2874,16 +2877,17 @@ async fn indexed_fuzzy_inbox_pages_preserve_full_period_matches_3780() {
                 assert!(reference.contains(&audio));
             }
             for page in 0..2 {
-                let messages = crate::rer_importer::inbox::get_inbox_messages(
+                let transaction = crate::read_query::begin(db).await.unwrap();
+                let ids = crate::rer_importer::inbox::query::load_postgres_inbox_page_ids(
+                    &transaction,
                     &login.id,
-                    &vec![login.id],
                     &fixture.env,
                     &req,
+                    None,
                 )
                 .await
                 .unwrap();
-                let ids =
-                    messages.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+                transaction.commit().await.unwrap();
                 let expected = reference
                     .iter()
                     .copied()
