@@ -11,7 +11,8 @@ its own selection; an active request's policy cannot change.
 
 The limit starts when a worker claims the request, excluding queue time.
 Fast reserves its last 30 seconds, Balanced 60 seconds, and Deep 120 seconds
-for a final answer. Checkpoints, output recovery, citation repair, and provider
+for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
+they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md). Checkpoints, output recovery, citation repair, and provider
 retries share the original deadline and call counters. These are ceilings,
 not promised completion times. The normal tool ceiling remains 128 and the
 provider ceiling remains 256 calls, with one provider call reserved for final
@@ -86,7 +87,8 @@ and keep GLM as an option.
    a Balanced follow-up after Deep, retry, reload while queued/running, and
    cancellation. Check original deadlines in gateway logs, source links,
    coverage notices, and persisted policy/metadata. A forced stalled synthesis
-   must yield source excerpts before the request deadline plus cleanup slack.
+   must yield the saved draft or a short notice before the request deadline
+   plus cleanup slack.
    Confirm other Echo hosts and namespaces were not changed.
 
 For rollback, stop admitting new work and drain active requests first. Disable
@@ -132,7 +134,9 @@ citations still require evidence collected during the current request. History
 alone does not replace that evidence.
 Final synthesis has no tools and lasts at most the preset's finalization
 allowance, also bounded by the original deadline. If synthesis times out,
-truncates, or lacks valid citations, Echo returns labeled source excerpts.
+truncates, or lacks valid citations, Echo returns the latest validated saved
+draft when the engine keeps one (non-OpenAI engines) and otherwise a short
+notice; raw source excerpts are never published.
 Completion metadata records `coverageLimited: true`, `reason: "context_limit"`.
 The notice describes incomplete coverage without suggesting that Deep mode
 would fix it. Cancellation, authorization failures, and content filtering do
