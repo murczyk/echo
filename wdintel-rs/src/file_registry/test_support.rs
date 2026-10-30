@@ -219,6 +219,7 @@ where
         spool_removed_at: Set(None),
         next_cleanup_at: Set(Some(expires_at)),
         stats_epoch: NotSet,
+        finalization_job_id: NotSet,
     })
     .exec_without_returning(db)
     .await

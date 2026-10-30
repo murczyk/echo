@@ -1069,18 +1069,6 @@ pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
     )
 }
 
-pub(in crate::rer_importer) fn analytics_message_has_linked_unit_ids(
-    unit_ids: &[i64],
-    scope: &AnalyticsMessageIdScope,
-) -> SimpleExpr {
-    linked_unit_ids_condition(
-        unit_ids,
-        false,
-        Some(scope),
-        Expr::col((signal_message::Entity, signal_message::Column::Id)),
-    )
-}
-
 fn linked_unit_ids_condition(
     unit_ids: &[i64],
     force_correlation: bool,
@@ -10164,21 +10152,9 @@ async fn query_count_stats_groups_postgres(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
-    let groups = if stats::source_count_windows(req, None).c(h!())?.is_some() {
-        let login = login_id_from_identity(user).c(h!())?;
-        stats::fetch_group_count_keys_in_source_windows(
-            req,
-            &login,
-            &env.dbx,
-            master_keys.clone(),
-        )
+    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
         .await
-        .c(h!())?
-    } else {
-        stats::fetch_groups(req, user, env, master_keys.clone())
-            .await
-            .c(h!())?
-    };
+        .context(h!())?;
     let groups = if should_include_missing_secret_groups(req) {
         include_missing_secret_groups(&env.dbx, groups, &master_keys)
             .await

@@ -16,6 +16,10 @@ use uuid::Uuid;
 pub(crate) struct UploadLock(File);
 
 impl UploadLock {
+    pub(crate) fn file(&self) -> &File {
+        &self.0
+    }
+
     pub(super) async fn run<T: Send + 'static>(
         self,
         operation: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
@@ -29,12 +33,27 @@ impl UploadLock {
         .c(h!())
     }
 
-    pub(super) async fn acquire(
+    pub(crate) async fn acquire(
         root: &Path,
         file_id: Uuid,
     ) -> anyhow::Result<Self> {
+        Self::acquire_until(
+            root,
+            file_id,
+            Instant::now()
+                + Duration::from_millis(SIGINT_FILE_UPLOAD_LOCK_TIMEOUT_MS),
+        )
+        .await
+        .c(h!())
+    }
+
+    pub(crate) async fn acquire_until(
+        root: &Path,
+        file_id: Uuid,
+        deadline: Instant,
+    ) -> anyhow::Result<Self> {
         let name = file_id.to_string();
-        acquire_named(root, &name).await.c(h!())
+        acquire_named(root, &name, deadline).await.c(h!())
     }
 
     fn try_acquire(root: &Path, file_id: Uuid) -> anyhow::Result<Option<Self>> {
@@ -75,9 +94,11 @@ fn try_lock(root: &Path, name: &str) -> anyhow::Result<Option<UploadLock>> {
     }
 }
 
-async fn acquire_named(root: &Path, name: &str) -> anyhow::Result<UploadLock> {
-    let deadline = Instant::now()
-        + Duration::from_millis(SIGINT_FILE_UPLOAD_LOCK_TIMEOUT_MS);
+async fn acquire_named(
+    root: &Path,
+    name: &str,
+    deadline: Instant,
+) -> anyhow::Result<UploadLock> {
     loop {
         if let Some(lock) = try_lock(root, name).c(h!())? {
             return Ok(lock);
@@ -89,15 +110,23 @@ async fn acquire_named(root: &Path, name: &str) -> anyhow::Result<UploadLock> {
             }
             .into());
         }
-        tokio::time::sleep(Duration::from_millis(
-            SIGINT_FILE_UPLOAD_LOCK_RETRY_MS,
-        ))
+        tokio::time::sleep(
+            Duration::from_millis(SIGINT_FILE_UPLOAD_LOCK_RETRY_MS)
+                .min(deadline.saturating_duration_since(Instant::now())),
+        )
         .await;
     }
 }
 
 pub(super) async fn admission_lock(root: &Path) -> anyhow::Result<UploadLock> {
-    acquire_named(root, "admission").await.c(h!())
+    acquire_named(
+        root,
+        "admission",
+        Instant::now()
+            + Duration::from_millis(SIGINT_FILE_UPLOAD_LOCK_TIMEOUT_MS),
+    )
+    .await
+    .c(h!())
 }
 
 pub(super) async fn admit(
@@ -233,6 +262,12 @@ pub(super) async fn remove_artifacts(
     root: &Path,
     path: &Path,
 ) -> anyhow::Result<()> {
+    if let Some((file_id, _)) = artifact_id(path) {
+        anyhow::ensure!(
+            !crate::devices::audio::pin::protects(root, file_id).c(h!())?,
+            "audio source belongs to finalization"
+        );
+    }
     let _admission = admission_lock(root).await.c(h!())?;
     remove_artifacts_locked(path).c(h!())
 }
@@ -276,6 +311,17 @@ pub(super) async fn cleanup(
         else {
             continue;
         };
+        match crate::devices::audio::pin::protects(root, file_id) {
+            Ok(false) => {}
+            Ok(true) => continue,
+            Err(error) => {
+                log::error!(
+                    "failed to check attachment upload ownership {}: {error:#}",
+                    path.display()
+                );
+                continue;
+            }
+        }
         let _admission = admission_lock(root).await.c(h!())?;
         let result = cleanup_artifact(
             &path,
@@ -347,11 +393,20 @@ fn completed_source(path: &Path) -> Option<(&Path, Uuid)> {
 
 pub(super) async fn lock_source(
     path: &Path,
+    deadline: Option<Instant>,
 ) -> anyhow::Result<Option<UploadLock>> {
     let Some((root, file_id)) = completed_source(path) else {
         return Ok(None);
     };
-    Ok(Some(UploadLock::acquire(root, file_id).await.c(h!())?))
+    let deadline = deadline.unwrap_or_else(|| {
+        Instant::now()
+            + Duration::from_millis(SIGINT_FILE_UPLOAD_LOCK_TIMEOUT_MS)
+    });
+    Ok(Some(
+        UploadLock::acquire_until(root, file_id, deadline)
+            .await
+            .c(h!())?,
+    ))
 }
 
 pub(super) async fn remove_consumed(path: &Path) -> anyhow::Result<bool> {
@@ -366,6 +421,39 @@ pub(super) async fn remove_consumed(path: &Path) -> anyhow::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn review_r5_corrupt_audio_pin_isolated_from_expired_sources() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory
+            .path()
+            .join("device-audio-tus")
+            .join(Uuid::new_v4().to_string())
+            .join("file_upload_tus");
+        let parent = root.join("completed").join("actor");
+        std::fs::create_dir_all(&parent).unwrap();
+        std::fs::create_dir_all(root.join("pins")).unwrap();
+        for id in [Uuid::from_u128(1), Uuid::from_u128(2)] {
+            std::fs::write(parent.join(format!("{id}.3")), b"abc").unwrap();
+        }
+        let paths = artifact_paths(&root).unwrap();
+        let suspect = &paths[0].0;
+        let healthy = &paths[1].0;
+        let suspect_id = artifact_id(suspect).unwrap().0;
+        std::fs::write(
+            root.join("pins").join(format!("{suspect_id}.json")),
+            b"{corrupt pin",
+        )
+        .unwrap();
+        cleanup(&root, Duration::ZERO, Duration::ZERO)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(suspect).unwrap(), b"abc");
+        assert!(
+            !healthy.exists(),
+            "corrupt pin blocked unrelated expired source cleanup"
+        );
+    }
 
     #[test]
     fn admission_preserves_the_free_space_floor_without_overflow() {

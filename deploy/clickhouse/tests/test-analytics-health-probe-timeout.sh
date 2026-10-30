@@ -49,14 +49,35 @@ source_psql() {
 }
 gateway_psql() {
   cat >/dev/null
-  if [[ ${ECHO_TEST_HEALTH_SCENARIO:-} == gateway_failure ]]; then
-    return 1
-  fi
+  case ${ECHO_TEST_HEALTH_SCENARIO:-} in
+    gateway_failure) return 1 ;;
+    user_memory|resource_once)
+      if [[ ${ECHO_TEST_HEALTH_SCENARIO:-} == resource_once \
+        && -f "$ECHO_TEST_HEALTH_SQL.retry" ]]; then
+        printf 't\n'
+        return 0
+      fi
+      touch "$ECHO_TEST_HEALTH_SQL.retry"
+      printf 'ERROR: pg_clickhouse: DB::Exception: User memory limit exceeded\n' >&2
+      return 1
+      ;;
+    query_capacity)
+      printf 'ERROR: pg_clickhouse: DB::Exception: Too many simultaneous queries\n' >&2
+      return 1
+      ;;
+  esac
 }
 postgres_psql() {
+  printf '%s\n' "$@" >"$ECHO_TEST_HEALTH_SQL.args"
   cat >"$ECHO_TEST_HEALTH_SQL"
 }
 MOCK
+
+cat >"$case_dir/bin/reconcile-if-needed.sh" <<'MOCK'
+#!/usr/bin/env bash
+[[ "$*" == --check ]]
+MOCK
+chmod +x "$case_dir/bin/reconcile-if-needed.sh"
 
 cat >"$case_dir/path/systemctl" <<'MOCK'
 #!/usr/bin/env bash
@@ -102,5 +123,34 @@ PATH="$case_dir/path:$PATH" \
   || status=$?
 [[ "$status" == 1 ]]
 grep -q 'could not read replicated analytics heartbeat' "$error_log"
+
+for scenario in user_memory query_capacity; do
+  status=0
+  PATH="$case_dir/path:$PATH" \
+    ECHO_TEST_HEALTH_SQL="$health_sql" \
+    ECHO_TEST_HEALTH_SCENARIO="$scenario" \
+    ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=1 \
+    bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log" \
+    || status=$?
+  [[ "$status" == 75 ]]
+  grep -q '^UPDATE public.echo_analytics_health' "$health_sql"
+  if grep -Eq 'checked_at|healthy' "$health_sql"; then
+    printf 'resource rejection unexpectedly replaced the last health decision\n' >&2
+    exit 1
+  fi
+  grep -q 'heartbeat read was rejected by gateway resource limits' "$error_log"
+done
+
+rm -f "$health_sql.retry"
+status=0
+PATH="$case_dir/path:$PATH" \
+  ECHO_TEST_HEALTH_SQL="$health_sql" \
+  ECHO_TEST_HEALTH_SCENARIO=resource_once \
+  ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=5 \
+  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log" \
+  || status=$?
+[[ "$status" == 0 ]]
+grep -q '^INSERT INTO public.echo_analytics_health' "$health_sql"
+grep -q '^healthy=true$' "$health_sql.args"
 
 printf 'Analytics health probe timeout tests passed\n'

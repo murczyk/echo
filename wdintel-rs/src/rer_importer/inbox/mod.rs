@@ -1608,12 +1608,6 @@ async fn query_inbox_digest(
         .await
         .c(h!())?
         .context(h!())?;
-    Ok(inbox_digest_from_row(&query_res).c(h!())?)
-}
-
-fn inbox_digest_from_row(
-    query_res: &QueryResult,
-) -> anyhow::Result<InboxDigest> {
     let first_element_ts = query_res
         .try_get("", "first_element_ts")
         .or_else(|_| {
@@ -1625,40 +1619,6 @@ fn inbox_digest_from_row(
         })
         .c(h!())?;
     Ok((query_res.try_get("", "count").c(h!())?, first_element_ts))
-}
-
-async fn query_inbox_digest_in_source_windows(
-    login: &Uuid,
-    env: &Env,
-    req: &InboxMessagesReq,
-    db: DatabaseConnection,
-    unsplit: String,
-    correlated: bool,
-) -> Result<InboxDigest, AppError> {
-    let Some(windows) = query::inbox_search_windows(req).c(h!())? else {
-        return query_inbox_digest(db, unsplit).await;
-    };
-    let mut digest = (0, None);
-    crate::rer_importer::search_windows::read(
-        &db,
-        windows,
-        |window| async move {
-            let sql = query::build_windowed_inbox_digest_query(
-                login, env, req, window, correlated,
-            )
-            .await
-            .c(h!())?;
-            Ok(Statement::from_string(DbBackend::Postgres, sql))
-        },
-        |rows| {
-            let next = inbox_digest_from_row(rows.first().c(h!())?).c(h!())?;
-            digest = merge_inbox_digests(digest, next).c(h!())?;
-            Ok(false)
-        },
-    )
-    .await
-    .c(h!())?;
-    Ok(digest)
 }
 
 async fn query_inbox_digest_singleflight<F, Fut>(
@@ -1850,15 +1810,7 @@ async fn query_inbox_digest_with_analytics(
     postgres_query: String,
 ) -> Result<InboxDigest, AppError> {
     if duty_uses_source_postgres {
-        return query_inbox_digest_in_source_windows(
-            &login,
-            &env,
-            &req,
-            env.dbx.clone(),
-            postgres_query,
-            true,
-        )
-        .await;
+        return query_inbox_digest(env.dbx.clone(), postgres_query).await;
     }
     if let Some(digest) =
         try_query_recent_duty_source_digest(login, &env, &req, &postgres_query)
@@ -1876,8 +1828,6 @@ async fn query_inbox_digest_with_analytics(
         .await
         .context(h!())?);
     }
-    let source_env = env.clone();
-    let source_req = req.clone();
     let analytics_lag_fallback_q = postgres_query.clone();
     let analytics_env = env.clone();
     let analytics_req = req.clone();
@@ -1905,29 +1855,15 @@ async fn query_inbox_digest_with_analytics(
             match digest {
                 Some(digest) => Ok(digest),
                 None => {
-                    query_inbox_digest_in_source_windows(
-                        &login,
-                        &analytics_env,
-                        &analytics_req,
+                    query_inbox_digest(
                         analytics_env.replica(),
                         analytics_lag_fallback_q,
-                        false,
                     )
                     .await
                 }
             }
         },
-        |db| async move {
-            query_inbox_digest_in_source_windows(
-                &login,
-                &source_env,
-                &source_req,
-                db,
-                postgres_query,
-                false,
-            )
-            .await
-        },
+        |db| query_inbox_digest(db, postgres_query),
     )
     .await
     .context(h!())?)
@@ -1993,8 +1929,6 @@ async fn query_rer_duty_inbox_digest_with_fresh_tail(
     let analytics_req = req.clone();
     let postgres_tail_db = env.dbx.clone();
     let postgres_fallback_db = env.dbx.clone();
-    let source_env = env.clone();
-    let source_req = req.clone();
     Ok(with_analytics_read_fallback(
         env.get_ref(),
         "rer duty inbox messages count",
@@ -2019,17 +1953,7 @@ async fn query_rer_duty_inbox_digest_with_fresh_tail(
             };
             merge_inbox_digests(historical, postgres_tail)
         },
-        |_db| async move {
-            query_inbox_digest_in_source_windows(
-                &login,
-                &source_env,
-                &source_req,
-                postgres_fallback_db,
-                postgres_query,
-                false,
-            )
-            .await
-        },
+        |_db| query_inbox_digest(postgres_fallback_db, postgres_query),
     )
     .await
     .context(h!())?)

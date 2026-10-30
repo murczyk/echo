@@ -178,7 +178,13 @@ export async function receiveAudio(
   resume = false,
 ): Promise<DeviceAudio> {
   const uploadUrl = await uploadAudio(api, deviceId, bytes, resume);
-  const req: ReceiveDeviceAudioReq = { deviceId, name, recordingStartedAt, uploadUrl };
+  const req: ReceiveDeviceAudioReq = {
+    deviceId,
+    name,
+    recordingStartedAt,
+    uploadUrl,
+    asyncFinalization: false,
+  };
   const response = await api.post('/api/device/audio/receive', {
     data: transformCamelToSnake(req),
   });

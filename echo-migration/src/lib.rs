@@ -509,6 +509,8 @@ mod m20261021_131746_echo_native_datasource;
 mod m20261022_071804_signal_group_creator;
 mod m20261022_151553_iggy_unit_refresh_queue;
 
+mod m20261029_104825_message_reply_component_locks;
+
 pub struct Migrator;
 
 mod m20261008_051638_ai_position_highlight_flags;
@@ -1203,6 +1205,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261026_110911_large_media_previews::Migration),
             Box::new(m20261026_190000_message_card_text_size::Migration),
             Box::new(m20261027_153932_ai_worker_fallback_monitoring::Migration),
+            Box::new(m20261029_104825_message_reply_component_locks::Migration),
         ]
     }
 }

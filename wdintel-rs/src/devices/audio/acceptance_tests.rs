@@ -1,7 +1,9 @@
 use super::tests::{audio_actor, audio_device, audio_organism};
 use super::*;
 use crate::entities::system_settings;
-use crate::file_registry::entities::device_audio;
+use crate::file_registry::entities::{
+    device_audio, device_audio_ingest, device_upload_finalization_job,
+};
 use crate::functest::tests::cleanup_locked;
 use actix_identity::{Identity, IdentityMiddleware};
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
@@ -20,6 +22,15 @@ mod text_tests;
 
 #[path = "processing_tests.rs"]
 mod processing_tests;
+
+#[path = "async_acceptance_tests.rs"]
+pub(super) mod async_acceptance_tests;
+
+#[path = "async_replay_tests.rs"]
+mod async_replay_tests;
+
+#[path = "async_recovery_tests.rs"]
+mod async_recovery_tests;
 
 pub(crate) async fn native_audio_bytes() -> web::Bytes {
     let directory = tempfile::tempdir().unwrap();
@@ -154,6 +165,7 @@ async fn stored_attempt(
     )
     .await
     .unwrap();
+    let capacity = storage::reserve_storage(&env.device_audio).await.unwrap();
     query::allow_store(
         &env.device_audio,
         &attempt,
@@ -166,6 +178,7 @@ async fn stored_attempt(
         env.device_audio.clone(),
         attempt.storage_key.clone(),
         prepared,
+        capacity,
     )
     .await
     .unwrap();
@@ -708,47 +721,72 @@ async fn audio_cleanup_recovers_after_real_process_exit() {
     assert_eq!(device_audio::Entity::find().count(db).await.unwrap(), 1);
 }
 
+fn receive_request(
+    command: &types::ReceiveDeviceAudioCommand,
+) -> serde_json::Value {
+    serde_json::json!({
+        "device_id": command.device_id,
+        "upload_url": command.upload_url,
+        "name": command.name,
+        "recording_started_at": command.recording_started_at.to_rfc3339(),
+    })
+}
+
+async fn finalization_record_counts(
+    runtime: &DeviceAudioRuntime,
+) -> (u64, u64, u64) {
+    let db = runtime.file_database().unwrap();
+    (
+        device_audio::Entity::find().count(db).await.unwrap(),
+        device_audio_ingest::Entity::find().count(db).await.unwrap(),
+        device_upload_finalization_job::Entity::find()
+            .count(db)
+            .await
+            .unwrap(),
+    )
+}
+
+fn available_audio_finalization_slots(
+    runtime: &DeviceAudioRuntime,
+) -> anyhow::Result<usize> {
+    use crate::devices::upload_finalization::resources::{self, ResourceKind};
+    let slots =
+        crate::types::DeviceUploadFinalizationSettings::default().audio_slots;
+    let mut available = Vec::new();
+    while let Some(guard) =
+        resources::try_acquire(&runtime.storage_dir, ResourceKind::Audio, slots)
+            .c(h!())?
+    {
+        available.push(guard);
+    }
+    Ok(available.len())
+}
+
+macro_rules! audio_receive_app {
+    ($env:expr) => {{
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&$env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        test::init_service(
+            App::new()
+                .app_data(web::Data::from($env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{actor}", web::post().to(login))
+                .service(routes()),
+        )
+        .await
+    }};
+}
+
 #[actix_web::test]
 #[serial_test::serial]
-async fn audio_receive_http_requires_session_and_confirmed_publication() {
+async fn audio_receive_finalization_contract_sync_publication_and_duplicate() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let (actor, device) = enabled_audio_device(&env).await;
-    let command = receive_command(
-        &env.device_audio,
-        actor,
-        device,
-        "HTTP accepted",
-        native_audio_bytes().await,
-    )
-    .await;
-    let sessions =
-        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
-            .await
-            .unwrap();
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::from(env.clone()))
-            .wrap(IdentityMiddleware::default())
-            .wrap(SessionMiddleware::new(sessions, Key::generate()))
-            .route("/test/login/{actor}", web::post().to(login))
-            .service(routes()),
-    )
-    .await;
-    let request = types::ReceiveDeviceAudioReq {
-        device_id: device.to_string(),
-        upload_url: command.upload_url.clone(),
-        name: command.name.clone(),
-        recording_started_at: command.recording_started_at.to_rfc3339(),
-    };
-    let response = test::call_service(
-        &app,
-        test::TestRequest::post()
-            .uri("/api/device/audio/receive")
-            .set_json(&request)
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let app = audio_receive_app!(env);
     let logged_in = test::call_service(
         &app,
         test::TestRequest::post()
@@ -757,51 +795,91 @@ async fn audio_receive_http_requires_session_and_confirmed_publication() {
     )
     .await;
     let cookie = logged_in.response().cookies().next().unwrap().into_owned();
-    let response = test::call_service(
-        &app,
-        test::TestRequest::post()
-            .uri("/api/device/audio/receive")
-            .cookie(cookie.clone())
-            .set_json(&request)
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let accepted: types::ReceiveDeviceAudioRsp =
-        test::read_body_json(response).await;
+    let bytes = native_audio_bytes().await;
+    for explicit_false in [false, true] {
+        let command = receive_command(
+            &env.device_audio,
+            actor,
+            device,
+            &format!("HTTP accepted {explicit_false}"),
+            bytes.clone(),
+        )
+        .await;
+        let mut request = receive_request(&command);
+        if explicit_false {
+            request["async_finalization"] = false.into();
+        }
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/device/audio/receive")
+                .set_json(&request)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/device/audio/receive?async_finalization=true")
+                .cookie(cookie.clone())
+                .set_json(&request)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert!(!response.headers().contains_key("location"));
+        let accepted: serde_json::Value = test::read_body_json(response).await;
+        assert_eq!(accepted.as_object().unwrap().len(), 1);
+        let audio = &accepted["audio"];
+        assert_eq!(audio.as_object().unwrap().len(), 8);
+        assert_eq!(audio["device_id"], device.to_string());
+        assert_eq!(audio["name"], command.name);
+        assert_eq!(
+            audio["recording_started_at"],
+            "2026-10-03T23:59:59.950001Z"
+        );
+        assert_eq!(audio["recording_ended_at"], "2026-10-04T00:00:00.050001Z");
+        assert_eq!(audio["duration_seconds"], 0.1);
+        assert_eq!(audio["processed"], false);
+        let id = Uuid::parse_str(audio["id"].as_str().unwrap()).unwrap();
+        let stored = device_audio::Entity::find_by_id(id)
+            .one(env.device_audio.file_database().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            audio["processing_version"],
+            stored.processing_version.to_string()
+        );
+        for duplicate_false in [false, true] {
+            let mut duplicate = receive_request(&command);
+            if duplicate_false {
+                duplicate["async_finalization"] = false.into();
+            }
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/device/audio/receive")
+                    .cookie(cookie.clone())
+                    .set_json(&duplicate)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            let duplicate: serde_json::Value =
+                test::read_body_json(response).await;
+            assert_eq!(
+                duplicate["details"]["code"],
+                "device_audio_name_conflict"
+            );
+            assert!(duplicate.get("job_id").is_none());
+        }
+    }
     assert_eq!(
-        accepted.audio.recording_started_at,
-        "2026-10-03T23:59:59.950001Z"
+        finalization_record_counts(&env.device_audio).await,
+        (2, 2, 0)
     );
-    assert_eq!(
-        accepted.audio.recording_ended_at,
-        "2026-10-04T00:00:00.050001Z"
-    );
-    assert!(!accepted.audio.processed);
-    let response = test::call_service(
-        &app,
-        test::TestRequest::post()
-            .uri("/api/device/audio/receive")
-            .cookie(cookie.clone())
-            .set_json(&request)
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::CONFLICT);
-    let duplicate: serde_json::Value = test::read_body_json(response).await;
-    assert_eq!(duplicate["details"]["code"], "device_audio_name_conflict");
-    let mut invalid = serde_json::to_value(&request).unwrap();
-    invalid["recording_started_at"] = "2026-10-03T23:59:59".into();
-    let response = test::call_service(
-        &app,
-        test::TestRequest::post()
-            .uri("/api/device/audio/receive")
-            .cookie(cookie.clone())
-            .set_json(&invalid)
-            .to_request(),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let command = receive_command(
         &env.device_audio,
         actor,
@@ -810,12 +888,244 @@ async fn audio_receive_http_requires_session_and_confirmed_publication() {
         web::Bytes::from_static(b"truncated"),
     )
     .await;
-    let request = types::ReceiveDeviceAudioReq {
-        device_id: device.to_string(),
-        upload_url: command.upload_url,
-        name: command.name,
-        recording_started_at: command.recording_started_at.to_rfc3339(),
-    };
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/audio/receive")
+            .cookie(cookie)
+            .set_json(receive_request(&command))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        finalization_record_counts(&env.device_audio).await,
+        (2, 3, 0)
+    );
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn audio_receive_finalization_contract_rejects_invalid_json() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let command = receive_command(
+        &env.device_audio,
+        actor,
+        device,
+        "strict request",
+        native_audio_bytes().await,
+    )
+    .await;
+    let app = audio_receive_app!(env);
+    let logged_in = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{actor}"))
+            .to_request(),
+    )
+    .await;
+    let cookie = logged_in.response().cookies().next().unwrap().into_owned();
+    let valid = receive_request(&command);
+    let mut invalid = Vec::new();
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!(0),
+        serde_json::json!(1),
+        serde_json::json!("false"),
+        serde_json::json!("true"),
+        serde_json::json!([]),
+        serde_json::json!({}),
+    ] {
+        let mut request = valid.clone();
+        request["async_finalization"] = value;
+        invalid.push(request);
+    }
+    for flag in [false, true] {
+        let mut request = valid.clone();
+        request["async_finalization"] = flag.into();
+        request["unexpected"] = true.into();
+        invalid.push(request);
+        invalid.push(serde_json::json!([
+            flag,
+            command.device_id,
+            command.upload_url,
+            command.name,
+            command.recording_started_at.to_rfc3339(),
+        ]));
+    }
+    for (key, value) in [
+        ("device_id", device.simple().to_string()),
+        ("recording_started_at", "2026-10-03T23:59:59".into()),
+    ] {
+        let mut request = valid.clone();
+        request[key] = value.into();
+        invalid.push(request);
+    }
+    let mut payloads: Vec<_> = invalid
+        .iter()
+        .map(|request| serde_json::to_vec(request).unwrap())
+        .collect();
+    payloads.extend([
+        Vec::new(),
+        b"{\"async_finalization\":".to_vec(),
+        b"{}".to_vec(),
+    ]);
+    let object = serde_json::to_string(&valid).unwrap();
+    payloads.push(
+        format!(
+            "{},\"async_finalization\":false,\"async_finalization\":true}}",
+            object.strip_suffix('}').unwrap(),
+        )
+        .into_bytes(),
+    );
+    for payload in payloads {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/device/audio/receive")
+                .cookie(cookie.clone())
+                .insert_header(("content-type", "application/json"))
+                .set_payload(payload.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{payload:?}");
+        assert_eq!(
+            finalization_record_counts(&env.device_audio).await,
+            (0, 0, 0)
+        );
+    }
+    assert!(upload::open_completed(
+        &env.device_audio,
+        actor,
+        device,
+        &command.upload_url
+    )
+    .await
+    .is_ok());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn audio_receive_finalization_contract_preserves_source_authorization() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let actor_record = crate::entities::login::Entity::find_by_id(actor)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let basic =
+        audio_actor(&env.dbx, actor_record.organism_id.unwrap(), &["Basic"])
+            .await;
+    let intruder =
+        audio_actor(&env.dbx, actor_record.organism_id.unwrap(), &["Cyber"])
+            .await;
+    let other_device = audio_device(
+        &env.dbx,
+        &actor_record,
+        actor_record.organism_id.unwrap(),
+        false,
+    )
+    .await;
+    let command = receive_command(
+        &env.device_audio,
+        actor,
+        device,
+        "source ownership",
+        native_audio_bytes().await,
+    )
+    .await;
+    let app = audio_receive_app!(env);
+    let mut cookies = Vec::new();
+    for account in [actor, basic.id, intruder.id] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{account}"))
+                .to_request(),
+        )
+        .await;
+        cookies
+            .push(response.response().cookies().next().unwrap().into_owned());
+    }
+    for flag in [None, Some(false)] {
+        let mut valid = receive_request(&command);
+        if let Some(flag) = flag {
+            valid["async_finalization"] = flag.into();
+        }
+        let mut bad_name = valid.clone();
+        bad_name["name"] = "".into();
+        bad_name["upload_url"] = "/missing-source".into();
+        let mut wrong_device = valid.clone();
+        wrong_device["device_id"] = other_device.id.to_string().into();
+        for (cookie, request, status) in [
+            (&cookies[1], bad_name.clone(), StatusCode::FORBIDDEN),
+            (&cookies[0], bad_name, StatusCode::BAD_REQUEST),
+            (&cookies[2], valid, StatusCode::NOT_FOUND),
+            (&cookies[0], wrong_device, StatusCode::NOT_FOUND),
+        ] {
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/device/audio/receive")
+                    .cookie(cookie.clone())
+                    .set_json(&request)
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), status, "{request:?}");
+            assert_eq!(
+                finalization_record_counts(&env.device_audio).await,
+                (0, 0, 0)
+            );
+        }
+    }
+    assert!(upload::open_completed(
+        &env.device_audio,
+        actor,
+        device,
+        &command.upload_url
+    )
+    .await
+    .is_ok());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn audio_receive_finalization_contract_true_is_unavailable_without_admission(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let command = receive_command(
+        &env.device_audio,
+        actor,
+        device,
+        "async unavailable",
+        native_audio_bytes().await,
+    )
+    .await;
+    let app = audio_receive_app!(env);
+    let logged_in = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{actor}"))
+            .to_request(),
+    )
+    .await;
+    let cookie = logged_in.response().cookies().next().unwrap().into_owned();
+    let mut request = receive_request(&command);
+    request["async_finalization"] = true.into();
+    let anonymous = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/audio/receive")
+            .set_json(&request)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
     let response = test::call_service(
         &app,
         test::TestRequest::post()
@@ -825,14 +1135,158 @@ async fn audio_receive_http_requires_session_and_confirmed_publication() {
             .to_request(),
     )
     .await;
-    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let retry_after: u64 = response
+        .headers()
+        .get("retry-after")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((1..=300).contains(&retry_after));
     assert_eq!(
-        device_audio::Entity::find()
-            .count(env.device_audio.file_database().unwrap())
-            .await
-            .unwrap(),
-        1
+        response.headers().get("cache-control").unwrap(),
+        "private, no-store"
     );
+    assert!(!response.headers().contains_key("location"));
+    let body =
+        String::from_utf8(test::read_body(response).await.to_vec()).unwrap();
+    assert!(!body.is_empty());
+    assert!(serde_json::from_str::<serde_json::Value>(&body).is_err());
+    assert!(!body.contains("job_id"));
+    assert!(!body.contains("\"audio\""));
+    assert!(!body.contains(&command.upload_url));
+    assert_eq!(
+        finalization_record_counts(&env.device_audio).await,
+        (0, 0, 0)
+    );
+    assert!(upload::open_completed(
+        &env.device_audio,
+        actor,
+        device,
+        &command.upload_url
+    )
+    .await
+    .is_ok());
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn audio_receive_finalization_contract_async_owner_blocks_sync() {
+    use crate::devices::upload_finalization::{
+        admission,
+        types::{FinalizationCommand, FinalizationTarget},
+    };
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    assert!(
+        !crate::devices::upload_finalization::configured_settings(
+            &env.config,
+            true
+        )
+        .enabled
+    );
+    let command = receive_command(
+        &env.device_audio,
+        actor,
+        device,
+        "already owned",
+        native_audio_bytes().await,
+    )
+    .await;
+    let (source, source_guard) = upload::open_completed(
+        &env.device_audio,
+        actor,
+        device,
+        &command.upload_url,
+    )
+    .await
+    .unwrap();
+    let db = env.device_audio.file_database().unwrap();
+    let job = admission::admit(
+        db,
+        &FinalizationCommand {
+            created_by_login_id: actor,
+            device_id: device,
+            source_size_bytes: i64::try_from(source.upload_length).unwrap(),
+            source_locator: Some(
+                source
+                    .file_path
+                    .strip_prefix(&env.config.storage_dir)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            target: FinalizationTarget::Audio {
+                tus_id: source.file_id,
+                audio_id: Uuid::new_v4(),
+                name: command.name.clone(),
+                recording_started_at: command.recording_started_at,
+                pin_token: Uuid::new_v4(),
+            },
+        },
+        &crate::types::DeviceUploadFinalizationSettings {
+            enabled: true,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    drop(source_guard);
+    let app = audio_receive_app!(env);
+    let logged_in = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{actor}"))
+            .to_request(),
+    )
+    .await;
+    let cookie = logged_in.response().cookies().next().unwrap().into_owned();
+    for flag in [None, Some(false)] {
+        let mut request = receive_request(&command);
+        if let Some(flag) = flag {
+            request["async_finalization"] = flag.into();
+        }
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/device/audio/receive")
+                .cookie(cookie.clone())
+                .set_json(&request)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let retry_after: u64 = response
+            .headers()
+            .get("retry-after")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!((1..=300).contains(&retry_after));
+        let body = String::from_utf8(test::read_body(response).await.to_vec())
+            .unwrap();
+        assert!(!body.is_empty());
+        assert!(serde_json::from_str::<serde_json::Value>(&body).is_err());
+        assert!(!body.contains("job_id"));
+        assert!(!body.contains("\"audio\""));
+        assert_eq!(
+            finalization_record_counts(&env.device_audio).await,
+            (0, 0, 1)
+        );
+        assert!(source.file_path.exists());
+    }
+    let stored = device_upload_finalization_job::Entity::find_by_id(job.job_id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.status, "queued");
+    assert!(stored.result.is_none());
+    assert!(stored.source_released_at.is_none());
 }
 
 #[actix_web::test]
@@ -957,7 +1411,7 @@ async fn audio_receive_reconciles_unknown_commit_before_cleanup() {
 
 #[actix_web::test]
 #[serial_test::serial]
-async fn audio_receive_cancellation_retains_source_and_admission() {
+async fn audio_receive_finalization_contract_cancellation_retains_guards() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let (actor, device) = enabled_audio_device(&env).await;
     let command = receive_command(
@@ -1008,6 +1462,8 @@ async fn audio_receive_cancellation_retains_source_and_admission() {
     .await;
     let source_guard_retained = busy.is_err();
     drop(busy);
+    let shared_available =
+        available_audio_finalization_slots(&env.device_audio);
     release.notify_one();
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
@@ -1030,6 +1486,14 @@ async fn audio_receive_cancellation_retains_source_and_admission() {
     })
     .await
     .unwrap();
+    let audio_slots =
+        crate::types::DeviceUploadFinalizationSettings::default().audio_slots;
+    assert_eq!(shared_available.unwrap(), audio_slots - 1,
+        "cancelled HTTP must retain the shared audio slot until owned work finishes");
+    assert_eq!(
+        available_audio_finalization_slots(&env.device_audio).unwrap(),
+        audio_slots
+    );
     assert_eq!(
         available,
         DEVICE_AUDIO_RECEIVE_CONCURRENCY - 1,
@@ -1095,6 +1559,7 @@ async fn audio_receive_storing_retry_never_repeats_put() {
     )
     .await
     .unwrap();
+    let capacity = storage::reserve_storage(&env.device_audio).await.unwrap();
     query::allow_store(
         &env.device_audio,
         &attempt,
@@ -1107,6 +1572,7 @@ async fn audio_receive_storing_retry_never_repeats_put() {
         env.device_audio.clone(),
         attempt.storage_key.clone(),
         prepared,
+        capacity,
     )
     .await
     .unwrap();
@@ -1618,7 +2084,8 @@ async fn audio_storage_upload_uses_authenticated_readback() {
         bytes: web::Bytes::from_static(source),
         admission: admission.clone(),
     };
-    storage::store_and_verify(runtime.clone(), key.clone(), prepared)
+    let capacity = storage::reserve_storage(&runtime).await.unwrap();
+    storage::store_and_verify(runtime.clone(), key.clone(), prepared, capacity)
         .await
         .unwrap();
     assert_eq!(
@@ -2285,4 +2752,95 @@ async fn audio_completed_source_distinguishes_pending_and_busy() {
     )
     .await
     .unwrap();
+}
+
+async fn storage_capacity_preserves_retry(
+    kind: crate::devices::upload_finalization::resources::ResourceKind,
+) {
+    use crate::devices::upload_finalization::resources::{self, ResourceKind};
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let command = receive_command(
+        &env.device_audio,
+        actor,
+        device,
+        &format!("storage capacity {kind:?}"),
+        native_audio_bytes().await,
+    )
+    .await;
+    let source = upload::handler(&env.device_audio, device)
+        .unwrap()
+        .open_completed_url(&actor, &command.upload_url)
+        .await
+        .unwrap()
+        .unwrap();
+    let settings = &env.device_audio.finalization_settings;
+    let count = match kind {
+        ResourceKind::Encryption => settings.encryption_slots,
+        ResourceKind::Readback => settings.readback_slots,
+        _ => unreachable!(),
+    };
+    let guards: Vec<_> = (0..count)
+        .map(|_| {
+            resources::try_acquire(&env.device_audio.storage_dir, kind, count)
+                .unwrap()
+                .unwrap()
+        })
+        .collect();
+    let result = receive(&env.device_audio, actor, command.clone()).await;
+    drop(guards);
+    super::tests::assert_status(result, StatusCode::SERVICE_UNAVAILABLE);
+    let db = env.device_audio.file_database().unwrap();
+    let attempt = query::find_attempt(db, &command.upload_url).await.unwrap();
+    if let Some(attempt) = &attempt {
+        assert_ne!(
+            attempt.status, "deleting",
+            "capacity exhaustion must remain retryable: {kind:?}"
+        );
+        assert!(attempt.source_consumed_at.is_none());
+    }
+    assert!(
+        source.file_path.exists(),
+        "capacity exhaustion must preserve TUS bytes: {kind:?}"
+    );
+    assert_eq!(device_audio::Entity::find().count(db).await.unwrap(), 0);
+    let types::ReceiveDeviceAudioOutcome::Accepted(accepted) =
+        receive(&env.device_audio, actor, command.clone())
+            .await
+            .unwrap()
+    else {
+        panic!(
+            "the same upload must publish after {kind:?} capacity is released"
+        );
+    };
+    assert_eq!(accepted.audio.name, command.name);
+    let retried = query::find_attempt(db, &command.upload_url)
+        .await
+        .unwrap()
+        .unwrap();
+    if let Some(attempt) = attempt {
+        assert_eq!(retried.id, attempt.id);
+    }
+    assert_eq!(retried.status, "ready");
+    assert!(retried.source_consumed_at.is_some());
+    assert!(!source.file_path.exists());
+    assert_eq!(device_audio::Entity::find().count(db).await.unwrap(), 1);
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_storage_capacity_preserves_retry_encryption() {
+    storage_capacity_preserves_retry(
+        crate::devices::upload_finalization::resources::ResourceKind::Encryption,
+    )
+    .await;
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn finalization_contract_storage_capacity_preserves_retry_readback() {
+    storage_capacity_preserves_retry(
+        crate::devices::upload_finalization::resources::ResourceKind::Readback,
+    )
+    .await;
 }

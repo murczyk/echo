@@ -193,6 +193,10 @@ async fn clear_file_entries(db: &DatabaseConnection) {
     db.execute_unprepared(
         r#"
         truncate table
+            device_upload_finalization_attempt,
+            device_upload_finalization_job,
+            device_upload_finalization_budget,
+            file_content_upload_object,
             file_archive,
             file_analysis_run_item,
             file_analysis_run,

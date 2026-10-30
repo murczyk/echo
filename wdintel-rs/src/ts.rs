@@ -17,6 +17,7 @@ enum TypeDef {
 struct Variant {
     name: String,
     tag: String,
+    transparent: bool,
     args: Vec<TypeExpr>,
 }
 
@@ -244,6 +245,7 @@ fn parse_union_type(
         variants.push(Variant {
             name: variant_name.clone(),
             tag: variant_name,
+            transparent: false,
             args,
         });
 
@@ -390,7 +392,13 @@ fn apply_union_tags(lines: &[&str], defs: &mut [TypeDef]) {
         }
         for variant in variants.iter_mut() {
             if let Some(tag) = tag_map.get(&variant.name) {
-                variant.tag = tag.to_string();
+                match tag {
+                    Some(tag) => variant.tag = tag.to_string(),
+                    None if variant.args.len() == 1 => {
+                        variant.transparent = true;
+                    }
+                    None => {}
+                }
             }
         }
     }
@@ -399,7 +407,7 @@ fn apply_union_tags(lines: &[&str], defs: &mut [TypeDef]) {
 fn parse_union_encoder_tags(
     lines: &[&str],
     union_name: &str,
-) -> HashMap<String, String> {
+) -> HashMap<String, Option<String>> {
     let encoder_name = format!("{}Encoder", lower_first(union_name));
     let signature =
         format!("{encoder_name} : {union_name} -> Json.Encode.Value");
@@ -467,7 +475,7 @@ fn find_case_index(lines: &[&str], start: usize) -> Option<usize> {
 fn parse_case_variant_tags(
     lines: &[&str],
     start: usize,
-) -> HashMap<String, String> {
+) -> HashMap<String, Option<String>> {
     let mut index = start;
     let mut tag_map = HashMap::new();
 
@@ -503,7 +511,9 @@ fn parse_case_variant_tags(
                 index += 1;
             }
             if let Some(tag) = extract_tag_from_block(&block_lines) {
-                tag_map.insert(variant_name, tag);
+                tag_map.insert(variant_name, Some(tag));
+            } else if is_transparent_encoder(&block_lines) {
+                tag_map.insert(variant_name, None);
             }
             continue;
         }
@@ -511,6 +521,13 @@ fn parse_case_variant_tags(
     }
 
     tag_map
+}
+
+fn is_transparent_encoder(lines: &[String]) -> bool {
+    let mut words = lines.iter().flat_map(|line| line.split_whitespace());
+    words.next().is_some_and(|name| name.ends_with("Encoder"))
+        && words.next() == Some("inner")
+        && words.next().is_none()
 }
 
 fn parse_variant_line(line: &str) -> Option<(String, String)> {
@@ -704,6 +721,9 @@ fn render_union(name: &str, variants: &[Variant]) -> String {
 }
 
 fn render_variant(variant: &Variant) -> String {
+    if variant.transparent {
+        return format_type(&variant.args[0], 0, TypeFormat::Inline);
+    }
     let tag = variant.tag.as_str();
     if variant.args.is_empty() {
         format!("'{}'", tag)
@@ -878,6 +898,38 @@ fn is_valid_ts_ident(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{parse_bindings, render_typescript};
+
+    #[test]
+    fn finalization_contract_result_union_has_no_wire_wrapper() {
+        let elm = r#"
+type FinalizationResult
+    = FinalizationFileResult FinalizationFileReceipt
+    | FinalizationAudioResult ReceiveDeviceAudioRsp
+
+finalizationResultEncoder : FinalizationResult -> Json.Encode.Value
+finalizationResultEncoder enum =
+    case enum of
+        FinalizationFileResult inner ->
+            finalizationFileReceiptEncoder inner
+        FinalizationAudioResult inner ->
+            receiveDeviceAudioRspEncoder inner
+
+type TaggedReceipt
+    = TaggedFile FinalizationFileReceipt
+
+taggedReceiptEncoder : TaggedReceipt -> Json.Encode.Value
+taggedReceiptEncoder enum =
+    case enum of
+        TaggedFile inner ->
+            Json.Encode.object [ ( "file", finalizationFileReceiptEncoder inner ) ]
+"#;
+        let typescript = render_typescript(&parse_bindings(elm).unwrap());
+        assert!(typescript.contains("| FinalizationFileReceipt\n"));
+        assert!(typescript.contains("| ReceiveDeviceAudioRsp\n"));
+        assert!(typescript.contains("| { file: FinalizationFileReceipt }"));
+        assert!(!typescript.contains("{ FinalizationFileResult:"));
+        assert!(!typescript.contains("{ FinalizationAudioResult:"));
+    }
 
     #[test]
     fn record_union_tag_comes_from_outer_object_key() {

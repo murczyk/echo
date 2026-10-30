@@ -9,6 +9,12 @@ async fn active_result(
     fallback: i64,
     processed: &[i64],
 ) -> anyhow::Result<i64> {
+    let candidates: Vec<_> = processed
+        .iter()
+        .copied()
+        .chain(std::iter::once(fallback))
+        .collect();
+    super::lock_messages(db, &candidates).await.c(h!())?;
     Ok(IdRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         "select id from signal_message where id = any($1) and not deleted order by id limit 1",

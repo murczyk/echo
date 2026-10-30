@@ -164,6 +164,42 @@ pub fn to_unit_txt(units_list: Vec<String>) -> Option<String> {
     units_list.into_iter().reduce(|a, b| format!("{a}, {b}"))
 }
 
+pub(crate) async fn parse_message_unit<C>(
+    db: &C,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    body: &str,
+    callsigns: Vec<String>,
+    aor_id: Option<i64>,
+) -> anyhow::Result<(crate::rer_importer::types::UnitAndLoc, Option<String>)>
+where
+    C: ConnectionTrait,
+{
+    let unit_and_location =
+        parser::extract_unit_with_aor(settlements, body, callsigns, aor_id)
+            .c(h!())?;
+    let Some(unit) = &unit_and_location.unit else {
+        return Ok((unit_and_location, None));
+    };
+    let unit_v2 = crate::inbox::parse_unit_v2(db, unit).await.c(h!())?;
+    let unit_v2 = match crate::inbox::unit_resolution::resolve_sigint_unit_id(
+        db,
+        None,
+        Some(unit),
+    )
+    .await
+    .c(h!())?
+    {
+        Some(unit_id) => sigint_unit::Entity::find_by_id(unit_id)
+            .one(db)
+            .await
+            .c(h!())?
+            .map(|unit| unit.name)
+            .or(unit_v2),
+        None => unit_v2,
+    };
+    Ok((unit_and_location, unit_v2))
+}
+
 async fn parse_units<'a, 'async_trait, C>(
     text: &String,
     dbx: &'a C,

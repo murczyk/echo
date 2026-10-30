@@ -774,6 +774,21 @@ fn original_unit_can_recover_fragments(
             .all(|segment| contains_structural_segment(unit, segment))
 }
 
+pub(crate) async fn has_resolved_unit_text<C>(
+    db: &C,
+    unit_v2: Option<&str>,
+    unit: Option<&str>,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(resolve_unit_text_candidates(db, unit_v2, unit)
+        .await
+        .context(h!())?
+        .iter()
+        .any(|resolution| resolution.sigint_unit_id.is_some()))
+}
+
 async fn resolve_unit_text_candidates<C>(
     db: &C,
     unit_v2: Option<&str>,

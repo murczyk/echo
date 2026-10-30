@@ -323,3 +323,228 @@ async fn lost_main_guard_rolls_back_setting_and_single_connection_save_can_finis
     .unwrap();
     assert!(!saved.enabled);
 }
+
+async fn phase5_global_asr(env: &crate::types::Env, enabled: bool) {
+    let mut settings = crate::entities::system_settings::Entity::find()
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    settings.enable_audio_transcription = Set(enabled);
+    settings.update(&env.dbx).await.unwrap();
+}
+
+async fn phase5_wait_blocked_backend(
+    files: &sea_orm::DatabaseConnection,
+    query: &str,
+    blocker: Option<i32>,
+) -> i32 {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let row = files
+                .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DbBackend::Postgres,
+                    "SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query ILIKE $1 AND ($2::integer IS NULL OR $2=ANY(pg_blocking_pids(pid))) LIMIT 1",
+                    [query.into(), blocker.into()],
+                ))
+                .await
+                .unwrap();
+            if let Some(row) = row {
+                break row.try_get("", "pid").unwrap();
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("expected publication dependency must be blocked")
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase5_async_publication_admits_asr_using_current_global_and_device_settings(
+) {
+    use crate::devices::audio::acceptance_tests::async_acceptance_tests::{
+        phase5_enqueue, phase5_env, phase5_wait_job,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    let root = tempfile::tempdir().unwrap();
+    let env = phase5_env(
+        &env,
+        root.path(),
+        env.device_audio.byte_store().unwrap().operator.clone(),
+    );
+    for (
+        initial_global,
+        initial_device,
+        current_global,
+        current_device,
+        pending,
+    ) in [
+        (true, true, true, false, None),
+        (true, true, false, true, None),
+        (false, false, true, true, Some(0)),
+    ] {
+        phase5_global_asr(&env, initial_global).await;
+        set(&env, actor, device, initial_device).await.unwrap();
+        let command = receive_command(
+            &env.device_audio,
+            actor,
+            device,
+            &Uuid::new_v4().to_string(),
+            native_audio_bytes().await,
+        )
+        .await;
+        let job_id = phase5_enqueue(env.clone(), actor, &command).await;
+        phase5_global_asr(&env, current_global).await;
+        set(&env, actor, device, current_device).await.unwrap();
+        let cancellation = CancellationToken::new();
+        let _cancel_on_drop = cancellation.clone().drop_guard();
+        let worker = tokio::spawn(
+            crate::devices::upload_finalization::worker::run_audio(
+                env.clone(),
+                env.device_audio.clone(),
+                cancellation.clone(),
+            ),
+        );
+        let files = env.device_audio.file_database().unwrap();
+        let completed = phase5_wait_job(&env, job_id, false).await;
+        assert_eq!(completed.status, "completed", "{:?}", completed.error_code);
+        cancellation.cancel();
+        tokio::time::timeout(Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        let audio_id = completed.audio_id.unwrap();
+        let audio = device_audio::Entity::find_by_id(audio_id)
+            .one(files)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(audio.automatic_transcription_pending, pending);
+        assert!(audio.automatic_transcription.is_none());
+        assert_eq!(
+            completed.result.unwrap()["value"]["audio"]["id"],
+            audio_id.to_string()
+        );
+    }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn phase5_async_audio_and_transcription_admission_remain_atomic_until_publication(
+) {
+    use crate::devices::audio::acceptance_tests::async_acceptance_tests::{
+        phase5_enqueue, phase5_env, phase5_wait_job,
+    };
+    use crate::file_registry::entities::{
+        device_audio_ingest, device_upload_finalization_job,
+    };
+    use sea_orm::{ColumnTrait, QueryFilter};
+    use tokio_util::sync::CancellationToken;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device) = enabled_audio_device(&env).await;
+    enable_asr(&env).await;
+    let root = tempfile::tempdir().unwrap();
+    let env = phase5_env(
+        &env,
+        root.path(),
+        env.device_audio.byte_store().unwrap().operator.clone(),
+    );
+    let command = receive_command(
+        &env.device_audio,
+        actor,
+        device,
+        "atomic-async-asr-admission",
+        native_audio_bytes().await,
+    )
+    .await;
+    let job_id = phase5_enqueue(env.clone(), actor, &command).await;
+    let files = env.device_audio.file_database().unwrap();
+    let transaction = files.begin().await.unwrap();
+    transaction
+        .execute_unprepared("LOCK TABLE device_audio IN SHARE MODE")
+        .await
+        .unwrap();
+    let cancellation = CancellationToken::new();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    let worker =
+        tokio::spawn(crate::devices::upload_finalization::worker::run_audio(
+            env.clone(),
+            env.device_audio.clone(),
+            cancellation.clone(),
+        ));
+    let publisher =
+        phase5_wait_blocked_backend(files, "%INSERT%device_audio%", None).await;
+    let heartbeat = phase5_wait_blocked_backend(
+        files,
+        "update device_upload_finalization_job set lease_until%",
+        Some(publisher),
+    )
+    .await;
+    let pending = device_upload_finalization_job::Entity::find_by_id(job_id)
+        .one(files)
+        .await
+        .unwrap()
+        .unwrap();
+    let audio_id = pending.audio_id.unwrap();
+    assert_ne!(pending.status, "completed");
+    assert!(pending.result.is_none());
+    assert!(device_audio::Entity::find_by_id(audio_id)
+        .one(files)
+        .await
+        .unwrap()
+        .is_none());
+    assert!(device_audio_ingest::Entity::find()
+        .filter(device_audio_ingest::Column::AudioId.eq(audio_id))
+        .one(files)
+        .await
+        .unwrap()
+        .is_none());
+    transaction.commit().await.unwrap();
+    let completed = tokio::time::timeout(
+        Duration::from_secs(5),
+        phase5_wait_job(&env, job_id, false),
+    )
+    .await;
+    if completed.is_err() {
+        files
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "SELECT pg_cancel_backend($1)",
+                [heartbeat.into()],
+            ))
+            .await
+            .unwrap();
+    }
+    cancellation.cancel();
+    tokio::time::timeout(Duration::from_secs(5), worker)
+        .await
+        .unwrap()
+        .unwrap();
+    let completed = completed
+        .expect("heartbeat must not prevent the publication transaction from committing");
+    assert_eq!(completed.status, "completed", "{:?}", completed.error_code);
+    let audio = device_audio::Entity::find_by_id(audio_id)
+        .one(files)
+        .await
+        .unwrap()
+        .unwrap();
+    let ingest = device_audio_ingest::Entity::find_by_id(audio.ingest_id)
+        .one(files)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(ingest.status, "ready");
+    assert_eq!(ingest.audio_id, audio_id);
+    assert_eq!(ingest.storage_key, audio.storage_key);
+    assert_eq!(audio.automatic_transcription_pending, Some(0));
+    assert_eq!(
+        completed.result.unwrap()["value"]["audio"]["id"],
+        audio_id.to_string()
+    );
+}

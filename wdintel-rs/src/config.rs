@@ -1758,12 +1758,9 @@ pub const ANALYTICS_POOL_MAX_CONNECTIONS_DEFAULT: u32 = 16;
 pub const ANALYTICS_POSTGRES_FALLBACK_MAX_CONCURRENT: usize = 8;
 pub const ANALYTICS_POSTGRES_FALLBACK_QUEUE_TIMEOUT_MS: u64 = 250;
 pub const ANALYSIS_SOURCE_SEARCH_SCOPE_MAX_DAYS: i64 = 7;
-pub const ANALYSIS_SOURCE_SEARCH_WINDOW_MONTHS: u32 = 3;
-pub const ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 90_000;
-pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT: u64 = 600_000;
+pub const ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 30_000;
+pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT: u64 = 60_000;
 pub const ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX: u64 = 600_000;
-pub const ANALYSIS_SEARCH_INDEXED_PAGE_PROBE_TIMEOUT_MS: u64 = 250;
-pub const ANALYSIS_SEARCH_ORDERED_PAGE_PROBE_TIMEOUT_MS: u64 = 1_000;
 pub const ANALYSIS_SOURCE_SEARCH_SQL_HINT: &str =
     "/* echo_scoped_source_search */";
 pub const ANALYSIS_SOURCE_READ_QUEUE_TIMEOUT_MS: u64 = 10_000;
@@ -1773,9 +1770,6 @@ pub const ANALYSIS_SOURCE_COUNT_MAX_CONCURRENT: usize = 4;
 pub const ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN: usize = 2;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_CONCURRENT: usize = 4;
 pub const ANALYSIS_SOURCE_COUNT_OPERATION_MAX_PER_LOGIN: usize = 2;
-pub const ANALYSIS_SOURCE_COUNT_PROBE_TIMEOUT_MS: u64 = 8_000;
-pub const ANALYSIS_SOURCE_COUNT_WINDOW_TIMEOUT_MS: u64 = 8_000;
-pub const ANALYSIS_SOURCE_COUNT_WINDOW_DAYS: i64 = 1;
 pub const ANALYSIS_SOURCE_READ_LOGIN_QUEUE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYSIS_SOURCE_READ_QUEUE_ERROR: &str =
     "analysis source read admission exhausted";
@@ -1811,6 +1805,50 @@ pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_DEFAULT: u64 = 500;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_BATCH_SIZE_MAX: u64 = 1_000;
 pub const SIGNAL_MESSAGE_UUID_BACKFILL_PAUSE_MS_DEFAULT: u64 = 250;
 
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_GLOBAL_JOBS: u32 = 512;
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_ACTOR_JOBS: u32 = 32;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_GLOBAL_JOBS: u32 = 512;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_ACTOR_JOBS: u32 = 32;
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_GLOBAL_BYTES: u64 =
+    80 * 1024 * 1024 * 1024;
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_ACTOR_BYTES: u64 =
+    100 * 1024 * 1024 * 1024;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_GLOBAL_BYTES: u64 =
+    8 * 1024 * 1024 * 1024;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_ACTOR_BYTES: u64 =
+    2 * 1024 * 1024 * 1024;
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_SLOTS: usize = 4;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_SLOTS: usize = 4;
+pub const DEVICE_UPLOAD_FINALIZATION_DECODE_SLOTS: usize = 2;
+pub const DEVICE_UPLOAD_FINALIZATION_READBACK_SLOTS: usize = 2;
+pub const DEVICE_UPLOAD_FINALIZATION_ENCRYPTION_SLOTS: usize = 2;
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_UNRESOLVED_WRITES: u32 = 4;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_UNRESOLVED_WRITES: u32 = 4;
+pub const DEVICE_UPLOAD_FINALIZATION_POLL_SECONDS: u64 = 1;
+pub const DEVICE_UPLOAD_FINALIZATION_RESOURCE_POLL_MILLIS: u64 = 20;
+pub const DEVICE_UPLOAD_FINALIZATION_LEASE_SECONDS: u64 = 60;
+pub const DEVICE_UPLOAD_FINALIZATION_HEARTBEAT_SECONDS: u64 = 10;
+pub const DEVICE_UPLOAD_FINALIZATION_RETRY_MIN_SECONDS: u64 = 1;
+pub const DEVICE_UPLOAD_FINALIZATION_NO_DISPATCH_RETRY_SECONDS: u64 = 1;
+pub const DEVICE_UPLOAD_FINALIZATION_RETRY_MAX_SECONDS: u64 = 300;
+pub const DEVICE_UPLOAD_FINALIZATION_FILE_PHASE_SECONDS: u64 = 1800;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_PHASE_SECONDS: u64 = 600;
+pub const DEVICE_UPLOAD_FINALIZATION_SOURCE_LOCK_MILLIS: u64 = 500;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_PIN_MAX_BYTES: u64 = 4096;
+pub const DEVICE_UPLOAD_FINALIZATION_AUDIO_DIRECTORY_ANCHOR: &str =
+    ".finalization";
+pub const DEVICE_UPLOAD_FINALIZATION_ORPHAN_SCAN_BATCH: usize = 100;
+pub const DEVICE_UPLOAD_FINALIZATION_ACCOUNTING_BATCH: i64 = 100;
+#[cfg(any(test, debug_assertions))]
+pub const DEVICE_UPLOAD_FINALIZATION_FAULT_POLL_MILLIS: u64 = 20;
+pub const DEVICE_UPLOAD_FINALIZATION_SHUTDOWN_GRACE_SECONDS: u64 = 120;
+pub const DEVICE_UPLOAD_FINALIZATION_COMPLETE_BODY_BYTES: usize = 1024;
+pub const DEVICE_UPLOAD_FINALIZATION_POLL_MAX_SECONDS: u64 = 300;
+pub const DEVICE_UPLOAD_FINALIZATION_METRICS_INTERVAL_SECONDS: u64 = 30;
+pub const DEVICE_UPLOAD_FINALIZATION_METRICS_LOCK: i64 = 7_069_512_943_169;
+pub const DEVICE_UPLOAD_FINALIZATION_METRICS_TIMEOUT_MILLIS: u64 = 5_000;
+pub const DEVICE_UPLOAD_FINALIZATION_STOP_TIMEOUT_SECONDS: u64 = 135;
+
 /// Dynamic config that's different on different deployments
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct Config {
@@ -1822,6 +1860,9 @@ pub struct Config {
     pub pg_password: Option<String>,
     pub pg_dbname: Option<String>,
     pub file_registry: Option<FileRegistryConfig>,
+    #[serde(default)]
+    pub device_upload_finalization:
+        Option<crate::types::DeviceUploadFinalizationSettings>,
     pub cookie_session_secret: String,
     /// Base64 32-byte StrongBox key for encrypting TOTP seeds in Redis and
     /// `login_totp`. Generate with `oneoff-generate-strongbox-key`.
@@ -2103,9 +2144,19 @@ impl TryFrom<PostgresRuntimeConfigRaw> for PostgresRuntimeConfig {
                 .statement_timeout_ms
                 .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT),
             search_statement_timeout_ms: config.search_statement_timeout_ms
-                .unwrap_or(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT),
+                .unwrap_or_else(|| config.statement_timeout_ms
+                    .unwrap_or(POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT)
+                    .min(ANALYSIS_SEARCH_STATEMENT_TIMEOUT_MS_DEFAULT)),
             search_http_timeout_ms: config.search_http_timeout_ms
-                .unwrap_or(ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT),
+                .unwrap_or_else(|| {
+                    if config.search_statement_timeout_ms.is_some_and(|timeout|
+                        timeout >= ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT)
+                    {
+                        ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_MAX
+                    } else {
+                        ANALYSIS_SEARCH_HTTP_TIMEOUT_MS_DEFAULT
+                    }
+                }),
             report_worker_statement_timeout_ms: config
                 .report_worker_statement_timeout_ms
                 .unwrap_or(
@@ -2692,6 +2743,37 @@ pg_dbname = "echo_analytics_gateway"
             POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT
         );
         assert_eq!(
+            postgres_runtime.search_statement_timeout_ms,
+            postgres_runtime.statement_timeout_ms
+        );
+        assert_eq!(postgres_runtime.search_http_timeout_ms, 60_000);
+        for statement_ms in [60_000, 90_000, 599_999] {
+            let configured: TestPostgresRuntimeSection = toml::from_str(
+                &format!("[postgres_runtime]\nsearch_statement_timeout_ms = {statement_ms}\n"),
+            )
+            .unwrap();
+            let postgres_runtime = configured.postgres_runtime.unwrap();
+            assert_eq!(
+                postgres_runtime.search_statement_timeout_ms,
+                statement_ms
+            );
+            assert_eq!(postgres_runtime.search_http_timeout_ms, 600_000);
+        }
+        for (ordinary, expected) in [(5_000, 5_000), (120_000, 30_000)] {
+            let configured: TestPostgresRuntimeSection =
+                toml::from_str(&format!(
+                    "[postgres_runtime]\nstatement_timeout_ms = {ordinary}\n"
+                ))
+                .unwrap();
+            assert_eq!(
+                configured
+                    .postgres_runtime
+                    .unwrap()
+                    .search_statement_timeout_ms,
+                expected
+            );
+        }
+        assert_eq!(
             postgres_runtime.report_worker_statement_timeout_ms,
             POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT
         );
@@ -2730,7 +2812,7 @@ search_http_timeout_ms = 600001
 "#,
             r#"
 [postgres_runtime]
-search_http_timeout_ms = 90000
+search_http_timeout_ms = 30000
 "#,
         ] {
             let error = toml::from_str::<TestPostgresRuntimeSection>(input)

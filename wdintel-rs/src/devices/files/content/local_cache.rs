@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use super::{repository::Upload, LockedSpool};
 use crate::devices::config::DEVICE_FILE_CONTENT_CACHE_TIMEOUT_SECS;
-use crate::file_registry::entities::file_content;
+use crate::file_registry::entities::{
+    file_content, file_content_upload_object,
+};
 use crate::h;
 use crate::messenger::media_local_cache;
 use crate::types::{warn, Env, ShortContext};
@@ -39,22 +41,44 @@ pub(super) async fn retain_upload_best_effort(
                 .await
                 .c(h!())?
                 .c(h!())?;
+        let selected =
+            file_content_upload_object::Entity::find_by_id(upload.id)
+                .one(env.file_registry_db().c(h!())?.connection())
+                .await
+                .c(h!())?
+                .c(h!())?;
         ensure!(
             content.upload_id == Some(upload.id)
-                && content.object_key == upload.object_key
+                && selected.file_id == upload.file_id
+                && content.object_key == selected.object_key
+                && content.source_size_bytes == selected.source_size_bytes
+                && content.source_sha256 == selected.source_sha256
+                && content.is_encrypted == selected.is_encrypted
                 && content.source_size_bytes as u64 == upload.upload_length
                 && content.source_sha256 == upload.expected_sha256,
             "retained upload does not match published content"
         );
-        media_local_cache::retain_object_best_effort(
-            &config,
-            &content.object_key,
-            content.source_size_bytes,
-            content.is_encrypted,
-            spool.source_path(),
-            content.created_at.timestamp(),
-        )
-        .await;
+        if selected.attempt_id.is_some() {
+            media_local_cache::retain_open_object_best_effort(
+                &config,
+                &content.object_key,
+                content.source_size_bytes,
+                content.is_encrypted,
+                spool.open_durable_source().c(h!())?,
+                content.created_at.timestamp(),
+            )
+            .await;
+        } else {
+            media_local_cache::retain_object_best_effort(
+                &config,
+                &content.object_key,
+                content.source_size_bytes,
+                content.is_encrypted,
+                spool.source_path(),
+                content.created_at.timestamp(),
+            )
+            .await;
+        }
         Ok(())
     })
     .await;

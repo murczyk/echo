@@ -39,6 +39,30 @@ impl MainGuard {
             && crate::devices::access::require_audio_edit(&actor.roles).is_ok())
     }
 
+    pub async fn authorize_source(&self, actor_id: Uuid) -> anyhow::Result<()> {
+        let actor = crate::devices::access::resolve_login_by_id(
+            &self.transaction,
+            &actor_id,
+        )
+        .await
+        .c(h!())?;
+        crate::devices::access::require_audio_source(&actor.roles).c(h!())?;
+        super::super::query::find_visible_device(
+            &self.transaction,
+            &actor,
+            self.device_id,
+        )
+        .await
+        .c(h!())?;
+        anyhow::ensure!(
+            self.active(),
+            crate::error::AppError::Forbidden(
+                "archived device cannot be changed".into()
+            )
+        );
+        Ok(())
+    }
+
     pub async fn acquire(
         runtime: &DeviceAudioRuntime,
         device_id: Uuid,

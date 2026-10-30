@@ -93,6 +93,11 @@ pub mod tests {
                     truncate table
                         public.file_archive,
                         public.device_audio_forwarding_outbox,
+                        public.device_upload_finalization_job,
+                        public.device_upload_finalization_attempt,
+                        public.device_upload_finalization_budget,
+                        public.device_upload_finalization_terminal_metric,
+                        public.file_content_upload_object,
                         public.device_audio_asr_setting,
                         public.device_audio,
                         public.device_audio_ingest,

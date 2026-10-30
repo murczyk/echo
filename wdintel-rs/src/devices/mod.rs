@@ -18,3 +18,8 @@ pub(crate) mod settings;
 #[cfg(test)]
 mod tests;
 pub(crate) mod types;
+#[allow(
+    dead_code,
+    reason = "Foundation interfaces are consumed by subsequent finalization adapters"
+)]
+pub(crate) mod upload_finalization;

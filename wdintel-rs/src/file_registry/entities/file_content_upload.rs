@@ -12,20 +12,22 @@ pub struct Model {
     #[sea_orm(
         primary_key,
         auto_increment = false,
-        unique_key = "file_content_upload_verified_identity_key"
+        unique_key = "file_content_upload_command_key"
     )]
     pub id: Uuid,
+    #[sea_orm(unique_key = "file_content_upload_command_key")]
     pub device_id: Uuid,
-    #[sea_orm(unique_key = "file_content_upload_verified_identity_key")]
+    #[sea_orm(unique_key = "file_content_upload_command_key")]
     pub file_id: Uuid,
-    #[sea_orm(unique_key = "file_content_upload_binding_key")]
+    #[sea_orm(unique_key = "file_content_upload_command_key")]
     pub revision: i64,
+    #[sea_orm(unique_key = "file_content_upload_command_key")]
     pub created_by_login_id: Uuid,
-    #[sea_orm(unique_key = "file_content_upload_verified_identity_key")]
+    #[sea_orm(unique_key = "file_content_upload_command_key")]
     pub upload_length: i64,
     #[sea_orm(
         column_type = "VarBinary(StringLen::None)",
-        unique_key = "file_content_upload_verified_identity_key"
+        unique_key = "file_content_upload_source_identity_key"
     )]
     pub expected_sha256: Vec<u8>,
     #[sea_orm(column_type = "Text", unique)]
@@ -38,12 +40,21 @@ pub struct Model {
     pub spool_removed_at: Option<DateTimeWithTimeZone>,
     pub next_cleanup_at: Option<DateTimeWithTimeZone>,
     pub stats_epoch: i64,
+    pub finalization_job_id: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::file_content::Entity")]
-    FileContent,
+    #[sea_orm(
+        belongs_to = "super::device_upload_finalization_job::Entity",
+        from = "Column::FinalizationJobId",
+        to = "super::device_upload_finalization_job::Column::Id",
+        on_update = "NoAction",
+        on_delete = "Restrict"
+    )]
+    DeviceUploadFinalizationJob,
+    #[sea_orm(has_many = "super::file_content_upload_object::Entity")]
+    FileContentUploadObject,
     #[sea_orm(
         belongs_to = "super::file_revision::Entity",
         from = "(Column::DeviceId, Column::FileId, Column::Revision)",
@@ -54,9 +65,15 @@ pub enum Relation {
     FileRevision,
 }
 
-impl Related<super::file_content::Entity> for Entity {
+impl Related<super::device_upload_finalization_job::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FileContent.def()
+        Relation::DeviceUploadFinalizationJob.def()
+    }
+}
+
+impl Related<super::file_content_upload_object::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileContentUploadObject.def()
     }
 }
 

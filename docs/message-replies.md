@@ -2,6 +2,17 @@
 
 Issue: [#3612](https://github.com/echoua/echo/issues/3612).
 
+## Lock protocol rollout
+
+After explicit approval naming the target and operations, stop its API and all
+background writers, apply `m20261029_104825_message_reply_component_locks` with
+the normal release migrations, then start API and workers from the new release.
+The migration changes functions/triggers only; it needs no data backfill or
+analytics resnapshot. Old binaries call the removed global-lock function, so
+rolling deployment with mixed writer versions is unsupported. A rollback must
+also stop all writers, reverse this migration, and restore the matching binaries;
+it requires separate approval when outside the approved operation.
+
 Duty Neo and Analysis Neo expose `Відповісти` in the shared message actions. It
 opens the page’s shared responsive editor with a read-only citation of the clicked
 message, a locked source group, an independent empty body, and a blue source outline.
@@ -30,9 +41,25 @@ Database triggers resolve heads, reparent descendants when an ancestor arrives o
 is remapped, handle soft and physical deletion, and enqueue invalidations.
 Descendants are updated as a set so a long chain does not exhaust the trigger stack.
 Invalidations include a surviving member when the head has been physically deleted. Reply
-mutations acquire one transaction advisory lock before source and relationship
-locks so concurrent native reconciliation cannot create divergent heads. When
-native sources share one canonical reply, its latest resolved target determines
+mutations acquire transaction advisory locks for the affected connected messages,
+source inbox/outbox receipts, relationships and cached thread identities. They
+use the same database protocol for application calls, source writes, relationship
+triggers and endpoint deletion. Reconciliation locks all processed candidates
+and the fallback before selecting the first active result, including duplicate
+promotion, so deletion during a lock wait cannot leave a stale canonical mapping.
+Unrelated threads and zero-row relationship
+updates do not share a global lock. Source receipt locks also protect parents
+that have not arrived yet; canonical-message locks coordinate deduplication across
+datasources. Locks are sorted, and discovery is repeated after waiting if the
+component gained identities. A failed discovery attempt releases its new locks
+before retrying. Writers use `READ COMMITTED`; fixed-snapshot write transactions
+are rejected because discovery must observe commits after a lock wait.
+Transactions that extend several components can still encounter
+normal row/advisory deadlocks; PostgreSQL aborts them, and native queue processing
+retries the complete item. User edits cannot change `engaged_message_id`.
+Concurrency safeguards are exercised in `wdintel-rs/src/message_reply/tests.rs`.
+
+When native sources share one canonical reply, its latest resolved target determines
 its single thread; the source receipts retain their individual native targets.
 The migration preserves the earliest existing relationship when old multi-citation
 rows share a reply. Nullable column backfill publishes the additive analytics

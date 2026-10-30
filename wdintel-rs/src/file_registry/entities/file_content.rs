@@ -50,13 +50,13 @@ pub enum Relation {
     )]
     FileArchive,
     #[sea_orm(
-        belongs_to = "super::file_content_upload::Entity",
-        from = "(Column::UploadId, Column::FileId, Column::ObjectKey, Column::SourceSizeBytes, Column::SourceSha256)",
-        to = "(super::file_content_upload::Column::Id, super::file_content_upload::Column::FileId, super::file_content_upload::Column::ObjectKey, super::file_content_upload::Column::UploadLength, super::file_content_upload::Column::ExpectedSha256)",
+        belongs_to = "super::file_content_upload_object::Entity",
+        from = "(Column::UploadId, Column::FileId, Column::ObjectKey, Column::SourceSizeBytes, Column::SourceSha256, Column::IsEncrypted)",
+        to = "(super::file_content_upload_object::Column::UploadId, super::file_content_upload_object::Column::FileId, super::file_content_upload_object::Column::ObjectKey, super::file_content_upload_object::Column::SourceSizeBytes, super::file_content_upload_object::Column::SourceSha256, super::file_content_upload_object::Column::IsEncrypted)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    FileContentUpload,
+    FileContentUploadObject,
     #[sea_orm(has_one = "super::file_document::Entity")]
     FileDocument,
     #[sea_orm(has_many = "super::file_entry::Entity")]
@@ -79,9 +79,9 @@ impl Related<super::file_archive::Entity> for Entity {
     }
 }
 
-impl Related<super::file_content_upload::Entity> for Entity {
+impl Related<super::file_content_upload_object::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FileContentUpload.def()
+        Relation::FileContentUploadObject.def()
     }
 }
 

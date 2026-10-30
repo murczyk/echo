@@ -67,7 +67,7 @@ pub async fn prepare_submission(
     preferred_group: Option<&str>,
 ) -> anyhow::Result<crate::entities::signal_group::Model> {
     let ids = &[engaged_message_id];
-    lock_threads(db).await.c(h!())?;
+    lock_messages(db, ids).await.c(h!())?;
     // Lock before checking access so deletion cannot race with relationship creation.
     db.query_all_raw(Statement::from_sql_and_values(DatabaseBackend::Postgres,
         "select id from signal_message where id = any($1) order by id for share", vec![ids.to_vec().into()]))
@@ -124,11 +124,26 @@ pub async fn prepare_submission(
     anyhow::bail!("Немає доступної групи для відповіді.")
 }
 
-pub(super) async fn lock_threads<C: ConnectionTrait>(
+pub(super) async fn lock_messages<C: ConnectionTrait>(
     db: &C,
+    ids: &[i64],
 ) -> anyhow::Result<()> {
-    db.execute_unprepared("select message_reply_lock_threads()")
-        .await
-        .c(h!())?;
+    let nodes: Vec<_> = ids.iter().map(|id| {
+        serde_json::json!({"kind": "message", "datasource": 0, "id": id})
+    }).collect();
+    lock_nodes(db, serde_json::json!(nodes)).await.c(h!())
+}
+
+pub(super) async fn lock_nodes<C: ConnectionTrait>(
+    db: &C,
+    nodes: serde_json::Value,
+) -> anyhow::Result<()> {
+    db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select message_reply_lock_nodes($1)",
+        vec![nodes.into()],
+    ))
+    .await
+    .c(h!())?;
     Ok(())
 }

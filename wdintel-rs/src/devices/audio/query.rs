@@ -22,7 +22,7 @@ pub(super) struct VisibleDevice {
     pub archived: bool,
 }
 
-#[derive(FromQueryResult)]
+#[derive(FromQueryResult, sqlx::FromRow)]
 pub(super) struct AudioRow {
     pub id: Uuid,
     pub device_id: Uuid,
@@ -275,6 +275,39 @@ pub(super) async fn find_attempt<C: ConnectionTrait>(
         .c(h!())
 }
 
+pub(super) async fn find_upload_attempt<C: ConnectionTrait>(
+    db: &C,
+    upload_id: Uuid,
+) -> anyhow::Result<Option<device_audio_ingest::Model>> {
+    device_audio_ingest::Entity::find()
+        .filter(device_audio_ingest::Column::TusUploadId.eq(upload_id))
+        .one(db)
+        .await
+        .c(h!())
+}
+
+pub(super) async fn own_ready_in(
+    connection: &mut sqlx::PgConnection,
+    attempt: &device_audio_ingest::Model,
+) -> anyhow::Result<ReceiveDeviceAudioRsp> {
+    let audio = sqlx::query_as::<_, AudioRow>(
+        "select a.id,a.device_id,a.name,a.recording_started_at,a.recording_ended_at,a.duration_us,a.processed,a.processing_version \
+         from device_audio_ingest i join device_audio a on a.ingest_id=i.id and a.id=i.audio_id and a.device_id=i.device_id and a.storage_key=i.storage_key \
+         where i.id=$1 and i.status='ready' and a.name_key=i.name_key and a.recording_started_at=i.recording_started_at \
+         and a.source_size_bytes=i.source_size_bytes and a.source_sha256=i.source_sha256 and a.duration_us=i.duration_us and a.mime_type=i.mime_type \
+         for share of i,a",
+    )
+    .bind(attempt.id)
+    .fetch_optional(connection)
+    .await
+    .c(h!())?
+    .ok_or_else(|| super::unavailable("audio publication proof is unavailable"))
+    .c(h!())?;
+    Ok(ReceiveDeviceAudioRsp {
+        audio: audio.summary(),
+    })
+}
+
 pub(super) fn check_attempt(
     attempt: &device_audio_ingest::Model,
     actor: Uuid,
@@ -292,6 +325,22 @@ pub(super) fn check_attempt(
         ));
     }
     Ok(())
+}
+
+pub(super) fn attempt_source_size(
+    attempt: &device_audio_ingest::Model,
+) -> Option<u64> {
+    attempt
+        .source_size_bytes
+        .and_then(|size| u64::try_from(size).ok())
+        .or_else(|| {
+            attempt
+                .tus_upload_ref
+                .rsplit('/')
+                .next()
+                .and_then(crate::sigint::file_upload::tus::parse_request_file)
+                .map(|(_, size)| size)
+        })
 }
 
 pub(super) fn conflict(code: &str, message: &str) -> anyhow::Error {
@@ -577,7 +626,7 @@ pub(super) async fn publish(
     Ok(outcome)
 }
 
-fn ready_audio(
+pub(super) fn ready_audio(
     attempt: &device_audio_ingest::Model,
     media: &ProbedAudio,
 ) -> anyhow::Result<device_audio::ActiveModel> {

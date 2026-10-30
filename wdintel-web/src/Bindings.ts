@@ -2845,11 +2845,80 @@ export type DeviceAudioPreparationState =
 ;
 
 export type ReceiveDeviceAudioReq = {
+  asyncFinalization: boolean;
   deviceId: string;
   uploadUrl: string;
   name: string;
   recordingStartedAt: string;
 };
+
+export type CompleteDeviceFileUploadReq = {
+  asyncFinalization: boolean;
+};
+
+export type FinalizationKind =
+  | 'file'
+  | 'audio'
+;
+
+export type QueuedAcknowledgement = {
+  status: QueuedStatus;
+  jobId: string;
+};
+
+export type QueuedStatus =
+  | 'queued'
+;
+
+export type FinalizationStatus =
+  | 'queued'
+  | 'processing'
+  | 'retry_wait'
+  | 'outcome_unknown'
+  | 'completed'
+  | 'failed'
+;
+
+export type FinalizationJobSnapshot = {
+  jobId: string;
+  kind: FinalizationKind;
+  status: FinalizationStatus;
+  createdAt: string;
+  updatedAt: string;
+  finishedAt: string | null;
+  retryAfterSeconds: number | null;
+  result: FinalizationResult | null;
+  error: FinalizationError | null;
+};
+
+export type FinalizationResult =
+  | FinalizationFileReceipt
+  | ReceiveDeviceAudioRsp
+;
+
+export type FinalizationFileReceipt = {
+  uploadId: string;
+  fileId: string;
+  revision: number;
+  status: CompletedStatus;
+};
+
+export type CompletedStatus =
+  | 'completed'
+;
+
+export type FinalizationError = {
+  code: string;
+  message: string;
+  action: FinalizationAction;
+};
+
+export type FinalizationAction =
+  | 'retry_poll'
+  | 'new_upload'
+  | 'correct_request'
+  | 'contact_operator'
+;
 
 export type ReceiveDeviceAudioRsp = {
   audio: DeviceAudio;

@@ -816,3 +816,69 @@ async fn forwarding_reuses_every_queue_state_and_enqueues_without_device_asr() {
         assert!(!worker::batch(&env).await.unwrap());
     }
 }
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn async_publication_uses_current_forwarding_settings_atomically() {
+    use crate::devices::upload_finalization;
+    use crate::file_registry::entities::device_audio_forwarding_outbox;
+    use audio::acceptance_tests::async_acceptance_tests::{
+        phase5_enqueue, phase5_env, phase5_wait_job,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let env = phase5_env(
+        &env,
+        root.path(),
+        env.device_audio.byte_store().unwrap().operator.clone(),
+    );
+    let (actor, device, groups) = fixture(&env).await;
+    for enabled in [true, false] {
+        configure(&env, &actor, device, !enabled, groups.clone(), vec![])
+            .await
+            .unwrap();
+        let command = receive_command(
+            &env.device_audio,
+            actor.id,
+            device,
+            &Uuid::new_v4().to_string(),
+            native_audio_bytes().await,
+        )
+        .await;
+        let job_id = phase5_enqueue(env.clone(), actor.id, &command).await;
+        configure(&env, &actor, device, enabled, vec![], vec![])
+            .await
+            .unwrap();
+        let cancellation = CancellationToken::new();
+        let _cancel_on_drop = cancellation.clone().drop_guard();
+        let worker = tokio::spawn(upload_finalization::worker::run_audio(
+            env.clone(),
+            env.device_audio.clone(),
+            cancellation.clone(),
+        ));
+        let job = phase5_wait_job(&env, job_id, false).await;
+        cancellation.cancel();
+        tokio::time::timeout(std::time::Duration::from_secs(5), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.status, "completed", "{:?}", job.error_code);
+        let files = env.device_audio.file_database().unwrap();
+        let deliveries = device_audio_forwarding_outbox::Entity::find()
+            .filter(
+                device_audio_forwarding_outbox::Column::AudioId
+                    .eq(job.audio_id.unwrap()),
+            )
+            .all(files)
+            .await
+            .unwrap();
+        assert_eq!(deliveries.len(), if enabled { groups.len() } else { 0 });
+        for delivery in deliveries {
+            assert!(groups.contains(&delivery.group_master_key));
+            assert_eq!(delivery.actor_id, actor.id);
+            assert!(delivery.completed_at.is_none());
+        }
+    }
+}

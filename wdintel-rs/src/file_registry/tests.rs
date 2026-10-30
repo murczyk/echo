@@ -11,8 +11,8 @@ use crate::devices::analytics::types::RuleExpression;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
-    DbBackend, DbErr, EntityTrait, IntoActiveModel, Set, Statement,
-    TransactionTrait, TryIntoModel,
+    DbBackend, DbErr, EntityTrait, FromQueryResult, IntoActiveModel, Set,
+    Statement, TransactionTrait, TryIntoModel,
 };
 use sea_orm_migration::MigratorTrait;
 use sqlx::migrate::MigrateDatabase;
@@ -694,6 +694,7 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261008_183827_file_preview_archive_members".to_string(),
             "m20261010_130006_device_audio_asr".to_string(),
             "m20261012_094502_device_audio_asr_scan_indexes".to_string(),
+            "m20261014_182354_device_upload_finalization".to_string(),
             "m20261016_165725_device_audio_transcription_pending".to_string(),
             "m20261016_172538_retire_device_audio_asr_executor".to_string(),
             "m20261017_101924_drop_device_audio_transcription_backfill"
@@ -702,6 +703,10 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20261023_071318_device_audio_forwarding".to_string(),
             "m20261024_090745_device_content_stats".to_string(),
             "m20261024_090746_device_content_stats_pending_index".to_string(),
+            "m20261027_092423_failed_finalization_cleanup".to_string(),
+            "m20261027_093747_file_finalization_ownership".to_string(),
+            "m20261027_112601_synchronous_finalization_adoption".to_string(),
+            "m20261028_153759_finalization_terminal_metrics".to_string(),
         ]
     );
 }
@@ -1350,6 +1355,7 @@ async fn assert_file_content_schema(connection: &DatabaseConnection) {
                 "timestamptz",
             ),
             ("stats_epoch", "NO", Some("0"), "bigint", "int8"),
+            ("finalization_job_id", "YES", None, "uuid", "uuid"),
         ],
     )
     .await;
@@ -1421,13 +1427,18 @@ order by value.enumsortorder
     );
     assert_eq!(
         constraint_names(connection, "file_content_upload", 'f').await,
-        vec!["file_content_upload_target_fk".to_string()]
+        vec![
+            "file_content_upload_finalization_job_id_fkey".to_string(),
+            "file_content_upload_target_fk".to_string(),
+        ]
     );
     assert_eq!(
         constraint_names(connection, "file_content_upload", 'u').await,
         vec![
             "file_content_upload_binding_key".to_string(),
+            "file_content_upload_command_key".to_string(),
             "file_content_upload_object_key_key".to_string(),
+            "file_content_upload_source_identity_key".to_string(),
             "file_content_upload_verified_identity_key".to_string(),
         ]
     );
@@ -1465,6 +1476,7 @@ where conname in (
     'file_content_revision_fk',
     'file_content_verified_upload_binding_fk',
     'file_content_upload_target_fk',
+    'file_content_upload_finalization_job_id_fkey',
     'file_entry_current_content_fk',
     'file_revision_device_file_fk'
 )
@@ -1490,12 +1502,16 @@ order by conname
                 "FOREIGN KEY (file_id, revision) REFERENCES file_revision(id, revision) ON DELETE RESTRICT",
             ),
             (
+                "file_content_upload_finalization_job_id_fkey",
+                "FOREIGN KEY (finalization_job_id) REFERENCES device_upload_finalization_job(id) ON DELETE RESTRICT",
+            ),
+            (
                 "file_content_upload_target_fk",
                 "FOREIGN KEY (device_id, file_id, revision) REFERENCES file_revision(device_id, id, revision) ON DELETE RESTRICT",
             ),
             (
                 "file_content_verified_upload_binding_fk",
-                "FOREIGN KEY (upload_id, file_id, object_key, source_size_bytes, source_sha256) REFERENCES file_content_upload(id, file_id, object_key, upload_length, expected_sha256) ON DELETE RESTRICT",
+                "FOREIGN KEY (upload_id, file_id, object_key, source_size_bytes, source_sha256, is_encrypted) REFERENCES file_content_upload_object(upload_id, file_id, object_key, source_size_bytes, source_sha256, is_encrypted) ON DELETE RESTRICT",
             ),
             (
                 "file_entry_current_content_fk",
@@ -1543,6 +1559,7 @@ order by tablename, indexname
             ("file_content", "file_content_upload_id_idx"),
             ("file_content_upload", "file_content_upload_binding_key",),
             ("file_content_upload", "file_content_upload_cleanup_idx"),
+            ("file_content_upload", "file_content_upload_command_key"),
             ("file_content_upload", "file_content_upload_object_key_key",),
             (
                 "file_content_upload",
@@ -1556,6 +1573,10 @@ order by tablename, indexname
             (
                 "file_content_upload",
                 "file_content_upload_reserved_count_idx",
+            ),
+            (
+                "file_content_upload",
+                "file_content_upload_source_identity_key"
             ),
             (
                 "file_content_upload",
@@ -1599,10 +1620,15 @@ order by relation.relname, trigger.tgname
     assert_eq!(
         triggers,
         [
+            ("file_content", "file_content_00_register_object_trg"),
             ("file_content", "file_content_archive_guard"),
             ("file_content", "file_content_immutable_trg"),
             ("file_content", "file_content_verify_reuse_trg"),
             ("file_content", "file_document_content_published"),
+            (
+                "file_content_upload",
+                "file_content_upload_finalization_trg",
+            ),
             ("file_content_upload", "file_content_upload_mutation_trg",),
         ]
         .into_iter()
@@ -2799,6 +2825,1661 @@ fn base_file_entry(
 
 fn uuid_label(id: Uuid) -> String {
     format!("n{}", id.to_string().replace('-', ""))
+}
+
+mod async_finalization_migration {
+    use super::super::entities::device_upload_finalization_job;
+    use super::*;
+
+    const VERSION: &str = "m20261014_182354_device_upload_finalization";
+    const ADOPTION_VERSION: &str =
+        "m20261027_112601_synchronous_finalization_adoption";
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn preserves_publications_and_canonical_sync_writers() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            migrate_before_finalization(connection).await;
+            let transaction = connection.begin().await.unwrap();
+            let original = publish_original(&transaction).await;
+            reuse_original(&transaction, &original).await;
+            insert_legacy_audio(&transaction).await;
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+
+            run_migrations(&config, Mode::Debug).await.unwrap();
+            run_migrations(&config, Mode::Debug).await.unwrap();
+
+            assert!(
+                table_exists(connection, "file_content_upload_object").await,
+                "async finalization migration must register selected objects"
+            );
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_eq!(table_count(connection, "file_content").await, 2);
+            assert_eq!(
+                table_count(connection, "file_content_upload_object").await,
+                1
+            );
+            assert_eq!(
+                table_count(connection, "device_upload_finalization_job").await,
+                0
+            );
+            assert_eq!(
+                table_count(connection, "device_upload_finalization_attempt")
+                    .await,
+                0
+            );
+            assert_selected_object(connection, &original).await;
+            assert_selected_object_immutable(connection, &original).await;
+
+            let transaction = connection.begin().await.unwrap();
+            let old_writer = publish_original(&transaction).await;
+            transaction.commit().await.unwrap();
+            assert_selected_object(connection, &old_writer).await;
+            assert_eq!(
+                table_count(connection, "file_content_upload_object").await,
+                2
+            );
+            assert_migration_versions(connection).await;
+
+            downgrade_finalization(connection).await.unwrap();
+            assert!(
+                !table_exists(connection, "file_content_upload_object").await
+            );
+            assert_eq!(table_count(connection, "file_content").await, 3);
+            assert_eq!(table_count(connection, "device_audio").await, 1);
+            wdfiles_migration::Migrator::up(connection, None)
+                .await
+                .unwrap();
+            assert_selected_object(connection, &original).await;
+            assert_selected_object(connection, &old_writer).await;
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn preserves_archive_publications_across_finalization_migration() {
+        use crate::file_registry::test_support::{
+            ARCHIVE_PUBLICATION_SQL, ARCHIVE_SOURCE_SQL,
+        };
+
+        let (config, database_url) = isolated_file_registry_config().await;
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            migrate_before_finalization(connection).await;
+            let transaction = connection.begin().await.unwrap();
+            transaction
+                .execute_unprepared(ARCHIVE_SOURCE_SQL)
+                .await
+                .unwrap();
+            transaction.execute_unprepared(
+                "insert into file_archive(id,device_id,source_file_id,source_revision,source_object_key,source_sha256,source_size_bytes,source_is_encrypted,root_id,depth,policy) select '00000000-0000-0000-0000-000000000101',r.device_id,r.id,r.revision,c.object_key,c.source_sha256,c.source_size_bytes,c.is_encrypted,'00000000-0000-0000-0000-000000000101',1,'{}' from file_revision r join file_content c on c.file_id=r.id and c.revision=r.revision where r.revision=1",
+            ).await.unwrap();
+            transaction
+                .execute_unprepared(ARCHIVE_PUBLICATION_SQL)
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+            run_migrations(&config, Mode::Debug).await.unwrap();
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_eq!(table_count(connection, "file_content").await, 4);
+            assert_eq!(
+                table_count(connection, "file_content_upload_object").await,
+                1
+            );
+            downgrade_finalization(connection).await.unwrap();
+            assert_eq!(publication_snapshot(connection).await, before);
+            run_migrations(&config, Mode::Debug).await.unwrap();
+            assert_eq!(publication_snapshot(connection).await, before);
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn backfills_accepted_file_job_ownership() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            let migrations = wdfiles_migration::Migrator::migrations();
+            let prior = migrations
+                .iter()
+                .position(|migration| {
+                    migration.name().ends_with("_file_finalization_ownership")
+                })
+                .unwrap();
+            wdfiles_migration::Migrator::up(
+                connection,
+                Some(u32::try_from(prior).unwrap()),
+            )
+            .await
+            .unwrap();
+            let transaction = connection.begin().await.unwrap();
+            let upload = insert_open_upload(&transaction).await;
+            let job_id = Uuid::new_v4();
+            transaction
+                .execute_raw(file_job_statement(&upload, job_id, "{}"))
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+            wdfiles_migration::Migrator::up(connection, None)
+                .await
+                .unwrap();
+            let row = connection.query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "select finalization_job_id from file_content_upload where id=$1",
+                [upload.id.into()],
+            )).await.unwrap().unwrap();
+            assert_eq!(
+                row.try_get::<Option<Uuid>>("", "finalization_job_id")
+                    .unwrap(),
+                Some(job_id)
+            );
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_migration_versions(connection).await;
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn phase6_adoption_preserves_populated_legacy_cleanup() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            let migrations = wdfiles_migration::Migrator::migrations();
+            let prior = migrations
+                .iter()
+                .position(|migration| migration.name() == ADOPTION_VERSION)
+                .unwrap();
+            wdfiles_migration::Migrator::up(
+                connection,
+                Some(u32::try_from(prior).unwrap()),
+            )
+            .await
+            .unwrap();
+            let transaction = connection.begin().await.unwrap();
+            let original = publish_original(&transaction).await;
+            reuse_original(&transaction, &original).await;
+            insert_legacy_audio(&transaction).await;
+            let pending = insert_open_upload(&transaction).await;
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+            let upload = file_content_upload::Entity::find_by_id(
+                original.upload_id.unwrap(),
+            )
+            .one(connection)
+            .await
+            .unwrap()
+            .unwrap();
+            assert!(upload.spool_removed_at.is_none());
+            assert!(upload.next_cleanup_at.is_some());
+            assert!(upload.finalization_job_id.is_none());
+
+            wdfiles_migration::Migrator::up(connection, None)
+                .await
+                .unwrap();
+            let job_id = Uuid::new_v4();
+            connection
+                .execute_raw(synchronous_adoption_statement(
+                    &upload,
+                    job_id,
+                    serde_json::json!({}),
+                ))
+                .await
+                .unwrap();
+            let pending_job_id = Uuid::new_v4();
+            connection
+                .execute_raw(file_job_statement(&pending, pending_job_id, "{}"))
+                .await
+                .unwrap();
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_eq!(
+                file_content_upload::Entity::find_by_id(upload.id)
+                    .one(connection)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                upload
+            );
+            assert_eq!(
+                file_content_upload::Entity::find_by_id(pending.id)
+                    .one(connection)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .finalization_job_id,
+                Some(pending_job_id)
+            );
+            let cleanup = connection.query_all_raw(Statement::from_string(
+                DbBackend::Postgres,
+                "select id from file_content_upload where next_cleanup_at <= now() and finalization_job_id is null order by next_cleanup_at, id".to_string(),
+            )).await.unwrap();
+            assert_eq!(
+                cleanup
+                    .into_iter()
+                    .map(|row| row.try_get::<Uuid>("", "id").unwrap())
+                    .collect::<Vec<_>>(),
+                vec![upload.id]
+            );
+            assert_selected_object(connection, &original).await;
+            assert_eq!(
+                table_count(connection, "device_upload_finalization_attempt")
+                    .await,
+                0
+            );
+            assert_migration_versions(connection).await;
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn phase6_rejects_forged_synchronous_adoption() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            let transaction = connection.begin().await.unwrap();
+            let original = publish_original(&transaction).await;
+            let upload = file_content_upload::Entity::find_by_id(
+                original.upload_id.unwrap(),
+            )
+            .one(&transaction)
+            .await
+            .unwrap()
+            .unwrap();
+            for overrides in [
+                serde_json::json!({"attempt_count": 1}),
+                serde_json::json!({"lease_epoch": 1}),
+                serde_json::json!({"quota_released_at": null}),
+                serde_json::json!({"source_release_state": "held", "source_released_at": null, "quota_released_at": null}),
+                serde_json::json!({"source_release_state": "release_pending", "source_released_at": null, "quota_released_at": null}),
+            ] {
+                reject_synchronous_adoption(&transaction, &upload, overrides)
+                    .await;
+            }
+            let impostor_id = Uuid::new_v4();
+            let mut impostor = upload.clone().into_active_model();
+            impostor.id = Set(impostor_id);
+            impostor.object_key = Set(format!(
+                "device-file-content/{}/{}/1/{impostor_id}",
+                upload.device_id, upload.file_id
+            ));
+            impostor.status = Set(FileContentUploadStatus::Open);
+            impostor.next_cleanup_at = Set(Some(upload.expires_at));
+            let impostor = impostor.insert(&transaction).await.unwrap();
+            reject_synchronous_adoption(
+                &transaction,
+                &impostor,
+                serde_json::json!({}),
+            )
+            .await;
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update file_content_upload set status = 'completed', next_cleanup_at = clock_timestamp() where id = $1",
+                [impostor.id.into()],
+            )).await.unwrap();
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "insert into file_content_upload_object (upload_id, file_id, object_key, source_size_bytes, source_sha256, is_encrypted) select id, file_id, object_key, upload_length, expected_sha256, true from file_content_upload where id = $1",
+                [impostor.id.into()],
+            )).await.unwrap();
+            reject_synchronous_adoption(
+                &transaction,
+                &impostor,
+                serde_json::json!({}),
+            )
+            .await;
+            transaction
+                .execute_raw(synchronous_adoption_statement(
+                    &upload,
+                    Uuid::new_v4(),
+                    serde_json::json!({}),
+                ))
+                .await
+                .unwrap();
+            transaction.rollback().await.unwrap();
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn phase6_refuses_downgrade_with_synchronous_adoption_history() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            let transaction = connection.begin().await.unwrap();
+            let original = publish_original(&transaction).await;
+            let upload = file_content_upload::Entity::find_by_id(
+                original.upload_id.unwrap(),
+            )
+            .one(&transaction)
+            .await
+            .unwrap()
+            .unwrap();
+            let job_id = Uuid::new_v4();
+            transaction
+                .execute_raw(synchronous_adoption_statement(
+                    &upload,
+                    job_id,
+                    serde_json::json!({}),
+                ))
+                .await
+                .unwrap();
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+            let job_before =
+                device_upload_finalization_job::Entity::find_by_id(job_id)
+                    .one(connection)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            let migrations = wdfiles_migration::Migrator::migrations();
+            let index = migrations
+                .iter()
+                .position(|migration| migration.name() == ADOPTION_VERSION)
+                .unwrap();
+            let transaction = connection.begin().await.unwrap();
+            let error = wdfiles_migration::Migrator::down(
+                &transaction,
+                Some(u32::try_from(migrations.len() - index).unwrap()),
+            )
+            .await
+            .unwrap_err();
+            transaction.rollback().await.unwrap();
+            assert!(
+                format!("{error:?}").contains(
+                    "cannot downgrade with retained finalization history"
+                ),
+                "unexpected downgrade error: {error:?}"
+            );
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_eq!(
+                device_upload_finalization_job::Entity::find_by_id(job_id)
+                    .one(connection)
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                job_before
+            );
+            assert_migration_versions(connection).await;
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    fn synchronous_adoption_statement(
+        upload: &file_content_upload::Model,
+        job_id: Uuid,
+        overrides: serde_json::Value,
+    ) -> Statement {
+        let now = Utc::now();
+        let mut terminal = serde_json::json!({
+            "status": "completed", "finished_at": now,
+            "created_at": now, "updated_at": now, "next_run_at": now,
+            "result": {"version": 1, "value": {
+                "upload_id": upload.id, "file_id": upload.file_id,
+                "revision": 1, "status": "completed",
+            }},
+            "source_release_state": "released",
+            "source_released_at": now, "quota_released_at": now,
+        });
+        terminal
+            .as_object_mut()
+            .unwrap()
+            .extend(overrides.as_object().unwrap().clone());
+        file_job_statement(upload, job_id, &terminal.to_string())
+    }
+
+    async fn reject_synchronous_adoption(
+        transaction: &DatabaseTransaction,
+        upload: &file_content_upload::Model,
+        overrides: serde_json::Value,
+    ) {
+        let error = reject(
+            transaction,
+            synchronous_adoption_statement(upload, Uuid::new_v4(), overrides),
+        )
+        .await;
+        assert!(has_postgres_error_code(&error, "P0001"), "{error:?}");
+        assert!(
+            format!("{error:?}").contains(
+                "synchronous adoption requires original completed publication"
+            ),
+            "{error:?}"
+        );
+    }
+
+    async fn migrate_before_finalization(connection: &DatabaseConnection) {
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let prior = migrations
+            .iter()
+            .position(|migration| migration.name() == VERSION)
+            .unwrap_or(migrations.len());
+        wdfiles_migration::Migrator::up(
+            connection,
+            Some(u32::try_from(prior).unwrap()),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_invalid_commands_and_attempt_bindings() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            assert!(
+                table_exists(connection, "device_upload_finalization_job")
+                    .await
+            );
+            let transaction = connection.begin().await.unwrap();
+            transaction.execute_unprepared(r#"
+DO $test$
+DECLARE
+  job_id uuid := gen_random_uuid();
+  device uuid := gen_random_uuid();
+  rejected boolean := false;
+BEGIN
+  insert into device_upload_finalization_job(id,kind,source_identity,created_by_login_id,device_id,audio_id,audio_name,audio_name_key,recording_started_at,upload_url,source_size_bytes,source_locator,pin_token,status,lease_epoch,error_code,error_message,error_action)
+  values(job_id,'audio',device::text||'/'||job_id::text,gen_random_uuid(),device,job_id,'test',convert_to('test','UTF8'),now(),'/api/device/audio/'||device::text||'/uploads/'||job_id::text||'.64',64,'audio/'||job_id::text,gen_random_uuid(),'outcome_unknown',1,'storage_outcome_unknown','Unknown','retry_poll');
+  BEGIN
+    insert into device_upload_finalization_attempt(id,job_id,kind,ordinal,lease_epoch,device_id,audio_id,object_key,is_encrypted,source_size_bytes)
+    values(job_id,job_id,'audio',1,1,device,job_id,'device-audio/'||device::text||'/'||job_id::text||'/'||job_id::text,false,64);
+  EXCEPTION WHEN raise_exception THEN
+    rejected := true;
+  END;
+  IF NOT rejected THEN RAISE EXCEPTION 'REGRESSION: attempt accepted without a live lease'; END IF;
+END $test$;
+"#).await.unwrap();
+            let upload = insert_open_upload(&transaction).await;
+            let job_id = Uuid::new_v4();
+            for overrides in [
+                r#"{"kind":"unknown"}"#,
+                r#"{"kind":"audio"}"#,
+                r#"{"source_identity":"not-the-upload"}"#,
+                r#"{"created_by_login_id":"00000000-0000-0000-0000-000000000001"}"#,
+                r#"{"device_id":"00000000-0000-0000-0000-000000000001"}"#,
+                r#"{"file_upload_id":null}"#,
+                r#"{"file_id":null}"#,
+                r#"{"revision":2}"#,
+                r#"{"source_size_bytes":2}"#,
+                r#"{"audio_id":"00000000-0000-0000-0000-000000000001"}"#,
+                r#"{"source_locator":"../outside"}"#,
+                r#"{"source_locator":"/absolute"}"#,
+                r#"{"source_locator":null}"#,
+                r#"{"command_version":0}"#,
+                r#"{"attempt_count":-1}"#,
+                r#"{"lease_epoch":-1}"#,
+                r#"{"status":"completed"}"#,
+                r#"{"status":"failed"}"#,
+                r#"{"source_release_state":"released"}"#,
+            ] {
+                reject(
+                    &transaction,
+                    file_job_statement(&upload, job_id, overrides),
+                )
+                .await;
+            }
+            transaction
+                .execute_raw(file_job_statement(&upload, job_id, "{}"))
+                .await
+                .unwrap();
+            reject(
+                &transaction,
+                file_job_statement(&upload, Uuid::new_v4(), "{}"),
+            )
+            .await;
+            assert_command_immutable(&transaction, job_id).await;
+            assert_attempt_bindings(&transaction, &upload, job_id).await;
+            assert_budget_constraints(&transaction).await;
+            assert_file_result_shapes(&transaction).await;
+            transaction.rollback().await.unwrap();
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn refuses_downgrade_with_retained_job_history() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            assert!(
+                table_exists(connection, "device_upload_finalization_job")
+                    .await
+            );
+            let transaction = connection.begin().await.unwrap();
+            let upload = insert_open_upload(&transaction).await;
+            let job_id = Uuid::new_v4();
+            transaction
+                .execute_raw(file_job_statement(&upload, job_id, "{}"))
+                .await
+                .unwrap();
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set status = 'failed', finished_at = now(), error_code = 'source_digest_mismatch', error_message = 'Source digest mismatch', error_action = 'new_upload' where id = $1",
+                [job_id.into()],
+            )).await.unwrap();
+            reject(
+                &transaction,
+                file_job_statement(&upload, Uuid::new_v4(), "{}"),
+            )
+            .await;
+            for assignment in [
+                "status = 'queued', finished_at = null, error_code = null, error_message = null, error_action = null",
+                "error_message = 'replacement failure'",
+                "finished_at = finished_at + interval '1 second'",
+                "winning_attempt_id = gen_random_uuid()",
+            ] {
+                reject(&transaction, Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!("update device_upload_finalization_job set {assignment} where id = $1"),
+                    [job_id.into()],
+                )).await;
+            }
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set source_release_state = 'release_pending' where id = $1",
+                [job_id.into()],
+            )).await.unwrap();
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set source_release_state = 'released', source_released_at = now(), quota_released_at = now() where id = $1",
+                [job_id.into()],
+            )).await.unwrap();
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+
+            let transaction = connection.begin().await.unwrap();
+            let error = downgrade_finalization(&transaction).await.unwrap_err();
+            transaction.rollback().await.unwrap();
+            assert!(
+                format!("{error:?}").contains("finalization"),
+                "unexpected downgrade error: {error:?}"
+            );
+            assert_eq!(
+                table_count(connection, "device_upload_finalization_job").await,
+                1
+            );
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_migration_versions(connection).await;
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    async fn insert_open_upload(
+        transaction: &DatabaseTransaction,
+    ) -> file_content_upload::Model {
+        let tree = insert_file_entry_tree(transaction).await;
+        let upload_id = Uuid::new_v4();
+        let now = Utc::now().fixed_offset();
+        let expires_at = now + Duration::hours(1);
+        let row = transaction.query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"insert into file_content_upload(id,device_id,file_id,revision,created_by_login_id,upload_length,expected_sha256,object_key,status,created_at,last_activity_at,expires_at,hard_expires_at,spool_removed_at,next_cleanup_at)
+                values($1,$2,$3,1,$4,1,$5,$6,'open',$7,$7,$8,$9,null,$8)
+                returning id,device_id,file_id,revision,created_by_login_id,upload_length,expected_sha256,object_key,status,created_at,last_activity_at,expires_at,hard_expires_at,spool_removed_at,next_cleanup_at,stats_epoch,null::uuid as finalization_job_id"#,
+            [upload_id.into(),tree.device_id.into(),tree.file_id.into(),Uuid::new_v4().into(),vec![1_u8; 32].into(),
+                format!("device-file-content/{}/{}/1/{upload_id}",tree.device_id,tree.file_id).into(),
+                now.into(),expires_at.into(),(now + Duration::days(1)).into()],
+        )).await.unwrap().unwrap();
+        file_content_upload::Model::from_query_result(&row, "").unwrap()
+    }
+
+    async fn downgrade_finalization<'c>(
+        connection: impl sea_orm_migration::IntoSchemaManagerConnection<'c>,
+    ) -> Result<(), DbErr> {
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let index = migrations
+            .iter()
+            .position(|migration| migration.name() == VERSION)
+            .unwrap();
+        let steps = u32::try_from(migrations.len() - index).unwrap();
+        wdfiles_migration::Migrator::down(connection, Some(steps)).await
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_completed_upload_without_original_publication() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            migrate_before_finalization(connection).await;
+            let transaction = connection.begin().await.unwrap();
+            let upload = insert_open_upload(&transaction).await;
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update file_content_upload set status='completed',next_cleanup_at=$2 where id=$1",
+                [upload.id.into(),Utc::now().fixed_offset().into()],
+            )).await.unwrap();
+            transaction.commit().await.unwrap();
+            let before = publication_snapshot(connection).await;
+
+            assert!(
+                wdfiles_migration::Migrator::up(connection, None)
+                    .await
+                    .is_err(),
+                "migration must reject completed upload without original file content"
+            );
+            assert!(
+                !table_exists(connection, "file_content_upload_object").await
+            );
+            assert_eq!(publication_snapshot(connection).await, before);
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_noncanonical_audio_commands_and_name_mutation() {
+        let (config, database_url) = isolated_file_registry_config().await;
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            assert!(
+                table_exists(connection, "device_upload_finalization_job")
+                    .await
+            );
+            let transaction = connection.begin().await.unwrap();
+            let job_id = Uuid::new_v4();
+            let device_id = Uuid::new_v4();
+            let source_id = Uuid::new_v4();
+            for overrides in [
+                r#"{"kind":"file"}"#,
+                r#"{"file_upload_id":"00000000-0000-0000-0000-000000000001"}"#,
+                r#"{"source_identity":"alternate-url-spelling"}"#,
+                r#"{"upload_url":"/api/device/audio/foreign/uploads/source.123"}"#,
+                r#"{"source_size_bytes":0}"#,
+                r#"{"audio_name":""}"#,
+                r#"{"audio_name_key":"\\x01"}"#,
+                r#"{"recording_started_at":"infinity"}"#,
+                r#"{"pin_token":null}"#,
+            ] {
+                reject(
+                    &transaction,
+                    audio_job_statement(
+                        job_id, device_id, source_id, overrides,
+                    ),
+                )
+                .await;
+            }
+            transaction
+                .execute_raw(audio_job_statement(
+                    job_id, device_id, source_id, "{}",
+                ))
+                .await
+                .unwrap();
+            reject(
+                &transaction,
+                audio_job_statement(Uuid::new_v4(), device_id, source_id, "{}"),
+            )
+            .await;
+            reject(&transaction, Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set status = 'completed', finished_at = now(), result = jsonb_build_object('version', 1, 'value', jsonb_build_object('audio', jsonb_build_object('id', audio_id, 'device_id', device_id))) where id = $1",
+                [job_id.into()],
+            )).await;
+            for assignment in [
+                "audio_id = gen_random_uuid()",
+                "audio_name = 'renamed.wav', audio_name_key = convert_to('renamed.wav', 'UTF8')",
+                "recording_started_at = recording_started_at + interval '1 microsecond'",
+                "pin_token = gen_random_uuid()",
+                "upload_url = upload_url || '0'",
+            ] {
+                reject(
+                    &transaction,
+                    Statement::from_sql_and_values(
+                        DbBackend::Postgres,
+                        format!(
+                            "update device_upload_finalization_job set {assignment} where id = $1"
+                        ),
+                        [job_id.into()],
+                    ),
+                )
+                .await;
+            }
+            transaction.rollback().await.unwrap();
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    fn audio_job_statement(
+        job_id: Uuid,
+        device_id: Uuid,
+        source_id: Uuid,
+        overrides: &str,
+    ) -> Statement {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"insert into device_upload_finalization_job select
+                (jsonb_populate_record(null::device_upload_finalization_job,
+                    jsonb_build_object(
+                        'id', $1::uuid, 'kind', 'audio', 'source_identity', $2::text,
+                        'created_by_login_id', $3::uuid, 'device_id', $4::uuid,
+                        'audio_id', $5::uuid, 'audio_name', 'record.wav',
+                        'audio_name_key', convert_to('record.wav', 'UTF8'),
+                        'recording_started_at', '2026-10-14T10:00:00.123456Z',
+                        'upload_url', $6::text, 'source_size_bytes', 123,
+                        'source_locator', $7::text, 'pin_token', $8::uuid,
+                        'command_version', 1, 'status', 'queued', 'created_at', now(),
+                        'updated_at', now(), 'next_run_at', now(), 'attempt_count', 0,
+                        'lease_epoch', 0, 'source_release_state', 'held'
+                    ) || $9::jsonb)).*"#,
+            [
+                job_id.into(),
+                format!("{device_id}/{source_id}").into(),
+                Uuid::new_v4().into(),
+                device_id.into(),
+                Uuid::new_v4().into(),
+                format!(
+                    "/api/device/audio/{device_id}/uploads/{source_id}.123"
+                )
+                .into(),
+                source_id.to_string().into(),
+                Uuid::new_v4().into(),
+                overrides.into(),
+            ],
+        )
+    }
+
+    fn file_job_statement(
+        upload: &file_content_upload::Model,
+        job_id: Uuid,
+        overrides: &str,
+    ) -> Statement {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"insert into device_upload_finalization_job select
+                (jsonb_populate_record(null::device_upload_finalization_job,
+                    jsonb_build_object(
+                        'id', $1::uuid, 'kind', 'file', 'source_identity', $2::text,
+                        'created_by_login_id', $3::uuid, 'device_id', $4::uuid,
+                        'file_upload_id', $2::uuid, 'file_id', $5::uuid, 'revision', 1,
+                        'source_size_bytes', 1, 'source_locator', $2::text,
+                        'command_version', 1, 'status', 'queued',
+                        'created_at', now(), 'updated_at', now(), 'next_run_at', now(),
+                        'attempt_count', 0, 'lease_epoch', 0, 'source_release_state', 'held'
+                    ) || $6::jsonb)).*"#,
+            [
+                job_id.into(),
+                upload.id.to_string().into(),
+                upload.created_by_login_id.into(),
+                upload.device_id.into(),
+                upload.file_id.into(),
+                overrides.into(),
+            ],
+        )
+    }
+
+    async fn assert_file_result_shapes(transaction: &DatabaseTransaction) {
+        let content = publish_original(transaction).await;
+        let upload =
+            file_content_upload::Entity::find_by_id(content.upload_id.unwrap())
+                .one(transaction)
+                .await
+                .unwrap()
+                .unwrap();
+        let receipt = serde_json::json!({
+            "upload_id": upload.id, "file_id": upload.file_id,
+            "revision": 1, "status": "completed",
+        });
+        let valid_result = serde_json::json!({"version": 1, "value": receipt});
+        let mut string_revision = valid_result.clone();
+        string_revision["value"]["revision"] = serde_json::json!("1");
+        let mut extra_field = valid_result.clone();
+        extra_field["value"]["object_key"] =
+            serde_json::json!(upload.object_key);
+        for result in [
+            serde_json::json!({"version": "1", "value": receipt}),
+            serde_json::json!({"version": 1, "value": {"status": "completed"}}),
+            string_revision,
+            extra_field,
+        ] {
+            let overrides = serde_json::json!({
+                "status": "completed", "finished_at": Utc::now(), "result": result,
+                "source_release_state": "released",
+                "source_released_at": Utc::now(), "quota_released_at": Utc::now(),
+            });
+            reject(
+                transaction,
+                file_job_statement(
+                    &upload,
+                    Uuid::new_v4(),
+                    &overrides.to_string(),
+                ),
+            )
+            .await;
+        }
+        let overrides = serde_json::json!({
+            "status": "completed", "finished_at": Utc::now(), "result": valid_result,
+            "source_release_state": "released",
+            "source_released_at": Utc::now(), "quota_released_at": Utc::now(),
+        });
+        let job_id = Uuid::new_v4();
+        transaction
+            .execute_raw(file_job_statement(
+                &upload,
+                job_id,
+                &overrides.to_string(),
+            ))
+            .await
+            .unwrap();
+        reject(transaction, Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_job set result = jsonb_set(result, '{value,revision}', '2'::jsonb) where id = $1",
+            [job_id.into()],
+        )).await;
+    }
+
+    async fn assert_command_immutable(
+        transaction: &DatabaseTransaction,
+        job_id: Uuid,
+    ) {
+        for assignment in [
+            "id = gen_random_uuid()",
+            "created_by_login_id = gen_random_uuid()",
+            "device_id = gen_random_uuid()",
+            "source_identity = gen_random_uuid()::text",
+            "file_upload_id = gen_random_uuid()",
+            "file_id = gen_random_uuid()",
+            "revision = 2",
+            "source_size_bytes = 2",
+            "source_locator = 'other-source'",
+            "command_version = 2",
+            "created_at = created_at + interval '1 second'",
+        ] {
+            reject(
+                transaction,
+                Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!("update device_upload_finalization_job set {assignment} where id = $1"),
+                    [job_id.into()],
+                ),
+            )
+            .await;
+        }
+        reject(
+            transaction,
+            Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "delete from device_upload_finalization_job where id = $1",
+                [job_id.into()],
+            ),
+        )
+        .await;
+    }
+
+    async fn assert_attempt_bindings(
+        transaction: &DatabaseTransaction,
+        upload: &file_content_upload::Model,
+        job_id: Uuid,
+    ) {
+        transaction.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_job set status = 'processing', lease_epoch = 1, lease_owner = $2, lease_until = now() + interval '1 hour' where id = $1",
+            [job_id.into(), Uuid::new_v4().into()],
+        )).await.unwrap();
+        let attempt_id = Uuid::new_v4();
+        for overrides in [
+            r#"{"kind":"audio"}"#,
+            r#"{"device_id":"00000000-0000-0000-0000-000000000001"}"#,
+            r#"{"file_upload_id":"00000000-0000-0000-0000-000000000001"}"#,
+            r#"{"object_key":"unowned-key"}"#,
+            r#"{"ordinal":0}"#,
+            r#"{"lease_epoch":0}"#,
+            r#"{"source_size_bytes":2}"#,
+            r#"{"source_sha256":"\\x01"}"#,
+            r#"{"phase":"prepared"}"#,
+            r#"{"phase":"write_intent"}"#,
+            r#"{"origin":"legacy_cleanup"}"#,
+        ] {
+            reject(
+                transaction,
+                attempt_statement(upload, job_id, attempt_id, overrides),
+            )
+            .await;
+        }
+        transaction
+            .execute_raw(attempt_statement(upload, job_id, attempt_id, "{}"))
+            .await
+            .unwrap();
+        reject(
+            transaction,
+            attempt_statement(upload, job_id, Uuid::new_v4(), "{}"),
+        )
+        .await;
+        reject(transaction, Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_attempt set source_sha256 = decode(repeat('02', 32), 'hex') where id = $1",
+            [attempt_id.into()],
+        )).await;
+        transaction.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_attempt set phase = 'prepared', source_sha256 = decode(repeat('01', 32), 'hex') where id = $1",
+            [attempt_id.into()],
+        )).await.unwrap();
+        transaction.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_attempt set phase = 'write_intent', write_intent_at = now(), write_credit_held = true where id = $1",
+            [attempt_id.into()],
+        )).await.unwrap();
+        for assignment in [
+            "source_sha256 = decode(repeat('02', 32), 'hex')",
+            "source_size_bytes = 2",
+            "is_encrypted = false",
+            "storage_policy_version = 2",
+            "object_key = 'replacement-key'",
+            "lease_epoch = 2",
+            "write_credit_held = false",
+        ] {
+            reject(
+                transaction,
+                Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!(
+                        "update device_upload_finalization_attempt set {assignment} where id = $1"
+                    ),
+                    [attempt_id.into()],
+                ),
+            )
+            .await;
+        }
+        assert_legacy_cleanup_and_single_write(transaction, upload, job_id)
+            .await;
+        let other_upload = insert_open_upload(transaction).await;
+        let other_job_id = Uuid::new_v4();
+        transaction
+            .execute_raw(file_job_statement(&other_upload, other_job_id, "{}"))
+            .await
+            .unwrap();
+        reject(transaction, Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_attempt set job_id = $2 where id = $1",
+            [attempt_id.into(), other_job_id.into()],
+        )).await;
+    }
+
+    async fn assert_legacy_cleanup_and_single_write(
+        transaction: &DatabaseTransaction,
+        upload: &file_content_upload::Model,
+        job_id: Uuid,
+    ) {
+        reject(
+            transaction,
+            legacy_cleanup_statement(upload, job_id, Uuid::new_v4(), 2),
+        )
+        .await;
+
+        let second_id = Uuid::new_v4();
+        transaction
+            .execute_raw(attempt_statement(
+                upload,
+                job_id,
+                second_id,
+                r#"{"ordinal":3}"#,
+            ))
+            .await
+            .unwrap();
+        transaction.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_attempt set phase = 'prepared', source_sha256 = decode(repeat('01', 32), 'hex') where id = $1",
+            [second_id.into()],
+        )).await.unwrap();
+        reject(transaction, Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_attempt set phase = 'write_intent', write_intent_at = now(), write_credit_held = true where id = $1",
+            [second_id.into()],
+        )).await;
+    }
+
+    fn legacy_cleanup_statement(
+        upload: &file_content_upload::Model,
+        job_id: Uuid,
+        cleanup_id: Uuid,
+        ordinal: i64,
+    ) -> Statement {
+        let overrides = serde_json::json!({
+            "origin": "legacy_cleanup", "ordinal": ordinal, "phase": "retired",
+            "object_key": upload.object_key, "retired_at": Utc::now(),
+            "cleanup_next_at": Utc::now(),
+        });
+        attempt_statement(upload, job_id, cleanup_id, &overrides.to_string())
+    }
+
+    fn attempt_statement(
+        upload: &file_content_upload::Model,
+        job_id: Uuid,
+        attempt_id: Uuid,
+        overrides: &str,
+    ) -> Statement {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"insert into device_upload_finalization_attempt select
+                (jsonb_populate_record(null::device_upload_finalization_attempt,
+                    jsonb_build_object(
+                        'id', $1::uuid, 'job_id', $2::uuid, 'kind', 'file',
+                        'origin', 'async', 'ordinal', 1, 'lease_epoch', 1,
+                        'file_upload_id', $3::uuid, 'device_id', $4::uuid,
+                        'object_key', $5::text, 'storage_policy_version', 1,
+                        'is_encrypted', true, 'source_size_bytes', 1,
+                        'phase', 'preparing', 'write_credit_held', false,
+                        'late_write_possible', false, 'created_at', now(), 'updated_at', now()
+                    ) || $6::jsonb)).*"#,
+            [
+                attempt_id.into(),
+                job_id.into(),
+                upload.id.into(),
+                upload.device_id.into(),
+                format!("device-file-finalization/{}/{attempt_id}", upload.id)
+                    .into(),
+                overrides.into(),
+            ],
+        )
+    }
+
+    async fn assert_budget_constraints(transaction: &DatabaseTransaction) {
+        transaction.execute_unprepared(
+            "insert into device_upload_finalization_budget (scope, reserved_jobs, reserved_source_bytes, unresolved_writes) values ('global:file', 1, 1, 1)",
+        ).await.unwrap();
+        for assignment in [
+            "reserved_jobs = -1",
+            "reserved_source_bytes = -1",
+            "unresolved_writes = -1",
+        ] {
+            reject(
+                transaction,
+                Statement::from_string(
+                    DbBackend::Postgres,
+                    format!("update device_upload_finalization_budget set {assignment}"),
+                ),
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn binds_selected_object_to_verified_attempt_and_rejects_canonical_conflict(
+    ) {
+        let (config, database_url) = isolated_file_registry_config().await;
+        run_migrations(&config, Mode::Debug).await.unwrap();
+        {
+            let db = connect_runtime(&config, Mode::Debug)
+                .await
+                .unwrap()
+                .unwrap();
+            let connection = db.connection();
+            assert!(
+                table_exists(connection, "file_content_upload_object").await
+            );
+            let transaction = connection.begin().await.unwrap();
+            let upload = insert_open_upload(&transaction).await;
+            let job_id = Uuid::new_v4();
+            let retired_id = Uuid::new_v4();
+            transaction
+                .execute_raw(file_job_statement(&upload, job_id, "{}"))
+                .await
+                .unwrap();
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set status = 'processing', lease_epoch = 1, lease_owner = $2, lease_until = now() + interval '1 hour' where id = $1",
+                [job_id.into(), Uuid::new_v4().into()],
+            )).await.unwrap();
+            transaction
+                .execute_raw(attempt_statement(
+                    &upload, job_id, retired_id, "{}",
+                ))
+                .await
+                .unwrap();
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set active_attempt_id = $2 where id = $1",
+                [job_id.into(), retired_id.into()],
+            )).await.unwrap();
+            reject(
+                &transaction,
+                selected_object_statement(&upload, retired_id, "{}"),
+            )
+            .await;
+            verify_attempt(&transaction, retired_id).await;
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_attempt set phase = 'retired', retired_at = now(), cleanup_next_at = now() where id = $1",
+                [retired_id.into()],
+            )).await.unwrap();
+            reject(
+                &transaction,
+                selected_object_statement(&upload, retired_id, "{}"),
+            )
+            .await;
+            reject(&transaction, Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_attempt set phase = 'verified', retired_at = null, cleanup_next_at = null where id = $1",
+                [retired_id.into()],
+            )).await;
+
+            let selected_id = Uuid::new_v4();
+            transaction
+                .execute_raw(attempt_statement(
+                    &upload,
+                    job_id,
+                    selected_id,
+                    r#"{"ordinal":2}"#,
+                ))
+                .await
+                .unwrap();
+            verify_attempt(&transaction, selected_id).await;
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_job set active_attempt_id = $2 where id = $1",
+                [job_id.into(), selected_id.into()],
+            )).await.unwrap();
+            assert_selected_attempt_bindings(
+                &transaction,
+                &upload,
+                selected_id,
+            )
+            .await;
+            transaction
+                .execute_raw(selected_object_statement(
+                    &upload,
+                    selected_id,
+                    "{}",
+                ))
+                .await
+                .unwrap();
+            reject(&transaction, Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_attempt set phase = 'retired', retired_at = now(), cleanup_next_at = now() where id = $1",
+                [selected_id.into()],
+            )).await;
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update device_upload_finalization_attempt set phase = 'selected' where id = $1",
+                [selected_id.into()],
+            )).await.unwrap();
+            transaction
+                .execute_raw(legacy_cleanup_statement(
+                    &upload,
+                    job_id,
+                    Uuid::new_v4(),
+                    3,
+                ))
+                .await
+                .unwrap();
+            for assignment in [
+                "phase = 'retired', retired_at = now(), cleanup_next_at = now()",
+                "cleanup_confirmed_at = now()",
+                "is_encrypted = false",
+            ] {
+                reject(&transaction, Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!("update device_upload_finalization_attempt set {assignment} where id = $1"),
+                    [selected_id.into()],
+                )).await;
+            }
+            reject(
+                &transaction,
+                Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    "delete from device_upload_finalization_attempt where id = $1",
+                    [selected_id.into()],
+                ),
+            )
+            .await;
+            assert_async_publication(&transaction, &upload, selected_id).await;
+            transaction.commit().await.unwrap();
+
+            let before = publication_snapshot(connection).await;
+            let transaction = connection.begin().await.unwrap();
+            assert!(downgrade_finalization(&transaction).await.is_err());
+            transaction.rollback().await.unwrap();
+            assert_eq!(publication_snapshot(connection).await, before);
+            assert_eq!(
+                table_count(connection, "file_content_upload_object").await,
+                1
+            );
+            assert_migration_versions(connection).await;
+        }
+        sqlx::Postgres::drop_database(&database_url).await.unwrap();
+    }
+
+    async fn verify_attempt(
+        transaction: &DatabaseTransaction,
+        attempt_id: Uuid,
+    ) {
+        for assignment in [
+            "phase = 'prepared', source_sha256 = decode(repeat('01', 32), 'hex')",
+            "phase = 'write_intent', write_intent_at = now(), write_credit_held = true",
+            "phase = 'verified', write_acknowledged_at = now(), verified_at = now(), write_resolved_at = now(), write_credit_held = false",
+        ] {
+            transaction.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                format!("update device_upload_finalization_attempt set {assignment} where id = $1"),
+                [attempt_id.into()],
+            )).await.unwrap();
+        }
+    }
+
+    async fn assert_selected_attempt_bindings(
+        transaction: &DatabaseTransaction,
+        upload: &file_content_upload::Model,
+        attempt_id: Uuid,
+    ) {
+        for overrides in [
+            r#"{"attempt_id":null}"#,
+            r#"{"source_size_bytes":2}"#,
+            r#"{"source_sha256":"\\x02"}"#,
+            r#"{"is_encrypted":false}"#,
+        ] {
+            reject(
+                transaction,
+                selected_object_statement(upload, attempt_id, overrides),
+            )
+            .await;
+        }
+        let other_upload = insert_open_upload(transaction).await;
+        reject(
+            transaction,
+            selected_object_statement(&other_upload, attempt_id, "{}"),
+        )
+        .await;
+    }
+
+    fn selected_object_statement(
+        upload: &file_content_upload::Model,
+        attempt_id: Uuid,
+        overrides: &str,
+    ) -> Statement {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"insert into file_content_upload_object select
+                (jsonb_populate_record(null::file_content_upload_object,
+                    jsonb_build_object(
+                        'upload_id', $1::uuid, 'file_id', $2::uuid,
+                        'object_key', $3::text, 'source_size_bytes', 1,
+                        'source_sha256', decode(repeat('01', 32), 'hex'),
+                        'is_encrypted', true, 'attempt_id', $4::uuid
+                    ) || $5::jsonb)).*"#,
+            [
+                upload.id.into(),
+                upload.file_id.into(),
+                format!("device-file-finalization/{}/{attempt_id}", upload.id)
+                    .into(),
+                attempt_id.into(),
+                overrides.into(),
+            ],
+        )
+    }
+
+    async fn assert_async_publication(
+        transaction: &DatabaseTransaction,
+        upload: &file_content_upload::Model,
+        attempt_id: Uuid,
+    ) {
+        let mut completed = upload.clone().into_active_model();
+        completed.status = Set(FileContentUploadStatus::Completed);
+        completed.next_cleanup_at = Set(Some(Utc::now().fixed_offset()));
+        completed.update(transaction).await.unwrap();
+        let mut content = file_content::ActiveModel {
+            file_id: Set(upload.file_id),
+            revision: Set(1),
+            upload_id: Set(Some(upload.id)),
+            origin_archive_id: Set(None),
+            object_key: Set(upload.object_key.clone()),
+            source_size_bytes: Set(1),
+            source_sha256: Set(vec![1; 32]),
+            is_encrypted: Set(true),
+            created_at: Set(Utc::now().fixed_offset()),
+        };
+        assert_file_entry_operation_rejected(
+            transaction,
+            content.clone().insert(transaction),
+        )
+        .await;
+        let object_key =
+            format!("device-file-finalization/{}/{attempt_id}", upload.id);
+        content.object_key = Set(object_key.clone());
+        content.is_encrypted = Set(false);
+        assert_file_entry_operation_rejected(
+            transaction,
+            content.clone().insert(transaction),
+        )
+        .await;
+        content.is_encrypted = Set(true);
+        let content = content.insert(transaction).await.unwrap();
+        transaction
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update file_entry set content_path = $2 where id = $1",
+                [upload.file_id.into(), object_key.clone().into()],
+            ))
+            .await
+            .unwrap();
+        reuse_original(transaction, &content).await;
+        let reused = file_content::Entity::find_by_id((upload.file_id, 2))
+            .one(transaction)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reused.upload_id, Some(upload.id));
+        assert_eq!(reused.object_key, object_key);
+        assert!(reused.is_encrypted);
+    }
+
+    async fn reject(
+        transaction: &DatabaseTransaction,
+        statement: Statement,
+    ) -> DbErr {
+        transaction
+            .execute_unprepared("savepoint finalization_rejection")
+            .await
+            .unwrap();
+        let description = format!("{statement:?}");
+        let error = match transaction.execute_raw(statement).await {
+            Err(error) => error,
+            Ok(_) => panic!("operation unexpectedly succeeded: {description}"),
+        };
+        assert!(
+            ["23503", "23505", "23514", "P0001"]
+                .iter()
+                .any(|code| has_postgres_error_code(&error, code)),
+            "expected constraint or trigger rejection for {description}, got {error:?}"
+        );
+        transaction
+            .execute_unprepared("rollback to savepoint finalization_rejection")
+            .await
+            .unwrap();
+        transaction
+            .execute_unprepared("release savepoint finalization_rejection")
+            .await
+            .unwrap();
+        error
+    }
+
+    async fn assert_selected_object_immutable(
+        connection: &DatabaseConnection,
+        original: &file_content::Model,
+    ) {
+        let transaction = connection.begin().await.unwrap();
+        for assignment in [
+            "object_key = 'replacement-key'",
+            "source_size_bytes = 2",
+            "source_sha256 = decode(repeat('02', 32), 'hex')",
+            "is_encrypted = false",
+            "attempt_id = gen_random_uuid()",
+        ] {
+            reject(
+                &transaction,
+                Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!(
+                        "update file_content_upload_object set {assignment} where upload_id = $1"
+                    ),
+                    [original.upload_id.into()],
+                ),
+            )
+            .await;
+        }
+        reject(
+            &transaction,
+            Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "delete from file_content_upload_object where upload_id = $1",
+                [original.upload_id.into()],
+            ),
+        )
+        .await;
+        assert_canonical_publication_cannot_retire(&transaction, original)
+            .await;
+        transaction.rollback().await.unwrap();
+    }
+
+    async fn assert_canonical_publication_cannot_retire(
+        transaction: &DatabaseTransaction,
+        original: &file_content::Model,
+    ) {
+        let upload = file_content_upload::Entity::find_by_id(
+            original.upload_id.unwrap(),
+        )
+        .one(transaction)
+        .await
+        .unwrap()
+        .unwrap();
+        let job_id = Uuid::new_v4();
+        transaction
+            .execute_raw(file_job_statement(&upload, job_id, "{}"))
+            .await
+            .unwrap();
+        transaction.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update device_upload_finalization_job set status = 'processing', lease_epoch = 1, lease_owner = $2, lease_until = now() + interval '1 hour' where id = $1",
+            [job_id.into(), Uuid::new_v4().into()],
+        )).await.unwrap();
+        reject(
+            transaction,
+            legacy_cleanup_statement(&upload, job_id, Uuid::new_v4(), 1),
+        )
+        .await;
+    }
+
+    async fn publish_original(
+        transaction: &DatabaseTransaction,
+    ) -> file_content::Model {
+        let tree = insert_file_entry_tree(transaction).await;
+        let file = file_entry::Entity::find_by_id(tree.file_id)
+            .one(transaction)
+            .await
+            .unwrap()
+            .unwrap();
+        super::super::test_support::publish_content(
+            transaction,
+            &file,
+            Uuid::now_v7(),
+        )
+        .await;
+        file_content::Entity::find_by_id((file.id, 1))
+            .one(transaction)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    async fn reuse_original(
+        transaction: &DatabaseTransaction,
+        original: &file_content::Model,
+    ) {
+        transaction
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                r#"insert into file_revision
+                select (jsonb_populate_record(null::file_revision,
+                    to_jsonb(r) || '{"revision":2,"source_sequence":2}'::jsonb)).*
+                from file_revision r where id = $1 and revision = 1"#,
+                [original.file_id.into()],
+            ))
+            .await
+            .unwrap();
+        let mut reused = original.clone().into_active_model();
+        reused.revision = Set(2);
+        reused.insert(transaction).await.unwrap();
+        transaction
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "update file_entry set revision = 2 where id = $1",
+                [original.file_id.into()],
+            ))
+            .await
+            .unwrap();
+    }
+
+    async fn insert_legacy_audio(transaction: &DatabaseTransaction) {
+        let device_id = Uuid::new_v4();
+        let audio_id = Uuid::new_v4();
+        let ingest_id = Uuid::new_v4();
+        let upload_id = Uuid::new_v4();
+        let actor_id = Uuid::new_v4();
+        let storage_key =
+            format!("device-audio/{device_id}/{audio_id}/{ingest_id}");
+        transaction
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                r#"insert into device_audio_ingest (
+                id, audio_id, device_id, actor_id, tus_upload_ref, tus_upload_id,
+                tus_owner_id, name, name_key, recording_started_at, created_at,
+                storage_key, status, lease_token, heartbeat_at
+            ) values ($1, $2, $3, $4, $5, $6, $4, 'legacy.wav',
+                convert_to('legacy.wav', 'UTF8'), '2026-10-13T10:00:00Z',
+                '2026-10-13T10:01:00Z', $7, 'finalizing', $8,
+                '2026-10-13T10:01:00Z')"#,
+                [
+                    ingest_id.into(),
+                    audio_id.into(),
+                    device_id.into(),
+                    actor_id.into(),
+                    format!("/api/device/audio/{device_id}/uploads/{upload_id}.123").into(),
+                    upload_id.into(),
+                    storage_key.into(),
+                    Uuid::new_v4().into(),
+                ],
+            ))
+            .await
+            .unwrap();
+        transaction
+            .execute_unprepared(
+                r#"update device_audio_ingest set status = 'storing',
+                source_size_bytes = 123, source_sha256 = decode(repeat('02', 32), 'hex'),
+                duration_us = 1000000, mime_type = 'audio/wav';
+            insert into device_audio (
+                id, device_id, ingest_id, name, name_key, recording_started_at,
+                duration_us, recording_ended_at, created_at, mime_type,
+                source_size_bytes, source_sha256, storage_key, transcription,
+                text_version, processed, processing_version
+            ) select audio_id, device_id, id, name, name_key, recording_started_at,
+                duration_us, recording_started_at + interval '1 second',
+                created_at, mime_type, source_size_bytes, source_sha256,
+                storage_key, '', gen_random_uuid(), false, gen_random_uuid()
+                from device_audio_ingest;
+            update device_audio_ingest set status = 'ready';"#,
+            )
+            .await
+            .unwrap();
+    }
+
+    async fn publication_snapshot(
+        connection: &DatabaseConnection,
+    ) -> Vec<String> {
+        let mut snapshot = Vec::new();
+        for table in [
+            "file_entry",
+            "file_revision",
+            "file_content_upload",
+            "file_content",
+            "device_audio_ingest",
+            "device_audio",
+        ] {
+            let projection = if table == "file_content_upload" {
+                "(to_jsonb(t) - 'finalization_job_id')::text"
+            } else {
+                "row_to_json(t)::text"
+            };
+            let rows = connection.query_all_raw(Statement::from_string(
+                DbBackend::Postgres,
+                format!("select {projection} as row from {table} t order by {projection}"),
+            )).await.unwrap();
+            snapshot.extend(rows.into_iter().map(|row| {
+                format!("{table}:{}", row.try_get::<String>("", "row").unwrap())
+            }));
+        }
+        snapshot
+    }
+
+    async fn assert_selected_object(
+        connection: &DatabaseConnection,
+        original: &file_content::Model,
+    ) {
+        let selected = connection
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "select * from file_content_upload_object where upload_id = $1",
+                [original.upload_id.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            selected.try_get::<Uuid>("", "file_id").unwrap(),
+            original.file_id
+        );
+        assert_eq!(
+            selected.try_get::<String>("", "object_key").unwrap(),
+            original.object_key
+        );
+        assert_eq!(
+            selected.try_get::<i64>("", "source_size_bytes").unwrap(),
+            1
+        );
+        assert_eq!(
+            selected.try_get::<Vec<u8>>("", "source_sha256").unwrap(),
+            vec![1; 32]
+        );
+        assert!(selected.try_get::<bool>("", "is_encrypted").unwrap());
+        assert_eq!(
+            selected.try_get::<Option<Uuid>>("", "attempt_id").unwrap(),
+            None
+        );
+    }
 }
 
 fn has_postgres_error_code(
