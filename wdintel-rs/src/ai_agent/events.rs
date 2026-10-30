@@ -389,6 +389,50 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
     Some(diagnostic)
 }
 
+pub fn tool_diagnostic(event: &Value) -> Option<Value> {
+    if event.get("type")?.as_str()? != "tool_diagnostic" {
+        return None;
+    }
+    let reason = event.get("reason")?.as_str()?;
+    if !matches!(
+        reason,
+        "research_checkpoint_required"
+            | "research_pagination_required"
+            | "http_error"
+            | "invalid_arguments"
+            | "cancelled"
+            | "network_error"
+            | "tool_error"
+    ) {
+        return None;
+    }
+    let tool = event.get("tool").and_then(Value::as_str).unwrap_or("");
+    let tool = if matches!(tool, "report_progress" | "update_research")
+        || tool.strip_prefix("echo_").is_some_and(|skill| {
+            super::route_registry::ROUTES
+                .iter()
+                .any(|route| route.skill == skill)
+        }) {
+        tool
+    } else {
+        "unknown"
+    };
+    let mut diagnostic = serde_json::json!({ "tool": tool, "reason": reason });
+    if let Some(private) =
+        event.get("handledPrivately").and_then(Value::as_bool)
+    {
+        diagnostic["handledPrivately"] = Value::Bool(private);
+    }
+    if reason == "http_error" {
+        if let Some(status) = event.get("httpStatus").and_then(Value::as_u64) {
+            if (400..=599).contains(&status) {
+                diagnostic["httpStatus"] = Value::from(status);
+            }
+        }
+    }
+    Some(diagnostic)
+}
+
 pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
     let event_type = event
         .get("eventType")
@@ -635,6 +679,44 @@ mod tests {
         assert!(completion_diagnostic(&serde_json::json!({
             "type": "completion_diagnostic", "stage": "secret", "outcome": "complete"
         })).is_none());
+    }
+
+    #[test]
+    fn issue_3572_kept_tool_failure_diagnostics_private_and_allowlisted() {
+        let event = serde_json::json!({
+            "type": "tool_diagnostic", "tool": "echo_inbox_messages",
+            "reason": "research_pagination_required", "handledPrivately": true,
+            "httpStatus": 503, "text": "private research",
+            "arguments": {"token": "secret"}, "error": "secret"
+        });
+        assert_eq!(
+            tool_diagnostic(&event).unwrap(),
+            serde_json::json!({
+                "tool": "echo_inbox_messages",
+                "reason": "research_pagination_required", "handledPrivately": true
+            })
+        );
+        assert!(normalize_runner_event(event).is_none());
+        assert_eq!(
+            tool_diagnostic(&serde_json::json!({
+                "type": "tool_diagnostic", "tool": "secret",
+                "reason": "http_error", "httpStatus": 503,
+                "handledPrivately": "secret"
+            }))
+            .unwrap(),
+            serde_json::json!({"tool": "unknown", "reason": "http_error", "httpStatus": 503})
+        );
+        assert!(tool_diagnostic(&serde_json::json!({
+            "type": "tool_diagnostic", "tool": "echo_inbox_messages",
+            "reason": "secret", "httpStatus": 999
+        }))
+        .is_none());
+        assert!(tool_diagnostic(&serde_json::json!({
+            "type": "tool_diagnostic", "reason": "http_error", "httpStatus": 999
+        }))
+        .unwrap()
+        .get("httpStatus")
+        .is_none());
     }
 
     #[test]
