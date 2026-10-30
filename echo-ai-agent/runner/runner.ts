@@ -3470,6 +3470,16 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       for (const section of sections) deliveredFileSections.set(fileCitationHref(section.source), section);
       for (const citation of citations) deliveredFiles.set(fileCitationHref(citation), citation);
     };
+    // Set only by tools of this request, not by the recap restored from earlier requests.
+    let retrievedCitable = false;
+    const recordRetrievedSources = (citations: MessageCitation[]) => {
+      if (citations.length) retrievedCitable = true;
+      recordSources(citations);
+    };
+    const recordRetrievedFiles = (citations: FileCitation[], sections: FileSection[]) => {
+      if (citations.length || sections.length) retrievedCitable = true;
+      recordFiles(citations, sections);
+    };
     const savedEvidence: NonNullable<BudgetEvidence["saved"]> = [];
     const recordSaved = (text: string, citations: string[]) => { if (citations.length) savedEvidence.push({ text, citations }); };
     if (payload.workMemory?.recap) recordSaved(payload.workMemory.recap, [...payload.workMemory.citations.map(citationHref), ...payload.workMemory.fileCitations.map(fileCitationHref)]);
@@ -3488,7 +3498,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       for (let offset = 0; offset < payload.workMemory.fileCitations.length; offset += 100) emit({ type: "file_citations", citations: payload.workMemory.fileCitations.slice(offset, offset + 100) });
     }
     const research = usesBoundedResearch(payload.modelName, payload.executionPolicy) ? new FlashResearch(
-      () => ({ citations: [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])], fileCitations: [...deliveredFiles.values()], links: mapRegistry.list().map(({ id }) => `echo-map:${id}`) }),
+      () => ({ citations: [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])], fileCitations: [...deliveredFiles.values()], links: mapRegistry.list().map(({ id }) => `echo-map:${id}`), citationRequired: retrievedCitable }),
       journal,
       (event) => emit({ type: "completion_diagnostic", ...event }),
       RESEARCH_TUNING,
@@ -3500,9 +3510,9 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         authentication,
         countInvocation,
         compactResponse,
-        recordSources,
+        recordRetrievedSources,
         recordMessages,
-        recordFiles,
+        recordRetrievedFiles,
         journal,
         recordSaved,
         research,
@@ -3511,7 +3521,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         ? createMapTools(mapRegistry, async (path, body, signal) => {
             const response = await echoRequest(payload, authentication, "POST", path, body as JsonObject, signal);
             return response.body;
-          }, emit, countInvocation, (source) => [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])].some((citation) => citation.messageId === source.messageId && citation.messageIdentifier === source.messageIdentifier), recordSources, payload.mapEdit,
+          }, emit, countInvocation, (source) => [...deliveredCitationsThisTurn, ...payload.history.flatMap((entry) => entry.citations ?? [])].some((citation) => citation.messageId === source.messageId && citation.messageIdentifier === source.messageIdentifier), recordRetrievedSources, payload.mapEdit,
           scriptRunner ? { run: scriptRunner, prompt: payload.prompt, messages: () => [...deliveredMessages.values()], files: () => [...deliveredFileSections.values()] } : undefined,
           sidcResolver, (source) => deliveredFiles.has(fileCitationHref(source)))
         : []),

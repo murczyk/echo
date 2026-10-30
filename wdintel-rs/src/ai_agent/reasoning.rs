@@ -169,7 +169,9 @@ pub fn resolve(
 /// Every non-OpenAI engine (GLM, Gemma) runs the runner's bounded research
 /// harness, which reserves twice the base finalization time for synthesis.
 fn bounded_research(model_name: &str) -> bool {
-    !model_name.starts_with(config::AI_AGENT_OPENAI_MODEL_PREFIX)
+    !config::AI_AGENT_OPENAI_MODEL_PREFIXES
+        .iter()
+        .any(|prefix| model_name.starts_with(prefix))
 }
 
 pub fn request_policy(

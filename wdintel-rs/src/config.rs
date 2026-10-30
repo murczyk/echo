@@ -495,7 +495,7 @@ pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
-pub const AI_AGENT_OPENAI_MODEL_PREFIX: &str = "gpt-";
+pub const AI_AGENT_OPENAI_MODEL_PREFIXES: &[&str] = &["gpt-", "o1", "o3", "o4"];
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
 pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;

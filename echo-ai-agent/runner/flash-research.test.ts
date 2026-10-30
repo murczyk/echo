@@ -128,6 +128,7 @@ const scenarios = [
   "legacy",
   "user-text",
   "user-text-history",
+  "history-aggregate",
   "user-map",
 ];
 
@@ -305,12 +306,15 @@ for (const [scenario, modelName] of [
           return Response.json({
             inbox_items: Array.from(
               {
+                // history-aggregate: a retrieval that delivers nothing citable.
                 length:
-                  scenario === "checkpoint-failure" ||
-                  scenario === "pagination" ||
-                  scenario === "incomplete"
-                    ? 20
-                    : 1,
+                  scenario === "history-aggregate"
+                    ? 0
+                    : scenario === "checkpoint-failure" ||
+                        scenario === "pagination" ||
+                        scenario === "incomplete"
+                      ? 20
+                      : 1,
               },
               (_, index) => [
                 index + 1,
@@ -430,7 +434,7 @@ for (const [scenario, modelName] of [
               `${draft} Invented [джерело](/rer-analysis-neo?m=missing)`,
             );
           return stream(
-            scenario.startsWith("user-text")
+            scenario.startsWith("user-text") || scenario === "history-aggregate"
               ? "The botanical survey is ready."
               : scenario === "user-map"
                 ? `[мапа](echo-map:${mapId})`
@@ -541,7 +545,7 @@ for (const [scenario, modelName] of [
           bootstrapToken: "A".repeat(43),
           correlationId,
           // An earlier cited answer must not demand citations for a source-free follow-up.
-          ...(scenario === "user-text-history"
+          ...(["user-text-history", "history-aggregate"].includes(scenario)
             ? {
                 history: [
                   {
@@ -714,7 +718,10 @@ for (const [scenario, modelName] of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
-    else if (scenario.startsWith("user-text"))
+    else if (
+      scenario.startsWith("user-text") ||
+      scenario === "history-aggregate"
+    )
       assert.equal(answer.trim(), "The botanical survey is ready.");
     else if (scenario === "user-map") {
       assert.ok(answer.includes(`](echo-map:${mapId})`));
@@ -919,7 +926,7 @@ test("bounded research covers every non-OpenAI engine with a budget", () => {
   // Without reasoning presets these engines have no budget to bound.
   assert.equal(usesBoundedResearch("glm-5.3"), false);
   assert.equal(usesBoundedResearch("gemma-4"), false);
-  for (const openai of ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-sol"])
+  for (const openai of ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-sol", "o1", "o3-mini", "o4-mini"])
     assert.equal(usesBoundedResearch(openai, policy), false);
 });
 

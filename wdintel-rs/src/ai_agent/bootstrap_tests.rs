@@ -687,6 +687,14 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
     gemma.model_name = "gemma-4".to_string();
     let mut sol = engine.clone();
     sol.model_name = crate::config::AI_AGENT_OPENAI_GPT_6_SOL.to_string();
+    let openai_engines: Vec<_> = ["o1", "o3-mini", "o4-mini"]
+        .into_iter()
+        .map(|name| {
+            let mut openai = engine.clone();
+            openai.model_name = name.to_string();
+            openai
+        })
+        .collect();
     for (preset, runtime, reserve) in [
         (Preset::Fast, 120, 60),
         (Preset::Balanced, 300, 120),
@@ -709,6 +717,15 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
             reserve / 2,
             "gpt"
         );
+        for openai in &openai_engines {
+            assert_eq!(
+                reasoning::resolve(&config, openai, preset)
+                    .finalization_seconds,
+                reserve / 2,
+                "{}",
+                openai.model_name
+            );
+        }
         assert!(flash_policy.reasoning_effort.is_none());
     }
     let policy = reasoning::resolve(

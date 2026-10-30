@@ -47,8 +47,11 @@ const CURSOR_KEYS = [
   "beforeRequestId",
 ];
 
+// Mirrors AI_AGENT_OPENAI_MODEL_PREFIXES in wdintel-rs/src/config.rs.
+const OPENAI_MODEL_PREFIXES = ["gpt-", "o1", "o3", "o4"];
+
 export function isOpenAiModel(modelName: string): boolean {
-  return modelName.startsWith("gpt-");
+  return OPENAI_MODEL_PREFIXES.some((prefix) => modelName.startsWith(prefix));
 }
 
 // Flash always uses the bounded research harness. Any other non-OpenAI engine (GLM,
@@ -128,8 +131,9 @@ type Sources = {
   citations: MessageCitation[];
   fileCitations: FileCitation[];
   links?: string[];
-  // False when this request retrieved nothing, so an answer built only from the user's
-  // own text may cite nothing even if earlier turns of the conversation did.
+  // False until this request's tools deliver a citable message or file, so an answer
+  // built from the user's own text or from aggregate data may cite nothing even if
+  // earlier turns of the conversation did.
   citationRequired?: boolean;
 };
 type Retrieval = {
@@ -232,7 +236,7 @@ export class FlashResearch {
       executionMode: "sequential",
       execute: async (_id, update) => {
         countInvocation();
-        const draft = validatedFlashAnswer(update.draft, this.currentSources());
+        const draft = validatedFlashAnswer(update.draft, this.sources());
         if (update.draft.trim() && !draft)
           throw new Error(
             "Draft must use only available source citations and registered map links",
@@ -301,10 +305,6 @@ export class FlashResearch {
     );
   }
 
-  private currentSources(): Sources {
-    return { ...this.sources(), citationRequired: this.ledger.length > 0 };
-  }
-
   private serialize(state: ResearchUpdate): string {
     return JSON.stringify({ research: state, retrievals: this.ledger });
   }
@@ -323,7 +323,7 @@ export class FlashResearch {
 
   fallback(): string {
     return (
-      validatedFlashAnswer(this.draft ?? null, this.currentSources()) ??
+      validatedFlashAnswer(this.draft ?? null, this.sources()) ??
       FLASH_INABILITY
     );
   }
@@ -441,7 +441,7 @@ export class FlashResearch {
         throw error;
       return null;
     });
-    const answer = validatedFlashAnswer(candidate, this.currentSources());
+    const answer = validatedFlashAnswer(candidate, this.sources());
     if (candidate && !answer) {
       outcome = "citation_rejected";
       this.diagnostic({
