@@ -5,6 +5,10 @@ import {
   FlashResearch,
   FLASH_ENGINE,
   FLASH_INABILITY,
+  FLASH_RESEARCH_PAGINATION_REQUIRED,
+  RESEARCH_TUNING,
+  finalizationMultipliers,
+  usesBoundedResearch,
   validatedFlashAnswer,
 } from "./flash-research.ts";
 import {
@@ -81,7 +85,7 @@ function stream(
   );
 }
 
-for (const scenario of [
+const scenarios = [
   "selective",
   "retry-length",
   "retry-citation",
@@ -124,8 +128,15 @@ for (const scenario of [
   "legacy",
   "user-text",
   "user-map",
+];
+
+// Every non-OpenAI engine with a budget runs the same harness as Flash.
+for (const [scenario, modelName] of [
+  ...scenarios.map((scenario) => [scenario, FLASH_ENGINE] as const),
+  ["selective", "glm-5.3"] as const,
+  ["selective", "gemma-4"] as const,
 ]) {
-  test(`#3572 Flash harness: ${scenario}`, async (t) => {
+  test(`#3572 Flash harness: ${scenario}${modelName === FLASH_ENGINE ? "" : ` on ${modelName}`}`, async (t) => {
     const events: any[] = [];
     const saved: any[] = [];
     const queries: any[] = [];
@@ -522,7 +533,7 @@ for (const scenario of [
                 : scenario === "pagination"
                   ? "Read every archive record and summarize them."
                   : "Summarize today's archive records.",
-          modelName: FLASH_ENGINE,
+          modelName,
           providerTransport: "echo_gateway",
           providerApiKey: "fixture-capability",
           echoPublicHost: "echo.example.test",
@@ -536,7 +547,7 @@ for (const scenario of [
           compactionKeepRecentTokens: 1024,
           ...(scenario === "legacy"
             ? {}
-            : { executionPolicy: policy, deadlineAt: Date.now() + 120_000 }),
+            : { executionPolicy: policy, deadlineAt: Date.now() + (scenario === "checkpoint-failure" ? 300_000 : 120_000) }),
           timeContext: {
             timeZone: "Europe/Kyiv",
             requestStartedAtUtc: new Date(Date.now()).toISOString(),
@@ -825,6 +836,80 @@ test("#3572 duration guard stops checkpoints before consuming the research reser
   budget.dispose();
 });
 
+test("incident 01a18e18: a checkpoint is not started with less research time than it needs", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
+  const context = { systemPrompt: "Fixture", messages: [] };
+  const tuned = new FlashResearch(() => sources, undefined, undefined, RESEARCH_TUNING);
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  // 60 s of research remain and no checkpoint has been observed yet.
+  assert.throws(() =>
+    tuned.beforeProvider("checkpoint", context, budget, 50, 65536, 8192),
+  );
+  assert.equal(budget.reason, "time_limit");
+  budget.dispose();
+  const untuned = new FlashResearch(() => sources);
+  const other = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  assert.doesNotThrow(() =>
+    untuned.beforeProvider("checkpoint", context, other, 50, 65536, 8192),
+  );
+  other.dispose();
+});
+
+test("incident 01a18e18: paging one search beyond the limit needs a coverage reason", async () => {
+  const research = new FlashResearch(() => sources, undefined, undefined, RESEARCH_TUNING);
+  const save = (extra: Record<string, unknown> = {}) =>
+    (research.tool(() => {}) as any).execute("save", { ...updated, ...extra });
+  const query = (search: string, cursor?: number) => ({
+    period,
+    search,
+    ...(cursor ? { before_id_noninclusive: cursor } : {}),
+  });
+  const page = (search: string, cursor?: number) => {
+    research.beforeRetrieval("inbox_messages", query(search, cursor));
+    research.record("echo_inbox_messages", query(search, cursor), { nextCursor: 1 });
+  };
+  await save();
+  page("грибники");
+  page("грибники", 400);
+  page("грибники", 300);
+  page("тюльпани"); // another search starts its own page count
+  await save();
+  assert.throws(
+    () => research.beforeRetrieval("inbox_messages", query("грибники", 200)),
+    { message: FLASH_RESEARCH_PAGINATION_REQUIRED },
+  );
+  assert.equal(research.updateRequired, true);
+  // The refusal does not authorize pagination: a checkpoint without a reason keeps it blocked.
+  await save();
+  assert.throws(() =>
+    research.beforeRetrieval("inbox_messages", query("грибники", 200)),
+  );
+  await save({ paginationReason: "User asked for every mention of this callsign." });
+  assert.doesNotThrow(() =>
+    research.beforeRetrieval("inbox_messages", query("грибники", 200)),
+  );
+  // Without tuning (the previous behavior) searched pagination is not limited.
+  const plain = new FlashResearch(() => sources);
+  await (plain.tool(() => {}) as any).execute("save", updated);
+  for (let index = 1; index <= 5; index++) {
+    const request = query("грибники", index * 100);
+    plain.beforeRetrieval("inbox_messages", request);
+    plain.record("echo_inbox_messages", request, { nextCursor: 1 });
+    await (plain.tool(() => {}) as any).execute("save", updated);
+  }
+});
+
+test("bounded research covers every non-OpenAI engine with a budget", () => {
+  assert.equal(usesBoundedResearch(FLASH_ENGINE), true);
+  assert.equal(usesBoundedResearch("glm-5.3", policy), true);
+  assert.equal(usesBoundedResearch("gemma-4", policy), true);
+  // Without reasoning presets these engines have no budget to bound.
+  assert.equal(usesBoundedResearch("glm-5.3"), false);
+  assert.equal(usesBoundedResearch("gemma-4"), false);
+  for (const openai of ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-sol"])
+    assert.equal(usesBoundedResearch(openai, policy), false);
+});
+
 test("#3572 draft reuse validates against current access, including every cited link", () => {
   assert.equal(validatedFlashAnswer(draft, sources), draft);
   assert.equal(
@@ -857,15 +942,26 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
       validateExecutionPolicy(original, 1000)?.finalizationSeconds,
       reserve,
     );
-    assert.throws(() => validateExecutionPolicy(original, 1000, true));
+    assert.throws(() => validateExecutionPolicy(original, 1000, [2]));
     assert.equal(
       validateExecutionPolicy(
         { ...original, finalizationSeconds: reserve * 2 },
         1000,
-        true,
+        [2],
       )?.maxRuntimeSeconds,
       runtime,
     );
+    // Other non-OpenAI engines accept both reserves so snapshotted policies survive a rollout.
+    for (const modelName of ["glm-5.3", "gemma-4"]) {
+      const multipliers = finalizationMultipliers(modelName);
+      assert.equal(validateExecutionPolicy(original, 1000, multipliers)?.finalizationSeconds, reserve);
+      assert.equal(
+        validateExecutionPolicy({ ...original, finalizationSeconds: reserve * 2 }, 1000, multipliers)?.finalizationSeconds,
+        reserve * 2,
+      );
+    }
+    assert.deepEqual(finalizationMultipliers(FLASH_ENGINE), [2]);
+    assert.deepEqual(finalizationMultipliers("gpt-6.1-sol"), [1]);
     assert.throws(() =>
       validateExecutionPolicy(
         { ...original, finalizationSeconds: reserve * 2 },

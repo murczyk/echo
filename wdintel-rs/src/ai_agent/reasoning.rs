@@ -157,13 +157,19 @@ pub fn resolve(
         checkpoint_effort: lowest.map(str::to_owned),
         synthesis_effort: lowest.map(str::to_owned),
         max_runtime_seconds,
-        finalization_seconds: if name == config::AI_AGENT_GLM_FLASH {
+        finalization_seconds: if bounded_research(name) {
             finalization_seconds
-                * config::AI_AGENT_GLM_FLASH_FINALIZATION_MULTIPLIER
+                * config::AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER
         } else {
             finalization_seconds
         },
     }
+}
+
+/// Every non-OpenAI engine (GLM, Gemma) runs the runner's bounded research
+/// harness, which reserves twice the base finalization time for synthesis.
+fn bounded_research(model_name: &str) -> bool {
+    !model_name.starts_with(config::AI_AGENT_OPENAI_MODEL_PREFIX)
 }
 
 pub fn request_policy(

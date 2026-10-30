@@ -683,6 +683,10 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
     use crate::ai_agent::types::AiAgentReasoningPreset as Preset;
     let mut flash = engine.clone();
     flash.model_name = crate::config::AI_AGENT_GLM_FLASH.to_string();
+    let mut gemma = engine.clone();
+    gemma.model_name = "gemma-4".to_string();
+    let mut sol = engine.clone();
+    sol.model_name = crate::config::AI_AGENT_OPENAI_GPT_6_SOL.to_string();
     for (preset, runtime, reserve) in [
         (Preset::Fast, 120, 60),
         (Preset::Balanced, 300, 120),
@@ -693,7 +697,18 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         assert_eq!(flash_policy.max_runtime_seconds, runtime, "#3572");
         assert_eq!(flash_policy.finalization_seconds, reserve, "#3572");
         assert_eq!(original.max_runtime_seconds, runtime, "#3572");
-        assert_eq!(original.finalization_seconds, reserve / 2, "#3572");
+        // Every non-OpenAI engine reserves the longer synthesis window; OpenAI keeps the base.
+        assert_eq!(original.finalization_seconds, reserve, "glm-5.3");
+        assert_eq!(
+            reasoning::resolve(&config, &gemma, preset).finalization_seconds,
+            reserve,
+            "gemma"
+        );
+        assert_eq!(
+            reasoning::resolve(&config, &sol, preset).finalization_seconds,
+            reserve / 2,
+            "gpt"
+        );
         assert!(flash_policy.reasoning_effort.is_none());
     }
     let policy = reasoning::resolve(

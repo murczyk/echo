@@ -30,15 +30,13 @@ const PRESETS = {
   deep: [1800, 120],
 } as const;
 const EFFORTS = new Set([null, "none", "low", "medium", "high", "max"]);
-const FALLBACK_MAX_SOURCES = 8;
-const FALLBACK_EXCERPT_CHARACTERS = 600;
 const FINALIZATION_CLEANUP_MS = 1000;
 export const PURPOSE_HEADER = "x-echo-ai-purpose";
 
 export function validateExecutionPolicy(
   value: unknown,
   deadline: unknown,
-  flash = false,
+  finalizationMultipliers: readonly number[] = [1],
 ): ExecutionPolicy | undefined {
   if (value === undefined) {
     if (deadline !== undefined)
@@ -60,7 +58,9 @@ export function validateExecutionPolicy(
       policy.synthesisEffort,
     ].every((effort) => EFFORTS.has(effort)) ||
     policy.maxRuntimeSeconds !== limits[0] ||
-    policy.finalizationSeconds !== limits[1] * (flash ? 2 : 1) ||
+    !finalizationMultipliers.some(
+      (multiplier) => policy.finalizationSeconds === limits[1] * multiplier,
+    ) ||
     !Number.isSafeInteger(deadline) ||
     (deadline as number) < 1
   ) {
@@ -143,16 +143,6 @@ export class ResearchBudget {
   }
 }
 
-function quoteExcerpt(text: string): string {
-  const excerpt = Array.from(text)
-    .slice(0, FALLBACK_EXCERPT_CHARACTERS)
-    .join("");
-  return `${excerpt.replace(/[\\`*_{}\[\]<>()!|#]/g, "\\$&")}${excerpt.length < text.length ? "…" : ""}`
-    .split("\n")
-    .map((line) => `> ${line}`)
-    .join("\n");
-}
-
 export interface BudgetEvidence {
   messages: CitedMessage[];
   files: FileSection[];
@@ -174,13 +164,12 @@ function evidenceRecords(
   ];
 }
 
-export function budgetFallback(evidence: BudgetEvidence): string {
-  const records = evidenceRecords(evidence)
-    .filter((record) => record.text.trim())
-    .slice(0, FALLBACK_MAX_SOURCES);
-  if (!records.length)
-    return "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
-  return `Встиг отримати такі уривки джерел; їх узагальнення не завершено.\n\n${records.map((record) => `${quoteExcerpt(record.text)}\n\n[джерело](${record.citation})`).join("\n\n")}`;
+// Raw source excerpts are never an answer: without a validated draft, say so briefly.
+export const BUDGET_INABILITY =
+  "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
+
+export function budgetFallback(): string {
+  return BUDGET_INABILITY;
 }
 
 export function chooseBudgetAnswer(
@@ -202,7 +191,7 @@ export function chooseBudgetAnswer(
       ));
   return valid
     ? canonicalizeAnswer(candidate, canonicalCitations, canonicalFileLinks)
-    : budgetFallback(evidence);
+    : budgetFallback();
 }
 
 export class SynthesisAuthorizationError extends Error {}

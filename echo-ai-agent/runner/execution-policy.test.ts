@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
+  BUDGET_INABILITY,
   budgetFallback,
   chooseBudgetAnswer,
   synthesizeBudgetEvidence,
@@ -69,7 +70,7 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
     "Earlier message [джерело](/rer-analysis-neo?m=source-42)";
   assert.equal(
     chooseBudgetAnswer(oldMessageAnswer, files, evidence.messages),
-    budgetFallback(files),
+    budgetFallback(),
   );
   assert.equal(
     chooseBudgetAnswer(oldMessageAnswer, evidence, evidence.messages),
@@ -77,7 +78,7 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
   );
   assert.equal(
     chooseBudgetAnswer("Uncited summary", evidence, evidence.messages),
-    budgetFallback(evidence),
+    budgetFallback(),
   );
   const historical = { messageId: 7, messageIdentifier: "historical-7" };
   const mixed = `${fileAnswer}\n${oldMessageAnswer}\nEarlier [source](/rer-analysis-neo?m=7)`;
@@ -109,7 +110,7 @@ test("#3724 reserves finalization after the original deadline without restarting
   }
 });
 
-test("#3724 returns a cited fallback when synthesis ignores cancellation", async () => {
+test("#3724 returns a short notice, never raw excerpts, when synthesis ignores cancellation", async () => {
   const cancellation = new AbortController();
   let calls = 0;
   const response = synthesizeBudgetEvidence(
@@ -131,10 +132,11 @@ test("#3724 returns a cited fallback when synthesis ignores cancellation", async
   cancellation.abort();
   assert.equal(await response, null);
   assert.equal(calls, 1);
-  const fallback = budgetFallback(evidence);
-  assert.ok(fallback.includes("Verified source text"));
-  assert.ok(fallback.includes("[джерело](/rer-analysis-neo?m=source-42)"));
-  assert.ok(fallback.includes("не завершено"));
+  const fallback = budgetFallback();
+  assert.equal(fallback, BUDGET_INABILITY);
+  assert.ok(!fallback.includes("Verified source text"));
+  assert.ok(!fallback.includes("уривки джерел"));
+  assert.ok(!fallback.includes("/rer-analysis-neo"));
 });
 
 test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds context", async () => {
@@ -190,7 +192,7 @@ test("#3724 synthesizes from a checkpoint when collected raw evidence exceeds co
       );
       assert.equal(
         chooseBudgetAnswer("Uncited summary", oversized, evidence.messages),
-        budgetFallback(oversized),
+        budgetFallback(),
       );
     } else assert.equal(answer, null);
   }
