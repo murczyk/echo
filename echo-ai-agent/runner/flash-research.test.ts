@@ -47,7 +47,7 @@ const period = { kind: "relative_days", days: 1 };
 
 function stream(
   content: string,
-  tool?: { name: string; args: unknown },
+  tool?: { name: string; args: unknown } | { name: string; args: unknown }[],
   stop = "stop",
 ): Response {
   const chunk = (delta: unknown, finish: string | null) => ({
@@ -61,17 +61,17 @@ function stream(
     content,
     ...(tool
       ? {
-          tool_calls: [
-            {
-              index: 0,
-              id: "call_fixture",
+          tool_calls: (Array.isArray(tool) ? tool : [tool]).map(
+            (call, index) => ({
+              index,
+              id: `call_fixture_${index}`,
               type: "function",
               function: {
-                name: tool.name,
-                arguments: JSON.stringify(tool.args),
+                name: call.name,
+                arguments: JSON.stringify(call.args),
               },
-            },
-          ],
+            }),
+          ),
         }
       : {}),
   };
@@ -110,6 +110,10 @@ for (const scenario of [
   "persistence-failure",
   "plan-required",
   "refresh-required",
+  "batch-refresh",
+  "batch-refresh-rejected",
+  "batch-refresh-persistence-failure",
+  "api-failure",
   "legacy",
   "user-text",
   "user-map",
@@ -118,6 +122,7 @@ for (const scenario of [
     const events: any[] = [];
     const saved: any[] = [];
     const queries: any[] = [];
+    const documents: any[] = [];
     const errors: unknown[] = [];
     const calls: { name: string; args: any }[] = [];
     const pagination = ["pagination", "refresh-required"].includes(scenario)
@@ -156,6 +161,15 @@ for (const scenario of [
       calls.length = 0;
     } else if (scenario === "follow-up") {
       refresh();
+    } else if (scenario.startsWith("batch-refresh")) {
+      for (let index = 0; index < 4; index++)
+        read({ period, search: `botanical ${index}` });
+      calls.push({
+        name: "echo_attachment_get",
+        args: { mediaId: correlationId },
+      });
+      read({ period, search: "after checkpoint" });
+      refresh();
     } else if (scenario === "pagination" || scenario === "refresh-required") {
       for (let page = 0; page < 10; page++) {
         read({ period, ...(page ? { cursor: page * 20 } : {}) });
@@ -178,7 +192,7 @@ for (const scenario of [
           "persistence-failure",
         ].includes(scenario)
       ) {
-        if (scenario === "selective" || scenario === "legacy")
+        if (["selective", "legacy", "api-failure"].includes(scenario))
           read({ period, search: "botanical survey" });
         refresh();
       }
@@ -197,6 +211,7 @@ for (const scenario of [
     let researchCalls = 0;
     let synthesisCalls = 0;
     let checkpoints = 0;
+    let forcedUpdates = 0;
     let clockOffset = 0;
     const now = Date.now.bind(Date);
     t.mock.method(Date, "now", () => now() + clockOffset);
@@ -221,15 +236,22 @@ for (const scenario of [
             { headers: { "set-cookie": "session=fixture; HttpOnly" } },
           );
         if (path === "/api/ai-agent/work/append") {
-          if (scenario === "persistence-failure")
-            return Response.json({ error: "unavailable" }, { status: 503 });
           const record = JSON.parse(init.body);
+          if (
+            scenario === "persistence-failure" ||
+            (scenario === "batch-refresh-persistence-failure" &&
+              record.kind === "checkpoint" &&
+              forcedUpdates > 0)
+          )
+            return Response.json({ error: "unavailable" }, { status: 503 });
           assert.equal(record.sequence, saved.length + 1);
           saved.push(record);
           return Response.json({ sequence: record.sequence });
         }
         if (path === "/api/signal/inbox/messages") {
           queries.push(JSON.parse(init.body));
+          if (scenario === "api-failure" && queries.length === 2)
+            return Response.json({ error: "unavailable" }, { status: 503 });
           assert.ok(
             saved.some((record) => record.kind === "checkpoint"),
             "initial plan must be saved before retrieval",
@@ -267,6 +289,19 @@ for (const scenario of [
               ],
             ),
             page_limit: 20,
+          });
+        }
+        if (path === "/api/attachments/get") {
+          assert.equal(queries.length, 4);
+          assert.equal(forcedUpdates, 0);
+          documents.push(JSON.parse(init.body));
+          return Response.json({
+            document: {
+              mediaId: correlationId,
+              fileName: "Botanical.pdf",
+              citation,
+            },
+            sections: [],
           });
         }
         if (path === "/api/ai-agent/maps/prepare")
@@ -364,6 +399,29 @@ for (const scenario of [
         assert.equal(purpose, "research");
         researchCalls++;
         assert.ok(researchCalls < 140);
+        if (body.tool_choice?.function?.name === "update_research") {
+          forcedUpdates++;
+          assert.deepEqual(
+            body.tools.map((tool: any) => tool.function.name),
+            ["update_research"],
+          );
+          if (scenario.startsWith("batch-refresh")) {
+            assert.equal(queries.length, 4);
+            assert.equal(documents.length, 1);
+          }
+          return stream("PRIVATE_RESEARCH_NARRATION", {
+            name: "update_research",
+            args: {
+              ...updated,
+              ...pagination,
+              ...(scenario === "batch-refresh-rejected" && forcedUpdates === 1
+                ? { draft: "Invented [source](/rer-analysis-neo?m=missing)" }
+                : {}),
+            },
+          });
+        }
+        if (scenario.startsWith("batch-refresh") && queries.length === 3)
+          return stream("PRIVATE_RESEARCH_NARRATION", calls.splice(0, 2));
         if (scenario === "follow-up")
           assert.ok(JSON.stringify(body).includes("Saved botanical survey"));
         if (
@@ -458,6 +516,17 @@ for (const scenario of [
               : { citations: [], fileCitations: [] }),
           },
           skills: [
+            ...(scenario.startsWith("batch-refresh")
+              ? [
+                  {
+                    method: "POST",
+                    path: "/api/attachments/get",
+                    skill: "attachment_get",
+                    label: "Read document metadata",
+                    requestKind: "attachmentRead",
+                  },
+                ]
+              : []),
             ...(scenario === "user-map"
               ? [
                   {
@@ -487,7 +556,14 @@ for (const scenario of [
         },
         false,
       );
-      if (["denied", "filtered", "persistence-failure"].includes(scenario))
+      if (
+        [
+          "denied",
+          "filtered",
+          "persistence-failure",
+          "batch-refresh-persistence-failure",
+        ].includes(scenario)
+      )
         await assert.rejects(runAgent(payload));
       else await runAgent(payload);
     } finally {
@@ -511,13 +587,25 @@ for (const scenario of [
         "denied",
         "filtered",
         "persistence-failure",
+        "batch-refresh-persistence-failure",
         "cancel",
         "synthesis-cancel",
       ].includes(scenario)
     ) {
       assert.equal(answer, undefined);
-      if (scenario === "cancel" || scenario === "persistence-failure")
+      if (
+        [
+          "cancel",
+          "persistence-failure",
+          "batch-refresh-persistence-failure",
+        ].includes(scenario)
+      )
         assert.equal(synthesisCalls, 0);
+      if (scenario === "batch-refresh-persistence-failure") {
+        assert.equal(queries.length, 4);
+        assert.equal(documents.length, 1);
+        assert.equal(forcedUpdates, 1);
+      }
       return;
     }
     assert.ok(answer);
@@ -566,7 +654,40 @@ for (const scenario of [
     if (scenario === "follow-up") assert.equal(queries.length, 0);
     if (scenario === "pagination") assert.equal(queries.length, 10);
     if (scenario === "plan-required") assert.equal(queries.length, 1);
-    if (scenario === "refresh-required") assert.ok(queries.length <= 8);
+    if (scenario === "refresh-required") {
+      assert.equal(queries.length, 10);
+      assert.ok(forcedUpdates > 0);
+    }
+    if (scenario.startsWith("batch-refresh")) {
+      assert.equal(queries.length, 5);
+      assert.equal(documents.length, 1);
+      assert.equal(
+        forcedUpdates,
+        scenario === "batch-refresh-rejected" ? 2 : 1,
+      );
+    }
+    const failures = events.filter(
+      (event) => event.type === "tool_end" && event.is_error,
+    );
+    if (
+      ["batch-refresh", "batch-refresh-rejected", "refresh-required"].includes(
+        scenario,
+      )
+    )
+      assert.deepEqual(failures, []);
+    if (scenario === "plan-required")
+      assert.equal(
+        failures[0].errorSummary,
+        "Потрібно зберегти проміжні результати аналізу перед наступним пошуком.",
+      );
+    if (scenario === "api-failure") {
+      assert.equal(queries.length, 2);
+      assert.equal(failures.length, 1);
+      assert.equal(
+        failures[0].errorSummary,
+        "Не вдалося завантажити дані за вказаними параметрами.",
+      );
+    }
     if (scenario === "slow-provider" || scenario === "deadline")
       assert.equal(queries.length, 1);
     if (scenario === "checkpoint-failure") assert.ok(checkpoints > 0);
