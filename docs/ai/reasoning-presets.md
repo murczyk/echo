@@ -1,9 +1,12 @@
 # Agent reasoning and research budgets
 
 The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
-Their limits remain 2, 5, and 30 minutes. Balanced is the default. Successful submission,
-changing provider, and opening another conversation reset the composer to
-Balanced. Retry preserves the failed request's preset. Each follow-up makes
+Their limits remain 2, 5, and 30 minutes. Balanced is the default. The browser
+remembers the last chosen Fast or Balanced in `localStorage`
+(`echo.ai-agent.reasoning-preset`). Deep is never remembered: successful
+submission, changing provider, and opening another conversation reset the
+composer to the remembered preset (Balanced if none). Retry preserves the
+failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
 
 The limit starts when a worker claims the request, excluding queue time.

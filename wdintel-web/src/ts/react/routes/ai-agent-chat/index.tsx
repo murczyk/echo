@@ -42,6 +42,12 @@ const MapWorkspace = lazy(() =>
 );
 import { ConversationHistoryItem } from './ConversationHistoryItem';
 import {
+  rememberedProviderId,
+  rememberedReasoningPreset,
+  saveRememberedProviderId,
+  saveRememberedReasoningPreset,
+} from './chat-preferences';
+import {
   RequestActivity,
   RequestDuration,
   type RequestActivityItem,
@@ -758,7 +764,8 @@ export function AiAgentChat({
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AiAgentMessage[]>([]);
   const [providerId, setProviderId] = useState('');
-  const [reasoningPreset, setReasoningPreset] = useState<AiAgentReasoningPreset>('balanced');
+  const [reasoningPreset, setReasoningPreset] =
+    useState<AiAgentReasoningPreset>(rememberedReasoningPreset);
   const [draft, setDraft] = useState('');
   const [liveRequests, setLiveRequests] = useState<LiveRequest[]>([]);
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
@@ -866,8 +873,7 @@ export function AiAgentChat({
       const nextConfiguration = await getAiAgentConfiguration();
       if (!mountedRef.current) return;
       setConfiguration(nextConfiguration);
-      defaultProviderIdRef.current =
-        nextConfiguration.defaultProviderId ?? nextConfiguration.providers[0]?.id ?? '';
+      defaultProviderIdRef.current = rememberedProviderId(nextConfiguration);
       setProviderId(defaultProviderIdRef.current);
       if (nextConfiguration.enabled) {
         const nextConversations = await listAiAgentConversations();
@@ -987,7 +993,7 @@ export function AiAgentChat({
   }
 
   function activateConversation(conversation: AiAgentConversationDetail) {
-    setReasoningPreset('balanced');
+    setReasoningPreset(rememberedReasoningPreset());
     clearLiveRequests();
     activeConversationIdRef.current = conversation.id;
     setActiveConversationId(conversation.id);
@@ -1060,7 +1066,7 @@ export function AiAgentChat({
   }
 
   function startNewConversation(replace = false) {
-    setReasoningPreset('balanced');
+    setReasoningPreset(rememberedReasoningPreset());
     requestedConversationIdRef.current = null;
     resetConversationView();
     writeConversationUrl(null, replace);
@@ -1210,7 +1216,7 @@ export function AiAgentChat({
         ...(mapEdit ? { mapEdit } : {}),
       });
       if (mapEdit) editedMapsRef.current.set(created.id, mapEdit);
-      if (mountedRef.current) setReasoningPreset('balanced');
+      if (mountedRef.current) setReasoningPreset(rememberedReasoningPreset());
       if (!mountedRef.current) return;
       void refreshConversationList();
       if (viewSequence !== viewSequenceRef.current) return;
@@ -1584,7 +1590,9 @@ export function AiAgentChat({
                     disabled={interactionLocked || Boolean(activeConversationId)}
                     onChange={(event) => {
                       setProviderId(event.target.value);
-                      setReasoningPreset('balanced');
+                      defaultProviderIdRef.current = event.target.value;
+                      saveRememberedProviderId(event.target.value);
+                      setReasoningPreset(rememberedReasoningPreset());
                     }}
                     inputProps={{ 'aria-label': 'Провайдер ШІ' }}
                     sx={{
@@ -1618,9 +1626,11 @@ export function AiAgentChat({
                       disableUnderline
                       value={reasoningPreset}
                       disabled={interactionLocked}
-                      onChange={(event) =>
-                        setReasoningPreset(event.target.value as AiAgentReasoningPreset)
-                      }
+                      onChange={(event) => {
+                        const preset = event.target.value as AiAgentReasoningPreset;
+                        setReasoningPreset(preset);
+                        saveRememberedReasoningPreset(preset);
+                      }}
                       inputProps={{ 'aria-label': 'Глибина аналізу' }}
                       sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
                     >
