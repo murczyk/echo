@@ -676,16 +676,100 @@ async fn interception_report_candidate_query(
     if let Some(candidate_ids) = candidate_ids {
         query = restrict_inbox_report_to_message_ids(query, candidate_ids);
     }
-    let query = filter_interception_report_period(env, req, period_end, query)
-        .await
-        .c(h!())?;
-    filter_selected_groups_and_senders_with_access(
-        query,
-        &req.selected_groups,
-        &req.selected_senders,
-        sigint_groups,
-    )
-    .c(h!())
+    let mut query =
+        filter_interception_report_period(env, req, period_end, query)
+            .await
+            .c(h!())?;
+    if let Some(condition) =
+        interception_report_group_condition(req, sigint_groups)
+    {
+        query = query.filter(condition);
+    }
+    Ok(query)
+}
+
+fn interception_report_group_condition(
+    req: &InboxMessagesReq,
+    allowed_groups: &[String],
+) -> Option<SimpleExpr> {
+    let allowed = allowed_groups.iter().collect::<HashSet<_>>();
+    let groups = req.selected_groups.as_ref().map(|groups| {
+        groups
+            .iter()
+            .filter(|group| allowed.contains(group))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let groups = groups.filter(|groups| !groups.is_empty());
+    let senders = req
+        .selected_senders
+        .as_ref()
+        .filter(|senders| !senders.is_empty());
+    if groups.is_none() && senders.is_none() {
+        return None;
+    }
+    Some(interception_report_group_lookup(
+        req.sort_by,
+        groups.unwrap_or_else(|| allowed_groups.to_vec()),
+        senders.map(Vec::as_slice),
+    ))
+}
+
+fn interception_report_group_lookup(
+    sort_by: Option<InboxMessagesSortBy>,
+    groups: Vec<String>,
+    senders: Option<&[String]>,
+) -> SimpleExpr {
+    let single_group = groups.len() == 1;
+    let message_id = match sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+        InboxMessagesSortBy::IMSDatetime => {
+            (sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)
+                .into_column_ref()
+        }
+        _ => (signal_message::Entity, signal_message::Column::Id)
+            .into_column_ref(),
+    };
+    let mut memberships = signal_message_group::Entity::find()
+        .select_only()
+        .column(signal_message_group::Column::GroupMasterKey)
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals(message_id),
+        );
+    let mut condition = sea_query::extension::postgres::PgExpr::eq_any(
+        Expr::col((
+            signal_message_group::Entity,
+            signal_message_group::Column::GroupMasterKey,
+        )),
+        groups,
+    );
+    if let Some(senders) = senders {
+        memberships = memberships.columns([
+            signal_message_group::Column::Sender,
+            signal_message_group::Column::LoginId,
+        ]);
+        condition = condition.and(
+            crate::sigint::sender::preferred_group_sender_expr(None)
+                .is_in(senders.to_vec()),
+        );
+    }
+    let query = if single_group {
+        memberships.filter(condition).offset(0).into_query()
+    } else {
+        Query::select()
+            .expr(Expr::value(1))
+            .from_subquery(
+                memberships.offset(0).into_query(),
+                signal_message_group::Entity,
+            )
+            .and_where(condition)
+            .offset(0)
+            .to_owned()
+    };
+    Expr::exists(query)
 }
 
 fn interception_report_messages_query(
@@ -907,9 +991,13 @@ async fn build_inbox_messages_report_sql(
         .group_by(sigint_inbox_item::Column::Id)
         .group_by(sigint_inbox_item::Column::Coords)
         .group_by(sigint_important::Column::SignalMessageId);
+    if req.sort_by == Some(InboxMessagesSortBy::IMSTimestamp) {
+        q = q
+            .column(signal_message::Column::Timestamp)
+            .group_by(signal_message::Column::Timestamp);
+    }
     let linked_message_ids = linked_intel_product_message_ids_query();
-    q = q
-        .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
+    q = q.filter(Expr::exists(linked_message_ids).not());
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
     }
@@ -1057,6 +1145,14 @@ fn linked_intel_product_message_ids_query() -> SelectStatement {
             crate::rer_importer::intel_product_filter::RELATION_KIND_COMMENT,
             crate::rer_importer::intel_product_filter::RELATION_KIND_REPORT,
         ]))
+        .filter(
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .offset(0)
         .into_query()
 }
 
@@ -1405,7 +1501,8 @@ mod tests {
         PostgresQueryBuilder,
     };
     use crate::entities::{
-        datasource_group, device_name, prelude::SignalMessage, sigint_comment,
+        datasource_group, device_name, intel_product, prelude::SignalMessage,
+        sea_orm_active_enums::IntelProductRelationKind, sigint_comment,
         sigint_inbox_item, sigint_inbox_item_tag, signal_message,
         signal_message_group,
     };
@@ -1981,6 +2078,8 @@ y:73-71279
             ),
             ("other sender", since, "other", true),
             ("without comment", since, "selected", false),
+            ("linked report", since, "selected", true),
+            ("linked comment", since, "selected", true),
         ] {
             let message_id = seed_interception_device_message(
                 env,
@@ -2028,7 +2127,46 @@ y:73-71279
             }
             message_ids.push(message_id);
         }
+        seed_scoped_interception_links(env, &message_ids, since).await;
         message_ids
+    }
+
+    async fn seed_scoped_interception_links(
+        env: &crate::types::Env,
+        message_ids: &[i64],
+        since: NaiveDateTime,
+    ) {
+        for (intel_message_id, relation_kind) in [
+            (message_ids[5], IntelProductRelationKind::Report),
+            (message_ids[6], IntelProductRelationKind::Comment),
+        ] {
+            for source_message_id in &message_ids[..2] {
+                intel_product::ActiveModel {
+                    intel_message_id: Set(intel_message_id),
+                    source_message_id: Set(*source_message_id),
+                    relation_kind: Set(relation_kind.clone()),
+                    created_at: Set(since),
+                    ..Default::default()
+                }
+                .insert(&env.dbx)
+                .await
+                .unwrap();
+            }
+        }
+        let other_group =
+            mk_signal_group(&env.dbx, Default::default()).await.unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message_ids[3]),
+                group_master_key: Set(Some(other_group.master_key)),
+                sender: Set(Some("selected".to_string())),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
     }
 
     #[tokio::test]
@@ -2051,58 +2189,92 @@ y:73-71279
         )
         .unwrap()
         .unwrap();
-        for sort_by in [None, Some(InboxMessagesSortBy::IMSCreatedAt)] {
-            let since = if sort_by == Some(InboxMessagesSortBy::IMSCreatedAt) {
-                since
-            } else {
+        for sort_by in [
+            None,
+            Some(InboxMessagesSortBy::IMSCreatedAt),
+            Some(InboxMessagesSortBy::IMSTimestamp),
+        ] {
+            let since = if sort_by.is_none() {
                 interception_since
+            } else {
+                since
             };
             let till = since + chrono::Duration::hours(1);
             for period_end in
                 [ReportPeriodEnd::Inclusive, ReportPeriodEnd::NonInclusive]
             {
-                let messages = load_interception_report_chunk_postgres(
-                    &login.id,
-                    &env,
-                    &InboxMessagesReq {
-                        since_date_inclusive_ms: Some(
-                            since.and_utc().timestamp_millis(),
-                        ),
-                        till_date_inclusive_ms: Some(
-                            till.and_utc().timestamp_millis(),
-                        ),
-                        selected_groups: Some(vec![datasource_group
-                            .group_master_key
-                            .clone()]),
-                        selected_senders: Some(vec!["selected".to_string()]),
-                        or_with_extended_form: Some(true),
-                        without_model_tags: Some(true),
-                        report_tags_only_this_unit: Some(true),
-                        nolimit: Some(true),
-                        sort_by,
-                        ..Default::default()
-                    },
-                    period_end,
-                    None,
-                )
-                .await
-                .unwrap();
-                let expected = if period_end == ReportPeriodEnd::Inclusive {
-                    vec![message_ids[0], message_ids[1]]
-                } else {
-                    vec![message_ids[0]]
-                };
-                assert_eq!(
-                    messages
-                        .iter()
-                        .map(|message| message.message_id)
-                        .collect::<Vec<_>>(),
-                    expected,
-                    "{sort_by:?}, {period_end:?}",
-                );
-                assert!(messages.iter().all(|message| {
-                    message.comment.as_deref() == Some("Manual report comment")
-                }));
+                for (selected_groups, selected_senders) in [
+                    (
+                        Some(vec![datasource_group.group_master_key.clone()]),
+                        Some(vec!["selected".to_string()]),
+                    ),
+                    (
+                        Some(vec![
+                            datasource_group.group_master_key.clone();
+                            2
+                        ]),
+                        Some(vec!["selected".to_string()]),
+                    ),
+                    (None, Some(vec!["selected".to_string()])),
+                    (
+                        Some(vec![datasource_group.group_master_key.clone()]),
+                        None,
+                    ),
+                    (None, None),
+                    (Some(Vec::new()), Some(Vec::new())),
+                    (
+                        Some(vec!["unavailable-group".to_string()]),
+                        Some(vec!["selected".to_string()]),
+                    ),
+                ] {
+                    let include_other_sender =
+                        selected_senders.as_ref().is_none_or(Vec::is_empty);
+                    let messages = load_interception_report_chunk_postgres(
+                        &login.id,
+                        &env,
+                        &InboxMessagesReq {
+                            since_date_inclusive_ms: Some(
+                                since.and_utc().timestamp_millis(),
+                            ),
+                            till_date_inclusive_ms: Some(
+                                till.and_utc().timestamp_millis(),
+                            ),
+                            selected_groups,
+                            selected_senders,
+                            or_with_extended_form: Some(true),
+                            without_model_tags: Some(true),
+                            report_tags_only_this_unit: Some(true),
+                            nolimit: Some(true),
+                            sort_by,
+                            ..Default::default()
+                        },
+                        period_end,
+                        None,
+                    )
+                    .await
+                    .unwrap();
+                    let mut expected =
+                        if period_end == ReportPeriodEnd::Inclusive {
+                            vec![message_ids[0], message_ids[1]]
+                        } else {
+                            vec![message_ids[0]]
+                        };
+                    if include_other_sender {
+                        expected.push(message_ids[3]);
+                    }
+                    assert_eq!(
+                        messages
+                            .iter()
+                            .map(|message| message.message_id)
+                            .collect::<Vec<_>>(),
+                        expected,
+                        "{sort_by:?}, {period_end:?}",
+                    );
+                    assert!(messages.iter().all(|message| {
+                        message.comment.as_deref()
+                            == Some("Manual report comment")
+                    }));
+                }
             }
         }
     }
