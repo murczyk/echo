@@ -11,7 +11,11 @@ summaries start with a sample, then use focused searches chosen from the request
 and observed evidence. Continuing unfiltered inbox pagination requires a specific
 coverage requirement in `update_research.paginationReason`; explicit exhaustive
 requests retain pagination. Existing
-scope, permission, citation, and search-semantics guidance still applies.
+scope, permission, citation, and search-semantics guidance still applies. If a
+continuation lacks that requirement, the runner privately defers it and forces a
+research checkpoint before the next retrieval turn. Flash must record a concrete
+coverage need or choose focused searches; the guard never authorizes pagination
+automatically. Rejected or failed checkpoints keep recovery blocked.
 
 After four retrieval attempts, the next research turn is restricted to
 `update_research` with a forced tool choice. An already admitted tool batch
@@ -70,6 +74,12 @@ budget fields, correlated with the request ID. These frames are never stored as
 chat events or sent to the frontend. Source text, tool arguments, credentials
 and hidden reasoning are excluded. This also records successful requests that
 returned a fallback draft instead of a completed synthesis.
+
+Tool failures also emit private `tool_diagnostic` frames with an allowlisted
+reason code, a recognized tool name and an optional HTTP status. The worker logs
+these against the request ID without arguments, source content or raw errors.
+Deferred pagination prerequisites stay out of public tool activity; genuine
+failures retain public error events with a safe `errorReason` code.
 
 ## Live evaluation
 
