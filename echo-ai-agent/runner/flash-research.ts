@@ -33,7 +33,7 @@ const REFRESH_RETRIEVALS = 4;
 const TURN_MARGIN_MS = 1000;
 const WARNING_MS = 10_000;
 
-export const FLASH_GUIDANCE = `Before retrieval, call update_research with a short task checklist. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination without recording a concrete coverage need in paginationReason; explicit exhaustive requests may continue pagination. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps after at most four retrieval calls, and before finishing research. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Use report_progress for ordinary public progress. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
+export const FLASH_GUIDANCE = `Before retrieval, call update_research with a short task checklist. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination without recording a concrete coverage need in paginationReason; explicit exhaustive requests may continue pagination. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Use report_progress for ordinary public progress. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
 
 const RESEARCH_PARAMETERS = Type.Object(
   {
@@ -126,6 +126,7 @@ export class FlashResearch {
   private state?: ResearchUpdate;
   private draft?: string;
   private retrievals = 0;
+  private retrievalBatchAllowed = true;
   private readonly ledger: Retrieval[] = [];
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
@@ -150,7 +151,7 @@ export class FlashResearch {
       name: RESEARCH_TOOL_NAME,
       label: "Private research state",
       description:
-        "Save a short task checklist, cited factual answer draft and coverage gaps. Required before retrieval and after at most four retrieval calls. Do not supply reasoning, deliberation, queries or cursors. This state is private; report_progress is for public status.",
+        "Save a short task checklist, cited factual answer draft and coverage gaps. Required before retrieval and between tool batches after four retrieval calls. Do not supply reasoning, deliberation, queries or cursors. This state is private; report_progress is for public status.",
       parameters: RESEARCH_PARAMETERS,
       executionMode: "sequential",
       execute: async (_id, update) => {
@@ -166,6 +167,7 @@ export class FlashResearch {
         this.state = saved;
         if (draft) this.draft = draft;
         this.retrievals = 0;
+        this.retrievalBatchAllowed = true;
         return {
           content: [{ type: "text", text: "Research state saved privately." }],
           details: {},
@@ -174,8 +176,12 @@ export class FlashResearch {
     });
   }
 
+  get updateRequired(): boolean {
+    return this.retrievals >= REFRESH_RETRIEVALS;
+  }
+
   beforeRetrieval(tool?: string, query?: Record<string, unknown>): void {
-    if (!this.state || this.retrievals >= REFRESH_RETRIEVALS)
+    if (!this.state || !this.retrievalBatchAllowed)
       throw new Error("Call update_research before further retrieval");
     if (
       tool === "inbox_messages" &&
@@ -397,6 +403,8 @@ export class FlashResearch {
     contextWindow: number,
     outputTokens: number,
   ): Context {
+    if (purpose === "research")
+      this.retrievalBatchAllowed = !this.updateRequired;
     const expectedMs =
       this.observedMs.get(purpose) ?? Math.max(0, ...this.observedMs.values());
     if (purpose !== "synthesis" && budget) {
@@ -426,7 +434,7 @@ export class FlashResearch {
         : null,
       toolRemaining,
       estimatedContextHeadroomTokens: headroom,
-      updateRequired: !this.state || this.retrievals >= REFRESH_RETRIEVALS,
+      updateRequired: !this.state || this.updateRequired,
       warning:
         remainingMs !== undefined &&
         remainingMs <= Math.max(WARNING_MS, expectedMs * 2 + TURN_MARGIN_MS)
@@ -436,6 +444,10 @@ export class FlashResearch {
     if (purpose === "research") this.researchStartedAt = Date.now();
     return {
       ...context,
+      tools:
+        purpose === "research" && this.updateRequired
+          ? context.tools?.filter((tool) => tool.name === RESEARCH_TOOL_NAME)
+          : context.tools,
       systemPrompt: `${context.systemPrompt}\nPrivate budget status (never quote in the answer): ${JSON.stringify(status)}`,
     };
   }

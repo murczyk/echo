@@ -77,7 +77,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.10.29.4";
+const HARNESS_RELEASE = "2026.10.30.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -2828,6 +2828,8 @@ function toolResultText(result: unknown): string {
 }
 
 export function toolErrorSummary(toolName: unknown, result: unknown): string {
+  if (toolResultText(result) === "Call update_research before further retrieval")
+    return "Потрібно зберегти проміжні результати аналізу перед наступним пошуком.";
   if (typeof toolName !== "string" || !toolName.startsWith("echo_map_")) return ROUTE_TOOL_ERROR;
   // Classify the diagnostic itself, not the valid example appended to it.
   const text = toolResultText(result).split("Приклад")[0];
@@ -3459,6 +3461,9 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
             ? AbortSignal.any([options.signal, researchSignal])
             : researchSignal,
           headers: { ...options?.headers, [PURPOSE_HEADER]: "research" },
+          ...(research?.updateRequired && context.tools?.some((tool: { name: string }) => tool.name === RESEARCH_TOOL_NAME)
+            ? { toolChoice: { type: "function", function: { name: RESEARCH_TOOL_NAME } } }
+            : {}),
         });
     }
     const currentTurnAssistantMessages: unknown[] = [];

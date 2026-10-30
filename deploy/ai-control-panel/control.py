@@ -19,6 +19,8 @@ import traceback
 
 AGENT_HOST = 'echo@echo-ai-agent-vm.eagle-atria.ts.net'
 AGENT_HOSTNAME = 'echo-ai-agent-vm.eagle-atria.ts.net'
+AGENT_CONNECTIONS = {hostname: 'echo@' + hostname for hostname in (
+    AGENT_HOSTNAME, 'echo-ai-agents-ua.eagle-atria.ts.net')}
 SSH_OPTIONS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=yes']
 HOST_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.@-]{0,252}$')
 SCAN_TIMEOUT = 35
@@ -69,11 +71,36 @@ def ssh(host, args):
     return ['ssh', *options, host, shlex.join(args)]
 
 
+def resolve_agent_host(row, override=None):
+    hostname = (row.get('dispatcher') or {}).get('host', '').strip().lower()
+    connection = AGENT_CONNECTIONS.get(hostname)
+    if not connection:
+        raise RuntimeError('Dispatcher host is missing or unsupported: ' + (hostname or 'not configured'))
+    if override and override != connection:
+        raise RuntimeError(f'Agent host override {override} does not match configured dispatcher {hostname}')
+    return connection
+
+
+def shared_for(row, data):
+    if 'shared_hosts' not in data:
+        return data['shared']
+    return data['shared_hosts'].get(row.get('agent_host'), {
+        'error': row.get('routing_error', 'Agent host was not discovered'), 'instances': []})
+
+
+def release_for(row, release):
+    if 'agent_hosts' not in release:
+        return release
+    return release['agent_hosts'].get(row.get('agent_host'), {'release': release['release']})
+
+
 class Control:
     def __init__(self, options):
         self.repo = options.repo.resolve()
         self.executable = options.executable.resolve()
         self.mode = options.mode
+        self.agent_override = getattr(options, 'agent_host', None)
+        self.agent_host = None
         self.bundle = self.repo / 'echo-ai-agent'
         path = self.bundle / 'bin/control-host.py'
         spec = importlib.util.spec_from_file_location('control_host', path)
@@ -81,9 +108,12 @@ class Control:
         spec.loader.exec_module(self.shared)
         self.host_script = path.read_text()
 
-    def host_action(self, action, request=None, timeout=SCAN_TIMEOUT):
+    def host_action(self, action, request=None, timeout=SCAN_TIMEOUT, agent_host=None):
+        agent_host = agent_host or self.agent_host
+        if agent_host not in AGENT_CONNECTIONS.values():
+            raise RuntimeError('No verified agent management connection')
         args = ['sudo', '-n', 'python3', '-', action, json.dumps(request or {})]
-        output = command(ssh(AGENT_HOST, args), self.host_script, timeout)
+        output = command(ssh(agent_host, args), self.host_script, timeout)
         result = json.loads(output)
         if result.get('diagnostic'):
             emit({'diagnostic': safe_error(result['diagnostic'], limit=None)})
@@ -125,6 +155,20 @@ class Control:
             raise ValueError('Invalid SSH alias in host list')
         return hosts
 
+    def discover(self, host):
+        row = self.probe(host)
+        try:
+            row['agent_host'] = resolve_agent_host(row, self.agent_override)
+        except RuntimeError as error:
+            row['routing_error'] = str(error)
+        return row
+
+    def inventory_host(self, agent_host):
+        try:
+            return self.host_action('inventory', agent_host=agent_host)
+        except Exception as error:
+            return {'error': safe_error(error), 'releases': [], 'instances': []}
+
     def scan(self, request):
         hosts = self.aliases(request.get('hosts', []))
         previous = {row['host']: row for row in request.get('snapshot', {}).get('hosts', [])}
@@ -132,34 +176,41 @@ class Control:
         if selected and not previous:
             hosts = [host for host in hosts if host in selected]
         refreshed = [host for host in hosts if not selected or host in selected or host not in previous]
-        message(f'Scanning {len(refreshed)} Echo hosts and shared harness inventory…')
+        message(f'Scanning {len(refreshed)} Echo hosts and their agent VMs…')
         with ThreadPoolExecutor(max_workers=4) as pool:
-            shared_future = pool.submit(self.host_action, 'inventory')
-            futures = {pool.submit(self.probe, host): host for host in refreshed}
+            futures = {pool.submit(self.discover, host): host for host in refreshed}
             for future in as_completed(futures):
                 host = futures[future]
                 previous[host] = future.result()
-                message(f'Scanned {host}')
                 row = previous[host]
-                emit({'diagnostic': f'{host}: namespace={row.get("namespace", "unknown")}, build={row.get("build", "unknown")}, requires={row.get("required_release", "unknown")}, running_match={row.get("running_match", "unknown")}, active_requests={row.get("active_requests", "unknown")}'})
-                if row.get('running_details'):
-                    emit({'diagnostic': f'{host}: {row["running_details"]}'})
-            try:
-                shared = shared_future.result()
-            except Exception as error:
-                shared = {'error': safe_error(error), 'releases': [], 'instances': []}
-        releases = {row['release']: row for row in shared['releases']}
+                message(f'Scanned {host}: agent host {row.get("agent_host", "unknown")}')
+                emit({'diagnostic': json.dumps(row)})
+        rows = [previous[host] for host in hosts]
+        connections = sorted({row['agent_host'] for row in rows if row.get('agent_host')})
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            inventories = dict(zip(connections, pool.map(self.inventory_host, connections)))
+        catalogs = {connection: self.release_catalog(inventory) for connection, inventory in inventories.items()}
+        data = {'hosts': rows, 'shared_hosts': inventories,
+                'shared': next(iter(inventories.values())) if len(inventories) == 1 else {},
+                'releases': combined_releases(catalogs)}
+        for row in rows:
+            row['stale'] = row['host'] not in refreshed
+        decorate(data)
+        return data
+
+    def release_catalog(self, inventory):
+        releases = {row['release']: dict(row) for row in inventory['releases']}
         metadata = self.shared.manifest(self.bundle)
         if metadata:
             release = metadata['release']
             local_digest = self.shared.digest(self.bundle)
             existing = releases.get(release)
-            collision = existing and existing['digest'] != local_digest
-            releases[release] = {'release': release, 'manifest': metadata, 'digest': local_digest, 'source': 'checkout', 'collision': bool(collision)}
-            releases[release]['revision'] = command(['git','-C',str(self.repo),'rev-parse','--short','HEAD']).strip()
-            releases[release]['dirty'] = bool(command(['git','-C',str(self.repo),'status','--porcelain','--','echo-ai-agent']).strip())
+            releases[release] = {'release': release, 'manifest': metadata, 'digest': local_digest,
+                                 'source': 'checkout', 'collision': bool(existing and existing['digest'] != local_digest)}
+            releases[release]['revision'] = command(['git', '-C', str(self.repo), 'rev-parse', '--short', 'HEAD']).strip()
+            releases[release]['dirty'] = bool(command(['git', '-C', str(self.repo), 'status', '--porcelain', '--', 'echo-ai-agent']).strip())
         for release in releases.values():
-            ready = any(row['template'] and row['state'] == 'stopped' and row['release'] == release['release'] and 'backup' not in row['name'] for row in shared['instances'])
+            ready = any(row['template'] and row['state'] == 'stopped' and row['release'] == release['release'] and 'backup' not in row['name'] for row in inventory['instances'])
             release['template_ready'] = ready
             release['availability'] = release['source'] + (' + template ready' if ready else ' + needs template')
             if release.get('revision'):
@@ -168,12 +219,7 @@ class Control:
                 release['availability'] += ' — ID collision'
             elif not release.get('manifest'):
                 release['availability'] += ' — compatibility unknown'
-        data = {'hosts': [previous[host] for host in hosts], 'shared': shared,
-                'releases': sorted(releases.values(), key=lambda row: release_key(row['release']), reverse=True)}
-        for row in data['hosts']:
-            row['stale'] = row['host'] not in refreshed
-        decorate(data)
-        return data
+        return releases
 
     def prepare(self, release, data):
         current = data['shared']
@@ -186,14 +232,14 @@ class Control:
         if release['source'] == 'retained':
             directory = '/opt/echo-ai-agent/releases/' + release['release']
         else:
-            directory = command(ssh(AGENT_HOST, ['mktemp', '-d', '/tmp/echo-ai-control-XXXXXXXX'])).strip()
+            directory = command(ssh(self.agent_host, ['mktemp', '-d', '/tmp/echo-ai-control-XXXXXXXX'])).strip()
             if not re.fullmatch(r'/tmp/echo-ai-control-[a-zA-Z0-9]+', directory):
                 raise RuntimeError('Unsafe remote staging path')
             with tempfile.TemporaryFile() as archive:
                 with tarfile.open(fileobj=archive, mode='w') as tar:
                     tar.add(self.bundle, arcname='.', filter=lambda info: None if {'node_modules','__pycache__'}.intersection(Path(info.name).parts) or info.name.endswith('.pyc') else info)
                 archive.seek(0)
-                process = subprocess.run(ssh(AGENT_HOST, ['tar', '-xf', '-', '-C', directory]), stdin=archive, capture_output=True, timeout=120)
+                process = subprocess.run(ssh(self.agent_host, ['tar', '-xf', '-', '-C', directory]), stdin=archive, capture_output=True, timeout=120)
                 if process.returncode:
                     raise RuntimeError('Harness upload failed')
         message(f'Preparing shared dispatcher and template {release["release"]}; existing namespace pins are preserved')
@@ -202,42 +248,63 @@ class Control:
             self.host_action('prepare', {'bundle': directory, 'digest': release['digest']}, timeout=660)
         finally:
             if directory.startswith('/tmp/echo-ai-control-'):
-                command(ssh(AGENT_HOST, ['sudo', '-n', 'rm', '-rf', '--', directory]))
+                command(ssh(self.agent_host, ['sudo', '-n', 'rm', '-rf', '--', directory]))
+
+    def upgrade_targets(self, request, data):
+        release = next((item for item in data['releases'] if item['release'] == request['release']), None)
+        if release is None:
+            raise RuntimeError('Unknown target release: ' + request['release'])
+        selected = [row for row in data['hosts'] if row['host'] in request['selected']]
+        if not selected or set(request['selected']) != {row['host'] for row in selected}:
+            raise RuntimeError('Select at least one known host')
+        snapshot = request.get('snapshot', {})
+        previewed_release = next((item for item in snapshot.get('releases', []) if item['release'] == release['release']), release)
+        for row in selected:
+            previewed = next((item for item in snapshot.get('hosts', []) if item['host'] == row['host']), row)
+            if row.get('agent_host') != previewed.get('agent_host') or row.get('dispatcher') != previewed.get('dispatcher'):
+                raise RuntimeError(f'{row["host"]}: agent host changed after preview; refresh first')
+            target = release_for(row, release)
+            if target.get('digest') != release_for(previewed, previewed_release).get('digest'):
+                raise RuntimeError('Release contents changed after preview; review the new scan')
+            status = row['eligibility_reconciled' if request.get('reconcile_orphans') else 'eligibility'][release['release']]
+            if status not in {'Ready', 'Current'}:
+                details = row.get('running_details', '') if not row.get('running_match') else ''
+                raise RuntimeError(f'{row["host"]}: {status}' + (f'. {details}' if details else ''))
+        return [(row, release_for(row, release)) for row in selected]
 
     def upgrade(self, request):
         data = self.scan({**request, 'selected': []})
         emit(data)
-        target = next((row for row in data['releases'] if row['release'] == request['release']), None)
-        if target is None:
-            raise RuntimeError('Unknown target release: ' + request['release'])
-        previewed = next((row for row in request.get('snapshot', {}).get('releases', []) if row['release'] == request['release']), target)
-        if target['digest'] != previewed['digest']:
-            raise RuntimeError('Release contents changed after preview; review the new scan')
-        selected = [row for row in data['hosts'] if row['host'] in request['selected']]
-        if not selected or set(request['selected']) != {row['host'] for row in selected}:
-            raise RuntimeError('Select at least one known host')
-        for row in selected:
-            status = row['eligibility_reconciled' if request.get('reconcile_orphans') else 'eligibility'][target['release']]
-            if status not in {'Ready', 'Current'}:
-                details = row.get('running_details', '') if not row.get('running_match') else ''
-                raise RuntimeError(f'{row["host"]}: {status}' + (f'. {details}' if details else ''))
+        targets = self.upgrade_targets(request, data)
         if request.get('dry_run'):
             message('Preview passed; no changes made. Selected: ' + ', '.join(request['selected']))
             return
-        selected = [row for row in selected if row['eligibility'].get(target['release']) != 'Current']
-        if not selected:
+        targets = [(row, target) for row, target in targets if row['eligibility'].get(target['release']) != 'Current']
+        if not targets:
             message('All selected hosts are already current')
             return
+        prepared = set()
         try:
-            if cancelled(request):
-                return
-            self.prepare(target, data)
-            for row in sorted(selected, key=lambda row: host_order(row['host'])):
+            for row, target in sorted(targets, key=lambda pair: host_order(pair[0]['host'])):
+                if cancelled(request):
+                    break
+                self.agent_host = row.get('agent_host')
+                if 'agent_host' in row:
+                    self.verify_route(row)
+                if self.agent_host not in prepared:
+                    self.prepare(target, {'shared': shared_for(row, data)})
+                    prepared.add(self.agent_host)
                 if cancelled(request):
                     break
                 self.upgrade_namespace(row, target, request.get('reconcile_orphans', False))
         finally:
             emit(self.scan({**request, 'selected': []}))
+
+    def verify_route(self, row):
+        current = self.probe(row['host'])
+        connection = resolve_agent_host(current, self.agent_override)
+        if connection != row.get('agent_host') or current.get('dispatcher') != row.get('dispatcher') or current.get('namespace') != row.get('namespace'):
+            raise RuntimeError(f'{row["host"]}: agent destination changed; refresh first')
 
     def journal_path(self, host):
         directory = self.repo / '.dev-runtime/ai-control-panel'
@@ -246,10 +313,11 @@ class Control:
 
     def upgrade_namespace(self, row, target, reconcile_orphans=False):
         host = row['host']
+        self.agent_host = resolve_agent_host(row, self.agent_override)
         path = self.journal_path(host)
         if path.exists() and json.loads(path.read_text()).get('phase') != 'complete':
             raise RuntimeError(f'{host}: recover the previous rollout first')
-        journal = {'host': host, 'namespace': row['namespace'], 'enabled': row['enabled'], 'phase': 'starting'}
+        journal = {'host': host, 'agent_host': self.agent_host, 'namespace': row['namespace'], 'enabled': row['enabled'], 'phase': 'starting'}
         self.shared.write_json(path, journal)
         try:
             maintenance = Maintenance(self.probe_command(host, maintenance=True))
@@ -323,6 +391,7 @@ class Control:
         try:
             if maintenance.ready['inventory']['namespace'] != journal['namespace']:
                 raise RuntimeError('Saved rollout belongs to a different namespace')
+            self.bind_recovery(journal, maintenance.ready['inventory'])
             maintenance.call({'action':'begin'})
             self.restore_namespace(journal, maintenance)
             journal['phase'] = 'complete'
@@ -331,6 +400,15 @@ class Control:
         finally:
             maintenance.close()
         emit(self.scan({**request,'selected':[]}))
+
+    def bind_recovery(self, journal, inventory):
+        connection = resolve_agent_host(inventory, getattr(self, 'agent_override', None))
+        if journal.get('agent_host'):
+            if journal['agent_host'] != connection:
+                raise RuntimeError('Saved rollout belongs to a different agent host; restore dispatcher settings first')
+        elif not getattr(self, 'agent_override', None):
+            raise RuntimeError('Legacy rollout journal has no agent host; verify its destination and supply --agent-host explicitly')
+        self.agent_host = connection
 
     def restore_namespace(self, journal, maintenance):
         states = journal.get('states', [])
@@ -405,6 +483,20 @@ def release_key(release):
     return tuple(int(part) for part in release.split('.'))
 
 
+def combined_releases(catalogs):
+    releases = {}
+    for connection, catalog in catalogs.items():
+        for name, release in catalog.items():
+            releases.setdefault(name, {'release': name, 'agent_hosts': {}})['agent_hosts'][connection] = release
+    for release in releases.values():
+        catalogs = release['agent_hosts']
+        if len(catalogs) == 1:
+            release.update(next(iter(catalogs.values())))
+        else:
+            release['availability'] = '; '.join(f'{host}: {entry["availability"]}' for host, entry in catalogs.items())
+    return sorted(releases.values(), key=lambda row: release_key(row['release']), reverse=True)
+
+
 def host_order(host):
     return (0 if host == 'local' else 1 if 'staging' in host else 2, host)
 
@@ -425,20 +517,24 @@ def shared_inventory_check(containers, owned, reconcile_orphans):
 
 
 def blockers(row, release, data, reconcile_orphans=False):
-    shared = data['shared']
+    if row.get('routing_error'):
+        return row['routing_error']
+    shared = shared_for(row, data)
+    release = release_for(row, release)
     if shared.get('error'):
         return 'Shared host unavailable'
     if not row.get('namespace'):
         return 'Not configured / unavailable'
     if row.get('stale'):
         return 'Stale: refresh this host'
-    if sum(other.get('namespace') == row['namespace'] for other in data['hosts']) != 1:
+    if sum(other.get('namespace') == row['namespace'] and other.get('agent_host') == row.get('agent_host') for other in data['hosts']) != 1:
         return 'Duplicate namespace aliases'
     if row.get('protocol') != 1:
         return 'Unknown compatibility: update Echo management helper'
     if not row.get('running_match'):
         return 'Start/restart matching Echo build'
-    if row.get('dispatcher', {}).get('host') != AGENT_HOSTNAME:
+    expected_host = row.get('agent_host', AGENT_HOST).split('@')[-1]
+    if row.get('dispatcher', {}).get('host', '').strip().lower() != expected_host:
         return 'Unsupported shared agent host'
     if row.get('template_id') != '019fc7f7-9770-7f83-9c1a-211af29b02e6':
         return 'Unsupported logical template ID'
@@ -469,23 +565,25 @@ def blockers(row, release, data, reconcile_orphans=False):
 
 def decorate(data):
     for row in data['hosts']:
+        shared = shared_for(row, data)
         deployed = {}
-        for instance in data['shared']['instances']:
+        for instance in shared['instances']:
             if instance['managed'] and instance['namespace'] == row.get('namespace'):
                 version = instance['release'] or 'unknown'
                 deployed[version] = deployed.get(version, 0)+1
         row['deployed'] = ', '.join(f'{version} ×{count}' for version,count in sorted(deployed.items())) or 'No containers'
-        if data['shared'].get('error') or not row.get('namespace'):
+        if shared.get('error') or not row.get('namespace'):
             row['deployed'] = 'Unknown'
         row['eligibility'] = {release['release']: blockers(row,release,data) for release in data['releases']}
         row['eligibility_reconciled'] = {release['release']: blockers(row,release,data,True) for release in data['releases']}
-        if not deployed and row.get('namespace') in data['shared'].get('selections', {}):
-            row['deployed'] = data['shared']['selections'][row['namespace']]['release'] + ' (template; 0 agents)'
+        if not deployed and row.get('namespace') in shared.get('selections', {}):
+            row['deployed'] = shared['selections'][row['namespace']]['release'] + ' (template; 0 agents)'
         row['details'] = ' | '.join(part for part in [row.get('probe_details', ''), row.get('running_details', ''),
+            f'Agent host: {row.get("agent_host", "unknown")}',
             f'Active requests: {row.get("active_requests", "unknown")}',
-            f'Namespace target: {data["shared"].get("selections", {}).get(row.get("namespace"), {}).get("release", "legacy default")}'] if part)
-        if data['shared'].get('error'):
-            row['details'] += ' | Shared host: ' + data['shared']['error']
+            f'Namespace target: {shared.get("selections", {}).get(row.get("namespace"), {}).get("release", "legacy default")}'] if part)
+        if shared.get('error'):
+            row['details'] += ' | Shared host: ' + shared['error']
 
 
 def main():
@@ -494,10 +592,8 @@ def main():
     parser.add_argument('--repo',type=Path,required=True)
     parser.add_argument('--executable',type=Path,required=True)
     parser.add_argument('--mode',default='debug')
-    parser.add_argument('--agent-host',choices=['echo@echo-ai-agent-vm.eagle-atria.ts.net', 'echo@echo-ai-agents-ua.eagle-atria.ts.net'],default=AGENT_HOST)
+    parser.add_argument('--agent-host', choices=AGENT_CONNECTIONS.values())
     options = parser.parse_args()
-    globals()['AGENT_HOST'] = options.agent_host
-    globals()['AGENT_HOSTNAME'] = options.agent_host.split('@')[-1]
     request = json.load(sys.stdin)
     message(f'AI control panel: action={options.action}, mode={options.mode}, repo={options.repo.resolve()}, hosts={request.get("selected") or "all"}, added_hosts={request.get("hosts", [])}, release={request.get("release") or "catalog"}, reconcile_orphans={bool(request.get("reconcile_orphans"))}, dry_run={bool(request.get("dry_run"))}, probe={options.executable}')
     control = Control(options)

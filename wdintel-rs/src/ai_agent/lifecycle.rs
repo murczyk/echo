@@ -729,6 +729,46 @@ pub async fn test_connection(
     test_connection_internal(env, &linked).await
 }
 
+pub(crate) async fn prepare_maintenance_connection_test(
+    dbx: &DatabaseConnection,
+    human_login_id: Uuid,
+) -> anyhow::Result<LinkedAgent> {
+    let txn = dbx.begin().await.c(h!())?;
+    crate::ai_agent::ensure_valid_human_target(&txn, human_login_id)
+        .await
+        .c(h!())?;
+    let mut linked =
+        load_linked_agent_on(&txn, human_login_id).await.c(h!())?;
+    let human = login::Entity::find_by_id(human_login_id)
+        .one(&txn)
+        .await
+        .c(h!())?
+        .filter(|human| !human.deleted && !human.deleted_permanently)
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    linked.login = synchronize_agent_scope(&txn, &human, linked.login)
+        .await
+        .c(h!())?;
+    synchronize_direct_hidden_groups(&txn, human.id, linked.login.id)
+        .await
+        .c(h!())?;
+    crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
+        .await
+        .c(h!())?;
+    if !access::linked_human_scope_is_current(&txn, human.id, &linked.login)
+        .await
+        .c(h!())?
+        || linked.login.deleted_permanently
+    {
+        return Err(AppError::Forbidden(
+            "Linked human access is not current".into(),
+        )
+        .into());
+    }
+    txn.commit().await.c(h!())?;
+    Ok(linked)
+}
+
 async fn test_connection_internal(
     env: &Env,
     linked: &LinkedAgent,

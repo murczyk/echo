@@ -12,6 +12,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  agent-management:
+    name: Agent management safeguards
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s deploy/ai-control-panel -p 'test_*.py' -v
+      - run: python3 -m unittest discover -s echo-ai-agent/tests -p test_control_panel.py -v
+
   iggy-storage-policy:
     name: Iggy storage policy safeguards
     runs-on: ubuntu-latest
