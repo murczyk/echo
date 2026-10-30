@@ -160,12 +160,17 @@ export function useRerDutyCallsignInfo() {
     setResolvedCallsignInfoMap((prev) => updateDutyResolvedCallsignInfoMap(prev, callsigns));
   }, []);
 
-  const retainFeedIds = useCallback((feedIds: string[]) => {
-    const activeFeedIds = new Set(feedIds);
-    setInboxCallsignInfoMapByFeedId((prev) =>
-      Object.fromEntries(Object.entries(prev).filter(([feedId]) => activeFeedIds.has(feedId))),
-    );
-  }, []);
+  const retainFeedIds = useCallback(
+    (feedIds: string[]) => {
+      const activeFeedIds = new Set(feedIds);
+      if (Object.keys(inboxCallsignInfoMapByFeedId).every((feedId) => activeFeedIds.has(feedId)))
+        return;
+      setInboxCallsignInfoMapByFeedId((prev) =>
+        Object.fromEntries(Object.entries(prev).filter(([feedId]) => activeFeedIds.has(feedId))),
+      );
+    },
+    [inboxCallsignInfoMapByFeedId],
+  );
 
   const inboxCallsignInfoMap = useMemo(
     () => combineDutyCallsignInfoMaps(inboxCallsignInfoMapByFeedId, {}),

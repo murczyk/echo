@@ -51,6 +51,34 @@ async function addFrequencies(page: Page, panel: Locator, values: string[]): Pro
 }
 
 test.describe('Duty characterization workflows @regression', () => {
+  test('#3923 clears unrelated cards when the selected group reload fails @regression', async ({
+    page,
+  }) => {
+    await installRerDutyShortStateMocks(page, {
+      signalGroups: ['group-1', 'avia-barrier'],
+      inboxResponse: buildInboxResponse([1, 2]),
+    });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      const request = route.request().postDataJSON() as { selected_groups?: string[] | null };
+      if (!request.selected_groups?.includes('avia-barrier')) return route.fallback();
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Group reload unavailable (503)' }),
+      });
+    });
+
+    await page.goto('/rer-duty-neo');
+    await expect(page.locator('[data-duty-message-id]')).toHaveCount(2);
+    await page.getByRole('button', { name: 'Розгорнути список груп' }).click();
+    await page.getByRole('button', { name: 'avia-barrier', exact: true }).click();
+
+    await expect(page.getByText('Group reload unavailable (503)', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-group-island]')).toContainText('avia-barrier');
+    await expect(page.locator('[data-duty-message-id]')).toHaveCount(0);
+    await expect(page.getByText('Немає повідомлень', { exact: true })).toBeVisible();
+  });
+
   test('a copied Duty link opens one feed without forcing the message group @regression', async ({
     page,
     context,
