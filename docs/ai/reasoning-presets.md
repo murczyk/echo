@@ -54,8 +54,8 @@ reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,
 the document extractor, engine token profiles, and the configured default
-provider are unaffected. Kharkiv should retain Sol as default and GLM as an
-option.
+provider are unaffected. Kharkiv should retain its configured default provider
+and keep GLM as an option.
 
 ## Rollout and recovery
 
@@ -67,7 +67,7 @@ option.
 2. Deploy only to Kharkiv. Drain queued/running requests before maintenance;
    disabling the global agent flag while a request runs revokes its access.
    Install the matching harness and migrate the application with the preset
-   feature flag still off. Preserve the existing Sol default, GLM option,
+   feature flag still off. Preserve the existing default provider, GLM option,
    government credentials, vision engine, and shared extractor settings.
 3. Against each candidate's government endpoint, verify a harmless function
    call, its matching result, and a final answer at **every mapped effort**.
