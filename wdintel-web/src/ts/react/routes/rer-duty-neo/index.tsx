@@ -663,8 +663,13 @@ export function RerDutyNeoPage({
   }, [hasCompletedInitialLoad, messageFeeds]);
 
   useEffect(() => {
+    if (
+      messageFeeds.length === previousFeedCountRef.current &&
+      messageFeeds.some((feed) => feed.id === activeFeedId)
+    )
+      return;
     if (messageFeeds.length === 0) {
-      setActiveFeedId(null);
+      if (activeFeedId !== null) setActiveFeedId(null);
       previousFeedCountRef.current = 0;
       return;
     }
@@ -680,7 +685,7 @@ export function RerDutyNeoPage({
       return messageFeeds[0].id;
     });
     previousFeedCountRef.current = messageFeeds.length;
-  }, [messageFeeds, targetMessageUid]);
+  }, [activeFeedId, messageFeeds, targetMessageUid]);
 
   const dutyTabUnreadTotal = useMemo(
     () =>
