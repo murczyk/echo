@@ -218,6 +218,40 @@ async fn set_enabled(
     Ok(())
 }
 
+async fn verify_maintenance_command(
+    mode: Mode,
+    db: &DatabaseConnection,
+    before: &Value,
+    command: &Value,
+) -> anyhow::Result<()> {
+    if command["action"] == "verify_template" {
+        let template_id = before["template_id"]
+            .as_str()
+            .context(h!())?
+            .parse()
+            .c(h!())?;
+        crate::ai_agent::lifecycle::preflight_template_for_db(db, template_id)
+            .await
+            .c(h!())?;
+    } else {
+        let human_id = command["human_id"]
+            .as_str()
+            .context(h!())?
+            .parse()
+            .c(h!())?;
+        crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
+            db, human_id,
+        )
+        .await
+        .c(h!())?;
+        let env = crate::server::new_readonly_env(mode).await.c(h!())?;
+        crate::ai_agent::lifecycle::test_connection(&env, human_id)
+            .await
+            .c(h!())?;
+    }
+    Ok(())
+}
+
 pub async fn maintenance(mode: Mode) -> anyhow::Result<()> {
     let config = read_config(mode).c(h!())?;
     let db = crate::new_pg_pool_from_config(&config).await.c(h!())?;
@@ -262,32 +296,18 @@ pub async fn maintenance(mode: Mode) -> anyhow::Result<()> {
                 disabled = true;
                 emit(json!({"ok": true})).c(h!())?;
             }
-            Some("verify_template") if disabled => {
-                let template_id = before["template_id"]
-                    .as_str()
-                    .context(h!())?
-                    .parse()
-                    .c(h!())?;
-                crate::ai_agent::lifecycle::preflight_template_for_db(
-                    &db,
-                    template_id,
+            Some("verify_template" | "verify") if disabled => {
+                let response = match verify_maintenance_command(
+                    mode, &db, &before, &command,
                 )
                 .await
-                .c(h!())?;
-                emit(json!({"ok": true})).c(h!())?;
-            }
-            Some("verify") if disabled => {
-                let human_id = command["human_id"]
-                    .as_str()
-                    .context(h!())?
-                    .parse()
-                    .c(h!())?;
-                let env =
-                    crate::server::new_readonly_env(mode).await.c(h!())?;
-                crate::ai_agent::lifecycle::test_connection(&env, human_id)
-                    .await
-                    .c(h!())?;
-                emit(json!({"ok": true})).c(h!())?;
+                {
+                    Ok(()) => json!({"ok": true}),
+                    Err(error) => {
+                        json!({"ok": false, "error": format!("{error:#}")})
+                    }
+                };
+                emit(response).c(h!())?;
             }
             Some("finish") if disabled => {
                 let states = command["states"].as_array().context(h!())?;

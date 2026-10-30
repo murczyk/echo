@@ -18,13 +18,9 @@ pub struct Options {
     /// Add an SSH alias to this session's fleet.
     #[arg(long, global = true)]
     host: Vec<String>,
-    /// Shared agent host to manage.
-    #[arg(
-        long,
-        default_value = "echo@echo-ai-agent-vm.eagle-atria.ts.net",
-        global = true
-    )]
-    agent_host: String,
+    /// Override the agent management connection; otherwise discover it from Echo.
+    #[arg(long, global = true)]
+    agent_host: Option<String>,
     #[arg(long, hide = true, conflicts_with = "maintenance")]
     probe: bool,
     #[arg(long, hide = true)]

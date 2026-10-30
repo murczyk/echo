@@ -311,6 +311,82 @@ async fn bootstrap_rejects_ineligible_managed_identities() {
 
 #[actix_web::test]
 #[serial]
+async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootstrap(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let linked =
+        crate::ai_agent::lifecycle::ensure_linked_agent(&env, fixture.human.id)
+            .await
+            .unwrap();
+    for login_id in [fixture.human.id, fixture.agent.id] {
+        crate::functest::tests::mk_secret_group_user(
+            &env.dbx,
+            crate::entities::secret_group_user::ActiveModel {
+                login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let app = test::init_service(bootstrap_app(env.clone()).await).await;
+    let (token, _) = issue_bootstrap(&env, fixture.agent.id, None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        test::call_service(&app, exchange(&token).to_request())
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let prepared =
+        crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
+            &env.dbx,
+            fixture.human.id,
+        )
+        .await
+        .unwrap();
+    assert_eq!(prepared.link.id, linked.link.id);
+    assert_eq!(prepared.login.id, fixture.agent.id);
+    assert_eq!(
+        prepared.container.instance_name,
+        linked.container.instance_name
+    );
+    assert!(prepared.login.deleted);
+    assert!(prepared.login.password.is_none());
+    assert!(!prepared.login.password_auth_enabled);
+    let (token, _) = issue_bootstrap(&env, fixture.agent.id, None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        test::call_service(&app, exchange(&token).to_request())
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    for reason in ["human_blocked", "human_role_revoked", "organism_disabled"] {
+        let fixture = AgentFixture::new(&env).await;
+        crate::ai_agent::lifecycle::ensure_linked_agent(&env, fixture.human.id)
+            .await
+            .unwrap();
+        fixture.invalidate(&env, reason).await;
+        assert!(
+            crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
+                &env.dbx,
+                fixture.human.id
+            )
+            .await
+            .is_err(),
+            "{reason}"
+        );
+        fixture.cleanup(&env).await;
+    }
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
 async fn startup_identity_rechecks_binding_and_current_access() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let app = test::init_service(bootstrap_app(env.clone()).await).await;
