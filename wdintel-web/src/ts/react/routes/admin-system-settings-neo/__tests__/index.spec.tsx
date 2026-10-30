@@ -241,17 +241,20 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ disableBotTags: true }));
     await act(async () => root.unmount());
   });
-  it('saves the #3598 hide-networks toggle', async () => {
+  it('saves the #3940 РЕР mode toggle using the inverse hide-networks value', async () => {
     const { container, root } = await renderPage();
     const checkbox = Array.from(container.querySelectorAll('label'))
-      .find((label) => label.textContent?.includes('Приховати мережі'))
+      .find((label) => label.textContent?.includes('Режим РЕР'))
       ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
 
-    expect(checkbox?.checked).toBe(false);
+    expect(checkbox?.checked).toBe(true);
     await act(async () => checkbox?.click());
     await act(async () => button(container, 'зберегти')?.click());
 
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ hideNetworks: true }));
+    await act(async () => checkbox?.click());
+    await act(async () => button(container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenLastCalledWith(expect.objectContaining({ hideNetworks: false }));
     await act(async () => root.unmount());
   });
   it('persists disabling test message replay immediately', async () => {

@@ -215,9 +215,9 @@ for (const host of ['analysis', 'duty'] as const) {
     ]);
     await installMessageCardMediaPreviewAssetRoutes(page);
     if (host === 'analysis') {
-      await installAnalysisNeoApiMocks(page, { inboxResponse: response });
+      await installAnalysisNeoApiMocks(page, { inboxResponse: response, hideNetworks: true });
     } else {
-      await installRerDutyShortStateMocks(page, { inboxResponse: response });
+      await installRerDutyShortStateMocks(page, { inboxResponse: response, hideNetworks: true });
       await page.route('**/api/sigint/units', (route) =>
         route.fulfill({ json: emptyUnitsListResponse() }),
       );
