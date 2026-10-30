@@ -23,6 +23,11 @@ repeatable-read transaction. The transaction ends before secondary enrichment.
 Unlimited reads keep their existing behavior. This prevents the planner from
 aggregating tags and metadata for the entire requested period before filtering.
 
+Source inbox pages using indexed Fuzzy match sets allow PostgreSQL to reorder
+the message/inbox join. Forcing a date-first lateral message lookup can place
+global text-match aggregation inside the per-message loop. Correlated,
+date-scoped, literal and non-text reads retain their existing join strategy.
+
 PostgreSQL fresh-tail pages and counts correlate text predicates to the outer
 message IDs, including filename and attachment branches. Their creation-time
 lower bound limits candidate messages before text checks; they do not construct
