@@ -2809,6 +2809,108 @@ async fn postgres_search_pages_preserve_filters_details_and_cursors_3780() {
     }
 }
 
+#[tokio::test]
+#[serial]
+async fn indexed_fuzzy_inbox_pages_preserve_full_period_matches_3780() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let login = find_test_login(db).await.unwrap();
+    let tag = mk_tag(db, Default::default()).await.unwrap();
+    seed_search_pagination_messages(&fixture, &login.id, tag.id).await;
+    let unit = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let date = test_dt(2026, 3, 1, 10, 0);
+    let attachments = seed_fresh_tail_search_messages_3780(
+        &fixture,
+        [unit.id, unit.id],
+        date,
+    )
+    .await;
+    let audio = seed_full_period_audio_search_3780(&fixture, date).await;
+    for (group, datetime) in [
+        (&fixture.secret_hidden, date),
+        (&fixture.alpha, date - chrono::Duration::days(16)),
+    ] {
+        mk_analysis_message(
+            db,
+            "Береза",
+            "155.2750",
+            datetime,
+            &[group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+    }
+    for newest in [false, true] {
+        for (search, count) in [
+            ("Берез", 31),
+            ("\"Береза\"", 31),
+            ("коридор", 1),
+            ("absent3780", 0),
+        ] {
+            let mut req = InboxMessagesReq {
+                since_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 1, 0, 0).and_utc().timestamp_millis(),
+                ),
+                till_date_inclusive_ms: Some(
+                    test_dt(2026, 3, 16, 0, 0).and_utc().timestamp_millis(),
+                ),
+                search: Some(search.into()),
+                newest_first: Some(newest),
+                ..Default::default()
+            };
+            let reference = inbox_map_item_ids(
+                &fixture.env,
+                &login.id,
+                &InboxMessagesReq {
+                    nolimit: Some(true),
+                    ..req.clone()
+                },
+            )
+            .await;
+            assert_eq!(reference.len(), count, "{search}");
+            if search == "Берез" {
+                assert!(reference.contains(&attachments[1]));
+                assert!(reference.contains(&attachments[3]));
+                assert!(!reference.contains(&attachments[4]));
+                assert!(reference.contains(&audio));
+            }
+            for page in 0..2 {
+                let transaction = crate::read_query::begin(db).await.unwrap();
+                let ids = crate::rer_importer::inbox::query::load_postgres_inbox_page_ids(
+                    &transaction,
+                    &login.id,
+                    &fixture.env,
+                    &req,
+                    None,
+                )
+                .await
+                .unwrap();
+                transaction.commit().await.unwrap();
+                let expected = reference
+                    .iter()
+                    .copied()
+                    .skip(page * INBOX_MESSAGES_PAGE_LIMIT)
+                    .take(INBOX_MESSAGES_PAGE_LIMIT)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    ids, expected,
+                    "{search}, newest={newest}, page={page}"
+                );
+                let Some(cursor) = ids.last().copied() else {
+                    break;
+                };
+                if newest {
+                    req.before_id_noninclusive = Some(cursor);
+                } else {
+                    req.since_id_noninclusive = Some(cursor);
+                }
+            }
+        }
+    }
+}
+
 async fn seed_fresh_tail_search_messages_3780(
     fixture: &RerAnalysisFixture,
     unit_ids: [i64; 2],

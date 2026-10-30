@@ -91,6 +91,13 @@ for (const scenario of [
   "long-evidence",
   "large-draft",
   "pagination-guard",
+  "pagination-recovery",
+  "pagination-recovery-rejected",
+  "pagination-recovery-persistence-failure",
+  "pagination-recovery-api-failure",
+  "pagination-recovery-no-memory",
+  "pagination-recovery-focused",
+  "invalid-arguments",
   "refresh-final",
   "synthesis-cancel",
   "pagination",
@@ -125,13 +132,16 @@ for (const scenario of [
     const documents: any[] = [];
     const errors: unknown[] = [];
     const calls: { name: string; args: any }[] = [];
-    const pagination = ["pagination", "refresh-required"].includes(scenario)
-      ? { paginationReason: "User requested every archive record." }
-      : {};
+    const recoveringPagination = scenario.startsWith("pagination-recovery");
+    const pagination =
+      (recoveringPagination && scenario !== "pagination-recovery-focused") ||
+      ["pagination", "refresh-required"].includes(scenario)
+        ? { paginationReason: "User requested every archive record." }
+        : {};
     const plan = () =>
       calls.push({
         name: "update_research",
-        args: { ...initial, ...pagination },
+        args: { ...initial, ...(recoveringPagination ? {} : pagination) },
       });
     const read = (args: any = { period }) =>
       calls.push({ name: "echo_inbox_messages", args });
@@ -180,6 +190,16 @@ for (const scenario of [
     } else {
       read();
       if (scenario === "pagination-guard") read({ period, cursor: 20 });
+      if (recoveringPagination) {
+        read({ period, cursor: 20 });
+        read(
+          scenario === "pagination-recovery-focused"
+            ? { period, search: "botanical survey" }
+            : { period, cursor: 20 },
+        );
+      }
+      if (scenario === "invalid-arguments")
+        read({ period, cursor: "not-a-cursor" });
       if (
         ![
           "no-draft",
@@ -239,7 +259,10 @@ for (const scenario of [
           const record = JSON.parse(init.body);
           if (
             scenario === "persistence-failure" ||
-            (scenario === "batch-refresh-persistence-failure" &&
+            ([
+              "batch-refresh-persistence-failure",
+              "pagination-recovery-persistence-failure",
+            ].includes(scenario) &&
               record.kind === "checkpoint" &&
               forcedUpdates > 0)
           )
@@ -250,10 +273,16 @@ for (const scenario of [
         }
         if (path === "/api/signal/inbox/messages") {
           queries.push(JSON.parse(init.body));
-          if (scenario === "api-failure" && queries.length === 2)
+          if (
+            ["api-failure", "pagination-recovery-api-failure"].includes(
+              scenario,
+            ) &&
+            queries.length === 2
+          )
             return Response.json({ error: "unavailable" }, { status: 503 });
           assert.ok(
-            saved.some((record) => record.kind === "checkpoint"),
+            scenario === "pagination-recovery-no-memory" ||
+              saved.some((record) => record.kind === "checkpoint"),
             "initial plan must be saved before retrieval",
           );
           if (scenario === "cancel") {
@@ -414,7 +443,10 @@ for (const scenario of [
             args: {
               ...updated,
               ...pagination,
-              ...(scenario === "batch-refresh-rejected" && forcedUpdates === 1
+              ...([
+                "batch-refresh-rejected",
+                "pagination-recovery-rejected",
+              ].includes(scenario) && forcedUpdates === 1
                 ? { draft: "Invented [source](/rer-analysis-neo?m=missing)" }
                 : {}),
             },
@@ -509,12 +541,16 @@ for (const scenario of [
             timeZone: "Europe/Kyiv",
             requestStartedAtUtc: new Date(Date.now()).toISOString(),
           },
-          workMemory: {
-            version: 1,
-            ...(scenario === "follow-up"
-              ? { recap: `Saved botanical survey: ${draft}`, ...sources }
-              : { citations: [], fileCitations: [] }),
-          },
+          ...(scenario === "pagination-recovery-no-memory"
+            ? {}
+            : {
+                workMemory: {
+                  version: 1,
+                  ...(scenario === "follow-up"
+                    ? { recap: `Saved botanical survey: ${draft}`, ...sources }
+                    : { citations: [], fileCitations: [] }),
+                },
+              }),
           skills: [
             ...(scenario.startsWith("batch-refresh")
               ? [
@@ -562,6 +598,8 @@ for (const scenario of [
           "filtered",
           "persistence-failure",
           "batch-refresh-persistence-failure",
+          "pagination-recovery-persistence-failure",
+          "pagination-recovery-persistence-failure",
         ].includes(scenario)
       )
         await assert.rejects(runAgent(payload));
@@ -588,6 +626,7 @@ for (const scenario of [
         "filtered",
         "persistence-failure",
         "batch-refresh-persistence-failure",
+        "pagination-recovery-persistence-failure",
         "cancel",
         "synthesis-cancel",
       ].includes(scenario)
@@ -604,6 +643,10 @@ for (const scenario of [
       if (scenario === "batch-refresh-persistence-failure") {
         assert.equal(queries.length, 4);
         assert.equal(documents.length, 1);
+        assert.equal(forcedUpdates, 1);
+      }
+      if (scenario === "pagination-recovery-persistence-failure") {
+        assert.equal(queries.length, 1);
         assert.equal(forcedUpdates, 1);
       }
       return;
@@ -629,6 +672,16 @@ for (const scenario of [
       assert.equal(diagnostics.at(-1).outcome, "fallback");
     }
     if (scenario === "pagination-guard") assert.equal(queries.length, 1);
+    if (recoveringPagination) {
+      assert.equal(queries.length, 2);
+      assert.equal(
+        forcedUpdates,
+        scenario === "pagination-recovery-rejected" ? 2 : 1,
+      );
+      if (scenario === "pagination-recovery-focused")
+        assert.equal(queries[1].search, "botanical survey");
+      else assert.equal(queries[1].before_id_noninclusive, 20);
+    }
     if (scenario === "large-draft") {
       assert.ok(answer.length > 3000);
       assert.ok(answer.startsWith("## Archive"));
@@ -669,6 +722,29 @@ for (const scenario of [
     const failures = events.filter(
       (event) => event.type === "tool_end" && event.is_error,
     );
+    if (scenario === "pagination-guard" || recoveringPagination) {
+      const deferred = events.filter(
+        (event) =>
+          event.type === "tool_diagnostic" &&
+          event.reason === "research_pagination_required",
+      );
+      assert.equal(deferred.length, 1);
+      assert.equal(deferred[0].handledPrivately, true);
+      assert.equal(
+        events.filter(
+          (event) =>
+            event.type === "tool_start" && event.tool === "echo_inbox_messages",
+        ).length,
+        queries.length,
+      );
+      if (scenario !== "pagination-recovery-api-failure")
+        assert.deepEqual(failures, []);
+    }
+    if (scenario === "invalid-arguments") {
+      assert.equal(queries.length, 1);
+      assert.equal(failures.length, 1);
+      assert.equal(failures[0].errorReason, "invalid_arguments");
+    }
     if (
       ["batch-refresh", "batch-refresh-rejected", "refresh-required"].includes(
         scenario,
@@ -680,9 +756,16 @@ for (const scenario of [
         failures[0].errorSummary,
         "Потрібно зберегти проміжні результати аналізу перед наступним пошуком.",
       );
-    if (scenario === "api-failure") {
+    if (["api-failure", "pagination-recovery-api-failure"].includes(scenario)) {
       assert.equal(queries.length, 2);
       assert.equal(failures.length, 1);
+      assert.equal(failures[0].errorReason, "http_error");
+      const diagnostic = events.find(
+        (event) =>
+          event.type === "tool_diagnostic" && event.reason === "http_error",
+      );
+      assert.equal(diagnostic.httpStatus, 503);
+      assert.equal(diagnostic.handledPrivately, false);
       assert.equal(
         failures[0].errorSummary,
         "Не вдалося завантажити дані за вказаними параметрами.",
@@ -715,6 +798,8 @@ for (const scenario of [
     );
     if (["user-text", "user-map"].includes(scenario))
       assert.equal(queries.length, 0);
+    else if (scenario === "pagination-recovery-no-memory")
+      assert.equal(checkpointsSaved.length, 0);
     else assert.ok(checkpointsSaved.length);
     if (scenario === "selective") {
       const latest = JSON.parse(checkpointsSaved.at(-1).content);
