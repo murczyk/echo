@@ -238,11 +238,6 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Локація');
 
     await openOverflowMenu(view.container);
-    const copySection = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-    ).find((item) => item.textContent?.trim() === 'Копіювати…');
-    if (copySection == null) throw new Error('missing copy section');
-    await click(copySection);
     const copyEtalon = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
     ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
@@ -296,11 +291,6 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Локація');
 
     await openOverflowMenu(view.container);
-    const copySection = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-    ).find((item) => item.textContent?.trim() === 'Копіювати…');
-    if (copySection == null) throw new Error('missing copy section');
-    await click(copySection);
     const copyEtalon = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
     ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
@@ -308,11 +298,6 @@ describe('MessageCard', () => {
     await click(copyEtalon);
 
     await openOverflowMenu(view.container);
-    const secondCopySection = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-    ).find((item) => item.textContent?.trim() === 'Копіювати…');
-    if (secondCopySection == null) throw new Error('missing second copy section');
-    await click(secondCopySection);
     const copyLocation = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
     ).find((item) => item.textContent?.trim() === 'Копіювати локацію');
@@ -411,11 +396,6 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('Alpha');
 
     await openOverflowMenu(view.container);
-    const copySection = Array.from(
-      document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-    ).find((item) => item.textContent?.trim() === 'Копіювати…');
-    if (copySection == null) throw new Error('missing copy section');
-    await click(copySection);
     const copyEtalon = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
     ).find((item) => item.textContent?.trim() === "Копіювати прив'язку");
@@ -533,56 +513,31 @@ describe('MessageCard', () => {
       await openOverflowMenu(view.container);
       expect(document.body.textContent).toContain('Позначити як не важливе');
       expect(document.body.textContent).toContain('Додати в закладки');
-      expect(document.body.textContent).toContain('Копіювати');
-      expect(document.body.textContent).toContain('Перейти');
-      if (hasExcludeSection) expect(document.body.textContent).toContain('Виключити');
-
-      const copySection = Array.from(
-        document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-      ).find((item) => item.textContent?.trim() === 'Копіювати…');
-      if (copySection == null) throw new Error('missing copy section');
-      await click(copySection);
-
       expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
-      expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
-        'Копіювання повідомлення',
-      );
-      expect(document.body.querySelector('[aria-label="Назад до додаткових дій"]')).not.toBeNull();
-      expect(document.body.textContent).toContain('Копіювати повідомлення');
-
-      const back = document.body.querySelector('[aria-label="Назад до додаткових дій"]');
-      if (!(back instanceof HTMLElement)) throw new Error('missing menu back button');
-      await click(back);
       expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
         'Додаткові дії повідомлення',
       );
-      expect(document.body.textContent).toContain('Копіювати');
-
-      const navigateSection = Array.from(
-        document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-      ).find((item) => item.textContent?.trim() === 'Перейти…');
-      if (navigateSection == null) throw new Error('missing navigate section');
-      await click(navigateSection);
-      expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
-        'Перехід по повідомленню',
+      const menuItems = Array.from(
+        document.body.querySelectorAll<HTMLElement>('[role="menuitem"]'),
       );
-      expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
-
-      const navigateBack = document.body.querySelector('[aria-label="Назад до додаткових дій"]');
-      if (!(navigateBack instanceof HTMLElement)) throw new Error('missing navigate back button');
-      await click(navigateBack);
-
-      if (hasExcludeSection) {
-        const excludeSection = Array.from(
-          document.body.querySelectorAll<HTMLElement>('[role="menuitem"], li'),
-        ).find((item) => item.textContent?.trim() === 'Виключити…');
-        if (excludeSection == null) throw new Error('missing exclude section');
-        await click(excludeSection);
-        expect(document.body.querySelector('[role="menu"]')?.getAttribute('aria-label')).toBe(
-          'Виключення з фільтрів',
-        );
-        expect(document.body.querySelectorAll('[role="menu"]')).toHaveLength(1);
-      }
+      const labels = menuItems.map((item) => item.textContent?.trim());
+      expect(labels).toContain('Копіювати повідомлення');
+      expect(labels).not.toContain('Копіювати частоту');
+      expect(labels.some((label) => label?.startsWith('В мережу'))).toBe(true);
+      expect(labels.some((label) => label?.startsWith('Виключити групу'))).toBe(hasExcludeSection);
+      expect(labels).not.toContain('Копіювати…');
+      expect(labels).not.toContain('Перейти…');
+      expect(labels).not.toContain('Виключити…');
+      expect(document.body.querySelector('[aria-label="Назад до додаткових дій"]')).toBeNull();
+      expect(document.body.querySelectorAll('[role="separator"]')).toHaveLength(
+        hasExcludeSection ? 3 : 2,
+      );
+      const copyText = menuItems.find(
+        (item) => item.textContent?.trim() === 'Копіювати повідомлення',
+      );
+      if (copyText == null) throw new Error('missing copy text action');
+      await click(copyText);
+      expect(view.props.onCopyText).toHaveBeenCalledOnce();
 
       clientWidth.mockRestore();
       scrollWidth.mockRestore();

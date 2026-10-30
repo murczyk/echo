@@ -107,7 +107,7 @@ test.describe('Duty characterization workflows @regression', () => {
       .first()
       .locator('[data-duty-message-id="2"]');
     await card.getByRole('button', { name: 'Більше дій' }).click();
-    await page.getByRole('menuitem', { name: /^Копіювати/ }).click();
+    await expect(page.getByRole('menuitem', { name: 'Копіювати…', exact: true })).toHaveCount(0);
     await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
     await expect(page.getByText('Посилання на повідомлення скопійовано.')).toBeVisible();
     const link = await page.evaluate(() => navigator.clipboard.readText());

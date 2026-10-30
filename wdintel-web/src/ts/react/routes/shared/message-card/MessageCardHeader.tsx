@@ -4,7 +4,6 @@ import { useRadioFeatures } from '../RadioFeatures';
 import MessageIcon from '@mui/icons-material/Message';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import BookmarkBorderOutlinedIcon from '@mui/icons-material/BookmarkBorderOutlined';
@@ -34,7 +33,7 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
-import { Menu, MenuItem } from '@mui/material';
+import { Divider, Menu, MenuItem } from '@mui/material';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
@@ -114,6 +113,7 @@ type OverflowMenuItem = {
   title: string;
   icon: JSX.Element;
   selected: boolean;
+  secondary?: boolean;
   href?: string;
   download?: string;
   disabled?: boolean;
@@ -121,8 +121,6 @@ type OverflowMenuItem = {
   ariaLabel?: string;
   onClick: (event: MouseEvent<HTMLElement>) => void;
 };
-
-type OverflowPanel = 'main' | 'copy' | 'navigate' | 'exclude';
 
 function ActionIconButton({
   title,
@@ -193,28 +191,6 @@ function HeaderText({
   );
 }
 
-function OverflowPanelBackItem({
-  panel,
-  onBack,
-}: {
-  panel: Exclude<OverflowPanel, 'main'>;
-  onBack: () => void;
-}) {
-  return (
-    <MenuItem
-      aria-label="Назад до додаткових дій"
-      onClick={(event) => {
-        event.stopPropagation();
-        onBack();
-      }}
-    >
-      <MenuRow icon={<ArrowBackIcon fontSize="small" />}>
-        {panel === 'copy' ? 'Копіювати' : panel === 'navigate' ? 'Перейти' : 'Виключити'}
-      </MenuRow>
-    </MenuItem>
-  );
-}
-
 type OverflowCopyPanelProps = {
   hasCopyTextWithNetwork: boolean;
   hasCopyTextWithNetworkAndNote: boolean;
@@ -231,7 +207,7 @@ type OverflowCopyPanelProps = {
   onClose: () => void;
 };
 
-function OverflowCopyPanel({
+function renderCopyMenuItems({
   hasCopyTextWithNetwork,
   hasCopyTextWithNetworkAndNote,
   hasFrequencyCopy,
@@ -251,52 +227,48 @@ function OverflowCopyPanel({
     onClose();
   };
 
-  return (
-    <>
-      <MenuItem onClick={() => runAndClose(onCopyText)}>
-        <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
+  return [
+    <MenuItem key="text" onClick={() => runAndClose(onCopyText)}>
+      <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
+    </MenuItem>,
+    hasCopyTextWithNetwork ? (
+      <MenuItem key="network" onClick={() => runAndClose(onCopyTextWithNetwork!)}>
+        <MenuRow icon={<PeopleIcon fontSize="small" />}>
+          Копіювати повідомлення з назвою мережі
+        </MenuRow>
       </MenuItem>
-      {hasCopyTextWithNetwork ? (
-        <MenuItem onClick={() => runAndClose(onCopyTextWithNetwork!)}>
-          <MenuRow icon={<PeopleIcon fontSize="small" />}>
-            Копіювати повідомлення з назвою мережі
-          </MenuRow>
-        </MenuItem>
-      ) : null}
-      {hasCopyTextWithNetworkAndNote ? (
-        <MenuItem onClick={() => runAndClose(onCopyTextWithNetworkAndNote!)}>
-          <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
-            Копіювати повідомлення з мережею та коментарем
-          </MenuRow>
-        </MenuItem>
-      ) : null}
-      {hasFrequencyCopy ? (
-        <MenuItem onClick={() => runAndClose(onCopyFreq!)}>
-          <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>Копіювати частоту</MenuRow>
-        </MenuItem>
-      ) : null}
-      {isPresent(onCopyMessageLink) ? (
-        <MenuItem onClick={() => runAndClose(onCopyMessageLink)}>
-          <MenuRow icon={<LinkIcon fontSize="small" />}>
-            Копіювати посилання на повідомлення
-          </MenuRow>
-        </MenuItem>
-      ) : null}
-      {canShowLocationCopy ? (
-        <MenuItem onClick={() => runAndClose(onCopyLocation!)}>
-          <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
-        </MenuItem>
-      ) : null}
-      {hasEtalonCopy ? (
-        <MenuItem onClick={() => runAndClose(onCopyEtalon!)}>
-          <MenuRow icon={<PeopleIcon fontSize="small" />}>Копіювати прив&apos;язку</MenuRow>
-        </MenuItem>
-      ) : null}
-    </>
-  );
+    ) : null,
+    hasCopyTextWithNetworkAndNote ? (
+      <MenuItem key="note" onClick={() => runAndClose(onCopyTextWithNetworkAndNote!)}>
+        <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
+          Копіювати повідомлення з мережею та коментарем
+        </MenuRow>
+      </MenuItem>
+    ) : null,
+    hasFrequencyCopy ? (
+      <MenuItem key="freq" onClick={() => runAndClose(onCopyFreq!)}>
+        <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>Копіювати частоту</MenuRow>
+      </MenuItem>
+    ) : null,
+    isPresent(onCopyMessageLink) ? (
+      <MenuItem key="link" onClick={() => runAndClose(onCopyMessageLink)}>
+        <MenuRow icon={<LinkIcon fontSize="small" />}>Копіювати посилання на повідомлення</MenuRow>
+      </MenuItem>
+    ) : null,
+    canShowLocationCopy ? (
+      <MenuItem key="location" onClick={() => runAndClose(onCopyLocation!)}>
+        <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
+      </MenuItem>
+    ) : null,
+    hasEtalonCopy ? (
+      <MenuItem key="etalon" onClick={() => runAndClose(onCopyEtalon!)}>
+        <MenuRow icon={<PeopleIcon fontSize="small" />}>Копіювати прив&apos;язку</MenuRow>
+      </MenuItem>
+    ) : null,
+  ].filter((item): item is JSX.Element => item != null);
 }
 
-function OverflowNavigationPanel({
+function renderNavigationMenuItems({
   items,
   onClose,
 }: {
@@ -344,7 +316,7 @@ function OverflowNavigationPanel({
   ));
 }
 
-function OverflowExcludePanel({
+function renderExcludeMenuItems({
   options,
   onExclude,
   onClose,
@@ -430,7 +402,6 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const overflowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [mobileActions, setMobileActions] = useState(false);
-  const [overflowPanel, setOverflowPanel] = useState<OverflowPanel>('main');
   const canShowReply = !readOnly && isPresent(onReply);
   const canShowPrimaryActions =
     !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
@@ -487,36 +458,10 @@ function ActionIconsRow({
           onClick: () => onBookmark!(),
         }
       : null,
-    mobileActions && canShowPrimaryActions
-      ? {
-          key: 'copy',
-          title: COPY_TITLE,
-          icon: <ContentCopyOutlinedIcon fontSize="small" />,
-          selected: false,
-          onClick: () => setOverflowPanel('copy'),
-        }
-      : null,
-    mobileActions && canShowNavigationMenu
-      ? {
-          key: 'navigate',
-          title: NAVIGATE_TITLE,
-          icon: <LaunchIcon fontSize="small" />,
-          selected: false,
-          onClick: () => setOverflowPanel('navigate'),
-        }
-      : null,
-    mobileActions && canShowExcludeMenu
-      ? {
-          key: 'exclude',
-          title: EXCLUDE_TITLE,
-          icon: <RemoveIcon fontSize="small" />,
-          selected: false,
-          onClick: () => setOverflowPanel('exclude'),
-        }
-      : null,
     !readOnly && isPresent(onEditDetails)
       ? {
           key: 'edit',
+          secondary: true,
           title: 'Редагувати',
           icon: <EditIcon fontSize="small" />,
           selected: false,
@@ -526,6 +471,7 @@ function ActionIconsRow({
     isPresent(attachmentArchiveDownload)
       ? {
           key: 'download-attachments-archive',
+          secondary: true,
           title: attachmentArchiveDownload.label,
           icon: <DownloadIcon fontSize="small" />,
           selected: false,
@@ -540,6 +486,7 @@ function ActionIconsRow({
     !readOnly && isPresent(onDelete)
       ? {
           key: 'delete',
+          secondary: true,
           title: 'Видалити',
           icon: <DeleteIcon fontSize="small" color="error" />,
           selected: false,
@@ -552,7 +499,9 @@ function ActionIconsRow({
   const overflowMenuItems = overflowMenuItemCandidates.filter(
     (item): item is OverflowMenuItem => item != null,
   );
-  const canShowOverflowMenu = overflowMenuItems.length > 0;
+  const canShowOverflowMenu =
+    overflowMenuItems.length > 0 ||
+    (mobileActions && (canShowPrimaryActions || canShowNavigationMenu || canShowExcludeMenu));
 
   function getMenuAnchorPosition(event: MouseEvent<HTMLElement>): MenuAnchorPosition {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -585,13 +534,11 @@ function ActionIconsRow({
   function openOverflowMenu(event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     overflowMenuTriggerRef.current = event.currentTarget;
-    setOverflowPanel('main');
     setOverflowMenuAnchorPosition(getMenuAnchorPosition(event));
   }
 
   function closeOverflowMenu() {
     blurActiveElement();
-    setOverflowPanel('main');
     setOverflowMenuAnchorPosition(null);
   }
 
@@ -793,6 +740,33 @@ function ActionIconsRow({
     };
   }, [headerRowRef, onCompactChange]);
 
+  function renderOverflowMenuItem(item: OverflowMenuItem) {
+    const props = {
+      disabled: item.disabled,
+      'aria-busy': item.ariaBusy,
+      'aria-label': item.ariaLabel,
+      selected: item.selected,
+      onClick: (event: MouseEvent<HTMLElement>) => handleOverflowMenuItemClick(event, item.onClick),
+    };
+    return item.href != null ? (
+      <MenuItem
+        key={item.key}
+        component="a"
+        href={item.href}
+        download={item.download}
+        target="_blank"
+        rel="noopener noreferrer"
+        {...props}
+      >
+        <MenuRow icon={item.icon}>{item.title}</MenuRow>
+      </MenuItem>
+    ) : (
+      <MenuItem key={item.key} {...props}>
+        <MenuRow icon={item.icon}>{item.title}</MenuRow>
+      </MenuItem>
+    );
+  }
+
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
       <Menu
@@ -801,93 +775,44 @@ function ActionIconsRow({
         anchorPosition={overflowMenuAnchorPosition ?? undefined}
         open
         onClose={closeOverflowMenu}
-        MenuListProps={{
-          'aria-label':
-            overflowPanel === 'copy'
-              ? 'Копіювання повідомлення'
-              : overflowPanel === 'navigate'
-                ? 'Перехід по повідомленню'
-                : overflowPanel === 'exclude'
-                  ? 'Виключення з фільтрів'
-                  : 'Додаткові дії повідомлення',
-        }}
+        MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
       >
-        {overflowPanel === 'main' ? (
-          overflowMenuItems.map((item) =>
-            item.href != null ? (
-              <MenuItem
-                key={item.key}
-                component="a"
-                href={item.href}
-                download={item.download}
-                target="_blank"
-                rel="noopener noreferrer"
-                disabled={item.disabled}
-                aria-busy={item.ariaBusy}
-                aria-label={item.ariaLabel}
-                selected={item.selected}
-                onClick={(event) => handleOverflowMenuItemClick(event, item.onClick)}
-              >
-                <MenuRow icon={item.icon}>{item.title}</MenuRow>
-              </MenuItem>
-            ) : (
-              <MenuItem
-                key={item.key}
-                disabled={item.disabled}
-                aria-busy={item.ariaBusy}
-                aria-label={item.ariaLabel}
-                selected={item.selected}
-                onClick={(event) => {
-                  if (item.key === 'copy') {
-                    event.stopPropagation();
-                    setOverflowPanel('copy');
-                  } else if (item.key === 'navigate') {
-                    event.stopPropagation();
-                    setOverflowPanel('navigate');
-                  } else if (item.key === 'exclude') {
-                    event.stopPropagation();
-                    setOverflowPanel('exclude');
-                  } else {
-                    handleOverflowMenuItemClick(event, item.onClick);
-                  }
-                }}
-              >
-                <MenuRow icon={item.icon}>{item.title}</MenuRow>
-              </MenuItem>
-            ),
-          )
-        ) : (
-          <>
-            <OverflowPanelBackItem panel={overflowPanel} onBack={() => setOverflowPanel('main')} />
-            {overflowPanel === 'copy' ? (
-              <OverflowCopyPanel
-                hasCopyTextWithNetwork={hasCopyTextWithNetwork}
-                hasCopyTextWithNetworkAndNote={hasCopyTextWithNetworkAndNote}
-                hasFrequencyCopy={hasFrequencyCopy}
-                canShowLocationCopy={canShowLocationCopy}
-                hasEtalonCopy={hasEtalonCopy}
-                onCopyText={onCopyText!}
-                onCopyTextWithNetwork={onCopyTextWithNetwork}
-                onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
-                onCopyFreq={onCopyFreq}
-                onCopyMessageLink={onCopyMessageLink}
-                onCopyLocation={onCopyLocation}
-                onCopyEtalon={onCopyEtalon}
-                onClose={closeOverflowMenu}
-              />
-            ) : null}
-            {overflowPanel === 'navigate' ? (
-              <OverflowNavigationPanel items={navigationMenuItems} onClose={closeOverflowMenu} />
-            ) : null}
-            {overflowPanel === 'exclude' ? (
-              <OverflowExcludePanel
-                options={excludeMenuOptions}
-                onExclude={onExcludeMessageEntity}
-                onClose={closeOverflowMenu}
-              />
-            ) : null}
-          </>
-        )}
+        {[
+          overflowMenuItems.filter((item) => !item.secondary).map(renderOverflowMenuItem),
+          mobileActions && canShowPrimaryActions
+            ? renderCopyMenuItems({
+                hasCopyTextWithNetwork,
+                hasCopyTextWithNetworkAndNote,
+                hasFrequencyCopy,
+                canShowLocationCopy,
+                hasEtalonCopy,
+                onCopyText: onCopyText!,
+                onCopyTextWithNetwork,
+                onCopyTextWithNetworkAndNote,
+                onCopyFreq,
+                onCopyMessageLink,
+                onCopyLocation,
+                onCopyEtalon,
+                onClose: closeOverflowMenu,
+              })
+            : [],
+          mobileActions && canShowNavigationMenu
+            ? renderNavigationMenuItems({ items: navigationMenuItems, onClose: closeOverflowMenu })
+            : [],
+          mobileActions && canShowExcludeMenu
+            ? renderExcludeMenuItems({
+                options: excludeMenuOptions,
+                onExclude: onExcludeMessageEntity,
+                onClose: closeOverflowMenu,
+              })
+            : [],
+          overflowMenuItems.filter((item) => item.secondary).map(renderOverflowMenuItem),
+        ]
+          .filter((items) => items.length > 0)
+          .flatMap((items, index) => [
+            ...(index > 0 ? [<Divider key={`divider-${index}`} role="separator" />] : []),
+            ...items,
+          ])}
       </Menu>
     ) : null;
 
