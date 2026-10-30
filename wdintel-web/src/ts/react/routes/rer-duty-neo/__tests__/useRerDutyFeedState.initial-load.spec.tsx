@@ -24,6 +24,7 @@ import {
   feedPendingNewerUnreadCount,
 } from '../utils';
 import { persistDutyFilterState, readPersistedDutyFilterState } from '../duty-filter-persistence';
+import { useRerDutyFeedState } from '../useRerDutyFeedState';
 
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
@@ -1359,6 +1360,75 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current?.error).toBe('network down');
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
     expect(apiRef.current?.messageFeeds[0]?.items).toHaveLength(0);
+  });
+
+  it('#3923 starts a filtered reload while the window clear is suspended', async () => {
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    const windowReady = deferred<void>('window clear');
+    const reload = deferred<InboxMessagesRsp>('filtered reload');
+    let blockWindowClear = false;
+
+    function Window({ items }: { items: Array<[number, InboxMessage]> }) {
+      if (blockWindowClear && items.length === 0) throw windowReady.promise;
+      return <span>{items.map(([id]) => id).join(',')}</span>;
+    }
+
+    function Harness() {
+      const api = useRerDutyFeedState({
+        freqs: [],
+        freqsReady: true,
+        setProfiles: vi.fn(),
+        setGroupInfos: vi.fn(),
+        pollIntervalSec: 1,
+        disableAutoScroll: false,
+        deviceAccess: { status: 'allowed' },
+      });
+      React.useEffect(() => {
+        apiRef.current = api;
+      });
+      const feed = api.messageFeeds[0];
+      return (
+        <>
+          <span role="status">{feed.loading ? 'loading' : 'ready'}</span>
+          <React.Suspense fallback={<span>waiting for window</span>}>
+            <Window items={feed.items} />
+          </React.Suspense>
+        </>
+      );
+    }
+
+    await act(async () => root.render(<Harness />));
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('ready');
+    blockWindowClear = true;
+    hoisted.fetchInboxMessages.mockReturnValueOnce(reload.promise);
+
+    await act(async () => {
+      apiRef.current!.applyFilter('mf-0', { ...emptyFilter(), groupsSelected: ['g-1'] });
+    });
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('loading');
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
+    expect(hoisted.fetchInboxMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ selectedGroups: ['g-1'] }),
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+
+    await act(async () => {
+      reload.resolve(rangeRsp(41, 60));
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      blockWindowClear = false;
+      windowReady.resolve();
+      await flushMicrotasks();
+    });
+
+    expect(container.querySelector('[role="status"]')?.textContent).toBe('ready');
+    expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => index + 41),
+    );
   });
 
   it('#3923 replaces the previous window after a filter change succeeds', async () => {

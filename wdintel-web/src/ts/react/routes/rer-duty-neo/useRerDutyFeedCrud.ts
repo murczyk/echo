@@ -28,7 +28,7 @@ export function useRerDutyFeedCrud(
       }
       const preserveUnread = options.preserveUnread && filtersEqual(currentFeed.filter, f);
       markFeedReloadRequested(feedId, preserveUnread);
-      commitFeedWindowUpdate(setMessageFeeds, (prev) => {
+      setMessageFeeds((prev) => {
         const w = prev.find((feed) => feed.id === feedId);
         if (!w || (!forceReload && filtersEqual(w.filter, f))) return prev;
         const filterChanged = !filtersEqual(w.filter, f);
@@ -38,7 +38,6 @@ export function useRerDutyFeedCrud(
                 ...feed,
                 ...(filterChanged
                   ? {
-                      items: [],
                       readIds: new Set<number>(),
                       unreadCount: 0,
                       unresolvedUnreadIds: new Set<number>(),
@@ -64,6 +63,13 @@ export function useRerDutyFeedCrud(
         persistStateToUrl(next);
         return next;
       });
+      if (!filtersEqual(currentFeed.filter, f)) {
+        commitFeedWindowUpdate(setMessageFeeds, (prev) => {
+          const feed = prev.find((feed) => feed.id === feedId);
+          if (!feed || feed.filter !== f) return prev;
+          return prev.map((feed) => (feed.id === feedId ? { ...feed, items: [] } : feed));
+        });
+      }
     },
     [markFeedReloadRequested, messageFeeds, persistStateToUrl, setMessageFeeds],
   );
