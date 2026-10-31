@@ -252,10 +252,11 @@ async fn issue_3864_summary_keeps_full_report_activity_across_chunks(
             ..req.clone()
         };
         let chunks = inbox_report_period_chunks(&req, 24).c(h!())?;
-        let messages =
+        let mut messages =
             load_reo_inbox_messages_chunks(db, &login.id, &env, &req, &chunks)
                 .await
                 .c(h!())?;
+        load_reo_message_networks(db, &mut messages).await.c(h!())?;
         let full = collect_report(
             messages,
             logins.clone(),
