@@ -327,9 +327,11 @@ async fn load_reo_report_messages(
                     .context(h!())?;
                 Ok(messages)
             },
-            |db| async move {
-                load_reo_inbox_messages_chunks(&db, login, env, req, chunks)
-                    .await
+            |_| async move {
+                load_reo_inbox_messages_chunks(
+                    &env.dbx, login, env, req, chunks,
+                )
+                .await
             },
         )
         .await
@@ -1710,6 +1712,7 @@ mod tests {
         mk_sigint_network_aor, mk_sigint_network_freq, mk_signal_message,
         mk_signal_message_group,
     };
+    use crate::rer_importer::types::AnalysisSearchMode;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
 
@@ -1812,6 +1815,9 @@ mod tests {
                 id: Set(message.id),
                 datetime: Set(Some(now)),
                 freq: Set(Some(freq.to_string())),
+                body_noheader: Set(Some(serde_json::json!({
+                    "body": "message",
+                }))),
                 ..Default::default()
             },
         )
@@ -1924,6 +1930,10 @@ CREATE TEMP TABLE sigint_inbox_item_network AS TABLE public.sigint_inbox_item_ne
             conn: analytics.clone(),
             retry_after_unix_ms_by_operation: Default::default(),
         });
+        env.replicas = vec![crate::types::ReplicaPool {
+            conn: analytics.clone(),
+            label: "lagging REO replica".to_string(),
+        }];
         let req = InboxMessagesReq {
             since_date_inclusive_ms: Some(
                 (earlier - chrono::Duration::minutes(1))
@@ -1941,11 +1951,29 @@ CREATE TEMP TABLE sigint_inbox_item_network AS TABLE public.sigint_inbox_item_ne
         let stale =
             load_reo_report_messages(&login.id, &env, &req, false, true, false)
                 .await;
+        let unsupported_req = InboxMessagesReq {
+            search: Some("message".to_string()),
+            search_mode: Some(AnalysisSearchMode::Exact),
+            ..req.clone()
+        };
+        let unsupported = load_reo_report_messages(
+            &login.id,
+            &env,
+            &unsupported_req,
+            false,
+            true,
+            false,
+        )
+        .await;
         analytics
             .execute_unprepared("DELETE FROM sigint_inbox_item_network")
             .await
             .c(h!())?;
         let fallback =
+            load_reo_report_messages(&login.id, &env, &req, false, true, false)
+                .await;
+        env.analytics = None;
+        let postgres_only =
             load_reo_report_messages(&login.id, &env, &req, false, true, false)
                 .await;
         analytics.execute_unprepared("ROLLBACK").await.c(h!())?;
@@ -1959,15 +1987,17 @@ CREATE TEMP TABLE sigint_inbox_item_network AS TABLE public.sigint_inbox_item_ne
             );
             assert_eq!(message.network_ids, Some(vec![old_network.id]));
         }
-        let fallback = fallback.context(h!())?;
-        assert_eq!(fallback.len(), 1);
-        assert_eq!(fallback[0].0, updated.id);
-        assert_eq!(fallback[0].1.freq.as_deref(), Some("155.5000"));
-        assert_eq!(
-            fallback[0].1.timestamp,
-            Some(now.and_utc().timestamp_millis())
-        );
-        assert_eq!(fallback[0].1.network_ids, Some(vec![new_network.id]));
+        for fallback in [unsupported, fallback, postgres_only] {
+            let fallback = fallback.context(h!())?;
+            assert_eq!(fallback.len(), 1);
+            assert_eq!(fallback[0].0, updated.id);
+            assert_eq!(fallback[0].1.freq.as_deref(), Some("155.5000"));
+            assert_eq!(
+                fallback[0].1.timestamp,
+                Some(now.and_utc().timestamp_millis())
+            );
+            assert_eq!(fallback[0].1.network_ids, Some(vec![new_network.id]));
+        }
         Ok(())
     }
 
