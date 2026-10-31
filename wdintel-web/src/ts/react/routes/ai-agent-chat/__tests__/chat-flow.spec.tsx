@@ -139,6 +139,51 @@ async function selectConversation() {
   await flush();
 }
 
+const REASONING_PRESETS = [
+  { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
+  { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
+  { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+];
+const SECOND_PROVIDER = {
+  ...PROVIDER,
+  id: 'provider-2',
+  name: 'GLM',
+  isDefault: false,
+};
+
+async function remountWithProviders(providers: Array<typeof PROVIDER>) {
+  mocks.configuration.mockResolvedValue({
+    enabled: true,
+    reasoningPresetsEnabled: true,
+    defaultProviderId: PROVIDER.id,
+    providers: providers.map((provider) => ({
+      ...provider,
+      reasoningAvailable: true,
+      reasoningPresets: REASONING_PRESETS,
+    })),
+  });
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<AiAgentChat />));
+  await flush();
+}
+
+function selector(label: string) {
+  return container.querySelector(`[role="combobox"][aria-label="${label}"]`) as HTMLElement;
+}
+
+async function chooseOption(label: string, optionText: string) {
+  await act(async () =>
+    selector(label).dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+  );
+  await flush();
+  const option = Array.from(document.body.querySelectorAll('[role="option"]')).find((item) =>
+    item.textContent?.includes(optionText),
+  )!;
+  await act(async () => option.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await flush();
+}
+
 function streamEvent(
   requestId: string,
   sequence: number,
@@ -165,6 +210,15 @@ function streamEvent(
 beforeEach(async () => {
   window.history.replaceState({}, '', '/');
   window.sessionStorage.clear();
+  const storage = new Map<string, string>();
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+      removeItem: (key: string) => storage.delete(key),
+    },
+  });
   connections = new Map();
   mocks.configuration.mockResolvedValue({
     enabled: true,
@@ -260,6 +314,65 @@ describe('AiAgentChat request queue', () => {
       expect.objectContaining({ reasoningPreset: 'deep' }),
     );
     expect(container.textContent).toContain('Ви · Глибокий');
+  });
+
+  it('remembers the chosen provider and Fast/Balanced across reloads and submits', async () => {
+    await remountWithProviders([PROVIDER, SECOND_PROVIDER]);
+    await chooseOption('Провайдер ШІ', 'GLM');
+    await chooseOption('Глибина аналізу', 'Швидкий');
+    expect(window.localStorage.getItem('echo.ai-agent.provider-id')).toBe('provider-2');
+    expect(window.localStorage.getItem('echo.ai-agent.reasoning-preset')).toBe('fast');
+
+    await remountWithProviders([PROVIDER, SECOND_PROVIDER]);
+    expect(selector('Провайдер ШІ').textContent).toContain('GLM');
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-remembered',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Коротке питання');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ providerId: 'provider-2', reasoningPreset: 'fast' }),
+    );
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+  });
+
+  it('keeps Deep one-shot and falls back to the remembered preset', async () => {
+    await remountWithProviders([PROVIDER]);
+    await chooseOption('Глибина аналізу', 'Швидкий');
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    expect(window.localStorage.getItem('echo.ai-agent.reasoning-preset')).toBe('fast');
+
+    await remountWithProviders([PROVIDER]);
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-deep-once',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Досліди докладно');
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningPreset: 'deep' }),
+    );
+    expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+  });
+
+  it('ignores a remembered provider that is gone or disabled', async () => {
+    window.localStorage.setItem('echo.ai-agent.provider-id', 'provider-2');
+    await remountWithProviders([PROVIDER, { ...SECOND_PROVIDER, enabled: false }]);
+    expect(selector('Провайдер ШІ').textContent).toContain('Gemma');
+
+    window.localStorage.setItem('echo.ai-agent.provider-id', 'removed-provider');
+    await remountWithProviders([PROVIDER, SECOND_PROVIDER]);
+    expect(selector('Провайдер ШІ').textContent).toContain('Gemma');
   });
 
   // The map workspace is lazy and pulls in milsymbol; load it once up front so

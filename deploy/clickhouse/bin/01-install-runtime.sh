@@ -10,6 +10,7 @@ load_versions
 require_cmd apt-get
 
 [[ $(dpkg --print-architecture) == amd64 ]] || die "only Debian amd64 is currently supported"
+grep -qw avx2 /proc/cpuinfo || die "ClickHouse $CLICKHOUSE_VERSION requires an amd64 CPU with AVX2 support"
 . /etc/os-release
 [[ "$ID" == debian && "$VERSION_ID" == 13 ]] \
   || die "runtime bundle is validated only for Debian 13; found $ID $VERSION_ID"
@@ -54,16 +55,24 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   "postgresql-$POSTGRESQL_MAJOR" \
   "postgresql-client-$POSTGRESQL_MAJOR"
 
-log "Installing ClickHouse LTS $CLICKHOUSE_VERSION"
+log "Installing ClickHouse stable $CLICKHOUSE_VERSION"
 curl -fsSL https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key \
   -o "$tmp_dir/clickhouse.asc"
 printf '%s  %s\n' "$CLICKHOUSE_APT_KEY_SHA256" "$tmp_dir/clickhouse.asc" | sha256sum --check
 gpg --dearmor <"$tmp_dir/clickhouse.asc" >"$tmp_dir/clickhouse.gpg"
 sudo install -m 0644 "$tmp_dir/clickhouse.gpg" /etc/apt/keyrings/clickhouse.gpg
 printf '%s\n' \
-  'deb [signed-by=/etc/apt/keyrings/clickhouse.gpg arch=amd64] https://packages.clickhouse.com/deb lts main' \
+  'deb [signed-by=/etc/apt/keyrings/clickhouse.gpg arch=amd64] https://packages.clickhouse.com/deb stable main' \
   | sudo tee /etc/apt/sources.list.d/clickhouse.list >/dev/null
 sudo apt-get update
+clickhouse_cpu_weight=$(systemctl show clickhouse-server.service --property=CPUWeight --value 2>/dev/null || true)
+if [[ -z "$clickhouse_cpu_weight" || "$clickhouse_cpu_weight" == '[not set]' \
+  || "$clickhouse_cpu_weight" == 18446744073709551615 ]]; then
+  sudo install -d -m 0755 /etc/systemd/system/clickhouse-server.service.d
+  printf '[Service]\nCPUWeight=100\n' \
+    | sudo tee /etc/systemd/system/clickhouse-server.service.d/echo-cgroup-cpu.conf >/dev/null
+  sudo systemctl daemon-reload
+fi
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
   "clickhouse-common-static=$CLICKHOUSE_VERSION" \
   "clickhouse-client=$CLICKHOUSE_VERSION" \

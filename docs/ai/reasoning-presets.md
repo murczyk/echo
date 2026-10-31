@@ -1,14 +1,18 @@
 # Agent reasoning and research budgets
 
 The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
-Their limits remain 2, 5, and 30 minutes. Balanced is the default. Successful submission,
-changing provider, and opening another conversation reset the composer to
-Balanced. Retry preserves the failed request's preset. Each follow-up makes
+Their limits remain 2, 5, and 30 minutes. Balanced is the default. The browser
+remembers the last chosen Fast or Balanced in `localStorage`
+(`echo.ai-agent.reasoning-preset`). Deep is never remembered: successful
+submission, changing provider, and opening another conversation reset the
+composer to the remembered preset (Balanced if none). Retry preserves the
+failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
 
 The limit starts when a worker claims the request, excluding queue time.
 Fast reserves its last 30 seconds, Balanced 60 seconds, and Deep 120 seconds
-for a final answer. Checkpoints, output recovery, citation repair, and provider
+for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
+they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md). Checkpoints, output recovery, citation repair, and provider
 retries share the original deadline and call counters. These are ceilings,
 not promised completion times. The normal tool ceiling remains 128 and the
 provider ceiling remains 256 calls, with one provider call reserved for final
@@ -54,8 +58,8 @@ reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,
 the document extractor, engine token profiles, and the configured default
-provider are unaffected. Kharkiv should retain Sol as default and GLM as an
-option.
+provider are unaffected. Kharkiv should retain its configured default provider
+and keep GLM as an option.
 
 ## Rollout and recovery
 
@@ -67,7 +71,7 @@ option.
 2. Deploy only to Kharkiv. Drain queued/running requests before maintenance;
    disabling the global agent flag while a request runs revokes its access.
    Install the matching harness and migrate the application with the preset
-   feature flag still off. Preserve the existing Sol default, GLM option,
+   feature flag still off. Preserve the existing default provider, GLM option,
    government credentials, vision engine, and shared extractor settings.
 3. Against each candidate's government endpoint, verify a harmless function
    call, its matching result, and a final answer at **every mapped effort**.
@@ -83,7 +87,8 @@ option.
    a Balanced follow-up after Deep, retry, reload while queued/running, and
    cancellation. Check original deadlines in gateway logs, source links,
    coverage notices, and persisted policy/metadata. A forced stalled synthesis
-   must yield source excerpts before the request deadline plus cleanup slack.
+   must yield the saved draft or a short notice before the request deadline
+   plus cleanup slack.
    Confirm other Echo hosts and namespaces were not changed.
 
 For rollback, stop admitting new work and drain active requests first. Disable
@@ -129,7 +134,9 @@ citations still require evidence collected during the current request. History
 alone does not replace that evidence.
 Final synthesis has no tools and lasts at most the preset's finalization
 allowance, also bounded by the original deadline. If synthesis times out,
-truncates, or lacks valid citations, Echo returns labeled source excerpts.
+truncates, or lacks valid citations, Echo returns the latest validated saved
+draft when the engine keeps one (non-OpenAI engines) and otherwise a short
+notice; raw source excerpts are never published.
 Completion metadata records `coverageLimited: true`, `reason: "context_limit"`.
 The notice describes incomplete coverage without suggesting that Deep mode
 would fix it. Cancellation, authorization failures, and content filtering do

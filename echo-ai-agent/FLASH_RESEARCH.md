@@ -1,15 +1,22 @@
-# Budget-aware GLM Flash research
+# Budget-aware bounded research
 
-Only `glm-5.3-flash-uncensored` uses this workflow. The selected provider and total
-Fast/Balanced/Deep deadlines remain 120/300/1800 seconds. Flash reserves
-60/120/240 seconds of those deadlines for synthesis. Without presets, its existing
-ten-minute deadline is retained with a two-minute synthesis reserve; final
-generation keeps the legacy gateway's authorized `research` purpose.
+`glm-5.3-flash-uncensored` always uses this workflow. Every other non-OpenAI
+engine (GLM-5.3, Gemma) uses it when [reasoning presets](../docs/ai/reasoning-presets.md)
+give the request a budget; without presets those engines keep their unbudgeted
+path. OpenAI engines keep the generic path, where a failed final synthesis yields a
+short notice instead of raw source excerpts. The selected provider and total
+Fast/Balanced/Deep deadlines remain 120/300/1800 seconds. These engines reserve
+60/120/240 seconds of those deadlines for synthesis (Rust `reasoning::resolve`; the
+runner also accepts the base 30/60/120 so policies queued before the reserve was
+raised still validate). Flash without presets keeps its existing ten-minute deadline
+with a two-minute synthesis reserve; final generation keeps the legacy gateway's
+authorized `research` purpose.
 
 Before retrieval, Flash saves a short checklist with `update_research`. Broad
 summaries start with a sample, then use focused searches chosen from the request
-and observed evidence. Continuing unfiltered inbox pagination requires a specific
-coverage requirement in `update_research.paginationReason`; explicit exhaustive
+and observed evidence. Continuing unfiltered inbox pagination, or reading more than three pages of
+one search, requires a specific coverage requirement in
+`update_research.paginationReason` (or a refined search); explicit exhaustive
 requests retain pagination. Existing
 scope, permission, citation, and search-semantics guidance still applies. If a
 continuation lacks that requirement, the runner privately defers it and forces a
@@ -36,7 +43,8 @@ retained only for the active request.
 Every provider turn receives private remaining research/total time, tool allowance
 and estimated context headroom. A warning requests completion before the research
 boundary. Observed provider durations prevent starting a research or checkpoint
-call that would consume the remaining research allowance. Transitions happen
+call that would consume the remaining research allowance; before the first
+checkpoint has been observed, one minute is assumed. Transitions happen
 between completed tool rounds; deadline timers and cancellation remain backstops.
 
 Synthesis uses the same context-aware evidence packing as other engines and at
@@ -93,6 +101,10 @@ node --experimental-strip-types echo-ai-agent/evals/flash-completion.mjs \
   echo-ai-agent/runner/runner.ts /private/profiles.json \
   glm-5.3-flash-uncensored grouped balanced
 ```
+
+When comparing GLM-5.3 or Gemma against a base runner built before they used this
+workflow, add `1` as a final argument: that runner accepts the doubled synthesis
+reserve only for Flash.
 
 Scenarios are `grouped`, `long`, `attachments`, `exhaustive` and `followup`;
 presets are `fast`,

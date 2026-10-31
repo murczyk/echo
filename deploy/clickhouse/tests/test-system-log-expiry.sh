@@ -29,7 +29,7 @@ cat >"$case_dir/config.xml" <<XML
   <path>$case_dir/data/</path>
   <logger><level>warning</level><log>$case_dir/server.log</log></logger>
   <listen_host>127.0.0.1</listen_host><tcp_port>$port</tcp_port>
-  <max_thread_pool_size>128</max_thread_pool_size>
+  <max_thread_pool_size>256</max_thread_pool_size>
   <background_pool_size>16</background_pool_size>
   <background_schedule_pool_size>4</background_schedule_pool_size>
   <background_message_broker_schedule_pool_size>2</background_message_broker_schedule_pool_size>
