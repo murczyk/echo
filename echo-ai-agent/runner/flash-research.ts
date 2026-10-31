@@ -4,6 +4,7 @@ import type { Context } from "@earendil-works/pi-ai/compat";
 import { citationHref, type MessageCitation } from "./citations.ts";
 import { fileCitationHref, type FileCitation } from "./devices.ts";
 import {
+  BUDGET_INABILITY,
   synthesizeBudgetEvidence,
   SynthesisAuthorizationError,
   SynthesisContentFilterError,
@@ -17,9 +18,12 @@ import type { WorkJournal } from "./work-memory.ts";
 
 export const FLASH_ENGINE = "glm-5.3-flash-uncensored";
 export const RESEARCH_TOOL_NAME = "update_research";
+export const FLASH_RESEARCH_UPDATE_REQUIRED =
+  "Call update_research before further retrieval";
+export const FLASH_RESEARCH_PAGINATION_REQUIRED =
+  "After the initial sample, use focused searches. Before continuing pagination, save the specific coverage requirement in update_research.paginationReason.";
 export const FLASH_SYNTHESIS_TOKENS = 8192;
-export const FLASH_INABILITY =
-  "Не вдалося підготувати перевірену відповідь за зібраними джерелами.";
+export const FLASH_INABILITY = BUDGET_INABILITY;
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",
@@ -32,8 +36,60 @@ export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
 const REFRESH_RETRIEVALS = 4;
 const TURN_MARGIN_MS = 1000;
 const WARNING_MS = 10_000;
+const CURSOR_KEYS = [
+  "cursor",
+  "before_id_noninclusive",
+  "after_unit_id",
+  "after",
+  "offset",
+  "afterId",
+  "afterSectionId",
+  "beforeRequestId",
+];
 
-export const FLASH_GUIDANCE = `Before retrieval, call update_research with a short task checklist. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination without recording a concrete coverage need in paginationReason; explicit exhaustive requests may continue pagination. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Use report_progress for ordinary public progress. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
+// Mirrors AI_AGENT_OPENAI_MODEL_PREFIXES in wdintel-rs/src/config.rs.
+const OPENAI_MODEL_PREFIXES = ["gpt-", "o1", "o3", "o4"];
+
+export function isOpenAiModel(modelName: string): boolean {
+  return OPENAI_MODEL_PREFIXES.some((prefix) => modelName.startsWith(prefix));
+}
+
+// Flash always uses the bounded research harness. Any other non-OpenAI engine (GLM,
+// Gemma) uses it when reasoning presets give the request a budget; without a budget
+// there is nothing to bound. OpenAI engines keep the generic path.
+export function usesBoundedResearch(
+  modelName: string,
+  executionPolicy?: ExecutionPolicy,
+): boolean {
+  return (
+    modelName === FLASH_ENGINE ||
+    (!isOpenAiModel(modelName) && executionPolicy !== undefined)
+  );
+}
+
+// Flash and the other non-OpenAI engines reserve twice the base finalization time.
+// Non-Flash engines also accept the base reserve so policies snapshotted before it
+// was raised (queued or running requests) still validate during a rollout.
+export function finalizationMultipliers(modelName: string): readonly number[] {
+  if (modelName === FLASH_ENGINE) return [2];
+  return isOpenAiModel(modelName) ? [1] : [1, 2];
+}
+
+export interface ResearchTuning {
+  // Pages of one search read before continuing needs paginationReason.
+  searchedPageLimit?: number;
+  // Expected duration of a context checkpoint before one has been observed.
+  checkpointPriorMs?: number;
+}
+
+// A single search was paged 22 times (440 records) on glm-5.3 before its deadline, and
+// context compaction began with less research time left than it needed.
+export const RESEARCH_TUNING: ResearchTuning = {
+  searchedPageLimit: 3,
+  checkpointPriorMs: 60_000,
+};
+
+export const FLASH_GUIDANCE = `Before retrieval, call update_research with a short task checklist. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Use report_progress for ordinary public progress. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
 
 const RESEARCH_PARAMETERS = Type.Object(
   {
@@ -60,7 +116,7 @@ const RESEARCH_PARAMETERS = Type.Object(
       Type.String({
         maxLength: 200,
         description:
-          "Factual coverage requirement for continuing unfiltered pagination, such as the user explicitly requesting every record. Empty for ordinary broad summaries; use focused searches after the first sample.",
+          "Factual coverage requirement for continuing pagination, such as the user explicitly requesting every record. Empty for ordinary broad summaries; use focused searches after the first sample.",
       }),
     ),
     gaps: Type.Array(Type.String({ minLength: 1, maxLength: 160 }), {
@@ -75,6 +131,10 @@ type Sources = {
   citations: MessageCitation[];
   fileCitations: FileCitation[];
   links?: string[];
+  // False until this request's tools deliver a citable message or file, so an answer
+  // built from the user's own text or from aggregate data may cite nothing even if
+  // earlier turns of the conversation did.
+  citationRequired?: boolean;
 };
 type Retrieval = {
   tool: string;
@@ -94,7 +154,11 @@ export function validatedFlashAnswer(
   const links = [...text.matchAll(/\[[^\]]*\]\(([^\s)]+)\)/g)].map(
     (match) => match[1],
   );
-  if (allowed.size && !links.some((href) => allowed.has(href)))
+  if (
+    allowed.size &&
+    sources.citationRequired !== false &&
+    !links.some((href) => allowed.has(href))
+  )
     return undefined;
   if (
     links.some((href) => !allowed.has(href) && !sources.links?.includes(href))
@@ -122,11 +186,24 @@ function continuation(value: unknown): Record<string, unknown> {
   );
 }
 
+function retrievalKey(tool: string, query: unknown): string {
+  const scope =
+    query && typeof query === "object"
+      ? Object.fromEntries(
+          Object.entries(query)
+            .filter(([key]) => !CURSOR_KEYS.includes(key))
+            .sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : query;
+  return `${tool}:${JSON.stringify(scope)}`;
+}
+
 export class FlashResearch {
   private state?: ResearchUpdate;
   private draft?: string;
   private retrievals = 0;
   private retrievalBatchAllowed = true;
+  private paginationUpdateRequired = false;
   private readonly ledger: Retrieval[] = [];
   private readonly unread = new Map<string, boolean>();
   private observedMs = new Map<string, number>();
@@ -134,16 +211,19 @@ export class FlashResearch {
   private readonly sources: () => Sources;
   private readonly journal?: WorkJournal;
   private readonly diagnostic: (event: CompletionDiagnostic) => void;
+  private readonly tuning: ResearchTuning;
   usedFallback = false;
 
   constructor(
     sources: () => Sources,
     journal?: WorkJournal,
     diagnostic: (event: CompletionDiagnostic) => void = () => {},
+    tuning: ResearchTuning = {},
   ) {
     this.sources = sources;
     this.journal = journal;
     this.diagnostic = diagnostic;
+    this.tuning = tuning;
   }
 
   tool(countInvocation: () => void) {
@@ -168,6 +248,7 @@ export class FlashResearch {
         if (draft) this.draft = draft;
         this.retrievals = 0;
         this.retrievalBatchAllowed = true;
+        this.paginationUpdateRequired = false;
         return {
           content: [{ type: "text", text: "Research state saved privately." }],
           details: {},
@@ -177,49 +258,43 @@ export class FlashResearch {
   }
 
   get updateRequired(): boolean {
-    return this.retrievals >= REFRESH_RETRIEVALS;
+    return this.paginationUpdateRequired || this.retrievals >= REFRESH_RETRIEVALS;
   }
 
   beforeRetrieval(tool?: string, query?: Record<string, unknown>): void {
     if (!this.state || !this.retrievalBatchAllowed)
-      throw new Error("Call update_research before further retrieval");
+      throw new Error(FLASH_RESEARCH_UPDATE_REQUIRED);
     if (
-      tool === "inbox_messages" &&
-      !query?.search &&
-      query?.before_id_noninclusive != null &&
+      this.paginationNeedsReason(tool, query) &&
       !this.state.paginationReason?.trim()
-    )
-      throw new Error(
-        "After the initial sample, use focused searches. Before continuing unfiltered pagination, save the specific coverage requirement in update_research.paginationReason.",
-      );
+    ) {
+      this.paginationUpdateRequired = true;
+      throw new Error(FLASH_RESEARCH_PAGINATION_REQUIRED);
+    }
     this.retrievals += 1;
+  }
+
+  private paginationNeedsReason(
+    tool?: string,
+    query?: Record<string, unknown>,
+  ): boolean {
+    if (tool !== "inbox_messages" || query?.before_id_noninclusive == null)
+      return false;
+    if (!query.search) return true;
+    const limit = this.tuning.searchedPageLimit;
+    if (limit === undefined) return false;
+    const scope = retrievalKey(`echo_${tool}`, query);
+    return (
+      this.ledger.filter((entry) => retrievalKey(entry.tool, entry.query) === scope)
+        .length >= limit
+    );
   }
 
   record(tool: string, query: unknown, response: unknown): void {
     const next = continuation(response);
     this.ledger.push({ tool, query, continuation: next });
-    const scope =
-      query && typeof query === "object"
-        ? Object.fromEntries(
-            Object.entries(query)
-              .filter(
-                ([key]) =>
-                  ![
-                    "cursor",
-                    "before_id_noninclusive",
-                    "after_unit_id",
-                    "after",
-                    "offset",
-                    "afterId",
-                    "afterSectionId",
-                    "beforeRequestId",
-                  ].includes(key),
-              )
-              .sort(([a], [b]) => a.localeCompare(b)),
-          )
-        : query;
     this.unread.set(
-      `${tool}:${JSON.stringify(scope)}`,
+      retrievalKey(tool, query),
       Object.entries(next).some(
         ([key, value]) =>
           key !== "nextOffset" &&
@@ -406,7 +481,11 @@ export class FlashResearch {
     if (purpose === "research")
       this.retrievalBatchAllowed = !this.updateRequired;
     const expectedMs =
-      this.observedMs.get(purpose) ?? Math.max(0, ...this.observedMs.values());
+      this.observedMs.get(purpose) ??
+      Math.max(
+        purpose === "checkpoint" ? (this.tuning.checkpointPriorMs ?? 0) : 0,
+        ...this.observedMs.values(),
+      );
     if (purpose !== "synthesis" && budget) {
       if (toolRemaining <= 0) budget.limit("tool_limit");
       if (budget.remainingResearchMs() <= expectedMs + TURN_MARGIN_MS)
@@ -435,6 +514,7 @@ export class FlashResearch {
       toolRemaining,
       estimatedContextHeadroomTokens: headroom,
       updateRequired: !this.state || this.updateRequired,
+      paginationUpdateRequired: this.paginationUpdateRequired,
       warning:
         remainingMs !== undefined &&
         remainingMs <= Math.max(WARNING_MS, expectedMs * 2 + TURN_MARGIN_MS)

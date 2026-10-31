@@ -5,6 +5,10 @@ import {
   FlashResearch,
   FLASH_ENGINE,
   FLASH_INABILITY,
+  FLASH_RESEARCH_PAGINATION_REQUIRED,
+  RESEARCH_TUNING,
+  finalizationMultipliers,
+  usesBoundedResearch,
   validatedFlashAnswer,
 } from "./flash-research.ts";
 import {
@@ -81,7 +85,7 @@ function stream(
   );
 }
 
-for (const scenario of [
+const scenarios = [
   "selective",
   "retry-length",
   "retry-citation",
@@ -91,6 +95,13 @@ for (const scenario of [
   "long-evidence",
   "large-draft",
   "pagination-guard",
+  "pagination-recovery",
+  "pagination-recovery-rejected",
+  "pagination-recovery-persistence-failure",
+  "pagination-recovery-api-failure",
+  "pagination-recovery-no-memory",
+  "pagination-recovery-focused",
+  "invalid-arguments",
   "refresh-final",
   "synthesis-cancel",
   "pagination",
@@ -116,22 +127,34 @@ for (const scenario of [
   "api-failure",
   "legacy",
   "user-text",
+  "user-text-history",
+  "history-aggregate",
   "user-map",
+];
+
+// Every non-OpenAI engine with a budget runs the same harness as Flash.
+for (const [scenario, modelName] of [
+  ...scenarios.map((scenario) => [scenario, FLASH_ENGINE] as const),
+  ["selective", "glm-5.3"] as const,
+  ["selective", "gemma-4"] as const,
 ]) {
-  test(`#3572 Flash harness: ${scenario}`, async (t) => {
+  test(`#3572 Flash harness: ${scenario}${modelName === FLASH_ENGINE ? "" : ` on ${modelName}`}`, async (t) => {
     const events: any[] = [];
     const saved: any[] = [];
     const queries: any[] = [];
     const documents: any[] = [];
     const errors: unknown[] = [];
     const calls: { name: string; args: any }[] = [];
-    const pagination = ["pagination", "refresh-required"].includes(scenario)
-      ? { paginationReason: "User requested every archive record." }
-      : {};
+    const recoveringPagination = scenario.startsWith("pagination-recovery");
+    const pagination =
+      (recoveringPagination && scenario !== "pagination-recovery-focused") ||
+      ["pagination", "refresh-required"].includes(scenario)
+        ? { paginationReason: "User requested every archive record." }
+        : {};
     const plan = () =>
       calls.push({
         name: "update_research",
-        args: { ...initial, ...pagination },
+        args: { ...initial, ...(recoveringPagination ? {} : pagination) },
       });
     const read = (args: any = { period }) =>
       calls.push({ name: "echo_inbox_messages", args });
@@ -157,7 +180,7 @@ for (const scenario of [
       name: "report_progress",
       args: { summary: "Reviewing botanical archive records." },
     });
-    if (["user-text", "user-map"].includes(scenario)) {
+    if (["user-text", "user-text-history", "user-map"].includes(scenario)) {
       calls.length = 0;
     } else if (scenario === "follow-up") {
       refresh();
@@ -180,6 +203,16 @@ for (const scenario of [
     } else {
       read();
       if (scenario === "pagination-guard") read({ period, cursor: 20 });
+      if (recoveringPagination) {
+        read({ period, cursor: 20 });
+        read(
+          scenario === "pagination-recovery-focused"
+            ? { period, search: "botanical survey" }
+            : { period, cursor: 20 },
+        );
+      }
+      if (scenario === "invalid-arguments")
+        read({ period, cursor: "not-a-cursor" });
       if (
         ![
           "no-draft",
@@ -239,7 +272,10 @@ for (const scenario of [
           const record = JSON.parse(init.body);
           if (
             scenario === "persistence-failure" ||
-            (scenario === "batch-refresh-persistence-failure" &&
+            ([
+              "batch-refresh-persistence-failure",
+              "pagination-recovery-persistence-failure",
+            ].includes(scenario) &&
               record.kind === "checkpoint" &&
               forcedUpdates > 0)
           )
@@ -250,10 +286,16 @@ for (const scenario of [
         }
         if (path === "/api/signal/inbox/messages") {
           queries.push(JSON.parse(init.body));
-          if (scenario === "api-failure" && queries.length === 2)
+          if (
+            ["api-failure", "pagination-recovery-api-failure"].includes(
+              scenario,
+            ) &&
+            queries.length === 2
+          )
             return Response.json({ error: "unavailable" }, { status: 503 });
           assert.ok(
-            saved.some((record) => record.kind === "checkpoint"),
+            scenario === "pagination-recovery-no-memory" ||
+              saved.some((record) => record.kind === "checkpoint"),
             "initial plan must be saved before retrieval",
           );
           if (scenario === "cancel") {
@@ -264,12 +306,15 @@ for (const scenario of [
           return Response.json({
             inbox_items: Array.from(
               {
+                // history-aggregate: a retrieval that delivers nothing citable.
                 length:
-                  scenario === "checkpoint-failure" ||
-                  scenario === "pagination" ||
-                  scenario === "incomplete"
-                    ? 20
-                    : 1,
+                  scenario === "history-aggregate"
+                    ? 0
+                    : scenario === "checkpoint-failure" ||
+                        scenario === "pagination" ||
+                        scenario === "incomplete"
+                      ? 20
+                      : 1,
               },
               (_, index) => [
                 index + 1,
@@ -389,7 +434,7 @@ for (const scenario of [
               `${draft} Invented [джерело](/rer-analysis-neo?m=missing)`,
             );
           return stream(
-            scenario === "user-text"
+            scenario.startsWith("user-text") || scenario === "history-aggregate"
               ? "The botanical survey is ready."
               : scenario === "user-map"
                 ? `[мапа](echo-map:${mapId})`
@@ -414,7 +459,10 @@ for (const scenario of [
             args: {
               ...updated,
               ...pagination,
-              ...(scenario === "batch-refresh-rejected" && forcedUpdates === 1
+              ...([
+                "batch-refresh-rejected",
+                "pagination-recovery-rejected",
+              ].includes(scenario) && forcedUpdates === 1
                 ? { draft: "Invented [source](/rer-analysis-neo?m=missing)" }
                 : {}),
             },
@@ -483,19 +531,31 @@ for (const scenario of [
       const payload = validatePayload(
         {
           prompt:
-            scenario === "user-text"
+            scenario.startsWith("user-text")
               ? "Translate into English: Ботанічне дослідження готове."
               : scenario === "user-map"
                 ? "Make a map of Orchard at latitude 50, longitude 30."
                 : scenario === "pagination"
                   ? "Read every archive record and summarize them."
                   : "Summarize today's archive records.",
-          modelName: FLASH_ENGINE,
+          modelName,
           providerTransport: "echo_gateway",
           providerApiKey: "fixture-capability",
           echoPublicHost: "echo.example.test",
           bootstrapToken: "A".repeat(43),
           correlationId,
+          // An earlier cited answer must not demand citations for a source-free follow-up.
+          ...(["user-text-history", "history-aggregate"].includes(scenario)
+            ? {
+                history: [
+                  {
+                    role: "assistant",
+                    content: `Earlier answer ${draft}`,
+                    citations: sources.citations,
+                  },
+                ],
+              }
+            : {}),
           contextWindow: 65_536,
           maxTokens: 8192,
           checkpointMaxTokens: 8192,
@@ -504,17 +564,21 @@ for (const scenario of [
           compactionKeepRecentTokens: 1024,
           ...(scenario === "legacy"
             ? {}
-            : { executionPolicy: policy, deadlineAt: Date.now() + 120_000 }),
+            : { executionPolicy: policy, deadlineAt: Date.now() + (scenario === "checkpoint-failure" ? 300_000 : 120_000) }),
           timeContext: {
             timeZone: "Europe/Kyiv",
             requestStartedAtUtc: new Date(Date.now()).toISOString(),
           },
-          workMemory: {
-            version: 1,
-            ...(scenario === "follow-up"
-              ? { recap: `Saved botanical survey: ${draft}`, ...sources }
-              : { citations: [], fileCitations: [] }),
-          },
+          ...(scenario === "pagination-recovery-no-memory"
+            ? {}
+            : {
+                workMemory: {
+                  version: 1,
+                  ...(scenario === "follow-up"
+                    ? { recap: `Saved botanical survey: ${draft}`, ...sources }
+                    : { citations: [], fileCitations: [] }),
+                },
+              }),
           skills: [
             ...(scenario.startsWith("batch-refresh")
               ? [
@@ -562,6 +626,8 @@ for (const scenario of [
           "filtered",
           "persistence-failure",
           "batch-refresh-persistence-failure",
+          "pagination-recovery-persistence-failure",
+          "pagination-recovery-persistence-failure",
         ].includes(scenario)
       )
         await assert.rejects(runAgent(payload));
@@ -588,6 +654,7 @@ for (const scenario of [
         "filtered",
         "persistence-failure",
         "batch-refresh-persistence-failure",
+        "pagination-recovery-persistence-failure",
         "cancel",
         "synthesis-cancel",
       ].includes(scenario)
@@ -604,6 +671,10 @@ for (const scenario of [
       if (scenario === "batch-refresh-persistence-failure") {
         assert.equal(queries.length, 4);
         assert.equal(documents.length, 1);
+        assert.equal(forcedUpdates, 1);
+      }
+      if (scenario === "pagination-recovery-persistence-failure") {
+        assert.equal(queries.length, 1);
         assert.equal(forcedUpdates, 1);
       }
       return;
@@ -629,6 +700,16 @@ for (const scenario of [
       assert.equal(diagnostics.at(-1).outcome, "fallback");
     }
     if (scenario === "pagination-guard") assert.equal(queries.length, 1);
+    if (recoveringPagination) {
+      assert.equal(queries.length, 2);
+      assert.equal(
+        forcedUpdates,
+        scenario === "pagination-recovery-rejected" ? 2 : 1,
+      );
+      if (scenario === "pagination-recovery-focused")
+        assert.equal(queries[1].search, "botanical survey");
+      else assert.equal(queries[1].before_id_noninclusive, 20);
+    }
     if (scenario === "large-draft") {
       assert.ok(answer.length > 3000);
       assert.ok(answer.startsWith("## Archive"));
@@ -637,7 +718,10 @@ for (const scenario of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
-    else if (scenario === "user-text")
+    else if (
+      scenario.startsWith("user-text") ||
+      scenario === "history-aggregate"
+    )
       assert.equal(answer.trim(), "The botanical survey is ready.");
     else if (scenario === "user-map") {
       assert.ok(answer.includes(`](echo-map:${mapId})`));
@@ -669,6 +753,29 @@ for (const scenario of [
     const failures = events.filter(
       (event) => event.type === "tool_end" && event.is_error,
     );
+    if (scenario === "pagination-guard" || recoveringPagination) {
+      const deferred = events.filter(
+        (event) =>
+          event.type === "tool_diagnostic" &&
+          event.reason === "research_pagination_required",
+      );
+      assert.equal(deferred.length, 1);
+      assert.equal(deferred[0].handledPrivately, true);
+      assert.equal(
+        events.filter(
+          (event) =>
+            event.type === "tool_start" && event.tool === "echo_inbox_messages",
+        ).length,
+        queries.length,
+      );
+      if (scenario !== "pagination-recovery-api-failure")
+        assert.deepEqual(failures, []);
+    }
+    if (scenario === "invalid-arguments") {
+      assert.equal(queries.length, 1);
+      assert.equal(failures.length, 1);
+      assert.equal(failures[0].errorReason, "invalid_arguments");
+    }
     if (
       ["batch-refresh", "batch-refresh-rejected", "refresh-required"].includes(
         scenario,
@@ -680,9 +787,16 @@ for (const scenario of [
         failures[0].errorSummary,
         "Потрібно зберегти проміжні результати аналізу перед наступним пошуком.",
       );
-    if (scenario === "api-failure") {
+    if (["api-failure", "pagination-recovery-api-failure"].includes(scenario)) {
       assert.equal(queries.length, 2);
       assert.equal(failures.length, 1);
+      assert.equal(failures[0].errorReason, "http_error");
+      const diagnostic = events.find(
+        (event) =>
+          event.type === "tool_diagnostic" && event.reason === "http_error",
+      );
+      assert.equal(diagnostic.httpStatus, 503);
+      assert.equal(diagnostic.handledPrivately, false);
       assert.equal(
         failures[0].errorSummary,
         "Не вдалося завантажити дані за вказаними параметрами.",
@@ -713,8 +827,10 @@ for (const scenario of [
     const checkpointsSaved = saved.filter(
       (record) => record.kind === "checkpoint",
     );
-    if (["user-text", "user-map"].includes(scenario))
+    if (["user-text", "user-text-history", "user-map"].includes(scenario))
       assert.equal(queries.length, 0);
+    else if (scenario === "pagination-recovery-no-memory")
+      assert.equal(checkpointsSaved.length, 0);
     else assert.ok(checkpointsSaved.length);
     if (scenario === "selective") {
       const latest = JSON.parse(checkpointsSaved.at(-1).content);
@@ -738,6 +854,80 @@ test("#3572 duration guard stops checkpoints before consuming the research reser
   assert.equal(budget.reason, "time_limit");
   assert.equal(budget.finalization.signal.aborted, false);
   budget.dispose();
+});
+
+test("incident 01a18e18: a checkpoint is not started with less research time than it needs", (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
+  const context = { systemPrompt: "Fixture", messages: [] };
+  const tuned = new FlashResearch(() => sources, undefined, undefined, RESEARCH_TUNING);
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  // 60 s of research remain and no checkpoint has been observed yet.
+  assert.throws(() =>
+    tuned.beforeProvider("checkpoint", context, budget, 50, 65536, 8192),
+  );
+  assert.equal(budget.reason, "time_limit");
+  budget.dispose();
+  const untuned = new FlashResearch(() => sources);
+  const other = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  assert.doesNotThrow(() =>
+    untuned.beforeProvider("checkpoint", context, other, 50, 65536, 8192),
+  );
+  other.dispose();
+});
+
+test("incident 01a18e18: paging one search beyond the limit needs a coverage reason", async () => {
+  const research = new FlashResearch(() => sources, undefined, undefined, RESEARCH_TUNING);
+  const save = (extra: Record<string, unknown> = {}) =>
+    (research.tool(() => {}) as any).execute("save", { ...updated, ...extra });
+  const query = (search: string, cursor?: number) => ({
+    period,
+    search,
+    ...(cursor ? { before_id_noninclusive: cursor } : {}),
+  });
+  const page = (search: string, cursor?: number) => {
+    research.beforeRetrieval("inbox_messages", query(search, cursor));
+    research.record("echo_inbox_messages", query(search, cursor), { nextCursor: 1 });
+  };
+  await save();
+  page("грибники");
+  page("грибники", 400);
+  page("грибники", 300);
+  page("тюльпани"); // another search starts its own page count
+  await save();
+  assert.throws(
+    () => research.beforeRetrieval("inbox_messages", query("грибники", 200)),
+    { message: FLASH_RESEARCH_PAGINATION_REQUIRED },
+  );
+  assert.equal(research.updateRequired, true);
+  // The refusal does not authorize pagination: a checkpoint without a reason keeps it blocked.
+  await save();
+  assert.throws(() =>
+    research.beforeRetrieval("inbox_messages", query("грибники", 200)),
+  );
+  await save({ paginationReason: "User asked for every mention of this callsign." });
+  assert.doesNotThrow(() =>
+    research.beforeRetrieval("inbox_messages", query("грибники", 200)),
+  );
+  // Without tuning (the previous behavior) searched pagination is not limited.
+  const plain = new FlashResearch(() => sources);
+  await (plain.tool(() => {}) as any).execute("save", updated);
+  for (let index = 1; index <= 5; index++) {
+    const request = query("грибники", index * 100);
+    plain.beforeRetrieval("inbox_messages", request);
+    plain.record("echo_inbox_messages", request, { nextCursor: 1 });
+    await (plain.tool(() => {}) as any).execute("save", updated);
+  }
+});
+
+test("bounded research covers every non-OpenAI engine with a budget", () => {
+  assert.equal(usesBoundedResearch(FLASH_ENGINE), true);
+  assert.equal(usesBoundedResearch("glm-5.3", policy), true);
+  assert.equal(usesBoundedResearch("gemma-4", policy), true);
+  // Without reasoning presets these engines have no budget to bound.
+  assert.equal(usesBoundedResearch("glm-5.3"), false);
+  assert.equal(usesBoundedResearch("gemma-4"), false);
+  for (const openai of ["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-sol", "o1", "o3-mini", "o4-mini"])
+    assert.equal(usesBoundedResearch(openai, policy), false);
 });
 
 test("#3572 draft reuse validates against current access, including every cited link", () => {
@@ -772,15 +962,26 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
       validateExecutionPolicy(original, 1000)?.finalizationSeconds,
       reserve,
     );
-    assert.throws(() => validateExecutionPolicy(original, 1000, true));
+    assert.throws(() => validateExecutionPolicy(original, 1000, [2]));
     assert.equal(
       validateExecutionPolicy(
         { ...original, finalizationSeconds: reserve * 2 },
         1000,
-        true,
+        [2],
       )?.maxRuntimeSeconds,
       runtime,
     );
+    // Other non-OpenAI engines accept both reserves so snapshotted policies survive a rollout.
+    for (const modelName of ["glm-5.3", "gemma-4"]) {
+      const multipliers = finalizationMultipliers(modelName);
+      assert.equal(validateExecutionPolicy(original, 1000, multipliers)?.finalizationSeconds, reserve);
+      assert.equal(
+        validateExecutionPolicy({ ...original, finalizationSeconds: reserve * 2 }, 1000, multipliers)?.finalizationSeconds,
+        reserve * 2,
+      );
+    }
+    assert.deepEqual(finalizationMultipliers(FLASH_ENGINE), [2]);
+    assert.deepEqual(finalizationMultipliers("gpt-6.1-sol"), [1]);
     assert.throws(() =>
       validateExecutionPolicy(
         { ...original, finalizationSeconds: reserve * 2 },

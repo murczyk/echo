@@ -10,6 +10,7 @@ const [
   engine,
   scenario = "grouped",
   preset = "balanced",
+  reserveMultiplier,
 ] = process.argv.slice(2);
 const profile = JSON.parse(await readFile(profilesPath, "utf8")).find(
   (entry) => entry.engine === engine,
@@ -18,8 +19,18 @@ assert.ok(profile, "Configured evaluation provider is missing");
 const { runAgent, validatePayload } = await import(
   pathToFileURL(resolve(runnerPath))
 );
-const flash = engine === "glm-5.3-flash-uncensored";
-const api = flash ? "openai-completions" : "openai-responses";
+// Every non-OpenAI engine (GLM, Gemma) runs the bounded research harness. Only GLM-5.3
+// varies reasoning by preset; Flash and Gemma run without a reasoning effort.
+const openai = engine.startsWith("gpt-");
+const reasons = openai || engine === "glm-5.3";
+const api = openai ? "openai-responses" : "openai-completions";
+// Non-OpenAI engines reserve twice the base synthesis time. A runner built before that
+// change accepts the doubled reserve only for Flash: pass 1 as the sixth argument when
+// comparing GLM-5.3 or Gemma against such a base runner.
+const multiplier = Number(
+  reserveMultiplier ?? (openai ? 1 : 2),
+);
+assert.ok([1, 2].includes(multiplier), "reserve multiplier must be 1 or 2");
 const [runtime, reserve] = {
   fast: [120, 30],
   balanced: [300, 60],
@@ -207,16 +218,20 @@ await runAgent(
       contextWindow: profile.context,
       maxTokens: profile.maxTokens,
       checkpointMaxTokens: profile.maxTokens,
-      compactionReserveTokens: flash ? 32768 : 16384,
+      compactionReserveTokens: openai ? 16384 : 32768,
       compactionKeepRecentTokens: 8192,
       executionPolicy: {
         preset,
         api,
-        reasoningEffort: flash ? null : "medium",
-        synthesisEffort: flash ? null : "low",
-        checkpointEffort: flash ? null : "low",
+        reasoningEffort: openai
+          ? "medium"
+          : engine === "glm-5.3"
+            ? { fast: "low", balanced: "high", deep: "max" }[preset]
+            : null,
+        synthesisEffort: reasons ? "low" : null,
+        checkpointEffort: reasons ? "low" : null,
         maxRuntimeSeconds: runtime,
-        finalizationSeconds: reserve * (flash ? 2 : 1),
+        finalizationSeconds: reserve * multiplier,
       },
       deadlineAt: Date.now() + runtime * 1000,
       timeContext: {

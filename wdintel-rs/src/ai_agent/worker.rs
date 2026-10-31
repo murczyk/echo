@@ -810,6 +810,10 @@ async fn run_request_inner(
                         info!("AI agent completion request_id={} diagnostic={diagnostic}", request.id);
                         continue;
                     }
+                    if let Some(diagnostic) = events::tool_diagnostic(&event) {
+                        info!("AI agent tool request_id={} diagnostic={diagnostic}", request.id);
+                        continue;
+                    }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {
                         if event_type == "completion_metadata" {
                             if execution_policy.is_none() { continue; }
