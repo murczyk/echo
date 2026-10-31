@@ -72,6 +72,9 @@ async fn role_settings_3935_combined_assigned_roles_and_respected_server_access(
             && strict.device_required
             && !strict.allow_unit_creation
     );
+    assert!(ensure_catalog_unit_creation(&env.dbx, &login.id)
+        .await
+        .is_err());
 
     let mut server_settings = server_settings.into_active_model();
     server_settings.devices_section_enabled = Set(false);
@@ -105,6 +108,13 @@ async fn role_settings_3935_combined_assigned_roles_and_respected_server_access(
             && strict.device_required
             && !strict.allow_unit_creation
     );
+    let mut login = login.into_active_model();
+    login.roles = Set(json!(["Rer", "UnitsEditor"]));
+    let login = login.update(&env.dbx).await.unwrap();
+    ensure_catalog_unit_creation(&env.dbx, &login.id)
+        .await
+        .unwrap();
+    assert!(ensure_unit_creation(&env.dbx, &login.id).await.is_err());
     let mut login = login.into_active_model();
     login.roles = Set(json!(["Rer"]));
     let login = login.update(&env.dbx).await.unwrap();
@@ -153,7 +163,9 @@ async fn role_settings_3935_guarded_admin_crud_and_message_creation_endpoints()
             .service(crate::sigint::direct_submit::edit_message)
             .service(
                 crate::sigint::unit::message_creation::create_unit_for_message,
-            ),
+            )
+            .service(crate::sigint::unit::create_unit)
+            .service(crate::sigint::unit::create_unit_with_auto_network),
     )
     .await;
     let mut cookies = Vec::new();
@@ -334,14 +346,52 @@ async fn role_settings_3935_guarded_admin_crud_and_message_creation_endpoints()
         .set_json(json!({"text": "Edited message 3935", "signal_group_master_key": "vukho-test-master-key"}))
         .to_request()).await;
     assert_eq!(response.status(), StatusCode::OK);
+    let unit_request =
+        serde_json::to_value(crate::sigint::unit::types::CreateUnitReq {
+            name: Some("Edit unit 3935".to_string()),
+            active: true,
+            ..Default::default()
+        })
+        .unwrap();
+    let network_request = json!({
+        "unit": unit_request, "skip_network_creation": true,
+        "locations": [], "unit_mask": [],
+    });
+    for (endpoint, request) in [
+        ("create-for-message", &network_request),
+        ("create-with-auto-network", &network_request),
+        ("create", &unit_request),
+    ] {
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/api/sigint/unit/{endpoint}?editing_message_id={message_id}"))
+                .cookie(cookies[0].clone())
+                .set_json(request)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{endpoint}");
+    }
+    assert_eq!(
+        sigint_unit::Entity::find().count(&env.dbx).await.unwrap(),
+        0
+    );
     let response = test::call_service(&app, test::TestRequest::post()
-        .uri(&format!("/api/sigint/unit/create-for-message?editing_message_id={message_id}"))
+        .uri(&format!("/api/1.1/message/{message_id}/edit"))
         .cookie(cookies[0].clone())
-        .set_json(crate::sigint::unit::types::CreateUnitWithAutoNetworkReq {
-            unit: crate::sigint::unit::types::CreateUnitReq { name: Some("Edit unit 3935".to_string()), active: true, ..Default::default() },
-            skip_network_creation: true, locations: vec![], unit_mask: vec![],
-        }).to_request()).await;
+        .set_json(json!({"text": "Edited with unit 3935", "unit": "Edit unit 3935", "create_unit": true, "signal_group_master_key": "vukho-test-master-key"}))
+        .to_request()).await;
     assert_eq!(response.status(), StatusCode::OK);
+    let selection =
+        crate::inbox::unit_selection::load_selections(&env.dbx, &[message_id])
+            .await
+            .unwrap();
+    assert_eq!(selection.len(), 1);
+    assert_eq!(
+        sigint_unit::Entity::find().count(&env.dbx).await.unwrap(),
+        1
+    );
     let response = test::call_service(
         &app,
         test::TestRequest::post()

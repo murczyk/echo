@@ -138,12 +138,11 @@ export function useManageMessageDrawer({
   const reportParentIdsKey = reportParentIds.join(',');
   const isReportMode = isReportCreateMode || isReportEditMode;
   const formReady = open && editTargetLoadState.status === 'idle';
-  const creationSettings = useMessageCreationSettings(
-    formReady && !isEditMode && !isReportEditMode,
-    currentUser?.id,
-  );
-  const unitRequired = creationSettings.settings?.unitRequired ?? false;
-  const deviceRequired = cyberEchoEnabled && (creationSettings.settings?.deviceRequired ?? false);
+  const creationSettings = useMessageCreationSettings(formReady, currentUser?.id);
+  const creationSettingsBlocked = !isEditMode && creationSettings.blocked;
+  const unitRequired = !isEditMode && (creationSettings.settings?.unitRequired ?? false);
+  const deviceRequired =
+    !isEditMode && cyberEchoEnabled && (creationSettings.settings?.deviceRequired ?? false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -701,7 +700,7 @@ export function useManageMessageDrawer({
       parsing || parseStatus === 'debouncing' || (autoParseEnabled && parseStatus === 'error');
 
     return isManageMessageSubmitEligible({
-      busy: busy || creationSettings.blocked || (isReportCreateMode && !reportCopyLoaded),
+      busy: busy || creationSettingsBlocked || (isReportCreateMode && !reportCopyLoaded),
       parsing: parserBlocksSubmit,
       schemaValid:
         (formState.isValid || reportDestinationMissing) &&
@@ -736,7 +735,7 @@ export function useManageMessageDrawer({
     });
   }, [
     busy,
-    creationSettings.blocked,
+    creationSettingsBlocked,
     unitRequired,
     deviceRequired,
     autoParseEnabled,
@@ -1207,7 +1206,7 @@ export function useManageMessageDrawer({
   };
 
   const { onSubmit } = useMessageSubmit({
-    busy: busy || creationSettings.blocked,
+    busy: busy || creationSettingsBlocked,
     radioFeaturesAllowed,
     cyberEchoEnabled,
     isEditMode,
@@ -1272,8 +1271,7 @@ export function useManageMessageDrawer({
     setPostInput,
     unitOptions,
     unitLoading,
-    unitAllowCreate:
-      unitAllowCreate && (isEditMode || creationSettings.settings?.allowUnitCreation === true),
+    unitAllowCreate: unitAllowCreate && creationSettings.settings?.allowUnitCreation === true,
     unitRequired,
     deviceRequired,
     creationSettingsError: creationSettings.error,

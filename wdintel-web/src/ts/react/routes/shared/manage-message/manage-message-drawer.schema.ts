@@ -111,7 +111,7 @@ export function makeMessageSchema(
       post: z.string().optional(),
       unit:
         !isEditMode && creationSettings?.unitRequired
-          ? z.string().trim().min(1, 'Оберіть підрозділ')
+          ? z.string().refine((unit) => unit.trim().length > 0, 'Оберіть підрозділ')
           : z.string().optional(),
       unitSelection: z
         .object({

@@ -10,52 +10,20 @@ pub async fn create_unit_for_message(
     user: actix_identity::Identity,
     env: actix_web::web::Data<Env>,
     req: Json<CreateUnitWithAutoNetworkReq>,
-    context: actix_web::web::Query<MessageUnitCreationContext>,
 ) -> Result<Json<Unit>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     ensure_unit_creation(&env.dbx, &login, &req.unit)
         .await
         .c(h!())?;
-    if let Some(message_id) = context.editing_message_id {
-        ensure_message_unit_edit_access(&env, &login, message_id)
-            .await
-            .c(h!())?;
-    } else {
-        crate::users::role_settings::ensure_unit_creation(&env.dbx, &login)
-            .await
-            .c(h!())?;
-    }
+    crate::users::role_settings::ensure_unit_creation(&env.dbx, &login)
+        .await
+        .c(h!())?;
     Ok(Json(
         create_unit_for_message_for_login(&login, &env, req.into_inner())
             .await
             .c(h!())?,
     ))
-}
-
-#[derive(Deserialize)]
-pub struct MessageUnitCreationContext {
-    editing_message_id: Option<i64>,
-}
-
-async fn ensure_message_unit_edit_access(
-    env: &Env,
-    login: &Uuid,
-    message_id: i64,
-) -> anyhow::Result<()> {
-    let groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
-            .await
-            .c(h!())?;
-    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, login)
-        .await
-        .c(h!())?;
-    crate::sigint::direct_submit::query::find_editable_signal_message(
-        &env.dbx, message_id, &groups, login, &logins,
-    )
-    .await
-    .c(h!())?;
-    Ok(())
 }
 
 async fn create_unit_for_message_for_login(

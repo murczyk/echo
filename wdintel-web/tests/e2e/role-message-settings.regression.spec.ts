@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
-import { openCreateReportDrawer } from './image-editor-drawer.fixtures';
+import { openCreateReportDrawer, openEditMessageDrawer } from './image-editor-drawer.fixtures';
 import { systemSettingsCurrentResponse } from './fixture-responses';
 
 test.use({ viewport: { width: 1600, height: 1000 } });
@@ -124,3 +124,47 @@ test('@regression #3935 creation settings failures blocked saving and could be r
   await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeEnabled();
   expect(requests).toBe(2);
 });
+
+for (const unavailable of [false, true]) {
+  test(`@regression #3935 edits saved without creation requirements or standalone unit creation (unavailable=${unavailable})`, async ({
+    page,
+  }) => {
+    let settingsRequests = 0;
+    await openEditMessageDrawer(page, async () => {
+      await page.route('**/api/1.1/submit-direct/settings', (route) => {
+        settingsRequests += 1;
+        return unavailable
+          ? route.fulfill({ status: 500, body: 'Rules unavailable' })
+          : route.fulfill({
+              json: { unitRequired: true, deviceRequired: true, allowUnitCreation: false },
+            });
+      });
+    });
+    await expect.poll(() => settingsRequests).toBe(1);
+    await page.route('**/api/sigint/unit/search', (route) =>
+      route.fulfill({ json: { units: [] } }),
+    );
+    const unit = page.getByRole('combobox', { name: 'Підрозділ', exact: true });
+    const emptySearch = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/sigint/unit/search') &&
+        response.request().postDataJSON()?.search === 'Нестворений підрозділ 3935',
+    );
+    await unit.fill('Нестворений підрозділ 3935');
+    await emptySearch;
+    await unit.press('ArrowDown');
+    await expect(page.getByRole('option', { name: /Додати Підрозділ/ })).toHaveCount(0);
+    await unit.fill('');
+    await unit.press('Escape');
+    await page.getByRole('textbox', { name: 'Текст повідомлення', exact: true }).fill('Edit 3935');
+    let saved = false;
+    await page.route('**/api/1.1/message/*/edit', (route) => {
+      saved = true;
+      return route.fulfill({ json: { signal_message_id: 3935 } });
+    });
+    const save = page.getByRole('button', { name: 'Зберегти', exact: true });
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect.poll(() => saved).toBe(true);
+  });
+}

@@ -36,7 +36,6 @@ type Props = {
   unitLoading: boolean;
   unitAllowCreate: boolean;
   unitRequired?: boolean;
-  editingMessageId?: number;
   canMergeUnitDuplicates?: boolean;
   onUnitFocus: () => void;
   unitLocked: boolean;
@@ -59,7 +58,6 @@ export function MetadataSection({
   unitLoading,
   unitAllowCreate,
   unitRequired = false,
-  editingMessageId,
   canMergeUnitDuplicates = false,
   onUnitFocus,
   unitLocked,
@@ -184,7 +182,6 @@ export function MetadataSection({
                   value={field.value ?? ''}
                   selection={unitSelection}
                   required={unitRequired}
-                  editingMessageId={editingMessageId}
                   errorMessage={
                     unitRequired && !field.value?.trim()
                       ? errors.unit?.message

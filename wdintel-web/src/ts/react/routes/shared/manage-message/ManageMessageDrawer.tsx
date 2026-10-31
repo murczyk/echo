@@ -1036,7 +1036,6 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             unitLoading={drawerState.unitLoading}
                             unitAllowCreate={drawerState.unitAllowCreate}
                             unitRequired={drawerState.unitRequired}
-                            editingMessageId={props.editTarget?.id}
                             canMergeUnitDuplicates={hasRole(
                               props.currentUser?.roles,
                               'UnitsEditor',

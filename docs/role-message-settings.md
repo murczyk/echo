@@ -7,8 +7,11 @@ settings to configure a different role.
 
 The three rules control whether a unit and device name are required, and whether
 inline unit creation is allowed. They apply to new messages, replies, copies,
-and intelligence reports. Existing message/report edits and the unit catalog
-keep their existing behavior.
+and intelligence reports. Required fields do not apply to existing message/report
+edits. Standalone inline unit creation respects role permissions in both modes.
+Unit catalog creation retains its exemption for users with `UnitsEditor` access;
+message writers without that access must obey the role creation permission on
+every standalone creation endpoint.
 
 Only explicitly assigned roles with saved settings participate. Each rule uses
 the most permissive configured value: required flags are combined with AND,
@@ -19,13 +22,14 @@ remembered empty fields. Server restrictions and ordinary authorization keep
 precedence over role rules. Device requirements apply only while the server
 allows devices and the user can access message devices.
 
-The editor fetches effective rules when a creation form opens and blocks saving
-until they load. Failures display an error and offer retry. The backend reloads
+The editor fetches effective rules when a form opens and blocks new-message saving
+until they load. Failures display an error and offer retry; existing message edits
+can still be saved while inline creation remains unavailable. The backend reloads
 rules before saving a new message/report or creating a unit through the message
-form, so changing browser values cannot bypass restrictions. Editing a message
-does not fetch or evaluate these creation rules. Inline unit creation during an
-edit passes `editing_message_id`; the server verifies that the message is editable
-before using the existing edit behavior.
+form, so changing browser values cannot bypass restrictions. A supplied
+`editing_message_id` does not exempt standalone creation. The direct message-edit
+API can still create a unit with `create_unit` while saving the authorized message
+update; unit creation and association commit in the same transaction.
 
 Settings live in `role_message_settings`, excluded from analytics replication.
 Normal deployment synchronizes packaged exclusions before applying the new

@@ -208,6 +208,18 @@ pub(crate) async fn ensure_unit_creation(
     Ok(())
 }
 
+pub(crate) async fn ensure_catalog_unit_creation(
+    db: &DatabaseConnection,
+    login: &Uuid,
+) -> anyhow::Result<()> {
+    let account = super::load_active_login(db, login).await.c(h!())?;
+    let roles: Vec<String> = serde_json::from_value(account.roles).c(h!())?;
+    if !super::role_matches(&roles, "UnitsEditor").c(h!())? {
+        ensure_unit_creation(db, login).await.c(h!())?;
+    }
+    Ok(())
+}
+
 fn unit_creation_forbidden() -> AppError {
     AppError::Forbidden(
         "Налаштування ролей забороняють створення підрозділів.".to_string(),

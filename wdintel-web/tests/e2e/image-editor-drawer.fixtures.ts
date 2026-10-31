@@ -195,8 +195,11 @@ export async function clickCreateMessage(page: Page, host: ImageEditorDrawerHost
   await scope.getByRole('button', { name: 'Додати повідомлення' }).click();
 }
 
-export async function openEditMessageDrawer(page: Page): Promise<void> {
-  await openDrawerFromMediaMessage(page, 'Редагувати', 'Редагувати повідомлення');
+export async function openEditMessageDrawer(
+  page: Page,
+  beforeOpen?: () => Promise<void>,
+): Promise<void> {
+  await openDrawerFromMediaMessage(page, 'Редагувати', 'Редагувати повідомлення', beforeOpen);
 }
 
 export async function openCreateReportDrawer(

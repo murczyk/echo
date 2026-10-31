@@ -15,7 +15,6 @@ type Props = {
   selection?: MessageFormData['unitSelection'];
   errorMessage?: string;
   required?: boolean;
-  editingMessageId?: number;
   options: UnitResponse[];
   loading: boolean;
   allowCreate: boolean;
@@ -30,7 +29,6 @@ export function MessageUnitAutocomplete({
   selection,
   errorMessage,
   required = false,
-  editingMessageId,
   options,
   loading,
   allowCreate,
@@ -39,9 +37,8 @@ export function MessageUnitAutocomplete({
   onFocus,
   onChange,
 }: Props) {
-  const creation = useMessageUnitCreation(
-    (unit) => onChange(unit.name, { id: unit.id, name: unit.name }),
-    editingMessageId,
+  const creation = useMessageUnitCreation((unit) =>
+    onChange(unit.name, { id: unit.id, name: unit.name }),
   );
   const selectedValue = useMemo(
     () => compatibleMessageUnitSelection(value, selection) ?? value,
