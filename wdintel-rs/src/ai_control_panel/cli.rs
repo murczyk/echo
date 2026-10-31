@@ -115,14 +115,16 @@ fn print_event(
                 target
             };
             println!(
-                "{} | {} | {} | requires {} | target {}: {}",
+                "{} | {} | {} | {} | requires {} | target {}: {}",
                 host["host"].as_str().unwrap_or("?"),
+                host["agent_host"].as_str().unwrap_or("agent host unknown"),
                 host["namespace"].as_str().unwrap_or("?"),
                 host["deployed"].as_str().unwrap_or("?"),
                 host["required_release"].as_str().unwrap_or("unknown"),
                 target,
                 host[eligibility][target]
                     .as_str()
+                    .or_else(|| host["routing_error"].as_str())
                     .unwrap_or("Unknown compatibility")
             );
         }

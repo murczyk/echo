@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runAgent, validatePayload } from "./runner.ts";
+import { BUDGET_INABILITY } from "./execution-policy.ts";
 
 const correlationId = "019fc7f7-9770-7f83-9c1a-211af29b02e6";
 const citation = "/rer-analysis-neo?m=fixture-1";
@@ -294,9 +295,12 @@ for (const api of ["openai-responses", "openai-completions"]) {
             {
               prompt: "Summarize the synthetic documents for today.",
               workMemory: { version: 1, recap: "Original subjects from interrupted work", citations: [], fileCitations: [] },
-              modelName: api === "openai-responses" ? "gpt-6-sol" : "glm-5.3",
+              // Non-OpenAI engines with a budget run the bounded research workflow
+              // (flash-research.test.ts); an OpenAI model on Chat Completions keeps
+              // this generic recovery path covered on that wire format.
+              modelName: api === "openai-responses" ? "gpt-6-sol" : "gpt-5.6-sol",
               checkpointModelName:
-                api === "openai-responses" ? "gpt-6-sol" : "glm-5.3",
+                api === "openai-responses" ? "gpt-6-sol" : "gpt-5.6-sol",
               providerTransport: "echo_gateway",
               providerApiKey: "fixture-capability",
               echoPublicHost: "echo.example.test",
@@ -386,14 +390,15 @@ for (const api of ["openai-responses", "openai-completions"]) {
           const answer = events.findLast(
             (event) => event.type === "assistant_snapshot",
           ).text;
-          assert.ok(answer.includes(citation));
+          const failedSynthesis = ["length", "uncited"].includes(outcome);
+          // A failed synthesis yields a short notice, never quoted source excerpts.
+          assert.equal(answer.includes(citation), !failedSynthesis);
+          assert.equal(answer.includes(BUDGET_INABILITY), failedSynthesis);
           assert.match(answer, /охоплення джерел неповне/i);
           assert.ok(!answer.includes("оберіть глибокий"));
           assert.ok(!answer.includes("Unfinished checkpoint"));
-          assert.equal(
-            answer.includes("їх узагальнення не завершено"),
-            ["length", "uncited"].includes(outcome),
-          );
+          assert.ok(!answer.includes("їх узагальнення не завершено"));
+          assert.ok(!answer.includes("Synthetic archive text"));
         }
       } finally {
         for (const signal of ["SIGINT", "SIGTERM"] as const)

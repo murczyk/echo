@@ -82,6 +82,12 @@ when it settles, while preserving the configured interval. Slow feeds do not
 block healthy feeds.
 Explicit initial loads, filter changes, and navigation remain immediate.
 
+Changing a feed filter clears its previous message window, buffered messages,
+and unread state before loading the new results. A failed reload shows an error
+without displaying messages from the previous filter. Edit refreshes with unchanged
+filters preserve the current window. Regression:
+`wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeedState.initial-load.spec.tsx`.
+
 Inbox events hydrate changed displayed and buffered messages without starting
 extra count polls. Buffer updates preserve the displayed window; identical
 payloads preserve message references to avoid unnecessary card reconciliation.

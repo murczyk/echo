@@ -66,6 +66,12 @@ const MESSAGE_CARD_COMPACT_ACTIONS_MAX_WIDTH_PX = 520;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
+export enum MessageCardMetadataPlacement {
+  All = 'all',
+  Header = 'header',
+  Content = 'content',
+}
+
 type ActionIconsRowProps = {
   id: number;
   msg: InboxMessage;
@@ -1188,6 +1194,7 @@ export type MessageCardHeaderProps = {
   msg: InboxMessage;
   copiedFeedbackId: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
+  metadata?: ReactNode;
   mapHref?: string;
   analysisHref?: string;
   onBookmark?: () => void;
@@ -1215,6 +1222,7 @@ export function MessageCardMetadata({
   metadataTrigger,
   wrapText = false,
   hideExplicitUnit = false,
+  placement = MessageCardMetadataPlacement.All,
 }: {
   msg: InboxMessage;
   groupName: string | null;
@@ -1223,13 +1231,18 @@ export function MessageCardMetadata({
   metadataTrigger?: ReactNode;
   wrapText?: boolean;
   hideExplicitUnit?: boolean;
+  placement?: MessageCardMetadataPlacement;
 }) {
   const radioFeaturesAllowed = useRadioFeatures();
   const canUseMessageDevices = useMessageDeviceAccess();
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
-    etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
+    (placement === MessageCardMetadataPlacement.Header ||
+      etalonDisplayModel.primaryKind !== 'location') &&
+    locationDisplayValue != null;
   const deviceName = canUseMessageDevices ? msg.deviceName?.trim() : undefined;
+  const showPrimaryMetadata = placement !== MessageCardMetadataPlacement.Content;
+  const showSecondaryMetadata = placement !== MessageCardMetadataPlacement.Header;
 
   return (
     <div className="message-card-metadata flex w-full items-start gap-2">
@@ -1237,7 +1250,12 @@ export function MessageCardMetadata({
         className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0"
         style={{ flexWrap: 'wrap' }}
       >
-        {isPresent(groupName) ? (
+        {placement === MessageCardMetadataPlacement.Header
+          ? etalonDisplayModel.renderedNetworks.map((network) => (
+              <NetworkMetadataItem key={network.networkId} {...network} />
+            ))
+          : null}
+        {showPrimaryMetadata && isPresent(groupName) ? (
           <MetaLine
             icon={<GraphicEqOutlinedIcon />}
             iconKind="group"
@@ -1246,7 +1264,7 @@ export function MessageCardMetadata({
             wrapText={wrapText}
           />
         ) : null}
-        {isPresent(senderName) ? (
+        {showPrimaryMetadata && isPresent(senderName) ? (
           <MetaLine
             icon={<AccountCircleOutlinedIcon />}
             title="Відправник"
@@ -1256,7 +1274,7 @@ export function MessageCardMetadata({
             <AuthorLabel accountId={msg.sender} fallback={senderName} />
           </MetaLine>
         ) : null}
-        {radioFeaturesAllowed && isPresent(msg.freq) ? (
+        {showSecondaryMetadata && radioFeaturesAllowed && isPresent(msg.freq) ? (
           <div className="message-card-header-meta" data-message-card-metadata-item="true">
             <span
               className="message-card-header-meta__icon"
@@ -1269,14 +1287,16 @@ export function MessageCardMetadata({
             </HeaderText>
           </div>
         ) : null}
-        {isPresent(deviceName) && deviceName !== '' ? (
+        {showSecondaryMetadata && isPresent(deviceName) && deviceName !== '' ? (
           <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} wrapText={wrapText} />
         ) : null}
-        <NetworkEtalonSection
-          etalonDisplayModel={etalonDisplayModel}
-          hideExplicitUnit={hideExplicitUnit}
-        />
-        {showTopGridLocation ? (
+        {placement === MessageCardMetadataPlacement.All ? (
+          <NetworkEtalonSection
+            etalonDisplayModel={etalonDisplayModel}
+            hideExplicitUnit={hideExplicitUnit}
+          />
+        ) : null}
+        {showPrimaryMetadata && showTopGridLocation ? (
           <MetaLine
             icon={<PlaceOutlinedIcon />}
             title="Локація"
@@ -1345,6 +1365,7 @@ function MessageCardHeaderComponent({
   msg,
   copiedFeedbackId,
   etalonDisplayModel,
+  metadata,
   mapHref,
   analysisHref,
   onBookmark,
@@ -1401,12 +1422,14 @@ function MessageCardHeaderComponent({
     >
       <div className="message-card-header-identity">
         <div data-message-card-header-left="true" className="min-w-0">
-          <div className="message-card-header-unit" data-message-card-header-unit-row="true">
-            <span className="message-card-header-meta__icon">
-              <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
-            </span>
-            <HeaderText wrap>{explicitUnit}</HeaderText>
-          </div>
+          {metadata ?? (
+            <div className="message-card-header-unit" data-message-card-header-unit-row="true">
+              <span className="message-card-header-meta__icon">
+                <SquareTwoToneIcon className="message-card-unit-icon" titleAccess="Підрозділ" />
+              </span>
+              <HeaderText wrap>{explicitUnit}</HeaderText>
+            </div>
+          )}
           {dateTimeBlock}
         </div>
       </div>

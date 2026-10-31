@@ -604,14 +604,14 @@ function MainSettingsSection({
           onChange={(checked) => patchForm({ defaultNeoAnalysis: checked })}
         />
         <MainSettingsSwitchRow
-          checked={form.hideNetworks}
+          checked={!form.hideNetworks}
           label={
             <InfoLabel
-              label="Приховати мережі"
-              tooltip="Приховує мережі в картках повідомлень і фільтр «Мережі» в оперативному та аналізі, у класичному й новому інтерфейсах. Сторінка «База даних → Мережі» залишається без змін."
+              label="Режим РЕР"
+              tooltip="показати радіомережі. групи за замовчуванням закриті, фільтри за замовчуванням відкриті. оптимізований дизайн картки перехопення під роботу РЕР"
             />
           }
-          onChange={(checked) => patchForm({ hideNetworks: checked })}
+          onChange={(checked) => patchForm({ hideNetworks: !checked })}
         />
         <MainSettingsSwitchRow
           checked={form.aiPositionHighlightsEnabled}

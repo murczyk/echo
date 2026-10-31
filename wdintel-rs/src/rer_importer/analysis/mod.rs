@@ -3910,20 +3910,19 @@ where
     let mut q2 = q;
     if let Some(ref search) = m_str_trim(search) {
         let search_parts = search::parse_search_parts(search).context(h!())?;
-        let source_scope = match source_scope {
-            Some(source_scope)
-                if scope.is_none()
-                    && !correlated_terms
-                    && crate::attachments::search::use_source_search_scope(
-                        search,
-                        search_mode,
-                        &source_scope,
-                    )
-                    .c(h!())? =>
-            {
-                Some(source_scope)
-            }
-            _ => None,
+        let source_scope = if message_search_strategy(
+            search,
+            search_mode,
+            correlated_terms,
+            scope,
+            source_scope.as_ref(),
+        )
+        .c(h!())?
+            == MessageSearchStrategy::Scoped
+        {
+            source_scope
+        } else {
+            None
         };
         let predicate = if let Some(source_scope) = source_scope {
             crate::attachments::search::scoped_analysis_message_filter(
@@ -3962,6 +3961,41 @@ where
         return Ok(q2);
     }
     Ok(q2)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::rer_importer) enum MessageSearchStrategy {
+    Correlated,
+    Scoped,
+    Indexed,
+}
+
+pub(in crate::rer_importer) fn message_search_strategy(
+    search: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    correlated_terms: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+    source_scope: Option<
+        &crate::attachments::analytics::SearchCoverageScope<'_>,
+    >,
+) -> anyhow::Result<MessageSearchStrategy> {
+    if correlated_terms {
+        return Ok(MessageSearchStrategy::Correlated);
+    }
+    if scope.is_none() {
+        if let Some(source_scope) = source_scope {
+            if crate::attachments::search::use_source_search_scope(
+                search,
+                search_mode,
+                source_scope,
+            )
+            .c(h!())?
+            {
+                return Ok(MessageSearchStrategy::Scoped);
+            }
+        }
+    }
+    Ok(MessageSearchStrategy::Indexed)
 }
 
 /// Summary table showing row-per-frequency

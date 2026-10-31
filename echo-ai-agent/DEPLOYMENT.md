@@ -287,3 +287,45 @@ Verify the running application revision, service health, release match and
 authenticated agent connection. Keep prior containers and rollout journals;
 verify other namespace selections remain unchanged. See
 [Flash completion diagnostics](FLASH_RESEARCH.md#completion-diagnostics).
+
+## GLM Flash checkpoint and pagination recovery (release 2026.10.30.2)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.10.30.2`,
+previewing with `--dry-run` first. This release requires no migration or provider
+change. It preserves other namespace selections and accepts prior runners.
+
+Verify matching application/container releases and authenticated connection
+checks. Exercise a Flash request with more than four retrievals, including a
+batch that crosses the fourth call: every admitted retrieval must complete, the
+next research turn must save its private state, and retrieval must then resume.
+Public activity must contain no private state or checkpoint prerequisite errors.
+Also exercise an inbox continuation without a saved pagination coverage reason:
+it must wait for a private checkpoint, then either resume with a justified
+coverage need or switch to focused searches. Verify that a real HTTP failure
+still produces a public error with `errorReason` and an allowlisted
+`AI agent tool` diagnostic in the worker journal. Private diagnostic frames must
+never appear in chat events or disclose source content or arguments.
+Retain the prior containers and rollout journal for the control panel's recovery
+procedure; recovery beyond the approved operation requires separate approval.
+
+## Bounded research for non-OpenAI engines (release 2026.10.30.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.10.30.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+The release preserves other namespace selections and accepts prior runners. With
+[reasoning presets](../docs/ai/reasoning-presets.md) enabled, GLM-5.3 and other
+non-OpenAI engines (not Flash alone) now use the
+[bounded research workflow](FLASH_RESEARCH.md) with a doubled synthesis reserve;
+raw source excerpts are no longer published as an answer by any engine.
+
+Roll out the application and the harness together: queued requests keep the
+policy snapshotted when they were queued and still validate. Verify the matching
+application/container releases and authenticated connection checks, then run a
+GLM-5.3 Balanced request that pages one search deeply: after three pages the next
+page must be refused until a coverage reason is saved, and a request that reaches
+its research limit must end with a cited answer or the short notice, never
+`Встиг отримати такі уривки джерел`. Check the request's `completion_diagnostic`
+log lines. Retain prior containers and the rollout journal; recovery beyond the
+approved operation requires separate approval.

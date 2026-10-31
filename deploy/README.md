@@ -19,6 +19,13 @@ Use `just deploy --server <server>` from `stable` to install CI packages.
 `just deploy` rejects a `main` checkout; deploy `main` explicitly with
 `just deploy-from-local --server <server>` if needed.
 
+Both deployment recipes finish with a read-only AI harness check. When the
+instance needs an upgrade, they print preview and upgrade commands using the
+running application's required release. The control panel discovers the agent
+VM from the instance's database; `--agent-host` is optional. An unavailable check
+prints a warning without failing a successful deployment. See the
+[controller instructions](ai-control-panel/README.md).
+
 When changing this policy, update the workflow on both branches. Updating only
 `stable` leaves the workflow stored on `main` active.
 

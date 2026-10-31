@@ -311,6 +311,82 @@ async fn bootstrap_rejects_ineligible_managed_identities() {
 
 #[actix_web::test]
 #[serial]
+async fn issue_3572_maintenance_refreshed_existing_scope_without_relaxing_bootstrap(
+) {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = AgentFixture::new(&env).await;
+    let linked =
+        crate::ai_agent::lifecycle::ensure_linked_agent(&env, fixture.human.id)
+            .await
+            .unwrap();
+    for login_id in [fixture.human.id, fixture.agent.id] {
+        crate::functest::tests::mk_secret_group_user(
+            &env.dbx,
+            crate::entities::secret_group_user::ActiveModel {
+                login_id: Set(login_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let app = test::init_service(bootstrap_app(env.clone()).await).await;
+    let (token, _) = issue_bootstrap(&env, fixture.agent.id, None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        test::call_service(&app, exchange(&token).to_request())
+            .await
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let prepared =
+        crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
+            &env.dbx,
+            fixture.human.id,
+        )
+        .await
+        .unwrap();
+    assert_eq!(prepared.link.id, linked.link.id);
+    assert_eq!(prepared.login.id, fixture.agent.id);
+    assert_eq!(
+        prepared.container.instance_name,
+        linked.container.instance_name
+    );
+    assert!(prepared.login.deleted);
+    assert!(prepared.login.password.is_none());
+    assert!(!prepared.login.password_auth_enabled);
+    let (token, _) = issue_bootstrap(&env, fixture.agent.id, None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        test::call_service(&app, exchange(&token).to_request())
+            .await
+            .status(),
+        StatusCode::OK
+    );
+    for reason in ["human_blocked", "human_role_revoked", "organism_disabled"] {
+        let fixture = AgentFixture::new(&env).await;
+        crate::ai_agent::lifecycle::ensure_linked_agent(&env, fixture.human.id)
+            .await
+            .unwrap();
+        fixture.invalidate(&env, reason).await;
+        assert!(
+            crate::ai_agent::lifecycle::prepare_maintenance_connection_test(
+                &env.dbx,
+                fixture.human.id
+            )
+            .await
+            .is_err(),
+            "{reason}"
+        );
+        fixture.cleanup(&env).await;
+    }
+    fixture.cleanup(&env).await;
+}
+
+#[actix_web::test]
+#[serial]
 async fn startup_identity_rechecks_binding_and_current_access() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let app = test::init_service(bootstrap_app(env.clone()).await).await;
@@ -607,6 +683,18 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
     use crate::ai_agent::types::AiAgentReasoningPreset as Preset;
     let mut flash = engine.clone();
     flash.model_name = crate::config::AI_AGENT_GLM_FLASH.to_string();
+    let mut gemma = engine.clone();
+    gemma.model_name = "gemma-4".to_string();
+    let mut sol = engine.clone();
+    sol.model_name = crate::config::AI_AGENT_OPENAI_GPT_6_SOL.to_string();
+    let openai_engines: Vec<_> = ["o1", "o3-mini", "o4-mini"]
+        .into_iter()
+        .map(|name| {
+            let mut openai = engine.clone();
+            openai.model_name = name.to_string();
+            openai
+        })
+        .collect();
     for (preset, runtime, reserve) in [
         (Preset::Fast, 120, 60),
         (Preset::Balanced, 300, 120),
@@ -617,7 +705,27 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         assert_eq!(flash_policy.max_runtime_seconds, runtime, "#3572");
         assert_eq!(flash_policy.finalization_seconds, reserve, "#3572");
         assert_eq!(original.max_runtime_seconds, runtime, "#3572");
-        assert_eq!(original.finalization_seconds, reserve / 2, "#3572");
+        // Every non-OpenAI engine reserves the longer synthesis window; OpenAI keeps the base.
+        assert_eq!(original.finalization_seconds, reserve, "glm-5.3");
+        assert_eq!(
+            reasoning::resolve(&config, &gemma, preset).finalization_seconds,
+            reserve,
+            "gemma"
+        );
+        assert_eq!(
+            reasoning::resolve(&config, &sol, preset).finalization_seconds,
+            reserve / 2,
+            "gpt"
+        );
+        for openai in &openai_engines {
+            assert_eq!(
+                reasoning::resolve(&config, openai, preset)
+                    .finalization_seconds,
+                reserve / 2,
+                "{}",
+                openai.model_name
+            );
+        }
         assert!(flash_policy.reasoning_effort.is_none());
     }
     let policy = reasoning::resolve(

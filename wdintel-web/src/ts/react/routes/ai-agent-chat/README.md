@@ -18,6 +18,13 @@ confirmation and removes the row only after the server accepts deletion. Deletin
 the viewed conversation replaces its URL with `/`; deleting another preserves the
 current view. The backend rejects deletion while a request is queued or running.
 
+The composer remembers the last chosen provider in `localStorage`
+(`echo.ai-agent.provider-id`) and uses it for new dialogues. A missing or
+disabled provider falls back to the configured default; opening an existing
+conversation uses its own provider without changing the remembered one. See
+[reasoning presets](../../../../../../docs/ai/reasoning-presets.md) for the
+remembered depth.
+
 ## Point-map documents
 
 Registered map links render lazy inline thumbnails. Each answer's latest main

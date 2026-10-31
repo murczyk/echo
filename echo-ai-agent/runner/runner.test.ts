@@ -991,7 +991,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.10.29.4",
+    harnessRelease: "2026.10.30.3",
   });
 });
 
@@ -1058,6 +1058,7 @@ test("suppresses progress lifecycle and labels route lifecycle events", () => {
       toolLabel: "Перевірка профілю користувача",
       is_error: true,
       errorSummary: "Не вдалося завантажити дані за вказаними параметрами.",
+      errorReason: "tool_error",
     },
   );
 });
@@ -1313,9 +1314,10 @@ test("keeps enriched tool labels through later updates and failure", () => {
     isError: true,
     result: { details: {} },
   });
-  assert.equal(events.length, 3);
+  const publicEvents = events.filter((event) => event.type !== "tool_diagnostic");
+  assert.equal(publicEvents.length, 3);
   assert.deepEqual(
-    events.map((event) => event.toolLabel),
+    publicEvents.map((event) => event.toolLabel),
     [label, label, label],
   );
 });

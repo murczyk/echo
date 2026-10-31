@@ -480,22 +480,14 @@ export function useRerDutyFeeds(
     ],
   );
   useEffect(() => {
+    if (
+      availableGroupKeys.length === knownGroupKeys.length &&
+      availableGroupKeys.every((key, index) => key === knownGroupKeys[index])
+    )
+      return;
     filterOpts.setRequiredGroupKeys(availableGroupKeys);
-  }, [availableGroupKeys, filterOpts.setRequiredGroupKeys]);
-  useEffect(() => {
-    setKnownGroupKeys((previous) => {
-      const next = mergeKnownGroupKeys(
-        previous,
-        recentGroupKeys,
-        Object.keys(filterOpts.groupInfos),
-        feedState.messageFeeds,
-        filterOpts.savedFilters.map(({ req }) => req),
-      );
-      return next.length === previous.length && next.every((key, index) => key === previous[index])
-        ? previous
-        : next;
-    });
-  }, [feedState.messageFeeds, filterOpts.groupInfos, recentGroupKeys, filterOpts.savedFilters]);
+    setKnownGroupKeys(availableGroupKeys);
+  }, [availableGroupKeys, filterOpts.setRequiredGroupKeys, knownGroupKeys]);
   const postsList = useMemo(
     () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
     [filterOpts.postsList, feedState.messageFeeds],

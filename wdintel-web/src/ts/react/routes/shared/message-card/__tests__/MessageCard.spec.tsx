@@ -1,8 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
+import { act } from 'react';
 import type { ComponentProps } from 'react';
-import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -39,7 +39,7 @@ vi.mock('@mui/material', async () => {
   const material = await vi.importActual<typeof import('@mui/material')>('@mui/material');
   return {
     ...material,
-    Popover: (props: React.ComponentProps<typeof material.Popover>) => {
+    Popover: (props: ComponentProps<typeof material.Popover>) => {
       observedPopoverAnchors.push(props.anchorEl as HTMLElement | null);
       return <material.Popover {...props} />;
     },
@@ -422,14 +422,14 @@ describe('MessageCard', () => {
     },
   );
 
-  // Regression: https://github.com/echoua/echo/issues/3324
+  // Regression: https://github.com/echoua/echo/issues/3940
   it.each([
     { displayMode: 'duty' as const, featureStrictNetworks: false, hideNetworks: false },
     { displayMode: 'analysis' as const, featureStrictNetworks: false, hideNetworks: true },
     { displayMode: 'duty' as const, featureStrictNetworks: true, hideNetworks: false },
     { displayMode: 'analysis' as const, featureStrictNetworks: true, hideNetworks: true },
   ])(
-    'ECHO-3324 keeps the explicit header unit independent of networks in $displayMode cards',
+    'ECHO-3940 switches header identity with РЕР mode in $displayMode cards',
     async ({ displayMode, featureStrictNetworks, hideNetworks }) => {
       const view = await renderCard({
         displayMode,
@@ -439,8 +439,16 @@ describe('MessageCard', () => {
       });
       const headerUnit = view.container.querySelector('[data-message-card-header-unit-row="true"]');
 
-      expect(headerUnit?.textContent).toContain('Підрозділ 42');
-      expect(headerUnit?.textContent).not.toContain('Alpha');
+      if (hideNetworks) {
+        expect(headerUnit?.textContent).toContain('Підрозділ 42');
+        expect(headerUnit?.textContent).not.toContain('Alpha');
+      } else {
+        expect(headerUnit).toBeNull();
+        expect(view.container.textContent).not.toContain('Підрозділ 42');
+        expect(
+          view.container.querySelector('[data-message-card-header-left="true"]')?.textContent,
+        ).toContain('Alpha');
+      }
       if (!featureStrictNetworks && !hideNetworks) {
         expect(
           view.container.querySelector('[data-message-card-network-item="true"]')?.textContent,
@@ -458,6 +466,7 @@ describe('MessageCard', () => {
     async ({ networkIds }) => {
       const view = await renderCard({
         featureStrictNetworks: true,
+        hideNetworks: true,
         msg: buildMessage({ unit: 'Підрозділ 42', networkIds }),
       });
       expect(
@@ -470,7 +479,7 @@ describe('MessageCard', () => {
   it.each([undefined, null, '', '   '])(
     'ECHO-3324 renders a dash for blank header units (%j)',
     async (unit) => {
-      const view = await renderCard({ msg: buildMessage({ unit }) });
+      const view = await renderCard({ hideNetworks: true, msg: buildMessage({ unit }) });
       expect(
         view.container.querySelector('[data-message-card-header-unit-row="true"]')?.textContent,
       ).toContain('—');

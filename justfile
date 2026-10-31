@@ -1191,6 +1191,9 @@ deploy _server_pos="" server silent="false":
         -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
         '{{ discord_webhook_infra }}' || true
     fi
+    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" "$SERVER"; then
+      echo "WARNING: AI harness check failed. Run: just ai-control-panel scan --host $SERVER --json" >&2
+    fi
 
 [arg('server', long='server')]
 [arg('silent', long='silent', value='true')]
@@ -1493,6 +1496,9 @@ deploy-from-local _server_pos="" server silent="false":
         -H 'Content-Type: application/json' \
         -d "{\"content\":\"✅ Deployed $SERVER from local .deb ($DEB_NAME)\"}" \
         '{{ discord_webhook_infra }}' || true
+    fi
+    if ! python3 "{{ justfile_directory() }}/deploy/ai-control-panel/deploy-notice.py" "$SERVER"; then
+      echo "WARNING: AI harness check failed. Run: just ai-control-panel scan --host $SERVER --json" >&2
     fi
 
 [arg('server', long='server')]
