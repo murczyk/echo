@@ -2037,11 +2037,9 @@ mod tests {
                 .await
                 .unwrap()
                 .unwrap();
-        if !canonical_group {
-            let mut duplicate_link = original_link.clone().into_active_model();
-            duplicate_link.id = NotSet;
-            duplicate_link.insert(&env.dbx).await.unwrap();
-        }
+        let mut duplicate_link = original_link.clone().into_active_model();
+        duplicate_link.id = NotSet;
+        duplicate_link.insert(&env.dbx).await.unwrap();
         let mut payload = direct_submit_payload("Moved message");
         payload.locations = vec!["issue-3955-location".to_string()];
         payload.signal_group_master_key =
@@ -2105,20 +2103,16 @@ mod tests {
         expected_link.group_master_key =
             Some(destinations[0].group_master_key.clone());
         assert_eq!(
-            signal_message_group::Entity::find_by_id(expected_link.id)
-                .one(&env.dbx)
+            signal_message_group::Entity::find()
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .eq(created.signal_message_id),
+                )
+                .order_by_id_asc()
+                .all(&env.dbx)
                 .await
-                .unwrap()
                 .unwrap(),
-            expected_link
-        );
-        assert_eq!(
-            signal_message_group::Entity::find_by_id(secondary_link.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap(),
-            secondary_link
+            vec![expected_link.clone(), secondary_link.clone()]
         );
         let message =
             signal_message::Entity::find_by_id(created.signal_message_id)

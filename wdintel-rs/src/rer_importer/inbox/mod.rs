@@ -2966,30 +2966,38 @@ async fn replace_submit_signal_message_group(
             .is_some(),
         None => false,
     };
-    match destination_group {
-        Some((master_key, id)) if !destination_group_exists => {
-            signal_message_group::Entity::update_many()
-                .col_expr(
-                    signal_message_group::Column::DatasourceGroupId,
-                    Expr::value(*id),
-                )
-                .col_expr(
-                    signal_message_group::Column::GroupMasterKey,
-                    Expr::value(master_key.clone()),
-                )
-                .filter(old_group)
-                .exec(txn)
-                .await
-                .c(h!())?;
-        }
-        _ => {
-            signal_message_group::Entity::delete_many()
-                .filter(old_group)
-                .exec(txn)
-                .await
-                .c(h!())?;
-        }
+    if let Some((master_key, id)) =
+        destination_group.filter(|_| !destination_group_exists)
+    {
+        let source_group_to_move = signal_message_group::Entity::find()
+            .select_only()
+            .column(signal_message_group::Column::Id)
+            .filter(old_group.clone())
+            .order_by_asc(signal_message_group::Column::Id)
+            .limit(1)
+            .into_query();
+        signal_message_group::Entity::update_many()
+            .col_expr(
+                signal_message_group::Column::DatasourceGroupId,
+                Expr::value(*id),
+            )
+            .col_expr(
+                signal_message_group::Column::GroupMasterKey,
+                Expr::value(master_key.clone()),
+            )
+            .filter(
+                signal_message_group::Column::Id
+                    .in_subquery(source_group_to_move),
+            )
+            .exec(txn)
+            .await
+            .c(h!())?;
     }
+    signal_message_group::Entity::delete_many()
+        .filter(old_group)
+        .exec(txn)
+        .await
+        .c(h!())?;
     crate::battle_line::settlement_queue::requeue_item_settlements(
         txn,
         signal_message.id,

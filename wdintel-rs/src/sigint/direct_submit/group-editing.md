@@ -13,6 +13,8 @@ earliest accessible membership when that canonical group is absent. Moves replac
 the source membership while preserving independent memberships. An existing
 destination membership is reused with its receipt metadata intact. Legacy
 memberships without datasource IDs are matched by their master key.
+For new destinations, only the earliest source membership is moved;
+redundant source copies are removed.
 
 Group replacement requeues settlement resolution for the new responsibility
 areas. Statistics capture the old and new activity windows in the same
