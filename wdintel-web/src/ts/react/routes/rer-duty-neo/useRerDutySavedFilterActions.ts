@@ -60,7 +60,13 @@ export function useRerDutySavedFilterActions(params: Params) {
       const feed = params.messageFeeds.find((item) => item.id === feedId);
       if (!feed) return false;
       try {
-        const list = await savedFilterUpsert({ name: trimmed, req: feed.filter });
+        const list = await savedFilterUpsert({
+          name: trimmed,
+          req: {
+            ...feed.filter,
+            unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
+          },
+        });
         params.setSavedFilters(list);
         const created = list.find((savedFilter) => savedFilter.name === trimmed);
         if (isPresent(created)) {
@@ -87,7 +93,11 @@ export function useRerDutySavedFilterActions(params: Params) {
     (feedId: string, saved: SavedFilterDuty) => {
       setSavedFilterSelectionForFeed(feedId, saved.id);
       setSavedFilterNameForFeed(feedId, saved.name);
-      params.applyFilter(feedId, normalizeFeed(saved.req as unknown as Record<string, unknown>));
+      const filter = normalizeFeed(saved.req as unknown as Record<string, unknown>);
+      params.applyFilter(feedId, {
+        ...filter,
+        unitsIncludeChildren: filter.unitsIncludeChildren ?? false,
+      });
     },
     [params.applyFilter, setSavedFilterNameForFeed, setSavedFilterSelectionForFeed],
   );
@@ -103,7 +113,13 @@ export function useRerDutySavedFilterActions(params: Params) {
       const feed = params.messageFeeds.find((item) => item.id === feedId);
       if (!feed) return;
       try {
-        const list = await savedFilterUpsert({ name: selectedSaved.name, req: feed.filter });
+        const list = await savedFilterUpsert({
+          name: selectedSaved.name,
+          req: {
+            ...feed.filter,
+            unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
+          },
+        });
         params.setSavedFilters(list);
       } catch (e) {
         params.setError(e instanceof Error ? e.message : String(e));

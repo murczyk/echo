@@ -3426,6 +3426,7 @@ type alias SavedFilter =
     { id : Int
     , name : String
     , req : AnalysisStatsReq
+    , unitFilter : Maybe (AnalysisUnitFilter)
     }
 
 
@@ -3435,6 +3436,21 @@ savedFilterEncoder struct =
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "name", (Json.Encode.string) struct.name )
         , ( "req", (analysisStatsReqEncoder) struct.req )
+        , ( "unit_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisUnitFilterEncoder)) struct.unitFilter )
+        ]
+
+
+type alias AnalysisUnitFilter =
+    { values : List (String)
+    , includeChildren : Bool
+    }
+
+
+analysisUnitFilterEncoder : AnalysisUnitFilter -> Json.Encode.Value
+analysisUnitFilterEncoder struct =
+    Json.Encode.object
+        [ ( "values", (Json.Encode.list (Json.Encode.string)) struct.values )
+        , ( "include_children", (Json.Encode.bool) struct.includeChildren )
         ]
 
 
@@ -3457,6 +3473,7 @@ savedFilterDutyEncoder struct =
 type alias SavedFilterUpsertReq =
     { name : String
     , req : AnalysisStatsReq
+    , unitFilter : Maybe (AnalysisUnitFilter)
     }
 
 
@@ -3465,6 +3482,7 @@ savedFilterUpsertReqEncoder struct =
     Json.Encode.object
         [ ( "name", (Json.Encode.string) struct.name )
         , ( "req", (analysisStatsReqEncoder) struct.req )
+        , ( "unit_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (analysisUnitFilterEncoder)) struct.unitFilter )
         ]
 
 
@@ -3521,6 +3539,7 @@ type alias RerDutyQueryStateWf =
     , postsDenied : Maybe (List (String))
     , unitsSelected : Maybe (List (String))
     , unitsDenied : Maybe (List (String))
+    , unitsIncludeChildren : Maybe (Bool)
     , selectedUnitIds : Maybe (List (Int))
     , deniedUnitIds : Maybe (List (Int))
     , selectedDeviceNames : Maybe (List (String))
@@ -3548,6 +3567,7 @@ rerDutyQueryStateWfEncoder struct =
         , ( "posts_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.postsDenied )
         , ( "units_selected", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsSelected )
         , ( "units_denied", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitsDenied )
+        , ( "units_include_children", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unitsIncludeChildren )
         , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
         , ( "denied_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedUnitIds )
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
@@ -21864,6 +21884,14 @@ savedFilterDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" (analysisStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_filter" (Json.Decode.nullable (analysisUnitFilterDecoder))))
+
+
+analysisUnitFilterDecoder : Json.Decode.Decoder AnalysisUnitFilter
+analysisUnitFilterDecoder =
+    Json.Decode.succeed AnalysisUnitFilter
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "values" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_children" (Json.Decode.bool)))
 
 
 savedFilterDutyDecoder : Json.Decode.Decoder SavedFilterDuty
@@ -21879,6 +21907,7 @@ savedFilterUpsertReqDecoder =
     Json.Decode.succeed SavedFilterUpsertReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "req" (analysisStatsReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_filter" (Json.Decode.nullable (analysisUnitFilterDecoder))))
 
 
 savedFilterDutyUpsertReqDecoder : Json.Decode.Decoder SavedFilterDutyUpsertReq
@@ -21943,6 +21972,7 @@ rerDutyQueryStateWfDecoder =
                                 Json.Decode.fail (Json.Decode.errorToString error)
             )
             (Json.Decode.dict Json.Decode.value)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_include_children" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.andThen
             (\fields ->
                 case Dict.get "selected_unit_ids" fields of

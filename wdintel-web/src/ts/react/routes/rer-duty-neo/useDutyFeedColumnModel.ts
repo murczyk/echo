@@ -290,12 +290,18 @@ function buildFeedFilterPanel(
         }),
       onUnitStatsError: deps.feeds.setError,
       onUnitsIncludeChildrenChange: (unitsIncludeChildren: boolean) => {
-        if ((feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) > 0) {
-          applyFilter(feed.id, feed.filter, true);
+        const filter = { ...feed.filter, unitsIncludeChildren };
+        if ((filter.unitsSelected?.length ?? 0) + (filter.unitsDenied?.length ?? 0) > 0) {
+          applyFilter(feed.id, filter);
+        } else {
+          setMessageFeeds((previous) => {
+            const next = previous.map((item) =>
+              item.id === feed.id ? { ...item, filter, unitsIncludeChildren } : item,
+            );
+            deps.feeds.persistStateToUrl(next);
+            return next;
+          });
         }
-        setMessageFeeds((previous) =>
-          previous.map((item) => (item.id === feed.id ? { ...item, unitsIncludeChildren } : item)),
-        );
       },
       onUnitsExactMatchOnlyChange: (v: boolean) =>
         applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),

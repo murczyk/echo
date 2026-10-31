@@ -15,6 +15,7 @@ type Params = {
     options?: { preserveUnread?: boolean },
   ) => Promise<unknown>;
   deviceAccessResolved: boolean;
+  isFeedReady?: (feed: MessageFeedState) => boolean;
 };
 
 /** Starts each initial/reload generation once after its state is ready. */
@@ -30,6 +31,7 @@ export function useRerDutyInitialLoadTrigger(params: Params) {
     const needingLoad = params.messageFeeds.filter(
       (feed) =>
         feed.loading &&
+        (params.isFeedReady?.(feed) ?? true) &&
         (feed.items.length === 0 || params.pendingReloadFeedIdsRef.current.has(feed.id)),
     );
     const keyFor = (feed: MessageFeedState) =>
@@ -51,6 +53,7 @@ export function useRerDutyInitialLoadTrigger(params: Params) {
     params.hasShortState,
     params.loadGenerationByFeedIdRef,
     params.messageFeeds,
+    params.isFeedReady,
     params.pendingReloadFeedIdsRef,
     params.shortStateReady,
   ]);

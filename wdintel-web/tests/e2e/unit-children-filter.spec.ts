@@ -26,8 +26,16 @@ for (const analysis of [false, true]) {
     const catalogGate = new Promise<void>((resolve) => {
       releaseCatalog = resolve;
     });
+    let catalogRequests = 0;
     await page.route('**/api/sigint/units', async (route) => {
-      if (route.request().postDataJSON().include_inactive) await catalogGate;
+      if (route.request().postDataJSON().include_inactive) {
+        await catalogGate;
+        catalogRequests += 1;
+        if (catalogRequests === 1) {
+          await route.fulfill({ status: 503, body: 'Temporary catalog failure #3527' });
+          return;
+        }
+      }
       await route.fulfill({
         json: transformCamelToSnake({
           units,
@@ -38,6 +46,7 @@ for (const analysis of [false, true]) {
       });
     });
     let countRequests = 0;
+    let countOffset = 0;
     const statsEndpoint = analysis
       ? '/api/rer/analysis/stats/units'
       : '/api/rer-importer/get-inbox-unit-stats';
@@ -49,7 +58,7 @@ for (const analysis of [false, true]) {
           units: units.map((unit, index) => ({
             unit_id: unit.id,
             name: unit.name,
-            count: index + (filtered ? 2 : 5),
+            count: index + (filtered ? 2 : 5) + countOffset,
           })),
         },
       });
@@ -69,7 +78,8 @@ for (const analysis of [false, true]) {
     const checkbox = page.getByRole('checkbox', { name: 'включаючи дочірні підрозділи' });
     await expect(checkbox).not.toBeChecked();
     await expect(checkbox).toBeEnabled();
-    await expect.poll(() => countRequests).toBeGreaterThan(0);
+    if (analysis) await expect.poll(() => countRequests).toBeGreaterThan(0);
+    else expect(countRequests).toBe(0);
     const countBeforeToggle = countRequests;
     await checkbox.check();
     await expect(checkbox).toBeDisabled();
@@ -77,6 +87,8 @@ for (const analysis of [false, true]) {
       page.getByRole('progressbar', { name: 'Завантаження ієрархії підрозділів' }),
     ).toBeVisible();
     releaseCatalog();
+    await expect(page.getByText(/Не вдалося завантажити ієрархію підрозділів/)).toBeVisible();
+    await expect.poll(() => catalogRequests).toBeGreaterThan(1);
     await expect(checkbox).toBeEnabled();
     const combo = analysis
       ? page.getByRole('combobox', { name: 'Підрозділи', exact: true })
@@ -90,7 +102,7 @@ for (const analysis of [false, true]) {
     await expect(parent).toContainText('11');
     await expect(page.getByRole('option', { name: /^6 А/ })).toContainText('11');
     await expect(page.getByRole('option', { name: /Регіон|Округ/ })).toHaveCount(0);
-    expect(countRequests).toBe(countBeforeToggle);
+    expect(countRequests).toBe(countBeforeToggle + (analysis ? 0 : 1));
     await parent.click();
     await combo.press('Escape');
     await combo.blur();
@@ -131,6 +143,17 @@ for (const analysis of [false, true]) {
       await combo.blur();
     } else {
       await expect(page.getByRole('button', { name: '27 омсбр (5)', exact: true })).toBeVisible();
+      countOffset = 1;
+      await page.evaluate(() =>
+        window.dispatchEvent(
+          new CustomEvent('echo-inbox-changed', {
+            detail: { messageIds: [99999] },
+          }),
+        ),
+      );
+      await expect(page.getByRole('button', { name: '27 омсбр (7)', exact: true })).toBeVisible({
+        timeout: 10000,
+      });
     }
     await checkbox.uncheck();
     await expect.poll(() => inboxRequests.at(-1)?.selected_unit_ids).toEqual([0]);

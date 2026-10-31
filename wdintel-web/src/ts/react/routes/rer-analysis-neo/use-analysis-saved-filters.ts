@@ -132,7 +132,14 @@ export function useAnalysisSavedFilters({
       setSaveInFlight(true);
       onError('');
       try {
-        const next = await upsertAnalysisSavedFilter({ name: nextName, req });
+        const next = await upsertAnalysisSavedFilter({
+          name: nextName,
+          req,
+          unitFilter: {
+            values: queryState.unitsSelected,
+            includeChildren: queryState.unitsIncludeChildren ?? false,
+          },
+        });
         setSavedFilters(next);
         const saved = next.find((item) => item.name === nextName) ?? null;
         setLoadedSavedFilterId(saved?.id ?? null);
@@ -185,7 +192,14 @@ export function useAnalysisSavedFilters({
     setSaveInFlight(true);
     onError('');
     try {
-      const next = await upsertAnalysisSavedFilter({ name: loadedSavedFilter.name, req });
+      const next = await upsertAnalysisSavedFilter({
+        name: loadedSavedFilter.name,
+        req,
+        unitFilter: {
+          values: queryState.unitsSelected,
+          includeChildren: queryState.unitsIncludeChildren ?? false,
+        },
+      });
       setSavedFilters(next);
       setLoadedSavedFilterId(loadedSavedFilter.id);
     } catch (saveError) {

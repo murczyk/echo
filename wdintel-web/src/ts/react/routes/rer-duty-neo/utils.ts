@@ -206,6 +206,7 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     unitsSelected: null,
     unitsDenied: null,
+    unitsIncludeChildren: false,
     selectedDeviceNames: null,
     deniedDeviceNames: null,
     selectedUnitIds: null,
@@ -338,6 +339,7 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.postsDenied, b.postsDenied) &&
     optArrEqual(a.unitsSelected, b.unitsSelected) &&
     optArrEqual(a.unitsDenied, b.unitsDenied) &&
+    (a.unitsIncludeChildren ?? false) === (b.unitsIncludeChildren ?? false) &&
     optArrEqual(a.selectedDeviceNames, b.selectedDeviceNames) &&
     optArrEqual(a.deniedDeviceNames, b.deniedDeviceNames) &&
     (a.unitsExactMatchOnly ?? false) === (b.unitsExactMatchOnly ?? false) &&
@@ -553,7 +555,13 @@ export function stableStringify(state: unknown): string {
 
 export function toShortQueryState(messageFeeds: MessageFeedState[]): RerDutyQueryState {
   return {
-    waterfalls: messageFeeds.map((f) => [f.id, f.filter]),
+    waterfalls: messageFeeds.map((f) => [
+      f.id,
+      {
+        ...f.filter,
+        unitsIncludeChildren: f.unitsIncludeChildren ?? false,
+      },
+    ]),
     groupScopes: messageFeeds.flatMap((feed) =>
       feed.groupScopeMasterKey ? [[feed.id, feed.groupScopeMasterKey] as [string, string]] : [],
     ),
@@ -567,6 +575,7 @@ export function toRerDutyStateFromShort(state: RerDutyQueryState): RerDutyState 
       id,
       filter,
       {
+        unitsIncludeChildren: filter.unitsIncludeChildren ?? false,
         adjacentFreqsRange: 0,
         highlightSignalsEnabled: false,
         onlyMyUnitTagsEnabled: false,

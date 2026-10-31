@@ -67,6 +67,8 @@ export function useFeedFilterSavedFiltersViewModel(
         JSON.stringify(loadedFilterNormalized.unitsSelected ?? []) &&
       JSON.stringify(filterState.unitsDenied ?? []) ===
         JSON.stringify(loadedFilterNormalized.unitsDenied ?? []) &&
+      (toggles.unitsIncludeChildren ?? false) ===
+        (loadedFilterNormalized.unitsIncludeChildren ?? false) &&
       JSON.stringify(filterState.locationsSelected ?? []) ===
         JSON.stringify(loadedFilterNormalized.locationsSelected ?? []) &&
       JSON.stringify(filterState.locationsDenied ?? []) ===

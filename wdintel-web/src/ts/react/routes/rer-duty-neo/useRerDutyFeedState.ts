@@ -243,8 +243,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     needsUnitHierarchy,
     setError,
   );
-  const effectiveFiltersReady =
-    frequencyFiltersReady && (!needsUnitHierarchy || unitHierarchy !== null);
+  const isFeedReady = useCallback(
+    (feed: MessageFeedState) =>
+      unitHierarchy !== null ||
+      ![...(feed.filter.unitsSelected ?? []), ...(feed.filter.unitsDenied ?? [])].some(
+        (value) => feed.unitsIncludeChildren || isUnitParentValue(value),
+      ),
+    [unitHierarchy],
+  );
+  const effectiveFiltersReady = frequencyFiltersReady;
 
   const showArrowResult = useCallback((feedId: string, message: string) => {
     const key = feedId;
@@ -339,6 +346,24 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       previous.map((feed) => (emptyFeedIds.includes(feed.id) ? { ...feed, loading: true } : feed)),
     );
   }, [markFeedReloadRequested]);
+  const previousUnitHierarchyRef = useRef(unitHierarchy);
+  useEffect(() => {
+    if (previousUnitHierarchyRef.current === unitHierarchy) return;
+    previousUnitHierarchyRef.current = unitHierarchy;
+    const feedIds = new Set(
+      messageFeedsRef.current
+        .filter((feed) =>
+          [...(feed.filter.unitsSelected ?? []), ...(feed.filter.unitsDenied ?? [])].some(
+            (value) => feed.unitsIncludeChildren || isUnitParentValue(value),
+          ),
+        )
+        .map((feed) => feed.id),
+    );
+    feedIds.forEach((feedId) => markFeedReloadRequested(feedId));
+    setMessageFeeds((previous) =>
+      previous.map((feed) => (feedIds.has(feed.id) ? { ...feed, loading: true } : feed)),
+    );
+  }, [markFeedReloadRequested, unitHierarchy]);
   const reloadFeeds = useCallback(() => {
     const feedIds = Array.from(new Set(messageFeedsRef.current.map((feed) => feed.id)));
     if (feedIds.length === 0) return;
@@ -1267,6 +1292,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useRerDutyInitialLoadTrigger({
     messageFeeds,
+    isFeedReady,
     shortStateReady,
     hasShortState: Boolean(shortStateIdRef.current),
     pendingReloadFeedIdsRef,
@@ -1375,6 +1401,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     buildReqForFeed,
     unitHierarchy,
     unitHierarchyLoading,
+    persistStateToUrl,
     getFeedLoadGeneration,
     networkDisplayMap,
     networkMap,

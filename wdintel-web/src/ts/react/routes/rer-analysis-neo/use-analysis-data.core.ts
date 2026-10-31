@@ -32,6 +32,7 @@ import { useLocalInboxChangeOrigins } from './use-local-inbox-change-origins';
 import { useTargetedInboxReconciliation } from './use-targeted-inbox-reconciliation';
 import { inboxMessagesEqual } from '../shared/message-card/message-card-message-updates';
 import { useAnalysisThreadData } from './use-analysis-thread-data';
+import { isUnitParentValue } from '../shared/unit-children-filter';
 
 const noScopedPage = async () => false;
 const noScopedLoad = async () => undefined;
@@ -785,6 +786,12 @@ export function useAnalysisData({
       };
       const candidateMessageIds = normalizeMessageIds(changedMessageIds);
       if (candidateMessageIds.length === 0) return;
+      if (
+        queryState.unitsSelected.length > 0 &&
+        (queryState.unitsIncludeChildren || queryState.unitsSelected.some(isUnitParentValue)) &&
+        !queryState.unitHierarchy
+      )
+        return;
       const retryForLatestMessageWindow = () => {
         if (!isMessageWindowStale()) return false;
         const retryMessageIds = candidateMessageIds.filter(shouldApply);

@@ -2004,6 +2004,52 @@ async fn query_inbox_unit_stats(
         .collect())
 }
 
+async fn load_inbox_unit_stats(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: Option<&DatabaseConnection>,
+    created_at_lower_bound: Option<NaiveDateTime>,
+    created_at_upper_bound: Option<NaiveDateTime>,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let Some(query) = build_inbox_unit_stats_query_with_created_at_bounds(
+        login,
+        env,
+        req,
+        analytics_db,
+        created_at_lower_bound,
+        created_at_upper_bound,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Ok(Vec::new());
+    };
+    query_inbox_unit_stats(analytics_db.unwrap_or(&env.dbx), query)
+        .await
+        .c(h!())
+}
+
+fn merge_inbox_unit_stats(
+    historical: Vec<AnalysisStatsUnit>,
+    fresh_tail: Vec<AnalysisStatsUnit>,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let mut units = historical
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect::<BTreeMap<_, _>>();
+    for unit in fresh_tail {
+        if let Some(previous) = units.get_mut(&unit.unit_id) {
+            previous.count =
+                previous.count.checked_add(unit.count).context(h!())?;
+            previous.name = unit.name;
+        } else {
+            units.insert(unit.unit_id, unit);
+        }
+    }
+    Ok(units.into_values().collect())
+}
+
 #[post("/api/rer-importer/get-inbox-unit-stats")]
 async fn inbox_unit_stats(
     user: Identity,
@@ -2026,33 +2072,49 @@ async fn inbox_unit_stats(
     req.load_latest = Some(true);
     let analytics_env = &env;
     let analytics_req = &req;
+    let fresh_tail_lower_bound = analytics_fresh_tail_lower_bound(
+        Utc::now().naive_utc(),
+        analytics_freshness_max_age_ms(&env),
+        RER_DUTY_ANALYTICS_FRESH_TAIL_MINUTES,
+    );
     let units = with_analytics_read_fallback(
         env.get_ref(),
         "inbox unit stats",
         analytics_inbox_request_supported(&req),
         |db| async move {
-            let query = build_inbox_unit_stats_query(
+            let historical = load_inbox_unit_stats(
                 &login,
                 analytics_env,
                 analytics_req,
                 Some(&db),
+                None,
+                Some(fresh_tail_lower_bound),
             )
             .await
-            .c(h!())?
-            .context(h!())?;
-            Ok(query_inbox_unit_stats(&db, query).await.c(h!())?)
-        },
-        |db| async move {
-            let query = build_inbox_unit_stats_query(
+            .c(h!())?;
+            let fresh_tail = load_inbox_unit_stats(
                 &login,
                 analytics_env,
                 analytics_req,
                 None,
+                Some(fresh_tail_lower_bound),
+                None,
             )
             .await
-            .c(h!())?
-            .context(h!())?;
-            Ok(query_inbox_unit_stats(&db, query).await.c(h!())?)
+            .c(h!())?;
+            Ok(merge_inbox_unit_stats(historical, fresh_tail).c(h!())?)
+        },
+        |_db| async move {
+            Ok(load_inbox_unit_stats(
+                &login,
+                analytics_env,
+                analytics_req,
+                None,
+                None,
+                None,
+            )
+            .await
+            .c(h!())?)
         },
     )
     .await
@@ -6001,11 +6063,21 @@ mod tests {
         )
         .await
         .unwrap();
-        for (freq, linked) in [("111", true), ("222", true), ("111", false)] {
+        let boundary = Utc::now().naive_utc();
+        for (index, (freq, linked)) in
+            [("111", true), ("222", true), ("111", false)]
+                .into_iter()
+                .enumerate()
+        {
             let message = mk_signal_message(
                 &env.dbx,
                 signal_message::ActiveModel {
                     datasource_group_id: Set(Some(datasource_group.id)),
+                    created_at: Set(if index == 0 {
+                        boundary - Duration::seconds(1)
+                    } else {
+                        boundary
+                    }),
                     ..Default::default()
                 },
             )
@@ -6060,10 +6132,12 @@ mod tests {
             "sort_by": "IMSCreatedAt"
         }))
         .unwrap();
-        let query = build_inbox_unit_stats_query(&login.id, &env, &req, None)
-            .await
-            .unwrap()
-            .unwrap();
+        let query = build_inbox_unit_stats_query_with_created_at_bounds(
+            &login.id, &env, &req, None, None, None,
+        )
+        .await
+        .unwrap()
+        .unwrap();
         let units = query_inbox_unit_stats(&env.dbx, query).await.unwrap();
         assert_eq!(units.len(), 2);
         assert_eq!(
@@ -6082,6 +6156,32 @@ mod tests {
                 .count,
             1
         );
+        let historical = load_inbox_unit_stats(
+            &login.id,
+            &env,
+            &req,
+            None,
+            None,
+            Some(boundary),
+        )
+        .await
+        .unwrap();
+        let fresh_tail = load_inbox_unit_stats(
+            &login.id,
+            &env,
+            &req,
+            None,
+            Some(boundary),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(historical.len(), 1);
+        assert_eq!(historical[0].unit_id, unit.id);
+        assert_eq!(fresh_tail.len(), 1);
+        assert_eq!(fresh_tail[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
+        let merged = merge_inbox_unit_stats(historical, fresh_tail).unwrap();
+        assert_eq!(merged.iter().map(|unit| unit.count).sum::<i64>(), 2);
     }
 
     #[serial]

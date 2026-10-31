@@ -45,6 +45,7 @@ function rerDutyQueryStateWfToSnake(
     posts_denied: w.postsDenied,
     units_selected: selectedUnits.legacyValues,
     units_denied: deniedUnits.legacyValues,
+    units_include_children: w.unitsIncludeChildren ?? false,
     selected_unit_ids: selectedUnits.unitIds,
     denied_unit_ids: deniedUnits.unitIds,
     selected_device_names: w.selectedDeviceNames,

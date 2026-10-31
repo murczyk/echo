@@ -116,6 +116,7 @@ export function emptyQueryState(): AnalysisQueryState {
     freqsSelected: [],
     callsignsSelected: [],
     unitsSelected: [],
+    unitsIncludeChildren: false,
     deviceNamesSelected: [],
     locationsSelected: [],
     postsSelected: [],
@@ -460,7 +461,12 @@ export function buildAnalysisReq(
   allFrequencies: string[] = [],
 ): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
-  if (query.unitsSelected.some(isUnitParentValue) && !query.unitHierarchy) return null;
+  if (
+    !query.unitHierarchy &&
+    query.unitsSelected.length > 0 &&
+    (query.unitsIncludeChildren || query.unitsSelected.some(isUnitParentValue))
+  )
+    return null;
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
@@ -674,7 +680,8 @@ export function queryStateFromSavedFilter(
     sendersSelected: req.selectedSenders ?? [],
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
-    unitsSelected: [
+    unitsIncludeChildren: savedFilter.unitFilter?.includeChildren ?? false,
+    unitsSelected: savedFilter.unitFilter?.values ?? [
       ...(req.selectedUnitIds ?? []).map(getUnitIdFilterValue),
       ...(req.selectedUnits ?? []),
     ],
@@ -853,6 +860,20 @@ export function queryStateMatchesSavedFilter(
   savedFilter: SavedFilter,
   allFrequencies: string[] = [],
 ): boolean {
+  if (savedFilter.unitFilter) {
+    const stateKey = queryStateComparisonKey(state, allFrequencies);
+    const savedKey = queryStateComparisonKey(
+      queryStateFromSavedFilter(savedFilter, state),
+      allFrequencies,
+    );
+    return (
+      stateKey !== null &&
+      stateKey === savedKey &&
+      (state.unitsIncludeChildren ?? false) === savedFilter.unitFilter.includeChildren &&
+      JSON.stringify(state.unitsSelected) === JSON.stringify(savedFilter.unitFilter.values)
+    );
+  }
+  if (state.unitsIncludeChildren) return false;
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;

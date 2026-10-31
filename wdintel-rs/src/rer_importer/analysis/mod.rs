@@ -6352,7 +6352,7 @@ pub async fn edit_freq_unit_name(
 trait FromSavedFilter {
     fn from_saved_filter(
         saved_filter: &sigint_saved_filter::Model,
-    ) -> Result<Self, serde_json::Error>
+    ) -> anyhow::Result<Self>
     where
         Self: Sized;
 }
@@ -6360,11 +6360,19 @@ trait FromSavedFilter {
 impl FromSavedFilter for SavedFilter {
     fn from_saved_filter(
         saved_filter: &sigint_saved_filter::Model,
-    ) -> Result<Self, serde_json::Error> {
+    ) -> anyhow::Result<Self> {
         Ok(SavedFilter {
             id: saved_filter.id,
             name: saved_filter.name.clone(),
-            req: serde_json::from_value(saved_filter.req.clone())?,
+            req: serde_json::from_value(saved_filter.req.clone()).c(h!())?,
+            unit_filter: serde_json::from_value(
+                saved_filter
+                    .req
+                    .get("unit_filter")
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+            .c(h!())?,
         })
     }
 }
@@ -6372,14 +6380,14 @@ impl FromSavedFilter for SavedFilter {
 impl FromSavedFilter for SavedFilterDuty {
     fn from_saved_filter(
         saved_filter: &sigint_saved_filter::Model,
-    ) -> Result<Self, serde_json::Error>
+    ) -> anyhow::Result<Self>
     where
         Self: Sized,
     {
         Ok(SavedFilterDuty {
             id: saved_filter.id,
             name: saved_filter.name.clone(),
-            req: serde_json::from_value(saved_filter.req.clone())?,
+            req: serde_json::from_value(saved_filter.req.clone()).c(h!())?,
         })
     }
 }
@@ -6498,12 +6506,15 @@ pub async fn saved_filter_upsert(
                 .await,
         )
         .c(h!())?;
+    let mut saved_req = serde_json::to_value(&req.req).c(h!())?;
+    saved_req["unit_filter"] =
+        serde_json::to_value(&req.unit_filter).c(h!())?;
     let mut filters: Vec<SavedFilter> = saved_filter_upsert_1(
         sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
         login,
         &env.dbx,
         req.name.clone(),
-        serde_json::to_value(req.req.clone()).context(h!())?,
+        saved_req,
     )
     .await
     .c(h!())?;

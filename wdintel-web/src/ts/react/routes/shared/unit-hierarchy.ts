@@ -77,7 +77,11 @@ export function buildUnitHierarchyTree(stats: UnitHierarchyStat[]): TreeNode[] {
       if (!hasAnyDeeperPart) return;
 
       const rawValue = part.trim();
-      path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : rawValue}`];
+      const pathValue =
+        rawValue === '__EMPTY__'
+          ? '%5F%5FEMPTY%5F%5F'
+          : rawValue.replaceAll('%', '%25').replaceAll('|', '%7C');
+      path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : pathValue}`];
       rawPath = [...rawPath];
       rawPath[level] = rawValue;
       if (rawValue === '') return;

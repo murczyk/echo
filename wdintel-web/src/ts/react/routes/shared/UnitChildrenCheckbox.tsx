@@ -1,4 +1,4 @@
-import { Checkbox, FormControlLabel, LinearProgress, Stack } from '@mui/material';
+import { Checkbox, FormControlLabel, LinearProgress } from '@mui/material';
 
 export function UnitChildrenCheckbox({
   checked,
@@ -10,7 +10,7 @@ export function UnitChildrenCheckbox({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <Stack direction="row" alignItems="center" spacing={1}>
+    <div className="flex items-center gap-2">
       <FormControlLabel
         control={
           <Checkbox
@@ -26,9 +26,9 @@ export function UnitChildrenCheckbox({
       {loading ? (
         <LinearProgress
           aria-label="Завантаження ієрархії підрозділів"
-          sx={{ flex: 1, minWidth: 40 }}
+          className="min-w-10 flex-1"
         />
       ) : null}
-    </Stack>
+    </div>
   );
 }

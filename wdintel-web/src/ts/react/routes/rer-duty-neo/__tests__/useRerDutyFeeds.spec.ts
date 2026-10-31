@@ -12,6 +12,7 @@ const hoisted = vi.hoisted(() => ({
   fetchOrganismKeywordSets: vi.fn(),
   fetchAnalysisCallsignInfos: vi.fn(),
   fetchMessagesByIds: vi.fn(),
+  fetchMessagesByIdsMatchingFilters: vi.fn(),
   fetchUserSettings: vi.fn(),
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   currentSystemSettings: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('../../../services/api/organism-keyword-sets', () => ({
 
 vi.mock('../../../services/api/analysis', () => ({
   fetchAnalysisCallsignInfos: hoisted.fetchAnalysisCallsignInfos,
+  fetchMessagesByIdsMatchingFilters: hoisted.fetchMessagesByIdsMatchingFilters,
 }));
 
 vi.mock('../../../services/api/user-settings', () => ({
@@ -211,6 +213,7 @@ vi.mock('../useRerDutyFeedState', () => ({
         ) => ({
           feedId: feed.id,
           filter: feed.filter,
+          selectedUnitIds: feed.filter.selectedUnitIds,
           loadLatest: opts?.loadLatest ?? null,
           highlightSignals: feed.highlightSignalsEnabled ?? false,
           reportTagsOnlyThisUnit: null,
@@ -585,6 +588,40 @@ describe('useRerDutyFeeds', () => {
 describe('useRerDutyFeeds inbox refreshes', () => {
   beforeEach(() => {
     hoisted.fetchMessagesByIds.mockClear();
+    hoisted.fetchMessagesByIdsMatchingFilters.mockReset();
+  });
+
+  it('#3527 removes edited messages that no longer match descendant unit filters', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: [[2, { text: 'moved to another unit', textMarked: [], inboxTags: [] }]],
+        pendingNewerItems: [],
+        filter: { selectedUnitIds: [21, 22] },
+        unreadCount: 1,
+        readIds: new Set<number>(),
+      },
+    ] as never;
+    hoisted.fetchMessagesByIdsMatchingFilters.mockResolvedValue([]);
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => localRoot.render(React.createElement(TestHarness)));
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2]);
+      });
+      expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledWith(
+        [2],
+        expect.objectContaining({ selectedUnitIds: [21, 22] }),
+      );
+      expect(latest?.messageFeeds[0].items).toEqual([]);
+      expect(latest?.messageFeeds[0].unreadCount).toBe(0);
+      expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => localRoot.unmount());
+      localContainer.remove();
+    }
   });
 
   // Regression: https://github.com/echoua/echo/issues/3780

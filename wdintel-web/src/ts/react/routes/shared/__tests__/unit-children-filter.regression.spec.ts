@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Unit } from '../../../../../Bindings';
 import { buildUnitFilterOptions } from '../../../utils/unit-search';
-import { buildAnalysisReq, emptyQueryState } from '../../rer-analysis-neo/helpers';
+import {
+  buildAnalysisReq,
+  emptyQueryState,
+  queryStateFromSavedFilter,
+  queryStateMatchesSavedFilter,
+} from '../../rer-analysis-neo/helpers';
 import { buildInboxReq, emptyFilter } from '../../rer-duty-neo/utils';
 import { aggregateUnitParentOptions, buildUnitHierarchyIndex } from '../unit-children-filter';
 
@@ -25,6 +30,69 @@ const units = [
 const hierarchy = buildUnitHierarchyIndex(units);
 
 describe('unit descendants regression #3527', () => {
+  it('does not join unrelated armies whose names contain hierarchy path delimiters', () => {
+    const unitHierarchy = buildUnitHierarchyIndex([
+      unit(40, 'Independent army', { army: '6 А|3:1 АК' }),
+      unit(41, 'Other army child', { army: '6 А', corps: '1 АК', brigade: '27 омсбр' }),
+    ]);
+    const req = buildInboxReq({
+      filter: { ...emptyFilter(), unitsSelected: ['unit-id:40'] },
+      unitsIncludeChildren: true,
+      unitHierarchy,
+    });
+    expect(req.selectedUnitIds).toEqual([40]);
+  });
+  it('keeps restored descendant requests closed until their hierarchy is available', () => {
+    const query = {
+      ...emptyQueryState(),
+      fromDateTimeStr: '2026-10-30T00:00',
+      toDateTimeStr: '2026-10-31T00:00',
+      unitsSelected: ['unit-id:20'],
+      unitsIncludeChildren: true,
+    };
+    expect(buildAnalysisReq(query)).toBeNull();
+    expect(
+      buildAnalysisReq({ ...query, unitHierarchy: hierarchy })?.selectedUnitIds?.sort(),
+    ).toEqual([20, 21, 22]);
+  });
+
+  it('restores saved parent intent and clears descendants when applying an older filter', () => {
+    const query = {
+      ...emptyQueryState(),
+      fromDateTimeStr: '2026-10-30T00:00',
+      toDateTimeStr: '2026-10-31T00:00',
+      unitsSelected: ['unit-id:20'],
+      unitsIncludeChildren: true,
+      unitHierarchy: hierarchy,
+    };
+    const saved = {
+      id: 1,
+      name: '#3527',
+      req: buildAnalysisReq(query)!,
+      unitFilter: { values: query.unitsSelected, includeChildren: true },
+    };
+    const restored = queryStateFromSavedFilter(saved, {
+      ...emptyQueryState(),
+      fromDateTimeStr: query.fromDateTimeStr,
+      toDateTimeStr: query.toDateTimeStr,
+    });
+    expect(restored.unitsSelected).toEqual(['unit-id:20']);
+    expect(restored.unitsIncludeChildren).toBe(true);
+    const refreshedHierarchy = buildUnitHierarchyIndex([
+      ...units,
+      unit(24, '3 мср 27 омсбр', { brigade: '27 омсбр', company: '3 мср' }),
+    ]);
+    expect(
+      buildAnalysisReq({ ...restored, unitHierarchy: refreshedHierarchy })?.selectedUnitIds?.sort(),
+    ).toEqual([20, 21, 22, 24]);
+    expect(queryStateMatchesSavedFilter(query, saved)).toBe(true);
+    expect(queryStateMatchesSavedFilter({ ...query, unitsIncludeChildren: false }, saved)).toBe(
+      false,
+    );
+    expect(
+      queryStateFromSavedFilter({ ...saved, unitFilter: null }, query).unitsIncludeChildren,
+    ).toBe(false);
+  });
   it('adds both children and a parent’s own counts without crossing another army or adding higher echelons', () => {
     const options = aggregateUnitParentOptions(
       [

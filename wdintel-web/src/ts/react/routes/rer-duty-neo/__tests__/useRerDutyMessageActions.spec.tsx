@@ -1267,7 +1267,7 @@ describe('useRerDutyMessageActions', () => {
     expect(mergeUpdatedDutyFeedMessages(feeds, 'mf-0', [1], [[1, buildMessage()]])).toBe(feeds);
   });
 
-  it('keeps saved-filter updates scoped to the feed that selected them', async () => {
+  it('#3527 keeps saved-filter updates and descendant preferences scoped to the selected feed', async () => {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     const firstFeed = buildFeed({
       id: 'mf-0',
@@ -1276,6 +1276,7 @@ describe('useRerDutyMessageActions', () => {
     const secondFeed = buildFeed({
       id: 'mf-1',
       filter: { ...emptyFilter(), groupsSelected: ['group-b'] },
+      unitsIncludeChildren: true,
     });
     hoisted.savedFilterUpsert.mockResolvedValue([
       { id: 1, name: 'Filter A', req: firstFeed.filter },
@@ -1320,7 +1321,7 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.savedFilterUpsert).toHaveBeenCalledTimes(1);
     expect(hoisted.savedFilterUpsert).toHaveBeenCalledWith({
       name: 'Filter A',
-      req: secondFeed.filter,
+      req: { ...secondFeed.filter, unitsIncludeChildren: true },
     });
   });
 

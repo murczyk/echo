@@ -1093,23 +1093,33 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     Ok(render_inbox_digest_query(q))
 }
 
-pub(crate) async fn build_inbox_unit_stats_query(
+pub(crate) async fn build_inbox_unit_stats_query_with_created_at_bounds(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     analytics_db: Option<&DatabaseConnection>,
+    created_at_lower_bound: Option<NaiveDateTime>,
+    created_at_upper_bound: Option<NaiveDateTime>,
 ) -> Result<Option<String>, AppError> {
-    let query = if let Some(db) = analytics_db {
+    let (query, unit_scope) = if let Some(db) = analytics_db {
         let freshness_max_age_ms = env
             .config
             .analytics
             .as_ref()
             .map(crate::config::AnalyticsConfig::freshness_max_age_ms)
             .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
-        let Some((query, _)) = build_analytics_filtered_inbox_query(
+        ensure_inbox_analytics_search_coverage(
             login,
             env,
             req,
+            db,
+            freshness_max_age_ms,
+        )
+        .await
+        .c(h!())?;
+        let Some(scope) = resolve_analytics_inbox_message_id_scope(
+            req,
+            &env.dbx,
             db,
             freshness_max_age_ms,
         )
@@ -1118,39 +1128,107 @@ pub(crate) async fn build_inbox_unit_stats_query(
         else {
             return Ok(None);
         };
-        query
+        let (query, _) = build_analytics_filtered_inbox_query_with_scope(
+            login, env, req, scope,
+        )
+        .await
+        .c(h!())?;
+        (query, Some(scope))
     } else {
-        build_filtered_inbox_query_with_scope(
+        let mut candidate_req = req.clone();
+        if created_at_lower_bound.is_some() {
+            candidate_req.search = None;
+        }
+        let query = build_filtered_inbox_query_with_scope(
             &env.dbx,
             login,
             env,
-            req,
+            &candidate_req,
             None,
             None,
             InboxQueryPurpose::Digest,
             InboxUnitLookupStrategy::Default,
         )
         .await
-        .c(h!())?
+        .c(h!())?;
+        (
+            apply_fresh_tail_inbox_search(query, req, created_at_lower_bound)
+                .c(h!())?,
+            None,
+        )
     };
-    let query = query
-        .select_only()
-        .column(signal_message::Column::Id)
-        .distinct();
+    let query = apply_inbox_created_at_bounds(
+        query,
+        created_at_lower_bound,
+        created_at_upper_bound,
+    )
+    .select_only()
+    .column(signal_message::Column::Id)
+    .distinct();
+    Ok(Some(render_inbox_unit_stats_query(
+        query,
+        unit_scope,
+        created_at_lower_bound.is_some(),
+    )))
+}
+
+fn render_inbox_unit_stats_query(
+    query: Select<signal_message::Entity>,
+    scope: Option<AnalyticsMessageIdScope>,
+    bounded_unit_lookup: bool,
+) -> String {
     let query = render_inbox_digest_query(query);
-    Ok(Some(format!(
+    let unit_links = sigint_inbox_item_unit::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item_unit::Column::ItemId)
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
+            "unit_id",
+        )
+        .column_as(
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Name)),
+            "name",
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_unit::Relation::SigintUnit.def(),
+        )
+        .filter(sigint_unit::Column::Deleted.eq(false));
+    let (unit_links, join_kind, join_condition) = if let Some(scope) = scope {
+        (
+            unit_links.filter(scope.condition((
+                sigint_inbox_item_unit::Entity,
+                sigint_inbox_item_unit::Column::ItemId,
+            ))),
+            "LEFT JOIN",
+            "unit_links.item_id = messages.id",
+        )
+    } else if bounded_unit_lookup {
+        (
+            unit_links
+                .filter(
+                    Expr::col((
+                        sigint_inbox_item_unit::Entity,
+                        sigint_inbox_item_unit::Column::ItemId,
+                    ))
+                    .equals((Alias::new("messages"), Alias::new("id"))),
+                )
+                .offset(0),
+            "LEFT JOIN LATERAL",
+            "TRUE",
+        )
+    } else {
+        (unit_links, "LEFT JOIN", "unit_links.item_id = messages.id")
+    };
+    let unit_links = unit_links.into_query().to_string(PostgresQueryBuilder);
+    format!(
         r#"SELECT COALESCE(unit_links.unit_id, {ANALYSIS_STATS_UNDEFINED_UNIT_ID}) AS unit_id,
                   COALESCE(unit_links.name, '{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}') AS name,
                   COUNT(DISTINCT messages.id) AS count
            FROM ({query}) AS messages
-           LEFT JOIN (
-               SELECT links.item_id, units.id AS unit_id, units.name
-               FROM sigint_inbox_item_unit AS links
-               JOIN sigint_unit AS units ON units.id = links.unit_id
-               WHERE units.deleted = FALSE
-           ) AS unit_links ON unit_links.item_id = messages.id
+           {join_kind} ({unit_links}) AS unit_links ON {join_condition}
            GROUP BY unit_links.unit_id, unit_links.name"#
-    )))
+    )
 }
 
 pub(crate) async fn build_inbox_digest_query(

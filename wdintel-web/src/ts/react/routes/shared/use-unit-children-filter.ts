@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { getAllUnitsList } from '../../services/api/units';
 import {
   aggregateUnitParentOptions,
@@ -10,6 +10,26 @@ import {
 export function useUnitHierarchyCatalog(needed: boolean, onError: (message: string) => void) {
   const [hierarchy, setHierarchy] = useState<UnitHierarchyIndex | null>(null);
   const [failed, setFailed] = useState(false);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  useEffect(() => {
+    if (!needed || !failed) return;
+    const timeout = setTimeout(() => setFailed(false), 2000);
+    return () => clearTimeout(timeout);
+  }, [failed, needed]);
+  useEffect(() => {
+    if (!needed) return;
+    const refresh = () => {
+      setHierarchy(null);
+      setFailed(false);
+    };
+    window.addEventListener('online', refresh);
+    window.addEventListener('focus', refresh);
+    return () => {
+      window.removeEventListener('online', refresh);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [needed]);
   useEffect(() => {
     if (!needed) {
       setFailed(false);
@@ -24,10 +44,10 @@ export function useUnitHierarchyCatalog(needed: boolean, onError: (message: stri
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setFailed(true);
-        onError(`Не вдалося завантажити ієрархію підрозділів: ${String(error)}`);
+        onErrorRef.current(`Не вдалося завантажити ієрархію підрозділів: ${String(error)}`);
       });
     return () => controller.abort();
-  }, [failed, hierarchy, needed, onError]);
+  }, [failed, hierarchy, needed]);
   return { hierarchy, loading: needed && hierarchy === null && !failed };
 }
 

@@ -90,7 +90,10 @@ export function useRerDutyShortState(params: Params) {
             setFilterPersistenceReady(true);
             current.setMessageFeeds(
               (state.messageFeeds ?? [['mf-0', emptyFilter()]]).map(([id, filter]) =>
-                createEmptyFeedState(id, filter, persistedFeedOptionsById.get(id)),
+                createEmptyFeedState(id, filter, {
+                  ...persistedFeedOptionsById.get(id),
+                  unitsIncludeChildren: filter.unitsIncludeChildren ?? false,
+                }),
               ),
             );
           } catch (error) {
@@ -123,7 +126,7 @@ export function useRerDutyShortState(params: Params) {
   const persistStateToUrl = useCallback(
     (next: MessageFeedState[]) => {
       if (shortStateIdRef.current && !ready) blockHydrationRef.current = true;
-      if (!featureEnabled || next.some((feed) => feed.unitsIncludeChildren)) {
+      if (!featureEnabled) {
         requestRef.current = { requestId: requestRef.current.requestId + 1, hash: null };
         pushStateToUrl(toQueryState(next));
         return;

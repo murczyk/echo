@@ -1091,6 +1091,7 @@ updateFilters msg model =
                     , postsDenied = Just m.postsDeniedSelect.selected
                     , unitsSelected = Nothing
                     , unitsDenied = Nothing
+                    , unitsIncludeChildren = Nothing
                     , selectedUnitIds = Nothing
                     , deniedUnitIds = Nothing
                     , selectedDeviceNames = Nothing

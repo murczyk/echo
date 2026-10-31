@@ -1593,10 +1593,20 @@ pub struct EditFreqUnitNameReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AnalysisUnitFilter {
+    pub values: Vec<String>,
+    pub include_children: bool,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SavedFilter {
     pub id: i64,
     pub name: String,
     pub req: AnalysisStatsReq,
+    #[serde(default)]
+    pub unit_filter: Option<AnalysisUnitFilter>,
 }
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -1613,6 +1623,8 @@ pub struct SavedFilterDuty {
 pub struct SavedFilterUpsertReq {
     pub name: String,
     pub req: AnalysisStatsReq,
+    #[serde(default)]
+    pub unit_filter: Option<AnalysisUnitFilter>,
 }
 
 #[derive(
@@ -1656,6 +1668,8 @@ pub struct RerDutyQueryStateWf {
     pub units_selected: Option<Vec<String>>,
     #[serde(default)]
     pub units_denied: Option<Vec<String>>,
+    #[serde(default)]
+    pub units_include_children: Option<bool>,
     #[serde(default)]
     pub selected_unit_ids: Option<Vec<i64>>,
     #[serde(default)]

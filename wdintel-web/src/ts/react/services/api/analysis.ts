@@ -230,6 +230,7 @@ export async function upsertAnalysisSavedFilter(req: SavedFilterUpsertReq): Prom
   const body = {
     name: req.name,
     req: analysisStatsReqBody(req.req),
+    unit_filter: req.unitFilter == null ? null : transformCamelToSnake(req.unitFilter),
   };
   const raw = await postJson<unknown>('/api/rer/analysis/saved-filter-upsert', body as JsonValue);
   return transformSnakeToCamel<SavedFilter[]>(raw) ?? [];

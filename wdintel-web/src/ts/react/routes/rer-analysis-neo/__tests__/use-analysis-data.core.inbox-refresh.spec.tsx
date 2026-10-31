@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../Bindings';
 import { emptyQueryState } from '../helpers';
 import { useAnalysisData } from '../use-analysis-data.core';
+import { buildUnitHierarchyIndex } from '../../shared/unit-children-filter';
+import { buildUnitFilterOptions } from '../../../utils/unit-search';
 
 const hoisted = vi.hoisted(() => ({
   fetchMessagesByIds: vi.fn(),
@@ -349,6 +351,49 @@ afterEach(() => {
   container = null;
 });
 describe('useAnalysisData inbox refreshes', () => {
+  it('#3527 never broadens reconciliation while restored descendant filters await the catalog', async () => {
+    hoisted.messages = [[1, inboxMessage({ text: 'displayed' })]];
+    renderHook({
+      fromDateTimeStr: '2026-10-30T00:00',
+      toDateTimeStr: '2026-10-31T00:00',
+      unitsSelected: ['unit-id:20'],
+      unitsIncludeChildren: true,
+    });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+    expect(hoisted.fetchMessagesByIds).not.toHaveBeenCalled();
+    expect(hoisted.fetchMessageIdsMatchingFilters).not.toHaveBeenCalled();
+    expect(latest!.messages.map(([id]) => id)).toEqual([1]);
+  });
+
+  it('#3527 removes a visible message whose edited unit no longer matches the parent', async () => {
+    const template = buildUnitFilterOptions([])[0];
+    const unitHierarchy = buildUnitHierarchyIndex([
+      { ...template, id: 20, name: '27 омсбр', army: '6 А', brigade: '27 омсбр' },
+      { ...template, id: 21, name: '1 мср', army: '6 А', brigade: '27 омсбр', company: '1 мср' },
+    ]);
+    const message = inboxMessage({ text: 'changed unit' });
+    hoisted.messages = [[1, message]];
+    hoisted.fetchMessagesByIds.mockResolvedValue([[1, message]]);
+    hoisted.fetchMessageIdsMatchingFilters.mockResolvedValue([]);
+    renderHook({
+      fromDateTimeStr: '2026-10-30T00:00',
+      toDateTimeStr: '2026-10-31T00:00',
+      unitsSelected: ['unit-id:20'],
+      unitsIncludeChildren: true,
+      unitHierarchy,
+    });
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+    expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
+      [1],
+      expect.objectContaining({ selectedUnitIds: [20, 21] }),
+      expect.anything(),
+    );
+    expect(latest!.messages).toEqual([]);
+  });
   it('#3780 preserves list and map identity for unchanged broadcast payloads', async () => {
     const message = inboxMessage({ text: 'displayed' });
     hoisted.messages = [[1, message]];
