@@ -5618,6 +5618,28 @@ export type FreqPelengsEntry = {
   pelengsCount: number;
 };
 
+export type RoleMessageSettings = {
+  role: string;
+  unitRequired: boolean;
+  deviceRequired: boolean;
+  allowUnitCreation: boolean;
+};
+
+export type RoleMessageSettingsKey = {
+  role: string;
+};
+
+export type RoleMessageSettingsListRsp = {
+  settings: Array<RoleMessageSettings>;
+  roles: Array<string>;
+};
+
+export type MessageCreationSettings = {
+  unitRequired: boolean;
+  deviceRequired: boolean;
+  allowUnitCreation: boolean;
+};
+
 export type SystemSettingsCurrentRsp = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;

@@ -246,6 +246,13 @@ export async function installAnalysisNeoApiMocks(
     const url = new URL(request.url());
     const { pathname } = url;
 
+    if (pathname === '/api/1.1/submit-direct/settings') {
+      await route.fulfill({
+        json: { unitRequired: false, deviceRequired: false, allowUnitCreation: true },
+      });
+      return;
+    }
+
     if (pathname === '/api/rer-importer/message-replies') {
       await fulfillJson(route, { replies: [], reply_messages: [] });
       return;

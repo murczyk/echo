@@ -1,7 +1,12 @@
 import type { Page, Route } from '@playwright/test';
 import type { MessageTimeBasis } from '../../src/ts/react/services/api/user-settings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
-import { networkSettingsResponse, systemSettingsCurrentResponse } from './fixture-responses';
+import {
+  emptyUnitsListResponse,
+  emptyNetworksListResponse,
+  networkSettingsResponse,
+  systemSettingsCurrentResponse,
+} from './fixture-responses';
 
 type ShortStateFixtureOptions = {
   userRoles?: string[];
@@ -180,6 +185,23 @@ export async function installRerDutyShortStateMocks(
 
     const url = new URL(request.url());
     const { pathname } = url;
+
+    if (pathname === '/api/sigint/network-list') {
+      await fulfillJson(route, emptyNetworksListResponse());
+      return;
+    }
+
+    if (pathname === '/api/sigint/units') {
+      await fulfillJson(route, emptyUnitsListResponse());
+      return;
+    }
+
+    if (pathname === '/api/1.1/submit-direct/settings') {
+      await route.fulfill({
+        json: { unitRequired: false, deviceRequired: false, allowUnitCreation: true },
+      });
+      return;
+    }
 
     if (pathname === '/api/rer-importer/message-replies') {
       await fulfillJson(route, { replies: [], reply_messages: [] });

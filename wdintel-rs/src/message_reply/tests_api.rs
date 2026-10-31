@@ -1,4 +1,7 @@
-use crate::entities::{login, organism, signal_message, signal_message_group};
+use crate::entities::{
+    login, organism, role_message_settings, signal_message,
+    signal_message_group,
+};
 use crate::functest::tests::*;
 use actix_identity::{Identity, IdentityMiddleware};
 use actix_session::{storage::RedisSessionStore, SessionMiddleware};
@@ -40,6 +43,15 @@ async fn replies_3612_reader_could_reply_without_gaining_ordinary_message_write_
     )
     .await
     .unwrap();
+    role_message_settings::ActiveModel {
+        role: Set("CyberViewerRestricted".into()),
+        unit_required: Set(true),
+        device_required: Set(false),
+        allow_unit_creation: Set(false),
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap();
     let source = mk_signal_message(
         &env.dbx,
         signal_message::ActiveModel {
@@ -77,6 +89,7 @@ async fn replies_3612_reader_could_reply_without_gaining_ordinary_message_write_
                     .build(),
             )
             .route("/_3612/login", web::get().to(login_reader))
+            .service(crate::users::role_settings::current)
             .service(crate::sigint::direct_submit::submit_direct)
             .service(super::message_replies),
     )
@@ -98,6 +111,18 @@ async fn replies_3612_reader_could_reply_without_gaining_ordinary_message_write_
     let unit = test::call_service(&app, test::TestRequest::post().uri("/api/1.1/submit-direct")
         .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Not allowed", "unit": "Protected unit", "engaged_message_id": source.id })).to_request()).await;
     assert_eq!(unit.status(), actix_web::http::StatusCode::FORBIDDEN);
+    let settings = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/1.1/submit-direct/settings")
+            .cookie(cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert!(settings.status().is_success());
+    let settings: crate::users::role_settings::types::MessageCreationSettings =
+        test::read_body_json(settings).await;
+    assert!(!settings.unit_required);
     let reply = test::call_service(&app, test::TestRequest::post().uri("/api/1.1/submit-direct")
         .cookie(cookie.clone()).set_json(serde_json::json!({ "text": "Reader reply", "engaged_message_id": source.id })).to_request()).await;
     assert!(

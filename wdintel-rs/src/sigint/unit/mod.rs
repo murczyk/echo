@@ -1210,6 +1210,9 @@ pub async fn create_unit(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     ensure_unit_creation(&env.dbx, &login, &req).await.c(h!())?;
+    crate::users::role_settings::ensure_catalog_unit_creation(&env.dbx, &login)
+        .await
+        .c(h!())?;
 
     let (unit, can_view_orbit) =
         create_unit_for_login(&login, &env, req.into_inner())
@@ -1253,6 +1256,9 @@ pub async fn create_unit_with_auto_network(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     ensure_unit_creation(&env.dbx, &login, &req.unit)
+        .await
+        .c(h!())?;
+    crate::users::role_settings::ensure_catalog_unit_creation(&env.dbx, &login)
         .await
         .c(h!())?;
 

@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../../Bindings';
 import dayjs from 'dayjs';
+import { getMessageCreationSettings } from '../../../../services/api/role-message-settings';
 
 const referenceDataMocks = vi.hoisted(() => ({
   getUserSigintGroups: vi.fn().mockResolvedValue([]),
@@ -96,6 +97,13 @@ vi.mock('../../../../services/api/direct-submit', () => ({
   copyDirectSubmit: directSubmitMocks.copyDirectSubmit,
   formatDirectSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : 'save failed',
+}));
+vi.mock('../../../../services/api/role-message-settings', () => ({
+  getMessageCreationSettings: vi.fn().mockResolvedValue({
+    unitRequired: false,
+    deviceRequired: false,
+    allowUnitCreation: true,
+  }),
 }));
 vi.mock('../../../../services/api/networks', () => ({
   getNetworksByIds: networkMocks.getNetworksByIds,
@@ -2218,13 +2226,23 @@ describe('ManageMessageDrawer edit mode', () => {
     },
   );
 
-  it.each([0, 1, 2])(
-    '#3891 submitted an inherited unit without an ID with %i exact catalog matches',
-    async (count) => {
+  it.each([
+    [0, false, '51 пдп'],
+    [1, false, '51 пдп'],
+    [2, false, '51 пдп'],
+    [0, true, ' 51 пдп '],
+  ] as const)(
+    '#3891/#3935 submitted an inherited unit without an ID (matches=%i, required=%s, label=%j)',
+    async (count, unitRequired, unit) => {
       vi.useFakeTimers();
       setRecentValues({});
+      vi.mocked(getMessageCreationSettings).mockResolvedValueOnce({
+        unitRequired,
+        deviceRequired: false,
+        allowUnitCreation: false,
+      });
       directSubmitMocks.copyDirectSubmit.mockResolvedValue({
-        payloads: [{ unit: '51 пдп', timestamp: '2026-10-20T06:46:00Z' }],
+        payloads: [{ unit, timestamp: '2026-10-20T06:46:00Z' }],
       });
       directSubmitMocks.searchUnitNames.mockResolvedValue(
         Array.from({ length: count }, (_, index) => ({ id: index + 1, name: '51 пдп' })),
@@ -2240,7 +2258,7 @@ describe('ManageMessageDrawer edit mode', () => {
               cyberEchoEnabled={false}
               currentUser={{ roles: ['Rer'] } as User}
               onClose={vi.fn()}
-              reportSource={{ id: 42, message: buildMessage({ unit: '51 пдп' }) }}
+              reportSource={{ id: 42, message: buildMessage({ unit }) }}
             />,
           );
         });
@@ -2248,7 +2266,7 @@ describe('ManageMessageDrawer edit mode', () => {
           await vi.advanceTimersByTimeAsync(350);
         });
         expect(textFieldPropsByLabel.get('Підрозділ')?.error).toBe(false);
-        expect(autocompleteValuesByLabel.get('Підрозділ')).toBe('51 пдп');
+        expect(autocompleteValuesByLabel.get('Підрозділ')).toBe(unit);
         await act(async () => {
           textFieldPropsByLabel
             .get('Текст розвіддонесення')
@@ -2265,7 +2283,7 @@ describe('ManageMessageDrawer edit mode', () => {
         });
         expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
           expect.objectContaining({
-            unit: '51 пдп',
+            unit,
             unit_id: undefined,
             create_unit: undefined,
             copy_source_signal_message_ids: [42],

@@ -416,6 +416,9 @@ pub async fn submit_signal_message(
     env: &Env,
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
+    crate::users::role_settings::validate_creation(&env.dbx, login, &payload)
+        .await
+        .c(h!())?;
     save_signal_message(login, env, None, payload).await
 }
 
