@@ -619,6 +619,7 @@ export function useManageMessageDrawer({
       dutySettings.setMessageAutoParseEnabled(enabled);
       dutySettings.scheduleSave({
         ...dutySettings,
+        messageCardQuickAction: undefined,
         messageAutoParseEnabled: enabled,
       });
     },

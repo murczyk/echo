@@ -63,6 +63,10 @@ export type UserDutySettings = {
   aiPositionHighlightsEnabled: UserDutySettingsDto['aiPositionHighlightsEnabled'];
 };
 
+export type UserDutySettingsUpdate = Omit<UserDutySettings, 'messageCardQuickAction'> & {
+  messageCardQuickAction?: MessageCardQuickAction;
+};
+
 export type MessageTimeBasis = 'interception' | 'creation';
 
 export type MessageTextPreviewLineLimit = 20 | 40 | null;
@@ -185,7 +189,7 @@ export async function fetchUserSettings(signal?: AbortSignal): Promise<UserDutyS
 }
 
 export async function saveUserSettings(
-  body: UserDutySettings,
+  body: UserDutySettingsUpdate,
   signal?: AbortSignal,
 ): Promise<UserDutySettings> {
   const response = await putJson<UserDutySettingsWire>(

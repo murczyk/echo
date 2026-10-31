@@ -40,15 +40,30 @@ async function installFixture(
     messageCardQuickAction: 'createReport',
   };
   let failSave = false;
+  let nextSaveBlocked: Promise<void> | undefined;
+  const saves: Record<string, unknown>[] = [];
   await page.route('**/api/user/settings', async (route) => {
     if (route.request().method() === 'PUT') {
       if (failSave) return route.fulfill({ status: 500, body: 'Save failed' });
-      settings = route.request().postDataJSON();
+      const changes = route.request().postDataJSON();
+      saves.push(changes);
+      const blocked = nextSaveBlocked;
+      nextSaveBlocked = undefined;
+      await blocked;
+      settings = { ...settings, ...changes };
     }
     await route.fulfill({ json: settings });
   });
   return {
     settings: () => settings,
+    saves,
+    blockNextSave: () => {
+      let release!: () => void;
+      nextSaveBlocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
     failSave: () => {
       failSave = true;
     },
@@ -56,6 +71,36 @@ async function installFixture(
 }
 
 for (const host of ['duty', 'analysis'] as const) {
+  test(`#3927 ${host}: unrelated settings keep the server default unset and preserve a personal choice @regression`, async ({
+    page,
+  }) => {
+    const fixture = await installFixture(page, host);
+    fixture.settings().messageCardQuickAction = 'copyText';
+    await page.goto(`/settings-neo?section=${host}`);
+    const select = page.getByRole('combobox', { name: 'Швидка дія для вузької картки' });
+    await expect(select).toHaveText('Копіювати повідомлення');
+    const releaseSave = fixture.blockNextSave();
+    await page.getByRole('button', { name: 'Збільшений', exact: true }).click();
+    await expect.poll(() => fixture.saves.length).toBe(1);
+    expect(fixture.saves[0]).not.toHaveProperty('messageCardQuickAction');
+    await select.click();
+    await page.getByRole('option', { name: 'Створити розвіддонесення', exact: true }).click();
+    await expect(select).toHaveText('Створити розвіддонесення');
+    await page.getByRole('button', { name: 'Стандартний', exact: true }).click();
+    releaseSave();
+    await expect.poll(() => fixture.saves.length).toBe(2);
+    expect(fixture.saves[1]).toMatchObject({
+      messageCardQuickAction: 'createReport',
+      largeMessageCardText: false,
+    });
+    await expect.poll(() => fixture.settings().messageCardQuickAction).toBe('createReport');
+    await page.getByRole('button', { name: 'Збільшений', exact: true }).click();
+    await expect.poll(() => fixture.saves.length).toBe(3);
+    expect(fixture.saves[2]).not.toHaveProperty('messageCardQuickAction');
+    await page.reload();
+    await expect(select).toHaveText('Створити розвіддонесення');
+  });
+
   test(`#3927 ${host}: every fixed quick action persists and appears once on narrow cards @regression`, async ({
     page,
     context,

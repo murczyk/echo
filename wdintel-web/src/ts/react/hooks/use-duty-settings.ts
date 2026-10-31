@@ -11,6 +11,7 @@ import {
   fetchUserSettings,
   saveUserSettings,
   type UserDutySettings,
+  type UserDutySettingsUpdate,
   type MessageCardQuickAction,
   type MessageTextPreviewLineLimit,
   type MessageTimeBasis,
@@ -18,7 +19,7 @@ import {
 
 type DutySettingsValue = UserDutySettings;
 
-type DutySettingsSaveRequest = DutySettingsValue;
+type DutySettingsSaveRequest = UserDutySettingsUpdate;
 
 export type DutySettingsHook = DutySettingsValue & {
   loadInProgress: boolean;
@@ -168,7 +169,11 @@ export function useDutySettings(): DutySettingsHook {
   const scheduleSave = useCallback(
     (nextSettings: DutySettingsSaveRequest) => {
       setSaveError(null);
-      pendingSaveRef.current = nextSettings;
+      pendingSaveRef.current = {
+        ...nextSettings,
+        messageCardQuickAction:
+          nextSettings.messageCardQuickAction ?? pendingSaveRef.current?.messageCardQuickAction,
+      };
       void flushSaveQueue();
     },
     [flushSaveQueue],

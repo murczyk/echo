@@ -520,7 +520,6 @@ describe('SettingsNeoPage', () => {
 
     expect(saveUserDutySettings).toHaveBeenCalledTimes(2);
     expect(saveUserDutySettings.mock.calls[1]?.[0]).toEqual({
-      messageCardQuickAction: 'createReport',
       tagsLayout: 'compact',
       disableAutoScroll: true,
       analysisMapInSidebar: false,

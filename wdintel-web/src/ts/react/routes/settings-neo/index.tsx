@@ -106,7 +106,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const [dutyFilterPersistenceError, setDutyFilterPersistenceError] = useState<string | null>(null);
   const scheduleDutySettingsSave = (overrides: Partial<UserDutySettings>) => {
     dutySettings.scheduleSave({
-      messageCardQuickAction: dutySettings.messageCardQuickAction,
       tagsLayout: dutySettings.tagsLayout,
       messageTextPreviewLines: dutySettings.messageTextPreviewLines,
       disableAutoScroll: dutySettings.disableAutoScroll,
