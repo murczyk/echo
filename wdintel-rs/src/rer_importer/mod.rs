@@ -2049,26 +2049,34 @@ where
         .c(h!())?;
     let mut data = BTreeMap::new();
     for id in sender_uuids {
-        let m_profile = echo_senders
+        let m_profile = logins
             .iter()
-            .find(|sender| sender.uuid == id)
-            .map(|sender| SignalProfileEntry {
+            .find(|login| login.id.to_string() == id)
+            .map(|login| SignalProfileEntry {
                 family_name: None,
-                given_name: sender.name.clone(),
+                given_name: Some(login.login.clone()),
             })
             .or_else(|| {
-                logins.iter().find(|login| login.id.to_string() == id).map(
-                    |login| SignalProfileEntry {
+                profiles
+                    .get(&id)
+                    .filter(|profile| {
+                        [&profile.given_name, &profile.family_name]
+                            .into_iter()
+                            .flatten()
+                            .any(|name| !name.trim().is_empty())
+                    })
+                    .map(|profile| SignalProfileEntry {
+                        family_name: profile.family_name.clone(),
+                        given_name: profile.given_name.clone(),
+                    })
+            })
+            .or_else(|| {
+                echo_senders.iter().find(|sender| sender.uuid == id).map(
+                    |sender| SignalProfileEntry {
                         family_name: None,
-                        given_name: Some(login.login.clone()),
+                        given_name: sender.name.clone(),
                     },
                 )
-            })
-            .or_else(|| {
-                profiles.get(&id).map(|p| SignalProfileEntry {
-                    family_name: p.family_name.clone(),
-                    given_name: p.given_name.clone(),
-                })
             });
         data.insert(id, m_profile);
     }
