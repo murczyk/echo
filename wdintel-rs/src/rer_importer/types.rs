@@ -686,6 +686,8 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub sender: Option<String>,
     #[serde(default)]
+    pub sender_id: Option<uuid::Uuid>,
+    #[serde(default)]
     pub post: Option<String>,
     #[serde(default)]
     pub unit: Option<String>,
@@ -718,6 +720,7 @@ impl Default for InboxSubmitItem {
             tags: None,
             timestamp: "1970-01-01T00:00:00Z".to_string(),
             sender: None,
+            sender_id: None,
             post: None,
             unit: None,
             locations: vec![],

@@ -118,7 +118,8 @@ test('API senders require an account and save independently of user edits #3958 
   await addSender.getByRole('combobox', { name: 'Обліковий запис Echo' }).fill('alice');
   await page.getByRole('option', { name: 'alice', exact: true }).click();
   const displayName = addSender.getByRole('textbox', { name: 'Ім’я відправника' });
-  await expect(displayName).toHaveValue('alice');
+  await expect(displayName).toHaveValue('');
+  await expect(save).toBeDisabled();
   await displayName.fill('   ');
   await expect(save).toBeDisabled();
   await displayName.fill('Operator Alice');

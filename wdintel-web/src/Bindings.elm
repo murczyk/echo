@@ -14553,6 +14553,20 @@ apiSenderEncoder struct =
         ]
 
 
+type alias OperatorSender =
+    { displayName : String
+    , senderUuid : String
+    }
+
+
+operatorSenderEncoder : OperatorSender -> Json.Encode.Value
+operatorSenderEncoder struct =
+    Json.Encode.object
+        [ ( "display_name", (Json.Encode.string) struct.displayName )
+        , ( "sender_uuid", (Json.Encode.string) struct.senderUuid )
+        ]
+
+
 type alias ListApiSendersReq =
     { apiId : String
     }
@@ -29487,6 +29501,13 @@ apiSenderDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_uuid" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+
+
+operatorSenderDecoder : Json.Decode.Decoder OperatorSender
+operatorSenderDecoder =
+    Json.Decode.succeed OperatorSender
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_uuid" (Json.Decode.string)))
 
 
 listApiSendersReqDecoder : Json.Decode.Decoder ListApiSendersReq

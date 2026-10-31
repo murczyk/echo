@@ -95,14 +95,9 @@ function SenderDialog({
             getOptionLabel={(login) => login.login}
             isOptionEqualToValue={(option, value) => option.id === value.id}
             onChange={(_, login) => {
-              const previousLogin = logins.find((login) => login.id === draft.loginId);
               setDraft({
                 ...draft,
                 loginId: login?.id ?? '',
-                displayName:
-                  !draft.displayName.trim() || draft.displayName === previousLogin?.login
-                    ? (login?.login ?? '')
-                    : draft.displayName,
               });
             }}
             disabled={saving}
@@ -112,6 +107,7 @@ function SenderDialog({
           />
           <TextField
             label="Ім’я відправника"
+            helperText="Це ім’я передається в API."
             required
             value={draft.displayName}
             onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}

@@ -5626,6 +5626,11 @@ export type ApiSender = {
   loginId: string;
 };
 
+export type OperatorSender = {
+  displayName: string;
+  senderUuid: string;
+};
+
 export type ListApiSendersReq = {
   apiId: string;
 };

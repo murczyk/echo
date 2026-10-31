@@ -72,7 +72,11 @@ pub(crate) async fn submit_generic_inbox_item(
     logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
-    super::validate_generic_submit_item(&item)?;
+    super::validate_generic_submit_item(&item).c(h!())?;
+    let sender_login =
+        crate::api_senders::resolve_login(txn, *login, item.sender_id)
+            .await
+            .c(h!())?;
     let groups = super::ensure_submit_groups(
         txn,
         datasource,
@@ -84,7 +88,7 @@ pub(crate) async fn submit_generic_inbox_item(
     let item = parse_missing_submit_unit(env, txn, &groups, item)
         .await
         .c(h!())?;
-    submit_inbox_item_with_groups(
+    let submitted = submit_inbox_item_with_groups(
         env.as_ref(),
         txn,
         Some(datasource.id),
@@ -95,6 +99,17 @@ pub(crate) async fn submit_generic_inbox_item(
         false,
     )
     .await
+    .c(h!())?;
+    if let Some(sender_login) = sender_login {
+        crate::api_senders::attribute_message(
+            txn,
+            submitted.signal_message_id,
+            sender_login,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(submitted)
 }
 
 async fn parse_missing_submit_unit(
