@@ -25,7 +25,7 @@ flowchart LR
 
 - One optional Debian 13 analytics container per Echo source container.
 - Native packages and systemd only; no Docker or Podman.
-- `amd64` runtime.
+- `amd64` runtime with AVX2 support (x86-64-v3).
 - Source PostgreSQL 18 and local gateway PostgreSQL 18.
 - Tailscale or an equally private routed network in both directions.
 - The operator creates the container, DNS/IPs, storage, backups, and SSH
@@ -46,7 +46,8 @@ stopping the services is not sanitization.
 
 All pins and downloadable checksums live in [versions.env](versions.env):
 
-- ClickHouse `26.3.12.3` LTS from its signed apt repository.
+- ClickHouse `26.10.2.103` stable from its signed apt repository, including
+  the per-user memory-accounting fix in [upstream PR #113647](https://github.com/ClickHouse/ClickHouse/pull/113647).
 - PeerDB `v0.37.1` at its release commit.
 - `pg_clickhouse` `v0.3.2-echo.2`, built specifically for PostgreSQL 18 from
   the `codex/v0.3.2-search-backports` fork branch. The pinned commit
@@ -83,7 +84,86 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 - Builder Go `1.26.5`, Rust `1.93.0`, and buf `1.60.0`.
 
 Exact ClickHouse packages are held after installation. Upgrades are explicit:
-update pins/checksums, rebuild artifacts, test in development, then staging.
+update pins/checksums, rebuild affected artifacts, test in development, then
+staging. ClickHouse-only upgrades use the signed apt packages directly.
+
+### ClickHouse-only upgrades
+
+PR #113647 is forward-only; updating the old 26.3 LTS packages does not include
+the fix. Upgrade the paired analytics containers, starting with
+`echo-staging-clickhouse` and `echo-kharkiv2-clickhouse`. Observe each canary
+for ten minutes before advancing. Then upgrade `echo-siversk-clickhouse`,
+`echo-zp2-clickhouse`, `echo-skhid-clickhouse`, and `echo-pivnich-clickhouse`
+sequentially, observing each for five minutes. Instances without an analytics
+companion need no action.
+
+Before changing a host, record package versions/holds, service and timer states,
+configuration hashes, stored-table UUIDs, replication health, and recent
+errors. Save `/etc/clickhouse-server` and the ClickHouse apt source plus the old
+three packages in a root-only directory under `/var/backups/echo-analytics`.
+Review the intervening release compatibility notes and validate the target
+binary with upstream's `04757_user_memory_tracker_no_drift.sh` regression in an
+isolated local instance.
+
+Change only the ClickHouse apt source from `lts` to `stable`, keeping its existing
+`signed-by` key. Refresh that repository, then simulate the exact installation
+and reject unrelated package changes. Before installation, pause the active
+analytics health, reconcile, and memory-limit timers, wait for their current
+services to finish, then call `acquire_analytics_reconcile_lock` from the active
+bundle's `bin/lib.sh` to hold `/run/lock/echo-analytics-reconcile.lock`.
+Keep PeerDB and the PostgreSQL gateway running; ClickHouse briefly interrupts
+analytics reads and ingestion while restarting.
+
+If the service has no explicit CPU weight, install the following drop-in before
+restarting. `CPUWeight=100` is the default scheduling weight; making it explicit
+keeps systemd's CPU controller enabled after SSH logout and avoids the repeated
+`cpu.max: errno: 19` metrics errors described in [upstream issue #128137](https://github.com/ClickHouse/ClickHouse/issues/128137).
+Preserve an existing custom CPU weight. Provisioning installs this workaround
+automatically when the weight is unset.
+
+```bash
+sudo install -d -m 0755 /etc/systemd/system/clickhouse-server.service.d
+printf '[Service]\nCPUWeight=100\n' \
+  | sudo tee /etc/systemd/system/clickhouse-server.service.d/echo-cgroup-cpu.conf >/dev/null
+sudo systemctl daemon-reload
+```
+
+```bash
+version=26.10.2.103
+sudo env DEBIAN_FRONTEND=noninteractive apt-get -s install \
+  --no-install-recommends --allow-change-held-packages \
+  "clickhouse-common-static=$version" "clickhouse-client=$version" "clickhouse-server=$version"
+sudo env DEBIAN_FRONTEND=noninteractive apt-get -y install \
+  --no-install-recommends --allow-change-held-packages \
+  -o Dpkg::Options::=--force-confold \
+  "clickhouse-common-static=$version" "clickhouse-client=$version" "clickhouse-server=$version"
+sudo apt-mark hold clickhouse-common-static clickhouse-client clickhouse-server
+```
+
+Debian may replace unmodified default configuration files even with
+`--force-confold`. Restore the saved configuration files and verify their hashes
+before restarting:
+
+```bash
+sudo systemctl restart clickhouse-server
+```
+
+Restore each timer to its original state, including on failure. Require matching
+package and runtime versions, unchanged existing configuration and stored-table
+UUIDs, successful authenticated gateway reads, a running mirror, and fresh
+successful heartbeat records. Reconciliation may recreate current-state views;
+verify their reads while checking that stored tables retain their UUIDs.
+During observation, check ClickHouse, PeerDB,
+gateway, and Echo logs every thirty seconds along with user memory and exception
+counts. Run `bin/manage-system-logs.sh --check` before and after the upgrade;
+record pre-existing findings and compare diagnostic-table TTLs to detect new drift.
+Check `system.text_log` as well as service journals so errors emitted by the
+metrics collector are included. Stop promotion for crashes, recurring errors,
+replication lag, or retention drift. Inspect any failed/partial installation
+before attempting
+recovery; do not automatically downgrade across release lines. Retain backups
+until the rollout is verified. No resnapshot, application configuration change,
+or gateway/PeerDB upgrade is needed.
 
 ### Extension-only hotfixes
 
