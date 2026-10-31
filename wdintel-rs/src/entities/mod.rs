@@ -59,6 +59,7 @@ pub mod api_integration;
 pub mod api_integration_iggy_destination;
 pub mod api_integration_iggy_event;
 pub mod api_integration_iggy_unit_refresh;
+pub mod api_sender;
 pub mod area_of_responsibility;
 pub mod area_of_responsibility_report_order;
 pub mod attachment_chunk;

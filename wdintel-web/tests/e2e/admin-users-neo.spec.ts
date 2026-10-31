@@ -58,6 +58,91 @@ async function installAdminUsersApiMocks(
   );
 }
 
+test('API senders require an account and save independently of user edits #3958 @regression', async ({
+  page,
+}) => {
+  const apiLogin = {
+    ...inactiveLogin,
+    login: 'operator-api',
+    roles: ['Api'],
+    deleted: false,
+    organismEnabled: true,
+  };
+  const senderLogin = {
+    ...apiLogin,
+    id: '019a0fd8-a021-7f19-ab9b-a9d432052648',
+    login: 'alice',
+    roles: ['Rer'],
+  };
+  await installAdminUsersApiMocks(page, [apiLogin, senderLogin]);
+  let senders: { api_id: string; sender_uuid: string; login_id: string; display_name: string }[] =
+    [];
+  let userUpdates = 0;
+  const senderUuid = 'cb2bca32-f436-448d-b4c3-b7fe36b02953';
+  await page.route('**/api/admin/api-senders', (route) => route.fulfill({ json: senders }));
+  await page.route('**/api/admin/api-senders/upsert', (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.api_id).toBe(apiLogin.id);
+    expect(body.login_id).toBe(senderLogin.id);
+    expect(body.display_name.trim()).not.toBe('');
+    const sender = { ...body, sender_uuid: body.sender_uuid ?? senderUuid };
+    senders = [sender];
+    return route.fulfill({ json: sender });
+  });
+  await page.route('**/api/admin/api-senders/delete', (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      api_id: apiLogin.id,
+      sender_uuid: senderUuid,
+    });
+    senders = [];
+    return route.fulfill({ json: null });
+  });
+  await page.route('**/api/login/update', (route) => {
+    userUpdates += 1;
+    return route.fulfill({ json: apiLogin });
+  });
+
+  await page.goto('/admin/users-neo');
+  await page
+    .locator('users-neo')
+    .getByRole('row')
+    .filter({ hasText: 'operator-api' })
+    .getByRole('button', { name: 'Редагувати', exact: true })
+    .click();
+  const editUser = page.getByRole('dialog', { name: 'Редагувати користувача' });
+  await expect(editUser.getByText('Відправників ще немає.')).toBeVisible();
+  await editUser.getByRole('button', { name: 'Додати відправника' }).click();
+  const addSender = page.getByRole('dialog', { name: 'Додати відправника' });
+  const save = addSender.getByRole('button', { name: 'Зберегти' });
+  await expect(save).toBeDisabled();
+  await addSender.getByRole('combobox', { name: 'Обліковий запис Echo' }).fill('alice');
+  await page.getByRole('option', { name: 'alice', exact: true }).click();
+  const displayName = addSender.getByRole('textbox', { name: 'Ім’я відправника' });
+  await expect(displayName).toHaveValue('');
+  await expect(save).toBeDisabled();
+  await displayName.fill('   ');
+  await expect(save).toBeDisabled();
+  await displayName.fill('Operator Alice');
+  await displayName.press('Enter');
+  await expect(addSender).toBeHidden();
+  await expect(editUser.getByText(senderUuid)).toBeVisible();
+  expect(userUpdates).toBe(0);
+
+  await editUser.getByRole('button', { name: 'Редагувати відправника', exact: true }).click();
+  const editSender = page.getByRole('dialog', { name: 'Редагувати відправника' });
+  await editSender.getByRole('textbox', { name: 'Ім’я відправника' }).fill('Renamed Alice');
+  await editSender.getByRole('button', { name: 'Зберегти' }).click();
+  await expect(editSender).toBeHidden();
+  await expect(editUser.getByText('Renamed Alice')).toBeVisible();
+  await editUser.getByRole('button', { name: 'Видалити відправника', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Підтвердження видалення' })
+    .getByRole('button', { name: 'Видалити', exact: true })
+    .click();
+  await expect(editUser.getByText('Відправників ще немає.')).toBeVisible();
+  expect(userUpdates).toBe(0);
+});
+
 for (const width of [1280, 390]) {
   test(`Admin Users dialogs follow visual keyboard order at ${width}px @regression`, async ({
     page,

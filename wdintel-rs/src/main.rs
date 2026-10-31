@@ -26,6 +26,7 @@ pub mod ai_transcript_analysis;
 mod ai_worker;
 pub(crate) mod alpine;
 pub mod api_integrations;
+pub mod api_senders;
 pub mod atak;
 pub mod attachments;
 pub mod aws;

@@ -1805,6 +1805,7 @@ fn direct_submit_payload_to_item(
         )
         .c(h!())?,
         sender: Some(sender),
+        sender_id: None,
         post: payload.post.clone(),
         unit: payload.unit.clone(),
         locations: payload.locations.clone(),
