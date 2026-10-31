@@ -36,6 +36,10 @@ for (const screen of ['analysis', 'duty'] as const) {
             reader.requests.find(({ path }) => path === `/api/1.1/message/${message.id}/edit`)?.body
               .signal_group_master_key,
           ).toBe('group-2');
+          expect(
+            reader.requests.find(({ path }) => path === `/api/1.1/message/${message.id}/edit`)?.body
+              .source_signal_group_master_key,
+          ).toBe('group-1');
         },
         { userRoles: ['Rer', 'DeleteMsg'], actorCount: 1 },
       );

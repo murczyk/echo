@@ -630,6 +630,45 @@ describe('useRerDutyFeeds inbox refreshes', () => {
     }
   });
 
+  it('#3955 reconciles moved buffered and off-window unread messages', async () => {
+    const localContainer = document.createElement('div');
+    const localRoot = createRoot(localContainer);
+    const displayedItems = [[1, { text: 'displayed', textMarked: [], inboxTags: [] }]];
+    hoisted.messageFeeds = [
+      {
+        id: 'mf-0',
+        items: displayedItems,
+        pendingNewerItems: [[2, { textMarked: [], inboxTags: [] }]],
+        windowedUnreadItems: new Map([[3, 300]]),
+        unresolvedUnreadIds: new Set([4]),
+        filter: { selectedGroups: ['group-1'] },
+        unreadCount: 3,
+        readIds: new Set([1]),
+      },
+    ] as never;
+    hoisted.fetchMessagesByIdsMatchingFilters.mockResolvedValue([]);
+    document.body.appendChild(localContainer);
+    try {
+      await act(async () => localRoot.render(React.createElement(TestHarness)));
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([2, 3, 4, 9]);
+      });
+      expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledWith(
+        [2, 3, 4],
+        expect.objectContaining({ selectedGroups: ['group-1'] }),
+      );
+      expect(latest?.messageFeeds[0].items).toBe(displayedItems);
+      expect(latest?.messageFeeds[0].pendingNewerItems).toEqual([]);
+      expect(latest?.messageFeeds[0].windowedUnreadItems).toEqual(new Map());
+      expect(latest?.messageFeeds[0].unresolvedUnreadIds).toEqual(new Set());
+      expect(latest?.messageFeeds[0].unreadCount).toBe(0);
+      expect(hoisted.pollNow).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => localRoot.unmount());
+      localContainer.remove();
+    }
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3780
   it('skips hydration and count polling when no visible ids overlap', async () => {
     const localContainer = document.createElement('div');

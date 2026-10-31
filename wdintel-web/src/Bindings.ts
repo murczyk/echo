@@ -4400,6 +4400,7 @@ export type DirectSubmitPayload = {
   network: SubmitNetwork | null;
   dmr: Array<SubmitDmrMetadata>;
   signalGroupMasterKey: string | null;
+  sourceSignalGroupMasterKey: string | null;
   deviceNameId: number | null | null;
   uploadUrls: Array<string> | null;
   attachmentUpdates: DirectSubmitAttachmentUpdates | null;

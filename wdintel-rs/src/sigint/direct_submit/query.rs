@@ -442,25 +442,59 @@ where
     }
 }
 
+pub async fn ensure_edit_source_group_available(
+    txn: &DatabaseTransaction,
+    allowed_groups: &[String],
+    signal_message_id: i64,
+    source_group_master_key: Option<&str>,
+) -> anyhow::Result<()> {
+    if let Some(key) = source_group_master_key {
+        if !allowed_groups.iter().any(|group| group == key) {
+            return Err(AppError::NotFound).c(h!());
+        }
+        signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(signal_message_id),
+            )
+            .filter(signal_message_group::Column::GroupMasterKey.eq(key))
+            .select_only()
+            .column(signal_message_group::Column::Id)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+    }
+    Ok(())
+}
+
 pub async fn ensure_edit_group_change_allowed(
     dbx: &DatabaseConnection,
     txn: &DatabaseTransaction,
     login: &Uuid,
     message: &signal_message::Model,
+    source_group_master_key: Option<&str>,
     destination_group_master_key: Option<&str>,
 ) -> anyhow::Result<()> {
-    let old_group = match message.datasource_group_id {
-        Some(id) => datasource_group::Entity::find_by_id(id)
+    let old_group = match (source_group_master_key, message.datasource_group_id)
+    {
+        (Some(key), _) => Some(key.to_string()),
+        (None, Some(id)) => datasource_group::Entity::find_by_id(id)
+            .select_only()
+            .column(datasource_group::Column::GroupMasterKey)
+            .into_tuple::<String>()
             .one(txn)
             .await
+            .c(h!())?,
+        (None, None) => {
+            crate::rer_importer::inbox::find_submit_signal_message_group_key(
+                txn, message.id, login,
+            )
+            .await
             .c(h!())?
-            .map(|group| group.group_master_key),
-        None => crate::rer_importer::inbox::find_submit_signal_message_group(
-            txn, message.id, login,
-        )
-        .await
-        .c(h!())?
-        .and_then(|group| group.group_master_key),
+        }
     };
     if old_group.as_deref() != destination_group_master_key {
         crate::users::has_role(dbx, login, "DeleteMsg")
