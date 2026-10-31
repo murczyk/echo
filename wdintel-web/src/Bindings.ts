@@ -1335,6 +1335,12 @@ export type SavedFilter = {
   id: number;
   name: string;
   req: AnalysisStatsReq;
+  unitFilter: AnalysisUnitFilter | null;
+};
+
+export type AnalysisUnitFilter = {
+  values: Array<string>;
+  includeChildren: boolean;
 };
 
 export type SavedFilterDuty = {
@@ -1346,6 +1352,7 @@ export type SavedFilterDuty = {
 export type SavedFilterUpsertReq = {
   name: string;
   req: AnalysisStatsReq;
+  unitFilter: AnalysisUnitFilter | null;
 };
 
 export type SavedFilterDutyUpsertReq = {
@@ -1374,6 +1381,7 @@ export type RerDutyQueryStateWf = {
   postsDenied: Array<string> | null;
   unitsSelected: Array<string> | null;
   unitsDenied: Array<string> | null;
+  unitsIncludeChildren: boolean | null;
   selectedUnitIds: Array<number> | null;
   deniedUnitIds: Array<number> | null;
   selectedDeviceNames: Array<string> | null;

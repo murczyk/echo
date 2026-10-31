@@ -21,6 +21,13 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { isPresent } from '../../../utils/misc';
 
+import {
+  buildUnitHierarchyTree,
+  HIERARCHY_KEYS,
+  type TreeNode,
+  type TreeLeafNode,
+} from '../../shared/unit-hierarchy';
+
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import type { SelectedSidebarUnitFilter, UnitHierarchyFilter, UnitStatView } from '../types';
@@ -39,26 +46,6 @@ type Props = {
   countLabel?: string;
 };
 
-type TreeLeafNode = {
-  kind: 'leaf';
-  id: string;
-  unitId: number;
-  label: string;
-  unitName: string;
-  count: number;
-};
-
-type TreeGroupNode = {
-  kind: 'group';
-  id: string;
-  label: string;
-  count: number;
-  hierarchy: UnitHierarchyFilter;
-  children: TreeNode[];
-};
-
-type TreeNode = TreeGroupNode | TreeLeafNode;
-
 const HIERARCHY_LABELS = [
   'Армійський регіон',
   'Військовий округ',
@@ -75,22 +62,6 @@ const HIERARCHY_LABELS = [
   'Команда/Екіпаж',
   'Інше',
 ] as const;
-const HIERARCHY_KEYS = [
-  'armyRegion',
-  'militaryDistrict',
-  'army',
-  'corps',
-  'division',
-  'brigade',
-  'regiment',
-  'battalion',
-  'company',
-  'platoon',
-  'squad',
-  'section',
-  'teamOrCrew',
-  'other',
-] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
 function collapseTerminalSingleUnitGroups(nodes: TreeNode[]): TreeNode[] {
@@ -105,74 +76,7 @@ function collapseTerminalSingleUnitGroups(nodes: TreeNode[]): TreeNode[] {
 }
 
 export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
-  const root: TreeNode[] = [];
-  const groups = new Map<string, TreeGroupNode>();
-
-  for (const row of stats) {
-    const rawParts = [
-      row.armyRegion,
-      row.militaryDistrict,
-      row.army,
-      row.corps,
-      row.division,
-      row.brigade,
-      row.regiment,
-      row.battalion,
-      row.company,
-      row.platoon,
-      row.squad,
-      row.section,
-      row.teamOrCrew,
-      row.other,
-    ];
-    const firstVisibleLevel =
-      row.armyRegion.trim() !== '' ? 0 : row.militaryDistrict.trim() !== '' ? 1 : 2;
-    let parentChildren = root;
-    let path: string[] = [];
-    let rawPath: string[] = [];
-
-    rawParts.forEach((part, level) => {
-      if (level < firstVisibleLevel) return;
-      const hasAnyDeeperPart = rawParts.slice(level).some((item) => item.trim() !== '');
-      if (!hasAnyDeeperPart) return;
-
-      const rawValue = part.trim();
-      path = [...path, `${level}:${rawValue === '' ? '__EMPTY__' : rawValue}`];
-      rawPath = [...rawPath];
-      rawPath[level] = rawValue;
-      if (rawValue === '') return;
-
-      const id = `group:${path.join('|')}`;
-
-      let group = groups.get(id);
-      if (!group) {
-        group = {
-          kind: 'group',
-          id,
-          label: rawValue,
-          count: 0,
-          hierarchy: createHierarchyFilter(rawPath),
-          children: [],
-        };
-        groups.set(id, group);
-        parentChildren.push(group);
-      }
-
-      group.count += row.count;
-      parentChildren = group.children;
-    });
-
-    parentChildren.push({
-      kind: 'leaf',
-      id: `unit:${row.unitId}`,
-      unitId: row.unitId,
-      label: row.unitName,
-      unitName: row.unitName,
-      count: row.count,
-    });
-  }
-
-  return collapseTerminalSingleUnitGroups(root);
+  return collapseTerminalSingleUnitGroups(buildUnitHierarchyTree(stats));
 }
 
 function collectGroupIds(nodes: TreeNode[]): string[] {
@@ -186,25 +90,6 @@ function collectGroupIds(nodes: TreeNode[]): string[] {
 
 function normalizeSearchQuery(value: string): string {
   return value.trim().toLocaleLowerCase();
-}
-
-function createHierarchyFilter(rawPath: string[]): UnitHierarchyFilter {
-  return {
-    armyRegion: rawPath[0] ?? null,
-    militaryDistrict: rawPath[1] ?? null,
-    army: rawPath[2] ?? null,
-    corps: rawPath[3] ?? null,
-    division: rawPath[4] ?? null,
-    brigade: rawPath[5] ?? null,
-    regiment: rawPath[6] ?? null,
-    battalion: rawPath[7] ?? null,
-    company: rawPath[8] ?? null,
-    platoon: rawPath[9] ?? null,
-    squad: rawPath[10] ?? null,
-    section: rawPath[11] ?? null,
-    teamOrCrew: rawPath[12] ?? null,
-    other: rawPath[13] ?? null,
-  };
 }
 
 function areHierarchyFiltersEqual(left: UnitHierarchyFilter, right: UnitHierarchyFilter): boolean {

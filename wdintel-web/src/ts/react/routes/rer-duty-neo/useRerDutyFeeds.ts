@@ -3,6 +3,7 @@ import type { OrganismKeywordSetDto } from '../../../../Bindings';
 import { fetchOrganismKeywordSets } from '../../services/api/organism-keyword-sets';
 import { fetchAnalysisCallsignInfos } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { fetchMessagesByIdsMatchingFilters } from '../../services/api/analysis';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { mergeUpdatedDutyFeedMessages } from '../shared/message-card/message-card-message-updates';
 import { INBOX_COUNT_POLL_INTERVAL_MS, sortMessageItemsByTime } from './utils';
@@ -189,6 +190,8 @@ export function useRerDutyFeeds(
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
+  const feedStateRef = useRef(feedState);
+  feedStateRef.current = feedState;
   const deviceAccessError = deviceAccess.status === 'error' ? deviceAccess.message : null;
   useEffect(() => {
     if (deviceAccessError != null) setFeedError(deviceAccessError);
@@ -246,6 +249,7 @@ export function useRerDutyFeeds(
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
       const refreshes = feedState.messageFeeds.flatMap((feed) => {
+        if (feed.loading) return [];
         const visibleMessageIds = new Set(
           [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
         );
@@ -277,14 +281,22 @@ export function useRerDutyFeeds(
             loadGeneration,
           }) => {
             try {
-              const nextMessages = await fetchMessagesByIds(visibleChangedMessageIds, inboxReq);
+              const unitFiltersActive =
+                (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||
+                (inboxReq.selectedUnits?.length ?? 0) > 0 ||
+                (inboxReq.deniedUnitIds?.length ?? 0) > 0 ||
+                (inboxReq.deniedUnits?.length ?? 0) > 0;
+              const nextMessages = await (unitFiltersActive
+                ? fetchMessagesByIdsMatchingFilters(visibleChangedMessageIds, inboxReq)
+                : fetchMessagesByIds(visibleChangedMessageIds, inboxReq));
               feedState.setMessageFeeds((current) =>
                 (() => {
                   const currentFeed = current.find((feed) => feed.id === feedId);
                   if (currentFeed == null) return current;
-                  if (feedState.getFeedLoadGeneration(feedId) !== loadGeneration) return current;
+                  if (feedStateRef.current.getFeedLoadGeneration(feedId) !== loadGeneration)
+                    return current;
                   const currentSignature = stableStringify(
-                    feedState.buildReqForFeed(currentFeed, { loadLatest: true }),
+                    feedStateRef.current.buildReqForFeed(currentFeed, { loadLatest: true }),
                   );
                   if (currentSignature !== requestSignature) return current;
                   return mergeUpdatedDutyFeedMessages(
@@ -501,6 +513,9 @@ export function useRerDutyFeeds(
     });
   }, [reloadLocations, setFeedError]);
   return {
+    unitHierarchy: feedState.unitHierarchy,
+    unitHierarchyLoading: feedState.unitHierarchyLoading,
+    persistStateToUrl: feedState.persistStateToUrl,
     buildReqForFeed: feedState.buildReqForFeed,
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,

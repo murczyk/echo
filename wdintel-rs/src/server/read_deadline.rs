@@ -26,6 +26,7 @@ fn has_read_deadline(path: &str) -> bool {
                 | "/api/rer-importer/get-inbox-map"
                 | "/api/rer-importer/get-inbox-group-stats"
                 | "/api/rer-importer/get-inbox-count"
+                | "/api/rer-importer/get-inbox-unit-stats"
                 | "/api/rer-importer/messages-by-id-matching-filters"
                 | "/api/sigint/freqs"
                 | "/api/sigint/freqs-v2"
@@ -71,7 +72,8 @@ pub(super) async fn enforce<B: MessageBody>(
         .unwrap_or_default();
     crate::read_query::scope(request_id, source_pools, async move {
     crate::read_query::configure_search_timeouts(search_timeouts);
-    if path.ends_with("/count") || path.ends_with("get-inbox-count") {
+    if path.ends_with("/count") || path.ends_with("get-inbox-count") ||
+        path.ends_with("get-inbox-unit-stats") {
         crate::read_query::set_count_request();
     }
     let started = tokio::time::Instant::now();
@@ -167,33 +169,39 @@ mod tests {
             App::new()
                 .app_data(queue.clone())
                 .wrap(actix_web::middleware::from_fn(enforce))
-                .route(
-                    "/api/rer/analysis/stats/messages/count",
-                    web::post().to(
+                .service(
+                    web::resource([
+                        "/api/rer/analysis/stats/messages/count",
+                        "/api/rer-importer/get-inbox-unit-stats",
+                    ])
+                    .route(web::post().to(
                         |queue: web::Data<tokio::sync::Mutex<()>>| async move {
                             let _held = queue.lock().await;
                             HttpResponse::Ok().finish()
                         },
-                    ),
+                    )),
                 ),
         )
         .await;
-        let response = test::try_call_service(
-            &app,
-            test::TestRequest::post()
-                .uri("/api/rer/analysis/stats/messages/count")
-                .to_request(),
-        );
-        tokio::pin!(response);
-        assert!(futures::poll!(&mut response).is_pending());
         tokio::time::pause();
-        tokio::time::advance(Duration::from_millis(
-            ANALYTICS_HTTP_READ_TIMEOUT_MS,
-        ))
-        .await;
-        let response = response.await.unwrap_err().error_response();
-        assert_eq!(response.status(), 503);
-        assert_eq!(response.headers().get("retry-after").unwrap(), "1");
+        for path in [
+            "/api/rer/analysis/stats/messages/count",
+            "/api/rer-importer/get-inbox-unit-stats",
+        ] {
+            let response = test::try_call_service(
+                &app,
+                test::TestRequest::post().uri(path).to_request(),
+            );
+            tokio::pin!(response);
+            assert!(futures::poll!(&mut response).is_pending());
+            tokio::time::advance(Duration::from_millis(
+                ANALYTICS_HTTP_READ_TIMEOUT_MS,
+            ))
+            .await;
+            let response = response.await.unwrap_err().error_response();
+            assert_eq!(response.status(), 503);
+            assert_eq!(response.headers().get("retry-after").unwrap(), "1");
+        }
         drop(held);
         assert!(queue.try_lock().is_ok());
     }

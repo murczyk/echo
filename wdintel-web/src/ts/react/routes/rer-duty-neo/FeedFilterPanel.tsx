@@ -1,9 +1,11 @@
 import type {
+  InboxMessagesReq,
   SavedFilterDuty,
   SignalGroupEntry,
   SignalProfileEntry,
   Unit,
 } from '../../../../Bindings';
+import type { UnitHierarchyIndex } from '../shared/unit-children-filter';
 import type { GroupCatalogError } from './useRerDutyFilterOptions';
 import type { FeedFilterModeTransfer } from './useFeedFilterSelectionState';
 import { FeedFilterPanelView } from './FeedFilterPanelView';
@@ -44,6 +46,8 @@ export type FeedFilterPanelModel = {
     postsList?: string[];
     locationsList?: string[];
     unitsList?: Unit[];
+    unitStatsReq?: InboxMessagesReq;
+    unitHierarchy?: UnitHierarchyIndex | null;
     persistentUnitFilterValues?: string[];
   };
   toggles: {
@@ -51,6 +55,8 @@ export type FeedFilterPanelModel = {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
     unitsExactMatchOnly?: boolean | null;
+    unitsIncludeChildren?: boolean;
+    unitHierarchyLoading?: boolean;
     reloadFreqsLoading: boolean;
     groupCatalogLoading?: boolean;
     groupCatalogError?: GroupCatalogError | null;
@@ -74,6 +80,8 @@ export type FeedFilterPanelModel = {
     onPostsChange?: (v: string[]) => void;
     onPostsDeniedChange?: (v: string[]) => void;
     onPostsModeTransfer: (next: FeedFilterModeTransfer) => void;
+    onUnitsIncludeChildrenChange?: (value: boolean) => void;
+    onUnitStatsError?: (message: string) => void;
     onUnitsChange?: (v: string[]) => void;
     onUnitsDeniedChange?: (v: string[]) => void;
     onUnitsModeTransfer: (next: FeedFilterModeTransfer) => void;

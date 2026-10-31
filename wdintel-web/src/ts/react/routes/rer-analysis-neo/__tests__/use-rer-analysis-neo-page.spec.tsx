@@ -15,6 +15,7 @@ import type {
 import type { AnalysisPageViewModel } from '../types';
 import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
+import { buildUnitFilterOptions } from '../../../utils/unit-search';
 
 const userSettingsMock = vi.hoisted(() => ({
   fetchUserSettings: vi.fn(),
@@ -23,6 +24,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
+const unitCatalogMock = vi.hoisted(() => ({ getAllUnitsList: vi.fn() }));
 const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
@@ -64,6 +66,7 @@ vi.mock('../../../services/api/client', () => ({
 vi.mock('../../../services/api/user', () => ({
   fetchCurrentUser: currentUserMock.fetchCurrentUser,
 }));
+vi.mock('../../../services/api/units', () => unitCatalogMock);
 
 vi.mock('../../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
@@ -383,6 +386,7 @@ describe('useRerAnalysisNeoPage', () => {
       disableBotTags: false,
     });
     currentUserMock.fetchCurrentUser.mockReset();
+    unitCatalogMock.getAllUnitsList.mockReset().mockResolvedValue([]);
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
     inboxMessagesMock.fetchInboxItemContext.mockReset();
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
@@ -1456,6 +1460,44 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.directMessageError).toBeTruthy();
       expect(latest?.directMessageNavigation).toBeNull();
       expect(latest?.directMessageLoading).toBe(false);
+    },
+  );
+
+  it.each(['unit-id:10', 'unit-parent:group:2:6 А'])(
+    '#3527 waits for the hierarchy before opening a direct window for %s',
+    async (parent) => {
+      const template = buildUnitFilterOptions([])[0];
+      const catalog = deferred<Array<typeof template>>();
+      unitCatalogMock.getAllUnitsList.mockReturnValue(catalog.promise);
+      const params = new URLSearchParams({
+        m: 'target-uid',
+        units: parent,
+        unitsIncludeChildren: 'true',
+        fromDateTime: '2026-08-28T00:00',
+        toDateTime: '2026-08-29T00:00',
+      });
+      window.history.replaceState({}, '', `${window.location.pathname}?${params}`);
+      inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildDirectLinkWindow());
+      renderHook();
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
+      await act(async () => {
+        catalog.resolve([
+          ...(parent === 'unit-id:10' ? [{ ...template, id: 10, name: '6 А', army: '6 А' }] : []),
+          { ...template, id: 11, name: '1 мср', army: '6 А', company: '1 мср' },
+        ]);
+      });
+      await flushEffects();
+      expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(
+        {
+          messageRef: 'target-uid',
+          inboxReq: expect.objectContaining({
+            selectedUnitIds: parent === 'unit-id:10' ? [10, 11] : [11],
+            selectedUnits: null,
+          }),
+        },
+        expect.anything(),
+      );
     },
   );
 

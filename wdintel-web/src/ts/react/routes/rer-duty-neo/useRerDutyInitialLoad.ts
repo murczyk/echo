@@ -25,6 +25,8 @@ export function createEmptyFeedState(
   filter: MessageFeedState['filter'],
   options: Partial<DutyFeedFilterOptions> = {},
 ): MessageFeedState {
+  const unitsIncludeChildren = filter.unitsIncludeChildren ?? options.unitsIncludeChildren ?? false;
+  filter = { ...filter, unitsIncludeChildren };
   return {
     id,
     filter: options.groupScopeMasterKey
@@ -43,6 +45,7 @@ export function createEmptyFeedState(
     adjacentFreqsRange: options.adjacentFreqsRange ?? 0,
     highlightSignalsEnabled: options.highlightSignalsEnabled ?? false,
     onlyMyUnitTagsEnabled: options.onlyMyUnitTagsEnabled ?? false,
+    unitsIncludeChildren,
   };
 }
 

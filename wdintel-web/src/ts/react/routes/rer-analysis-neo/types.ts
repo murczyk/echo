@@ -21,6 +21,7 @@ import type {
   Unit,
   ReportHistoryRow,
 } from '../../../../Bindings';
+import type { UnitHierarchyIndex } from '../shared/unit-children-filter';
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
@@ -91,6 +92,9 @@ export type AnalysisQueryState = Omit<
   RerAnalysisQueryState,
   'dateFromStr' | 'timeFromStr' | 'dateToStr' | 'timeToStr'
 > & {
+  unitsIncludeChildren?: boolean;
+  unitHierarchy?: UnitHierarchyIndex | null;
+  unitHierarchyLoading?: boolean;
   fromDateTimeStr: string;
   toDateTimeStr: string;
   filterTagsOption: TagFilterOption;

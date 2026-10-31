@@ -3109,6 +3109,7 @@ update user shared route msg model =
                         req =
                             { req = analysisPs
                             , name = model.saveFilterInp
+                            , unitFilter = Nothing
                             }
                     in
                     ( { model | saveFilterInProgress = True }
@@ -3203,6 +3204,7 @@ update user shared route msg model =
                                 req =
                                     { req = analysisPs
                                     , name = savedFilter.name
+                                    , unitFilter = Nothing
                                     }
                             in
                             ( { model

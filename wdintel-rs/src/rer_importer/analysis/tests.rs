@@ -440,6 +440,7 @@ fn short_state_filter(
         posts_denied: None,
         units_selected: None,
         units_denied: None,
+        units_include_children: None,
         selected_unit_ids: None,
         denied_unit_ids: None,
         selected_device_names: None,
@@ -10405,12 +10406,13 @@ async fn rer_duty_short_state_hash_collision_creates_new_id() {
 async fn rer_duty_short_state_get_refreshes_ttl() {
     let env = cleanup().await.unwrap();
     let mut redis = env.redis.clone();
-    let (id, _reused) = rer_duty_short_state_create_or_reuse(
-        &mut redis,
-        short_state(Some(vec!["group-1".to_string()])),
-    )
-    .await
-    .unwrap();
+    let mut state = short_state(Some(vec!["group-1".to_string()]));
+    state.waterfalls.as_mut().unwrap()[0]
+        .1
+        .units_include_children = Some(true);
+    let (id, _reused) = rer_duty_short_state_create_or_reuse(&mut redis, state)
+        .await
+        .unwrap();
     let ttl_before: i64 =
         redis.ttl(rer_duty_short_state_key(&id)).await.unwrap();
 
@@ -10426,6 +10428,44 @@ async fn rer_duty_short_state_get_refreshes_ttl() {
     );
     assert!(ttl_before > 0);
     assert!(ttl_after > 0);
+    assert_eq!(
+        rsp.state.waterfalls.as_ref().unwrap()[0]
+            .1
+            .units_include_children,
+        Some(true)
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn saved_analysis_filter_preserves_descendant_selection_3527() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    let env = &fixture.env;
+    let login = find_test_login(&env.dbx).await.unwrap();
+    let req = analysis_stats_req0(&fixture);
+    let unit_filter = AnalysisUnitFilter {
+        values: vec!["unit-parent:group:2:6 А".to_string()],
+        include_children: true,
+    };
+    let mut saved_req = serde_json::to_value(req).unwrap();
+    saved_req["unit_filter"] = serde_json::to_value(&unit_filter).unwrap();
+    let filters: Vec<SavedFilter> = saved_filter_upsert_1(
+        sea_orm_active_enums::SigintSavedFilterTypeEnum::Analysis,
+        login.id,
+        &env.dbx,
+        "Descendant filter #3527".to_string(),
+        saved_req,
+    )
+    .await
+    .unwrap();
+    for filter in &filters {
+        sigint_saved_filter::Entity::delete_by_id(filter.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+    assert_eq!(filters.len(), 1);
+    assert_eq!(filters[0].unit_filter.as_ref(), Some(&unit_filter));
 }
 
 #[tokio::test]

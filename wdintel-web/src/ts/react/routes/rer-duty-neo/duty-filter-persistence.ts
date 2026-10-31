@@ -18,6 +18,7 @@ export function buildPersistedDutyFilterState(messageFeeds: readonly Persistable
       ({
         id,
         filter,
+        unitsIncludeChildren,
         adjacentFreqsRange,
         highlightSignalsEnabled,
         onlyMyUnitTagsEnabled,
@@ -26,6 +27,7 @@ export function buildPersistedDutyFilterState(messageFeeds: readonly Persistable
         id,
         filter,
         {
+          unitsIncludeChildren,
           adjacentFreqsRange,
           highlightSignalsEnabled,
           onlyMyUnitTagsEnabled,
