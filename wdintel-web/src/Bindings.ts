@@ -5619,6 +5619,29 @@ export type FreqPelengsEntry = {
   pelengsCount: number;
 };
 
+export type ApiSender = {
+  apiId: string;
+  displayName: string;
+  senderUuid: string;
+  loginId: string;
+};
+
+export type ListApiSendersReq = {
+  apiId: string;
+};
+
+export type UpsertApiSenderReq = {
+  apiId: string;
+  displayName: string;
+  senderUuid: string | null;
+  loginId: string;
+};
+
+export type DeleteApiSenderReq = {
+  apiId: string;
+  senderUuid: string;
+};
+
 export type RoleMessageSettings = {
   role: string;
   unitRequired: boolean;

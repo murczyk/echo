@@ -14535,6 +14535,68 @@ freqPelengsEntryEncoder struct =
         ]
 
 
+type alias ApiSender =
+    { apiId : String
+    , displayName : String
+    , senderUuid : String
+    , loginId : String
+    }
+
+
+apiSenderEncoder : ApiSender -> Json.Encode.Value
+apiSenderEncoder struct =
+    Json.Encode.object
+        [ ( "api_id", (Json.Encode.string) struct.apiId )
+        , ( "display_name", (Json.Encode.string) struct.displayName )
+        , ( "sender_uuid", (Json.Encode.string) struct.senderUuid )
+        , ( "login_id", (Json.Encode.string) struct.loginId )
+        ]
+
+
+type alias ListApiSendersReq =
+    { apiId : String
+    }
+
+
+listApiSendersReqEncoder : ListApiSendersReq -> Json.Encode.Value
+listApiSendersReqEncoder struct =
+    Json.Encode.object
+        [ ( "api_id", (Json.Encode.string) struct.apiId )
+        ]
+
+
+type alias UpsertApiSenderReq =
+    { apiId : String
+    , displayName : String
+    , senderUuid : Maybe (String)
+    , loginId : String
+    }
+
+
+upsertApiSenderReqEncoder : UpsertApiSenderReq -> Json.Encode.Value
+upsertApiSenderReqEncoder struct =
+    Json.Encode.object
+        [ ( "api_id", (Json.Encode.string) struct.apiId )
+        , ( "display_name", (Json.Encode.string) struct.displayName )
+        , ( "sender_uuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.senderUuid )
+        , ( "login_id", (Json.Encode.string) struct.loginId )
+        ]
+
+
+type alias DeleteApiSenderReq =
+    { apiId : String
+    , senderUuid : String
+    }
+
+
+deleteApiSenderReqEncoder : DeleteApiSenderReq -> Json.Encode.Value
+deleteApiSenderReqEncoder struct =
+    Json.Encode.object
+        [ ( "api_id", (Json.Encode.string) struct.apiId )
+        , ( "sender_uuid", (Json.Encode.string) struct.senderUuid )
+        ]
+
+
 type alias RoleMessageSettings =
     { role : String
     , unitRequired : Bool
@@ -29416,6 +29478,37 @@ freqPelengsEntryDecoder =
     Json.Decode.succeed FreqPelengsEntry
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pelengs_count" (Json.Decode.int)))
+
+
+apiSenderDecoder : Json.Decode.Decoder ApiSender
+apiSenderDecoder =
+    Json.Decode.succeed ApiSender
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_uuid" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+
+
+listApiSendersReqDecoder : Json.Decode.Decoder ListApiSendersReq
+listApiSendersReqDecoder =
+    Json.Decode.succeed ListApiSendersReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_id" (Json.Decode.string)))
+
+
+upsertApiSenderReqDecoder : Json.Decode.Decoder UpsertApiSenderReq
+upsertApiSenderReqDecoder =
+    Json.Decode.succeed UpsertApiSenderReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_uuid" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login_id" (Json.Decode.string)))
+
+
+deleteApiSenderReqDecoder : Json.Decode.Decoder DeleteApiSenderReq
+deleteApiSenderReqDecoder =
+    Json.Decode.succeed DeleteApiSenderReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_uuid" (Json.Decode.string)))
 
 
 roleMessageSettingsDecoder : Json.Decode.Decoder RoleMessageSettings

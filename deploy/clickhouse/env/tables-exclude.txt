@@ -183,3 +183,6 @@ public.ai_worker_progress
 
 # Role policy for interactive message creation.
 public.role_message_settings
+
+# API sender attribution is resolved before messages enter analytics.
+public.api_sender

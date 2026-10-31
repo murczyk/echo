@@ -37,8 +37,10 @@ async fn message_submit(
     let datasource = ensure_api_datasource(&login_id, &txn).await.c(h!())?;
     let mut changed_inbox_item_ids = vec![];
     let message_uid = if datasource.enabled.unwrap_or(false) {
-        let sender_id =
-            ensure_profile(&txn, req.profile.clone()).await.c(h!())?;
+        let (sender_id, sender_login_id) =
+            resolve_profile(&txn, login_id, req.profile.clone())
+                .await
+                .c(h!())?;
         let group_master_key =
             ensure_group(datasource.id, &txn, req.group.clone())
                 .await
@@ -54,7 +56,7 @@ async fn message_submit(
             inbox_message_id: None,
         };
         let signal_message_result =
-            crate::message_queue::process_signal_message_queue_item(
+            crate::message_queue::process_signal_message_queue_item_with_options(
                 message,
                 Vec::<MessageAttachmentF1>::new(),
                 &mut env.redis.clone(),
@@ -65,6 +67,10 @@ async fn message_submit(
                 &txn,
                 true,
                 &mut changed_inbox_item_ids,
+                crate::message_queue::ProcessSignalMessageQueueItemOptions {
+                    login_id: sender_login_id,
+                    ..Default::default()
+                },
             )
             .await
             .c(h!())?;
@@ -191,6 +197,27 @@ async fn ensure_api_datasource(
         let datasource = new_datasource.insert(txn).await.c(h!())?;
         Ok(datasource)
     }
+}
+
+async fn resolve_profile(
+    txn: &DatabaseTransaction,
+    api_id: uuid::Uuid,
+    profile: types::Profile,
+) -> anyhow::Result<(String, Option<uuid::Uuid>)> {
+    let sender = crate::api_senders::find(txn, api_id, &profile.id)
+        .await
+        .c(h!())?;
+    if let Some(sender) = sender {
+        let sender_id =
+            crate::sigint::direct_submit::query::ensure_current_user_sender(
+                txn,
+                &sender.login_id,
+            )
+            .await
+            .c(h!())?;
+        return Ok((sender_id, Some(sender.login_id)));
+    }
+    Ok((ensure_profile(txn, profile).await.c(h!())?, None))
 }
 
 async fn ensure_profile(

@@ -1418,6 +1418,7 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+DELETE FROM api_sender;
 DELETE FROM role_message_settings;
 DELETE FROM ai_worker_progress;
 DELETE FROM ai_transcript_analysis_job;

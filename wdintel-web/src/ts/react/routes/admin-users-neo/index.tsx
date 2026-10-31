@@ -73,6 +73,7 @@ import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { MessengerProfileSelect } from './MessengerProfileSelect';
 import { UserUuidValue } from './UserUuidValue';
 import { RoleSettingsTab } from './RoleSettingsTab';
+import { ApiSenders } from './ApiSenders';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -1649,6 +1650,9 @@ export function EditUserDialog(props: {
               disabled={isSubmitting}
               className="md:col-span-2"
             />
+            {login?.roles.includes('Api') ? (
+              <ApiSenders apiId={login.id} disabled={isSubmitting} />
+            ) : null}
           </div>
         ) : null}
       </DialogContent>
