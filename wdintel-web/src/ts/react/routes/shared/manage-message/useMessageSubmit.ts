@@ -297,7 +297,9 @@ export function useMessageSubmit({
         signal.throwIfAborted();
         addValues(recentValues);
         let editAppliedLocally = false;
-        if (onSubmitEdit && res.message) {
+        const groupChanged =
+          payload.signal_group_master_key !== (editTarget.message.groupMasterKey ?? null);
+        if (onSubmitEdit && res.message && !groupChanged) {
           try {
             await onSubmitEdit(editTarget.id, res.message);
             editAppliedLocally = true;

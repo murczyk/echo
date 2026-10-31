@@ -599,6 +599,19 @@ async fn save_signal_message(
         ),
         None => None,
     };
+    if let Some(signal_message) = &signal_message {
+        if !is_intelligence_report {
+            query::ensure_edit_group_change_allowed(
+                &env.dbx,
+                &txn,
+                login,
+                signal_message,
+                signal_group_master_key,
+            )
+            .await
+            .c(h!())?;
+        }
+    }
 
     let deleted_media_ids = payload
         .deleted_media_ids
@@ -1246,11 +1259,6 @@ async fn persist_direct_submit_item(
             (datasource_id, vec![])
         }
     };
-    if let Some(signal_message_id) = signal_message_id {
-        query::delete_signal_message_groups(txn, signal_message_id)
-            .await
-            .c(h!())?;
-    }
     let linked_comment = if signal_message_id.is_none()
         && parent_signal_message_ids.is_empty()
     {
@@ -1908,6 +1916,214 @@ mod tests {
                 .into_active_model();
         signal_message.deleted = Set(deleted);
         signal_message.update(dbx).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3955_destination_changes_require_delete_role_and_preserve_other_groups(
+    ) {
+        use crate::entities::{
+            datasource_group, sigint_zone_datasource, signal_group,
+            signal_group_aor,
+        };
+        use crate::functest::tests::{
+            mk_datasource_group, mk_sigint_zone_datasource, mk_signal_group,
+        };
+
+        let env = cleanup().await.unwrap();
+        let login = login::Entity::find()
+            .filter(login::Column::Login.eq(TEST_LOGIN))
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let created = submit_signal_message(
+            &login.id,
+            &env,
+            direct_submit_payload("Original message"),
+        )
+        .await
+        .unwrap();
+        let original_link = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(created.signal_message_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let original_group = datasource_group::Entity::find_by_id(
+            original_link.datasource_group_id.unwrap(),
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let original_group_aor = signal_group_aor::Entity::find()
+            .filter(
+                signal_group_aor::Column::MasterKey.eq(TEST_SIGNAL_GROUP_KEY),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut destinations = vec![];
+        for name in ["destination", "secondary", "inaccessible"] {
+            let group = mk_signal_group(
+                &env.dbx,
+                signal_group::ActiveModel {
+                    master_key: Set(format!("issue-3955-{name}")),
+                    datasource_id: Set(Some(original_group.datasource_id)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let group = mk_datasource_group(
+                &env.dbx,
+                datasource_group::ActiveModel {
+                    group_master_key: Set(group.master_key),
+                    datasource_id: Set(original_group.datasource_id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            if name == "destination" {
+                let mut group_aor =
+                    original_group_aor.clone().into_active_model();
+                group_aor.id = NotSet;
+                group_aor.master_key = Set(group.group_master_key.clone());
+                group_aor.insert(&env.dbx).await.unwrap();
+                mk_sigint_zone_datasource(
+                    &env.dbx,
+                    sigint_zone_datasource::ActiveModel {
+                        sigint_zone_id: Set(login.sigint_zone_id.unwrap()),
+                        datasource_id: Set(group.datasource_id),
+                        group_master_key: Set(group.group_master_key.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            }
+            destinations.push(group);
+        }
+        let mut secondary_link = original_link.clone().into_active_model();
+        secondary_link.id = NotSet;
+        secondary_link.group_master_key =
+            Set(Some(destinations[1].group_master_key.clone()));
+        secondary_link.datasource_group_id = Set(Some(destinations[1].id));
+        let secondary_link = secondary_link.insert(&env.dbx).await.unwrap();
+
+        edit_signal_message(
+            &login.id,
+            &env,
+            created.signal_message_id,
+            direct_submit_payload("Edited message"),
+        )
+        .await
+        .unwrap();
+        let mut payload = direct_submit_payload("Moved message");
+        payload.signal_group_master_key =
+            Some(destinations[0].group_master_key.clone());
+        let error = edit_signal_message(
+            &login.id,
+            &env,
+            created.signal_message_id,
+            payload.clone(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(error, AppError::Forbidden(message) if message.contains("DeleteMsg"))
+        );
+        let mut login = login.into_active_model();
+        login.roles = Set(json!(["Rer", "DeleteMsg"]));
+        let login = login.update(&env.dbx).await.unwrap();
+        let mut inaccessible_payload = payload.clone();
+        inaccessible_payload.signal_group_master_key =
+            Some(destinations[2].group_master_key.clone());
+        assert!(edit_signal_message(
+            &login.id,
+            &env,
+            created.signal_message_id,
+            inaccessible_payload
+        )
+        .await
+        .is_err());
+        let unchanged_link =
+            signal_message_group::Entity::find_by_id(original_link.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(unchanged_link, original_link);
+
+        edit_signal_message(
+            &login.id,
+            &env,
+            created.signal_message_id,
+            payload,
+        )
+        .await
+        .unwrap();
+        let mut expected_link = original_link;
+        expected_link.datasource_group_id = Some(destinations[0].id);
+        expected_link.group_master_key =
+            Some(destinations[0].group_master_key.clone());
+        assert_eq!(
+            signal_message_group::Entity::find_by_id(expected_link.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap(),
+            expected_link
+        );
+        assert_eq!(
+            signal_message_group::Entity::find_by_id(secondary_link.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap(),
+            secondary_link
+        );
+        let message =
+            signal_message::Entity::find_by_id(created.signal_message_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(message.datasource_group_id, Some(destinations[0].id));
+        for (group_key, expected_count) in [
+            (TEST_SIGNAL_GROUP_KEY, 0),
+            (destinations[0].group_master_key.as_str(), 1),
+        ] {
+            let query = crate::rer_importer::inbox::query::build_inbox_query_for_candidate_ids(
+                &env.dbx,
+                &login.id,
+                &env,
+                &crate::rer_importer::types::InboxMessagesReq {
+                    since_id_noninclusive: Some(0),
+                    selected_groups: Some(vec![group_key.to_string()]),
+                    ..Default::default()
+                },
+                &[created.signal_message_id],
+                false,
+            )
+            .await
+            .unwrap();
+            let messages = env
+                .dbx
+                .query_all_raw(sea_orm::Statement::from_string(
+                    sea_orm::DbBackend::Postgres,
+                    query,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(messages.len(), expected_count);
+        }
     }
 
     #[test]

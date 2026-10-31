@@ -281,12 +281,14 @@ export function useRerDutyFeeds(
             loadGeneration,
           }) => {
             try {
-              const unitFiltersActive =
+              const membershipFiltersActive =
+                (inboxReq.selectedGroups?.length ?? 0) > 0 ||
+                (inboxReq.deniedGroups?.length ?? 0) > 0 ||
                 (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||
                 (inboxReq.selectedUnits?.length ?? 0) > 0 ||
                 (inboxReq.deniedUnitIds?.length ?? 0) > 0 ||
                 (inboxReq.deniedUnits?.length ?? 0) > 0;
-              const nextMessages = await (unitFiltersActive
+              const nextMessages = await (membershipFiltersActive
                 ? fetchMessagesByIdsMatchingFilters(visibleChangedMessageIds, inboxReq)
                 : fetchMessagesByIds(visibleChangedMessageIds, inboxReq));
               feedState.setMessageFeeds((current) =>

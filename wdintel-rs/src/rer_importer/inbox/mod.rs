@@ -2858,6 +2858,9 @@ async fn update_submit_signal_message(
     )
     .await
     .c(h!())?;
+    replace_submit_signal_message_group(txn, &signal_message, groups.first())
+        .await
+        .c(h!())?;
     let assign_author =
         signal_message.login_id.is_none() && signal_message.sender.is_none();
     let mut signal_message = signal_message.into_active_model();
@@ -2877,6 +2880,47 @@ async fn update_submit_signal_message(
             .c(h!())?;
     ensure_submit_signal_message_groups(txn, &signal_message, groups).await?;
     Ok(signal_message)
+}
+
+async fn replace_submit_signal_message_group(
+    txn: &DatabaseTransaction,
+    signal_message: &signal_message::Model,
+    destination_group: Option<&(String, i64)>,
+) -> anyhow::Result<()> {
+    let Some(old_group_id) = signal_message.datasource_group_id else {
+        return Ok(());
+    };
+    if Some(old_group_id) == destination_group.map(|(_, id)| *id) {
+        return Ok(());
+    }
+    let old_group = signal_message_group::Column::SignalMessageId
+        .eq(signal_message.id)
+        .and(signal_message_group::Column::DatasourceGroupId.eq(old_group_id));
+    match destination_group {
+        Some((master_key, id)) => {
+            signal_message_group::Entity::update_many()
+                .col_expr(
+                    signal_message_group::Column::DatasourceGroupId,
+                    Expr::value(*id),
+                )
+                .col_expr(
+                    signal_message_group::Column::GroupMasterKey,
+                    Expr::value(master_key.clone()),
+                )
+                .filter(old_group)
+                .exec(txn)
+                .await
+                .c(h!())?;
+        }
+        None => {
+            signal_message_group::Entity::delete_many()
+                .filter(old_group)
+                .exec(txn)
+                .await
+                .c(h!())?;
+        }
+    }
+    Ok(())
 }
 
 async fn upsert_submit_signal_message_inner(

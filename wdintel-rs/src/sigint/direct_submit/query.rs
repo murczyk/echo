@@ -60,6 +60,7 @@ where
 {
     let message = signal_message::Entity::find_by_id(signal_message_id)
         .filter(signal_message::Column::Deleted.eq(false))
+        .lock_exclusive()
         .one(dbx)
         .await
         .c(h!())?
@@ -441,20 +442,29 @@ where
     }
 }
 
-pub async fn delete_signal_message_groups<C>(
-    dbx: &C,
-    signal_message_id: i64,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait,
-{
-    signal_message_group::Entity::delete_many()
-        .filter(
-            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
-        )
-        .exec(dbx)
-        .await
-        .c(h!())?;
+pub async fn ensure_edit_group_change_allowed(
+    dbx: &DatabaseConnection,
+    txn: &DatabaseTransaction,
+    login: &Uuid,
+    message: &signal_message::Model,
+    destination_group_master_key: Option<&str>,
+) -> anyhow::Result<()> {
+    let old_group = match message.datasource_group_id {
+        Some(id) => datasource_group::Entity::find_by_id(id)
+            .one(txn)
+            .await
+            .c(h!())?,
+        None => None,
+    };
+    if old_group
+        .as_ref()
+        .map(|group| group.group_master_key.as_str())
+        != destination_group_master_key
+    {
+        crate::users::has_role(dbx, login, "DeleteMsg")
+            .await
+            .c(h!())?;
+    }
     Ok(())
 }
 

@@ -4358,6 +4358,31 @@ describe('ManageMessageDrawer edit mode', () => {
     vi.useRealTimers();
   });
 
+  it.each([
+    [['Rer'], true],
+    [['Rer', 'DeleteMsg'], false],
+    [['Admin'], false],
+    [['Full'], false],
+  ])('#3955 destination group edit access for %j', async (roles, disabled) => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={{ roles } as User}
+          onClose={vi.fn()}
+          editTarget={{ id: 42, message: buildMessage() }}
+        />,
+      );
+    });
+    const group = container.querySelector('input[aria-label="Група"]') as HTMLInputElement;
+    expect(group.disabled).toBe(disabled);
+    root.unmount();
+  });
+
   it('renders the edit title and calls onSubmitEdit with a merged message on save', async () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({

@@ -1013,7 +1013,9 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             busy={busy}
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
-                            groupEditable={isReportMode}
+                            groupEditable={
+                              isReportMode || hasRole(props.currentUser?.roles, 'DeleteMsg')
+                            }
                             groupLocked={isReplyMode}
                             cyberEchoEnabled={props.cyberEchoEnabled}
                             deviceRequired={drawerState.deviceRequired}

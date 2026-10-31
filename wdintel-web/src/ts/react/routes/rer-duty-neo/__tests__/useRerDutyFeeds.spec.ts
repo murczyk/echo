@@ -213,6 +213,8 @@ vi.mock('../useRerDutyFeedState', () => ({
         ) => ({
           feedId: feed.id,
           filter: feed.filter,
+          selectedGroups: feed.filter.selectedGroups,
+          deniedGroups: feed.filter.deniedGroups,
           selectedUnitIds: feed.filter.selectedUnitIds,
           loadLatest: opts?.loadLatest ?? null,
           highlightSignals: feed.highlightSignalsEnabled ?? false,
@@ -591,7 +593,11 @@ describe('useRerDutyFeeds inbox refreshes', () => {
     hoisted.fetchMessagesByIdsMatchingFilters.mockReset();
   });
 
-  it('#3527 removes edited messages that no longer match descendant unit filters', async () => {
+  it.each([
+    ['#3527', { selectedUnitIds: [21, 22] }],
+    ['#3955', { selectedGroups: ['group-1'] }],
+    ['#3955', { deniedGroups: ['group-2'] }],
+  ])('%s removes edited messages that no longer match %j', async (_issue, filter) => {
     const localContainer = document.createElement('div');
     const localRoot = createRoot(localContainer);
     hoisted.messageFeeds = [
@@ -599,7 +605,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
         id: 'mf-0',
         items: [[2, { text: 'moved to another unit', textMarked: [], inboxTags: [] }]],
         pendingNewerItems: [],
-        filter: { selectedUnitIds: [21, 22] },
+        filter,
         unreadCount: 1,
         readIds: new Set<number>(),
       },
@@ -613,7 +619,7 @@ describe('useRerDutyFeeds inbox refreshes', () => {
       });
       expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledWith(
         [2],
-        expect.objectContaining({ selectedUnitIds: [21, 22] }),
+        expect.objectContaining(filter),
       );
       expect(latest?.messageFeeds[0].items).toEqual([]);
       expect(latest?.messageFeeds[0].unreadCount).toBe(0);
