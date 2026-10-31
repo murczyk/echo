@@ -3,6 +3,7 @@ import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material'
 import { PowerAlert } from '../../components/PowerAlert';
 import type {
   MessageAttachmentPreviewMode,
+  MessageCardQuickAction,
   MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
@@ -18,6 +19,8 @@ const cardSx = {
 };
 
 export type SettingsDutySectionProps = {
+  messageCardQuickAction: MessageCardQuickAction;
+  onMessageCardQuickActionChange: (value: MessageCardQuickAction) => void;
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
@@ -48,6 +51,8 @@ export type SettingsDutySectionProps = {
 };
 
 export function SettingsDutySection({
+  messageCardQuickAction,
+  onMessageCardQuickActionChange,
   loadInProgress,
   prefsLoadError,
   saveError,
@@ -110,6 +115,8 @@ export function SettingsDutySection({
           ) : null}
 
           <SettingsMessageCard
+            messageCardQuickAction={messageCardQuickAction}
+            onMessageCardQuickActionChange={onMessageCardQuickActionChange}
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}

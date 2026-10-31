@@ -36,7 +36,7 @@ import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputA
 import { Divider, Menu, MenuItem } from '@mui/material';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
-import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
+import { cloneElement, memo, useContext, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, MouseEvent, ReactNode, RefObject } from 'react';
 import { APP_TIME_ZONE, ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
@@ -53,6 +53,7 @@ import {
   type MessageCardNavigationMenuItem,
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
+import { MessageCardQuickActionContext } from './MessageCardQuickAction';
 import { useMessageDeviceAccess } from './MessageDeviceAccess';
 import { useMessageCardDateDisplayMs } from './useMessageCardDateDisplayMs';
 
@@ -228,7 +229,7 @@ function renderCopyMenuItems({
   };
 
   return [
-    <MenuItem key="text" onClick={() => runAndClose(onCopyText)}>
+    <MenuItem key="copyText" onClick={() => runAndClose(onCopyText)}>
       <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
     </MenuItem>,
     hasCopyTextWithNetwork ? (
@@ -251,7 +252,7 @@ function renderCopyMenuItems({
       </MenuItem>
     ) : null,
     isPresent(onCopyMessageLink) ? (
-      <MenuItem key="link" onClick={() => runAndClose(onCopyMessageLink)}>
+      <MenuItem key="copyLink" onClick={() => runAndClose(onCopyMessageLink)}>
         <MenuRow icon={<LinkIcon fontSize="small" />}>Копіювати посилання на повідомлення</MenuRow>
       </MenuItem>
     ) : null,
@@ -386,6 +387,7 @@ function ActionIconsRow({
   headerRowRef,
   onCompactChange,
 }: ActionIconsRowProps) {
+  const messageCardQuickAction = useContext(MessageCardQuickActionContext) ?? 'createReport';
   const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
   const copyMenuId = useId();
@@ -402,6 +404,7 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const overflowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [mobileActions, setMobileActions] = useState(false);
+  const canShowCreateReport = !readOnly && isPresent(onCreateReport);
   const canShowReply = !readOnly && isPresent(onReply);
   const canShowPrimaryActions =
     !readOnly && isPresent(onBookmark) && isPresent(onImportant) && isPresent(onCopyText);
@@ -420,16 +423,22 @@ function ActionIconsRow({
   const canShowLocationCopy =
     etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItemCandidates: Array<OverflowMenuItem | null> = [
+    mobileActions && canShowCreateReport
+      ? {
+          key: 'createReport',
+          title: 'Створити розвіддонесення',
+          icon: <NoteAddIcon fontSize="small" />,
+          selected: false,
+          onClick: (event) => onCreateReport(event.currentTarget),
+        }
+      : null,
     mobileActions && canShowReply
       ? {
           key: 'reply',
           title: 'Відповісти',
           icon: <ReplyIcon fontSize="small" />,
           selected: false,
-          onClick: (event) => {
-            const focusTarget = overflowMenuTriggerRef.current ?? event.currentTarget;
-            window.setTimeout(() => onReply(focusTarget), 0);
-          },
+          onClick: (event) => onReply(event.currentTarget),
         }
       : null,
     mobileActions && canShowPrimaryActions
@@ -458,6 +467,24 @@ function ActionIconsRow({
           onClick: () => onBookmark!(),
         }
       : null,
+    mobileActions && canShowPrimaryActions
+      ? {
+          key: 'copyText',
+          title: 'Копіювати повідомлення',
+          icon: <MessageIcon fontSize="small" />,
+          selected: false,
+          onClick: () => onCopyText!(),
+        }
+      : null,
+    mobileActions && canShowPrimaryActions && isPresent(onCopyMessageLink)
+      ? {
+          key: 'copyLink',
+          title: 'Копіювати посилання на повідомлення',
+          icon: <LinkIcon fontSize="small" />,
+          selected: false,
+          onClick: () => onCopyMessageLink(),
+        }
+      : null,
     !readOnly && isPresent(onEditDetails)
       ? {
           key: 'edit',
@@ -465,7 +492,7 @@ function ActionIconsRow({
           title: 'Редагувати',
           icon: <EditIcon fontSize="small" />,
           selected: false,
-          onClick: (event) => onEditDetails(overflowMenuTriggerRef.current ?? event.currentTarget),
+          onClick: (event) => onEditDetails(event.currentTarget),
         }
       : null,
     isPresent(attachmentArchiveDownload)
@@ -496,8 +523,14 @@ function ActionIconsRow({
         }
       : null,
   ];
-  const overflowMenuItems = overflowMenuItemCandidates.filter(
+  const availableActions = overflowMenuItemCandidates.filter(
     (item): item is OverflowMenuItem => item != null,
+  );
+  const quickAction = mobileActions
+    ? availableActions.find((item) => item.key === messageCardQuickAction)
+    : undefined;
+  const overflowMenuItems = availableActions.filter(
+    (item) => item.key !== quickAction?.key && item.key !== 'copyText' && item.key !== 'copyLink',
   );
   const canShowOverflowMenu =
     overflowMenuItems.length > 0 ||
@@ -574,6 +607,8 @@ function ActionIconsRow({
   }
 
   if (
+    !quickAction &&
+    !canShowCreateReport &&
     !canShowReply &&
     !canShowPrimaryActions &&
     !canShowNavigationMenu &&
@@ -584,7 +619,22 @@ function ActionIconsRow({
   }
 
   const buttons = [
-    !readOnly && isPresent(onCreateReport) ? (
+    quickAction ? (
+      <ActionIconButton
+        key="quick-action"
+        title={quickAction.title}
+        icon={cloneElement(quickAction.icon, { className: 'message-card-action-btn__icon' })}
+        onClick={quickAction.onClick}
+        selected={quickAction.selected}
+        importantAction={quickAction.key === 'important'}
+        buttonProps={
+          quickAction.key === 'important' || quickAction.key === 'bookmark'
+            ? { 'aria-pressed': quickAction.selected }
+            : undefined
+        }
+      />
+    ) : null,
+    !mobileActions && canShowCreateReport ? (
       <ActionIconButton
         key="report"
         title="Створити розвіддонесення"
@@ -746,7 +796,15 @@ function ActionIconsRow({
       'aria-busy': item.ariaBusy,
       'aria-label': item.ariaLabel,
       selected: item.selected,
-      onClick: (event: MouseEvent<HTMLElement>) => handleOverflowMenuItemClick(event, item.onClick),
+      onClick: (event: MouseEvent<HTMLElement>) => {
+        const focusTarget = overflowMenuTriggerRef.current ?? event.currentTarget;
+        handleOverflowMenuItemClick(event, () => {
+          if (item.key === 'reply') window.setTimeout(() => onReply?.(focusTarget), 0);
+          else if (item.key === 'createReport') onCreateReport?.(focusTarget);
+          else if (item.key === 'edit') onEditDetails?.(focusTarget);
+          else item.onClick(event);
+        });
+      },
     };
     return item.href != null ? (
       <MenuItem
@@ -794,7 +852,7 @@ function ActionIconsRow({
                 onCopyLocation,
                 onCopyEtalon,
                 onClose: closeOverflowMenu,
-              })
+              }).filter((item) => item.key !== quickAction?.key)
             : [],
           mobileActions && canShowNavigationMenu
             ? renderNavigationMenuItems({ items: navigationMenuItems, onClose: closeOverflowMenu })

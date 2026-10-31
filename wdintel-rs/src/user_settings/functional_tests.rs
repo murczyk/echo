@@ -18,6 +18,123 @@ async fn sign_in(
 
 #[actix_web::test]
 #[serial]
+async fn issue_3927_quick_action_persists_and_survives_older_clients() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let login = crate::functest::tests::find_test_login(&env.dbx)
+        .await
+        .unwrap();
+    let sessions =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(sessions, Key::generate()))
+            .route("/test/login/{login}", web::post().to(sign_in))
+            .service(user_settings_get)
+            .service(user_settings_put),
+    )
+    .await;
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri(&format!("/test/login/{}", login.id))
+            .to_request(),
+    )
+    .await;
+    let cookie = response.response().cookies().next().unwrap().into_owned();
+    let mut settings: serde_json::Value = test::call_and_read_body_json(
+        &app,
+        test::TestRequest::get()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(settings["messageCardQuickAction"], "createReport");
+    for action in [
+        "createReport",
+        "reply",
+        "important",
+        "bookmark",
+        "copyText",
+        "copyLink",
+        "edit",
+        "delete",
+    ] {
+        settings["messageCardQuickAction"] = action.into();
+        let saved: serde_json::Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::put()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .set_json(&settings)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(saved["messageCardQuickAction"], action);
+        settings
+            .as_object_mut()
+            .unwrap()
+            .remove("messageCardQuickAction");
+        settings["tagsLayout"] = "hidden".into();
+        let saved: serde_json::Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::put()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .set_json(&settings)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(saved["messageCardQuickAction"], action);
+        let loaded: serde_json::Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(loaded["messageCardQuickAction"], action);
+        assert_eq!(loaded["tagsLayout"], "hidden");
+    }
+    settings["messageCardQuickAction"] = "unsupported".into();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::put()
+            .uri("/api/user/settings")
+            .cookie(cookie.clone())
+            .set_json(&settings)
+            .to_request(),
+    )
+    .await;
+    assert!(!response.status().is_success());
+    for stored in [None, Some("futureAction")] {
+        env.dbx
+            .execute_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "update user_settings set message_card_quick_action = $1 where login_id = $2",
+                vec![stored.into(), login.id.into()],
+            ))
+            .await
+            .unwrap();
+        let loaded: serde_json::Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::get()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(loaded["messageCardQuickAction"], "createReport");
+    }
+}
+
+#[actix_web::test]
+#[serial]
 async fn issue_3620_migration_enables_existing_users_and_preserves_later_opt_outs(
 ) {
     let env = crate::functest::tests::cleanup().await.unwrap();

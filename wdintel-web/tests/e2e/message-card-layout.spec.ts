@@ -77,6 +77,9 @@ for (const host of ['analysis', 'duty'] as const) {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
       'E2E message-card media preview fixture',
     );
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Повідомлення скопійовано.' }),
+    ).toBeVisible();
   });
 
   test(`#3324 keeps the important badge left of actions at every card width (${host}) @regression`, async ({

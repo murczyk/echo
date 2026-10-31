@@ -6,7 +6,13 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, MessageMediaInfo, Network, Tag } from '../../../../../../Bindings.ts';
+import type {
+  InboxMessage,
+  MessageCardQuickAction,
+  MessageMediaInfo,
+  Network,
+  Tag,
+} from '../../../../../../Bindings.ts';
 import { emptyFilter } from '../../../rer-duty-neo/utils.ts';
 import { formatMessageCardTooltipTime, MessageCard } from '../MessageCard.tsx';
 import { MessageCardHeader, MessageCardMetadata } from '../MessageCardHeader.tsx';
@@ -18,6 +24,7 @@ import {
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
 } from '../MessageCardMedia.tsx';
+import { MessageCardQuickActionContext } from '../MessageCardQuickAction';
 import { MessageDeviceAccessProvider } from '../MessageDeviceAccess.tsx';
 import { DutyExcludeMenuContext } from '../DutyExcludeMenu.ts';
 import { MessageDeleteAccessContext, MessageWriteAccessContext } from '../MessageWriteAccess.tsx';
@@ -72,7 +79,12 @@ function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
 
 async function renderCard(
   overrides: Partial<ComponentProps<typeof MessageCard>> = {},
-  access: { canWrite?: boolean; canDelete?: boolean; dutyExcludeMenuEnabled?: boolean } = {},
+  access: {
+    canWrite?: boolean;
+    canDelete?: boolean;
+    dutyExcludeMenuEnabled?: boolean;
+    quickAction?: MessageCardQuickAction;
+  } = {},
 ) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -103,7 +115,14 @@ async function renderCard(
     onDelete: vi.fn(),
     ...overrides,
   } as ComponentProps<typeof MessageCard>;
-  const card = <MessageCard {...props} />;
+  const card =
+    access.quickAction == null ? (
+      <MessageCard {...props} />
+    ) : (
+      <MessageCardQuickActionContext.Provider value={access.quickAction ?? 'createReport'}>
+        <MessageCard {...props} />
+      </MessageCardQuickActionContext.Provider>
+    );
   await act(async () =>
     root.render(
       access.canWrite === undefined &&
@@ -219,6 +238,78 @@ afterEach(() => {
 });
 
 describe('MessageCard', () => {
+  it('#3927 keeps report creation available when it is the only card action', async () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+    const view = await renderCard({
+      displayMode: 'analysis',
+      msg: buildMessage({ networkIds: [] }),
+      onBookmark: undefined,
+      onImportant: undefined,
+      onCopyText: undefined,
+      onDelete: undefined,
+    });
+    const report = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Створити розвіддонесення"]',
+    );
+    if (report == null) throw new Error('missing report action');
+    await click(report);
+    expect(view.props.onCreateReport).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['createReport', 'Створити розвіддонесення', 'onCreateReport'],
+    ['important', 'Позначити як важливе', 'onImportant'],
+    ['bookmark', 'Додати в закладки', 'onBookmark'],
+    ['copyText', 'Копіювати повідомлення', 'onCopyText'],
+    ['copyLink', 'Копіювати посилання на повідомлення', 'onCopyMessageLink'],
+    ['edit', 'Редагувати', 'onEditDetails'],
+    ['delete', 'Видалити', 'onDelete'],
+  ] as const)(
+    '#3927 executes %s directly and removes only its menu duplicate',
+    async (quickAction, label, callback) => {
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+      const handler = vi.fn();
+      const view = await renderCard({ [callback]: handler }, { canDelete: true, quickAction });
+      const button = view.container.querySelector<HTMLButtonElement>(
+        `button[aria-label="${label}"]`,
+      );
+      if (button == null) throw new Error(`missing ${quickAction} button`);
+      await click(button);
+      expect(handler).toHaveBeenCalledOnce();
+      if (quickAction === 'createReport' || quickAction === 'edit') {
+        expect(handler.mock.calls[0].at(-1)).toBe(button);
+      }
+      await openOverflowMenu(view.container);
+      const labels = Array.from(document.body.querySelectorAll('[role="menuitem"]')).map((item) =>
+        item.textContent?.trim(),
+      );
+      expect(labels).not.toContain(label);
+      if (quickAction !== 'createReport') expect(labels).toContain('Створити розвіддонесення');
+    },
+  );
+
+  it.each([
+    ['important', { important: true }, 'Позначити як не важливе', 'onImportant'],
+    ['bookmark', { bookmarked: true }, 'Прибрати з закладок', 'onBookmark'],
+  ] as const)(
+    '#3927 preserves the active state of %s',
+    async (quickAction, state, label, callback) => {
+      vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);
+      const handler = vi.fn();
+      const view = await renderCard(
+        { msg: buildMessage(state), [callback]: handler },
+        { quickAction },
+      );
+      const button = view.container.querySelector<HTMLButtonElement>(
+        `button[aria-label="${label}"]`,
+      );
+      if (button == null) throw new Error(`missing ${quickAction} button`);
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      await click(button);
+      expect(handler).toHaveBeenCalledOnce();
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3598
   it('hides cold-loaded network metadata and copies the independently displayed unit', async () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(390);

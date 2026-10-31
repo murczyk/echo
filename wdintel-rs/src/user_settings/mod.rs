@@ -2,8 +2,8 @@ use crate::users::login_id_from_identity;
 pub mod types;
 
 pub use types::{
-    DutyTagsLayout, MessageTextPreviewLines, MessageTimeBasis,
-    UserDutySettingsDto,
+    DutyTagsLayout, MessageCardQuickAction, MessageTextPreviewLines,
+    MessageTimeBasis, UserDutySettingsDto,
 };
 
 use crate::entities::sea_orm_active_enums::{
@@ -49,6 +49,16 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         duty_collapse_media_previews: m.duty_collapse_media_previews,
         large_media_previews: m.large_media_previews.unwrap_or(false),
         large_message_card_text: m.large_message_card_text.unwrap_or(false),
+        message_card_quick_action: m
+            .message_card_quick_action
+            .as_ref()
+            .and_then(|action| {
+                serde_json::from_value::<MessageCardQuickAction>(
+                    serde_json::Value::String(action.clone()),
+                )
+                .ok()
+            })
+            .unwrap_or_default(),
         media_summary_enabled: m.media_summary_enabled,
         ai_position_highlights_enabled: m
             .ai_position_highlights_enabled
@@ -70,6 +80,9 @@ fn preserve_omitted_compatibility_fields(
 ) {
     if body.get("largeMessageCardText").is_none() {
         incoming.large_message_card_text = existing.large_message_card_text;
+    }
+    if body.get("messageCardQuickAction").is_none() {
+        incoming.message_card_quick_action = existing.message_card_quick_action;
     }
     if body.get("largeMediaPreviews").is_none() {
         incoming.large_media_previews = existing.large_media_previews;
@@ -116,6 +129,7 @@ pub async fn user_settings_put(
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let body = req.into_inner();
     let needs_existing = body.get("largeMessageCardText").is_none()
+        || body.get("messageCardQuickAction").is_none()
         || body.get("largeMediaPreviews").is_none()
         || body.get("messageSortBy").is_none()
         || body.get("messageAutoParseEnabled").is_none()
@@ -164,6 +178,12 @@ pub async fn user_settings_put(
         duty_collapse_media_previews: Set(dto.duty_collapse_media_previews),
         large_media_previews: Set(Some(dto.large_media_previews)),
         large_message_card_text: Set(Some(dto.large_message_card_text)),
+        message_card_quick_action: Set(serde_json::to_value(
+            dto.message_card_quick_action,
+        )
+        .c(h!())?
+        .as_str()
+        .map(str::to_owned)),
         media_summary_enabled: Set(dto.media_summary_enabled),
         ai_position_highlights_enabled: Set(Some(
             dto.ai_position_highlights_enabled,
@@ -191,6 +211,7 @@ pub async fn user_settings_put(
                 user_settings::Column::DutyCollapseMediaPreviews,
                 user_settings::Column::LargeMediaPreviews,
                 user_settings::Column::LargeMessageCardText,
+                user_settings::Column::MessageCardQuickAction,
                 user_settings::Column::MediaSummaryEnabled,
                 user_settings::Column::AiPositionHighlightsEnabled,
                 user_settings::Column::MessageSortBy,
@@ -251,6 +272,21 @@ mod functional_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3927_rejects_explicit_unknown_quick_actions() {
+        for action in
+            [serde_json::json!("unsupported"), serde_json::Value::Null]
+        {
+            let body = serde_json::json!({
+                "tagsLayout": "compact",
+                "messageCardQuickAction": action,
+            });
+            assert!(
+                serde_json::from_value::<UserDutySettingsDto>(body).is_err()
+            );
+        }
+    }
 
     #[test]
     fn omitted_auto_parse_setting_preserves_the_stored_value() {

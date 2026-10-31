@@ -27,6 +27,37 @@ resultDecoder errDecoder okDecoder =
         ]
 
 
+type MessageCardQuickAction
+    = QuickActionCreateReport
+    | QuickActionReply
+    | QuickActionImportant
+    | QuickActionBookmark
+    | QuickActionCopyText
+    | QuickActionCopyLink
+    | QuickActionEdit
+    | QuickActionDelete
+
+
+messageCardQuickActionEncoder : MessageCardQuickAction -> Json.Encode.Value
+messageCardQuickActionEncoder enum =
+    case enum of
+        QuickActionCreateReport ->
+            Json.Encode.string "createReport"
+        QuickActionReply ->
+            Json.Encode.string "reply"
+        QuickActionImportant ->
+            Json.Encode.string "important"
+        QuickActionBookmark ->
+            Json.Encode.string "bookmark"
+        QuickActionCopyText ->
+            Json.Encode.string "copyText"
+        QuickActionCopyLink ->
+            Json.Encode.string "copyLink"
+        QuickActionEdit ->
+            Json.Encode.string "edit"
+        QuickActionDelete ->
+            Json.Encode.string "delete"
+
 type alias Name =
     { body : String
     }
@@ -32401,6 +32432,83 @@ messageTimeBasisDecoder =
                 )
         ]
 
+messageCardQuickActionDecoder : Json.Decode.Decoder MessageCardQuickAction
+messageCardQuickActionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "createReport" ->
+                            Json.Decode.succeed QuickActionCreateReport
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "reply" ->
+                            Json.Decode.succeed QuickActionReply
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "important" ->
+                            Json.Decode.succeed QuickActionImportant
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "bookmark" ->
+                            Json.Decode.succeed QuickActionBookmark
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "copyText" ->
+                            Json.Decode.succeed QuickActionCopyText
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "copyLink" ->
+                            Json.Decode.succeed QuickActionCopyLink
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "edit" ->
+                            Json.Decode.succeed QuickActionEdit
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "delete" ->
+                            Json.Decode.succeed QuickActionDelete
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout
     , messageTextPreviewLines : MessageTextPreviewLines
@@ -32414,6 +32522,7 @@ type alias UserDutySettingsDto =
     , dutyCollapseMediaPreviews : Bool
     , largeMediaPreviews : Bool
     , largeMessageCardText : Bool
+    , messageCardQuickAction : MessageCardQuickAction
     , mediaSummaryEnabled : Bool
     , messageSortBy : MessageTimeBasis
     , messageAutoParseEnabled : Bool
@@ -32436,6 +32545,7 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyCollapseMediaPreviews" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionCreateReport ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummaryEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))

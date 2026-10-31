@@ -1,4 +1,8 @@
-import type { DutyTagsLayout, UserDutySettingsDto } from '../../../../Bindings';
+import type {
+  DutyTagsLayout,
+  MessageCardQuickAction,
+  UserDutySettingsDto,
+} from '../../../../Bindings';
 
 import { getJson, putJson } from './client';
 import {
@@ -16,8 +20,30 @@ export enum MessageAttachmentPreviewMode {
   Large = 'large',
 }
 
-export type { UserDutySettingsDto };
+export type { MessageCardQuickAction, UserDutySettingsDto };
+
+export const MESSAGE_CARD_QUICK_ACTION_OPTIONS: ReadonlyArray<{
+  value: MessageCardQuickAction;
+  label: string;
+}> = [
+  { value: 'createReport', label: 'Створити розвіддонесення' },
+  { value: 'reply', label: 'Відповісти' },
+  { value: 'important', label: 'Важливість' },
+  { value: 'bookmark', label: 'Закладки' },
+  { value: 'copyText', label: 'Копіювати повідомлення' },
+  { value: 'copyLink', label: 'Копіювати посилання на повідомлення' },
+  { value: 'edit', label: 'Редагувати' },
+  { value: 'delete', label: 'Видалити' },
+];
+
+export function normalizeMessageCardQuickAction(value: unknown): MessageCardQuickAction {
+  return (
+    MESSAGE_CARD_QUICK_ACTION_OPTIONS.find((option) => option.value === value)?.value ??
+    'createReport'
+  );
+}
 export type UserDutySettings = {
+  messageCardQuickAction: MessageCardQuickAction;
   /** Analysis time basis. Duty always uses creation time. */
   messageSortBy: MessageTimeBasis;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -44,6 +70,7 @@ export type MessageTextPreviewLineLimit = 20 | 40 | null;
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
 type UserDutySettingsWire = Omit<
   UserDutySettingsDto,
+  | 'messageCardQuickAction'
   | 'tagsLayout'
   | 'analysisMapInSidebar'
   | 'dutyAudioTranscriptionCollapsed'
@@ -59,6 +86,7 @@ type UserDutySettingsWire = Omit<
   | 'messageAutoParseEnabled'
   | 'aiPositionHighlightsEnabled'
 > & {
+  messageCardQuickAction?: MessageCardQuickAction | null;
   messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
@@ -130,6 +158,7 @@ function serializeTagsLayout(tagsLayout: TagsLayoutVariant): DutyTagsLayoutWire 
 
 function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings {
   return {
+    messageCardQuickAction: normalizeMessageCardQuickAction(raw.messageCardQuickAction),
     messageSortBy: raw.messageSortBy === 'creation' ? 'creation' : 'interception',
     messageTextPreviewLines: normalizeMessageTextPreviewLines(raw.messageTextPreviewLines),
     tagsLayout: normalizeTagsLayout(raw.tagsLayout),
@@ -162,6 +191,7 @@ export async function saveUserSettings(
   const response = await putJson<UserDutySettingsWire>(
     '/api/user/settings',
     {
+      messageCardQuickAction: body.messageCardQuickAction,
       messageSortBy: body.messageSortBy,
       messageTextPreviewLines: serializeMessageTextPreviewLines(body.messageTextPreviewLines),
       tagsLayout: serializeTagsLayout(body.tagsLayout),
