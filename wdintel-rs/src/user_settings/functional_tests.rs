@@ -209,17 +209,19 @@ async fn issue_3927_quick_action_persists_and_survives_older_clients() {
     .await;
     assert_eq!(loaded["messageCardQuickAction"], "delete");
     env.dbx.execute_unprepared("update system_settings set hide_networks = false where not deleted").await.unwrap();
-    settings["messageCardQuickAction"] = "unsupported".into();
-    let response = test::call_service(
-        &app,
-        test::TestRequest::put()
-            .uri("/api/user/settings")
-            .cookie(cookie.clone())
-            .set_json(&settings)
-            .to_request(),
-    )
-    .await;
-    assert!(!response.status().is_success());
+    for action in [serde_json::json!("unsupported"), serde_json::Value::Null] {
+        settings["messageCardQuickAction"] = action;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::put()
+                .uri("/api/user/settings")
+                .cookie(cookie.clone())
+                .set_json(&settings)
+                .to_request(),
+        )
+        .await;
+        assert!(!response.status().is_success());
+    }
     for stored in [None, Some("futureAction")] {
         env.dbx
             .execute_raw(sea_orm::Statement::from_sql_and_values(

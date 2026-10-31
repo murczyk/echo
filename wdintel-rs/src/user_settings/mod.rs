@@ -308,21 +308,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn issue_3927_rejects_explicit_unknown_quick_actions() {
-        for action in
-            [serde_json::json!("unsupported"), serde_json::Value::Null]
-        {
-            let body = serde_json::json!({
-                "tagsLayout": "compact",
-                "messageCardQuickAction": action,
-            });
-            assert!(
-                serde_json::from_value::<UserDutySettingsDto>(body).is_err()
-            );
-        }
-    }
-
-    #[test]
     fn omitted_auto_parse_setting_preserves_the_stored_value() {
         let body = serde_json::json!({ "tagsLayout": "compact" });
         let mut incoming = UserDutySettingsDto::default();
