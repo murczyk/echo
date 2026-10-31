@@ -309,19 +309,48 @@ async fn load_reo_report_messages(
         inbox_report_period_chunks(req, report_settings.chunking_hours)
             .context(h!())?;
     let chunks = &chunks;
-    crate::rer_importer::analysis::with_analytics_read_fallback(
-        env,
-        "REO report interception scan",
-        crate::rer_importer::analysis::analytics_inbox_request_supported(req),
-        |db| async move {
-            load_reo_inbox_messages_chunks(&db, login, env, req, chunks).await
-        },
-        |db| async move {
-            load_reo_inbox_messages_chunks(&db, login, env, req, chunks).await
-        },
-    )
-    .await
-    .context(h!())
+    let mut messages =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env,
+            "REO report interception scan",
+            crate::rer_importer::analysis::analytics_inbox_request_supported(
+                req,
+            ),
+            |db| async move {
+                load_reo_inbox_messages_chunks(&db, login, env, req, chunks)
+                    .await
+            },
+            |db| async move {
+                load_reo_inbox_messages_chunks(&db, login, env, req, chunks)
+                    .await
+            },
+        )
+        .await
+        .context(h!())?;
+    load_reo_message_networks(&env.dbx, &mut messages)
+        .await
+        .context(h!())?;
+    Ok(messages)
+}
+
+async fn load_reo_message_networks(
+    dbx: &DatabaseConnection,
+    messages: &mut [(i64, ReoInboxMessage)],
+) -> anyhow::Result<()> {
+    for messages in messages.chunks_mut(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
+        let message_ids = messages.iter().map(|(id, _)| *id).collect_vec();
+        let mut network_ids_by_message =
+            crate::rer_importer::inbox::load_message_networks_by_ids(
+                dbx,
+                &message_ids,
+            )
+            .await
+            .context(h!())?;
+        for (id, message) in messages {
+            message.network_ids = network_ids_by_message.remove(id);
+        }
+    }
+    Ok(())
 }
 
 async fn load_reo_inbox_messages_chunks(
@@ -388,13 +417,6 @@ async fn load_reo_inbox_messages(
     .await
     .context(h!())?;
     let message_ids = rows.iter().map(|row| row.id).collect_vec();
-    let mut network_ids_by_message =
-        crate::rer_importer::inbox::load_message_networks_by_ids(
-            &env.dbx,
-            &message_ids,
-        )
-        .await
-        .context(h!())?;
     let mut group_keys_by_message =
         load_reo_group_master_keys(dbx, login, req, &message_ids)
             .await
@@ -421,7 +443,7 @@ async fn load_reo_inbox_messages(
                     callsign_tokens: parse_optional_json_vec(
                         row.callsign_tokens,
                     )?,
-                    network_ids: network_ids_by_message.remove(&id),
+                    network_ids: None,
                     group_master_key: group_keys_by_message
                         .remove(&id)
                         .unwrap_or_default(),
@@ -1812,13 +1834,30 @@ mod tests {
             nolimit: Some(true),
             ..Default::default()
         };
+        let messages = load_reo_inbox_messages(
+            &analytics,
+            &login.id,
+            &env,
+            &req,
+            ReportPeriodEnd::Inclusive,
+        )
+        .await
+        .context(h!())?;
+        assert_eq!(messages.len(), 2);
+        assert!(messages
+            .iter()
+            .all(|(_, message)| message.network_ids.is_none()));
+        assert_eq!(
+            sigint_inbox_item_network::Entity::find()
+                .count(db)
+                .await
+                .context(h!())?,
+            0
+        );
+
         for _ in 0..2 {
-            let messages = load_reo_inbox_messages(
-                &analytics,
-                &login.id,
-                &env,
-                &req,
-                ReportPeriodEnd::Inclusive,
+            let messages = load_reo_report_messages(
+                &login.id, &env, &req, false, true, false,
             )
             .await
             .context(h!())?;
