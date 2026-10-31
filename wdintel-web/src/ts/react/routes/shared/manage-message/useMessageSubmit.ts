@@ -237,6 +237,7 @@ export function useMessageSubmit({
             : data.signalGroupMasterKey === DO_NOT_SEND_GROUP_VALUE
               ? null
               : data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
+        source_signal_group_master_key: isEditMode ? editTarget?.message.groupMasterKey : undefined,
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length ? uploadUrls : null,
         attachment_updates: buildAttachmentUpdates(
@@ -297,7 +298,9 @@ export function useMessageSubmit({
         signal.throwIfAborted();
         addValues(recentValues);
         let editAppliedLocally = false;
-        if (onSubmitEdit && res.message) {
+        const groupChanged =
+          payload.signal_group_master_key !== (editTarget.message.groupMasterKey ?? null);
+        if (onSubmitEdit && res.message && !groupChanged) {
           try {
             await onSubmitEdit(editTarget.id, res.message);
             editAppliedLocally = true;

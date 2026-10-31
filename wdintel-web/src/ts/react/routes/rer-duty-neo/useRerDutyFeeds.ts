@@ -254,7 +254,14 @@ export function useRerDutyFeeds(
           [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
         );
         const visibleChangedMessageIds = Array.from(
-          new Set(messageIds.filter((messageId) => visibleMessageIds.has(messageId))),
+          new Set(
+            messageIds.filter(
+              (messageId) =>
+                visibleMessageIds.has(messageId) ||
+                feed.windowedUnreadItems?.has(messageId) ||
+                feed.unresolvedUnreadIds?.has(messageId),
+            ),
+          ),
         );
         if (visibleChangedMessageIds.length === 0) return [];
         const inboxReq = feedState.buildReqForFeed(feed, { loadLatest: true });
@@ -281,12 +288,14 @@ export function useRerDutyFeeds(
             loadGeneration,
           }) => {
             try {
-              const unitFiltersActive =
+              const membershipFiltersActive =
+                (inboxReq.selectedGroups?.length ?? 0) > 0 ||
+                (inboxReq.deniedGroups?.length ?? 0) > 0 ||
                 (inboxReq.selectedUnitIds?.length ?? 0) > 0 ||
                 (inboxReq.selectedUnits?.length ?? 0) > 0 ||
                 (inboxReq.deniedUnitIds?.length ?? 0) > 0 ||
                 (inboxReq.deniedUnits?.length ?? 0) > 0;
-              const nextMessages = await (unitFiltersActive
+              const nextMessages = await (membershipFiltersActive
                 ? fetchMessagesByIdsMatchingFilters(visibleChangedMessageIds, inboxReq)
                 : fetchMessagesByIds(visibleChangedMessageIds, inboxReq));
               feedState.setMessageFeeds((current) =>

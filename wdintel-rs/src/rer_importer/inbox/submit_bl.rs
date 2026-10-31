@@ -191,6 +191,7 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode(
         keep_timestamp_missing,
         location_mode,
         None,
+        None,
     )
     .await
 }
@@ -223,6 +224,7 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode_context(
         keep_timestamp_missing,
         location_mode,
         signal_message_uuid,
+        None,
     )
     .await
 }
@@ -239,6 +241,7 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
     allow_empty_content: bool,
     keep_timestamp_missing: bool,
     location_mode: super::InboxLocationSubmitMode,
+    source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
         &env.config,
@@ -254,6 +257,7 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
         keep_timestamp_missing,
         location_mode,
         None,
+        source_group_master_key,
     )
     .await
 }
@@ -272,6 +276,7 @@ async fn submit_inbox_item_with_groups_inner(
     keep_timestamp_missing: bool,
     location_mode: super::InboxLocationSubmitMode,
     signal_message_uuid: Option<uuid::Uuid>,
+    source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
     let mut prepared = prepare_inbox_submit_item(
         txn,
@@ -303,6 +308,7 @@ async fn submit_inbox_item_with_groups_inner(
             prepared.timestamp,
             prepared.operator_tags,
             groups,
+            source_group_master_key,
         )
         .await
         .c(h!())?,
