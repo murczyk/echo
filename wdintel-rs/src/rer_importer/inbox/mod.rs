@@ -2858,9 +2858,14 @@ async fn update_submit_signal_message(
     )
     .await
     .c(h!())?;
-    replace_submit_signal_message_group(txn, &signal_message, groups.first())
-        .await
-        .c(h!())?;
+    replace_submit_signal_message_group(
+        txn,
+        &signal_message,
+        login_id,
+        groups.first(),
+    )
+    .await
+    .c(h!())?;
     let assign_author =
         signal_message.login_id.is_none() && signal_message.sender.is_none();
     let mut signal_message = signal_message.into_active_model();
@@ -2882,20 +2887,60 @@ async fn update_submit_signal_message(
     Ok(signal_message)
 }
 
+pub(crate) async fn find_submit_signal_message_group(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    login: &Uuid,
+) -> anyhow::Result<Option<signal_message_group::Model>> {
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(txn, login)
+            .await
+            .c(h!())?;
+    signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId.eq(signal_message_id),
+        )
+        .filter(
+            signal_message_group::Column::GroupMasterKey.is_in(allowed_groups),
+        )
+        .order_by_asc(signal_message_group::Column::Id)
+        .one(txn)
+        .await
+        .c(h!())
+}
+
 async fn replace_submit_signal_message_group(
     txn: &DatabaseTransaction,
     signal_message: &signal_message::Model,
+    login: &Uuid,
     destination_group: Option<&(String, i64)>,
 ) -> anyhow::Result<()> {
-    let Some(old_group_id) = signal_message.datasource_group_id else {
-        return Ok(());
+    let old_group = match signal_message.datasource_group_id {
+        Some(old_group_id) => {
+            if Some(old_group_id) == destination_group.map(|(_, id)| *id) {
+                return Ok(());
+            }
+            signal_message_group::Column::DatasourceGroupId.eq(old_group_id)
+        }
+        None => {
+            let Some(old_group) =
+                find_submit_signal_message_group(txn, signal_message.id, login)
+                    .await
+                    .c(h!())?
+            else {
+                return Ok(());
+            };
+            if old_group.group_master_key.as_deref()
+                == destination_group.map(|(key, _)| key.as_str())
+            {
+                return Ok(());
+            }
+            signal_message_group::Column::Id.eq(old_group.id)
+        }
     };
-    if Some(old_group_id) == destination_group.map(|(_, id)| *id) {
-        return Ok(());
-    }
     let old_group = signal_message_group::Column::SignalMessageId
         .eq(signal_message.id)
-        .and(signal_message_group::Column::DatasourceGroupId.eq(old_group_id));
+        .and(old_group);
     match destination_group {
         Some((master_key, id)) => {
             signal_message_group::Entity::update_many()

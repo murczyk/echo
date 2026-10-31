@@ -453,14 +453,16 @@ pub async fn ensure_edit_group_change_allowed(
         Some(id) => datasource_group::Entity::find_by_id(id)
             .one(txn)
             .await
-            .c(h!())?,
-        None => None,
+            .c(h!())?
+            .map(|group| group.group_master_key),
+        None => crate::rer_importer::inbox::find_submit_signal_message_group(
+            txn, message.id, login,
+        )
+        .await
+        .c(h!())?
+        .and_then(|group| group.group_master_key),
     };
-    if old_group
-        .as_ref()
-        .map(|group| group.group_master_key.as_str())
-        != destination_group_master_key
-    {
+    if old_group.as_deref() != destination_group_master_key {
         crate::users::has_role(dbx, login, "DeleteMsg")
             .await
             .c(h!())?;

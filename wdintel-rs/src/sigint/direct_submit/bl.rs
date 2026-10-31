@@ -1922,6 +1922,21 @@ mod tests {
     #[serial]
     async fn issue_3955_destination_changes_require_delete_role_and_preserve_other_groups(
     ) {
+        for (canonical_group, linked_datasource_group) in
+            [(true, true), (false, true), (false, false)]
+        {
+            assert_destination_changes(
+                canonical_group,
+                linked_datasource_group,
+            )
+            .await;
+        }
+    }
+
+    async fn assert_destination_changes(
+        canonical_group: bool,
+        linked_datasource_group: bool,
+    ) {
         use crate::entities::{
             datasource_group, sigint_zone_datasource, signal_group,
             signal_group_aor,
@@ -2017,6 +2032,27 @@ mod tests {
         secondary_link.datasource_group_id = Set(Some(destinations[1].id));
         let secondary_link = secondary_link.insert(&env.dbx).await.unwrap();
 
+        if !canonical_group {
+            signal_message::ActiveModel {
+                id: Set(created.signal_message_id),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        if !linked_datasource_group {
+            signal_message_group::ActiveModel {
+                id: Set(original_link.id),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+
         edit_signal_message(
             &login.id,
             &env,
@@ -2025,6 +2061,32 @@ mod tests {
         )
         .await
         .unwrap();
+        if !canonical_group {
+            signal_message::ActiveModel {
+                id: Set(created.signal_message_id),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        if !linked_datasource_group {
+            signal_message_group::ActiveModel {
+                id: Set(original_link.id),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            }
+            .update(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let original_link =
+            signal_message_group::Entity::find_by_id(original_link.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
         let mut payload = direct_submit_payload("Moved message");
         payload.signal_group_master_key =
             Some(destinations[0].group_master_key.clone());
