@@ -1,5 +1,16 @@
 # Group message ingestion
 
+Sender names from echo-im are synchronized for both Signal and WhatsApp in the
+same transaction that acknowledges incoming messages. The synchronized profile
+is used for display before legacy echo-im sender records, so a WhatsApp device
+suffix change cannot restore an old name from the normalized sender ID. Blank
+incoming names preserve the last known name. A nonblank echo-im name replaces
+the full display name, including any surname left from an older profile.
+
+Regression coverage: `wdintel-rs/src/messenger/worker/mod.rs`
+(`sender_renames_3957_follow_echo_im_for_signal_and_whatsapp` and
+`sender_names_3957_use_echo_im_when_synced_profile_is_empty`).
+
 In `/admin/directions-neo`, assigned and orphan group editors expose
 «Отримувати нові повідомлення з месенджера». This stores the nullable
 `signal_group.fetch_new_messages` flag. The column has no SQL default; `NULL`
