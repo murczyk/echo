@@ -137,7 +137,7 @@ pub(crate) async fn resolve(
     let login = super::load_active_login(db, login).await.c(h!())?;
     let roles: Vec<String> = serde_json::from_value(login.roles).c(h!())?;
     let settings = role_message_settings::Entity::find()
-        .filter(role_message_settings::Column::Role.is_in(roles))
+        .filter(role_message_settings::Column::Role.is_in(roles.clone()))
         .all(db)
         .await
         .c(h!())?;
@@ -153,6 +153,10 @@ pub(crate) async fn resolve(
             settings.iter().all(|settings| settings.device_required);
         rules.allow_unit_creation =
             settings.iter().any(|settings| settings.allow_unit_creation);
+    }
+    if rules.unit_required {
+        rules.unit_required = super::role_matches(&roles, "Rer").c(h!())?
+            || super::role_matches(&roles, "Cyber").c(h!())?;
     }
     if rules.device_required {
         rules.device_required =

@@ -21,6 +21,8 @@ unit creation. Role rules take precedence over personal form defaults, including
 remembered empty fields. Server restrictions and ordinary authorization keep
 precedence over role rules. Device requirements apply only while the server
 allows devices and the user can access message devices.
+Unit requirements apply only to users with ordinary message-write access;
+reply-only viewers can still send text-only replies.
 
 The editor fetches effective rules when a form opens and blocks new-message saving
 until they load. Failures display an error and offer retry; existing message edits
@@ -39,5 +41,6 @@ removes saved role rules.
 Regression coverage:
 
 - `wdintel-rs/src/users/role_settings/tests.rs`
+- `wdintel-rs/src/message_reply/tests_api.rs`
 - `wdintel-web/tests/e2e/role-message-settings.regression.spec.ts`
 - `wdintel-web/tests/e2e/admin-users-neo.spec.ts`
