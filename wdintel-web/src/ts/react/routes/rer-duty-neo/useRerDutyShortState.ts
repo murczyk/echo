@@ -123,7 +123,8 @@ export function useRerDutyShortState(params: Params) {
   const persistStateToUrl = useCallback(
     (next: MessageFeedState[]) => {
       if (shortStateIdRef.current && !ready) blockHydrationRef.current = true;
-      if (!featureEnabled) {
+      if (!featureEnabled || next.some((feed) => feed.unitsIncludeChildren)) {
+        requestRef.current = { requestId: requestRef.current.requestId + 1, hash: null };
         pushStateToUrl(toQueryState(next));
         return;
       }

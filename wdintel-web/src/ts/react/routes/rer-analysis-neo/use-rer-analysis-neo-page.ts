@@ -54,6 +54,8 @@ import type {
   User,
 } from '../../../../Bindings';
 import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
+import { useUnitHierarchyCatalog } from '../shared/use-unit-children-filter';
+import { isUnitParentValue } from '../shared/unit-children-filter';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -363,11 +365,19 @@ export function useRerAnalysisNeoPage(
     !radioFeaturesAllowed && selectedSidebarTab === 'frequencies'
       ? 'callsigns'
       : selectedSidebarTab;
+  const needsUnitHierarchy =
+    queryState.unitsIncludeChildren === true || queryState.unitsSelected.some(isUnitParentValue);
+  const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
+    needsUnitHierarchy,
+    setPageError,
+  );
   const effectiveQueryState = useMemo(
     () =>
       effectiveRadioQuery(
         {
           ...queryStateWithResolvedRoleDate,
+          unitHierarchy,
+          unitHierarchyLoading,
           deviceNamesSelected:
             deviceAccess.status === 'denied'
               ? []
@@ -384,6 +394,8 @@ export function useRerAnalysisNeoPage(
     [
       deviceAccess.status,
       queryStateWithResolvedRoleDate,
+      unitHierarchy,
+      unitHierarchyLoading,
       radioFeaturesAllowed,
       rerReportFilterAccess.status,
       hideNetworks,
@@ -733,6 +745,7 @@ export function useRerAnalysisNeoPage(
     authUserName,
     currentUser,
     deferInitialLoad:
+      (needsUnitHierarchy && unitHierarchy === null) ||
       systemSettingsStatus === 'loading' ||
       deviceAccess.status === 'loading' ||
       (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||
@@ -1040,10 +1053,12 @@ export function useRerAnalysisNeoPage(
     allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    queryState:
-      deviceAccess.status === 'denied'
-        ? { ...queryStateWithResolvedRoleDate, deviceNamesSelected: [] }
-        : queryStateWithResolvedRoleDate,
+    queryState: {
+      ...queryStateWithResolvedRoleDate,
+      unitHierarchy,
+      deviceNamesSelected:
+        deviceAccess.status === 'denied' ? [] : queryStateWithResolvedRoleDate.deviceNamesSelected,
+    },
     setQueryState,
   });
 

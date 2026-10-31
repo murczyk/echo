@@ -501,6 +501,8 @@ export function useRerDutyFeeds(
     });
   }, [reloadLocations, setFeedError]);
   return {
+    unitHierarchy: feedState.unitHierarchy,
+    unitHierarchyLoading: feedState.unitHierarchyLoading,
     buildReqForFeed: feedState.buildReqForFeed,
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,

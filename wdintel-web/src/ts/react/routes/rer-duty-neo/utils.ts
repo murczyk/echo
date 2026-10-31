@@ -15,13 +15,24 @@ import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-
 import { toLegacyRerAnalysisQueryState } from '../../../rer-analysis-query-state-legacy';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
-import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/unit-search';
+import {
+  UNIT_FILTER_UNSET_ID,
+  getCanonicalUnitIdValue,
+  isCanonicalUnitIdValue,
+} from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { readPersistedDutyFilterState } from './duty-filter-persistence';
 import { mergeMessageWindow } from '../shared/message-feed/windowing';
 import { readLinkedMessageReferenceFromWindow as parseDutyMessageUidFromWindow } from '../shared/message-navigation/message-navigation-url';
 
+import {
+  expandUnitSelections,
+  isUnitParentValue,
+  type UnitHierarchyIndex,
+} from '../shared/unit-children-filter';
+
 export type DutyFeedFilterOptions = {
+  unitsIncludeChildren?: boolean;
   adjacentFreqsRange: number;
   highlightSignalsEnabled: boolean;
   onlyMyUnitTagsEnabled: boolean;
@@ -267,6 +278,7 @@ function normalizePersistedFeedOptions(value: unknown): DutyFeedFilterOptions | 
     adjacentFreqsRange,
     highlightSignalsEnabled: raw.highlightSignalsEnabled === true,
     onlyMyUnitTagsEnabled: raw.onlyMyUnitTagsEnabled === true,
+    unitsIncludeChildren: raw.unitsIncludeChildren === true,
     groupScopeMasterKey:
       typeof raw.groupScopeMasterKey === 'string' && raw.groupScopeMasterKey.trim() !== ''
         ? raw.groupScopeMasterKey
@@ -368,13 +380,25 @@ export function buildInboxReq(opts: {
   tillDateInclusiveMs?: number | null;
   nolimit?: boolean;
   filter: RerDutyFeedFilterState;
+  unitsIncludeChildren?: boolean;
+  unitHierarchy?: UnitHierarchyIndex | null;
   /** Expanded freqs (selected + adjacent); if not set, filter.freqsSelected is used. */
   expandedFreqsSelected?: string[] | null;
   expandedFreqsDenied?: string[] | null;
   highlightSignals?: boolean | null;
   reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
-  const f = opts.filter;
+  const selectedUnits = expandUnitSelections(
+    opts.filter.unitsSelected ?? [],
+    opts.unitsIncludeChildren ?? false,
+    opts.unitHierarchy,
+  );
+  const deniedUnits = expandUnitSelections(
+    opts.filter.unitsDenied ?? [],
+    opts.unitsIncludeChildren ?? false,
+    opts.unitHierarchy,
+  );
+  const f = { ...opts.filter, unitsSelected: selectedUnits, unitsDenied: deniedUnits };
   const selectedUnitIds = (f.unitsSelected ?? []).flatMap((value) => {
     const unitId = getCanonicalUnitIdValue(value);
     return unitId === null ? [] : [unitId];
@@ -408,7 +432,10 @@ export function buildInboxReq(opts: {
     deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
     selectedUnits: emptyArrToNull(selectedLegacyUnits),
-    selectedUnitIds: emptyArrToNull(selectedUnitIds),
+    selectedUnitIds:
+      selectedUnits.length === 0 && opts.filter.unitsSelected?.some(isUnitParentValue)
+        ? [UNIT_FILTER_UNSET_ID]
+        : emptyArrToNull(selectedUnitIds),
     selectedDeviceNames: emptyArrToNull(f.selectedDeviceNames),
     deniedDeviceNames: emptyArrToNull(f.deniedDeviceNames),
     deniedUnits: emptyArrToNull(deniedLegacyUnits),
@@ -995,6 +1022,7 @@ export type MessageFeedState = {
    * Flushed into `items` on follow / arrow / reach-bottom.
    */
   pendingNewerItems?: MessageItem[];
+  unitsIncludeChildren?: boolean;
   /** Auto-add freqs in range (MHz); 0 = off. */
   adjacentFreqsRange: DutyFeedFilterOptions['adjacentFreqsRange'];
   /** Підсвічувати сигнали (додатково). */
@@ -1346,6 +1374,7 @@ export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
       f.id,
       f.filter,
       {
+        unitsIncludeChildren: f.unitsIncludeChildren,
         adjacentFreqsRange: f.adjacentFreqsRange,
         highlightSignalsEnabled: f.highlightSignalsEnabled,
         onlyMyUnitTagsEnabled: f.onlyMyUnitTagsEnabled,

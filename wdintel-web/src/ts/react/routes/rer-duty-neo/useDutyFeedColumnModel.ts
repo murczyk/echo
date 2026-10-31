@@ -202,6 +202,8 @@ function buildFeedFilterPanel(
       postsList,
       locationsList,
       unitsList: Object.values(unitsMap),
+      unitStatsReq: deps.feeds.buildReqForFeed(feed, { loadLatest: true }),
+      unitHierarchy: deps.feeds.unitHierarchy,
       persistentUnitFilterValues,
     },
     toggles: {
@@ -209,6 +211,8 @@ function buildFeedFilterPanel(
       highlightSignalsEnabled: feed.highlightSignalsEnabled,
       onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
       unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
+      unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
+      unitHierarchyLoading: deps.feeds.unitHierarchyLoading,
       reloadFreqsLoading,
       groupCatalogLoading,
       groupCatalogError,
@@ -284,6 +288,15 @@ function buildFeedFilterPanel(
           unitsSelected: includeValues.length ? includeValues : null,
           unitsDenied: excludeValues.length ? excludeValues : null,
         }),
+      onUnitStatsError: deps.feeds.setError,
+      onUnitsIncludeChildrenChange: (unitsIncludeChildren: boolean) => {
+        if ((feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) > 0) {
+          applyFilter(feed.id, feed.filter, true);
+        }
+        setMessageFeeds((previous) =>
+          previous.map((item) => (item.id === feed.id ? { ...item, unitsIncludeChildren } : item)),
+        );
+      },
       onUnitsExactMatchOnlyChange: (v: boolean) =>
         applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
       ...buildLocationFilterActions(feed, deps.feeds),
@@ -346,6 +359,7 @@ function buildFeedFilterPanel(
                   adjacentFreqsRange: 0,
                   highlightSignalsEnabled: false,
                   onlyMyUnitTagsEnabled: false,
+                  unitsIncludeChildren: false,
                 }
               : item,
           ),

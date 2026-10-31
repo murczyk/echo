@@ -350,6 +350,11 @@ export async function installRerDutyShortStateMocks(
       return;
     }
 
+    if (pathname === '/api/rer-importer/get-inbox-unit-stats') {
+      await fulfillJson(route, { units: [] });
+      return;
+    }
+
     if (pathname === '/api/rer-importer/get-inbox-count') {
       const requestBody = request.postDataJSON();
       const response = options.inboxCountResponseForRequest

@@ -20,7 +20,12 @@ import {
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
-import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
+import {
+  UNIT_FILTER_UNSET_ID,
+  getCanonicalUnitIdValue,
+  getUnitIdFilterValue,
+} from '../../utils/unit-search';
+import { expandUnitSelections, isUnitParentValue } from '../shared/unit-children-filter';
 import type { AnalysisQueryState } from './types';
 import type { GroupScope } from '../shared/group-navigation';
 
@@ -455,6 +460,7 @@ export function buildAnalysisReq(
   allFrequencies: string[] = [],
 ): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
+  if (query.unitsSelected.some(isUnitParentValue) && !query.unitHierarchy) return null;
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
@@ -475,7 +481,13 @@ export function buildAnalysisReq(
           ]),
         )
       : query.freqsSelected;
-  const units = partitionUnitSelections(query.unitsSelected);
+  const units = partitionUnitSelections(
+    expandUnitSelections(
+      query.unitsSelected,
+      query.unitsIncludeChildren ?? false,
+      query.unitHierarchy,
+    ),
+  );
 
   return {
     sinceDateInclusiveMs,
@@ -486,7 +498,11 @@ export function buildAnalysisReq(
     selectedPosts: query.postsSelected.length ? query.postsSelected : null,
     selectedCallsigns: query.callsignsSelected.length ? query.callsignsSelected : null,
     selectedUnits: units.legacy.length ? units.legacy : null,
-    selectedUnitIds: units.ids.length ? units.ids : null,
+    selectedUnitIds: units.ids.length
+      ? units.ids
+      : query.unitsSelected.some(isUnitParentValue) && units.legacy.length === 0
+        ? [UNIT_FILTER_UNSET_ID]
+        : null,
     selectedDeviceNames: query.deviceNamesSelected.length ? query.deviceNamesSelected : null,
     selectedLocations: query.locationsSelected.length ? query.locationsSelected : null,
     selectedAors: query.aorsSelected.length

@@ -4,6 +4,8 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import { Badge, Box, Button, Divider, Paper, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
 
+import { useUnitParentOptions } from '../../shared/use-unit-children-filter';
+
 import { PowerChip } from '../../../components/PowerChip';
 import { AnalysisSavedFiltersCard } from './AnalysisSavedFiltersCard';
 import {
@@ -114,6 +116,22 @@ export function AnalysisFiltersPanel({
     ],
   );
 
+  const unitOptions = useMemo(() => {
+    const optionsByValue = new Map(derived.unitsOptions.map((option) => [option.value, option]));
+    queryState.unitHierarchy?.parents.forEach((parent) => {
+      if (queryState.unitsSelected.includes(parent.value) && !optionsByValue.has(parent.value)) {
+        optionsByValue.set(parent.value, { value: parent.value, label: parent.label, count: 0 });
+      }
+    });
+    return [...optionsByValue.values()];
+  }, [derived.unitsOptions, queryState.unitHierarchy, queryState.unitsSelected]);
+  const unitParents = useUnitParentOptions(
+    queryState.unitsIncludeChildren ?? false,
+    unitOptions,
+    queryState.unitHierarchy,
+  );
+  const derivedWithParents = { ...derived, unitsOptions: unitParents.options };
+
   const toggleSection = (section: FilterSectionId) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
@@ -217,7 +235,10 @@ export function AnalysisFiltersPanel({
                   threadOnly={page.threadMode != null}
                   counts={counts}
                   cyberEchoEnabled={cyberEchoEnabled}
-                  derived={derived}
+                  derived={derivedWithParents}
+                  unitHierarchyLoading={
+                    queryState.unitHierarchyLoading === true || unitParents.loading
+                  }
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
@@ -282,7 +303,10 @@ export function AnalysisFiltersPanel({
                   threadOnly={page.threadMode != null}
                   counts={counts}
                   cyberEchoEnabled={cyberEchoEnabled}
-                  derived={derived}
+                  derived={derivedWithParents}
+                  unitHierarchyLoading={
+                    queryState.unitHierarchyLoading === true || unitParents.loading
+                  }
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}

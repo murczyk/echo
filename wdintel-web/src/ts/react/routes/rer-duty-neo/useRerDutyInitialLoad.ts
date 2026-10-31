@@ -43,6 +43,7 @@ export function createEmptyFeedState(
     adjacentFreqsRange: options.adjacentFreqsRange ?? 0,
     highlightSignalsEnabled: options.highlightSignalsEnabled ?? false,
     onlyMyUnitTagsEnabled: options.onlyMyUnitTagsEnabled ?? false,
+    unitsIncludeChildren: options.unitsIncludeChildren ?? false,
   };
 }
 

@@ -1,5 +1,7 @@
 use crate::attachments::analytics::{SearchCoverageScope, SearchTimeBasis};
 use crate::config::{
+    ANALYSIS_STATS_UNDEFINED_UNIT_ID, ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
+    ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT,
     ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE,
     ANALYTICS_INBOX_LATEST_PROBE_BUCKET_MS, ANALYTICS_INBOX_LATEST_PROBE_DAYS,
     ANALYTICS_INBOX_MESSAGE_ID_BOUNDS_CACHE_MAX_ENTRIES,
@@ -1089,6 +1091,66 @@ async fn build_inbox_digest_query_with_created_at_bounds(
     );
 
     Ok(render_inbox_digest_query(q))
+}
+
+pub(crate) async fn build_inbox_unit_stats_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: Option<&DatabaseConnection>,
+) -> Result<Option<String>, AppError> {
+    let query = if let Some(db) = analytics_db {
+        let freshness_max_age_ms = env
+            .config
+            .analytics
+            .as_ref()
+            .map(crate::config::AnalyticsConfig::freshness_max_age_ms)
+            .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+        let Some((query, _)) = build_analytics_filtered_inbox_query(
+            login,
+            env,
+            req,
+            db,
+            freshness_max_age_ms,
+        )
+        .await
+        .c(h!())?
+        else {
+            return Ok(None);
+        };
+        query
+    } else {
+        build_filtered_inbox_query_with_scope(
+            &env.dbx,
+            login,
+            env,
+            req,
+            None,
+            None,
+            InboxQueryPurpose::Digest,
+            InboxUnitLookupStrategy::Default,
+        )
+        .await
+        .c(h!())?
+    };
+    let query = query
+        .select_only()
+        .column(signal_message::Column::Id)
+        .distinct();
+    let query = render_inbox_digest_query(query);
+    Ok(Some(format!(
+        r#"SELECT COALESCE(unit_links.unit_id, {ANALYSIS_STATS_UNDEFINED_UNIT_ID}) AS unit_id,
+                  COALESCE(unit_links.name, '{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}') AS name,
+                  COUNT(DISTINCT messages.id) AS count
+           FROM ({query}) AS messages
+           LEFT JOIN (
+               SELECT links.item_id, units.id AS unit_id, units.name
+               FROM sigint_inbox_item_unit AS links
+               JOIN sigint_unit AS units ON units.id = links.unit_id
+               WHERE units.deleted = FALSE
+           ) AS unit_links ON unit_links.item_id = messages.id
+           GROUP BY unit_links.unit_id, unit_links.name"#
+    )))
 }
 
 pub(crate) async fn build_inbox_digest_query(
