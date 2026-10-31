@@ -11,7 +11,7 @@ type CreationForm = {
   hideNetworks: boolean;
 };
 
-export function useMessageUnitCreation(onCreated: (unit: Unit) => void) {
+export function useMessageUnitCreation(onCreated: (unit: Unit) => void, editingMessageId?: number) {
   const [form, setForm] = useState<CreationForm | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -65,10 +65,13 @@ export function useMessageUnitCreation(onCreated: (unit: Unit) => void) {
     setSubmitting(true);
     setError(null);
     try {
-      const unit = await createUnitForMessage({
-        unit: value.unit,
-        ...(value.autoNetwork ?? { skipNetworkCreation: true, locations: [], unitMask: [] }),
-      });
+      const unit = await createUnitForMessage(
+        {
+          unit: value.unit,
+          ...(value.autoNetwork ?? { skipNetworkCreation: true, locations: [], unitMask: [] }),
+        },
+        editingMessageId,
+      );
       if (session.current !== version) return;
       onCreated(unit);
       setForm(null);

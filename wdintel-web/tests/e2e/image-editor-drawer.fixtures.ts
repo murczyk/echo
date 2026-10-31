@@ -199,8 +199,16 @@ export async function openEditMessageDrawer(page: Page): Promise<void> {
   await openDrawerFromMediaMessage(page, 'Редагувати', 'Редагувати повідомлення');
 }
 
-export async function openCreateReportDrawer(page: Page): Promise<void> {
-  await openDrawerFromMediaMessage(page, 'Створити розвіддонесення', 'Створити розвіддонесення');
+export async function openCreateReportDrawer(
+  page: Page,
+  beforeOpen?: () => Promise<void>,
+): Promise<void> {
+  await openDrawerFromMediaMessage(
+    page,
+    'Створити розвіддонесення',
+    'Створити розвіддонесення',
+    beforeOpen,
+  );
 }
 
 export async function openEditReportDrawer(page: Page): Promise<void> {
@@ -273,6 +281,7 @@ async function openDrawerFromMediaMessage(
   page: Page,
   actionName: string,
   heading: string,
+  beforeOpen?: () => Promise<void>,
 ): Promise<void> {
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse();
   const [, message] = inboxResponse.inbox_items[0]!;
@@ -301,6 +310,7 @@ async function openDrawerFromMediaMessage(
       }),
     );
   }
+  await beforeOpen?.();
   await page.goto('/rer-duty-neo');
   await dutyMocks.systemSettingsReady;
   await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);

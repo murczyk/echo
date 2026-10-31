@@ -180,3 +180,6 @@ public.ai_transcript_analysis_test_message
 public.ai_transcript_analysis_test_result
 public.ai_transcript_analysis_job
 public.ai_worker_progress
+
+# Role policy for interactive message creation.
+public.role_message_settings

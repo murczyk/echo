@@ -303,3 +303,69 @@ test('Admin Users clear-search button hides the badge when no column filters rem
   await expect(users.locator('tbody tr')).toHaveCount(overflowingLogins.length);
   await expect(badge).toHaveClass(/MuiBadge-invisible/);
 });
+
+for (const width of [1280, 390]) {
+  test(`@regression #3935 role cards supported add, edit and delete at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installAdminUsersApiMocks(page);
+    let settings = [
+      { role: 'Rer', unitRequired: true, deviceRequired: false, allowUnitCreation: false },
+    ];
+    const saves: unknown[] = [];
+    await page.route('**/api/admin/role-message-settings/*', async (route) => {
+      const operation = new URL(route.request().url()).pathname.split('/').pop();
+      if (operation === 'list')
+        return route.fulfill({ json: { settings, roles: ['Admin', 'Rer', 'Cyber'] } });
+      const request = route.request().postDataJSON();
+      if (operation === 'delete') {
+        settings = settings.filter(({ role }) => role !== request.role);
+        return route.fulfill({ json: null });
+      }
+      saves.push(request);
+      settings = [...settings.filter(({ role }) => role !== request.role), request];
+      return route.fulfill({ json: request });
+    });
+    await page.goto('/admin/users-neo');
+    const tabs = page.getByRole('tab');
+    await expect(tabs.nth(0)).toHaveText('Всі користувачі');
+    await expect(tabs.nth(1)).toHaveText('Налаштування ролей');
+    await tabs.nth(1).click();
+    await expect(page.getByRole('article', { name: 'Налаштування ролі Rer' })).toBeVisible();
+    await page.getByRole('button', { name: 'Додати налаштування', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('button', { name: 'Зберегти' })).toBeDisabled();
+    await dialog.getByRole('combobox', { name: 'Роль' }).click();
+    await expect(page.getByRole('option', { name: 'Rer', exact: true })).toHaveCount(0);
+    await page.getByRole('option', { name: 'Cyber', exact: true }).click();
+    await dialog.getByRole('checkbox', { name: 'Обов’язковий підрозділ' }).check();
+    await dialog.getByRole('checkbox', { name: 'Обов’язкова назва пристрою' }).check();
+    await dialog.getByRole('button', { name: 'Зберегти' }).click();
+    const card = page.getByRole('article', { name: 'Налаштування ролі Cyber' });
+    await expect(card).toBeVisible();
+    expect(saves[0]).toEqual({
+      role: 'Cyber',
+      unitRequired: true,
+      deviceRequired: true,
+      allowUnitCreation: true,
+    });
+    await card.getByRole('button', { name: 'Редагувати' }).click();
+    await expect(dialog.getByRole('combobox', { name: 'Роль' })).toBeDisabled();
+    await dialog.getByRole('checkbox', { name: 'Дозволено створювати підрозділи' }).uncheck();
+    await dialog.getByRole('button', { name: 'Зберегти' }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(saves[1]).toEqual({
+      role: 'Cyber',
+      unitRequired: true,
+      deviceRequired: true,
+      allowUnitCreation: false,
+    });
+    await card.getByRole('button', { name: 'Видалити' }).click();
+    await dialog.getByRole('button', { name: 'Видалити' }).click();
+    await expect(card).toHaveCount(0);
+    await page.getByRole('button', { name: 'Додати налаштування', exact: true }).click();
+    await dialog.getByRole('combobox', { name: 'Роль' }).click();
+    await expect(page.getByRole('option', { name: 'Cyber', exact: true })).toBeVisible();
+  });
+}

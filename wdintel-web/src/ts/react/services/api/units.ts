@@ -196,9 +196,12 @@ export async function createUnit(unit: CreateUnitReq): Promise<Unit> {
   return transformSnakeToCamel<Unit>(raw);
 }
 
-export async function createUnitForMessage(req: CreateUnitWithAutoNetworkReq): Promise<Unit> {
+export async function createUnitForMessage(
+  req: CreateUnitWithAutoNetworkReq,
+  editingMessageId?: number,
+): Promise<Unit> {
   const raw = await postJson<unknown>(
-    '/api/sigint/unit/create-for-message',
+    `/api/sigint/unit/create-for-message${editingMessageId == null ? '' : `?editing_message_id=${editingMessageId}`}`,
     transformCamelToSnake(req),
   );
   return transformSnakeToCamel<Unit>(raw);

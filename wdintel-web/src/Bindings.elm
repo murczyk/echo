@@ -14533,6 +14533,66 @@ freqPelengsEntryEncoder struct =
         ]
 
 
+type alias RoleMessageSettings =
+    { role : String
+    , unitRequired : Bool
+    , deviceRequired : Bool
+    , allowUnitCreation : Bool
+    }
+
+
+roleMessageSettingsEncoder : RoleMessageSettings -> Json.Encode.Value
+roleMessageSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "role", (Json.Encode.string) struct.role )
+        , ( "unitRequired", (Json.Encode.bool) struct.unitRequired )
+        , ( "deviceRequired", (Json.Encode.bool) struct.deviceRequired )
+        , ( "allowUnitCreation", (Json.Encode.bool) struct.allowUnitCreation )
+        ]
+
+
+type alias RoleMessageSettingsKey =
+    { role : String
+    }
+
+
+roleMessageSettingsKeyEncoder : RoleMessageSettingsKey -> Json.Encode.Value
+roleMessageSettingsKeyEncoder struct =
+    Json.Encode.object
+        [ ( "role", (Json.Encode.string) struct.role )
+        ]
+
+
+type alias RoleMessageSettingsListRsp =
+    { settings : List (RoleMessageSettings)
+    , roles : List (String)
+    }
+
+
+roleMessageSettingsListRspEncoder : RoleMessageSettingsListRsp -> Json.Encode.Value
+roleMessageSettingsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "settings", (Json.Encode.list (roleMessageSettingsEncoder)) struct.settings )
+        , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
+        ]
+
+
+type alias MessageCreationSettings =
+    { unitRequired : Bool
+    , deviceRequired : Bool
+    , allowUnitCreation : Bool
+    }
+
+
+messageCreationSettingsEncoder : MessageCreationSettings -> Json.Encode.Value
+messageCreationSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "unitRequired", (Json.Encode.bool) struct.unitRequired )
+        , ( "deviceRequired", (Json.Encode.bool) struct.deviceRequired )
+        , ( "allowUnitCreation", (Json.Encode.bool) struct.allowUnitCreation )
+        ]
+
+
 type alias SystemSettingsCurrentRsp =
     { id : Maybe (Int)
     , rerAnalysisUnitsExactMatchOnlyDefault : Bool
@@ -29353,6 +29413,36 @@ freqPelengsEntryDecoder =
     Json.Decode.succeed FreqPelengsEntry
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "pelengs_count" (Json.Decode.int)))
+
+
+roleMessageSettingsDecoder : Json.Decode.Decoder RoleMessageSettings
+roleMessageSettingsDecoder =
+    Json.Decode.succeed RoleMessageSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unitRequired" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deviceRequired" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowUnitCreation" (Json.Decode.bool)))
+
+
+roleMessageSettingsKeyDecoder : Json.Decode.Decoder RoleMessageSettingsKey
+roleMessageSettingsKeyDecoder =
+    Json.Decode.succeed RoleMessageSettingsKey
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
+
+
+roleMessageSettingsListRspDecoder : Json.Decode.Decoder RoleMessageSettingsListRsp
+roleMessageSettingsListRspDecoder =
+    Json.Decode.succeed RoleMessageSettingsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (Json.Decode.list (roleMessageSettingsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
+
+
+messageCreationSettingsDecoder : Json.Decode.Decoder MessageCreationSettings
+messageCreationSettingsDecoder =
+    Json.Decode.succeed MessageCreationSettings
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unitRequired" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deviceRequired" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowUnitCreation" (Json.Decode.bool)))
 
 
 systemSettingsCurrentRspDecoder : Json.Decode.Decoder SystemSettingsCurrentRsp

@@ -201,6 +201,7 @@ pub use super::rer_gdoc_callsign::Entity as RerGdocCallsign;
 pub use super::rer_report_access_login::Entity as RerReportAccessLogin;
 pub use super::restream::Entity as Restream;
 pub use super::restream_setup::Entity as RestreamSetup;
+pub use super::role_message_settings::Entity as RoleMessageSettings;
 pub use super::seaql_echo_gpu_migrations::Entity as SeaqlEchoGpuMigrations;
 pub use super::seaql_im_migrations::Entity as SeaqlImMigrations;
 pub use super::secret_group_organism::Entity as SecretGroupOrganism;

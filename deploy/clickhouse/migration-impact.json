@@ -945,6 +945,11 @@
       ]
     },
     "echo:m20261021_131746_echo_native_datasource": { "changes": [] },
+    "echo:m20261031_104502_role_message_settings": {
+      "changes": [
+        { "table": "public.role_message_settings", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261029_104825_message_reply_component_locks": { "changes": [] },
     "echo:m20261027_153932_ai_worker_fallback_monitoring": {
       "changes": [

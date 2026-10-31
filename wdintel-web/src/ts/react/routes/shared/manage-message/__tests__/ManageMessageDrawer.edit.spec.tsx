@@ -97,6 +97,13 @@ vi.mock('../../../../services/api/direct-submit', () => ({
   formatDirectSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : 'save failed',
 }));
+vi.mock('../../../../services/api/role-message-settings', () => ({
+  getMessageCreationSettings: vi.fn().mockResolvedValue({
+    unitRequired: false,
+    deviceRequired: false,
+    allowUnitCreation: true,
+  }),
+}));
 vi.mock('../../../../services/api/networks', () => ({
   getNetworksByIds: networkMocks.getNetworksByIds,
 }));
