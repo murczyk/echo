@@ -390,7 +390,7 @@ async fn load_reo_inbox_messages(
     let message_ids = rows.iter().map(|row| row.id).collect_vec();
     let mut network_ids_by_message =
         crate::rer_importer::inbox::load_message_networks_by_ids(
-            dbx,
+            &env.dbx,
             &message_ids,
         )
         .await
@@ -1641,8 +1641,9 @@ fn get_network_summaries_for_message_id(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_aor, mk_aor, mk_sigint_network,
-        mk_sigint_network_aor,
+        cleanup, find_test_aor, find_test_datasource_group, find_test_login,
+        mk_aor, mk_sigint_inbox_item, mk_sigint_network, mk_sigint_network_aor,
+        mk_sigint_network_freq, mk_signal_message, mk_signal_message_group,
     };
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
@@ -1711,6 +1712,144 @@ mod tests {
             network_ids,
             group_master_key: None,
         }
+    }
+
+    async fn mk_reo_test_inbox_message(
+        db: &DatabaseConnection,
+        group: &datasource_group::Model,
+        now: NaiveDateTime,
+        freq: &str,
+    ) -> anyhow::Result<signal_message::Model> {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(group.id)),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group.group_master_key.clone())),
+                datasource_group_id: Set(Some(group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                freq: Set(Some(freq.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        Ok(message)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reo_read_only_scan_backfills_networks_on_primary_3780(
+    ) -> anyhow::Result<()> {
+        let env = cleanup().await.context(h!())?;
+        let db = &env.dbx;
+        let login = find_test_login(db).await.context(h!())?;
+        let group = find_test_datasource_group(db).await.context(h!())?;
+        let aor = find_test_aor(db).await.context(h!())?;
+        let now = Utc::now().naive_utc();
+        let network =
+            mk_reo_test_network(db, aor.id, now).await.context(h!())?;
+        mk_sigint_network_freq(
+            db,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.4500".to_string()),
+                active_from: Set(now - chrono::Duration::days(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        let matched = mk_reo_test_inbox_message(db, &group, now, "146.4500")
+            .await
+            .context(h!())?;
+        let unmatched = mk_reo_test_inbox_message(db, &group, now, "999.0000")
+            .await
+            .context(h!())?;
+        assert_eq!(
+            sigint_inbox_item_network::Entity::find()
+                .count(db)
+                .await
+                .context(h!())?,
+            0
+        );
+
+        let mut options =
+            ConnectOptions::new(crate::mk_conn_string(&env.config));
+        options.map_sqlx_postgres_opts(|options| {
+            options.options([("default_transaction_read_only", "on")])
+        });
+        let analytics = Database::connect(options).await.context(h!())?;
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                (now - chrono::Duration::minutes(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                (now + chrono::Duration::minutes(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        for _ in 0..2 {
+            let messages = load_reo_inbox_messages(
+                &analytics,
+                &login.id,
+                &env,
+                &req,
+                ReportPeriodEnd::Inclusive,
+            )
+            .await
+            .context(h!())?;
+            assert_eq!(messages.len(), 2);
+            assert_eq!(
+                messages
+                    .iter()
+                    .find(|(id, _)| *id == matched.id)
+                    .context(h!())?
+                    .1
+                    .network_ids,
+                Some(vec![network.id])
+            );
+            assert_eq!(
+                messages
+                    .iter()
+                    .find(|(id, _)| *id == unmatched.id)
+                    .context(h!())?
+                    .1
+                    .network_ids,
+                None
+            );
+            let links = sigint_inbox_item_network::Entity::find()
+                .all(db)
+                .await
+                .context(h!())?;
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].sigint_inbox_item_id, matched.id);
+            assert_eq!(links[0].sigint_network_id, network.id);
+        }
+        Ok(())
     }
 
     #[tokio::test]
