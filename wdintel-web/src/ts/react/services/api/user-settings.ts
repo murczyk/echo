@@ -28,8 +28,8 @@ export const MESSAGE_CARD_QUICK_ACTION_OPTIONS: ReadonlyArray<{
 }> = [
   { value: 'createReport', label: 'Створити розвіддонесення' },
   { value: 'reply', label: 'Відповісти' },
-  { value: 'important', label: 'Важливість' },
-  { value: 'bookmark', label: 'Закладки' },
+  { value: 'important', label: 'Позначити як важливе' },
+  { value: 'bookmark', label: 'Додати в закладки' },
   { value: 'copyText', label: 'Копіювати повідомлення' },
   { value: 'copyLink', label: 'Копіювати посилання на повідомлення' },
   { value: 'edit', label: 'Редагувати' },
