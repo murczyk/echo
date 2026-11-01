@@ -870,6 +870,7 @@ fn inbox_search_scope<'a>(
             InboxMessagesSortBy::IMSCreatedAt => SearchTimeBasis::Creation,
         },
         groups,
+        media_presence_filtered: req.only_with_media == Some(true),
     })
 }
 
@@ -1750,6 +1751,7 @@ async fn ensure_inbox_analytics_search_coverage(
                 till_inclusive: true,
                 time_basis,
                 groups: &groups,
+                media_presence_filtered: req.only_with_media == Some(true),
             },
         )
         .await

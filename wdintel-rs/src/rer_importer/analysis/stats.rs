@@ -147,6 +147,7 @@ where
                 SearchTimeBasis::Interception
             },
             groups: master_keys,
+            media_presence_filtered: false,
         }),
     )
 }
