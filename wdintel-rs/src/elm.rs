@@ -25,6 +25,7 @@ const RER_DUTY_GROUP_SCOPES_COMPAT_DECODER: &str = r#"Json.Decode.oneOf [ Json.D
 const RER_DUTY_WF_COMPAT_FIELDS: &[(&str, &str)] = &[
     ("units_selected", "Json.Decode.list (Json.Decode.string)"),
     ("units_denied", "Json.Decode.list (Json.Decode.string)"),
+    ("units_include_children", "Json.Decode.bool"),
     ("selected_unit_ids", "Json.Decode.list (Json.Decode.int)"),
     ("denied_unit_ids", "Json.Decode.list (Json.Decode.int)"),
     (
