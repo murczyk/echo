@@ -6293,6 +6293,33 @@ export type AiAgentMapEditRsp = {
   canRedo: boolean;
 };
 
+export type AiAgentUploadItem = {
+  id: string;
+  conversationId: string | null;
+  requestId: string | null;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  state: string;
+  isImage: boolean;
+  chunkCount: number;
+  lastError: string | null;
+  createdAt: number;
+};
+
+export type AiAgentUploadListReq = {
+  conversationId: string | null;
+  ids: Array<string>;
+};
+
+export type AiAgentUploadListRsp = {
+  uploads: Array<AiAgentUploadItem>;
+};
+
+export type AiAgentUploadIdReq = {
+  id: string;
+};
+
 export type AiAgentMessageItem = {
   reasoningPreset: AiAgentReasoningPreset | null;
   maxRuntimeSeconds: number | null;
@@ -6306,6 +6333,7 @@ export type AiAgentMessageItem = {
   citations: Array<AiAgentMessageCitation>;
   fileCitations: Array<AiAgentFileCitation>;
   maps: Array<AiAgentMapSummary>;
+  attachments: Array<AiAgentUploadItem>;
 };
 
 export type AiAgentConversationDetail = {
@@ -6323,6 +6351,7 @@ export type AiAgentRequestCreateReq = {
   aiEngineId: string | null;
   prompt: string;
   mapEdit: AiAgentMapEditTarget | null;
+  uploadIds: Array<string>;
 };
 
 export type AiAgentRequestCreateRsp = {
@@ -6345,6 +6374,7 @@ export type AiAgentProviderRuntimeProfileItem = {
   maxOutputTokens: number;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
+  visionInputEnabled: boolean;
 };
 
 export type AiAgentAdminSettingsItem = {

@@ -17,6 +17,7 @@ pub(crate) mod reasoning;
 mod review;
 mod route_registry;
 pub mod types;
+pub mod uploads;
 pub mod work_memory;
 pub mod worker;
 
@@ -425,6 +426,15 @@ pub async fn create_request(
         settings.mattermost_chat_enabled,
     )
     .await?;
+    uploads::bind_to_request(
+        &txn,
+        human.id,
+        conversation.id,
+        request_id,
+        &req.upload_ids,
+    )
+    .await
+    .c(h!())?;
     if let Some(target) = &req.map_edit {
         maps::workspace::store_request_target(
             &txn,
@@ -786,6 +796,9 @@ pub(super) async fn conversation_detail(
     let mut file_citations =
         file_citations::load(dbx, &request_ids).await.c(h!())?;
     let mut maps = maps::load_summaries(dbx, &request_ids).await.c(h!())?;
+    let mut attachments = uploads::context::by_request(dbx, &request_ids)
+        .await
+        .c(h!())?;
     let mut messages = Vec::new();
     for request in requests {
         let policy = reasoning::request_policy(&request).c(h!())?;
@@ -813,6 +826,12 @@ pub(super) async fn conversation_detail(
             citations: Vec::new(),
             file_citations: Vec::new(),
             maps: Vec::new(),
+            attachments: attachments
+                .remove(&request.id)
+                .unwrap_or_default()
+                .iter()
+                .map(uploads::store_item)
+                .collect(),
             created_at: request.queued_at.and_utc().timestamp_millis(),
         });
         let request_maps = maps.remove(&request.id).unwrap_or_default();
@@ -837,6 +856,7 @@ pub(super) async fn conversation_detail(
                     .unwrap_or_default(),
                 content: response,
                 maps: request_maps,
+                attachments: Vec::new(),
                 created_at: request
                     .completed_at
                     .unwrap_or(request.updated_at)

@@ -235,6 +235,8 @@ pub async fn update_settings(
                 Set(profile.compaction_reserve_tokens);
             runtime_profile.compaction_keep_recent_tokens =
                 Set(profile.compaction_keep_recent_tokens);
+            runtime_profile.vision_input_enabled =
+                Set(Some(profile.vision_input_enabled));
             runtime_profile.updated_at = Set(Utc::now().naive_utc());
             runtime_profile.update(&txn).await.c(h!())?;
         } else {
@@ -248,6 +250,7 @@ pub async fn update_settings(
                 compaction_keep_recent_tokens: Set(
                     profile.compaction_keep_recent_tokens
                 ),
+                vision_input_enabled: Set(Some(profile.vision_input_enabled)),
                 created_at: Set(Utc::now().naive_utc()),
                 updated_at: Set(Utc::now().naive_utc()),
             }
@@ -302,6 +305,9 @@ async fn settings_item(
                 compaction_reserve_tokens: profile.compaction_reserve_tokens,
                 compaction_keep_recent_tokens: profile
                     .compaction_keep_recent_tokens,
+                vision_input_enabled: profile
+                    .vision_input_enabled
+                    .unwrap_or(false),
             })
             .collect::<Vec<_>>();
     provider_runtime_profiles

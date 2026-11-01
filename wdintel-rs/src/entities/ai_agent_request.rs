@@ -58,6 +58,8 @@ pub enum Relation {
     AiAgentRequestMapTarget,
     #[sea_orm(has_one = "super::ai_agent_security_review::Entity")]
     AiAgentSecurityReview,
+    #[sea_orm(has_many = "super::ai_agent_upload::Entity")]
+    AiAgentUpload,
     #[sea_orm(has_many = "super::ai_agent_work_record::Entity")]
     AiAgentWorkRecord,
     #[sea_orm(
@@ -125,6 +127,12 @@ impl Related<super::ai_agent_request_map_target::Entity> for Entity {
 impl Related<super::ai_agent_security_review::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentSecurityReview.def()
+    }
+}
+
+impl Related<super::ai_agent_upload::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentUpload.def()
     }
 }
 

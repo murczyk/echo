@@ -329,3 +329,24 @@ its research limit must end with a cited answer or the short notice, never
 `Встиг отримати такі уривки джерел`. Check the request's `completion_diagnostic`
 log lines. Retain prior containers and the rollout journal; recovery beyond the
 approved operation requires separate approval.
+
+## Conversation uploads (release 2026.11.01.1)
+
+Apply the `m20261101_151245_ai_agent_uploads` migration with the matching
+application, then upgrade the approved installation's namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.01.1`, previewing with
+`--dry-run` first. The runner accepts the new `uploads`, `turnImages` and
+`visionInput` payload fields and registers the `upload_*` tools. Echo requires
+the exact harness release, so chat requests report that the agent is updating
+until the namespace matches.
+
+Uploads need S3 and the native document extractor already used for message
+attachments. Vision stays off until an admin enables "Модель приймає зображення"
+in an engine's runtime profile; enable it only for engines that accept OpenAI
+image parts. Verify the rollout this way:
+- A DOCX question is answered from inline text.
+- A follow-up question uses `upload_read`.
+- A photographed page is answered from OCR on a text-only engine and from the
+  image on a vision engine.
+
+See [the upload pipeline](../wdintel-rs/src/ai_agent/uploads/README.md).

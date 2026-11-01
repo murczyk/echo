@@ -16,6 +16,7 @@ pub struct Model {
     pub compaction_keep_recent_tokens: i32,
     pub created_at: DateTime,
     pub updated_at: DateTime,
+    pub vision_input_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -967,6 +967,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_agent_upload_env = env.clone();
+    let ai_agent_upload_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_upload_worker", bg_set, async move {
+        crate::ai_agent::uploads::worker::run_nofail(
+            ai_agent_upload_env,
+            ai_agent_upload_cancellation,
+        )
+        .await;
+    });
+
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
@@ -1386,6 +1396,14 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::delete_conversation)
             .service(crate::ai_agent::create_request)
             .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::uploads::api::create_upload)
+            .service(crate::ai_agent::uploads::api::list_uploads)
+            .service(crate::ai_agent::uploads::api::delete_upload)
+            .service(crate::ai_agent::uploads::api::download_upload)
+            .service(crate::ai_agent::uploads::agent_api::agent_list)
+            .service(crate::ai_agent::uploads::agent_api::agent_read)
+            .service(crate::ai_agent::uploads::agent_api::agent_search)
+            .service(crate::ai_agent::uploads::agent_api::agent_image)
             .service(crate::ai_agent::work_memory::append)
             .service(crate::ai_agent::work_memory::list)
             .service(crate::ai_agent::work_memory::read)

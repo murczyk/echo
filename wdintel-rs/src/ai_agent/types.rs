@@ -157,6 +157,8 @@ pub struct AiAgentMessageItem {
         Vec<crate::devices::documents::types::AiAgentFileCitation>,
     #[serde(default)]
     pub maps: Vec<super::maps::types::AiAgentMapSummary>,
+    #[serde(default)]
+    pub attachments: Vec<super::uploads::types::AiAgentUploadItem>,
 }
 
 #[derive(
@@ -184,6 +186,8 @@ pub struct AiAgentRequestCreateReq {
     pub prompt: String,
     #[serde(default)]
     pub map_edit: Option<super::maps::types::AiAgentMapEditTarget>,
+    #[serde(default)]
+    pub upload_ids: Vec<String>,
 }
 
 #[derive(
@@ -251,6 +255,8 @@ pub struct AiAgentProviderRuntimeProfileItem {
     pub max_output_tokens: i32,
     pub compaction_reserve_tokens: i32,
     pub compaction_keep_recent_tokens: i32,
+    #[serde(default)]
+    pub vision_input_enabled: bool,
 }
 
 #[derive(

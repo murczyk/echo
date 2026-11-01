@@ -25,6 +25,18 @@ conversation uses its own provider without changing the remembered one. See
 [reasoning presets](../../../../../../docs/ai/reasoning-presets.md) for the
 remembered depth.
 
+## Attachments
+
+The composer accepts files from the paperclip button, drag-and-drop and pasted
+clipboard images (`ComposerAttachments.tsx`, `composer-attachments.ts`). Files
+upload immediately as drafts; chips show upload and extraction progress, and
+removing a chip deletes the draft. A message may be sent once every upload has
+finished, even while extraction continues, and with empty text. Switching
+conversations discards unsent drafts. Sent messages show attachment chips that
+open the stored original. The backend pipeline, limits and agent tools are
+described in
+[`wdintel-rs/src/ai_agent/uploads/README.md`](../../../../../../wdintel-rs/src/ai_agent/uploads/README.md).
+
 ## Point-map documents
 
 Registered map links render lazy inline thumbnails. Each answer's latest main

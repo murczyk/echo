@@ -4438,12 +4438,23 @@ dependencies = [
  "byteorder-lite",
  "color_quant",
  "gif",
+ "image-webp",
  "moxcms",
  "num-traits",
  "png",
  "tiff",
  "zune-core",
  "zune-jpeg",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]
@@ -9997,6 +10008,7 @@ dependencies = [
  "echo-install-utils",
  "echo-migration",
  "elm_rs",
+ "encoding_rs",
  "env_logger 0.11.9",
  "flate2",
  "fs2",
@@ -10009,6 +10021,7 @@ dependencies = [
  "governor",
  "hmac 0.12.1",
  "iggy",
+ "image 0.25.10",
  "indicatif 0.18.4",
  "infer",
  "itertools 0.14.0",
