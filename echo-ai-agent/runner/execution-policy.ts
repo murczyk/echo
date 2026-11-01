@@ -314,6 +314,8 @@ type SynthesisOptions = {
   prepareContext?: (context: Context) => Context;
   purpose?: "research" | "synthesis";
   allowUserEvidence?: boolean;
+  /** Images attached to the current message, kept for final synthesis. */
+  images?: { type: "image"; data: string; mimeType: string }[];
   onOutcome?: (outcome: CompletionDiagnostic) => void;
 };
 
@@ -326,7 +328,13 @@ function synthesisContext(options: SynthesisOptions): Context | null {
   )
     return null;
   const messages: Context["messages"] = [
-    { role: "user", content: options.prompt, timestamp: Date.now() },
+    {
+      role: "user",
+      content: options.images?.length
+        ? [{ type: "text", text: options.prompt }, ...options.images]
+        : options.prompt,
+      timestamp: Date.now(),
+    },
   ];
   const context: Context = { systemPrompt: options.systemPrompt, messages };
   let remaining =

@@ -1527,9 +1527,15 @@ function providerName(engines: AiEngineItem[], id: string): string {
   return engines.find((engine) => engine.id === id)?.name ?? id;
 }
 
-function defaultProviderRuntimeProfile(
+type ProviderRuntimeProfile = AiAgentSettings['providerRuntimeProfiles'][number];
+
+function defaultProviderRuntimeProfile(engine: AiEngineItem): ProviderRuntimeProfile {
+  return { ...defaultProviderRuntimeLimits(engine), visionInputEnabled: false };
+}
+
+function defaultProviderRuntimeLimits(
   engine: AiEngineItem,
-): AiAgentSettings['providerRuntimeProfiles'][number] {
+): Omit<ProviderRuntimeProfile, 'visionInputEnabled'> {
   const modelName = engine.modelName.toLowerCase();
   if (modelName === 'gpt-6-sol') {
     return {
@@ -1615,10 +1621,10 @@ function ProviderRuntimeProfilesEditor({
   engines: AiEngineItem[];
   onChange: (settings: AiAgentSettings) => void;
 }) {
-  function updateProfile(
+  function updateProfile<K extends keyof Omit<ProviderRuntimeProfile, 'aiEngineId'>>(
     aiEngineId: string,
-    field: keyof Omit<AiAgentSettings['providerRuntimeProfiles'][number], 'aiEngineId'>,
-    value: number,
+    field: K,
+    value: ProviderRuntimeProfile[K],
   ) {
     onChange({
       ...settings,
@@ -1693,6 +1699,17 @@ function ProviderRuntimeProfilesEditor({
                     }
                   />
                 </Stack>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={profile.visionInputEnabled ?? false}
+                      onChange={(event) =>
+                        updateProfile(aiEngineId, 'visionInputEnabled', event.target.checked)
+                      }
+                    />
+                  }
+                  label="Модель приймає зображення (вкладені фото передаються напряму)"
+                />
               </Stack>
             </CardContent>
           </Card>

@@ -116,6 +116,22 @@ async fn provider_call(
             "Provider request is invalid",
         ));
     };
+    let images_allowed = match image_parts(&body) {
+        ImageParts::None => true,
+        ImageParts::Invalid => false,
+        ImageParts::Inline => super::uploads::agent_api::vision_enabled(
+            &env,
+            authorization.ai_engine.id,
+        )
+        .await
+        .c(h!())?,
+    };
+    if !images_allowed {
+        return Ok(provider_error(
+            StatusCode::BAD_REQUEST,
+            "Provider request is invalid",
+        ));
+    }
     if !purpose_request_is_allowed(
         &body,
         api,
@@ -253,12 +269,7 @@ fn responses_input_is_allowed(item: &Value) -> bool {
             ) && item.get("content").is_some_and(|content| {
                 content.is_string()
                     || content.as_array().is_some_and(|parts| {
-                        parts.iter().all(|part| {
-                            matches!(
-                                part.get("type").and_then(Value::as_str),
-                                Some("input_text" | "output_text")
-                            ) && part.get("text").is_some_and(Value::is_string)
-                        })
+                        parts.iter().all(responses_part_is_allowed)
                     })
             })
         }
@@ -267,13 +278,95 @@ fn responses_input_is_allowed(item: &Value) -> bool {
             .all(|key| item.get(*key).is_some_and(Value::is_string)),
         Some("function_call_output") => {
             item.get("call_id").is_some_and(Value::is_string)
-                && item.get("output").is_some_and(Value::is_string)
+                && item.get("output").is_some_and(|output| {
+                    output.is_string()
+                        || output.as_array().is_some_and(|parts| {
+                            parts.iter().all(responses_part_is_allowed)
+                        })
+                })
         }
         Some("reasoning") => {
             item.get("encrypted_content").is_some_and(Value::is_string)
         }
         _ => false,
     }
+}
+
+fn responses_part_is_allowed(part: &Value) -> bool {
+    match part.get("type").and_then(Value::as_str) {
+        Some("input_text" | "output_text") => {
+            part.get("text").is_some_and(Value::is_string)
+        }
+        Some("input_image") => part
+            .get("image_url")
+            .and_then(Value::as_str)
+            .is_some_and(is_inline_image_url),
+        _ => false,
+    }
+}
+
+/// Images may only arrive inline; remote URLs would let the agent make the
+/// provider fetch arbitrary addresses.
+fn is_inline_image_url(url: &str) -> bool {
+    ["image/jpeg", "image/png", "image/webp"]
+        .iter()
+        .any(|mime| {
+            url.strip_prefix("data:")
+                .and_then(|rest| rest.strip_prefix(mime))
+                .and_then(|rest| rest.strip_prefix(";base64,"))
+                .is_some_and(|data| !data.is_empty())
+        })
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ImageParts {
+    None,
+    Inline,
+    Invalid,
+}
+
+/// Scans a provider body for image parts of either OpenAI API shape.
+fn image_parts(body: &Value) -> ImageParts {
+    fn visit(value: &Value, found: &mut ImageParts) {
+        match value {
+            Value::Array(values) => {
+                values.iter().for_each(|value| visit(value, found))
+            }
+            Value::Object(object) => {
+                let url = match object.get("type").and_then(Value::as_str) {
+                    Some("input_image") => {
+                        Some(object.get("image_url").and_then(Value::as_str))
+                    }
+                    Some("image_url") => Some(
+                        object
+                            .get("image_url")
+                            .and_then(|image| image.get("url"))
+                            .and_then(Value::as_str),
+                    ),
+                    _ => None,
+                };
+                match url {
+                    Some(Some(url)) if is_inline_image_url(url) => {
+                        if *found == ImageParts::None {
+                            *found = ImageParts::Inline;
+                        }
+                    }
+                    Some(_) => *found = ImageParts::Invalid,
+                    None => {
+                        object.values().for_each(|value| visit(value, found))
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut found = ImageParts::None;
+    for key in ["messages", "input"] {
+        if let Some(value) = body.get(key) {
+            visit(value, &mut found);
+        }
+    }
+    found
 }
 
 fn purpose_request_is_allowed(
@@ -792,6 +885,34 @@ fn provider_error(status: StatusCode, message: &'static str) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn issue_3962_image_parts_must_be_inline() {
+        let inline = "data:image/jpeg;base64,/9j/4AAQ";
+        let chat = json!({"messages":[{"role":"user","content":[
+            {"type":"text","text":"Що на фото?"},
+            {"type":"image_url","image_url":{"url":inline}}
+        ]}]});
+        assert_eq!(image_parts(&chat), ImageParts::Inline);
+        let mut remote = chat.clone();
+        remote["messages"][0]["content"][1]["image_url"]["url"] =
+            json!("https://example.invalid/a.png");
+        assert_eq!(image_parts(&remote), ImageParts::Invalid);
+        let mut svg = chat.clone();
+        svg["messages"][0]["content"][1]["image_url"]["url"] =
+            json!("data:image/svg+xml;base64,PHN2Zz4=");
+        assert_eq!(image_parts(&svg), ImageParts::Invalid);
+        assert_eq!(
+            image_parts(&json!({"messages":[{"role":"user","content":"hi"}]})),
+            ImageParts::None
+        );
+        let tool_output = json!({"input":[{"type":"function_call_output","call_id":"c1",
+            "output":[{"type":"input_text","text":"ok"},{"type":"input_image","detail":"auto","image_url":inline}]}]});
+        assert_eq!(image_parts(&tool_output), ImageParts::Inline);
+        assert!(responses_input_is_allowed(&tool_output["input"][0]));
+        let user = json!({"role":"user","content":[{"type":"input_image","image_url":"https://example.invalid/a.png"}]});
+        assert!(!responses_input_is_allowed(&user));
+    }
 
     #[test]
     fn issue_3724_checkpoint_scope_rejected_tools_and_excess_output() {

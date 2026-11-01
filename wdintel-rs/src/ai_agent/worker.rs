@@ -602,6 +602,18 @@ async fn run_request_inner(
     if request_is_cancelled(env, request.id).await? {
         return Ok(RunOutcome::Cancelled);
     }
+    if !wait_for_uploads(
+        env,
+        request,
+        execution_policy.as_ref(),
+        cancellation,
+        &mut activity_titles,
+    )
+    .await
+    .c(h!())?
+    {
+        return Ok(RunOutcome::Cancelled);
+    }
     let Some(linked) = lifecycle::start_for_request(
         env,
         request.id,
@@ -744,6 +756,14 @@ async fn run_request_inner(
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
     }
+    add_upload_context(
+        env,
+        request,
+        runtime_profile.vision_input_enabled == Some(true),
+        &mut runner_payload,
+    )
+    .await
+    .c(h!())?;
     if env.config.ai_agent_work_memory_enabled == Some(true) {
         runner_payload["workMemory"] =
             match super::work_memory::initial_context(env, request).await {
@@ -910,6 +930,90 @@ async fn run_request_inner(
         return Ok(RunOutcome::Cancelled);
     }
     Ok(RunOutcome::Completed(response, completion_metadata))
+}
+
+/// Holds the run until documents sent with this message are extracted, so
+/// the agent sees their text. Proceeds with whatever is ready on timeout.
+/// A reasoning preset's runtime is shared with the wait, so only part of it
+/// may be spent here.
+async fn wait_for_uploads(
+    env: &Env,
+    request: &ai_agent_request::Model,
+    execution_policy: Option<&super::reasoning::ExecutionPolicy>,
+    cancellation: &CancellationToken,
+    activity_titles: &mut ActivityTitles,
+) -> Result<bool, AppError> {
+    if super::uploads::context::pending_count(env, request.id)
+        .await
+        .c(h!())?
+        == 0
+    {
+        return Ok(true);
+    }
+    append_presented_event(
+        env,
+        request.id,
+        "progress",
+        json!({ "summary": "Обробляю вкладені файли" }),
+        activity_titles,
+    )
+    .await
+    .c(h!())?;
+    let wait_secs = execution_policy.map_or(
+        crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_SECS,
+        |policy| {
+            (policy.max_runtime_seconds
+                / crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_RUNTIME_DIVISOR)
+                .min(crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_SECS)
+        },
+    );
+    let deadline =
+        std::time::Instant::now() + StdDuration::from_secs(wait_secs);
+    while std::time::Instant::now() < deadline {
+        tokio::select! {
+            _ = cancellation.cancelled() => return Err(interrupted_error()),
+            _ = tokio::time::sleep(StdDuration::from_millis(crate::config::AI_AGENT_UPLOAD_EXTRACTION_WAIT_POLL_MS)) => {}
+        }
+        if request_is_cancelled(env, request.id).await.c(h!())? {
+            return Ok(false);
+        }
+        if super::uploads::context::pending_count(env, request.id)
+            .await
+            .c(h!())?
+            == 0
+        {
+            break;
+        }
+    }
+    Ok(true)
+}
+
+async fn add_upload_context(
+    env: &Env,
+    request: &ai_agent_request::Model,
+    vision: bool,
+    runner_payload: &mut Value,
+) -> Result<(), AppError> {
+    let context = super::uploads::context::runner_uploads(env, request, vision)
+        .await
+        .c(h!())?;
+    if let Some(skills) = runner_payload["skills"].as_array_mut() {
+        skills.retain(|skill| {
+            let name = skill["skill"].as_str().unwrap_or_default();
+            (vision || name != "upload_image")
+                && (!context.uploads.is_empty() || !name.starts_with("upload_"))
+        });
+    }
+    if !context.uploads.is_empty() {
+        runner_payload["uploads"] = json!(context.uploads);
+    }
+    if vision {
+        runner_payload["visionInput"] = json!(true);
+    }
+    if !context.turn_images.is_empty() {
+        runner_payload["turnImages"] = json!(context.turn_images);
+    }
+    Ok(())
 }
 
 pub(super) fn bounded_runner_payload(
@@ -1143,6 +1247,10 @@ pub(super) async fn load_history(
         super::file_citations::load(&env.dbx, &request_ids)
             .await
             .c(h!())?;
+    let mut attachments =
+        super::uploads::context::by_request(&env.dbx, &request_ids)
+            .await
+            .c(h!())?;
     let message_ids = citations
         .values()
         .flatten()
@@ -1180,7 +1288,12 @@ pub(super) async fn load_history(
     }
     let mut history = Vec::new();
     for prior in requests.into_iter().rev() {
-        history.push(json!({ "role": "user", "content": prior.prompt }));
+        let attached = super::uploads::context::history_prefix(
+            &attachments.remove(&prior.id).unwrap_or_default(),
+        );
+        history.push(
+            json!({ "role": "user", "content": format!("{attached}{}", prior.prompt) }),
+        );
         let readable = accessible.contains(&prior.id);
         let request_maps = if readable {
             maps.remove(&prior.id).unwrap_or_default()

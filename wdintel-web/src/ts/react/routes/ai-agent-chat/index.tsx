@@ -71,6 +71,7 @@ import {
   AiAgentEvent,
   AiAgentMessage,
   AiAgentRequestState,
+  AiAgentUpload,
   cancelAiAgentRequest,
   deleteAiAgentConversation,
   getAiAgentConfiguration,
@@ -80,6 +81,12 @@ import {
 } from '../../services/api/ai-agent';
 import { HttpRequestError } from '../../services/api/client';
 import { streamAiAgentEventsWithReconnect } from './stream';
+import { AttachFileButton, ComposerAttachments, MessageAttachments } from './ComposerAttachments';
+import {
+  AI_CHAT_UPLOAD_MAX_PER_MESSAGE,
+  pastedFiles,
+  useComposerAttachments,
+} from './composer-attachments';
 
 type Source = { title: string; url: string | null };
 
@@ -104,6 +111,7 @@ export type LiveRequest = {
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  attachments?: AiAgentUpload[];
   lastSequence: number;
   streamError: string | null;
 };
@@ -112,7 +120,10 @@ type PendingSubmission = {
   id: string;
   prompt: string;
   createdAt: number;
+  attachments: AiAgentUpload[];
 };
+
+const ATTACHMENTS_ONLY_PROMPT = 'Опрацюй вкладені файли.';
 
 const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
   fast: 'Швидкий',
@@ -256,6 +267,7 @@ export function activeRequestsFromConversation(
       citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
       fileCitations: assistantByRequestId.get(message.requestId)?.fileCitations ?? [],
       maps: assistantByRequestId.get(message.requestId)?.maps ?? [],
+      attachments: message.attachments ?? [],
       progress: [],
       tools: [],
       sources: [],
@@ -568,6 +580,7 @@ function ConversationMessage({
       <Typography component="div" sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
         {message.content}
       </Typography>
+      <MessageAttachments attachments={message.attachments ?? []} />
       {stateMessage ? (
         <Typography
           variant="body2"
@@ -711,6 +724,7 @@ function LiveRequestView({
     citations: [],
     fileCitations: [],
     maps: [],
+    attachments: request.attachments ?? [],
     content: request.prompt,
     createdAt: request.createdAt,
   };
@@ -767,6 +781,8 @@ export function AiAgentChat({
   const [reasoningPreset, setReasoningPreset] =
     useState<AiAgentReasoningPreset>(rememberedReasoningPreset);
   const [draft, setDraft] = useState('');
+  const composerAttachments = useComposerAttachments(activeConversationId);
+  const sendingUploadIdsRef = useRef<string[]>([]);
   const [liveRequests, setLiveRequests] = useState<LiveRequest[]>([]);
   const [pendingSubmission, setPendingSubmission] = useState<PendingSubmission | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -1034,6 +1050,7 @@ export function AiAgentChat({
           reasoningPreset: userMessage.reasoningPreset ?? request.reasoningPreset,
           maxRuntimeSeconds: userMessage.maxRuntimeSeconds ?? request.maxRuntimeSeconds,
           startedAt: userMessage.startedAt ?? request.startedAt,
+          attachments: userMessage.attachments ?? request.attachments,
           completionMetadata: assistantMessage?.completionMetadata ?? request.completionMetadata,
           assistantText: assistantMessage?.content ?? request.assistantText,
           citations: assistantMessage?.citations ?? request.citations,
@@ -1056,6 +1073,7 @@ export function AiAgentChat({
     mapOpenerRef.current = null;
     clearLiveRequests();
     setDraft('');
+    composerAttachments.discardAll(sendingUploadIdsRef.current);
     setPendingSubmission(null);
     setSubmitting(false);
     setLoadingConversation(false);
@@ -1164,7 +1182,21 @@ export function AiAgentChat({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    await submitPrompt(draft.trim());
+    if (composerAttachments.uploading) return;
+    const hasAttachments = composerAttachments.uploadIds.length > 0;
+    await submitPrompt(draft.trim() || (hasAttachments ? ATTACHMENTS_ONLY_PROMPT : ''), {
+      withAttachments: hasAttachments,
+    });
+  }
+
+  function addComposerFiles(files: File[]) {
+    const skipped = composerAttachments.addFiles(files);
+    if (skipped > 0) {
+      notify({
+        severity: 'warning',
+        message: `До одного повідомлення можна додати не більше ${AI_CHAT_UPLOAD_MAX_PER_MESSAGE} файлів`,
+      });
+    }
   }
 
   function retryRequest(prompt: string, preset?: AiAgentReasoningPreset | null) {
@@ -1176,7 +1208,8 @@ export function AiAgentChat({
     {
       preserveDraft = false,
       preset = reasoningPreset,
-    }: { preserveDraft?: boolean; preset?: AiAgentReasoningPreset } = {},
+      withAttachments = false,
+    }: { preserveDraft?: boolean; preset?: AiAgentReasoningPreset; withAttachments?: boolean } = {},
   ) {
     if (
       !prompt ||
@@ -1194,7 +1227,14 @@ export function AiAgentChat({
     submittingRef.current = true;
     setSubmitting(true);
     const createdAt = Date.now();
-    setPendingSubmission({ id: `pending-${createdAt}`, prompt, createdAt });
+    const uploadIds = withAttachments ? composerAttachments.uploadIds : [];
+    sendingUploadIdsRef.current = uploadIds;
+    const attachments = withAttachments
+      ? composerAttachments.attachments.flatMap((item) =>
+          item.upload && uploadIds.includes(item.upload.id) ? [item.upload] : [],
+        )
+      : [];
+    setPendingSubmission({ id: `pending-${createdAt}`, prompt, createdAt, attachments });
     if (!preserveDraft) setDraft('');
     setError(null);
 
@@ -1214,7 +1254,9 @@ export function AiAgentChat({
         message: prompt,
         ...(configuration?.reasoningPresetsEnabled ? { reasoningPreset: preset } : {}),
         ...(mapEdit ? { mapEdit } : {}),
+        ...(uploadIds.length ? { uploadIds } : {}),
       });
+      if (uploadIds.length) composerAttachments.clearSent(uploadIds);
       if (mapEdit) editedMapsRef.current.set(created.id, mapEdit);
       if (mountedRef.current) setReasoningPreset(rememberedReasoningPreset());
       if (!mountedRef.current) return;
@@ -1236,6 +1278,7 @@ export function AiAgentChat({
             (option) => option.preset === preset,
           )?.maxRuntimeSeconds,
           state: created.state,
+          attachments,
           assistantText: '',
           progress: [],
           tools: [],
@@ -1258,6 +1301,7 @@ export function AiAgentChat({
       setError(message);
       notify({ severity: 'error', message });
     } finally {
+      sendingUploadIdsRef.current = [];
       if (mountedRef.current && viewSequence === viewSequenceRef.current) {
         submittingRef.current = false;
         setSubmitting(false);
@@ -1334,6 +1378,8 @@ export function AiAgentChat({
   const interactionLocked = submitting || activeRequestExists;
   const retryDisabled =
     interactionLocked || loadingConversation || conversationLoadFailed || !selectedProvider;
+  const composerDisabled =
+    submitting || loadingConversation || conversationLoadFailed || !selectedProvider;
 
   if (unavailable && error) {
     return <AiAgentChatUnavailable message={error} onRetry={() => void loadPage()} />;
@@ -1513,6 +1559,7 @@ export function AiAgentChat({
                       citations: [],
                       fileCitations: [],
                       maps: [],
+                      attachments: pendingSubmission.attachments,
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,
                     }}
@@ -1529,6 +1576,15 @@ export function AiAgentChat({
             <Box
               component="form"
               onSubmit={submit}
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                const files = Array.from(event.dataTransfer.files);
+                if (files.length === 0) return;
+                event.preventDefault();
+                if (!composerDisabled) addComposerFiles(files);
+              }}
               sx={{
                 width: '100%',
                 maxWidth: 768,
@@ -1551,6 +1607,10 @@ export function AiAgentChat({
                   }
                 />
               ) : null}
+              <ComposerAttachments
+                attachments={composerAttachments.attachments}
+                onRemove={composerAttachments.remove}
+              />
               <TextField
                 fullWidth
                 multiline
@@ -1558,11 +1618,15 @@ export function AiAgentChat({
                 variant="standard"
                 placeholder="Повідомлення"
                 value={draft}
-                disabled={
-                  submitting || loadingConversation || conversationLoadFailed || !selectedProvider
-                }
+                disabled={composerDisabled}
                 slotProps={{ input: { disableUnderline: true } }}
                 onChange={(event) => setDraft(event.target.value)}
+                onPaste={(event) => {
+                  const files = pastedFiles(event.clipboardData?.items);
+                  if (files.length === 0) return;
+                  event.preventDefault();
+                  addComposerFiles(files);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
@@ -1583,6 +1647,7 @@ export function AiAgentChat({
                   flexWrap="wrap"
                   sx={{ minWidth: 0 }}
                 >
+                  <AttachFileButton disabled={composerDisabled} onFiles={addComposerFiles} />
                   <Select
                     variant="standard"
                     disableUnderline
@@ -1669,11 +1734,9 @@ export function AiAgentChat({
                     type="submit"
                     aria-label="Надіслати"
                     disabled={
-                      submitting ||
-                      loadingConversation ||
-                      conversationLoadFailed ||
-                      !draft.trim() ||
-                      !selectedProvider
+                      composerDisabled ||
+                      composerAttachments.uploading ||
+                      (!draft.trim() && composerAttachments.uploadIds.length === 0)
                     }
                     size="small"
                     sx={{

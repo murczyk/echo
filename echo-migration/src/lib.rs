@@ -11,6 +11,7 @@ mod m20261026_110911_large_media_previews;
 mod m20261026_190000_message_card_text_size;
 mod m20261027_153932_ai_worker_fallback_monitoring;
 mod m20261031_155820_api_sender;
+mod m20261101_151245_ai_agent_uploads;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1211,6 +1212,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261029_104825_message_reply_component_locks::Migration),
             Box::new(m20261031_104502_role_message_settings::Migration),
             Box::new(m20261031_155820_api_sender::Migration),
+            Box::new(m20261101_151245_ai_agent_uploads::Migration),
         ]
     }
 }

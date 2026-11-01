@@ -16203,6 +16203,76 @@ aiAgentMapEditRspEncoder struct =
         ]
 
 
+type alias AiAgentUploadItem =
+    { id : String
+    , conversationId : Maybe (String)
+    , requestId : Maybe (String)
+    , fileName : String
+    , contentType : String
+    , sizeBytes : Int
+    , state : String
+    , isImage : Bool
+    , chunkCount : Int
+    , lastError : Maybe (String)
+    , createdAt : Int
+    }
+
+
+aiAgentUploadItemEncoder : AiAgentUploadItem -> Json.Encode.Value
+aiAgentUploadItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
+        , ( "requestId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.requestId )
+        , ( "fileName", (Json.Encode.string) struct.fileName )
+        , ( "contentType", (Json.Encode.string) struct.contentType )
+        , ( "sizeBytes", (Json.Encode.int) struct.sizeBytes )
+        , ( "state", (Json.Encode.string) struct.state )
+        , ( "isImage", (Json.Encode.bool) struct.isImage )
+        , ( "chunkCount", (Json.Encode.int) struct.chunkCount )
+        , ( "lastError", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastError )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiAgentUploadListReq =
+    { conversationId : Maybe (String)
+    , ids : List (String)
+    }
+
+
+aiAgentUploadListReqEncoder : AiAgentUploadListReq -> Json.Encode.Value
+aiAgentUploadListReqEncoder struct =
+    Json.Encode.object
+        [ ( "conversationId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.conversationId )
+        , ( "ids", (Json.Encode.list (Json.Encode.string)) struct.ids )
+        ]
+
+
+type alias AiAgentUploadListRsp =
+    { uploads : List (AiAgentUploadItem)
+    }
+
+
+aiAgentUploadListRspEncoder : AiAgentUploadListRsp -> Json.Encode.Value
+aiAgentUploadListRspEncoder struct =
+    Json.Encode.object
+        [ ( "uploads", (Json.Encode.list (aiAgentUploadItemEncoder)) struct.uploads )
+        ]
+
+
+type alias AiAgentUploadIdReq =
+    { id : String
+    }
+
+
+aiAgentUploadIdReqEncoder : AiAgentUploadIdReq -> Json.Encode.Value
+aiAgentUploadIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
 type alias AiAgentMessageItem =
     { reasoningPreset : Maybe (AiAgentReasoningPreset)
     , maxRuntimeSeconds : Maybe (Int)
@@ -16216,6 +16286,7 @@ type alias AiAgentMessageItem =
     , citations : List (AiAgentMessageCitation)
     , fileCitations : List (AiAgentFileCitation)
     , maps : List (AiAgentMapSummary)
+    , attachments : List (AiAgentUploadItem)
     }
 
 
@@ -16234,6 +16305,7 @@ aiAgentMessageItemEncoder struct =
         , ( "citations", (Json.Encode.list (aiAgentMessageCitationEncoder)) struct.citations )
         , ( "fileCitations", (Json.Encode.list (aiAgentFileCitationEncoder)) struct.fileCitations )
         , ( "maps", (Json.Encode.list (aiAgentMapSummaryEncoder)) struct.maps )
+        , ( "attachments", (Json.Encode.list (aiAgentUploadItemEncoder)) struct.attachments )
         ]
 
 
@@ -16265,6 +16337,7 @@ type alias AiAgentRequestCreateReq =
     , aiEngineId : Maybe (String)
     , prompt : String
     , mapEdit : Maybe (AiAgentMapEditTarget)
+    , uploadIds : List (String)
     }
 
 
@@ -16276,6 +16349,7 @@ aiAgentRequestCreateReqEncoder struct =
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         , ( "prompt", (Json.Encode.string) struct.prompt )
         , ( "mapEdit", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapEditTargetEncoder)) struct.mapEdit )
+        , ( "uploadIds", (Json.Encode.list (Json.Encode.string)) struct.uploadIds )
         ]
 
 
@@ -16325,6 +16399,7 @@ type alias AiAgentProviderRuntimeProfileItem =
     , maxOutputTokens : Int
     , compactionReserveTokens : Int
     , compactionKeepRecentTokens : Int
+    , visionInputEnabled : Bool
     }
 
 
@@ -16336,6 +16411,7 @@ aiAgentProviderRuntimeProfileItemEncoder struct =
         , ( "maxOutputTokens", (Json.Encode.int) struct.maxOutputTokens )
         , ( "compactionReserveTokens", (Json.Encode.int) struct.compactionReserveTokens )
         , ( "compactionKeepRecentTokens", (Json.Encode.int) struct.compactionKeepRecentTokens )
+        , ( "visionInputEnabled", (Json.Encode.bool) struct.visionInputEnabled )
         ]
 
 
@@ -30352,6 +30428,41 @@ aiAgentMapEditRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "canRedo" (Json.Decode.bool)))
 
 
+aiAgentUploadItemDecoder : Json.Decode.Decoder AiAgentUploadItem
+aiAgentUploadItemDecoder =
+    Json.Decode.succeed AiAgentUploadItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contentType" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sizeBytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "isImage" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chunkCount" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lastError" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiAgentUploadListReqDecoder : Json.Decode.Decoder AiAgentUploadListReq
+aiAgentUploadListReqDecoder =
+    Json.Decode.succeed AiAgentUploadListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ids" (Json.Decode.list (Json.Decode.string))))
+
+
+aiAgentUploadListRspDecoder : Json.Decode.Decoder AiAgentUploadListRsp
+aiAgentUploadListRspDecoder =
+    Json.Decode.succeed AiAgentUploadListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uploads" (Json.Decode.list (aiAgentUploadItemDecoder))))
+
+
+aiAgentUploadIdReqDecoder : Json.Decode.Decoder AiAgentUploadIdReq
+aiAgentUploadIdReqDecoder =
+    Json.Decode.succeed AiAgentUploadIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
 aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
 aiAgentMessageItemDecoder =
     Json.Decode.succeed AiAgentMessageItem
@@ -30367,6 +30478,7 @@ aiAgentMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "citations" (Json.Decode.list (aiAgentMessageCitationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileCitations" (Json.Decode.list (aiAgentFileCitationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maps" (Json.Decode.list (aiAgentMapSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (aiAgentUploadItemDecoder))))
 
 
 aiAgentConversationDetailDecoder : Json.Decode.Decoder AiAgentConversationDetail
@@ -30388,6 +30500,7 @@ aiAgentRequestCreateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapEdit" (Json.Decode.nullable (aiAgentMapEditTargetDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uploadIds" (Json.Decode.list (Json.Decode.string))))
 
 
 aiAgentRequestCreateRspDecoder : Json.Decode.Decoder AiAgentRequestCreateRsp
@@ -30418,6 +30531,7 @@ aiAgentProviderRuntimeProfileItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxOutputTokens" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "compactionReserveTokens" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "compactionKeepRecentTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "visionInputEnabled" (Json.Decode.bool)))
 
 
 aiAgentAdminSettingsItemDecoder : Json.Decode.Decoder AiAgentAdminSettingsItem

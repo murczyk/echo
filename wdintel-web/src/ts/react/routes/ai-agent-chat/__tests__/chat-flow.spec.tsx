@@ -23,6 +23,9 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   map: vi.fn(),
   fetchSources: vi.fn(),
+  upload: vi.fn(),
+  listUploads: vi.fn(),
+  deleteUpload: vi.fn(),
 }));
 
 vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
@@ -34,6 +37,9 @@ vi.mock('../../../services/api/ai-agent', async (importOriginal) => ({
   cancelAiAgentRequest: mocks.cancel,
   deleteAiAgentConversation: mocks.delete,
   getAiAgentMap: mocks.map,
+  uploadAiAgentFile: mocks.upload,
+  listAiAgentUploads: mocks.listUploads,
+  deleteAiAgentUpload: mocks.deleteUpload,
   openAiAgentMapWorkspace: async (summary: unknown, signal?: AbortSignal) => {
     const document = await mocks.map(summary, signal);
     return {
@@ -259,6 +265,89 @@ afterEach(async () => {
   vi.clearAllMocks();
   resetSharedMapDocuments();
 });
+function chooseFiles(files: File[]) {
+  const input = container.querySelector(
+    '[data-testid="ai-agent-chat-file-input"]',
+  ) as HTMLInputElement;
+  Object.defineProperty(input, 'files', { configurable: true, value: files });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function uploadItem(id: string, fileName: string) {
+  return {
+    id,
+    conversationId: null,
+    requestId: null,
+    fileName,
+    contentType: 'application/pdf',
+    sizeBytes: 2048,
+    state: 'ready',
+    isImage: false,
+    chunkCount: 3,
+    lastError: null,
+    createdAt: 1_700_000_000_000,
+  };
+}
+
+describe('AiAgentChat attachments', () => {
+  it('#3962 uploads picked files and sends them with the next message', async () => {
+    mocks.upload.mockResolvedValueOnce(uploadItem('upload-1', 'наказ.pdf'));
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-upload',
+      conversationId: CONVERSATION.id,
+      state: 'queued',
+    });
+    await act(async () => chooseFiles([new File(['%PDF-1.7'], 'наказ.pdf')]));
+    await flush();
+    expect(mocks.upload).toHaveBeenCalledWith(expect.any(File), null, expect.any(AbortSignal));
+    const chips = container.querySelector('[data-testid="ai-agent-chat-attachments"]');
+    expect(chips?.textContent).toContain('наказ.pdf');
+
+    submitForm();
+    await flush();
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: 'Опрацюй вкладені файли.', uploadIds: ['upload-1'] }),
+    );
+    expect(container.querySelector('[data-testid="ai-agent-chat-attachments"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="live-request-request-upload"]')?.textContent,
+    ).toContain('наказ.pdf');
+  });
+
+  it('#3962 rejects unsupported files locally and removes drafts on the server', async () => {
+    mocks.upload.mockResolvedValueOnce(uploadItem('upload-2', 'фото.jpg'));
+    mocks.deleteUpload.mockResolvedValue(undefined);
+    await act(async () =>
+      chooseFiles([new File(['MZ'], 'setup.exe'), new File(['jpg'], 'фото.jpg')]),
+    );
+    await flush();
+    expect(mocks.upload).toHaveBeenCalledTimes(1);
+    const chips = container.querySelector('[data-testid="ai-agent-chat-attachments"]')!;
+    expect(chips.textContent).toContain('setup.exe · Непідтримуваний формат');
+    const remove = chips.querySelectorAll('.MuiChip-deleteIcon')[1];
+    await act(async () => remove.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    expect(mocks.deleteUpload).toHaveBeenCalledWith('upload-2');
+    expect(chips.textContent).not.toContain('фото.jpg');
+  });
+});
+
+describe('AiAgentChat attachment navigation', () => {
+  it('#3962 discards drafts from a new chat when another conversation opens', async () => {
+    mocks.conversations.mockResolvedValue([CONVERSATION]);
+    await remountWithProviders([PROVIDER]);
+    mocks.upload.mockResolvedValueOnce(uploadItem('upload-3', 'чернетка.pdf'));
+    mocks.deleteUpload.mockResolvedValue(undefined);
+    await act(async () => chooseFiles([new File(['%PDF-1.7'], 'чернетка.pdf')]));
+    await flush();
+    expect(container.querySelector('[data-testid="ai-agent-chat-attachments"]')).not.toBeNull();
+
+    await selectConversation();
+    expect(mocks.deleteUpload).toHaveBeenCalledWith('upload-3');
+    expect(container.querySelector('[data-testid="ai-agent-chat-attachments"]')).toBeNull();
+  });
+});
+
 describe('AiAgentChat request queue', () => {
   it('#3724 requires explicit Deep selection and preserves it on retry', async () => {
     mocks.configuration.mockResolvedValue({
