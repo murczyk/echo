@@ -983,6 +983,26 @@ export function AddUserDialog(props: {
 
         <div ref={formRef} className="grid gap-3 md:grid-cols-2">
           <TextField
+            label="Delta логін"
+            value={form.deltaLogin}
+            onChange={(event) => {
+              const deltaLogin = event.target.value;
+              setForm((prev) => ({ ...prev, deltaLogin, login: deltaLogin }));
+              setServerErrors((current) => ({
+                ...clearAuthenticationGroupServerError(current, 'deltaLogin'),
+                login: undefined,
+              }));
+            }}
+            onBlur={() => touch('deltaLogin')}
+            required={!form.passwordAuthEnabled}
+            error={Boolean(fieldError('deltaLogin'))}
+            helperText={fieldError('deltaLogin')}
+            fullWidth
+            disabled={isSubmitting}
+            autoFocus
+          />
+
+          <TextField
             label="Логін"
             value={form.login}
             onChange={(event) => {
@@ -993,24 +1013,6 @@ export function AddUserDialog(props: {
             required
             error={Boolean(fieldError('login'))}
             helperText={fieldError('login')}
-            fullWidth
-            disabled={isSubmitting}
-            autoFocus
-          />
-
-          <TextField
-            label="Delta логін"
-            value={form.deltaLogin}
-            onChange={(event) => {
-              setForm((prev) => ({ ...prev, deltaLogin: event.target.value }));
-              setServerErrors((current) =>
-                clearAuthenticationGroupServerError(current, 'deltaLogin'),
-              );
-            }}
-            onBlur={() => touch('deltaLogin')}
-            required={!form.passwordAuthEnabled}
-            error={Boolean(fieldError('deltaLogin'))}
-            helperText={fieldError('deltaLogin')}
             fullWidth
             disabled={isSubmitting}
           />
