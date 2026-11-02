@@ -220,8 +220,17 @@ transactions that remain open longer than the freshness window. After one comple
 replication freshness window of tracking, at most 1,001 pending or recent IDs are read.
 More than 1,000 forces full source fallback. Otherwise, relevant changes are
 checked against the request's dates and permitted groups in both source and
-analytics rows. Checking both catches newly imported backdated messages and
-stale former owners without depending on analytics ID optimization bounds.
+analytics rows. A change is relevant only when that message also has an
+attachment chunk text, member, summary, media file name or audio file name
+matching any search term, including negated terms, in the same database.
+Media-presence filters (`only_with_media`) treat every in-scope change as
+relevant. Only the current source and analytics states are compared. One
+residual race is accepted: two committed edits inside the window, where only
+the intermediate version matches a term, can surface that version if CDC
+applies it between the check and the query. The response is then at most one
+freshness window stale for that message. Checking both catches newly
+imported backdated messages, stale former owners, and removed or renamed
+matches without depending on analytics ID optimization bounds.
 Relevant changes use PostgreSQL for the complete operation; unrelated changes
 allow analytics. Results/counts are not merged between databases.
 

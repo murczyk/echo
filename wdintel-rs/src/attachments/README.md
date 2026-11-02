@@ -45,6 +45,30 @@ No analytics resnapshot is required. An application rollback can retain the
 index; remove it only through the migration rollback after reverting the app.
 See [index verification and interrupted-build recovery](#claim-index-recovery).
 
+A step that is not finished is requeued according to what it waits for:
+
+- **Progress:** due again after 10 seconds.
+- **External extractor job or map conversion still working:** polled after a
+  quarter of its age, at least 10 seconds and at most 10 minutes. An extractor
+  answering 429 or 503 is retried after 60 seconds.
+- **Image or PDF waiting for OCR:** the job moves to `waiting`, which neither
+  claim index covers, so a long OCR backlog costs the claim nothing. A
+  successful OCR result needs no polling: the `attachment_ocr_changed` trigger
+  supersedes the waiting job and queues a new one.
+
+The extract worker also runs two periodic sweeps:
+
+- **Every 5 minutes:** it requeues up to 10,000 waiting jobs whose OCR failed,
+  completed without usable quality, or is missing while an OCR engine is
+  configured. Their next step reports the OCR failure.
+- **Hourly:** it moves queued, retrying and lease-expired jobs of deleted
+  messages to `message_deleted`, once they have been idle for an hour. The
+  claim never picks these jobs, but without the sweep it would still have to
+  scan past them. The same sweep first returns `message_deleted` jobs to the
+  queue when their message is live again, for example after a duplicate trace
+  is promoted or a submitted message is restored. Both steps run in batches of
+  10,000, at most 20 batches per run.
+
 Every source chunk gets its own summary; large documents are reduced through
 successive summary batches rather than a first-N-character cutoff. Coordinates
 come from original text. Position matching also reads original chunks, including

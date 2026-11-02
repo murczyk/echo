@@ -60,6 +60,7 @@ async fn scoped_coverage(
             till_inclusive: false,
             time_basis: SearchTimeBasis::Creation,
             groups,
+            media_presence_filtered: false,
         },
     )
     .await
@@ -76,20 +77,21 @@ async fn attachment_search_scopes_changes_and_ignores_processing_updates_3780()
         .await
         .unwrap();
     ready_coverage(source).await;
+    let analytics = snapshot_membership(&env).await;
     let groups = [group];
     execute(source, "UPDATE attachment_document SET updated_at=now() AT TIME ZONE 'UTC' WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
-    scoped_coverage(source, source, &groups, "Береза", None)
+    scoped_coverage(source, &analytics, &groups, "Береза", None)
         .await
         .unwrap();
     execute(source, "UPDATE attachment_chunk SET text='Вільха',summary=NULL WHERE media_id=$1", vec![job.media_id.into()]).await.unwrap();
     for search in ["Береза", "-Береза", "Вільха", "-Вільха"]
     {
         assert_requires_source(
-            scoped_coverage(source, source, &groups, search, None).await,
+            scoped_coverage(source, &analytics, &groups, search, None).await,
         );
         scoped_coverage(
             source,
-            source,
+            &analytics,
             &["unrelated-group".into()],
             search,
             None,
@@ -98,13 +100,19 @@ async fn attachment_search_scopes_changes_and_ignores_processing_updates_3780()
         .unwrap();
         scoped_coverage(
             source,
-            source,
+            &analytics,
             &groups,
             search,
             Some(chrono::Utc::now().naive_utc() + chrono::Duration::days(1)),
         )
         .await
         .unwrap();
+    }
+    for search in ["Сосна", "-Сосна", "\"Сосна червона\""]
+    {
+        scoped_coverage(source, &analytics, &groups, search, None)
+            .await
+            .unwrap();
     }
     execute(
         source,
@@ -120,16 +128,16 @@ async fn attachment_search_scopes_changes_and_ignores_processing_updates_3780()
     )
     .await
     .unwrap();
-    assert_requires_source(
-        scoped_coverage(source, source, &groups, "-scoped", None).await,
-    );
-    execute(
-        source,
-        "DELETE FROM public.echo_analytics_attachment_search",
-        vec![],
-    )
-    .await
-    .unwrap();
+    for search in ["-scoped", "renamed"] {
+        assert_requires_source(
+            scoped_coverage(source, &analytics, &groups, search, None).await,
+        );
+    }
+    scoped_coverage(source, &analytics, &groups, "-Сосна", None)
+        .await
+        .unwrap();
+    analytics.close().await.unwrap();
+    source.execute_unprepared("DROP SCHEMA attachment_search_replica_3780 CASCADE; DELETE FROM public.echo_analytics_attachment_search").await.unwrap();
 }
 
 async fn snapshot_membership(env: &Env) -> DatabaseConnection {
@@ -138,6 +146,10 @@ async fn snapshot_membership(env: &Env) -> DatabaseConnection {
         "signal_message",
         "sigint_inbox_item",
         "signal_message_group",
+        "signal_message_media",
+        "attachment_document",
+        "attachment_chunk",
+        "signal_message_audio_search",
     ] {
         execute(&env.dbx, &format!("CREATE TABLE attachment_search_replica_3780.{table} AS SELECT * FROM public.{table}"), vec![]).await.unwrap();
     }
@@ -161,6 +173,7 @@ async fn attachment_search_observes_commits_before_expiring_changes_3780() {
     let source = &env.dbx;
     let job = attachment(&env, message, "before-commit.txt").await;
     ready_coverage(source).await;
+    let analytics = snapshot_membership(&env).await;
     let groups = [group];
     let transaction = source.begin().await.unwrap();
     transaction
@@ -177,7 +190,7 @@ async fn attachment_search_observes_commits_before_expiring_changes_3780() {
     assert_requires_source(
         ensure_search_coverage_scoped(
             source,
-            source,
+            &analytics,
             &Some("-before".into()),
             None,
             1,
@@ -187,6 +200,7 @@ async fn attachment_search_observes_commits_before_expiring_changes_3780() {
                 till_inclusive: false,
                 time_basis: SearchTimeBasis::Creation,
                 groups: &groups,
+                media_presence_filtered: false,
             },
         )
         .await,
@@ -197,23 +211,18 @@ async fn attachment_search_observes_commits_before_expiring_changes_3780() {
         vec![1]
     );
     assert_requires_source(
-        scoped_coverage(source, source, &groups, "-before", None).await,
+        scoped_coverage(source, &analytics, &groups, "-before", None).await,
     );
     execute(source, "UPDATE attachment_search_message_change SET changed_at=(now() AT TIME ZONE 'UTC')-interval '1 hour'", vec![]).await.unwrap();
-    scoped_coverage(source, source, &groups, "-before", None)
+    scoped_coverage(source, &analytics, &groups, "-before", None)
         .await
         .unwrap();
     execute(source, "UPDATE signal_message_media SET file_name='edited-again.txt' WHERE id=$1", vec![job.media_id.into()]).await.unwrap();
     assert_requires_source(
-        scoped_coverage(source, source, &groups, "-before", None).await,
+        scoped_coverage(source, &analytics, &groups, "-before", None).await,
     );
-    execute(
-        source,
-        "DELETE FROM public.echo_analytics_attachment_search",
-        vec![],
-    )
-    .await
-    .unwrap();
+    analytics.close().await.unwrap();
+    source.execute_unprepared("DROP SCHEMA attachment_search_replica_3780 CASCADE; DELETE FROM public.echo_analytics_attachment_search").await.unwrap();
 }
 
 async fn changed_time_membership(
@@ -316,6 +325,7 @@ async fn attachment_search_scopes_time_endpoints_and_literal_modes_3780() {
                             _ => SearchTimeBasis::Creation,
                         },
                         groups: &groups,
+                        media_presence_filtered: false,
                     },
                 )
                 .await;
@@ -524,4 +534,75 @@ async fn attachment_search_bootstrap_overflow_and_retention_stay_conservative_37
     )
     .await
     .unwrap();
+}
+
+async fn audio_search(source: &DatabaseConnection, message: i64, name: &str) {
+    execute(
+        source,
+        r#"
+        with source as (
+            insert into transcription_source(id, source_key)
+            values ($1, '3780-audio/' || $1::text) returning id
+        ), audio as (
+            insert into signal_message_audio_ref
+                (id, signal_message_id, audio_id, transcription_source_id)
+            select $1, $2, $1, id from source returning id
+        )
+        insert into signal_message_audio_search(id, signal_message_id, file_name)
+        select id, $2, $3 from audio
+        "#,
+        vec![Uuid::new_v4().into(), message.into(), name.into()],
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn attachment_search_change_terms_cover_audio_and_media_presence_3780() {
+    let (env, group, message) = fixture().await;
+    let source = &env.dbx;
+    let job = attachment(&env, message, "unrelated.txt").await;
+    publish(&env, &job, package("Береза"), vec![1])
+        .await
+        .unwrap();
+    audio_search(source, message, "Вільха.wav").await;
+    ready_coverage(source).await;
+    let analytics = snapshot_membership(&env).await;
+    let groups = [group];
+    execute(
+        source,
+        "UPDATE signal_message_audio_search SET file_name='Сосна.wav' WHERE signal_message_id=$1",
+        vec![message.into()],
+    )
+    .await
+    .unwrap();
+    for search in ["Сосна", "-Вільха"] {
+        assert_requires_source(
+            scoped_coverage(source, &analytics, &groups, search, None).await,
+        );
+    }
+    scoped_coverage(source, &analytics, &groups, "Ясен", None)
+        .await
+        .unwrap();
+    assert_requires_source(
+        ensure_search_coverage_scoped(
+            source,
+            &analytics,
+            &Some("Ясен".into()),
+            None,
+            90_000,
+            SearchCoverageScope {
+                since: None,
+                till: None,
+                till_inclusive: false,
+                time_basis: SearchTimeBasis::Creation,
+                groups: &groups,
+                media_presence_filtered: true,
+            },
+        )
+        .await,
+    );
+    analytics.close().await.unwrap();
+    source.execute_unprepared("DROP SCHEMA attachment_search_replica_3780 CASCADE; DELETE FROM public.echo_analytics_attachment_search").await.unwrap();
 }

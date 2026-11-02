@@ -6,6 +6,7 @@ mod preview;
 mod preview_cache;
 mod protocol;
 pub(in crate::devices) mod read;
+pub(crate) mod recover;
 pub(in crate::devices) mod repository;
 mod reuse;
 mod spool;
@@ -142,7 +143,7 @@ async fn try_build_runtime(
         })
         .map_err(|error| error.c(h!()))?;
     let spool = Spool::initialize(
-        PathBuf::from(&config.storage_dir).join("device-file-content-spool"),
+        PathBuf::from(&config.storage_dir).join(DEVICE_FILE_CONTENT_SPOOL_DIR),
         required_capacity,
     )
     .await

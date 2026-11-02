@@ -181,6 +181,7 @@ pub(super) async fn ensure_analytics_search_coverage(
             till_inclusive: false,
             time_basis,
             groups,
+            media_presence_filtered: false,
         },
     )
     .await

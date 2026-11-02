@@ -366,6 +366,49 @@ pub(crate) async fn record_not_dispatched(
     Ok(())
 }
 
+/// Retires an active write whose object is absent once its lease and write
+/// timeout have passed, so the job can dispatch a fresh attempt. A late write
+/// may still land, so cleanup keeps rechecking the retired key.
+pub(crate) async fn retire_unconfirmed_write(
+    db: &DatabaseConnection,
+    claim: &ClaimedFinalizationJob,
+    attempt_id: Uuid,
+    write_timeout_seconds: u64,
+) -> Result<bool> {
+    let mut transaction = db
+        .get_postgres_connection_pool()
+        .begin()
+        .await
+        .context(h!())?;
+    let actor: Uuid = sqlx::query_scalar("select created_by_login_id from device_upload_finalization_job where id=$1")
+        .bind(claim.job_id).fetch_one(&mut *transaction).await.context(h!())?;
+    let (global, _) = lock_budgets(&mut transaction, claim.kind, actor)
+        .await
+        .context(h!())?;
+    if !lock_claim(&mut transaction, claim).await.context(h!())? {
+        return Ok(false);
+    }
+    let timeout = i64::try_from(write_timeout_seconds).context(h!())?;
+    let credit: Option<bool> = sqlx::query_scalar("select a.write_credit_held from device_upload_finalization_attempt a join device_upload_finalization_job j on j.id=a.job_id and j.active_attempt_id=a.id where a.id=$1 and a.job_id=$2 and a.lease_epoch<$3 and a.origin='async' and a.phase='write_intent' and a.write_acknowledged_at is null and a.verified_at is null and a.write_intent_at<clock_timestamp()-$4*interval '1 second' for update of a")
+        .bind(attempt_id).bind(claim.job_id).bind(claim.lease_epoch).bind(timeout)
+        .fetch_optional(&mut *transaction).await.context(h!())?;
+    let Some(credit) = credit else {
+        return Ok(false);
+    };
+    sqlx::query("update device_upload_finalization_attempt set phase='retired',write_resolved_at=coalesce(write_resolved_at,clock_timestamp()),write_credit_held=false,retired_at=clock_timestamp(),cleanup_next_at=clock_timestamp(),late_write_possible=true,last_error_code='write_unconfirmed',updated_at=clock_timestamp() where id=$1")
+        .bind(attempt_id).execute(&mut *transaction).await.context(h!())?;
+    if credit {
+        sqlx::query("update device_upload_finalization_budget set unresolved_writes=unresolved_writes-1 where scope=$1")
+            .bind(global).execute(&mut *transaction).await.context(h!())?;
+    }
+    let diagnostic = FinalizationFailure::DependencyUnavailable.diagnostic();
+    sqlx::query("update device_upload_finalization_job set status='retry_wait',next_run_at=clock_timestamp(),lease_owner=null,lease_until=null,error_code=$2,error_message=$3,error_action='retry_poll',updated_at=clock_timestamp() where id=$1")
+        .bind(claim.job_id).bind(diagnostic.code).bind(diagnostic.message)
+        .execute(&mut *transaction).await.context(h!())?;
+    transaction.commit().await.context(h!())?;
+    Ok(true)
+}
+
 pub(crate) async fn record_write_resolution(
     db: &DatabaseConnection,
     claim: &ClaimedFinalizationJob,

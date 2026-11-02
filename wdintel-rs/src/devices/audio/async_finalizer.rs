@@ -118,6 +118,20 @@ async fn execute_owned(
             .context(h!())?
         {
             recovery::Reconciliation::Verified(object) => object,
+            recovery::Reconciliation::Missing(attempt) => {
+                if query::retire_unconfirmed_write(
+                    db,
+                    claim,
+                    attempt,
+                    timeout.as_secs(),
+                )
+                .await
+                .context(h!())?
+                {
+                    return Ok(());
+                }
+                return Err(FinalizationFailure::StorageOutcomeUnknown.into());
+            }
             _ => return Err(FinalizationFailure::StorageOutcomeUnknown.into()),
         }
     } else {
