@@ -8,6 +8,7 @@ import type {
   AiAgentAdminRequestItem,
   AiAgentAdminRequestListReq,
   AiAgentAdminRequestListRsp,
+  AiAgentAdminRequestMetadata,
   AiAgentAdminSettingsItem,
   AiAgentAdminSettingsUpdateReq,
   AiAgentAdminUserItem,
@@ -191,6 +192,8 @@ export type AiAgentAuditRequest = {
 
 export type AiAgentAuditRequestDetail = AiAgentAuditRequest & {
   conversation: AiAgentConversationDetail;
+  events: AiAgentEvent[];
+  metadata: AiAgentAdminRequestMetadata;
 };
 
 export type AiAgentEchoProxy = {
@@ -692,9 +695,10 @@ export async function streamAiAgentEvents(input: {
   signal: AbortSignal;
   onEvent: (event: AiAgentEvent) => void;
   inactivityTimeoutMs?: number;
+  basePath?: string;
 }): Promise<void> {
   const url = new URL(
-    `/api/ai-agent/requests/${encodeURIComponent(input.requestId)}/events`,
+    `${input.basePath ?? '/api/ai-agent'}/requests/${encodeURIComponent(input.requestId)}/events`,
     window.location.origin,
   );
   if (input.afterSequence > 0) url.searchParams.set('after', String(input.afterSequence));
@@ -949,7 +953,15 @@ export async function getAiAgentAuditRequest(id: string): Promise<AiAgentAuditRe
       ...normalizeConversation(response.conversation),
       messages: response.conversation.messages.map(normalizeMessage),
     },
+    events: response.events.map((event) => normalizeAiAgentEvent(event, response.request.id)),
+    metadata: response.metadata,
   };
+}
+
+export function streamAiAgentAdminEvents(
+  input: Omit<Parameters<typeof streamAiAgentEvents>[0], 'basePath'>,
+): Promise<void> {
+  return streamAiAgentEvents({ ...input, basePath: '/api/admin/ai-agent' });
 }
 
 export async function retryAiAgentSecurityReview(id: string): Promise<AiAgentAuditRequestDetail> {

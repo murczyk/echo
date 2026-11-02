@@ -12,6 +12,15 @@ pub enum ProviderApi {
     OpenaiResponses,
 }
 
+impl ProviderApi {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenaiCompletions => "openai-completions",
+            Self::OpenaiResponses => "openai-responses",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionPolicy {

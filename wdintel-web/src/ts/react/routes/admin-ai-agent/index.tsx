@@ -73,7 +73,6 @@ import {
   listAiAgentAuditRequests,
   listAiAgentContainers,
   listAiAgentEchoProxies,
-  retryAiAgentSecurityReview,
   saveAiAgentDispatcher,
   saveAiAgentEchoProxy,
   saveAiAgentSettings,
@@ -98,7 +97,9 @@ import {
   getAiReviewerEngineCompatibility,
 } from './engine-eligibility';
 import { MattermostWebhookField } from './MattermostWebhookField';
-import { readAiAgentRequestDeepLink } from './url-state';
+import { errorMessage, formatDateTime, statusColor } from './format';
+import { RequestDetailsDialog } from './request-details/RequestDetailsDialog';
+import { readAiAgentRequestDeepLink, writeAiAgentRequestDeepLink } from './url-state';
 
 export type AiAgentAdminSection =
   | 'providers'
@@ -116,18 +117,6 @@ export type AiAgentAdminSection =
   | 'ocr'
   | 'settings';
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : 'Невідома помилка';
-}
-
-function formatDateTime(timestamp: number | null): string {
-  if (!timestamp) return '—';
-  const date = new Date(timestamp);
-  return Number.isNaN(date.getTime())
-    ? '—'
-    : new Intl.DateTimeFormat('uk-UA', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
-}
-
 export function requestDurationSeconds(
   request: Pick<AiAgentAuditRequest, 'createdAt' | 'completedAt' | 'state'>,
   now = Date.now(),
@@ -136,14 +125,6 @@ export function requestDurationSeconds(
     request.completedAt ?? (request.state === 'queued' || request.state === 'running' ? now : null);
   if (end === null || end < request.createdAt) return null;
   return Math.round((end - request.createdAt) / 100) / 10;
-}
-
-function statusColor(status: string): 'default' | 'success' | 'warning' | 'error' | 'info' {
-  if (['running', 'completed', 'safe', 'sent'].includes(status)) return 'success';
-  if (['queued', 'pending', 'starting'].includes(status)) return 'info';
-  if (['suspicious', 'stopping'].includes(status)) return 'warning';
-  if (['failed', 'critical'].includes(status)) return 'error';
-  return 'default';
 }
 
 function PageFailure({ message, onRetry }: { message: string; onRetry: () => void }) {
@@ -446,200 +427,6 @@ function ContainersPage() {
   );
 }
 
-export function RequestDetailsDialog({
-  request,
-  onClose,
-  onReviewRetried,
-}: {
-  request: AiAgentAuditRequestDetail | null;
-  onClose: () => void;
-  onReviewRetried: (request: AiAgentAuditRequestDetail) => void;
-}) {
-  const [retrying, setRetrying] = useState(false);
-  const { notify } = usePowerSnackbar();
-
-  async function retryReview() {
-    if (!request) return;
-    setRetrying(true);
-    try {
-      onReviewRetried(await retryAiAgentSecurityReview(request.id));
-      notify({ severity: 'success', message: 'Повторну перевірку поставлено в чергу.' });
-    } catch (retryError) {
-      notify({
-        severity: 'error',
-        message: `Не вдалося повторити перевірку: ${errorMessage(retryError)}`,
-      });
-    } finally {
-      setRetrying(false);
-    }
-  }
-
-  return (
-    <Dialog open={request !== null} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>Запит {request?.id}</DialogTitle>
-      <DialogContent dividers>
-        {request ? (
-          <Stack spacing={2}>
-            <Stack direction="row" spacing={1} flexWrap="wrap">
-              <Chip size="small" label={request.state} color={statusColor(request.state)} />
-              <Chip
-                size="small"
-                label={`Перевірка: ${request.reviewState}`}
-                color={statusColor(request.reviewState)}
-              />
-              {request.severity ? (
-                <Chip size="small" label={request.severity} color={statusColor(request.severity)} />
-              ) : null}
-            </Stack>
-            <Box>
-              <Typography variant="subtitle2">Запит користувача</Typography>
-              <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                {request.prompt}
-              </Typography>
-            </Box>
-            <Box>
-              <Typography variant="subtitle2">Відповідь</Typography>
-              <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                {request.response ?? '—'}
-              </Typography>
-            </Box>
-            {request.error ? (
-              <PowerAlert severity="error">
-                <Typography variant="subtitle2">Технічні деталі помилки</Typography>
-                <Typography
-                  component="pre"
-                  variant="body2"
-                  sx={{ m: 0, mt: 0.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-                >
-                  {request.error}
-                </Typography>
-              </PowerAlert>
-            ) : null}
-            <Box>
-              <Typography variant="subtitle2">
-                Контекст розмови: {request.conversation.title}
-              </Typography>
-              <Stack spacing={1} sx={{ mt: 1 }}>
-                {request.conversation.messages.map((message) => {
-                  const selected = message.requestId === request.id;
-                  return (
-                    <Box
-                      key={message.id}
-                      sx={{
-                        border: 1,
-                        borderColor: selected ? 'primary.main' : 'divider',
-                        borderRadius: 1,
-                        bgcolor: selected ? 'action.selected' : 'background.default',
-                        p: 1,
-                      }}
-                    >
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                        <Chip
-                          size="small"
-                          label={message.role === 'user' ? 'Користувач' : 'Асистент'}
-                          color={message.role === 'user' ? 'info' : 'success'}
-                        />
-                        <Chip size="small" label={message.requestState} />
-                        {selected ? (
-                          <Chip size="small" label="Поточний запит" color="primary" />
-                        ) : null}
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDateTime(message.createdAt)}
-                        </Typography>
-                      </Stack>
-                      <Typography
-                        sx={{ mt: 0.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
-                      >
-                        {message.content}
-                      </Typography>
-                    </Box>
-                  );
-                })}
-              </Stack>
-            </Box>
-            {request.progress.length > 0 ? (
-              <Box>
-                <Typography variant="subtitle2">Прогрес</Typography>
-                {request.progress.map((item, index) => (
-                  <Typography key={`${index}-${item}`} variant="body2">
-                    {item}
-                  </Typography>
-                ))}
-              </Box>
-            ) : null}
-            {request.toolActivity.length > 0 ? (
-              <Box>
-                <Typography variant="subtitle2">Інструменти й API</Typography>
-                {request.toolActivity.map((item, index) => (
-                  <Typography key={`${index}-${item}`} variant="body2">
-                    {item}
-                  </Typography>
-                ))}
-              </Box>
-            ) : null}
-            <Box>
-              <Typography variant="subtitle2">Безпекова перевірка</Typography>
-              <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                {request.reviewSummary ?? '—'}
-              </Typography>
-              {request.reviewCategories.length > 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  Категорії: {request.reviewCategories.join(', ')}
-                </Typography>
-              ) : null}
-              <Typography variant="body2" color="text.secondary">
-                Спроб перевірки: {request.reviewAttemptCount}
-              </Typography>
-              {request.reviewLastError ? (
-                <Typography variant="body2" color="error" sx={{ overflowWrap: 'anywhere' }}>
-                  {request.reviewLastError}
-                </Typography>
-              ) : null}
-            </Box>
-            <Box>
-              <Typography variant="subtitle2">Mattermost сповіщення</Typography>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                <Chip
-                  size="small"
-                  label={request.alertState ?? 'не потрібне'}
-                  color={statusColor(request.alertState ?? '')}
-                />
-                <Typography variant="body2" color="text.secondary">
-                  Спроб: {request.alertAttemptCount}
-                </Typography>
-              </Stack>
-              {request.alertLastError ? (
-                <Typography variant="body2" color="error" sx={{ overflowWrap: 'anywhere' }}>
-                  {request.alertLastError}
-                </Typography>
-              ) : null}
-            </Box>
-            <Typography variant="body2" color="text.secondary">
-              Створено: {formatDateTime(request.createdAt)} · Запущено:{' '}
-              {formatDateTime(request.startedAt)} · Завершено: {formatDateTime(request.completedAt)}
-            </Typography>
-          </Stack>
-        ) : null}
-      </DialogContent>
-      <DialogActions>
-        {request?.reviewState === 'failed' ? (
-          <PowerButton
-            variant="outlined"
-            disabled={retrying}
-            startIcon={retrying ? <CircularProgress size={16} /> : undefined}
-            onClick={() => void retryReview()}
-          >
-            Повторити перевірку
-          </PowerButton>
-        ) : null}
-        <PowerButton variant="contained" onClick={onClose}>
-          Закрити
-        </PowerButton>
-      </DialogActions>
-    </Dialog>
-  );
-}
-
 const REQUESTS_DEFAULT_COLUMN_ORDER = [
   'mrt-row-numbers',
   'mrt-row-actions',
@@ -837,6 +624,7 @@ function RequestsPage() {
   const [page, setPage] = useState(1);
   const [firstPage, setFirstPage] = useState(1);
   const loadVersion = useRef(0);
+  const openVersion = useRef(0);
   const [selected, setSelected] = useState<AiAgentAuditRequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -846,11 +634,13 @@ function RequestsPage() {
     const openDeepLink = () => {
       const requestId = readAiAgentRequestDeepLink();
       if (requestId) void openRequest(requestId);
+      else closeRequest();
     };
     void load().then(openDeepLink);
     window.addEventListener('popstate', openDeepLink);
     return () => {
       loadVersion.current += 1;
+      openVersion.current += 1;
       window.removeEventListener('popstate', openDeepLink);
     };
   }, []);
@@ -889,10 +679,20 @@ function RequestsPage() {
     }
   }
 
-  async function openRequest(id: string) {
+  function closeRequest() {
+    openVersion.current += 1;
+    setSelected(null);
+  }
+
+  async function openRequest(id: string, updateUrl = false) {
+    const version = ++openVersion.current;
     try {
-      setSelected(await getAiAgentAuditRequest(id));
+      const request = await getAiAgentAuditRequest(id);
+      if (version !== openVersion.current) return;
+      if (updateUrl) writeAiAgentRequestDeepLink(id);
+      setSelected(request);
     } catch (loadError) {
+      if (version !== openVersion.current) return;
       notify({
         severity: 'error',
         message: `Не вдалося відкрити запит: ${errorMessage(loadError)}`,
@@ -932,7 +732,7 @@ function RequestsPage() {
           requests={requests}
           loading={loading}
           firstRowIndex={(firstPage - 1) * pageSize}
-          onView={(request) => void openRequest(request.id)}
+          onView={(request) => void openRequest(request.id, true)}
         />
         <Stack spacing={1} alignItems="center">
           {page < pageStartIds.length ? (
@@ -960,11 +760,15 @@ function RequestsPage() {
         </Stack>
         <RequestDetailsDialog
           request={selected}
-          onClose={() => setSelected(null)}
-          onReviewRetried={(next) => {
-            setSelected(next);
+          onClose={() => {
+            writeAiAgentRequestDeepLink(null);
+            closeRequest();
+          }}
+          onRequestUpdated={(next) => {
+            setSelected((current) => (current?.id === next.id ? next : current));
             setRequests((current) => current.map((item) => (item.id === next.id ? next : item)));
           }}
+          onOpenRequest={(id) => void openRequest(id, true)}
         />
       </Stack>
     </TableStateProvider>

@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { AiAgentAdminRequestItem } from '../../src/Bindings';
+import type {
+  AiAgentAdminRequestDetail,
+  AiAgentAdminRequestItem,
+  AiAgentMessageItem,
+  AiAgentRequestEventItem,
+} from '../../src/Bindings';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 async function installRequests(page: Page) {
@@ -112,4 +117,204 @@ test('AI request pagination failures preserve the current entries and allow retr
   await showMore.click({ delay: 450 });
   await expect(rows).toHaveCount(40);
   expect(state.starts).toEqual([null, 'request-21', 'request-21']);
+});
+
+const DETAIL_TURNS = 12;
+const DETAIL_CURRENT = 'turn-6';
+
+function detailRequestItem(id: string, state: string, response: string | null) {
+  return {
+    id,
+    conversationId: 'conversation',
+    humanLoginId: 'human',
+    humanLogin: 'operator',
+    aiEngineId: 'engine',
+    aiEngineName: 'Engine',
+    prompt: `Question ${id}`,
+    response,
+    state,
+    error: null,
+    queuedAt: 1_700_000_000_000,
+    startedAt: 1_700_000_001_000,
+    completedAt: state === 'running' ? null : 1_700_000_009_000,
+    review: null,
+  } satisfies AiAgentAdminRequestItem;
+}
+
+function detailMessage(
+  requestId: string,
+  role: 'user' | 'assistant',
+  content: string,
+  requestState = 'completed',
+): AiAgentMessageItem {
+  return {
+    reasoningPreset: 'deep',
+    maxRuntimeSeconds: 900,
+    startedAt: 1_700_000_001_000,
+    completionMetadata: null,
+    requestId,
+    requestState,
+    role,
+    content,
+    createdAt: 1_700_000_000_000,
+    citations: [],
+    fileCitations: [],
+    maps: [],
+    attachments: [],
+  };
+}
+
+function detailEvent(
+  sequence: number,
+  eventType: string,
+  payload: object,
+): AiAgentRequestEventItem {
+  return {
+    sequence,
+    eventType,
+    payloadJson: JSON.stringify(payload),
+    createdAt: 1_700_000_001_000 + sequence,
+    activityPresentation: null,
+    activityOnly: false,
+  };
+}
+
+function requestDetail(id: string, completed: boolean): AiAgentAdminRequestDetail {
+  const running = id === DETAIL_CURRENT && !completed;
+  const messages = Array.from({ length: DETAIL_TURNS }, (_, index) => `turn-${index + 1}`).flatMap(
+    (requestId) =>
+      requestId === DETAIL_CURRENT && running
+        ? [detailMessage(requestId, 'user', `Question ${requestId}`, 'running')]
+        : [
+            detailMessage(requestId, 'user', `Question ${requestId}`),
+            detailMessage(
+              requestId,
+              'assistant',
+              requestId === DETAIL_CURRENT
+                ? 'Final **streamed** answer'
+                : `Answer for ${requestId} with **bold** text\n\n${'Long paragraph. '.repeat(30)}`,
+            ),
+          ],
+  );
+  return {
+    request: detailRequestItem(
+      id,
+      running ? 'running' : 'completed',
+      running ? null : id === DETAIL_CURRENT ? 'Final **streamed** answer' : `Answer for ${id}`,
+    ),
+    conversation: {
+      id: 'conversation',
+      title: 'Audit dialogue',
+      aiEngineId: 'engine',
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_000_000,
+      messages,
+    },
+    events: running
+      ? [
+          detailEvent(1, 'request_start', {}),
+          detailEvent(2, 'progress', { text: 'Шукаю повідомлення' }),
+        ]
+      : [],
+    metadata: {
+      aiEngineModelName: 'glm-5.3',
+      aiEngineHost: 'llm.example:8443',
+      agentLogin: 'agent',
+      providerApi: 'openai-completions',
+      reasoningPreset: 'deep',
+      reasoningEffort: 'high',
+      checkpointEffort: null,
+      synthesisEffort: null,
+      maxRuntimeSeconds: 900,
+      finalizationSeconds: 60,
+      completionMetadata: null,
+    },
+  };
+}
+
+test('AI request details render the dialogue like the chat and follow a running request live', async ({
+  page,
+}) => {
+  await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
+  const state = { completed: false, gets: [] as string[] };
+  let releaseStream!: () => void;
+  const streamReleased = new Promise<void>((resolve) => (releaseStream = resolve));
+  await page.route('**/api/admin/ai-agent/requests/list', (route) =>
+    route.fulfill({
+      json: {
+        items: [detailRequestItem(DETAIL_CURRENT, 'running', null)],
+        pageSize: 20,
+        total: null,
+        pageStartIds: [DETAIL_CURRENT],
+      },
+    }),
+  );
+  let releaseSlowDetail!: () => void;
+  const slowDetail = new Promise<void>((resolve) => (releaseSlowDetail = resolve));
+  await page.route('**/api/admin/ai-agent/requests/get', async (route) => {
+    const { requestId } = route.request().postDataJSON();
+    state.gets.push(requestId);
+    if (requestId === 'turn-8') await slowDetail;
+    await route.fulfill({ json: requestDetail(requestId, state.completed) });
+  });
+  await page.route('**/api/admin/ai-agent/requests/*/events*', async (route) => {
+    expect(new URL(route.request().url()).searchParams.get('after')).toBe('2');
+    await streamReleased;
+    state.completed = true;
+    const events = [
+      detailEvent(3, 'assistant_delta', { text: 'Final **streamed** answer' }),
+      detailEvent(4, 'completion', {}),
+    ];
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: events
+        .map((event) => `id: ${event.sequence}\ndata: ${JSON.stringify(event)}\n\n`)
+        .join(''),
+    });
+  });
+
+  await page.goto(`/admin/ai/requests?requestId=${DETAIL_CURRENT}`);
+  const dialog = page.getByRole('dialog');
+  const transcript = dialog.getByTestId('admin-ai-request-transcript');
+  const current = dialog.getByTestId('admin-ai-current-turn');
+  await expect(dialog.getByTestId('admin-ai-request-metadata')).toContainText('glm-5.3');
+  await expect(current.getByTestId('request-activity-title')).toHaveText('Шукаю повідомлення');
+  await expect(current).toBeInViewport();
+  await expect(transcript.locator('strong', { hasText: 'bold' }).first()).toBeAttached();
+
+  releaseStream();
+  await expect(current.locator('strong')).toHaveText('streamed');
+  await expect.poll(() => state.gets.filter((id) => id === DETAIL_CURRENT).length).toBe(2);
+  await expect(dialog.getByText('completed', { exact: true }).first()).toBeVisible();
+
+  const jump = dialog.getByRole('button', { name: 'До поточного запиту', exact: true });
+  await expect(jump).toHaveCount(0);
+  await transcript.evaluate((element) => element.scrollTo({ top: 0 }));
+  await expect(jump).toBeVisible();
+  await jump.click();
+  await expect(current).toBeInViewport();
+  await expect(jump).toHaveCount(0);
+
+  const other = dialog.getByTestId('admin-ai-turn-turn-7');
+  const openOther = other.getByRole('button', { name: 'Відкрити цей запит', exact: true });
+  await other.hover();
+  await expect(openOther.locator('xpath=..')).toHaveCSS('opacity', '1');
+  await openOther.click();
+  await expect(page).toHaveURL(/requestId=turn-7/);
+  await expect(current).toContainText('Question turn-7');
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`requestId=${DETAIL_CURRENT}`));
+  await expect(current).toContainText(`Question ${DETAIL_CURRENT}`);
+  await dialog
+    .getByTestId('admin-ai-turn-turn-8')
+    .getByRole('button', { name: 'Відкрити цей запит', exact: true })
+    .click();
+  await expect.poll(() => state.gets.includes('turn-8')).toBe(true);
+  await dialog.getByRole('button', { name: 'Закрити', exact: true }).first().click();
+  await expect(page).not.toHaveURL(/requestId=/);
+  await expect(dialog).toHaveCount(0);
+  releaseSlowDetail();
+  await page.waitForTimeout(300);
+  await expect(dialog).toHaveCount(0);
+  await expect(page).not.toHaveURL(/requestId=/);
 });

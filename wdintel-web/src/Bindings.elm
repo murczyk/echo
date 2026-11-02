@@ -16908,10 +16908,43 @@ aiAgentRequestEventItemEncoder struct =
         ]
 
 
+type alias AiAgentAdminRequestMetadata =
+    { aiEngineModelName : String
+    , aiEngineHost : Maybe (String)
+    , agentLogin : Maybe (String)
+    , providerApi : Maybe (String)
+    , reasoningPreset : Maybe (AiAgentReasoningPreset)
+    , reasoningEffort : Maybe (String)
+    , checkpointEffort : Maybe (String)
+    , synthesisEffort : Maybe (String)
+    , maxRuntimeSeconds : Maybe (Int)
+    , finalizationSeconds : Maybe (Int)
+    , completionMetadata : Maybe (AiAgentCompletionMetadata)
+    }
+
+
+aiAgentAdminRequestMetadataEncoder : AiAgentAdminRequestMetadata -> Json.Encode.Value
+aiAgentAdminRequestMetadataEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineModelName", (Json.Encode.string) struct.aiEngineModelName )
+        , ( "aiEngineHost", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineHost )
+        , ( "agentLogin", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.agentLogin )
+        , ( "providerApi", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.providerApi )
+        , ( "reasoningPreset", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentReasoningPresetEncoder)) struct.reasoningPreset )
+        , ( "reasoningEffort", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reasoningEffort )
+        , ( "checkpointEffort", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.checkpointEffort )
+        , ( "synthesisEffort", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.synthesisEffort )
+        , ( "maxRuntimeSeconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.maxRuntimeSeconds )
+        , ( "finalizationSeconds", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.finalizationSeconds )
+        , ( "completionMetadata", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentCompletionMetadataEncoder)) struct.completionMetadata )
+        ]
+
+
 type alias AiAgentAdminRequestDetail =
     { request : AiAgentAdminRequestItem
     , conversation : AiAgentConversationDetail
     , events : List (AiAgentRequestEventItem)
+    , metadata : AiAgentAdminRequestMetadata
     }
 
 
@@ -16921,6 +16954,7 @@ aiAgentAdminRequestDetailEncoder struct =
         [ ( "request", (aiAgentAdminRequestItemEncoder) struct.request )
         , ( "conversation", (aiAgentConversationDetailEncoder) struct.conversation )
         , ( "events", (Json.Encode.list (aiAgentRequestEventItemEncoder)) struct.events )
+        , ( "metadata", (aiAgentAdminRequestMetadataEncoder) struct.metadata )
         ]
 
 
@@ -31010,12 +31044,29 @@ aiAgentRequestEventItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activityOnly" (Json.Decode.bool)))
 
 
+aiAgentAdminRequestMetadataDecoder : Json.Decode.Decoder AiAgentAdminRequestMetadata
+aiAgentAdminRequestMetadataDecoder =
+    Json.Decode.succeed AiAgentAdminRequestMetadata
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineModelName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineHost" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "agentLogin" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerApi" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningPreset" (Json.Decode.nullable (aiAgentReasoningPresetDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reasoningEffort" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checkpointEffort" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "synthesisEffort" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxRuntimeSeconds" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "finalizationSeconds" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "completionMetadata" (Json.Decode.nullable (aiAgentCompletionMetadataDecoder))))
+
+
 aiAgentAdminRequestDetailDecoder : Json.Decode.Decoder AiAgentAdminRequestDetail
 aiAgentAdminRequestDetailDecoder =
     Json.Decode.succeed AiAgentAdminRequestDetail
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "request" (aiAgentAdminRequestItemDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversation" (aiAgentConversationDetailDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "events" (Json.Decode.list (aiAgentRequestEventItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata" (aiAgentAdminRequestMetadataDecoder)))
 
 
 aiAgentAdminUserReqDecoder : Json.Decode.Decoder AiAgentAdminUserReq

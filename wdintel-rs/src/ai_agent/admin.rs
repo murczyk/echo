@@ -1,5 +1,7 @@
 use super::types::*;
-use super::{access, chat_monitoring, dispatcher, lifecycle, review};
+use super::{
+    access, chat_monitoring, dispatcher, lifecycle, reasoning, review,
+};
 use crate::config::{
     AI_AGENT_ADMIN_REQUEST_PAGE_SIZE, AI_AGENT_ECHO_PROXY_PING_PATH,
     AI_AGENT_ECHO_PROXY_TEST_TIMEOUT_SEC, AI_AGENT_MATTERMOST_TIMEOUT_SEC,
@@ -972,6 +974,7 @@ pub async fn get_request(
             .await
             .c(h!())?
             .ok_or(AppError::NotFound)?;
+    let metadata = request_metadata(&env.dbx, &request).await.c(h!())?;
     let request = request_item(&env, request).await?;
     let events = ai_agent_request_event::Entity::find()
         .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
@@ -1002,7 +1005,94 @@ pub async fn get_request(
         conversation: super::conversation_detail(&env.dbx, conversation)
             .await?,
         events,
+        metadata,
     }))
+}
+
+async fn request_metadata(
+    db: &impl ConnectionTrait,
+    request: &ai_agent_request::Model,
+) -> anyhow::Result<AiAgentAdminRequestMetadata> {
+    let ai_engine = ai_engine::Entity::find_by_id(request.ai_engine_id)
+        .one(db)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let agent_login = match request.agent_login_id {
+        Some(id) => login::Entity::find_by_id(id)
+            .one(db)
+            .await
+            .c(h!())?
+            .map(|agent| agent.login),
+        None => None,
+    };
+    build_request_metadata(request, &ai_engine, agent_login)
+}
+
+fn build_request_metadata(
+    request: &ai_agent_request::Model,
+    ai_engine: &ai_engine::Model,
+    agent_login: Option<String>,
+) -> anyhow::Result<AiAgentAdminRequestMetadata> {
+    let policy = reasoning::request_policy(request).c(h!())?;
+    let completion_metadata = request
+        .completion_metadata
+        .clone()
+        .map(serde_json::from_value)
+        .transpose()
+        .c(h!())?;
+    Ok(AiAgentAdminRequestMetadata {
+        ai_engine_model_name: ai_engine.model_name.clone(),
+        ai_engine_host: engine_host(&ai_engine.url),
+        agent_login,
+        provider_api: policy.as_ref().map(|p| p.api.as_str().to_string()),
+        reasoning_preset: policy.as_ref().map(|p| p.preset),
+        reasoning_effort: policy
+            .as_ref()
+            .and_then(|p| p.reasoning_effort.clone()),
+        checkpoint_effort: policy
+            .as_ref()
+            .and_then(|p| p.checkpoint_effort.clone()),
+        synthesis_effort: policy
+            .as_ref()
+            .and_then(|p| p.synthesis_effort.clone()),
+        max_runtime_seconds: policy
+            .as_ref()
+            .map(|p| p.max_runtime_seconds as i64),
+        finalization_seconds: policy
+            .as_ref()
+            .map(|p| p.finalization_seconds as i64),
+        completion_metadata,
+    })
+}
+
+fn engine_host(url: &str) -> Option<String> {
+    let url = Url::parse(url).ok()?;
+    let host = url.host_str()?;
+    Some(match url.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    })
+}
+
+#[get("/api/admin/ai-agent/requests/{request_id}/events")]
+pub async fn request_events(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    request_id: actix_web::web::Path<String>,
+    query: actix_web::web::Query<super::SseQuery>,
+    http_req: actix_web::HttpRequest,
+) -> Result<actix_web::HttpResponse, AppError> {
+    ensure_admin_non_api_agent(&env, &user).await?;
+    let request_id = access::parse_uuid(&request_id)?;
+    ai_agent_request::Entity::find_by_id(request_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    Ok(super::request_event_stream(
+        &env, request_id, &query, &http_req,
+    ))
 }
 
 #[post("/api/admin/ai-agent/requests/retry-review")]

@@ -455,10 +455,29 @@ pub struct AiAgentRequestEventItem {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct AiAgentAdminRequestMetadata {
+    pub ai_engine_model_name: String,
+    pub ai_engine_host: Option<String>,
+    pub agent_login: Option<String>,
+    pub provider_api: Option<String>,
+    pub reasoning_preset: Option<AiAgentReasoningPreset>,
+    pub reasoning_effort: Option<String>,
+    pub checkpoint_effort: Option<String>,
+    pub synthesis_effort: Option<String>,
+    pub max_runtime_seconds: Option<i64>,
+    pub finalization_seconds: Option<i64>,
+    pub completion_metadata: Option<AiAgentCompletionMetadata>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct AiAgentAdminRequestDetail {
     pub request: AiAgentAdminRequestItem,
     pub conversation: AiAgentConversationDetail,
     pub events: Vec<AiAgentRequestEventItem>,
+    pub metadata: AiAgentAdminRequestMetadata,
 }
 
 #[derive(
