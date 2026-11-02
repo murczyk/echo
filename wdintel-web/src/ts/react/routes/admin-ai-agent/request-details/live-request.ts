@@ -17,7 +17,7 @@ export function isTerminalRequestState(state: AiAgentRequestState): boolean {
   return TERMINAL_STATES.has(state);
 }
 
-export function liveRequestFromDetail(detail: AiAgentAuditRequestDetail): LiveRequest {
+function liveRequestFromDetail(detail: AiAgentAuditRequestDetail): LiveRequest {
   const userMessage = detail.conversation.messages.find(
     (message) => message.requestId === detail.id && message.role === 'user',
   );

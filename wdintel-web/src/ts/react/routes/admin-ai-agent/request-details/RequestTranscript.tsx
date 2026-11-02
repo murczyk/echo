@@ -1,24 +1,33 @@
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import AttachFileIcon from '@mui/icons-material/AttachFile';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Tooltip, Typography } from '@mui/material';
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 
-import type { AiAgentMapSummary } from '../../../../../Bindings';
+import type {
+  AiAgentFileCitation,
+  AiAgentMapSummary,
+  AiAgentMessageCitation,
+} from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerIconButton } from '../../../components/PowerIconButton';
-import type { AiAgentAuditRequestDetail, AiAgentMessage } from '../../../services/api/ai-agent';
+import type {
+  AiAgentAuditRequestDetail,
+  AiAgentMessage,
+  AiAgentUpload,
+} from '../../../services/api/ai-agent';
 import {
   currentActivityPresentation,
   type LiveRequest,
   MarkdownContent,
   REASONING_LABELS,
 } from '../../ai-agent-chat';
-import { MessageAttachments } from '../../ai-agent-chat/ComposerAttachments';
+import { formatFileSize } from '../../ai-agent-chat/ComposerAttachments';
 import { RequestActivity, RequestDuration } from '../../ai-agent-chat/RequestActivity';
 import { formatDateTime } from '../format';
 import { isTerminalRequestState } from './live-request';
@@ -31,7 +40,7 @@ enum CurrentTurnPosition {
   Below = 'below',
 }
 
-export function transcriptTurns(detail: AiAgentAuditRequestDetail): Turn[] {
+function transcriptTurns(detail: AiAgentAuditRequestDetail): Turn[] {
   const turns: Turn[] = [];
   for (const message of detail.conversation.messages) {
     let turn = turns.find((item) => item.requestId === message.requestId);
@@ -67,23 +76,31 @@ function UserBubble({
       <Typography component="div" className="whitespace-pre-wrap [overflow-wrap:anywhere]">
         {content}
       </Typography>
-      <MessageAttachments attachments={message?.attachments ?? []} />
+      <InertChips
+        items={(message?.attachments ?? []).map((upload: AiAgentUpload) => ({
+          key: upload.id,
+          icon: <AttachFileIcon fontSize="inherit" color="action" />,
+          label: `${upload.fileName} · ${formatFileSize(upload.sizeBytes)}`,
+        }))}
+      />
     </div>
   );
 }
 
-function MapTitles({ maps }: { maps: AiAgentMapSummary[] }) {
-  if (maps.length === 0) return null;
+type InertChip = { key: string; icon: ReactNode; label: string };
+
+function InertChips({ items }: { items: InertChip[] }) {
+  if (items.length === 0) return null;
   return (
     <ul className="m-0 mt-echo-sm flex list-none flex-wrap gap-echo-xs p-0">
-      {maps.map((summary) => (
+      {items.map((item) => (
         <li
-          key={`${summary.requestId}:${summary.id}`}
-          className="flex items-center gap-echo-xs rounded-echo-pill border-1 border-solid border-echo-border px-echo-sm"
+          key={item.key}
+          className="flex min-w-0 items-center gap-echo-xs rounded-echo-pill border-1 border-solid border-echo-border px-echo-sm"
         >
-          <MapOutlinedIcon fontSize="inherit" color="action" />
-          <Typography variant="caption" color="text.secondary">
-            {summary.title} · {summary.validCount}
+          {item.icon}
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {item.label}
           </Typography>
         </li>
       ))}
@@ -91,14 +108,26 @@ function MapTitles({ maps }: { maps: AiAgentMapSummary[] }) {
   );
 }
 
+function mapChips(maps: AiAgentMapSummary[]): InertChip[] {
+  return maps.map((summary) => ({
+    key: `${summary.requestId}:${summary.id}`,
+    icon: <MapOutlinedIcon fontSize="inherit" color="action" />,
+    label: `${summary.title} · ${summary.validCount}`,
+  }));
+}
+
 function AssistantBubble({
   content,
   message,
   maps = message?.maps ?? [],
+  citations = message?.citations ?? [],
+  fileCitations = message?.fileCitations ?? [],
 }: {
   content: string;
   message?: AiAgentMessage;
   maps?: AiAgentMapSummary[];
+  citations?: AiAgentMessageCitation[];
+  fileCitations?: AiAgentFileCitation[];
 }) {
   return (
     <div className="w-full self-start rounded-echo-md border-1 border-solid border-echo-border bg-echo-surface-raised px-echo-lg py-echo-md">
@@ -106,14 +135,10 @@ function AssistantBubble({
         ЕХО Агент
         {message?.completionMetadata?.coverageLimited ? ' · Охоплення джерел неповне' : ''}
       </Typography>
-      <MarkdownContent
-        citations={message?.citations ?? []}
-        fileCitations={message?.fileCitations ?? []}
-        maps={[]}
-      >
+      <MarkdownContent citations={citations} fileCitations={fileCitations} maps={[]}>
         {content}
       </MarkdownContent>
-      <MapTitles maps={maps} />
+      <InertChips items={mapChips(maps)} />
     </div>
   );
 }
@@ -267,7 +292,13 @@ function CurrentTurn({
         }
       />
       {content || maps.length ? (
-        <AssistantBubble content={content} message={turn.assistant} maps={maps} />
+        <AssistantBubble
+          content={content}
+          message={turn.assistant}
+          maps={maps}
+          citations={turn.assistant?.citations ?? live.citations ?? []}
+          fileCitations={turn.assistant?.fileCitations ?? live.fileCitations ?? []}
+        />
       ) : null}
       <CurrentTurnOutcome detail={detail} live={live} onReconnect={onReconnect} />
     </article>

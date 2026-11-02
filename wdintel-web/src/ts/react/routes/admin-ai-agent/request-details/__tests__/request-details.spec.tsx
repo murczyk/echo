@@ -27,7 +27,6 @@ vi.mock('../../../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
 }));
 
-import { liveRequestFromDetail } from '../live-request';
 import { RequestDetailsDialog } from '../RequestDetailsDialog';
 
 const CREATED_AT = 1_700_000_000_000;
@@ -164,58 +163,7 @@ afterEach(async () => {
   container.remove();
 });
 
-describe('liveRequestFromDetail', () => {
-  it('replays stored events into chat-style activity and keeps the stored terminal state', () => {
-    const live = liveRequestFromDetail(
-      detail({
-        state: 'completed',
-        completedAt: CREATED_AT + 9000,
-        events: [
-          event(1, 'request_start'),
-          event(2, 'progress', { text: 'Шукаю повідомлення' }),
-          event(3, 'tool_start', { toolCallId: 'tool-1', toolLabel: 'Пошук' }),
-          event(4, 'tool_end', { toolCallId: 'tool-1', toolLabel: 'Пошук', isError: false }),
-          event(5, 'assistant_delta', { text: 'Answer' }),
-        ],
-      }),
-    );
-    expect(live.state).toBe('completed');
-    expect(live.finishedAt).toBe(CREATED_AT + 9000);
-    expect(live.assistantText).toBe('Answer');
-    expect(live.activity).toEqual([{ text: 'Шукаю повідомлення' }, { toolId: 'tool-1' }]);
-    expect(live.tools[0]).toMatchObject({ name: 'Пошук', status: 'completed' });
-    expect(live.reasoningPreset).toBe('deep');
-  });
-});
-
 describe('RequestDetailsDialog', () => {
-  it('renders the dialogue in order with markdown, metadata and a hover action for other turns', async () => {
-    const callbacks = await render(
-      detail({ state: 'completed', completedAt: CREATED_AT + 5000, response: 'Done' }),
-    );
-    const transcript = document.body.querySelector('[data-testid="admin-ai-request-transcript"]')!;
-    const text = transcript.textContent ?? '';
-    expect(text.indexOf('First question')).toBeLessThan(text.indexOf('Second question'));
-    expect(text.indexOf('Second question')).toBeLessThan(text.indexOf('Third question'));
-    expect(transcript.querySelector('strong')?.textContent).toBe('bold');
-    const current = transcript.querySelector('[data-testid="admin-ai-current-turn"]')!;
-    expect(current.textContent).toContain('Поточний запит');
-    expect(current.textContent).toContain('Done');
-
-    const metadata = document.body.querySelector('[data-testid="admin-ai-request-metadata"]')!;
-    expect(metadata.textContent).toContain('glm-5.3');
-    expect(metadata.textContent).toContain('openai-completions');
-    expect(metadata.textContent).toContain('Глибокий');
-    expect(metadata.textContent).toContain('15 хв');
-    expect(mocks.stream).not.toHaveBeenCalled();
-
-    const other = transcript.querySelector('[data-testid="admin-ai-turn-request-3"]')!;
-    await act(async () =>
-      (other.querySelector('[aria-label="Відкрити цей запит"]') as HTMLButtonElement).click(),
-    );
-    expect(callbacks.onOpenRequest).toHaveBeenCalledWith('request-3');
-  });
-
   it('streams a running request like the chat and refreshes it once it finishes', async () => {
     let finish!: () => void;
     mocks.stream.mockImplementation(({ onEvent }: { onEvent: (value: AiAgentEvent) => void }) => {

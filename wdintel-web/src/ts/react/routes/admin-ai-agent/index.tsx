@@ -624,6 +624,7 @@ function RequestsPage() {
   const [page, setPage] = useState(1);
   const [firstPage, setFirstPage] = useState(1);
   const loadVersion = useRef(0);
+  const openVersion = useRef(0);
   const [selected, setSelected] = useState<AiAgentAuditRequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -633,12 +634,13 @@ function RequestsPage() {
     const openDeepLink = () => {
       const requestId = readAiAgentRequestDeepLink();
       if (requestId) void openRequest(requestId);
-      else setSelected(null);
+      else closeRequest();
     };
     void load().then(openDeepLink);
     window.addEventListener('popstate', openDeepLink);
     return () => {
       loadVersion.current += 1;
+      openVersion.current += 1;
       window.removeEventListener('popstate', openDeepLink);
     };
   }, []);
@@ -677,12 +679,20 @@ function RequestsPage() {
     }
   }
 
+  function closeRequest() {
+    openVersion.current += 1;
+    setSelected(null);
+  }
+
   async function openRequest(id: string, updateUrl = false) {
+    const version = ++openVersion.current;
     try {
       const request = await getAiAgentAuditRequest(id);
+      if (version !== openVersion.current) return;
       if (updateUrl) writeAiAgentRequestDeepLink(id);
       setSelected(request);
     } catch (loadError) {
+      if (version !== openVersion.current) return;
       notify({
         severity: 'error',
         message: `Не вдалося відкрити запит: ${errorMessage(loadError)}`,
@@ -752,7 +762,7 @@ function RequestsPage() {
           request={selected}
           onClose={() => {
             writeAiAgentRequestDeepLink(null);
-            setSelected(null);
+            closeRequest();
           }}
           onRequestUpdated={(next) => {
             setSelected((current) => (current?.id === next.id ? next : current));

@@ -249,10 +249,13 @@ test('AI request details render the dialogue like the chat and follow a running 
       },
     }),
   );
-  await page.route('**/api/admin/ai-agent/requests/get', (route) => {
+  let releaseSlowDetail!: () => void;
+  const slowDetail = new Promise<void>((resolve) => (releaseSlowDetail = resolve));
+  await page.route('**/api/admin/ai-agent/requests/get', async (route) => {
     const { requestId } = route.request().postDataJSON();
     state.gets.push(requestId);
-    return route.fulfill({ json: requestDetail(requestId, state.completed) });
+    if (requestId === 'turn-8') await slowDetail;
+    await route.fulfill({ json: requestDetail(requestId, state.completed) });
   });
   await page.route('**/api/admin/ai-agent/requests/*/events*', async (route) => {
     expect(new URL(route.request().url()).searchParams.get('after')).toBe('2');
@@ -302,6 +305,16 @@ test('AI request details render the dialogue like the chat and follow a running 
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`requestId=${DETAIL_CURRENT}`));
   await expect(current).toContainText(`Question ${DETAIL_CURRENT}`);
+  await dialog
+    .getByTestId('admin-ai-turn-turn-8')
+    .getByRole('button', { name: 'Відкрити цей запит', exact: true })
+    .click();
+  await expect.poll(() => state.gets.includes('turn-8')).toBe(true);
   await dialog.getByRole('button', { name: 'Закрити', exact: true }).first().click();
+  await expect(page).not.toHaveURL(/requestId=/);
+  await expect(dialog).toHaveCount(0);
+  releaseSlowDetail();
+  await page.waitForTimeout(300);
+  await expect(dialog).toHaveCount(0);
   await expect(page).not.toHaveURL(/requestId=/);
 });

@@ -12,7 +12,7 @@ import { RequestDuration } from '../../ai-agent-chat/RequestActivity';
 import { formatDateTime, statusColor } from '../format';
 import { isTerminalRequestState } from './live-request';
 
-export function formatSeconds(seconds: number | null | undefined): string {
+function formatSeconds(seconds: number | null | undefined): string {
   if (isNullOrUndefined(seconds)) return '—';
   if (seconds < 60) return `${seconds} с`;
   const minutes = Math.floor(seconds / 60);
