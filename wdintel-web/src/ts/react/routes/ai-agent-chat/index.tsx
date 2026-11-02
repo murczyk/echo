@@ -125,7 +125,7 @@ type PendingSubmission = {
 
 const ATTACHMENTS_ONLY_PROMPT = 'Опрацюй вкладені файли.';
 
-const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
+export const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
   fast: 'Швидкий',
   balanced: 'Збалансований',
   deep: 'Глибокий',
@@ -431,7 +431,7 @@ export function shouldIgnoreStreamError(
   return signal.aborted || Boolean(request && TERMINAL_STATES.has(request.state));
 }
 
-function MarkdownContent({
+export function MarkdownContent({
   children,
   citations,
   fileCitations = [],
@@ -646,7 +646,7 @@ function requestStatus(request: LiveRequest): string {
   );
 }
 
-function currentActivityPresentation(request: LiveRequest) {
+export function currentActivityPresentation(request: LiveRequest) {
   if (TERMINAL_STATES.has(request.state)) return { title: requestStatus(request), detail: null };
   const runningTool = [...request.tools].reverse().find((tool) => tool.status === 'running');
   const presentation = runningTool ? runningTool.presentation : request.currentActivityPresentation;

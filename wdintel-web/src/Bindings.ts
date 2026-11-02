@@ -6523,10 +6523,25 @@ export type AiAgentRequestEventItem = {
   activityOnly: boolean;
 };
 
+export type AiAgentAdminRequestMetadata = {
+  aiEngineModelName: string;
+  aiEngineHost: string | null;
+  agentLogin: string | null;
+  providerApi: string | null;
+  reasoningPreset: AiAgentReasoningPreset | null;
+  reasoningEffort: string | null;
+  checkpointEffort: string | null;
+  synthesisEffort: string | null;
+  maxRuntimeSeconds: number | null;
+  finalizationSeconds: number | null;
+  completionMetadata: AiAgentCompletionMetadata | null;
+};
+
 export type AiAgentAdminRequestDetail = {
   request: AiAgentAdminRequestItem;
   conversation: AiAgentConversationDetail;
   events: Array<AiAgentRequestEventItem>;
+  metadata: AiAgentAdminRequestMetadata;
 };
 
 export type AiAgentAdminUserReq = {

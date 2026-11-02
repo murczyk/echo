@@ -1433,6 +1433,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::admin::list_containers)
             .service(crate::ai_agent::admin::list_requests)
             .service(crate::ai_agent::admin::get_request)
+            .service(crate::ai_agent::admin::request_events)
             .service(crate::ai_agent::admin::retry_review)
             .service(crate::ai_agent::admin::get_user_agent)
             .service(crate::ai_agent::admin::start_user_agent)

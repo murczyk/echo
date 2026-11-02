@@ -570,6 +570,15 @@ pub async fn request_events(
     let human = access::current_human_login(&env.dbx, &user, false).await?;
     let request_id = access::parse_uuid(&request_id)?;
     owned_request(&env.dbx, human.id, request_id).await?;
+    Ok(request_event_stream(&env, request_id, &query, &http_req))
+}
+
+fn request_event_stream(
+    env: &Env,
+    request_id: Uuid,
+    query: &SseQuery,
+    http_req: &HttpRequest,
+) -> HttpResponse {
     let last_event_id = http_req
         .headers()
         .get("Last-Event-ID")
@@ -590,10 +599,8 @@ pub async fn request_events(
             Err(err) => Some((Err(err), None)),
         }
     });
-    Ok(
-        event_stream_response(StatusCode::OK, "no-cache, no-transform")
-            .streaming(stream),
-    )
+    event_stream_response(StatusCode::OK, "no-cache, no-transform")
+        .streaming(stream)
 }
 
 fn event_stream_response(
