@@ -10586,6 +10586,155 @@ async fn count_stats_analytics_resource_limits_preserve_circuit_3780() {
     ));
 }
 
+fn local_source_rejection_3978() -> AppError {
+    anyhow::Error::new(DbErr::Custom(
+        crate::config::ANALYSIS_SOURCE_READ_QUEUE_ERROR.into(),
+    ))
+    .context(h!())
+    .into()
+}
+
+#[test]
+fn analytics_failure_reason_separates_local_source_saturation_3978() {
+    assert_eq!(
+        analytics_failure_reason(&local_source_rejection_3978(), None),
+        "source_saturated"
+    );
+    let source_timeout = AppError::ServiceUnavailable {
+        msg: "source statement timeout".into(),
+        retry_after_secs: 1,
+    };
+    assert_eq!(
+        analytics_failure_reason(&source_timeout, None),
+        "source_saturated"
+    );
+    let analytics: AppError = anyhow::anyhow!("analytics unavailable").into();
+    assert_eq!(
+        analytics_failure_reason(&analytics, None),
+        "analytics_error"
+    );
+}
+
+#[tokio::test]
+async fn count_stats_local_source_rejection_keeps_circuit_closed_3978() {
+    // 0 is a closed circuit; 1 is an expired cooldown, i.e. a half-open probe.
+    for initial_state in [0, 1] {
+        let retry_state = AtomicU64::new(initial_state);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let postgres_attempts = std::sync::atomic::AtomicUsize::new(0);
+        let error = with_count_stats_analytics_fallback(
+            Some(async {
+                Err::<&str, AppError>(local_source_rejection_3978())
+            }),
+            None,
+            core::time::Duration::from_secs(1),
+            async {
+                postgres_attempts
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok::<_, AppError>("postgres")
+            },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            AppError::ServiceUnavailable {
+                retry_after_secs: 1,
+                ..
+            }
+        ));
+        assert_eq!(
+            postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn analytics_read_local_source_rejection_keeps_circuit_closed_3978() {
+    let fixture = mk_rer_analysis_fixture().await.unwrap();
+    // One connection holds an uncommitted health view, so the analytics
+    // freshness check passes without changing the shared test schema.
+    let analytics = crate::new_pg_pool_from_conn_string_with_max_connections(
+        crate::mk_conn_string(&fixture.env.config),
+        1,
+    )
+    .await
+    .unwrap();
+    analytics
+        .execute_unprepared(
+            "BEGIN; CREATE VIEW public.echo_analytics_health AS \
+             SELECT true AS singleton, true AS healthy, \
+             CURRENT_TIMESTAMP AS checked_at;",
+        )
+        .await
+        .unwrap();
+    let mut env = (*fixture.env).clone();
+    env.config.analytics = Some(
+        serde_json::from_value(serde_json::json!({
+            "pg_host":"unused", "pg_user":"unused",
+            "pg_password":"unused", "pg_dbname":"unused"
+        }))
+        .unwrap(),
+    );
+    env.analytics = Some(crate::types::AnalyticsPool {
+        conn: analytics.clone(),
+        retry_after_unix_ms_by_operation: Default::default(),
+    });
+    let operation = "source saturation test 3978";
+    let postgres_attempts = std::sync::atomic::AtomicUsize::new(0);
+
+    let error = with_analytics_read_fallback(
+        &env,
+        operation,
+        true,
+        |_db| async { Err::<i64, AppError>(local_source_rejection_3978()) },
+        |_db| async {
+            postgres_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok::<_, AppError>(0)
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, AppError::ServiceUnavailable { .. }));
+    assert_eq!(
+        postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+    let analytics_value = || {
+        with_analytics_read_fallback(
+            &env,
+            operation,
+            true,
+            |_db| async { Ok::<_, AppError>(1i64) },
+            |_db| async { Ok::<_, AppError>(0i64) },
+        )
+    };
+    assert_eq!(analytics_value().await.unwrap(), 1);
+
+    // A failure of analytics itself still opens the circuit.
+    with_analytics_read_fallback(
+        &env,
+        operation,
+        true,
+        |_db| async {
+            Err::<i64, AppError>(
+                anyhow::anyhow!("analytics unavailable").into(),
+            )
+        },
+        |_db| async { Ok::<_, AppError>(0i64) },
+    )
+    .await
+    .unwrap();
+    assert_eq!(analytics_value().await.unwrap(), 0);
+    analytics.close().await.unwrap();
+}
+
 #[tokio::test]
 async fn count_stats_analytics_error_retries_postgres_once() {
     let postgres_attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));

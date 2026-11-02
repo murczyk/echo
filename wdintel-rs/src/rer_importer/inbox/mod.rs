@@ -1603,7 +1603,23 @@ async fn query_inbox_digest(
     db: DatabaseConnection,
     query: String,
 ) -> Result<InboxDigest, AppError> {
-    let query_res = crate::read_query::connection(&db)
+    read_inbox_digest(crate::read_query::connection(&db), query).await
+}
+
+/// Counts the analytics fresh tail without taking a shared SQL slot.
+async fn query_fresh_tail_inbox_digest(
+    db: DatabaseConnection,
+    query: String,
+) -> Result<InboxDigest, AppError> {
+    read_inbox_digest(crate::read_query::fresh_tail_connection(&db), query)
+        .await
+}
+
+async fn read_inbox_digest(
+    connection: crate::read_query::ReadConnection<'_>,
+    query: String,
+) -> Result<InboxDigest, AppError> {
+    let query_res = connection
         .query_one_raw(Statement::from_string(DatabaseBackend::Postgres, query))
         .await
         .c(h!())?
@@ -1928,16 +1944,23 @@ async fn query_rer_duty_inbox_digest_with_fresh_tail(
     let analytics_env = env.clone();
     let analytics_req = req.clone();
     let postgres_tail_db = env.dbx.clone();
+    let postgres_tail_bounded = fresh_tail_inbox_digest_is_bounded(&req);
     let postgres_fallback_db = env.dbx.clone();
     Ok(with_analytics_read_fallback(
         env.get_ref(),
         "rer duty inbox messages count",
         true,
         |db| async move {
-            let postgres_tail =
-                query_inbox_digest(postgres_tail_db, postgres_tail_query)
-                    .await
-                    .context(h!())?;
+            let postgres_tail = if postgres_tail_bounded {
+                query_fresh_tail_inbox_digest(
+                    postgres_tail_db,
+                    postgres_tail_query,
+                )
+                .await
+            } else {
+                query_inbox_digest(postgres_tail_db, postgres_tail_query).await
+            }
+            .context(h!())?;
             let Some(historical) = load_analytics_inbox_digest(
                 &login,
                 &analytics_env,
@@ -6175,6 +6198,26 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(cached, (7, None));
+    }
+
+    #[test]
+    fn fresh_tail_digest_keeps_slots_for_period_unit_filters_3978() {
+        let now = Utc::now();
+        let mut req = InboxMessagesReq {
+            page_id: Some("rer-duty-neo".to_string()),
+            since_date_inclusive_ms: Some(
+                (now - Duration::days(30)).timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(now.timestamp_millis()),
+            ..Default::default()
+        };
+        assert!(fresh_tail_inbox_digest_is_bounded(&req));
+        // Period unit matching scans the whole requested period.
+        req.selected_units = Some(vec!["unit".to_string()]);
+        assert!(!fresh_tail_inbox_digest_is_bounded(&req));
+        // Without a period the unit filter is correlated to tail rows.
+        req.sort_by = Some(InboxMessagesSortBy::IMSTimestamp);
+        assert!(fresh_tail_inbox_digest_is_bounded(&req));
     }
 
     #[serial]

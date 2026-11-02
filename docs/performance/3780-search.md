@@ -68,6 +68,21 @@ query; count-operation admission is separate from ordinary reads. Their admissio
 waits can use the remaining whole-request budget; acquiring a pooled connection
 still has a ten-second bound.
 
+Analytics-backed counts read the fresh tail, the last five minutes that
+analytics may not have replicated yet, from PostgreSQL (#3978). A fresh-tail
+digest starts from messages, so `created_at` drives the creation-time index;
+the inbox-first indexed shape visited every inbox item in the requested period
+first (on echo-skhid up to 10 s per tail, versus about 10 ms now). These reads
+skip the SQL slots, so heavy PostgreSQL-only searches cannot reject them; they
+keep the ten-second pool wait, statement timeout and cancellation, and log
+`stage=source_admission outcome=skipped`. A Duty count tail with period unit
+filters keeps the slots, because its unit matching covers the whole requested
+period.
+A local limit that rejects a source read inside an analytics attempt (SQL
+slots, pool wait, count queue, fallback capacity or a source statement timeout)
+is `reason=source_saturated`: the request returns 503 without a PostgreSQL
+retry and the analytics circuit stays closed, because analytics did not fail.
+
 The existing eight fallback-operation slots, limited to two per login, cover
 ordinary fallbacks and query-policy source routes. Search counts use the SQL
 count limits instead of holding an operation slot for their entire request.

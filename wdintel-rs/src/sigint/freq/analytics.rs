@@ -79,11 +79,26 @@ async fn query_counts(
     db: &DatabaseConnection,
     sql: String,
 ) -> anyhow::Result<Vec<FrequencyCount>> {
+    read_counts(crate::read_query::connection(db), sql).await
+}
+
+/// Counts the analytics fresh tail without taking a shared SQL slot.
+async fn query_fresh_tail_counts(
+    db: &DatabaseConnection,
+    sql: String,
+) -> anyhow::Result<Vec<FrequencyCount>> {
+    read_counts(crate::read_query::fresh_tail_connection(db), sql).await
+}
+
+async fn read_counts(
+    connection: crate::read_query::ReadConnection<'_>,
+    sql: String,
+) -> anyhow::Result<Vec<FrequencyCount>> {
     FrequencyCount::find_by_statement(Statement::from_string(
         DbBackend::Postgres,
         sql,
     ))
-    .all(&crate::read_query::connection(db))
+    .all(&connection)
     .await
     .c(h!())
 }
@@ -137,7 +152,7 @@ pub(super) async fn load_hybrid_counts(
     let tail = frequency_candidates(&count_req, groups, None)
         .c(h!())?
         .filter(signal_message::Column::CreatedAt.gte(cutoff));
-    let tail = query_counts(
+    let tail = query_fresh_tail_counts(
         source,
         build_frequency_counts_query(tail, &count_req, None),
     )
