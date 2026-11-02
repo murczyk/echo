@@ -329,8 +329,21 @@ describe('useRerDutyMessageActions', () => {
     vi.useRealTimers();
   });
 
-  it('shows the shared success snackbar after copying a message link', async () => {
-    hoisted.copyTextToClipboard.mockResolvedValueOnce(undefined);
+  it.each([
+    ['text-7', 'Повідомлення скопійовано.'],
+    ['text-network-7', 'Повідомлення скопійовано.'],
+    ['text-network-note-7', 'Повідомлення скопійовано.'],
+    ['link-7', 'Посилання на повідомлення скопійовано.'],
+    ['freq-7', 'Скопійовано в буфер обміну.'],
+    ['etalon-7', 'Скопійовано в буфер обміну.'],
+    ['location-7', 'Скопійовано в буфер обміну.'],
+  ])('shows a success snackbar only after copying %s completes', async (feedbackId, message) => {
+    let finishCopy!: () => void;
+    hoisted.copyTextToClipboard.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishCopy = resolve;
+      }),
+    );
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(
@@ -341,11 +354,17 @@ describe('useRerDutyMessageActions', () => {
     });
 
     await act(async () => {
-      apiRef.current?.handleMessageCopy('https://example.test/rer-duty-neo?m=target', 'link-7');
+      apiRef.current?.handleMessageCopy('Copied message value', feedbackId);
+      await flushMicrotasks();
+    });
+    expect(document.body.querySelector('[role="status"]')).toBeNull();
+
+    await act(async () => {
+      finishCopy();
       await flushMicrotasks();
     });
 
-    expect(document.body.textContent).toContain('Посилання на повідомлення скопійовано.');
+    expect(document.body.querySelector('[role="status"]')?.textContent).toContain(message);
   });
 
   it('#3646 removes AI origin without clearing another user importance', async () => {

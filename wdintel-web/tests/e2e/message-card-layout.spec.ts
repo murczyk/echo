@@ -6,10 +6,82 @@ import { emptyNetworksListResponse, emptyUnitsListResponse } from './fixture-res
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
+  openMessageCardPreviewHost,
 } from './message-card-media-preview.fixtures';
 
 // Regression: https://github.com/echoua/echo/issues/3324
 for (const host of ['analysis', 'duty'] as const) {
+  test(`#3927 narrow ${host} cards expose grouped actions without submenus @regression`, async ({
+    page,
+    context,
+  }, testInfo) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await openMessageCardPreviewHost(page, host);
+    const card = page.locator('.message-card-root').first();
+    const copyTrigger = card.getByRole('button', { name: 'Копіювати…', exact: true });
+    await expect(copyTrigger).toBeVisible();
+    await copyTrigger.click();
+    await expect(page.getByRole('menu', { name: 'Копіювання повідомлення' })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await card.evaluate((element) => {
+      element.closest<HTMLElement>('.message-card-item')!.style.width = '330px';
+    });
+    await expect(copyTrigger).toHaveCount(0);
+    const trigger = card.getByRole('button', { name: 'Більше дій', exact: true });
+    await trigger.click();
+    const menu = page.getByRole('menu', { name: 'Додаткові дії повідомлення' });
+    await expect(menu).toBeVisible();
+    await expect(
+      menu.getByRole('menuitem', { name: 'Копіювати повідомлення', exact: true }),
+    ).toBeVisible();
+    await expect(
+      menu.getByRole('menuitem', { name: 'Копіювати частоту', exact: true }),
+    ).toBeVisible();
+    await expect(
+      menu.getByRole('menuitem', { name: /^(Копіювати|Перейти|Виключити)…$/ }),
+    ).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: 'Назад до додаткових дій' })).toHaveCount(0);
+    expect(await menu.getByRole('separator').count()).toBeGreaterThan(0);
+    expect(
+      await menu.evaluate((element) => {
+        const children = Array.from(element.children);
+        return children.every(
+          (child, index) =>
+            child.getAttribute('role') !== 'separator' ||
+            (index > 0 &&
+              index < children.length - 1 &&
+              children[index - 1].getAttribute('role') !== 'separator'),
+        );
+      }),
+    ).toBe(true);
+    if (host === 'duty') {
+      await expect(menu.getByRole('menuitem', { name: 'В аналіз', exact: true })).toHaveCount(1);
+      await expect(menu.getByRole('menuitem', { name: /^Виключити групу/ })).toHaveCount(1);
+    } else {
+      await expect(menu.getByRole('menuitem', { name: /^Виключити/ })).toHaveCount(0);
+    }
+    await page.keyboard.press('End');
+    await expect(menu.getByRole('menuitem').last()).toBeFocused();
+    await expect(menu.locator('..')).toHaveCSS('opacity', '1');
+    await menu.screenshot({
+      path: testInfo.outputPath(`${host}-flat-actions.png`),
+      animations: 'disabled',
+    });
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await trigger.click();
+    await menu.getByRole('menuitem', { name: 'Копіювати повідомлення', exact: true }).click();
+    await expect(menu).toHaveCount(0);
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      'E2E message-card media preview fixture',
+    );
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Повідомлення скопійовано.' }),
+    ).toBeVisible();
+  });
+
   test(`#3324 keeps the important badge left of actions at every card width (${host}) @regression`, async ({
     page,
   }, testInfo) => {

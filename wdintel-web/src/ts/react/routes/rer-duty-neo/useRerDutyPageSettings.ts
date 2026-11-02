@@ -10,6 +10,7 @@ import {
   USER_SETTINGS_UPDATED_EVENT,
   fetchUserSettings,
   type MessageTextPreviewLineLimit,
+  type MessageCardQuickAction,
 } from '../../services/api/user-settings';
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from './utils';
 import { canUseMessageDevices } from '../../utils/roles';
@@ -28,6 +29,7 @@ export type RerDutyPageSettings = {
   collapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
+  messageCardQuickAction: MessageCardQuickAction;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
 };
@@ -60,6 +62,8 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   );
   const [largeMediaPreviews, setLargeMediaPreviews] = useState(false);
   const [largeMessageCardText, setLargeMessageCardText] = useState(false);
+  const [messageCardQuickAction, setMessageCardQuickAction] =
+    useState<MessageCardQuickAction>('createReport');
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
@@ -77,6 +81,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         );
         setLargeMediaPreviews(prefs.largeMediaPreviews ?? false);
         setLargeMessageCardText(prefs.largeMessageCardText ?? false);
+        setMessageCardQuickAction(prefs.messageCardQuickAction ?? 'createReport');
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
@@ -86,6 +91,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(true);
         setLargeMediaPreviews(false);
         setLargeMessageCardText(false);
+        setMessageCardQuickAction('createReport');
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
       }
@@ -105,6 +111,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           dutyCollapseMediaPreviews?: boolean;
           largeMediaPreviews?: boolean;
           largeMessageCardText?: boolean;
+          messageCardQuickAction?: MessageCardQuickAction;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
         }>
@@ -120,6 +127,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       }
       if (typeof detail?.largeMediaPreviews === 'boolean') {
         setLargeMediaPreviews(detail.largeMediaPreviews);
+      }
+      if (detail?.messageCardQuickAction != null) {
+        setMessageCardQuickAction(detail.messageCardQuickAction);
       }
       if (typeof detail?.largeMessageCardText === 'boolean') {
         setLargeMessageCardText(detail.largeMessageCardText);
@@ -216,6 +226,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
+    messageCardQuickAction,
     mediaSummaryEnabled,
     messageTextPreviewLines,
   };

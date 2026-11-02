@@ -29,5 +29,5 @@ suite =
             }
             """
                 |> Decode.decodeString Bindings.userDutySettingsDtoDecoder
-                |> Result.map (\settings -> ( settings.analysisAudioTranscriptionCollapsed, settings.largeMediaPreviews, settings.largeMessageCardText ))
-                |> Expect.equal (Ok ( True, False, False ))
+                |> Result.map (\settings -> ( ( settings.analysisAudioTranscriptionCollapsed, settings.largeMediaPreviews, settings.largeMessageCardText ), settings.messageCardQuickAction ))
+                |> Expect.equal (Ok ( ( True, False, False ), Bindings.QuickActionCreateReport ))

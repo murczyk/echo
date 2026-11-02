@@ -33,6 +33,8 @@ pub struct Model {
     pub receive_alerts_in_messenger: Option<bool>,
     pub large_media_previews: Option<bool>,
     pub large_message_card_text: Option<bool>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub message_card_quick_action: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

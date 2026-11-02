@@ -1,12 +1,15 @@
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { Collapse, useMediaQuery } from '@mui/material';
 import {
   MessageAttachmentPreviewMode,
+  type MessageCardQuickAction,
   type MessageTextPreviewLineLimit,
 } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import { MESSAGE_CARD_QUICK_ACTION_ICONS } from '../shared/message-card/MessageCardQuickAction';
 import './SettingsMessageCardPreview.css';
 
 const PREVIEW_TAG_WIDTHS = [72, 88, 64, 56, 80, 48, 72, 64];
@@ -26,6 +29,7 @@ function PreviewLines({ widths }: { widths: number[] }) {
 }
 
 export function SettingsMessageCardPreview({
+  messageCardQuickAction,
   largeMessageCardText,
   tagsLayout,
   mediaSummaryEnabled,
@@ -33,6 +37,7 @@ export function SettingsMessageCardPreview({
   aiPositionHighlightsEnabled,
   messageTextPreviewLines,
 }: {
+  messageCardQuickAction: MessageCardQuickAction;
   largeMessageCardText: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled: boolean;
@@ -43,6 +48,7 @@ export function SettingsMessageCardPreview({
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const duration = reducedMotion ? 0 : 250;
   const attachmentsExpanded = attachmentPreviewMode !== MessageAttachmentPreviewMode.Collapsed;
+  const QuickActionIcon = MESSAGE_CARD_QUICK_ACTION_ICONS[messageCardQuickAction];
   return (
     <section
       aria-label="Попередній перегляд картки повідомлення"
@@ -62,6 +68,17 @@ export function SettingsMessageCardPreview({
         <div className="message-card-header-row">
           <div data-message-card-header-left="true" className="w-full">
             <PreviewLines widths={[40, 28]} />
+          </div>
+          <div className="message-card-action-group pointer-events-none">
+            <span
+              data-message-card-quick-action-preview={messageCardQuickAction}
+              className="message-card-action-btn"
+            >
+              <QuickActionIcon className="message-card-action-btn__icon" />
+            </span>
+            <span className="message-card-action-btn">
+              <MoreVertIcon className="message-card-action-btn__icon" />
+            </span>
           </div>
         </div>
         <div className="message-card-divider" aria-hidden="true" />

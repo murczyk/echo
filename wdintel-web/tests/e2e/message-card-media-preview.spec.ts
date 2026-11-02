@@ -2425,7 +2425,6 @@ for (const width of [1280, 390]) {
         await copyButton.click();
       } else {
         await card.getByRole('button', { name: 'Більше дій' }).click();
-        await page.getByRole('menuitem', { name: /^Копіювати/ }).click();
       }
       await page.getByRole('menuitem', { name: 'Копіювати посилання на повідомлення' }).click();
       const link = new URL(await page.evaluate(() => navigator.clipboard.readText()));
