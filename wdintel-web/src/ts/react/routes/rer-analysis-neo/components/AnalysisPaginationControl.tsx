@@ -23,6 +23,7 @@ type Props = {
   rangePageIndex?: number;
   pageSize: number;
   messagesCount: number;
+  rangeCount?: number;
   totalCount: number | null;
   totalLoading: boolean;
   loading: boolean;
@@ -161,6 +162,7 @@ export function AnalysisPaginationControl({
   rangePageIndex = pageIndex,
   pageSize,
   messagesCount,
+  rangeCount,
   totalCount,
   totalLoading,
   loading,
@@ -180,10 +182,10 @@ export function AnalysisPaginationControl({
   const start = rangePageIndex * pageSize + 1;
   const end =
     totalCount === null
-      ? rangePageIndex * pageSize + Math.min(messagesCount, pageSize)
+      ? rangePageIndex * pageSize + (rangeCount ?? Math.min(messagesCount, pageSize))
       : Math.min(
           rangePageIndex * pageSize +
-            (rangeUsesPageSize ? pageSize : Math.min(messagesCount, pageSize)),
+            (rangeCount ?? (rangeUsesPageSize ? pageSize : Math.min(messagesCount, pageSize))),
           totalCount,
         );
   let currentRangeText = '';

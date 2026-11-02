@@ -47,6 +47,8 @@ mod m20261027_092423_failed_finalization_cleanup;
 mod m20261027_093747_file_finalization_ownership;
 mod m20261027_112601_synchronous_finalization_adoption;
 mod m20261028_153759_finalization_terminal_metrics;
+mod m20261030_143441_device_audio_activity_index;
+mod m20261031_111058_device_list_activity_order;
 
 pub struct Migrator;
 
@@ -112,6 +114,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261027_093747_file_finalization_ownership::Migration),
             Box::new(m20261027_112601_synchronous_finalization_adoption::Migration),
             Box::new(m20261028_153759_finalization_terminal_metrics::Migration),
+            Box::new(m20261030_143441_device_audio_activity_index::Migration),
+            Box::new(m20261031_111058_device_list_activity_order::Migration),
         ]
     }
 }

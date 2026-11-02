@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { DeviceUnitStat, Unit } from '../../../../Bindings';
+import type { DeviceFilterOptions, DeviceUnitStat, Unit } from '../../../../Bindings';
 import { redirectToLogin } from '../../auth-redirect';
 import { isAbortError, isUnauthorizedError } from '../../services/api/client';
-import { getDeviceUnitStats, listDeviceUnits } from '../../services/api/devices';
+import {
+  getDeviceUnitStats,
+  listDeviceFilterOptions,
+  listDeviceUnits,
+} from '../../services/api/devices';
 import { formatDeviceErrorMessage } from './helpers';
 
 export function useDevicesSidebarResource(enabled: boolean, canReadUnitCatalog: boolean) {
   const [units, setUnits] = useState<Unit[]>([]);
+  const [filterOptions, setFilterOptions] = useState<DeviceFilterOptions>({
+    aors: [],
+    creators: [],
+    tags: [],
+  });
   const [unitStats, setUnitStats] = useState<DeviceUnitStat[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [loaded, setLoaded] = useState(false);
@@ -32,14 +41,16 @@ export function useDevicesSidebarResource(enabled: boolean, canReadUnitCatalog: 
         const unitCatalog = canReadUnitCatalog
           ? listDeviceUnits({ signal: controller.signal })
           : Promise.resolve<Unit[]>([]);
-        const [nextUnits, nextUnitStats] = await Promise.all([
+        const [nextUnits, nextUnitStats, nextFilterOptions] = await Promise.all([
           unitCatalog,
           getDeviceUnitStats({ signal: controller.signal }),
+          listDeviceFilterOptions({ signal: controller.signal }),
         ]);
         if (requestSeqRef.current !== seq || controller.signal.aborted) return;
 
         setUnits(nextUnits);
         setUnitStats(nextUnitStats);
+        setFilterOptions(nextFilterOptions);
         setLoaded(true);
         setUnitCatalogLoaded(canReadUnitCatalog);
       } catch (loadError) {
@@ -50,9 +61,7 @@ export function useDevicesSidebarResource(enabled: boolean, canReadUnitCatalog: 
           redirectToLogin();
           return;
         }
-        setError(
-          `Помилка завантаження статистики підрозділів: ${formatDeviceErrorMessage(loadError)}`,
-        );
+        setError(`Помилка завантаження фільтрів пристроїв: ${formatDeviceErrorMessage(loadError)}`);
       } finally {
         if (requestSeqRef.current === seq) setLoading(false);
         if (abortRef.current === controller) abortRef.current = null;
@@ -84,6 +93,7 @@ export function useDevicesSidebarResource(enabled: boolean, canReadUnitCatalog: 
   return {
     units: canReadUnitCatalog ? units : [],
     unitStats,
+    filterOptions,
     loading,
     loaded,
     error,

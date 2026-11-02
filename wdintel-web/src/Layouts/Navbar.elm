@@ -378,6 +378,13 @@ view user activeName shared route { toContentMsg, model, content } =
         , div
             ([ class "app-shell"
              , class
+                (if isDevicesListPath then
+                    "app-shell--without-bottom-gap"
+
+                 else
+                    ""
+                )
+             , class
                 (if model.isNavbarVisible then
                     "app-shell--navbar-visible"
 

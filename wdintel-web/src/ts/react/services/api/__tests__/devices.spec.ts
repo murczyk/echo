@@ -119,6 +119,8 @@ describe('devices API service routes', () => {
         archivedFilter: 'active_only',
         aorIds: [4],
         unitIds: [7],
+        createdBy: ['operator'],
+        tags: ['priority'],
         limit: 25,
         offset: 0,
         sortBy: ['updated_at_desc'],
@@ -133,6 +135,8 @@ describe('devices API service routes', () => {
       archived_filter: 'active_only',
       aor_ids: [4],
       unit_ids: [7],
+      created_by: ['operator'],
+      tags: ['priority'],
       limit: 25,
       offset: 0,
       sort_by: ['updated_at_desc'],
@@ -220,7 +224,7 @@ describe('devices API service routes', () => {
       mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
     });
     expect(requestBody(2)).toEqual({ clearMattermostWebhook: true });
-    expect(settings).toEqual({ hasMattermostWebhook: true });
+    expect(settings).toEqual({ hasMattermostWebhook: true, activitySplitFilesAudio: false });
   });
 });
 

@@ -290,6 +290,9 @@ mod tests {
 
     fn device_fixture(device_id: Uuid) -> DeviceCurrentState {
         DeviceCurrentState {
+            rating: 0,
+            tags: Vec::new(),
+            description: None,
             id: device_id,
             name: Some("Ймовірно 57 орб 2 рр БпС комп 2 （MSI)".to_string()),
             aors: Vec::new(),

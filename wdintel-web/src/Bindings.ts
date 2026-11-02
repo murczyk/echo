@@ -2245,6 +2245,18 @@ export type DeviceArchivedFilter =
 ;
 
 export type DeviceListSortBy =
+  | 'aors_asc'
+  | 'aors_desc'
+  | 'unit_asc'
+  | 'unit_desc'
+  | 'created_by_asc'
+  | 'created_by_desc'
+  | 'last_content_at_asc'
+  | 'last_content_at_desc'
+  | 'content_bytes_asc'
+  | 'content_bytes_desc'
+  | 'rating_asc'
+  | 'rating_desc'
   | 'display_title_asc'
   | 'display_title_desc'
   | 'created_at_asc'
@@ -2287,6 +2299,8 @@ export type DeviceStats = {
 
 export type DeviceListItem = {
   id: string;
+  rating: number;
+  tags: Array<string>;
   name: string | null;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
@@ -2296,10 +2310,32 @@ export type DeviceListItem = {
   updatedAt: string;
   archivedAt: string | null;
   stats: DeviceStats | null;
+  audioDays: Array<DeviceAudioDayStat> | null;
+  activitySplitFilesAudio: boolean;
+};
+
+export type DeviceFilterOptions = {
+  aors: Array<AorSummary>;
+  creators: Array<DeviceCreatorFilterOption>;
+  tags: Array<string>;
+};
+
+export type DeviceCreatorFilterOption = {
+  login: string;
+  displayName: string | null;
+};
+
+export type DeviceAudioDayStat = {
+  day: string;
+  contentCount: number;
+  contentBytes: number;
 };
 
 export type DeviceDetails = {
   id: string;
+  rating: number;
+  tags: Array<string>;
+  description: string | null;
   name: string | null;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
@@ -2323,6 +2359,8 @@ export type ListDevicesReq = {
   archivedFilter: DeviceArchivedFilter | null;
   aorIds: Array<number> | null;
   unitIds: Array<number> | null;
+  createdBy: Array<string> | null;
+  tags: Array<string> | null;
   limit: number | null;
   offset: number | null;
   sortBy: Array<DeviceListSortBy>;
@@ -2352,6 +2390,9 @@ export type CreateDeviceReq = {
 
 export type UpdateDeviceReq = {
   deviceId: string;
+  rating: number | null;
+  tags: Array<string> | null;
+  description: string | null;
   externalUrl: string | null;
   customFields: Record<string, string | null> | null;
   name: string | null;
@@ -3253,10 +3294,12 @@ export type TagMatch =
 export type DeviceSettingsReq = {
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
+  activitySplitFilesAudio: boolean | null;
 };
 
 export type DeviceSettingsItem = {
   hasMattermostWebhook: boolean;
+  activitySplitFilesAudio: boolean;
 };
 
 export type Organism = {

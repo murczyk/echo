@@ -6,10 +6,12 @@ export function AuthorLabel({
   login,
   accountId,
   fallback,
+  interactive = true,
 }: {
   login?: string | null;
   accountId?: string | null;
   fallback?: string | null;
+  interactive?: boolean;
 }) {
   const key = authorKey(login, accountId);
   const subscribe = useCallback((listener: () => void) => subscribeAuthor(key, listener), [key]);
@@ -18,6 +20,7 @@ export function AuthorLabel({
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const panelId = useId();
   if (!author?.displayName) return <>{fallback ?? login ?? accountId ?? '—'}</>;
+  if (!interactive) return <>{author.displayName}</>;
   return (
     <>
       <button

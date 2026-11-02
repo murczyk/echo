@@ -3,6 +3,9 @@ import type { CreateDeviceInput, DeviceUpdatePatchInput } from '../../services/a
 import { formatDeviceErrorMessage } from './helpers';
 
 export const DEVICE_NAME_MAX_CHARS = 255;
+export const DEVICE_DESCRIPTION_MAX_CHARS = 4000;
+export const DEVICE_TAG_MAX_CHARS = 64;
+export const DEVICE_TAGS_MAX_COUNT = 50;
 export const DEVICE_EXTERNAL_URL_MAX_CHARS = 4096;
 export const DEVICE_CUSTOM_FIELDS_MAX_COUNT = 50;
 export const DEVICE_CUSTOM_FIELD_KEY_MAX_CHARS = 128;
@@ -27,6 +30,8 @@ export type DeviceCustomFieldDraft = {
 };
 
 export type DeviceUpsertForm = {
+  description: string;
+  tags: string[];
   name: string;
   aorIds: number[];
   unitId: number | null;
@@ -41,6 +46,8 @@ export type DeviceCustomFieldDraftError = {
 };
 
 export type DeviceUpsertValidationErrors = {
+  description?: string;
+  tags?: string;
   name?: string;
   externalUrl?: string;
   customFields?: string;
@@ -48,6 +55,8 @@ export type DeviceUpsertValidationErrors = {
 };
 
 export type DeviceServerFieldErrors = Partial<{
+  description: string;
+  tags: string;
   name: string;
   aorIds: string;
   unitId: string;
@@ -67,6 +76,8 @@ export function createDeviceCustomFieldDraft(
 
 export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
   return {
+    description: '',
+    tags: [],
     name: '',
     aorIds: [],
     unitId: null,
@@ -77,6 +88,8 @@ export function createDefaultDeviceUpsertForm(): DeviceUpsertForm {
 
 export function deviceDetailsToUpsertForm(device: DeviceDetails): DeviceUpsertForm {
   return {
+    description: device.description ?? '',
+    tags: device.tags ?? [],
     name: device.name ?? '',
     aorIds: device.aors.map((aor) => aor.id),
     unitId: device.unit?.id ?? null,
@@ -162,6 +175,7 @@ export function validateDeviceUpsertForm(
   if (form === null) return errors;
 
   if (permissions.sourceData) {
+    errors.description = validateMaxChars(form.description.trim(), DEVICE_DESCRIPTION_MAX_CHARS);
     const externalUrlError = validateExternalUrl(form.externalUrl);
     if (externalUrlError) errors.externalUrl = externalUrlError;
 
@@ -175,7 +189,20 @@ export function validateDeviceUpsertForm(
     if (nameError) errors.name = nameError;
   }
 
+  if (permissions.analyticalData) {
+    if (form.tags.length > DEVICE_TAGS_MAX_COUNT) errors.tags = 'Забагато тегів.';
+    else if (
+      form.tags.some(
+        (tag) => tag.trim() === '' || Array.from(tag.trim()).length > DEVICE_TAG_MAX_CHARS,
+      )
+    ) {
+      errors.tags = 'Тег має містити від 1 до 64 символів.';
+    }
+  }
+
   const isEmpty =
+    errors.description === undefined &&
+    errors.tags === undefined &&
     errors.name === undefined &&
     errors.externalUrl === undefined &&
     errors.customFields === undefined &&
@@ -227,6 +254,8 @@ export function buildUpdateDevicePatch(
 
   if (permissions.sourceData) {
     const externalUrlValue = form.externalUrl.trim();
+    const description = form.description.trim() || null;
+    if (description !== (device.description ?? null)) req.description = description;
     const externalUrl = externalUrlValue === '' ? null : externalUrlValue;
     const customFields = normalizeDeviceCustomFields(form.customFields);
     const customFieldsPatch = buildCustomFieldsPatch(customFields, device.customFields);
@@ -237,6 +266,7 @@ export function buildUpdateDevicePatch(
 
   if (permissions.analyticalData) {
     if (form.audioForwarding !== undefined) req.audioForwarding = form.audioForwarding;
+    if (JSON.stringify(form.tags) !== JSON.stringify(device.tags ?? [])) req.tags = form.tags;
     const name = form.name.trim();
     const deviceAorIds = device.aors.map((aor) => aor.id);
     const arraysEqual =
@@ -253,6 +283,9 @@ export function buildUpdateDevicePatch(
 
 export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): boolean {
   return (
+    patch.description !== undefined ||
+    patch.tags !== undefined ||
+    patch.rating !== undefined ||
     patch.audioForwarding !== undefined ||
     patch.name !== undefined ||
     patch.aorIds !== undefined ||
@@ -264,6 +297,10 @@ export function hasDeviceUpdatePatchChanges(patch: DeviceUpdatePatchInput): bool
 
 function fieldNameFromBackend(field: string): keyof DeviceServerFieldErrors | null {
   switch (field) {
+    case 'description':
+      return 'description';
+    case 'tags':
+      return 'tags';
     case 'name':
       return 'name';
     case 'aor_ids':

@@ -1,7 +1,9 @@
 use super::bl::custom_fields::custom_fields_from_json;
 use crate::devices::access;
+use crate::devices::config::DEVICE_LIST_MAX_LIMIT;
 use crate::devices::devices::types::{
-    DeviceAorReference, DeviceArchivedScope, DeviceCurrentState,
+    AorSummary, DeviceAorReference, DeviceArchivedScope,
+    DeviceCreatorFilterOption, DeviceCurrentState, DeviceFilterOptions,
     DeviceListSort, DeviceUnitReference,
     DomainDeviceStatusCounts as DeviceStatusCounts,
     DomainDeviceUnitStat as DeviceUnitStat, ListDevicesResult,
@@ -14,8 +16,8 @@ use crate::h;
 use crate::types::{NaiveDateTime, ShortContext};
 use sea_orm::sea_query::{
     extension::postgres::PgExpr, Alias, CommonTableExpression, Expr, Func,
-    JoinType, LikeExpr, Order, Query, SelectStatement, SimpleExpr, UnionType,
-    WithClause,
+    JoinType, LikeExpr, NullOrdering, Order, Query, SelectStatement,
+    SimpleExpr, UnionType, WithClause,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
@@ -235,6 +237,8 @@ pub(super) struct ListDevicesQuery {
     pub(super) archived_scope: DeviceArchivedScope,
     pub(super) aor_ids: Vec<i64>,
     pub(super) unit_ids: Vec<i64>,
+    pub(super) created_by: Vec<String>,
+    pub(super) tags: Vec<String>,
     pub(super) limit: u64,
     pub(super) offset: u64,
     pub(super) sort_by: Vec<DeviceListSort>,
@@ -256,8 +260,150 @@ pub(super) async fn read(
         .c(h!())?)
 }
 
+pub(super) async fn tag_options(
+    main_db: &DatabaseConnection,
+    login: &login::Model,
+) -> Result<Vec<String>, AppError> {
+    access::require_analytical_write(&login.roles).c(h!())?;
+    let query = visible_devices_query(login, DeviceReadScope::IncludeArchived)
+        .c(h!())?;
+    Ok(read_tag_options(main_db, query).await.c(h!())?)
+}
+
+pub(super) async fn filter_options(
+    main_db: &DatabaseConnection,
+    login: &login::Model,
+) -> Result<DeviceFilterOptions, AppError> {
+    let query = visible_devices_query(login, DeviceReadScope::IncludeArchived)
+        .c(h!())?;
+    let creator_display_name = Expr::cust("(select nullif(author.display_name, '') from login author where author.login = device.created_by and not author.deleted_permanently)");
+    let creators = query
+        .clone()
+        .select_only()
+        .column(device::Column::CreatedBy)
+        .column_as(creator_display_name, "display_name")
+        .distinct()
+        .order_by_asc(device::Column::CreatedBy)
+        .into_tuple::<(String, Option<String>)>()
+        .all(main_db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|(login, display_name)| DeviceCreatorFilterOption {
+            login,
+            display_name,
+        })
+        .collect();
+    let device_ids = query
+        .clone()
+        .select_only()
+        .column(device::Column::Id)
+        .into_query();
+    let aor_ids = device_aor::Entity::find()
+        .select_only()
+        .column(device_aor::Column::AorId)
+        .filter(device_aor::Column::DeviceId.in_subquery(device_ids))
+        .into_query();
+    let aors = area_of_responsibility::Entity::find()
+        .select_only()
+        .columns([
+            area_of_responsibility::Column::Id,
+            area_of_responsibility::Column::Name,
+        ])
+        .filter(area_of_responsibility::Column::Id.in_subquery(aor_ids))
+        .order_by_asc(area_of_responsibility::Column::Name)
+        .into_tuple::<(i64, String)>()
+        .all(main_db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|(id, name)| AorSummary { id, name })
+        .collect();
+    let tags = read_tag_options(main_db, query).await.c(h!())?;
+    Ok(DeviceFilterOptions {
+        aors,
+        creators,
+        tags,
+    })
+}
+
+async fn read_tag_options(
+    main_db: &DatabaseConnection,
+    query: Select<device::Entity>,
+) -> anyhow::Result<Vec<String>> {
+    let rows = query
+        .select_only()
+        .column(device::Column::Tags)
+        .into_tuple::<serde_json::Value>()
+        .all(main_db)
+        .await
+        .c(h!())?;
+    let mut tags = BTreeMap::new();
+    for row in rows {
+        for tag in serde_json::from_value::<Vec<String>>(row).c(h!())? {
+            tags.entry(tag.to_lowercase()).or_insert(tag);
+        }
+    }
+    Ok(tags.into_values().collect())
+}
+
+pub(super) async fn set_archived(
+    main_db: &DatabaseConnection,
+    login: &login::Model,
+    device_id: Uuid,
+    archived: bool,
+) -> Result<DeviceCurrentState, AppError> {
+    use sea_orm::TransactionTrait;
+    access::require_analytical_write(&login.roles).c(h!())?;
+    let transaction = main_db.begin().await.c(h!())?;
+    let device = visible_devices_query(login, DeviceReadScope::IncludeArchived)
+        .c(h!())?
+        .filter(device::Column::Id.eq(device_id))
+        .lock_exclusive()
+        .one(&transaction)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    let device = if device.archived == archived {
+        device
+    } else {
+        let now = chrono::Utc::now().naive_utc();
+        device::ActiveModel {
+            id: Set(device.id),
+            archived: Set(archived),
+            archived_at: Set(archived.then_some(now)),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .update(&transaction)
+        .await
+        .c(h!())?
+    };
+    let device = hydrate_devices(&transaction, vec![device])
+        .await
+        .c(h!())?
+        .pop()
+        .ok_or_else(|| anyhow::anyhow!("device hydrator lost device"))
+        .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(device)
+}
+
+#[cfg(test)]
 pub(super) async fn list(
     main_db: &DatabaseConnection,
+    login: &login::Model,
+    command: ListDevicesQuery,
+) -> Result<ListDevicesResult, AppError> {
+    Ok(list_with_stats(main_db, None, login, command)
+        .await
+        .c(h!())?)
+}
+
+pub(super) async fn list_with_stats(
+    main_db: &DatabaseConnection,
+    file_db: Option<&DatabaseConnection>,
     login: &login::Model,
     command: ListDevicesQuery,
 ) -> Result<ListDevicesResult, AppError> {
@@ -268,14 +414,39 @@ pub(super) async fn list(
     );
     let status_counts =
         load_status_counts(main_db, query.clone()).await.c(h!())?;
+    let activity_split_files_audio =
+        crate::devices::settings::activity_split_files_audio(main_db)
+            .await
+            .c(h!())?;
     let query = apply_archived_scope(query, command.archived_scope);
     let total = query.clone().count(main_db).await.c(h!())?;
-    let devices = apply_list_sort(query, &command.sort_by)
-        .offset(command.offset)
-        .limit(command.limit)
-        .all(main_db)
-        .await
-        .c(h!())?;
+    let devices =
+        if let (true, Some(file_db), [DeviceListSort::LastContentAtDesc]) = (
+            total > DEVICE_LIST_MAX_LIMIT,
+            file_db,
+            command.sort_by.as_slice(),
+        ) {
+            super::activity_order::read(
+                main_db,
+                file_db,
+                query,
+                command.offset,
+                command.limit,
+                activity_split_files_audio,
+            )
+            .await
+            .c(h!())?
+        } else {
+            read_sorted_page(
+                main_db,
+                file_db,
+                query,
+                &command,
+                activity_split_files_audio,
+            )
+            .await
+            .c(h!())?
+        };
     let has_more = command.offset.saturating_add(devices.len() as u64) < total;
     let devices = hydrate_devices(main_db, devices).await.c(h!())?;
 
@@ -284,7 +455,57 @@ pub(super) async fn list(
         total,
         has_more,
         status_counts,
+        activity_split_files_audio,
     })
+}
+
+async fn read_sorted_page(
+    main_db: &DatabaseConnection,
+    file_db: Option<&DatabaseConnection>,
+    query: Select<device::Entity>,
+    command: &ListDevicesQuery,
+    activity_split_files_audio: bool,
+) -> anyhow::Result<Vec<device::Model>> {
+    let sort_values = if command.sort_by.iter().any(|sort| {
+        matches!(
+            sort,
+            DeviceListSort::ContentBytesAsc
+                | DeviceListSort::ContentBytesDesc
+                | DeviceListSort::LastContentAtAsc
+                | DeviceListSort::LastContentAtDesc
+        )
+    }) {
+        match file_db {
+            Some(file_db) => {
+                let ids = query
+                    .clone()
+                    .select_only()
+                    .column(device::Column::Id)
+                    .into_tuple::<Uuid>()
+                    .all(main_db)
+                    .await
+                    .c(h!())?;
+                Some(
+                    crate::devices::files::stats::read_sort_values(
+                        file_db,
+                        &ids,
+                        activity_split_files_audio,
+                    )
+                    .await
+                    .c(h!())?,
+                )
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
+    apply_list_sort(query, &command.sort_by, sort_values.as_ref())
+        .offset(command.offset)
+        .limit(command.limit)
+        .all(main_db)
+        .await
+        .c(h!())
 }
 
 pub(super) async fn unit_stats(
@@ -438,6 +659,9 @@ fn hydrate_device(
 
     Ok(DeviceCurrentState {
         id: device_id,
+        rating: device.rating.unwrap_or(0),
+        tags: serde_json::from_value(device.tags).c(h!())?,
+        description: device.description,
         name: device.name,
         aors: aors_by_device.remove(&device_id).unwrap_or_default(),
         unit,
@@ -485,6 +709,17 @@ fn apply_list_filters(
         query = query
             .filter(device::Column::UnitId.is_in(command.unit_ids.clone()));
     }
+    if !command.created_by.is_empty() {
+        query = query.filter(
+            device::Column::CreatedBy.is_in(command.created_by.clone()),
+        );
+    }
+    if !command.tags.is_empty() {
+        query = query.filter(Expr::cust_with_values(
+            "exists (select 1 from jsonb_array_elements_text(device.tags) tag(value) where lower(tag.value) = any($1::text[]))",
+            [sea_orm::Value::from(command.tags.clone())],
+        ));
+    }
     if let Some(filter_text) = &command.filter_text {
         let pattern = literal_substring_pattern(filter_text);
         query = query.filter(
@@ -521,30 +756,62 @@ fn apply_archived_scope(
 fn apply_list_sort(
     mut query: Select<device::Entity>,
     sort_by: &[DeviceListSort],
+    sort_values: Option<&(serde_json::Value, serde_json::Value)>,
 ) -> Select<device::Entity> {
     for sort in sort_by {
-        query = match sort {
-            DeviceListSort::DisplayTitleAsc => {
-                query.order_by(display_title_sort_expr(), Order::Asc)
-            }
-            DeviceListSort::DisplayTitleDesc => {
-                query.order_by(display_title_sort_expr(), Order::Desc)
-            }
-            DeviceListSort::CreatedAtAsc => {
-                query.order_by_asc(device::Column::CreatedAt)
-            }
-            DeviceListSort::CreatedAtDesc => {
-                query.order_by_desc(device::Column::CreatedAt)
-            }
-            DeviceListSort::UpdatedAtAsc => {
-                query.order_by_asc(device::Column::UpdatedAt)
-            }
-            DeviceListSort::UpdatedAtDesc => {
-                query.order_by_desc(device::Column::UpdatedAt)
-            }
+        let expression = list_sort_expression(*sort, sort_values);
+        let order = list_sort_order(*sort);
+        query = if matches!(
+            sort,
+            DeviceListSort::AorsAsc
+                | DeviceListSort::AorsDesc
+                | DeviceListSort::UnitAsc
+                | DeviceListSort::UnitDesc
+                | DeviceListSort::LastContentAtAsc
+                | DeviceListSort::LastContentAtDesc
+        ) {
+            query.order_by_with_nulls(expression, order, NullOrdering::Last)
+        } else {
+            query.order_by(expression, order)
         };
     }
     query.order_by_asc(device::Column::Id)
+}
+
+fn list_sort_order(sort: DeviceListSort) -> Order {
+    match sort {
+        DeviceListSort::DisplayTitleDesc
+        | DeviceListSort::CreatedAtDesc
+        | DeviceListSort::UpdatedAtDesc
+        | DeviceListSort::AorsDesc
+        | DeviceListSort::UnitDesc
+        | DeviceListSort::CreatedByDesc
+        | DeviceListSort::RatingDesc
+        | DeviceListSort::ContentBytesDesc
+        | DeviceListSort::LastContentAtDesc => Order::Desc,
+        _ => Order::Asc,
+    }
+}
+
+fn list_sort_expression(
+    sort: DeviceListSort,
+    sort_values: Option<&(serde_json::Value, serde_json::Value)>,
+) -> SimpleExpr {
+    match sort {
+        DeviceListSort::DisplayTitleAsc | DeviceListSort::DisplayTitleDesc => display_title_sort_expr(),
+        DeviceListSort::CreatedAtAsc | DeviceListSort::CreatedAtDesc => Expr::col((device::Entity, device::Column::CreatedAt)),
+        DeviceListSort::UpdatedAtAsc | DeviceListSort::UpdatedAtDesc => Expr::col((device::Entity, device::Column::UpdatedAt)),
+        DeviceListSort::AorsAsc | DeviceListSort::AorsDesc => Expr::cust("(select string_agg(lower(a.name), ', ' order by a.id) from device_aor da join area_of_responsibility a on a.id = da.aor_id where da.device_id = device.id)"),
+        DeviceListSort::UnitAsc | DeviceListSort::UnitDesc => Expr::cust("(select lower(u.name) from sigint_unit u where u.id = device.unit_id)"),
+        DeviceListSort::CreatedByAsc | DeviceListSort::CreatedByDesc => Expr::cust("lower(coalesce((select nullif(author.display_name, '') from login author where author.login = device.created_by and not author.deleted_permanently), device.created_by))"),
+        DeviceListSort::RatingAsc | DeviceListSort::RatingDesc => Expr::cust("coalesce(device.rating, 0)"),
+        DeviceListSort::ContentBytesAsc | DeviceListSort::ContentBytesDesc => Expr::cust_with_values(
+            "coalesce((($1::jsonb) ->> device.id::text)::bigint, 0)",
+            [sort_values.map(|values| values.0.clone()).unwrap_or_else(|| serde_json::json!({}))]),
+        DeviceListSort::LastContentAtAsc | DeviceListSort::LastContentAtDesc => Expr::cust_with_values(
+            "(($1::jsonb) ->> device.id::text)::timestamptz",
+            [sort_values.map(|values| values.1.clone()).unwrap_or_else(|| serde_json::json!({}))]),
+    }
 }
 
 fn display_title_sort_expr() -> SimpleExpr {
@@ -594,6 +861,9 @@ fn literal_substring_pattern(value: &str) -> String {
 }
 
 pub(super) struct DeviceChanges {
+    pub(super) rating: Option<i32>,
+    pub(super) tags: Option<serde_json::Value>,
+    pub(super) description: Option<Option<String>>,
     pub(super) external_url: Option<Option<String>>,
     pub(super) custom_fields: Option<serde_json::Value>,
     pub(super) name: Option<String>,
@@ -604,6 +874,9 @@ pub(super) struct DeviceChanges {
 impl DeviceChanges {
     pub(super) fn is_empty(&self) -> bool {
         self.external_url.is_none()
+            && self.rating.is_none()
+            && self.tags.is_none()
+            && self.description.is_none()
             && self.custom_fields.is_none()
             && self.name.is_none()
             && self.aor_ids.is_none()
@@ -711,6 +984,9 @@ pub(super) async fn apply_device_changes(
     now: NaiveDateTime,
 ) -> Result<device::Model, AppError> {
     let DeviceChanges {
+        rating,
+        tags,
+        description,
         external_url,
         custom_fields,
         name,
@@ -721,6 +997,15 @@ pub(super) async fn apply_device_changes(
         id: Set(device_id),
         ..Default::default()
     };
+    if let Some(rating) = rating {
+        device.rating = Set(Some(rating));
+    }
+    if let Some(tags) = tags {
+        device.tags = Set(tags);
+    }
+    if let Some(description) = description {
+        device.description = Set(description);
+    }
     if let Some(external_url) = external_url {
         device.external_url = Set(external_url);
     }

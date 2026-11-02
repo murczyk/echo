@@ -26,6 +26,9 @@ pub struct Model {
     #[sea_orm(column_type = "JsonBinary")]
     pub custom_fields: Json,
     pub organism_id: i64,
+    pub rating: Option<i32>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub description: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

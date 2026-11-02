@@ -712,3 +712,4 @@ pub(crate) async fn shared_bytes(
     .await
     .c(h!())
 }
+pub(in crate::devices) mod activity;

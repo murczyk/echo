@@ -18,7 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { isPresent } from '../../../utils/misc';
 
 import {
@@ -44,6 +44,7 @@ type Props = {
   isInvestigating?: boolean;
   selectedUnitFilter?: SelectedSidebarUnitFilter;
   countLabel?: string;
+  additionalFilters?: ReactNode;
 };
 
 const HIERARCHY_LABELS = [
@@ -325,6 +326,7 @@ export function UnitStatsSidebar({
   isInvestigating = false,
   selectedUnitFilter,
   countLabel = 'Позивних',
+  additionalFilters,
 }: Props) {
   const [searchInput, setSearchInput] = useState('');
   const debouncedSearchInput = useDebouncedValue(searchInput, SIDEBAR_FILTER_DEBOUNCE_MS);
@@ -369,12 +371,14 @@ export function UnitStatsSidebar({
           borderRadius: 0,
         }}
       >
-        <Typography variant="h6">Підрозділи</Typography>
+        <Typography variant="h6">{additionalFilters ? 'Фільтри' : 'Підрозділи'}</Typography>
         {onToggleOpen ? (
           <IconButton
             onClick={onToggleOpen}
-            aria-label="Показати панель підрозділів"
-            title="Показати панель підрозділів"
+            aria-label={
+              additionalFilters ? 'Показати панель фільтрів' : 'Показати панель підрозділів'
+            }
+            title={additionalFilters ? 'Показати панель фільтрів' : 'Показати панель підрозділів'}
             sx={{ color: 'text.primary' }}
           >
             <KeyboardArrowDownIcon />
@@ -403,8 +407,8 @@ export function UnitStatsSidebar({
         width: isDesktopLayout ? 320 : '100%',
         minWidth: isDesktopLayout ? 280 : 0,
         height: isDesktopLayout ? '100%' : 'auto',
-        maxHeight: isDesktopLayout ? '100%' : '36vh',
-        overflow: 'hidden',
+        maxHeight: isDesktopLayout ? '100%' : additionalFilters ? '70vh' : '36vh',
+        overflow: additionalFilters ? 'auto' : 'hidden',
         display: 'flex',
         flexDirection: 'column',
         borderRadius: 0,
@@ -413,9 +417,17 @@ export function UnitStatsSidebar({
       }}
       aria-busy={loading}
     >
-      <Stack spacing={1.5} sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Stack
+        spacing={1.5}
+        sx={{
+          p: 2,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          flexShrink: additionalFilters ? 0 : undefined,
+        }}
+      >
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-          <Typography variant="h6">Підрозділи</Typography>
+          <Typography variant="h6">{additionalFilters ? 'Фільтри' : 'Підрозділи'}</Typography>
           <Stack
             direction="row"
             spacing={1}
@@ -438,8 +450,10 @@ export function UnitStatsSidebar({
             {onToggleOpen ? (
               <IconButton
                 onClick={onToggleOpen}
-                aria-label="Сховати панель підрозділів"
-                title="Сховати панель підрозділів"
+                aria-label={
+                  additionalFilters ? 'Сховати панель фільтрів' : 'Сховати панель підрозділів'
+                }
+                title={additionalFilters ? 'Сховати панель фільтрів' : 'Сховати панель підрозділів'}
                 sx={{
                   display: isDesktopLayout ? 'none' : 'inline-flex',
                   color: 'text.primary',
@@ -450,6 +464,8 @@ export function UnitStatsSidebar({
             ) : null}
           </Stack>
         </Stack>
+        {additionalFilters}
+        {additionalFilters ? <Typography variant="subtitle2">Підрозділи</Typography> : null}
         {selectedUnitFilter ? (
           <Stack spacing={0.75}>
             <Typography variant="caption" color="text.secondary">
@@ -546,7 +562,7 @@ export function UnitStatsSidebar({
           <CircularProgress size={24} color="primary" aria-label="Завантаження статистики" />
         </Stack>
       ) : (
-        <Stack sx={{ position: 'relative', flex: 1, minHeight: 0 }}>
+        <Stack sx={{ position: 'relative', flex: 1, minHeight: additionalFilters ? 160 : 0 }}>
           <SectionLoadingOverlay
             open={loading && stats.length > 0}
             ariaLabel="Оновлення статистики"
