@@ -9422,6 +9422,13 @@ where
             }
             Ok(Err(err)) => {
                 reason = analytics_failure_reason(&err, analytics_conn);
+                if reason == "source_saturated" {
+                    if let Some(retry_attempt) = retry_attempt {
+                        retry_attempt.record_success();
+                    }
+                    warn!(target: "analytics_route", "request_id={request_id} operation=\"analysis stats count\" route=analytics outcome=rejected reason=source_saturated elapsed_ms={}", started.elapsed().as_millis());
+                    return Err(err);
+                }
                 let open_circuit = reason == "analytics_error";
                 warn!(
                     "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
@@ -9637,6 +9644,11 @@ where
             }
             Some(Err(err)) => {
                 reason = analytics_failure_reason(&err, Some(&analytics.conn));
+                if reason == "source_saturated" {
+                    retry_attempt.record_success();
+                    warn!(target: "analytics_route", "request_id={request_id} operation={operation:?} route=analytics outcome=rejected reason=source_saturated elapsed_ms={}", started.elapsed().as_millis());
+                    return Err(err);
+                }
                 let open_circuit = reason == "analytics_error";
                 warn!(
                     "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
@@ -9818,10 +9830,17 @@ fn has_postgres_error_code(
     false
 }
 
+/// Classifies a failed analytics attempt. `source_saturated` means a local
+/// limit rejected a PostgreSQL read inside the attempt (SQL slots, pool wait,
+/// count queue, fallback capacity or a source statement timeout); analytics
+/// itself did not fail, and a PostgreSQL retry would queue on the same limits.
 fn analytics_failure_reason(
     error: &AppError,
     analytics_conn: Option<&DatabaseConnection>,
 ) -> &'static str {
+    if matches!(error, AppError::ServiceUnavailable { .. }) {
+        return "source_saturated";
+    }
     let mut acquire_timed_out = false;
     let mut source = Some(error as &(dyn StdError + 'static));
     while let Some(error) = source {

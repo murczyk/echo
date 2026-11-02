@@ -232,6 +232,84 @@ async fn source_read_admission_keeps_capacity_for_another_login_3780() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn fresh_tail_reads_skip_source_admission_3978() {
+    let env = crate::functest::tests::cleanup().await.unwrap();
+    let db = test_pool(&env, 4).await;
+    let lock = uuid::Uuid::new_v4().as_u128() as i64;
+    let blocker = env.dbx.begin().await.unwrap();
+    blocker
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT pg_advisory_xact_lock($1)",
+            [lock.into()],
+        ))
+        .await
+        .unwrap();
+    let login = uuid::Uuid::new_v4();
+    let marker = format!("3978_tail_{}", uuid::Uuid::new_v4().simple());
+    let mut readers = Vec::new();
+    for _ in 0..ANALYSIS_SOURCE_READ_MAX_PER_LOGIN {
+        let reader = db.clone();
+        let statement = Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            format!("SELECT pg_advisory_xact_lock_shared($1) /* {marker} */"),
+            [lock.into()],
+        );
+        readers.push(tokio::spawn(async move {
+            scope(
+                uuid::Uuid::new_v4().to_string(),
+                vec![pool_identity(&reader)],
+                async {
+                    set_login(login);
+                    connection(&reader).query_one_raw(statement).await.unwrap();
+                },
+            )
+            .await;
+        }));
+    }
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let row = env.dbx.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
+                "SELECT count(*) AS count FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND state='active' AND query LIKE $1", [format!("%{marker}%").into()]))
+                .await.unwrap().unwrap();
+            if row.try_get::<i64>("", "count").unwrap() as usize == ANALYSIS_SOURCE_READ_MAX_PER_LOGIN { break; }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.unwrap();
+    let select =
+        || Statement::from_string(DbBackend::Postgres, "SELECT 42 AS value");
+    let (admitted, tail) = scope(
+        uuid::Uuid::new_v4().to_string(),
+        vec![pool_identity(&db)],
+        async {
+            set_login(login);
+            let admitted = tokio::time::timeout(
+                Duration::from_millis(500),
+                connection(&db).query_one_raw(select()),
+            )
+            .await;
+            let tail = tokio::time::timeout(
+                Duration::from_secs(3),
+                fresh_tail_connection(&db).query_one_raw(select()),
+            )
+            .await;
+            (admitted.is_err(), tail)
+        },
+    )
+    .await;
+    assert!(admitted, "an ordinary read must wait for the login's slots");
+    let row = tail.unwrap().unwrap().unwrap();
+    assert_eq!(row.try_get::<i32>("", "value").unwrap(), 42);
+    assert!(readers.iter().all(|reader| !reader.is_finished()));
+    blocker.rollback().await.unwrap();
+    for reader in readers {
+        reader.await.unwrap();
+    }
+    db.close().await.unwrap();
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn search_statement_budget_does_not_leak_to_ordinary_reads_3780() {
     let env = crate::functest::tests::cleanup().await.unwrap();
     let mut config = env.config.clone();

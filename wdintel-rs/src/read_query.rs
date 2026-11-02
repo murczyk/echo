@@ -189,11 +189,22 @@ pub(crate) async fn scope<T>(
 }
 
 pub(crate) fn connection(db: &DatabaseConnection) -> ReadConnection<'_> {
-    ReadConnection { db }
+    ReadConnection { db, slots: true }
+}
+
+/// Source reads bounded to the analytics fresh tail: the few minutes that
+/// analytics may not have replicated yet. They skip the shared SQL slots, so
+/// heavy PostgreSQL-only searches cannot reject them, but keep the pool wait
+/// bound, statement timeout and cancellation of every source read.
+pub(crate) fn fresh_tail_connection(
+    db: &DatabaseConnection,
+) -> ReadConnection<'_> {
+    ReadConnection { db, slots: false }
 }
 
 pub(crate) struct ReadConnection<'a> {
     db: &'a DatabaseConnection,
+    slots: bool,
 }
 
 fn login_reads(
@@ -408,7 +419,7 @@ pub(crate) struct ReadTransaction {
 pub(crate) async fn begin(
     db: &DatabaseConnection,
 ) -> anyhow::Result<ReadTransaction> {
-    let mut lease = read_lease(db, connection(db).is_source_read())
+    let mut lease = read_lease(db, connection(db).is_source_read(), true)
         .await
         .c(h!())?;
     sqlx::query(sqlx::AssertSqlSafe(
@@ -426,10 +437,14 @@ pub(crate) async fn begin(
 async fn read_lease(
     db: &DatabaseConnection,
     active: bool,
+    slots: bool,
 ) -> anyhow::Result<ReadLease> {
-    let permits = if active {
+    let permits = if active && slots {
         Some(acquire_reads().await.c(h!())?)
     } else {
+        if active {
+            log::info!(target: "analytics_route", "request_id={} stage=source_admission outcome=skipped reason=fresh_tail", request_id());
+        }
         None
     };
     let pool = db.get_postgres_connection_pool();
@@ -638,7 +653,7 @@ impl ReadConnection<'_> {
         statement: Statement,
         one: bool,
     ) -> anyhow::Result<Vec<QueryResult>> {
-        let mut lease = read_lease(self.db, true).await.c(h!())?;
+        let mut lease = read_lease(self.db, true, self.slots).await.c(h!())?;
         let result = read_rows(
             &mut **lease.connection.as_mut().c(h!())?,
             statement,

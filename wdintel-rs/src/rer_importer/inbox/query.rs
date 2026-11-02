@@ -392,6 +392,20 @@ fn build_inbox_query_base(
     query
 }
 
+/// A fresh-tail digest starts from messages so its `created_at` lower bound
+/// uses the creation-time index; the inbox-first indexed shape would visit
+/// every inbox item in the requested period before applying that bound.
+fn inbox_digest_purpose(
+    req: &InboxMessagesReq,
+    created_at_lower_bound: Option<NaiveDateTime>,
+) -> InboxQueryPurpose {
+    if created_at_lower_bound.is_none() && inbox_count_uses_indexed_query(req) {
+        InboxQueryPurpose::IndexedDigest
+    } else {
+        InboxQueryPurpose::Digest
+    }
+}
+
 fn inbox_count_uses_indexed_query(req: &InboxMessagesReq) -> bool {
     if req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime)
         != InboxMessagesSortBy::IMSDatetime
@@ -919,11 +933,7 @@ async fn build_unit_filtered_inbox_digest_query(
     created_at_upper_bound: Option<NaiveDateTime>,
     unit_lookup_strategy: InboxUnitLookupStrategy,
 ) -> Result<String, AppError> {
-    let purpose = if inbox_count_uses_indexed_query(req) {
-        InboxQueryPurpose::IndexedDigest
-    } else {
-        InboxQueryPurpose::Digest
-    };
+    let purpose = inbox_digest_purpose(req, created_at_lower_bound);
     if inbox_period_unit_filters_supported(req) {
         if let Some((dt_since, dt_till)) = inbox_unit_filter_period(req)? {
             let mut candidate_req = req.clone();
@@ -1054,11 +1064,7 @@ async fn build_inbox_digest_query_with_created_at_bounds(
         .await
         .context(h!())?);
     }
-    let purpose = if inbox_count_uses_indexed_query(req) {
-        InboxQueryPurpose::IndexedDigest
-    } else {
-        InboxQueryPurpose::Digest
-    };
+    let purpose = inbox_digest_purpose(req, created_at_lower_bound);
     let mut candidate_req = req.clone();
     if created_at_lower_bound.is_some() {
         candidate_req.search = None;
@@ -1124,6 +1130,18 @@ pub(crate) async fn build_correlated_inbox_digest_query(
     )
     .await
     .context(h!())?)
+}
+
+/// Whether the fresh-tail digest reads only rows inside the tail, so it can
+/// skip the shared SQL slots. The digest starts from the `created_at` index
+/// (`inbox_digest_purpose`), but period unit filters materialize unit matches
+/// over the whole requested period, so that query keeps the slots.
+pub(crate) fn fresh_tail_inbox_digest_is_bounded(
+    req: &InboxMessagesReq,
+) -> bool {
+    !inbox_count_has_unit_filter(req)
+        || !inbox_period_unit_filters_supported(req)
+        || matches!(inbox_unit_filter_period(req), Ok(None))
 }
 
 pub(crate) async fn build_postgres_fresh_tail_inbox_digest_query(
