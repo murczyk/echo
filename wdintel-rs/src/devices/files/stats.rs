@@ -640,6 +640,103 @@ left join device_content_stat s on s.device_id = d.device_id
 left join device_tree_stat t on t.device_id = d.device_id
 "#;
 
+pub(in crate::devices) async fn read_sort_values(
+    db: &DatabaseConnection,
+    device_ids: &[Uuid],
+    include_audio: bool,
+) -> Result<(serde_json::Value, serde_json::Value)> {
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"select d.device_id, coalesce(s.content_bytes, 0) as content_bytes,
+                   case when $2::boolean then greatest(s.last_content_at, s.last_audio_at)
+                   else s.last_content_at end as last_content_at
+               from unnest($1::uuid[]) d(device_id)
+               left join device_content_stat s on s.device_id = d.device_id"#,
+            [device_ids.to_vec().into(), include_audio.into()],
+        ))
+        .await
+        .context(h!())?;
+    let mut sizes = serde_json::Map::new();
+    let mut activity = serde_json::Map::new();
+    for row in rows {
+        let id = row
+            .try_get::<Uuid>("", "device_id")
+            .context(h!())?
+            .to_string();
+        sizes.insert(
+            id.clone(),
+            serde_json::json!(row
+                .try_get::<i64>("", "content_bytes")
+                .context(h!())?),
+        );
+        activity.insert(
+            id,
+            serde_json::json!(
+                get_datetime(&row, "last_content_at").context(h!())?
+            ),
+        );
+    }
+    Ok((sizes.into(), activity.into()))
+}
+
+pub(in crate::devices) async fn read_activity_page(
+    db: &DatabaseConnection,
+    cursor: Option<(Uuid, DateTime<FixedOffset>)>,
+    limit: u64,
+    include_audio: bool,
+) -> Result<Vec<(Uuid, DateTime<FixedOffset>)>> {
+    let activity = if include_audio {
+        "greatest(last_content_at, last_audio_at)"
+    } else {
+        "last_content_at"
+    };
+    let projection = format!("device_id, {activity} as activity");
+    let order = format!("{activity} desc, device_id");
+    let (sql, values) = if let Some((id, at)) = cursor {
+        (
+            format!(
+                r#"
+select device_id, activity from (
+    (select {projection} from device_content_stat
+     where {activity} = $1 and device_id > $2
+     order by {order} limit $3)
+    union all
+    (select {projection} from device_content_stat
+     where {activity} < $1
+     order by {order} limit $3)
+) batch order by activity desc, device_id limit $3
+"#
+            ),
+            vec![
+                at.into(),
+                id.into(),
+                i64::try_from(limit).context(h!())?.into(),
+            ],
+        )
+    } else {
+        (
+            format!("select {projection} from device_content_stat where {activity} is not null order by {order} limit $1"),
+            vec![i64::try_from(limit).context(h!())?.into()],
+        )
+    };
+    db.query_all_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .await
+    .context(h!())?
+    .into_iter()
+    .map(|row| {
+        Ok((
+            row.try_get("", "device_id").context(h!())?,
+            row.try_get("", "activity").context(h!())?,
+        ))
+    })
+    .collect()
+}
+
 const READ_EXTENSIONS_SQL: &str = r#"
 select device_id, extension, content_count, content_bytes, last_content_at
 from device_content_stat_extension

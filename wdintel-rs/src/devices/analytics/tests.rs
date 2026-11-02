@@ -415,6 +415,8 @@ async fn insert_analytics_test_device(env: &Env) -> Uuid {
         created_by: Set(owner.login),
         unit_id: Set(None),
         tags: Set(json!([])),
+        rating: Set(None),
+        description: Set(None),
         external_url: Set(None),
         archived: Set(false),
         archived_at: Set(None),

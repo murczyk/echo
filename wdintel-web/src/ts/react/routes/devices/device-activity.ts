@@ -1,5 +1,18 @@
-import type { DeviceDayStat, DeviceStats } from '../../../../Bindings';
-import { FILE_TYPE_CATEGORY_NAMES, fileTypeCategoryForExtension } from './file-type-categories';
+import type { DeviceAudioDayStat, DeviceDayStat, DeviceStats } from '../../../../Bindings';
+import {
+  FILE_TYPE_CATEGORIES,
+  FILE_TYPE_CATEGORY_NAMES,
+  fileTypeCategoryForExtension,
+} from './file-type-categories';
+
+const DEVICE_UPLOAD_ACTIVITY_COLORS: Record<string, string> = {
+  Файли: '#3b82f6',
+  Аудіо: '#ec4899',
+};
+
+export function deviceActivityCategoryColor(category: string): string | undefined {
+  return DEVICE_UPLOAD_ACTIVITY_COLORS[category] ?? FILE_TYPE_CATEGORIES[category]?.color;
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Matches `DEVICE_STATS_LIST_ACTIVITY_DAYS`, the window the device list loads. */
@@ -54,18 +67,59 @@ export type DeviceRecentActivity =
 export function buildDeviceRecentActivity(
   stats: DeviceStats,
   today: string = currentKyivDay(),
+  audioDays?: DeviceAudioDayStat[],
 ): DeviceRecentActivity {
   const window = dayRange(addDays(today, 1 - DEVICE_LIST_ACTIVITY_DAYS), DEVICE_LIST_ACTIVITY_DAYS);
   const currentYear = Number(today.slice(0, 4));
-  if (stats.days.some(({ day }) => day >= window[0] && day <= today)) {
-    return { kind: 'recent', days: buildActivityDays(stats.days, window, currentYear) };
+  const rows = audioDays === undefined ? stats.days : [...stats.days, ...audioDays];
+  const buildDays = (window: string[]) =>
+    audioDays === undefined
+      ? buildActivityDays(stats.days, window, currentYear)
+      : buildUploadActivityDays(stats.days, audioDays, window, currentYear);
+  if (rows.some(({ day }) => day >= window[0] && day <= today)) {
+    return { kind: 'recent', days: buildDays(window) };
   }
   let lastDay: string | null = null;
-  for (const { day } of stats.days) {
+  for (const { day } of rows) {
     if (day < window[0] && (lastDay === null || day > lastDay)) lastDay = day;
   }
   if (lastDay === null) return { kind: 'none' };
-  return { kind: 'lastActive', day: buildActivityDays(stats.days, [lastDay], currentYear)[0] };
+  return { kind: 'lastActive', day: buildDays([lastDay])[0] };
+}
+
+function buildUploadActivityDays(
+  fileDays: DeviceDayStat[],
+  audioDays: DeviceAudioDayStat[],
+  window: string[],
+  currentYear: number,
+): DeviceActivityDay[] {
+  const totals = new Map(window.map((day) => [day, [] as DeviceActivityCategory[]]));
+  for (const [category, rows] of [
+    ['Файли', fileDays],
+    ['Аудіо', audioDays],
+  ] as const) {
+    const counts = new Map<string, DeviceActivityCategory>();
+    for (const row of rows) {
+      if (!totals.has(row.day)) continue;
+      const total = counts.get(row.day) ?? { category, contentCount: 0n, contentBytes: 0n };
+      total.contentCount += BigInt(row.contentCount);
+      total.contentBytes += BigInt(row.contentBytes);
+      counts.set(row.day, total);
+    }
+    for (const [day, total] of counts) {
+      if (total.contentCount > 0n) totals.get(day)!.push(total);
+    }
+  }
+  return window.map((day) => {
+    const categories = totals.get(day)!;
+    return {
+      day,
+      label: formatActivityDayLabel(day, currentYear),
+      categories,
+      contentCount: categories.reduce((sum, category) => sum + category.contentCount, 0n),
+      contentBytes: categories.reduce((sum, category) => sum + category.contentBytes, 0n),
+    };
+  });
 }
 
 function dayTime(day: string): number {

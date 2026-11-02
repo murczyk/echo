@@ -10,6 +10,8 @@ mod m20261026_101819_messenger_alert_delivery_created_at_index;
 mod m20261026_110911_large_media_previews;
 mod m20261026_190000_message_card_text_size;
 mod m20261027_153932_ai_worker_fallback_monitoring;
+mod m20261030_114640_device_rating_description;
+mod m20261030_143441_device_activity_breakdown;
 mod m20261031_155820_api_sender;
 mod m20261101_151245_ai_agent_uploads;
 pub use sea_orm_migration::prelude::*;
@@ -1212,6 +1214,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261027_153932_ai_worker_fallback_monitoring::Migration),
             Box::new(m20261029_104825_message_reply_component_locks::Migration),
             Box::new(m20261031_080043_message_card_quick_action::Migration),
+            Box::new(m20261030_114640_device_rating_description::Migration),
+            Box::new(m20261030_143441_device_activity_breakdown::Migration),
             Box::new(m20261031_104502_role_message_settings::Migration),
             Box::new(m20261031_155820_api_sender::Migration),
             Box::new(m20261101_151245_ai_agent_uploads::Migration),

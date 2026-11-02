@@ -1,8 +1,8 @@
-import AddIcon from '@mui/icons-material/Add';
-import { Box, CircularProgress, Stack, Typography, useMediaQuery } from '@mui/material';
+import { Box, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useMemo } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
@@ -13,6 +13,7 @@ import {
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
 import type { ActiveFilterDescriptor } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
+import { DeviceSidebarFilters } from './components/DeviceSidebarFilters';
 import { UnitStatsSidebar } from '../rer-callsigns-neo/components/UnitStatsSidebar';
 import { DEFAULT_DEVICES_SORTING, sanitizeDevicesColumnFilters } from './helpers';
 import { DeviceUpsertDrawer } from './components/DeviceUpsertDrawer';
@@ -24,13 +25,14 @@ import { useDeviceMobileLayout } from './use-device-mobile-layout';
 const columnOrder = buildDefaultColumnOrder({
   dataColumnIds: [
     'name',
+    'rating',
     'aors',
     'unit',
     'createdBy',
     'createdAt',
     'activity',
     'size',
-    'lifecycle',
+    'tags',
   ],
   withRowNumbers: true,
   withRowActions: true,
@@ -44,7 +46,8 @@ const defaultColumnVisibility = {
   size: true,
   createdBy: true,
   createdAt: true,
-  lifecycle: true,
+  rating: true,
+  tags: true,
 };
 
 function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
@@ -82,8 +85,37 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
       });
     }
 
+    for (const [id, label, values] of [
+      [
+        'aors',
+        'Смуги',
+        page.filters.aorIds.map(
+          (id) => page.filterOptions.aors.find((aor) => aor.id === id)?.name ?? `#${id}`,
+        ),
+      ],
+      [
+        'createdBy',
+        'Створив',
+        page.filters.createdBy.map(
+          (login) =>
+            page.filterOptions.creators
+              .find((creator) => creator.login === login)
+              ?.displayName?.trim() || login,
+        ),
+      ],
+      ['tags', 'Теги', page.filters.tags],
+    ] as const) {
+      if (values.length)
+        filters.push({
+          id,
+          label,
+          value: [...values],
+          valuePreview: values.join(', '),
+          isGlobalFilter: false,
+        });
+    }
     return filters;
-  }, [page.filters.archivedFilter, page.selectedSidebarUnitFilter]);
+  }, [page.filters, page.filterOptions, page.selectedSidebarUnitFilter]);
 
   function clearAdditionalActiveFilter(filterId: string) {
     switch (filterId) {
@@ -93,39 +125,41 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
       case 'unit':
         page.onClearUnitFilter();
         break;
+      case 'aors':
+        page.setSidebarFilters({ ...page.filters, aorIds: [] });
+        break;
+      case 'createdBy':
+        page.setSidebarFilters({ ...page.filters, createdBy: [] });
+        break;
+      case 'tags':
+        page.setSidebarFilters({ ...page.filters, tags: [] });
+        break;
     }
   }
 
   function clearAdditionalActiveFilters() {
-    page.setArchivedFilter('active');
-    page.onClearUnitFilter();
+    page.clearAdditionalFilters();
   }
+
+  const sidebarFilters = (
+    <DeviceSidebarFilters
+      filters={page.filters}
+      options={page.filterOptions}
+      loading={page.sidebarLoading}
+      onChange={page.setSidebarFilters}
+    />
+  );
 
   if (!page.permissions.canRead) {
     return <PageErrorState message="Немає доступу до пристроїв." minHeight="100%" />;
   }
 
   return (
-    <Box sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}>
-      <Stack
-        spacing={3}
-        useFlexGap
-        sx={{ minHeight: 0, height: '100%', overflow: isDesktopLayout ? 'hidden' : 'visible' }}
-      >
+    <Box sx={{ minHeight: 0, height: '100%', overflow: 'hidden' }}>
+      <Stack spacing={3} useFlexGap sx={{ minHeight: 0, height: '100%', overflow: 'hidden' }}>
         {mobile ? (
           <header className="flex shrink-0 items-center justify-between gap-echo-sm">
             <h1 className="m-0 text-[24px]! font-semibold!">Пристрої</h1>
-            {page.permissions.canCreate ? (
-              <PowerButton
-                variant="contained"
-                className="!min-h-echo-control-lg"
-                onClick={page.openCreateDialog}
-                disabled={page.creating || page.loading}
-                startIcon={<AddIcon />}
-              >
-                Створити
-              </PowerButton>
-            ) : null}
           </header>
         ) : (
           <TablePageToolbar
@@ -147,23 +181,28 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
             }
             titleLeadingGap={2}
             internalActionsHidden
-            actions={
-              page.permissions.canCreate ? (
-                <PowerButton
-                  variant="contained"
-                  onClick={page.openCreateDialog}
-                  disabled={page.creating || page.loading}
-                  startIcon={page.creating ? <CircularProgress size={16} /> : <AddIcon />}
-                >
-                  Створити пристрій
-                </PowerButton>
-              ) : null
-            }
           />
         )}
 
         {page.status ? (
-          <PowerAlert severity={page.status.kind}>{page.status.text}</PowerAlert>
+          <PowerAlert
+            severity={page.status.kind}
+            autoHideDuration={page.status.retry ? null : undefined}
+            action={
+              page.status.retry && page.rows.length > 0 ? (
+                <PowerButton
+                  size="small"
+                  onClick={() =>
+                    void (page.status?.retry === 'append' ? page.loadMore() : page.reload())
+                  }
+                >
+                  Повторити
+                </PowerButton>
+              ) : undefined
+            }
+          >
+            {page.status.text}
+          </PowerAlert>
         ) : null}
         {page.sidebarError ? (
           <PowerAlert
@@ -180,25 +219,13 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
         ) : null}
 
         <DeviceUpsertDrawer
-          open={page.createDialogOpen}
-          mode="create"
-          fieldPermissions={page.permissions.fieldPermissions}
-          form={page.createForm}
-          saving={page.creating}
-          error={page.createError}
-          serverFieldErrors={page.createServerFieldErrors}
-          referenceLoading={false}
-          aorOptions={page.aorOptions}
-          unitOptions={page.unitOptions}
-          onClose={page.closeCreateDialog}
-          onChange={page.setCreateForm}
-          onSave={(form) => void page.submitCreateDialog(form)}
-        />
-
-        <DeviceUpsertDrawer
           open={page.editDialogOpen}
           mode="edit"
           deviceId={page.editDeviceId}
+          archived={page.editArchived}
+          onArchive={() => {
+            if (page.editDeviceId) page.requestArchive(page.editDeviceId);
+          }}
           fieldPermissions={page.permissions.fieldPermissions}
           form={page.editForm}
           saving={page.editSubmitting}
@@ -212,6 +239,15 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           onClose={page.closeEditDialog}
           onChange={page.setEditForm}
           onSave={(form) => void page.submitEditDialog(form)}
+        />
+        <ConfirmDangerDialog
+          open={page.archiveCandidateId !== null}
+          title={page.restoring ? 'Розархівувати пристрій?' : 'Архівувати пристрій?'}
+          description={`Пристрій: ${page.rows.find((row) => row.id === page.archiveCandidateId)?.name ?? 'Без назви'}. ${page.restoring ? 'Пристрій стане активним. Редагування та нова синхронізація знову будуть доступні.' : 'Архівований пристрій залишиться доступним для перегляду. Редагування та нова синхронізація будуть недоступні. Незбережені зміни форми буде втрачено.'}`}
+          confirmLabel={page.restoring ? 'Розархівувати' : 'Архівувати'}
+          submitting={page.archiving}
+          onClose={page.closeArchiveConfirmation}
+          onConfirm={() => void page.confirmArchive()}
         />
 
         <Stack
@@ -234,6 +270,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                   showInvestigatingFilter={false}
                   selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
                   countLabel="Пристроїв"
+                  additionalFilters={sidebarFilters}
                 />
               </Box>
             ) : null
@@ -248,6 +285,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
               onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
               selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
               countLabel="Пристроїв"
+              additionalFilters={sidebarFilters}
             />
           )}
 
@@ -269,7 +307,6 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
               onChangeGlobalFilter={tableStateContext.onChangeGlobalFilter}
               filters={page.filters}
               setFilters={page.setFilters}
-              statusCounts={page.statusCounts}
               additionalActiveFilters={additionalActiveFilters}
               onClearAdditionalActiveFilter={clearAdditionalActiveFilter}
               onClearAdditionalActiveFilters={clearAdditionalActiveFilters}
@@ -290,8 +327,12 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                 refreshing={page.refreshing}
                 loadingMore={page.loadingMore}
                 hasMore={page.hasMore}
-                total={page.total}
+                startOffset={page.startOffset}
+                scrollResetKey={page.scrollResetKey}
+                autoLoadBlocked={page.status?.kind === 'error'}
                 canEdit={page.permissions.canEdit}
+                canRate={page.permissions.canRate}
+                onRate={(deviceId, rating) => void page.rateDevice(deviceId, rating)}
                 mutatingDeviceId={page.busyDeviceId}
                 hasFilters={page.hasFilters}
                 tableStateContext={tableStateContext}

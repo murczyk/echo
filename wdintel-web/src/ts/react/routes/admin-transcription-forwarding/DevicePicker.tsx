@@ -30,6 +30,8 @@ export function DevicePicker({ value, disabled, onChange }: Props) {
           archivedFilter: 'active_only',
           aorIds: null,
           unitIds: null,
+          createdBy: null,
+          tags: null,
           limit: 50,
           offset: 0,
           sortBy: ['display_title_asc'],

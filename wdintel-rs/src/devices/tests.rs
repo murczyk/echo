@@ -39,6 +39,7 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(crate::sigint::device_name::device_name_create)
         .service(super::devices::list)
         .service(super::devices::unit_stats)
+        .service(super::devices::filter_options)
         .service(super::devices::aors)
         .service(super::devices::units)
         .service(super::devices::detail)
@@ -850,6 +851,30 @@ async fn target_api_smoke_covers_all_routes() {
         .any(|device| device["id"] == child_device.id.to_string()));
 
     let mut login = login.into_active_model();
+    login.roles = Set(json!([crate::config::ROLE_CYBER_VIEWER]));
+    let login = login.update(&env.dbx).await.unwrap();
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/api/device/filter-options")
+            .cookie(session_cookie.clone())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let options: Value = test::read_body_json(response).await;
+    assert!(options["creators"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|creator| creator["login"] == login.login));
+    assert!(!options["creators"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|creator| creator["login"] == other_login.login));
+
+    let mut login = login.into_active_model();
     login.roles = Set(json!([ROLE_CYBER]));
     let login = login.update(&env.dbx).await.unwrap();
     for target_id in [&device_id, &child_device.id.to_string()] {
@@ -971,6 +996,7 @@ async fn target_api_smoke_covers_all_routes() {
         "/api/device/aors",
         "/api/device/units",
         "/api/device/unit-stats",
+        "/api/device/filter-options",
     ] {
         let response = test::call_service(
             &app,
@@ -1610,6 +1636,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
             .unwrap()
             .into_active_model();
     settings.mattermost_webhook_url = Set(None);
+    settings.activity_split_files_audio = Set(None);
     settings.update(&env.dbx).await.unwrap();
 
     let organism = mk_organism(
@@ -1696,14 +1723,18 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     let admin_cookie = login_cookie!(admin.id);
     let reader_cookie = login_cookie!(reader.id);
 
-    let response = post!(reader_cookie, json!({}));
+    let response = post!(reader_cookie.clone(), json!({}));
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response =
+        post!(reader_cookie, json!({"activitySplitFilesAudio": true}));
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
     let response = post!(admin_cookie.clone(), json!({}));
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         test::read_body_json::<Value, _>(response).await,
-        json!({"hasMattermostWebhook": false})
+        json!({"hasMattermostWebhook": false, "activitySplitFilesAudio": false})
     );
 
     const WEBHOOK: &str = "https://1.1.1.1/hooks/device-settings-secret";
@@ -1714,8 +1745,18 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         test::read_body_json::<Value, _>(response).await,
-        json!({"hasMattermostWebhook": true})
+        json!({"hasMattermostWebhook": true, "activitySplitFilesAudio": false})
     );
+    let response = post!(
+        admin_cookie.clone(),
+        json!({"activitySplitFilesAudio": true})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        test::read_body_json::<Value, _>(response).await,
+        json!({"hasMattermostWebhook": true, "activitySplitFilesAudio": true})
+    );
+
     let stored =
         device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
             .one(&env.dbx)
@@ -1729,8 +1770,14 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         test::read_body_json::<Value, _>(response).await,
-        json!({"hasMattermostWebhook": true})
+        json!({"hasMattermostWebhook": true, "activitySplitFilesAudio": true})
     );
+
+    let response = post!(
+        admin_cookie.clone(),
+        json!({"activitySplitFilesAudio": false})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = post!(
         admin_cookie.clone(),
@@ -1752,7 +1799,7 @@ async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         test::read_body_json::<Value, _>(response).await,
-        json!({"hasMattermostWebhook": false})
+        json!({"hasMattermostWebhook": false, "activitySplitFilesAudio": false})
     );
     let stored =
         device_settings::Entity::find_by_id(device_config::DEVICE_SETTINGS_ID)
@@ -2438,9 +2485,10 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     assert_eq!(scheduled_all["created_run_count"], 1);
 }
 
-const TARGET_ROUTES: [&str; 29] = [
+const TARGET_ROUTES: [&str; 30] = [
     "/api/device/list",
     "/api/device/unit-stats",
+    "/api/device/filter-options",
     "/api/device/aors",
     "/api/device/units",
     "/api/device/detail",
@@ -3152,6 +3200,8 @@ pub(in crate::devices) mod schema {
             ),
             ("custom_fields", "NO", None, "jsonb"),
             ("organism_id", "NO", None, "bigint"),
+            ("rating", "YES", None, "integer"),
+            ("description", "YES", None, "text"),
         ]
         .into_iter()
         .map(|(name, nullable, default, data_type)| {
@@ -3333,6 +3383,8 @@ pub(in crate::devices) mod schema {
             organism_id: Set(organism_id),
             unit_id: Set(None),
             tags: Set(json!([])),
+            rating: Set(None),
+            description: Set(None),
             external_url: Set(None),
             archived: Set(archived),
             archived_at: Set(archived_at),

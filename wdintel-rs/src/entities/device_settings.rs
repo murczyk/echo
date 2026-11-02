@@ -13,6 +13,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub mattermost_webhook_url: Option<String>,
     pub updated_at: DateTime,
+    pub activity_split_files_audio: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

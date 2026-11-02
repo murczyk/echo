@@ -3,7 +3,12 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 
-import { formatDeviceBytes, formatDeviceCount, type DeviceActivityDay } from '../device-activity';
+import {
+  deviceActivityCategoryColor,
+  formatDeviceBytes,
+  formatDeviceCount,
+  type DeviceActivityDay,
+} from '../device-activity';
 import { FILE_TYPE_CATEGORIES, FILE_TYPE_CATEGORY_NAMES } from '../file-type-categories';
 
 // Pixel geometry shared by the y labels, the SVG plot and the day labels so they line up exactly.
@@ -48,6 +53,7 @@ type ChartScale = {
 
 type Props = {
   days: DeviceActivityDay[];
+  ariaLabel?: string;
   /** `detailed` adds a y-axis with gridlines and a category legend and uses taller bars. */
   variant?: keyof typeof GEOMETRY;
   /** Dims the bars, e.g. for activity outside the displayed window. */
@@ -58,7 +64,12 @@ const FADED_BAR_OPACITY = 0.4;
 
 /** Same layout as `NetworkDetailsActivityChart`, but in fixed pixels inside a horizontal
  * scroller so the full history fits; it opens scrolled to the latest day. */
-export function DeviceActivityChart({ days, variant = 'compact', faded = false }: Props) {
+export function DeviceActivityChart({
+  days,
+  variant = 'compact',
+  faded = false,
+  ariaLabel = 'Завантаження файлів за днями',
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<HoveredDay | null>(null);
 
@@ -88,6 +99,7 @@ export function DeviceActivityChart({ days, variant = 'compact', faded = false }
           sx={{ flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', pb: '2px' }}
         >
           <ActivityPlot
+            ariaLabel={ariaLabel}
             days={days}
             scale={scale}
             faded={faded}
@@ -157,12 +169,14 @@ function YAxisLabels({ ticks, height }: { ticks: YTick[]; height: number }) {
 }
 
 function ActivityPlot({
+  ariaLabel,
   days,
   scale,
   faded,
   hovered,
   onHover,
 }: {
+  ariaLabel: string;
   days: DeviceActivityDay[];
   scale: ChartScale;
   faded: boolean;
@@ -187,7 +201,7 @@ function ActivityPlot({
     <Box
       component="svg"
       role="img"
-      aria-label="Завантаження файлів за днями"
+      aria-label={ariaLabel}
       width={plotWidth}
       height={svgHeight}
       onMouseMove={onMouseMove}
@@ -259,7 +273,7 @@ function DayBar({
       {day.categories.map((category, categoryIndex) => {
         const height = (Number(category.contentCount) / Number(maxCount)) * geometry.plotHeight;
         segmentTop -= height;
-        const fill = FILE_TYPE_CATEGORIES[category.category]?.color;
+        const fill = deviceActivityCategoryColor(category.category);
         return categoryIndex === day.categories.length - 1 ? (
           <path
             key={category.category}
@@ -344,6 +358,7 @@ function ActivityTooltip({
 }) {
   return (
     <Paper
+      role="tooltip"
       elevation={6}
       sx={{
         position: 'fixed',
@@ -382,7 +397,7 @@ function ActivityTooltip({
                       width: 12,
                       height: 12,
                       borderRadius: '3px',
-                      bgcolor: FILE_TYPE_CATEGORIES[category.category]?.color,
+                      bgcolor: deviceActivityCategoryColor(category.category),
                       flexShrink: 0,
                     }}
                   />

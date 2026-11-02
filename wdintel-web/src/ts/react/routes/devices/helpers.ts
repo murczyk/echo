@@ -6,7 +6,6 @@ import type {
   DeviceDetails,
   DeviceListItem,
   DeviceListSortBy,
-  DeviceStats,
   DeviceUnitStat,
   ListDevicesReq,
   Unit,
@@ -26,7 +25,12 @@ export type DeviceArchivedFilterValue = 'active' | 'archived' | 'all';
 export type DevicesFilterState = {
   archivedFilter: DeviceArchivedFilterValue;
   unitIds: number[];
+  aorIds: number[];
+  createdBy: string[];
+  tags: string[];
 };
+
+export type DeviceSidebarFilterState = Pick<DevicesFilterState, 'aorIds' | 'createdBy' | 'tags'>;
 
 export type DeviceLookupOption = {
   id: number;
@@ -65,8 +69,10 @@ export type DeviceRowView = DeviceListItem & {
 };
 
 export const DEVICES_LIST_PAGE_SIZE = 100;
-// Empty sorting falls back to the server default (`updated_at_desc`).
-export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [];
+export const DEVICES_AUTO_LOAD_THRESHOLD_PX = 160;
+export const DEVICES_LOADING_PLACEHOLDER_COUNT = 3;
+export const DEVICES_LOADING_ROW_ID_PREFIX = 'device-loading-row-';
+export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [{ id: 'activity', desc: true }];
 const DEVICE_UNIT_HIERARCHY_KEYS = [
   'armyRegion',
   'militaryDistrict',
@@ -88,9 +94,14 @@ export function createDefaultDevicesFilterState(): DevicesFilterState {
   return {
     archivedFilter: 'active',
     unitIds: [],
+    aorIds: [],
+    createdBy: [],
+    tags: [],
   };
 }
-export function resolveDevicesColumnFilters(columnFilters: MRT_ColumnFiltersState): {
+export function resolveDevicesColumnFilters(
+  columnFilters: MRT_ColumnFiltersState,
+): DeviceSidebarFilterState & {
   archivedFilter: DeviceArchivedFilterValue;
   selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
 } {
@@ -101,6 +112,11 @@ export function resolveDevicesColumnFilters(columnFilters: MRT_ColumnFiltersStat
 
   return {
     archivedFilter,
+    aorIds: resolveNumberFilter(columnFilters.find((filter) => filter.id === 'aors')?.value),
+    createdBy: resolveStringFilter(
+      columnFilters.find((filter) => filter.id === 'createdBy')?.value,
+    ),
+    tags: resolveStringFilter(columnFilters.find((filter) => filter.id === 'tags')?.value),
     selectedSidebarUnitFilter: isSelectedSidebarUnitFilter(unitValue) ? unitValue : null,
   };
 }
@@ -108,11 +124,17 @@ export function resolveDevicesColumnFilters(columnFilters: MRT_ColumnFiltersStat
 export function buildDevicesColumnFilters({
   archivedFilter,
   selectedSidebarUnitFilter,
-}: {
+  aorIds = [],
+  createdBy = [],
+  tags = [],
+}: Partial<DeviceSidebarFilterState> & {
   archivedFilter: DeviceArchivedFilterValue;
   selectedSidebarUnitFilter: SelectedSidebarUnitFilter | null;
 }): MRT_ColumnFiltersState {
   return [
+    ...(aorIds.length ? [{ id: 'aors', value: aorIds }] : []),
+    ...(createdBy.length ? [{ id: 'createdBy', value: createdBy }] : []),
+    ...(tags.length ? [{ id: 'tags', value: tags }] : []),
     ...(archivedFilter === 'active' ? [] : [{ id: 'lifecycle', value: archivedFilter }]),
     ...(selectedSidebarUnitFilter === null
       ? []
@@ -124,6 +146,22 @@ export function sanitizeDevicesColumnFilters(
   columnFilters: MRT_ColumnFiltersState,
 ): MRT_ColumnFiltersState {
   return buildDevicesColumnFilters(resolveDevicesColumnFilters(columnFilters));
+}
+
+function resolveNumberFilter(value: unknown): number[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((item): item is number => Number.isSafeInteger(item) && item > 0))]
+    : [];
+}
+
+function resolveStringFilter(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [
+        ...new Set(
+          value.filter((item): item is string => typeof item === 'string' && item.trim() !== ''),
+        ),
+      ]
+    : [];
 }
 
 function isSelectedSidebarUnitFilter(value: unknown): value is SelectedSidebarUnitFilter {
@@ -159,9 +197,21 @@ export function formatDeviceDateTime(value: string | null | undefined): string {
 
 export function buildDevicesSortBy(sorting: MRT_SortingState): DeviceListSortBy[] {
   const current = sorting[0];
-  if (!current) return ['updated_at_desc'];
+  if (!current) return ['last_content_at_desc'];
 
   switch (current.id) {
+    case 'aors':
+      return [current.desc ? 'aors_desc' : 'aors_asc'];
+    case 'unit':
+      return [current.desc ? 'unit_desc' : 'unit_asc'];
+    case 'createdBy':
+      return [current.desc ? 'created_by_desc' : 'created_by_asc'];
+    case 'activity':
+      return [current.desc ? 'last_content_at_desc' : 'last_content_at_asc'];
+    case 'size':
+      return [current.desc ? 'content_bytes_desc' : 'content_bytes_asc'];
+    case 'rating':
+      return [current.desc ? 'rating_desc' : 'rating_asc'];
     case 'name':
       return [current.desc ? 'display_title_desc' : 'display_title_asc'];
     case 'updatedAt':
@@ -169,7 +219,7 @@ export function buildDevicesSortBy(sorting: MRT_SortingState): DeviceListSortBy[
     case 'createdAt':
       return [current.desc ? 'created_at_desc' : 'created_at_asc'];
     default:
-      return ['updated_at_desc'];
+      return ['last_content_at_desc'];
   }
 }
 
@@ -190,7 +240,9 @@ export function buildDevicesListReq(params: {
         : params.filters.archivedFilter === 'all'
           ? 'all'
           : 'active_only',
-    aorIds: null,
+    aorIds: params.filters.aorIds.length > 0 ? params.filters.aorIds : null,
+    createdBy: params.filters.createdBy.length > 0 ? params.filters.createdBy : null,
+    tags: params.filters.tags.length > 0 ? params.filters.tags : null,
     unitIds: params.filters.unitIds.length > 0 ? params.filters.unitIds : null,
     limit: params.limit,
     offset: params.offset,
@@ -200,7 +252,12 @@ export function buildDevicesListReq(params: {
 
 export function hasActiveDevicesFilters(searchText: string, filters: DevicesFilterState): boolean {
   return (
-    searchText.trim() !== '' || filters.archivedFilter !== 'active' || filters.unitIds.length > 0
+    searchText.trim() !== '' ||
+    filters.archivedFilter !== 'active' ||
+    filters.unitIds.length > 0 ||
+    filters.aorIds.length > 0 ||
+    filters.createdBy.length > 0 ||
+    filters.tags.length > 0
   );
 }
 
@@ -212,17 +269,26 @@ export function buildDeviceRowView(device: DeviceListItem): DeviceRowView {
     updatedAtLabel: formatDeviceDateTime(device.updatedAt),
     createdAtLabel: formatDeviceDateTime(device.createdAt),
     archivedAtLabel: formatDeviceDateTime(device.archivedAt),
-    activity: device.stats ? buildDeviceRecentActivity(device.stats) : null,
+    activity:
+      device.stats && (!device.activitySplitFilesAudio || device.audioDays !== null)
+        ? buildDeviceRecentActivity(
+            device.stats,
+            undefined,
+            device.activitySplitFilesAudio ? (device.audioDays ?? []) : undefined,
+          )
+        : null,
     sizeLabel: device.stats ? formatDeviceBytes(BigInt(device.stats.contentBytes)) : '—',
   };
 }
 
 export function deviceDetailsToListItem(
   device: DeviceDetails,
-  stats: DeviceStats | null,
+  current: DeviceListItem,
 ): DeviceListItem {
   return {
     id: device.id,
+    rating: device.rating,
+    tags: device.tags,
     name: device.name,
     aors: device.aors,
     unit: device.unit,
@@ -231,7 +297,9 @@ export function deviceDetailsToListItem(
     createdAt: device.createdAt,
     updatedAt: device.updatedAt,
     archivedAt: device.archivedAt,
-    stats,
+    stats: current.stats,
+    audioDays: current.audioDays,
+    activitySplitFilesAudio: current.activitySplitFilesAudio,
   };
 }
 

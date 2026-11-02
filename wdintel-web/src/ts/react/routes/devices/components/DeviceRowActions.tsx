@@ -1,6 +1,6 @@
 import EditIcon from '@mui/icons-material/Edit';
 
-import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
+import { MrtRowActionButton } from '../../../components/MrtRowActionButton';
 import type { DeviceRowView } from '../helpers';
 
 type Props = {
@@ -11,16 +11,14 @@ type Props = {
 };
 
 export function DeviceRowActions({ row, canEdit, disabled, onEdit }: Props) {
-  if (!canEdit || row.archived) return null;
-
+  if (!canEdit) return null;
   return (
-    <MrtRowActions forceMenu>
-      <MrtRowActionButton
-        label="Редагувати"
-        icon={<EditIcon fontSize="small" />}
-        disabled={disabled}
-        onClick={() => onEdit(row.id)}
-      />
-    </MrtRowActions>
+    <MrtRowActionButton
+      label="Редагувати"
+      icon={<EditIcon fontSize="small" />}
+      disabled={disabled}
+      opensModal
+      onClick={() => onEdit(row.id)}
+    />
   );
 }

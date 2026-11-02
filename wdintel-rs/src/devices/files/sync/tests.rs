@@ -57,6 +57,8 @@ async fn insert_device(db: &DatabaseConnection, owner: &login::Model) -> Uuid {
         organism_id: Set(owner.organism_id.unwrap()),
         unit_id: Set(None),
         tags: Set(json!([])),
+        rating: Set(None),
+        description: Set(None),
         external_url: Set(None),
         archived: Set(false),
         archived_at: Set(None),

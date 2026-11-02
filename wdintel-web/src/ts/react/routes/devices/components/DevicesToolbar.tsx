@@ -1,43 +1,11 @@
-import { Box, Stack } from '@mui/material';
+import { ToggleButton, ToggleButtonGroup } from '@mui/material';
 import type { MRT_TableInstance } from 'material-react-table';
-import type { Dispatch, ReactNode, SetStateAction } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 
-import { PowerChip } from '../../../components/PowerChip';
-import { TableToolbarLayout } from '../../../components/TableToolbarLayout';
 import { GlobalFilterTextField } from '../../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import type { ActiveFilterDescriptor } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
 import type { DeviceArchivedFilterValue, DevicesFilterState } from '../helpers';
-
-function StatusChipLabel({
-  color,
-  label,
-  counter,
-}: {
-  color: string;
-  label: string;
-  counter: ReactNode;
-}) {
-  return (
-    <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap sx={{ minWidth: 0 }}>
-      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
-      <Stack
-        direction="row"
-        spacing={0.5}
-        alignItems="center"
-        useFlexGap
-        sx={{ minWidth: 0, whiteSpace: 'nowrap' }}
-      >
-        <Box component="span" sx={{ minWidth: 0 }}>
-          {label}
-        </Box>
-        <Box component="span" sx={{ minWidth: 0, color: 'text.primary', fontWeight: 700 }}>
-          {counter}
-        </Box>
-      </Stack>
-    </Stack>
-  );
-}
 
 type Props = {
   loading: boolean;
@@ -45,7 +13,6 @@ type Props = {
   onChangeGlobalFilter: (value: string | ((prev: string) => string)) => void;
   filters: Pick<DevicesFilterState, 'archivedFilter'>;
   setFilters: Dispatch<SetStateAction<DevicesFilterState>>;
-  statusCounts: { active: number; archived: number } | null;
   additionalActiveFilters: ActiveFilterDescriptor[];
   onClearAdditionalActiveFilter: (filterId: string) => void;
   onClearAdditionalActiveFilters: () => void;
@@ -65,62 +32,59 @@ export function DevicesToolbar({
   onChangeGlobalFilter,
   filters,
   setFilters,
-  statusCounts,
   additionalActiveFilters,
   onClearAdditionalActiveFilter,
   onClearAdditionalActiveFilters,
   table,
 }: Props) {
   return (
-    <TableToolbarLayout
-      leading={
-        <>
-          <div className="w-full min-w-56 max-w-[360px] flex-1">
-            <GlobalFilterTextField
-              className="!min-w-0 !w-full"
-              globalFilter={globalFilter}
-              setGlobalFilter={onChangeGlobalFilter}
-              disabled={loading}
-            />
-          </div>
-          <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap', minWidth: 0 }}>
-            <PowerChip
-              selected={filters.archivedFilter === 'all'}
-              onClick={() => setStatus(setFilters, 'all')}
-              label="Всі"
-              interactive
-              fontWeight={700}
-            />
-            <PowerChip
-              selected={filters.archivedFilter === 'active'}
-              onClick={() => setStatus(setFilters, 'active')}
-              label={
-                <StatusChipLabel
-                  color="#54c06c"
-                  label="Активні"
-                  counter={statusCounts?.active ?? '—'}
-                />
-              }
-              interactive
-              fontWeight={700}
-            />
-            <PowerChip
-              selected={filters.archivedFilter === 'archived'}
-              onClick={() => setStatus(setFilters, 'archived')}
-              label={
-                <StatusChipLabel
-                  color="#6b6b6b"
-                  label="Архівні"
-                  counter={statusCounts?.archived ?? '—'}
-                />
-              }
-              interactive
-              fontWeight={700}
-            />
-          </Stack>
-        </>
-      }
-      trailing={
+    <div className="flex min-w-0 flex-col gap-echo-md echo-lg:flex-row echo-lg:flex-wrap echo-lg:items-center">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-echo-md">
+        <div className="w-full min-w-56 max-w-[360px] flex-1">
+          <GlobalFilterTextField
+            className="!min-w-0 !w-full"
+            globalFilter={globalFilter}
+            setGlobalFilter={onChangeGlobalFilter}
+            disabled={loading}
+          />
+        </div>
+        <ToggleButtonGroup
+          exclusive
+          size="small"
+          color="primary"
+          value={filters.archivedFilter}
+          aria-label="Стан пристроїв"
+          onChange={(_, value: DeviceArchivedFilterValue | null) => {
+            if (value !== null) setStatus(setFilters, value);
+          }}
+          sx={{
+            flexShrink: 0,
+            borderRadius: 1,
+            '& .MuiToggleButton-root': {
+              textTransform: 'none',
+              px: 1.75,
+              py: 0.875,
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              lineHeight: 1.25,
+              borderRadius: 0,
+            },
+            '& .MuiToggleButtonGroup-firstButton': {
+              borderTopLeftRadius: 8,
+              borderBottomLeftRadius: 8,
+            },
+            '& .MuiToggleButtonGroup-lastButton': {
+              borderTopRightRadius: 8,
+              borderBottomRightRadius: 8,
+            },
+          }}
+        >
+          <ToggleButton value="all">Усі</ToggleButton>
+          <ToggleButton value="active">Активні</ToggleButton>
+          <ToggleButton value="archived">Архів</ToggleButton>
+        </ToggleButtonGroup>
+      </div>
+      <div className="flex shrink-0 items-center justify-end gap-echo-sm echo-lg:ml-auto">
         <InternalTableActions
           table={table}
           columnsVisibilityDisabled={loading}
@@ -132,7 +96,7 @@ export function DevicesToolbar({
           fullScreenEnabled={false}
           fullScreenDisabled={loading}
         />
-      }
-    />
+      </div>
+    </div>
   );
 }

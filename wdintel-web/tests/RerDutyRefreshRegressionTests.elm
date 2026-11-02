@@ -515,6 +515,7 @@ suite =
                                     , \_ -> Expect.equal (Just [ "group-a" ]) filter.groupsSelected
                                     , \_ -> Expect.equal Nothing filter.unitsSelected
                                     , \_ -> Expect.equal Nothing filter.unitsDenied
+                                    , \_ -> Expect.equal Nothing filter.unitsIncludeChildren
                                     , \_ -> Expect.equal Nothing filter.selectedUnitIds
                                     , \_ -> Expect.equal Nothing filter.deniedUnitIds
                                     , \_ -> Expect.equal Nothing filter.selectedDeviceNames
@@ -534,6 +535,7 @@ suite =
                     dutyFilter
                         [ ( "units_selected", Json.Encode.null )
                         , ( "units_denied", Json.Encode.null )
+                        , ( "units_include_children", Json.Encode.bool True )
                         , ( "selected_unit_ids", Json.Encode.list Json.Encode.int [ 7 ] )
                         , ( "denied_unit_ids", Json.Encode.null )
                         , ( "selected_device_names", Json.Encode.list Json.Encode.string [ "DEVICE-A" ] )
@@ -543,6 +545,7 @@ suite =
                     Ok filter ->
                         Expect.all
                             [ \_ -> Expect.equal Nothing filter.unitsSelected
+                            , \_ -> Expect.equal (Just True) filter.unitsIncludeChildren
                             , \_ -> Expect.equal (Just [ 7 ]) filter.selectedUnitIds
                             , \_ -> Expect.equal (Just [ "DEVICE-A" ]) filter.selectedDeviceNames
                             , \_ -> Expect.equal Nothing filter.deniedDeviceNames

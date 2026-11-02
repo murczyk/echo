@@ -13,6 +13,7 @@ import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { navigateWithinSpa } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
 import { DeviceUpsertDrawer } from '../devices/components/DeviceUpsertDrawer';
+import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { DeviceFilesSidebar, useDeviceFiles } from '../device-files';
 import type { DeviceAnalyticsTagFilter } from '../device-files/types';
 import { useDeviceAnalyticsTags } from '../device-files/use-device-analytics-tags';
@@ -490,6 +491,7 @@ export function DeviceDetailsPage({
         open={page.editForm !== null}
         mode="edit"
         deviceId={page.device?.id}
+        onArchive={() => page.setArchiveConfirmationOpen(true)}
         fieldPermissions={page.permissions.fieldPermissions}
         form={page.editForm}
         saving={page.editSubmitting}
@@ -503,6 +505,15 @@ export function DeviceDetailsPage({
         onClose={page.closeEditDrawer}
         onChange={page.setEditForm}
         onSave={(form) => void page.saveEditDevice(form)}
+      />
+      <ConfirmDangerDialog
+        open={page.archiveConfirmationOpen ?? false}
+        title="Архівувати пристрій?"
+        description={`Пристрій: ${page.device?.name ?? 'Без назви'}. Архівований пристрій залишиться доступним для перегляду. Редагування та нова синхронізація будуть недоступні. Незбережені зміни форми буде втрачено.`}
+        confirmLabel="Архівувати"
+        submitting={page.editSubmitting}
+        onClose={() => page.setArchiveConfirmationOpen(false)}
+        onConfirm={() => void page.archiveCurrentDevice()}
       />
     </Box>
   );

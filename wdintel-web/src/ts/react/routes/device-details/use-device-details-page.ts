@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AreaOfResponsibility, DeviceDetails, Unit } from '../../../../Bindings';
 import {
   getDeviceDetail,
+  archiveDevice,
   listDeviceAors,
   listDeviceUnits,
   updateDevice,
@@ -61,6 +62,7 @@ export function useDeviceDetailsPage({
   const [editError, setEditError] = useState<string | null>(null);
   const [editServerFieldErrors, setEditServerFieldErrors] = useState<DeviceServerFieldErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [archiveConfirmationOpen, setArchiveConfirmationOpen] = useState(false);
 
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -229,9 +231,41 @@ export function useDeviceDetailsPage({
   );
 
   const initialLoadFailed = !loading && device === null && status?.kind === 'error';
+  const archiveCurrentDevice = useCallback(async () => {
+    if (
+      !device ||
+      device.archived ||
+      editSubmitting ||
+      !permissions.fieldPermissions.analyticalData
+    )
+      return;
+    setEditSubmitting(true);
+    setEditError(null);
+    try {
+      const archived = await archiveDevice(device.id);
+      setDevice(archived);
+      setEditForm(null);
+      setStatus({ kind: 'success', text: 'Пристрій архівовано.' });
+    } catch (error) {
+      if (isNetworkRequestError(error)) {
+        setEditForm(null);
+        await loadDevice({ preserveData: true });
+        setStatus({
+          kind: 'error',
+          text: `Результат архівування невідомий. Дані перезавантажено. ${formatDeviceErrorMessage(error)}`,
+        });
+      } else setEditError(`Помилка архівування пристрою: ${formatDeviceErrorMessage(error)}`);
+    } finally {
+      setArchiveConfirmationOpen(false);
+      setEditSubmitting(false);
+    }
+  }, [device, editSubmitting, loadDevice, permissions.fieldPermissions.analyticalData]);
 
   return {
     permissions,
+    archiveConfirmationOpen,
+    setArchiveConfirmationOpen,
+    archiveCurrentDevice,
     device,
     loading,
     refreshing,
