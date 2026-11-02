@@ -1,6 +1,6 @@
 use super::{
     store::*,
-    worker::{Job, Package, Section},
+    worker::{dependency_poll_delay, Job, JobOutcome, Package, Section},
 };
 use crate::{
     entities::{
@@ -258,7 +258,7 @@ pub async fn extract_map(
     job: &Job,
     media: &signal_message_media::Model,
     name: &str,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<JobOutcome> {
     use crate::entities::signal_message_media_conversion_job;
     use md5::{Digest, Md5};
     let conversion = signal_message_media_conversion_job::Entity::find()
@@ -272,7 +272,7 @@ pub async fn extract_map(
     let Some(conversion) = conversion else {
         let bytes = super::worker::source_bytes(env, media).await.c(h!())?;
         execute(&env.dbx,"insert into signal_message_media_conversion_job(signal_message_id,source_media_id,source_file_md5,source_file_name,source_content_type,status) values($1,$2,$3,$4,$5,'pending') on conflict(source_media_id) do nothing",vec![media.signal_message_id.into(),media.id.into(),format!("{:x}",Md5::digest(&bytes)).into(),name.into(),media.content_type.clone().into()]).await.c(h!())?;
-        return Ok(false);
+        return Ok(JobOutcome::Again);
     };
     anyhow::ensure!(
         conversion.status
@@ -280,7 +280,9 @@ pub async fn extract_map(
         "map conversion failed; retry map conversion first"
     );
     if conversion.status != crate::config::SIGINT_MEDIA_CONVERSION_STATUS_DONE {
-        return Ok(false);
+        return Ok(JobOutcome::Wait(dependency_poll_delay(
+            chrono::Utc::now() - conversion.created_at.to_utc(),
+        )));
     }
     let bytes = crate::sigint::media_conversion::fetch_completed_result_bytes(
         env,
@@ -315,7 +317,7 @@ pub async fn extract_map(
     super::worker::publish(env, job, package, bytes)
         .await
         .c(h!())?;
-    Ok(true)
+    Ok(JobOutcome::Done)
 }
 
 pub async fn requeue_positions(

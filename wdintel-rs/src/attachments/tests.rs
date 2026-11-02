@@ -2,7 +2,7 @@ use super::{
     api::{read_document, search_documents},
     store::*,
     types::*,
-    worker::{publish, Job, Package, Section},
+    worker::{publish, Job, JobOutcome, Package, Section},
 };
 use crate::{
     entities::{
@@ -299,9 +299,12 @@ async fn attachment_ocr_keeps_provider_profile_3662() {
     let engine = Uuid::now_v7();
     execute(&env.dbx,"insert into ai_engine(id,name,url,model_name,enabled,ocr_enabled) values($1,$2,'http://localhost','ocr',true,true)",vec![engine.into(),format!("attachment-ocr-{engine}").into()]).await.unwrap();
     execute(&env.dbx,"insert into ocr_settings(id,worker_enabled,main_ai_engine_id) values(1,true,$1) on conflict(id) do update set main_ai_engine_id=excluded.main_ai_engine_id",vec![engine.into()]).await.unwrap();
-    assert!(!super::worker::extract_ocr(&env, &job, "scan.pdf")
-        .await
-        .unwrap());
+    assert_eq!(
+        super::worker::extract_ocr(&env, &job, "scan.pdf")
+            .await
+            .unwrap(),
+        JobOutcome::AwaitOcr
+    );
     let ocr = crate::entities::ocr_job::Entity::find_by_id(job.media_id)
         .one(&env.dbx)
         .await
@@ -877,9 +880,12 @@ async fn stored_ocr_recovery_is_scoped_and_dry_by_default_3714() {
     assert_ne!(document.generation, original_generation);
     execute(&env.dbx,"update attachment_job set state='running',lease=gen_random_uuid(),lease_until=now()+interval '15 minutes' where media_id=$1 and generation=$2",vec![job.media_id.into(),document.generation.into()]).await.unwrap();
     let replacement: Job = rows(&env.dbx,"select * from attachment_job where media_id=$1 and generation=$2 and kind='extract'",vec![job.media_id.into(),document.generation.into()]).await.unwrap().pop().unwrap();
-    assert!(super::worker::extract_ocr(&env, &replacement, "scan.pdf")
-        .await
-        .unwrap());
+    assert_eq!(
+        super::worker::extract_ocr(&env, &replacement, "scan.pdf")
+            .await
+            .unwrap(),
+        JobOutcome::Done
+    );
     assert!(crate::media_summary::coordinates_for_media(
         &env.dbx,
         job.media_id

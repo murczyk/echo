@@ -2590,6 +2590,22 @@ pub const ATTACHMENT_BATCH_SIZE: i64 = 50;
 pub const ATTACHMENT_CHUNK_CHARS: usize = 12_000;
 pub const ATTACHMENT_CHUNK_OVERLAP: usize = 1000;
 pub const ATTACHMENT_WORKER_SLEEP_SECS: u64 = 5;
+/// Delay before a job that made progress is due again.
+pub const ATTACHMENT_REQUEUE_SECS: u64 = 10;
+/// Upper bound for polling a still-working extractor job or map conversion.
+pub const ATTACHMENT_DEPENDENCY_POLL_MAX_SECS: u64 = 600;
+/// Back-off after the extractor answers 429 or 503.
+pub const ATTACHMENT_EXTRACTOR_BUSY_SECS: u64 = 60;
+/// How often waiting OCR jobs are checked for failed or missing OCR.
+pub const ATTACHMENT_OCR_WAIT_SWEEP_SECS: u64 = 300;
+/// How often jobs of deleted messages are parked and jobs of restored
+/// messages resumed.
+pub const ATTACHMENT_DELETED_JOB_SWEEP_SECS: u64 = 3600;
+/// Jobs of deleted messages are parked only after this much inactivity, so
+/// briefly staged messages are left alone.
+pub const ATTACHMENT_DELETED_JOB_MIN_IDLE_SECS: u64 = 3600;
+pub const ATTACHMENT_DELETED_JOB_SWEEP_MAX_BATCHES: usize = 20;
+pub const ATTACHMENT_QUEUE_SWEEP_BATCH: i64 = 10_000;
 pub const ATTACHMENT_LEASE_SECS: i64 = 900;
 pub const ATTACHMENT_MAX_ATTEMPTS: i32 = 8;
 pub const ATTACHMENT_SEARCH_LIMIT: i64 = 20;
