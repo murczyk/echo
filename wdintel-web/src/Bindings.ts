@@ -1346,6 +1346,12 @@ export type SavedFilter = {
   id: number;
   name: string;
   req: AnalysisStatsReq;
+  unitFilter: AnalysisUnitFilter | null;
+};
+
+export type AnalysisUnitFilter = {
+  values: Array<string>;
+  includeChildren: boolean;
 };
 
 export type SavedFilterDuty = {
@@ -1357,6 +1363,7 @@ export type SavedFilterDuty = {
 export type SavedFilterUpsertReq = {
   name: string;
   req: AnalysisStatsReq;
+  unitFilter: AnalysisUnitFilter | null;
 };
 
 export type SavedFilterDutyUpsertReq = {
@@ -1385,6 +1392,7 @@ export type RerDutyQueryStateWf = {
   postsDenied: Array<string> | null;
   unitsSelected: Array<string> | null;
   unitsDenied: Array<string> | null;
+  unitsIncludeChildren: boolean | null;
   selectedUnitIds: Array<number> | null;
   deniedUnitIds: Array<number> | null;
   selectedDeviceNames: Array<string> | null;
@@ -4403,6 +4411,7 @@ export type DirectSubmitPayload = {
   network: SubmitNetwork | null;
   dmr: Array<SubmitDmrMetadata>;
   signalGroupMasterKey: string | null;
+  sourceSignalGroupMasterKey: string | null;
   deviceNameId: number | null | null;
   uploadUrls: Array<string> | null;
   attachmentUpdates: DirectSubmitAttachmentUpdates | null;
@@ -5621,6 +5630,56 @@ export type FreqPelengsEntry = {
   pelengsCount: number;
 };
 
+export type ApiSender = {
+  apiId: string;
+  displayName: string;
+  senderUuid: string;
+  loginId: string;
+};
+
+export type OperatorSender = {
+  displayName: string;
+  senderUuid: string;
+};
+
+export type ListApiSendersReq = {
+  apiId: string;
+};
+
+export type UpsertApiSenderReq = {
+  apiId: string;
+  displayName: string;
+  senderUuid: string | null;
+  loginId: string;
+};
+
+export type DeleteApiSenderReq = {
+  apiId: string;
+  senderUuid: string;
+};
+
+export type RoleMessageSettings = {
+  role: string;
+  unitRequired: boolean;
+  deviceRequired: boolean;
+  allowUnitCreation: boolean;
+};
+
+export type RoleMessageSettingsKey = {
+  role: string;
+};
+
+export type RoleMessageSettingsListRsp = {
+  settings: Array<RoleMessageSettings>;
+  roles: Array<string>;
+};
+
+export type MessageCreationSettings = {
+  unitRequired: boolean;
+  deviceRequired: boolean;
+  allowUnitCreation: boolean;
+};
+
 export type SystemSettingsCurrentRsp = {
   id: number | null;
   rerAnalysisUnitsExactMatchOnlyDefault: boolean;
@@ -6245,6 +6304,33 @@ export type AiAgentMapEditRsp = {
   canRedo: boolean;
 };
 
+export type AiAgentUploadItem = {
+  id: string;
+  conversationId: string | null;
+  requestId: string | null;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  state: string;
+  isImage: boolean;
+  chunkCount: number;
+  lastError: string | null;
+  createdAt: number;
+};
+
+export type AiAgentUploadListReq = {
+  conversationId: string | null;
+  ids: Array<string>;
+};
+
+export type AiAgentUploadListRsp = {
+  uploads: Array<AiAgentUploadItem>;
+};
+
+export type AiAgentUploadIdReq = {
+  id: string;
+};
+
 export type AiAgentMessageItem = {
   reasoningPreset: AiAgentReasoningPreset | null;
   maxRuntimeSeconds: number | null;
@@ -6258,6 +6344,7 @@ export type AiAgentMessageItem = {
   citations: Array<AiAgentMessageCitation>;
   fileCitations: Array<AiAgentFileCitation>;
   maps: Array<AiAgentMapSummary>;
+  attachments: Array<AiAgentUploadItem>;
 };
 
 export type AiAgentConversationDetail = {
@@ -6275,6 +6362,7 @@ export type AiAgentRequestCreateReq = {
   aiEngineId: string | null;
   prompt: string;
   mapEdit: AiAgentMapEditTarget | null;
+  uploadIds: Array<string>;
 };
 
 export type AiAgentRequestCreateRsp = {
@@ -6297,6 +6385,7 @@ export type AiAgentProviderRuntimeProfileItem = {
   maxOutputTokens: number;
   compactionReserveTokens: number;
   compactionKeepRecentTokens: number;
+  visionInputEnabled: boolean;
 };
 
 export type AiAgentAdminSettingsItem = {

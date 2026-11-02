@@ -112,6 +112,34 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/ai-agent/uploads/ai/list",
+        skill: "upload_list",
+        label: "Переглядаю вкладені файли",
+        request_kind: "uploadList",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/uploads/ai/read",
+        skill: "upload_read",
+        label: "Читаю вкладений файл",
+        request_kind: "uploadRead",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/uploads/ai/search",
+        skill: "upload_search",
+        label: "Шукаю у вкладених файлах",
+        request_kind: "uploadSearch",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/uploads/ai/image",
+        skill: "upload_image",
+        label: "Розглядаю вкладене зображення",
+        request_kind: "uploadImage",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/ai-agent/maps/prepare",
         skill: "map_prepare",
         label: "Готую точки мапи",
@@ -321,6 +349,10 @@ mod tests {
                     | "deviceFileStatus"
                     | "workList"
                     | "workRead"
+                    | "uploadList"
+                    | "uploadRead"
+                    | "uploadSearch"
+                    | "uploadImage"
             ));
         }
         let daily_activity = ROUTES

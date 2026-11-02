@@ -22,6 +22,7 @@ type Props = {
   groupEditable?: boolean;
   groupLocked?: boolean;
   cyberEchoEnabled: boolean;
+  deviceRequired?: boolean;
   deviceNameOptions: string[];
   deviceNamesLoading: boolean;
   setDeviceNameInput: (value: string) => void;
@@ -37,6 +38,7 @@ export function SystemSection({
   groupEditable = false,
   groupLocked = false,
   cyberEchoEnabled,
+  deviceRequired = false,
   deviceNameOptions,
   deviceNamesLoading,
   setDeviceNameInput,
@@ -168,6 +170,9 @@ export function SystemSection({
                   <TextField
                     {...params}
                     label="Назва пристрою"
+                    required={deviceRequired}
+                    error={Boolean(errors.deviceName)}
+                    helperText={errors.deviceName?.message}
                     size="small"
                     fullWidth
                     disabled={busy}

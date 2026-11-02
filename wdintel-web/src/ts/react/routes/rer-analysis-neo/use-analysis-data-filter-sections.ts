@@ -73,6 +73,7 @@ const SECTION_QUERY_FIELDS: Array<{
   { field: 'deviceNamesSelected', section: 'devices' },
   { field: 'callsignsSelected', section: 'callsigns' },
   { field: 'unitsSelected', section: 'units' },
+  { field: 'unitsIncludeChildren', section: 'units' },
   { field: 'locationsSelected', section: 'locations' },
   { field: 'postsSelected', section: 'posts' },
   { field: 'networksSelected', section: 'networks' },

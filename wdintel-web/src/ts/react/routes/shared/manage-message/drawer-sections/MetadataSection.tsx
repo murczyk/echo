@@ -35,6 +35,7 @@ type Props = {
   unitOptions: UnitResponse[];
   unitLoading: boolean;
   unitAllowCreate: boolean;
+  unitRequired?: boolean;
   canMergeUnitDuplicates?: boolean;
   onUnitFocus: () => void;
   unitLocked: boolean;
@@ -56,6 +57,7 @@ export function MetadataSection({
   unitOptions,
   unitLoading,
   unitAllowCreate,
+  unitRequired = false,
   canMergeUnitDuplicates = false,
   onUnitFocus,
   unitLocked,
@@ -179,11 +181,18 @@ export function MetadataSection({
                   options={unitOptions}
                   value={field.value ?? ''}
                   selection={unitSelection}
+                  required={unitRequired}
                   errorMessage={
-                    !isEditMode &&
-                    !isMessageUnitSelectionValid(field.value, unitSelection, unitNetworkSelection)
-                      ? MESSAGE_UNIT_SELECTION_ERROR
-                      : undefined
+                    unitRequired && !field.value?.trim()
+                      ? errors.unit?.message
+                      : !isEditMode &&
+                          !isMessageUnitSelectionValid(
+                            field.value,
+                            unitSelection,
+                            unitNetworkSelection,
+                          )
+                        ? MESSAGE_UNIT_SELECTION_ERROR
+                        : undefined
                   }
                   loading={unitLoading}
                   allowCreate={unitAllowCreate}

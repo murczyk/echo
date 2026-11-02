@@ -746,6 +746,18 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                       {autoParseSettingsLoadError}
                     </PowerAlert>
                   ) : null}
+                  {drawerState.creationSettingsError ? (
+                    <PowerAlert
+                      severity="error"
+                      autoHideDuration={null}
+                      dismissible={false}
+                      action={
+                        <Button onClick={drawerState.retryCreationSettings}>Повторити</Button>
+                      }
+                    >
+                      Не вдалося завантажити налаштування ролей: {drawerState.creationSettingsError}
+                    </PowerAlert>
+                  ) : null}
                   {reportCopyError ? (
                     <PowerAlert
                       severity="error"
@@ -1001,9 +1013,12 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             busy={busy}
                             isEditMode={isEditMode}
                             isReportMode={isReportMode}
-                            groupEditable={isReportMode}
+                            groupEditable={
+                              isReportMode || hasRole(props.currentUser?.roles, 'DeleteMsg')
+                            }
                             groupLocked={isReplyMode}
                             cyberEchoEnabled={props.cyberEchoEnabled}
+                            deviceRequired={drawerState.deviceRequired}
                             deviceNameOptions={deviceNameOptions}
                             deviceNamesLoading={deviceNamesLoading}
                             setDeviceNameInput={setDeviceNameInput}
@@ -1022,6 +1037,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                             unitOptions={drawerState.unitOptions}
                             unitLoading={drawerState.unitLoading}
                             unitAllowCreate={drawerState.unitAllowCreate}
+                            unitRequired={drawerState.unitRequired}
                             canMergeUnitDuplicates={hasRole(
                               props.currentUser?.roles,
                               'UnitsEditor',

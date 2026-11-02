@@ -1,5 +1,5 @@
 import { emitUnauthorizedEvent } from '../../auth-redirect';
-import { getJson, postBytes, postJson, postVoid } from './client';
+import { getJson, postBytes, postFormData, postJson, postVoid } from './client';
 import type {
   AiAgentActivityPresentation,
   AiAgentReasoningPreset,
@@ -49,6 +49,10 @@ import type {
   AiAgentRequestCreateRsp,
   AiAgentRequestEventItem,
   AiAgentRequestIdReq,
+  AiAgentUploadIdReq,
+  AiAgentUploadItem,
+  AiAgentUploadListReq,
+  AiAgentUploadListRsp,
 } from '../../../../Bindings';
 
 export type AiAgentRequestState = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
@@ -383,6 +387,7 @@ function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
     role: value.role,
     maps: value.maps ?? [],
     fileCitations: value.fileCitations ?? [],
+    attachments: value.attachments ?? [],
   };
 }
 
@@ -629,6 +634,7 @@ export async function submitAiAgentRequest(input: {
   message: string;
   reasoningPreset?: AiAgentReasoningPreset | null;
   mapEdit?: AiAgentMapEditTarget | null;
+  uploadIds?: string[];
 }): Promise<AiAgentRequestCreated> {
   const req: AiAgentRequestCreateReq = {
     conversationId: input.conversationId,
@@ -636,6 +642,7 @@ export async function submitAiAgentRequest(input: {
     prompt: input.message,
     reasoningPreset: input.reasoningPreset ?? null,
     mapEdit: input.mapEdit ?? null,
+    uploadIds: input.uploadIds ?? [],
   };
   const response = await postJson<AiAgentRequestCreateRsp>('/api/ai-agent/requests/create', req);
   return {
@@ -643,6 +650,34 @@ export async function submitAiAgentRequest(input: {
     conversationId: response.conversationId,
     state: requestState(response.state),
   };
+}
+
+export type AiAgentUpload = AiAgentUploadItem;
+
+export async function uploadAiAgentFile(
+  file: File,
+  conversationId: string | null,
+  signal?: AbortSignal,
+): Promise<AiAgentUpload> {
+  const body = new FormData();
+  if (conversationId) body.append('conversationId', conversationId);
+  body.append('file', file, file.name);
+  return postFormData<AiAgentUpload>('/api/ai-agent/uploads/create', body, { signal });
+}
+
+export async function listAiAgentUploads(ids: string[]): Promise<AiAgentUpload[]> {
+  if (ids.length === 0) return [];
+  const req: AiAgentUploadListReq = { conversationId: null, ids };
+  return (await postJson<AiAgentUploadListRsp>('/api/ai-agent/uploads/list', req)).uploads;
+}
+
+export async function deleteAiAgentUpload(id: string): Promise<void> {
+  const req: AiAgentUploadIdReq = { id };
+  await postVoid('/api/ai-agent/uploads/delete', req);
+}
+
+export function aiAgentUploadUrl(id: string): string {
+  return `/api/ai-agent/uploads/${encodeURIComponent(id)}/original`;
 }
 
 export async function cancelAiAgentRequest(id: string): Promise<AiAgentRequestState> {

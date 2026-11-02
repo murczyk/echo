@@ -20,7 +20,12 @@ import {
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
-import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
+import {
+  UNIT_FILTER_UNSET_ID,
+  getCanonicalUnitIdValue,
+  getUnitIdFilterValue,
+} from '../../utils/unit-search';
+import { expandUnitSelections, isUnitParentValue } from '../shared/unit-children-filter';
 import type { AnalysisQueryState } from './types';
 import type { GroupScope } from '../shared/group-navigation';
 
@@ -111,6 +116,7 @@ export function emptyQueryState(): AnalysisQueryState {
     freqsSelected: [],
     callsignsSelected: [],
     unitsSelected: [],
+    unitsIncludeChildren: false,
     deviceNamesSelected: [],
     locationsSelected: [],
     postsSelected: [],
@@ -455,6 +461,12 @@ export function buildAnalysisReq(
   allFrequencies: string[] = [],
 ): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
+  if (
+    !query.unitHierarchy &&
+    query.unitsSelected.length > 0 &&
+    (query.unitsIncludeChildren || query.unitsSelected.some(isUnitParentValue))
+  )
+    return null;
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
@@ -475,7 +487,13 @@ export function buildAnalysisReq(
           ]),
         )
       : query.freqsSelected;
-  const units = partitionUnitSelections(query.unitsSelected);
+  const units = partitionUnitSelections(
+    expandUnitSelections(
+      query.unitsSelected,
+      query.unitsIncludeChildren ?? false,
+      query.unitHierarchy,
+    ),
+  );
 
   return {
     sinceDateInclusiveMs,
@@ -486,7 +504,11 @@ export function buildAnalysisReq(
     selectedPosts: query.postsSelected.length ? query.postsSelected : null,
     selectedCallsigns: query.callsignsSelected.length ? query.callsignsSelected : null,
     selectedUnits: units.legacy.length ? units.legacy : null,
-    selectedUnitIds: units.ids.length ? units.ids : null,
+    selectedUnitIds: units.ids.length
+      ? units.ids
+      : query.unitsSelected.some(isUnitParentValue) && units.legacy.length === 0
+        ? [UNIT_FILTER_UNSET_ID]
+        : null,
     selectedDeviceNames: query.deviceNamesSelected.length ? query.deviceNamesSelected : null,
     selectedLocations: query.locationsSelected.length ? query.locationsSelected : null,
     selectedAors: query.aorsSelected.length
@@ -658,7 +680,8 @@ export function queryStateFromSavedFilter(
     sendersSelected: req.selectedSenders ?? [],
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
-    unitsSelected: [
+    unitsIncludeChildren: savedFilter.unitFilter?.includeChildren ?? false,
+    unitsSelected: savedFilter.unitFilter?.values ?? [
       ...(req.selectedUnitIds ?? []).map(getUnitIdFilterValue),
       ...(req.selectedUnits ?? []),
     ],
@@ -837,6 +860,20 @@ export function queryStateMatchesSavedFilter(
   savedFilter: SavedFilter,
   allFrequencies: string[] = [],
 ): boolean {
+  if (savedFilter.unitFilter) {
+    const stateKey = queryStateComparisonKey(state, allFrequencies);
+    const savedKey = queryStateComparisonKey(
+      queryStateFromSavedFilter(savedFilter, state),
+      allFrequencies,
+    );
+    return (
+      stateKey !== null &&
+      stateKey === savedKey &&
+      (state.unitsIncludeChildren ?? false) === savedFilter.unitFilter.includeChildren &&
+      JSON.stringify(state.unitsSelected) === JSON.stringify(savedFilter.unitFilter.values)
+    );
+  }
+  if (state.unitsIncludeChildren) return false;
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;

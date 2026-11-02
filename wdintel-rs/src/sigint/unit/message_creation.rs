@@ -16,6 +16,9 @@ pub async fn create_unit_for_message(
     ensure_unit_creation(&env.dbx, &login, &req.unit)
         .await
         .c(h!())?;
+    crate::users::role_settings::ensure_unit_creation(&env.dbx, &login)
+        .await
+        .c(h!())?;
     Ok(Json(
         create_unit_for_message_for_login(&login, &env, req.into_inner())
             .await

@@ -85,6 +85,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/flash-research.ts" \
     "$BUNDLE_DIR/runner/citations.ts" \
     "$BUNDLE_DIR/runner/attachments.ts" \
+    "$BUNDLE_DIR/runner/uploads.ts" \
     "$BUNDLE_DIR/runner/devices.ts" \
     "$BUNDLE_DIR/runner/maps.ts" \
     "$BUNDLE_DIR/runner/map-script.ts" \

@@ -1,3 +1,5 @@
+import { isUnitParentValue } from '../shared/unit-children-filter';
+import { useDutyUnitOptions } from './useDutyUnitOptions';
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
 import {
@@ -70,6 +72,9 @@ export type FeedFilterPanelViewModel = {
   posts: FeedFilterSelectionViewModel<string>;
   locations: FeedFilterLocationsViewModel;
   units: FeedFilterSelectionViewModel<string> & {
+    unitsIncludeChildren?: boolean;
+    unitHierarchyLoading?: boolean;
+    onUnitsIncludeChildrenChange?: (value: boolean) => void;
     showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
@@ -230,6 +235,16 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       new Map((unitsList ?? []).map((unit) => [getUnitIdFilterValue(unit.id), unit.name.trim()])),
     [unitsCatalogKey],
   );
+  const unitCounts = useDutyUnitOptions(panel);
+  const visibleUnitOptions = toggles.unitsIncludeChildren
+    ? unitCounts.options.map((option) => option.value)
+    : unitOptions;
+  const unitCountsByValue = new Map(unitCounts.options.map((option) => [option.value, option]));
+  const unitLabel = (value: string) =>
+    unitCountsByValue.get(value)?.label ??
+    unitLabelsById.get(value) ??
+    sources.unitHierarchy?.parents.find((parent) => parent.value === value)?.label ??
+    value;
   const unitBulkPasteOptions = useMemo(
     () => [...new Set([...unitOptions, ...persistentUnitFilterValues])],
     [persistentUnitFilterValues, unitOptions],
@@ -348,14 +363,20 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       value: unitSelectionState.localValue,
       onModeChange: unitSelectionState.setMode,
       onValueChange: unitSelectionState.setLocalValue,
-      options: unitOptions,
+      options: visibleUnitOptions,
+      unitsIncludeChildren: toggles.unitsIncludeChildren,
+      unitHierarchyLoading: unitCounts.loading,
+      onUnitsIncludeChildrenChange: actions.onUnitsIncludeChildrenChange,
       bulkPasteOptions: unitBulkPasteOptions,
-      getOptionLabel: (value: string) => unitLabelsById.get(value) || value,
+      getOptionLabel: (value: string) =>
+        toggles.unitsIncludeChildren && unitCountsByValue.has(value)
+          ? `${unitLabel(value)} (${unitCountsByValue.get(value)!.count})`
+          : unitLabel(value),
       getOptionKey: (value: string) => value,
       rankedSearch: true,
       keepOpenAndPreserveInputOnSelect: true,
       showExactMatchControl: unitSelectionState.localValue.some(
-        (value) => !isCanonicalUnitIdValue(value),
+        (value) => !isCanonicalUnitIdValue(value) && !isUnitParentValue(value),
       ),
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',

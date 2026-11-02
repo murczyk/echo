@@ -47,6 +47,7 @@ export function useRerDutyFeedCrud(
                     }
                   : {}),
                 filter: f,
+                unitsIncludeChildren: f.unitsIncludeChildren ?? feed.unitsIncludeChildren ?? false,
                 loading: true,
                 loadingOlder: false,
                 hasReachedStart: false,

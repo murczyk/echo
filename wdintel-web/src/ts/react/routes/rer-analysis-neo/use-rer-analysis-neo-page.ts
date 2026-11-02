@@ -54,6 +54,8 @@ import type {
   User,
 } from '../../../../Bindings';
 import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
+import { useUnitHierarchyCatalog } from '../shared/use-unit-children-filter';
+import { isUnitParentValue } from '../shared/unit-children-filter';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -363,11 +365,20 @@ export function useRerAnalysisNeoPage(
     !radioFeaturesAllowed && selectedSidebarTab === 'frequencies'
       ? 'callsigns'
       : selectedSidebarTab;
+  const linkedMessageQueryState = replyNavigationVersion > 0 ? queryState : targetMessageQueryState;
+  const needsUnitHierarchy =
+    queryState.unitsIncludeChildren === true || queryState.unitsSelected.some(isUnitParentValue);
+  const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
+    needsUnitHierarchy,
+    setPageError,
+  );
   const effectiveQueryState = useMemo(
     () =>
       effectiveRadioQuery(
         {
           ...queryStateWithResolvedRoleDate,
+          unitHierarchy,
+          unitHierarchyLoading,
           deviceNamesSelected:
             deviceAccess.status === 'denied'
               ? []
@@ -384,6 +395,8 @@ export function useRerAnalysisNeoPage(
     [
       deviceAccess.status,
       queryStateWithResolvedRoleDate,
+      unitHierarchy,
+      unitHierarchyLoading,
       radioFeaturesAllowed,
       rerReportFilterAccess.status,
       hideNetworks,
@@ -404,12 +417,15 @@ export function useRerAnalysisNeoPage(
         : { ...current, messageTimeBasis: dutySettings.messageSortBy },
     );
   }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
-  const linkedMessageQueryState = replyNavigationVersion > 0 ? queryState : targetMessageQueryState;
   const directMessageWindowQueryState = useMemo(
     () =>
       effectiveRadioQuery(
         {
           ...linkedMessageQueryState,
+          unitHierarchy,
+          unitsSelected: queryState.unitsSelected,
+          unitsIncludeChildren: queryState.unitsIncludeChildren,
+          unitsExactMatchOnly: queryState.unitsExactMatchOnly,
           deviceNamesSelected:
             deviceAccess.status === 'denied' ? [] : linkedMessageQueryState.deviceNamesSelected,
           onlyWithNetwork:
@@ -427,6 +443,10 @@ export function useRerAnalysisNeoPage(
       ),
     [
       linkedMessageQueryState,
+      unitHierarchy,
+      queryState.unitsSelected,
+      queryState.unitsIncludeChildren,
+      queryState.unitsExactMatchOnly,
       radioFeaturesAllowed,
       deviceAccess.status,
       rerReportFilterAccess.status,
@@ -441,6 +461,10 @@ export function useRerAnalysisNeoPage(
   );
 
   const directMessageDefaultsPending =
+    (directMessageWindowQueryState.unitsSelected.length > 0 &&
+      (directMessageWindowQueryState.unitsIncludeChildren ||
+        directMessageWindowQueryState.unitsSelected.some(isUnitParentValue)) &&
+      unitHierarchy === null) ||
     currentUserStatus === 'loading' ||
     (rerReportFilterAccessPending && targetMessageQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
@@ -504,9 +528,14 @@ export function useRerAnalysisNeoPage(
             : adjustQueryDateRangeForDirectMessage(requestQueryState, context.message![1]);
           periodAdjusted = next !== requestQueryState;
           if (periodAdjusted) publishPeriod(next);
+          const inboxReq = buildInboxReq(next, [], true);
+          if (inboxReq === null) {
+            restorePeriod();
+            return null;
+          }
           try {
             const window = await fetchInboxWindow(
-              { messageRef: targetMessageUid, inboxReq: buildInboxReq(next, [], true) },
+              { messageRef: targetMessageUid, inboxReq },
               { signal },
             );
             if (signal.aborted) return null;
@@ -733,6 +762,7 @@ export function useRerAnalysisNeoPage(
     authUserName,
     currentUser,
     deferInitialLoad:
+      (needsUnitHierarchy && queryState.unitsSelected.length > 0 && unitHierarchy === null) ||
       systemSettingsStatus === 'loading' ||
       deviceAccess.status === 'loading' ||
       (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||
@@ -1040,10 +1070,12 @@ export function useRerAnalysisNeoPage(
     allFrequencies: dataFreqValues,
     onError: setPageError,
     onUnauthorized: handleUnauthorized,
-    queryState:
-      deviceAccess.status === 'denied'
-        ? { ...queryStateWithResolvedRoleDate, deviceNamesSelected: [] }
-        : queryStateWithResolvedRoleDate,
+    queryState: {
+      ...queryStateWithResolvedRoleDate,
+      unitHierarchy,
+      deviceNamesSelected:
+        deviceAccess.status === 'denied' ? [] : queryStateWithResolvedRoleDate.deviceNamesSelected,
+    },
     setQueryState,
   });
 

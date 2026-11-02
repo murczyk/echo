@@ -309,19 +309,92 @@ async fn load_reo_report_messages(
         inbox_report_period_chunks(req, report_settings.chunking_hours)
             .context(h!())?;
     let chunks = &chunks;
-    crate::rer_importer::analysis::with_analytics_read_fallback(
-        env,
-        "REO report interception scan",
-        crate::rer_importer::analysis::analytics_inbox_request_supported(req),
-        |db| async move {
-            load_reo_inbox_messages_chunks(&db, login, env, req, chunks).await
-        },
-        |db| async move {
-            load_reo_inbox_messages_chunks(&db, login, env, req, chunks).await
-        },
-    )
-    .await
-    .context(h!())
+    let mut outcome =
+        crate::rer_importer::analysis::with_analytics_read_fallback_outcome(
+            env,
+            "REO report interception scan",
+            crate::rer_importer::analysis::analytics_inbox_request_supported(
+                req,
+            ),
+            |db| async move {
+                let mut messages = load_reo_inbox_messages_chunks(
+                    &db, login, env, req, chunks,
+                )
+                .await
+                .context(h!())?;
+                load_reo_analytics_message_networks(&db, &mut messages)
+                    .await
+                    .context(h!())?;
+                Ok(messages)
+            },
+            |_| async move {
+                load_reo_inbox_messages_chunks(
+                    &env.dbx, login, env, req, chunks,
+                )
+                .await
+            },
+        )
+        .await
+        .context(h!())?;
+    if outcome.postgres_reason.is_some() {
+        load_reo_message_networks(&env.dbx, &mut outcome.value)
+            .await
+            .context(h!())?;
+    }
+    Ok(outcome.value)
+}
+
+async fn load_reo_analytics_message_networks(
+    dbx: &DatabaseConnection,
+    messages: &mut [(i64, ReoInboxMessage)],
+) -> anyhow::Result<()> {
+    for messages in messages.chunks_mut(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
+        let message_ids = messages.iter().map(|(id, _)| *id).collect_vec();
+        let links = sigint_inbox_item_network::Entity::find()
+            .select_only()
+            .column(sigint_inbox_item_network::Column::SigintInboxItemId)
+            .column(sigint_inbox_item_network::Column::SigintNetworkId)
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .is_in(message_ids),
+            )
+            .into_tuple::<(i64, i64)>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        let mut network_ids_by_message = HashMap::<i64, Vec<i64>>::new();
+        for (message_id, network_id) in links {
+            network_ids_by_message
+                .entry(message_id)
+                .or_default()
+                .push(network_id);
+        }
+        for (id, message) in messages {
+            message.network_ids =
+                Some(network_ids_by_message.remove(id).context(h!())?);
+        }
+    }
+    Ok(())
+}
+
+async fn load_reo_message_networks(
+    dbx: &DatabaseConnection,
+    messages: &mut [(i64, ReoInboxMessage)],
+) -> anyhow::Result<()> {
+    for messages in messages.chunks_mut(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
+        let message_ids = messages.iter().map(|(id, _)| *id).collect_vec();
+        let mut network_ids_by_message =
+            crate::rer_importer::inbox::load_message_networks_by_ids(
+                dbx,
+                &message_ids,
+            )
+            .await
+            .context(h!())?;
+        for (id, message) in messages {
+            message.network_ids = network_ids_by_message.remove(id);
+        }
+    }
+    Ok(())
 }
 
 async fn load_reo_inbox_messages_chunks(
@@ -388,13 +461,6 @@ async fn load_reo_inbox_messages(
     .await
     .context(h!())?;
     let message_ids = rows.iter().map(|row| row.id).collect_vec();
-    let mut network_ids_by_message =
-        crate::rer_importer::inbox::load_message_networks_by_ids(
-            dbx,
-            &message_ids,
-        )
-        .await
-        .context(h!())?;
     let mut group_keys_by_message =
         load_reo_group_master_keys(dbx, login, req, &message_ids)
             .await
@@ -421,7 +487,7 @@ async fn load_reo_inbox_messages(
                     callsign_tokens: parse_optional_json_vec(
                         row.callsign_tokens,
                     )?,
-                    network_ids: network_ids_by_message.remove(&id),
+                    network_ids: None,
                     group_master_key: group_keys_by_message
                         .remove(&id)
                         .unwrap_or_default(),
@@ -1641,9 +1707,12 @@ fn get_network_summaries_for_message_id(
 mod tests {
     use super::*;
     use crate::functest::tests::{
-        cleanup, find_test_aor, mk_aor, mk_sigint_network,
-        mk_sigint_network_aor,
+        cleanup, cleanup_locked, find_test_aor, find_test_datasource_group,
+        find_test_login, mk_aor, mk_sigint_inbox_item, mk_sigint_network,
+        mk_sigint_network_aor, mk_sigint_network_freq, mk_signal_message,
+        mk_signal_message_group,
     };
+    use crate::rer_importer::types::AnalysisSearchMode;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
 
@@ -1711,6 +1780,339 @@ mod tests {
             network_ids,
             group_master_key: None,
         }
+    }
+
+    async fn mk_reo_test_inbox_message(
+        db: &DatabaseConnection,
+        group: &datasource_group::Model,
+        now: NaiveDateTime,
+        freq: &str,
+    ) -> anyhow::Result<signal_message::Model> {
+        let message = mk_signal_message(
+            db,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(group.id)),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_signal_message_group(
+            db,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group.group_master_key.clone())),
+                datasource_group_id: Set(Some(group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                freq: Set(Some(freq.to_string())),
+                body_noheader: Set(Some(serde_json::json!({
+                    "body": "message",
+                }))),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        Ok(message)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reo_keeps_analytics_rows_and_networks_together_3780(
+    ) -> anyhow::Result<()> {
+        let (env, _guard) = cleanup_locked().await.context(h!())?;
+        let db = &env.dbx;
+        let login = find_test_login(db).await.context(h!())?;
+        let group = find_test_datasource_group(db).await.context(h!())?;
+        let aor = find_test_aor(db).await.context(h!())?;
+        let now = Utc::now().naive_utc();
+        let earlier = now - chrono::Duration::minutes(1);
+        let old_network =
+            mk_reo_test_network(db, aor.id, now).await.context(h!())?;
+        let new_network =
+            mk_reo_test_network(db, aor.id, now).await.context(h!())?;
+        let updated =
+            mk_reo_test_inbox_message(db, &group, earlier, "146.4500")
+                .await
+                .context(h!())?;
+        let deleted =
+            mk_reo_test_inbox_message(db, &group, earlier, "146.4500")
+                .await
+                .context(h!())?;
+        for message_id in [updated.id, deleted.id] {
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message_id),
+                sigint_network_id: Set(old_network.id),
+                created_at: Set(now),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .c(h!())?;
+        }
+        let analytics =
+            crate::new_pg_pool_from_conn_string_with_max_connections(
+                crate::mk_conn_string(&env.config),
+                1,
+            )
+            .await
+            .c(h!())?;
+        analytics
+            .execute_unprepared(
+                r#"
+BEGIN;
+CREATE VIEW public.echo_analytics_health AS
+    SELECT true AS singleton, true AS healthy,
+           CURRENT_TIMESTAMP AS checked_at;
+CREATE TEMP TABLE signal_message AS TABLE public.signal_message;
+CREATE TEMP TABLE sigint_inbox_item AS TABLE public.sigint_inbox_item;
+CREATE TEMP TABLE sigint_inbox_item_network AS TABLE public.sigint_inbox_item_network;
+"#,
+            )
+            .await
+            .c(h!())?;
+        signal_message::ActiveModel {
+            id: Set(updated.id),
+            timestamp: Set(Some(now)),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .c(h!())?;
+        sigint_inbox_item::ActiveModel {
+            id: Set(updated.id),
+            freq: Set(Some("155.5000".to_string())),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .c(h!())?;
+        sigint_inbox_item_network::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item_network::Column::SigintNetworkId,
+                sea_query::Expr::value(new_network.id),
+            )
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(updated.id),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+        signal_message::ActiveModel {
+            id: Set(deleted.id),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .update(db)
+        .await
+        .c(h!())?;
+        sigint_inbox_item_network::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(deleted.id),
+            )
+            .exec(db)
+            .await
+            .c(h!())?;
+        let mut env = env.as_ref().clone();
+        env.analytics = Some(crate::types::AnalyticsPool {
+            conn: analytics.clone(),
+            retry_after_unix_ms_by_operation: Default::default(),
+        });
+        env.replicas = vec![crate::types::ReplicaPool {
+            conn: analytics.clone(),
+            label: "lagging REO replica".to_string(),
+        }];
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                (earlier - chrono::Duration::minutes(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                (now + chrono::Duration::minutes(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let stale =
+            load_reo_report_messages(&login.id, &env, &req, false, true, false)
+                .await;
+        let unsupported_req = InboxMessagesReq {
+            search: Some("message".to_string()),
+            search_mode: Some(AnalysisSearchMode::Exact),
+            ..req.clone()
+        };
+        let unsupported = load_reo_report_messages(
+            &login.id,
+            &env,
+            &unsupported_req,
+            false,
+            true,
+            false,
+        )
+        .await;
+        analytics
+            .execute_unprepared("DELETE FROM sigint_inbox_item_network")
+            .await
+            .c(h!())?;
+        let fallback =
+            load_reo_report_messages(&login.id, &env, &req, false, true, false)
+                .await;
+        env.analytics = None;
+        let postgres_only =
+            load_reo_report_messages(&login.id, &env, &req, false, true, false)
+                .await;
+        analytics.execute_unprepared("ROLLBACK").await.c(h!())?;
+        let stale = stale.context(h!())?;
+        assert_eq!(stale.len(), 2);
+        for (_, message) in stale {
+            assert_eq!(message.freq.as_deref(), Some("146.4500"));
+            assert_eq!(
+                message.timestamp,
+                Some(earlier.and_utc().timestamp_millis())
+            );
+            assert_eq!(message.network_ids, Some(vec![old_network.id]));
+        }
+        for fallback in [unsupported, fallback, postgres_only] {
+            let fallback = fallback.context(h!())?;
+            assert_eq!(fallback.len(), 1);
+            assert_eq!(fallback[0].0, updated.id);
+            assert_eq!(fallback[0].1.freq.as_deref(), Some("155.5000"));
+            assert_eq!(
+                fallback[0].1.timestamp,
+                Some(now.and_utc().timestamp_millis())
+            );
+            assert_eq!(fallback[0].1.network_ids, Some(vec![new_network.id]));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reo_read_only_scan_backfills_networks_on_primary_3780(
+    ) -> anyhow::Result<()> {
+        let env = cleanup().await.context(h!())?;
+        let db = &env.dbx;
+        let login = find_test_login(db).await.context(h!())?;
+        let group = find_test_datasource_group(db).await.context(h!())?;
+        let aor = find_test_aor(db).await.context(h!())?;
+        let now = Utc::now().naive_utc();
+        let network =
+            mk_reo_test_network(db, aor.id, now).await.context(h!())?;
+        mk_sigint_network_freq(
+            db,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.4500".to_string()),
+                active_from: Set(now - chrono::Duration::days(1)),
+                ..Default::default()
+            },
+        )
+        .await
+        .context(h!())?;
+        let matched = mk_reo_test_inbox_message(db, &group, now, "146.4500")
+            .await
+            .context(h!())?;
+        let unmatched = mk_reo_test_inbox_message(db, &group, now, "999.0000")
+            .await
+            .context(h!())?;
+        assert_eq!(
+            sigint_inbox_item_network::Entity::find()
+                .count(db)
+                .await
+                .context(h!())?,
+            0
+        );
+
+        let mut options =
+            ConnectOptions::new(crate::mk_conn_string(&env.config));
+        options.map_sqlx_postgres_opts(|options| {
+            options.options([("default_transaction_read_only", "on")])
+        });
+        let analytics = Database::connect(options).await.context(h!())?;
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                (now - chrono::Duration::minutes(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                (now + chrono::Duration::minutes(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let messages = load_reo_inbox_messages(
+            &analytics,
+            &login.id,
+            &env,
+            &req,
+            ReportPeriodEnd::Inclusive,
+        )
+        .await
+        .context(h!())?;
+        assert_eq!(messages.len(), 2);
+        assert!(messages
+            .iter()
+            .all(|(_, message)| message.network_ids.is_none()));
+        assert_eq!(
+            sigint_inbox_item_network::Entity::find()
+                .count(db)
+                .await
+                .context(h!())?,
+            0
+        );
+
+        for _ in 0..2 {
+            let messages = load_reo_report_messages(
+                &login.id, &env, &req, false, true, false,
+            )
+            .await
+            .context(h!())?;
+            assert_eq!(messages.len(), 2);
+            assert_eq!(
+                messages
+                    .iter()
+                    .find(|(id, _)| *id == matched.id)
+                    .context(h!())?
+                    .1
+                    .network_ids,
+                Some(vec![network.id])
+            );
+            assert_eq!(
+                messages
+                    .iter()
+                    .find(|(id, _)| *id == unmatched.id)
+                    .context(h!())?
+                    .1
+                    .network_ids,
+                None
+            );
+            let links = sigint_inbox_item_network::Entity::find()
+                .all(db)
+                .await
+                .context(h!())?;
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].sigint_inbox_item_id, matched.id);
+            assert_eq!(links[0].sigint_network_id, network.id);
+        }
+        Ok(())
     }
 
     #[tokio::test]

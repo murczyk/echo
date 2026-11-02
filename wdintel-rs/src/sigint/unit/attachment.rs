@@ -874,7 +874,9 @@ fn validate_aor_ids(aor_ids: Vec<i64>) -> Result<Vec<i64>, AppError> {
     Ok(aor_ids.into_iter().collect())
 }
 
-fn sanitize_file_name(raw_file_name: &str) -> Result<String, AppError> {
+pub(crate) fn sanitize_file_name(
+    raw_file_name: &str,
+) -> Result<String, AppError> {
     let file_name = raw_file_name
         .rsplit(['/', '\\'])
         .next()
@@ -905,7 +907,7 @@ fn sanitize_file_name(raw_file_name: &str) -> Result<String, AppError> {
     Ok(file_name)
 }
 
-fn normalize_content_type(
+pub(crate) fn normalize_content_type(
     supplied_content_type: Option<&str>,
     file_name: &str,
 ) -> String {
@@ -1015,7 +1017,10 @@ async fn commit_attachment_upload(
     .c(h!())?
 }
 
-async fn delete_stored_asset_best_effort(env: &Env, storage_key: &str) {
+pub(crate) async fn delete_stored_asset_best_effort(
+    env: &Env,
+    storage_key: &str,
+) {
     let (Some(s3), Some(s3_config)) = (&env.s3, &env.s3_config) else {
         return;
     };

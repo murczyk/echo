@@ -120,6 +120,7 @@ export async function viewMessage(actor: Actor, id: number) {
 
 type GroupFeedActorsOptions = {
   actorCount?: number;
+  userRoles?: string[];
   messageFields?: (message: Message) => Record<string, unknown>;
 };
 
@@ -246,7 +247,7 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
           json: {
             id: user,
             name: user,
-            roles: ['Rer', 'Admin'],
+            roles: options.userRoles ?? ['Rer', 'Admin'],
             sigint_zone_id: null,
             organism_id: null,
             delta_login: null,
@@ -287,6 +288,13 @@ export async function installGroupFeedActors(options: GroupFeedActorsOptions = {
           groups: [body.signal_group_master_key],
         });
         await route.fulfill({ json: { signal_message_id: message.id } });
+      } else if (/^\/api\/1\.1\/message\/\d+\/edit$/.test(path)) {
+        const message = messages.find((message) => message.id === Number(path.split('/')[4]))!;
+        message.text = body.full_body ?? body.text;
+        message.groups = [body.signal_group_master_key];
+        await route.fulfill({
+          json: { signal_message_id: message.id, message: inboxMessage(message) },
+        });
       } else if (
         path === '/api/rer-importer/get-inbox' ||
         path === '/api/rer-importer/get-inbox-count'

@@ -48,6 +48,7 @@ import {
 import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
+import { useMessageCreationSettings } from './useMessageCreationSettings';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
 import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
 import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
@@ -137,6 +138,11 @@ export function useManageMessageDrawer({
   const reportParentIdsKey = reportParentIds.join(',');
   const isReportMode = isReportCreateMode || isReportEditMode;
   const formReady = open && editTargetLoadState.status === 'idle';
+  const creationSettings = useMessageCreationSettings(formReady, currentUser?.id);
+  const creationSettingsBlocked = !isEditMode && creationSettings.blocked;
+  const unitRequired = !isEditMode && (creationSettings.settings?.unitRequired ?? false);
+  const deviceRequired =
+    !isEditMode && cyberEchoEnabled && (creationSettings.settings?.deviceRequired ?? false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -387,8 +393,13 @@ export function useManageMessageDrawer({
 
   const resolver = useMemo(
     () =>
-      zodResolver(makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed)),
-    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed],
+      zodResolver(
+        makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed, {
+          unitRequired,
+          deviceRequired,
+        }),
+      ),
+    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed, unitRequired, deviceRequired],
   );
 
   const methods = useForm<MessageFormData>({
@@ -400,6 +411,9 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset, resetField } = methods;
   const formValues = useWatch({ control });
+  useEffect(() => {
+    if (creationSettings.settings) void methods.trigger(['unit', 'deviceName']);
+  }, [creationSettings.settings, methods]);
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
       active: formReady,
@@ -687,9 +701,12 @@ export function useManageMessageDrawer({
       parsing || parseStatus === 'debouncing' || (autoParseEnabled && parseStatus === 'error');
 
     return isManageMessageSubmitEligible({
-      busy: busy || (isReportCreateMode && !reportCopyLoaded),
+      busy: busy || creationSettingsBlocked || (isReportCreateMode && !reportCopyLoaded),
       parsing: parserBlocksSubmit,
-      schemaValid: formState.isValid || reportDestinationMissing,
+      schemaValid:
+        (formState.isValid || reportDestinationMissing) &&
+        (!unitRequired || Boolean(formValues.unit?.trim())) &&
+        (!deviceRequired || Boolean(formValues.deviceName?.trim())),
       unitSelectionValid:
         isEditMode ||
         isMessageUnitSelectionValid(
@@ -719,6 +736,9 @@ export function useManageMessageDrawer({
     });
   }, [
     busy,
+    creationSettingsBlocked,
+    unitRequired,
+    deviceRequired,
     autoParseEnabled,
     editTarget,
     existingMedia,
@@ -1187,7 +1207,7 @@ export function useManageMessageDrawer({
   };
 
   const { onSubmit } = useMessageSubmit({
-    busy,
+    busy: busy || creationSettingsBlocked,
     radioFeaturesAllowed,
     cyberEchoEnabled,
     isEditMode,
@@ -1252,7 +1272,11 @@ export function useManageMessageDrawer({
     setPostInput,
     unitOptions,
     unitLoading,
-    unitAllowCreate,
+    unitAllowCreate: unitAllowCreate && creationSettings.settings?.allowUnitCreation === true,
+    unitRequired,
+    deviceRequired,
+    creationSettingsError: creationSettings.error,
+    retryCreationSettings: creationSettings.retry,
     onUnitFocus,
     networkNameOptions,
     networkNameLoading,

@@ -9,6 +9,8 @@ pub struct OperatorInboxMessage {
     pub message: String,
     pub group: Group,
     pub profile: Profile,
+    #[serde(default)]
+    pub sender_id: Option<uuid::Uuid>,
     pub metadata: Metadata,
 }
 

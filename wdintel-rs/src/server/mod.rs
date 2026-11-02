@@ -967,6 +967,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_agent_upload_env = env.clone();
+    let ai_agent_upload_cancellation = cancel_token.clone();
+    spawn_named_worker("ai_agent_upload_worker", bg_set, async move {
+        crate::ai_agent::uploads::worker::run_nofail(
+            ai_agent_upload_env,
+            ai_agent_upload_cancellation,
+        )
+        .await;
+    });
+
     spawn_named_worker("signal_cli_verbose_logger", bg_set, async move {
         info!("Starting enable_signal_cli_verbose_logging");
         if let Err(err) = echo_im::enable_signal_cli_verbose_logging(
@@ -1254,6 +1264,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::get_inbox_map)
             .service(crate::rer_importer::inbox::map_settlement_messages)
             .service(crate::rer_importer::inbox::inbox_messages_count)
+            .service(crate::rer_importer::inbox::inbox_unit_stats)
             .service(crate::rer_importer::inbox::delete_message)
             .service(crate::rer_importer::inbox::comment_save)
             .service(crate::rer_importer::inbox::inbox_submit)
@@ -1385,6 +1396,14 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_agent::delete_conversation)
             .service(crate::ai_agent::create_request)
             .service(crate::ai_agent::cancel_request)
+            .service(crate::ai_agent::uploads::api::create_upload)
+            .service(crate::ai_agent::uploads::api::list_uploads)
+            .service(crate::ai_agent::uploads::api::delete_upload)
+            .service(crate::ai_agent::uploads::api::download_upload)
+            .service(crate::ai_agent::uploads::agent_api::agent_list)
+            .service(crate::ai_agent::uploads::agent_api::agent_read)
+            .service(crate::ai_agent::uploads::agent_api::agent_search)
+            .service(crate::ai_agent::uploads::agent_api::agent_image)
             .service(crate::ai_agent::work_memory::append)
             .service(crate::ai_agent::work_memory::list)
             .service(crate::ai_agent::work_memory::read)
@@ -1544,6 +1563,11 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)
+            .service(crate::users::role_settings::list)
+            .service(crate::users::role_settings::create)
+            .service(crate::users::role_settings::update)
+            .service(crate::users::role_settings::delete)
+            .service(crate::users::role_settings::current)
             .service(crate::users::list_logins)
             .service(crate::users::create_login)
             .service(crate::users::create_delta_login)
@@ -1838,6 +1862,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::link_operator)
             .service(crate::messenger::group_update)
             .service(crate::operator::message_submit)
+            .service(crate::api_senders::fetch_senders)
+            .service(crate::api_senders::list_senders)
+            .service(crate::api_senders::upsert_sender)
+            .service(crate::api_senders::delete_sender)
             .service(crate::messenger_ingest::accounts_sync)
             .service(crate::messenger_ingest::chats_sync)
             .service(crate::messenger_ingest::chat_members_sync)

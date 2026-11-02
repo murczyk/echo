@@ -5,7 +5,8 @@ and `create_unit` fields (#3535). An explicit ID selects an existing,
 non-deleted unit; `create_unit: true` requires a nonempty name and no ID.
 Message writers (`Rer` or `Cyber`, including administrators) can add name-only
 units through this flow; general unit editing still requires `UnitsEditor`.
-Creation reuses a unique name match, rejects ambiguous names, and serializes
+Inline creation also respects [role settings](../../../../docs/role-message-settings.md)
+for new messages and reports. Creation reuses a unique name match, rejects ambiguous names, and serializes
 concurrent inline creation by normalized name. Name matching collapses
 whitespace and ignores case. Legacy free-text submissions remain accepted.
 

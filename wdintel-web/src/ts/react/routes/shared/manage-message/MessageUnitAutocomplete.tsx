@@ -14,6 +14,7 @@ type Props = {
   value: string;
   selection?: MessageFormData['unitSelection'];
   errorMessage?: string;
+  required?: boolean;
   options: UnitResponse[];
   loading: boolean;
   allowCreate: boolean;
@@ -27,6 +28,7 @@ export function MessageUnitAutocomplete({
   value,
   selection,
   errorMessage,
+  required = false,
   options,
   loading,
   allowCreate,
@@ -105,6 +107,7 @@ export function MessageUnitAutocomplete({
           <TextField
             {...params}
             label="Підрозділ"
+            required={required}
             size="small"
             fullWidth
             disabled={disabled || creation.loading}
