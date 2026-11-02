@@ -3116,6 +3116,9 @@ mod tests {
             report_chunking_hours: Set(
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
+            report_global_concurrency: Set(None),
+            report_kind_concurrency: Set(None),
+            report_etalonka_concurrency: Set(None),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),

@@ -1,7 +1,7 @@
 # RER report administration
 
-`/admin/all-reports?tab=rer-report` contains the system switch, access-list editor,
-and unit metadata table. All six `/api/admin/rer-report/*` endpoints require an
+`/admin/system-settings-neo#reports` contains a standalone RER block with the
+system switch, access-list editor, and unit metadata table. All six `/api/admin/rer-report/*` endpoints require an
 administrator. The existing system switch endpoint remains unchanged.
 
 The access list controls only the Analysis Neo `Для звіту РЕР` checkbox. Both the
@@ -60,15 +60,15 @@ rollback if they must be preserved.
   replacement and rollback, metadata CRUD conflicts, real synchronous merge,
   and metadata writes waiting for concurrent merges.
 - `wdintel-rs/src/sigint/unit/merge_task.rs`: staged metadata transfer.
-- `wdintel-web/src/ts/react/__tests__/admin-all-reports-element.spec.tsx`:
-  snackbar context on the direct RER tab.
-- `wdintel-web/src/ts/react/routes/admin-all-reports/__tests__/index.spec.tsx`:
+- `wdintel-web/src/ts/react/__tests__/system-settings-neo-element.spec.tsx`:
+  snackbar context on the direct Reports settings tab.
+- `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/RerReportSettings.spec.tsx`:
   persisted settings under partial failures, retry, unavailable account removal,
-  saved switch, and shared URL parameters.
-- `wdintel-web/src/ts/react/routes/admin-all-reports/__tests__/RerReportMetadataEditor.spec.tsx`:
+  and saved switch.
+- `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/RerReportMetadataEditor.spec.tsx`:
   selected-unit text and seeded-label reconciliation.
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`:
   eligibility and hidden-filter cleanup.
 - `wdintel-web/tests/e2e/analysis-neo.spec.ts`: Analysis browser flows.
-- `wdintel-web/tests/e2e/rer-report-admin.spec.ts`: real admin tab partial-failure
+- `wdintel-web/tests/e2e/rer-report-admin.spec.ts`: Reports settings partial-failure
   recovery and metadata dialog on phone and desktop widths.

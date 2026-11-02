@@ -237,3 +237,22 @@
 - **Source implementation:** `SettingsMyReportsSection.tsx`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 - **Original Echo issue/PR, if known:** none recorded
+
+## Report administration
+
+- Administrators manage report chunking, size restrictions, and concurrency in
+  `/admin/system-settings-neo#reports`. Defaults are 4 globally, 1 per non-Etalonka
+  kind, and 2 for Etalonka. New limits apply to subsequent claims; running jobs
+  finish normally. Etalonka jobs remain sequential for each user.
+- The independent RER block retains its enable toggle, eligible-user list,
+  metadata editor, retry behavior, and existing report visibility rules. Saving
+  the general settings after toggling RER must preserve the RER toggle.
+- All Reports displays report history. Legacy `?tab=rer-report` links navigate to
+  Reports settings while retaining metadata filters.
+- Restart requires confirmation and invokes only the administrator endpoint
+  `/api/admin/restart-report-worker`. It restarts the report service and shows
+  failures without reporting success.
+- Coverage: `wdintel-web/tests/e2e/report-settings.spec.ts`,
+  `wdintel-web/tests/e2e/rer-report-admin.spec.ts`,
+  `wdintel-web/src/ts/react/routes/admin-all-reports/__tests__/index.spec.tsx`, and
+  `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/RerReportSettings.spec.tsx`.

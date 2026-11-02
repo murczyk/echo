@@ -25,7 +25,10 @@ for (const width of [375, 1200]) {
         metadataFails ? { status: 500, body: 'Metadata unavailable' } : { json: { items: [] } },
       ),
     );
-    await page.goto('/admin/all-reports?tab=rer-report&globalFilter=unit');
+    await page.route('**/api/admin/system-settings/list', (route) =>
+      route.fulfill({ json: { items: [] } }),
+    );
+    await page.goto('/admin/system-settings-neo?globalFilter=unit#reports');
 
     const toggle = page.getByRole('checkbox', { name: 'enable rer report' });
     await expect(toggle).toBeChecked();

@@ -14927,6 +14927,9 @@ type alias SystemSettingsItem =
     , doNotStoreDuplicateEchoimFailures : Bool
     , goiAssociationMessageUidWorkerEnabled : Bool
     , reportChunkingHours : Int
+    , reportGlobalConcurrency : Int
+    , reportKindConcurrency : Int
+    , reportEtalonkaConcurrency : Int
     , limitBigReports : Bool
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
@@ -14979,6 +14982,9 @@ systemSettingsItemEncoder struct =
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
+        , ( "report_global_concurrency", (Json.Encode.int) struct.reportGlobalConcurrency )
+        , ( "report_kind_concurrency", (Json.Encode.int) struct.reportKindConcurrency )
+        , ( "report_etalonka_concurrency", (Json.Encode.int) struct.reportEtalonkaConcurrency )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
@@ -15036,6 +15042,9 @@ type alias CreateSystemSettingsReq =
     , doNotStoreDuplicateEchoimFailures : Bool
     , goiAssociationMessageUidWorkerEnabled : Bool
     , reportChunkingHours : Int
+    , reportGlobalConcurrency : Maybe (Int)
+    , reportKindConcurrency : Maybe (Int)
+    , reportEtalonkaConcurrency : Maybe (Int)
     , limitBigReports : Bool
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
@@ -15083,6 +15092,9 @@ createSystemSettingsReqEncoder struct =
         , ( "do_not_store_duplicate_echoim_failures", (Json.Encode.bool) struct.doNotStoreDuplicateEchoimFailures )
         , ( "goi_association_message_uid_worker_enabled", (Json.Encode.bool) struct.goiAssociationMessageUidWorkerEnabled )
         , ( "report_chunking_hours", (Json.Encode.int) struct.reportChunkingHours )
+        , ( "report_global_concurrency", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.reportGlobalConcurrency )
+        , ( "report_kind_concurrency", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.reportKindConcurrency )
+        , ( "report_etalonka_concurrency", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.reportEtalonkaConcurrency )
         , ( "limit_big_reports", (Json.Encode.bool) struct.limitBigReports )
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
@@ -30046,6 +30058,9 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_global_concurrency" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_kind_concurrency" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_etalonka_concurrency" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
@@ -30098,6 +30113,9 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_store_duplicate_echoim_failures" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "goi_association_message_uid_worker_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_chunking_hours" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_global_concurrency" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_kind_concurrency" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_etalonka_concurrency" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit_big_reports" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))

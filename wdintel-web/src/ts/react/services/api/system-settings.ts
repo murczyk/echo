@@ -43,6 +43,9 @@ type SystemSettingsItemRaw = {
   do_not_store_duplicate_echoim_failures?: boolean;
   goi_association_message_uid_worker_enabled?: boolean;
   report_chunking_hours?: number;
+  report_global_concurrency?: BackendSystemSettingsItem['reportGlobalConcurrency'];
+  report_kind_concurrency?: BackendSystemSettingsItem['reportKindConcurrency'];
+  report_etalonka_concurrency?: BackendSystemSettingsItem['reportEtalonkaConcurrency'];
   limit_big_reports?: boolean;
   enable_audio_transcription?: boolean;
   peleng_bounds_enabled?: boolean;
@@ -132,6 +135,9 @@ type CreateSystemSettingsReqRaw = {
   do_not_store_duplicate_echoim_failures: boolean;
   goi_association_message_uid_worker_enabled: boolean;
   report_chunking_hours: number;
+  report_global_concurrency?: BackendSystemSettingsItem['reportGlobalConcurrency'];
+  report_kind_concurrency?: BackendSystemSettingsItem['reportKindConcurrency'];
+  report_etalonka_concurrency?: BackendSystemSettingsItem['reportEtalonkaConcurrency'];
   limit_big_reports: boolean;
   enable_audio_transcription: boolean;
   peleng_bounds_enabled: boolean;
@@ -185,6 +191,9 @@ export type SystemSettingsItem = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: BackendSystemSettingsItem['reportGlobalConcurrency'];
+  reportKindConcurrency: BackendSystemSettingsItem['reportKindConcurrency'];
+  reportEtalonkaConcurrency: BackendSystemSettingsItem['reportEtalonkaConcurrency'];
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
@@ -270,6 +279,9 @@ export type CreateSystemSettingsInput = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency?: BackendSystemSettingsItem['reportGlobalConcurrency'];
+  reportKindConcurrency?: BackendSystemSettingsItem['reportKindConcurrency'];
+  reportEtalonkaConcurrency?: BackendSystemSettingsItem['reportEtalonkaConcurrency'];
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
@@ -320,6 +332,9 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     doNotStoreDuplicateEchoimFailures: raw.do_not_store_duplicate_echoim_failures ?? false,
     goiAssociationMessageUidWorkerEnabled: raw.goi_association_message_uid_worker_enabled ?? false,
     reportChunkingHours: raw.report_chunking_hours ?? 24,
+    reportGlobalConcurrency: raw.report_global_concurrency ?? 4,
+    reportKindConcurrency: raw.report_kind_concurrency ?? 1,
+    reportEtalonkaConcurrency: raw.report_etalonka_concurrency ?? 2,
     limitBigReports: raw.limit_big_reports ?? false,
     enableAudioTranscription: raw.enable_audio_transcription ?? false,
     pelengBoundsEnabled: raw.peleng_bounds_enabled ?? false,
@@ -416,6 +431,9 @@ export async function createSystemSettings(
     do_not_store_duplicate_echoim_failures: input.doNotStoreDuplicateEchoimFailures,
     goi_association_message_uid_worker_enabled: input.goiAssociationMessageUidWorkerEnabled,
     report_chunking_hours: input.reportChunkingHours,
+    report_global_concurrency: input.reportGlobalConcurrency,
+    report_kind_concurrency: input.reportKindConcurrency,
+    report_etalonka_concurrency: input.reportEtalonkaConcurrency,
     limit_big_reports: input.limitBigReports,
     enable_audio_transcription: input.enableAudioTranscription,
     peleng_bounds_enabled: input.pelengBoundsEnabled,

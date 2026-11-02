@@ -2,12 +2,12 @@
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../routes/admin-all-reports', async () => {
+vi.mock('../routes/admin-system-settings-neo', async () => {
   const { usePowerSnackbar } = await vi.importActual<typeof import('../components/PowerSnackbar')>(
     '../components/PowerSnackbar',
   );
   return {
-    AdminAllReportsPage: () => {
+    AdminSystemSettingsNeoPage: () => {
       usePowerSnackbar();
       return (
         <label>
@@ -19,23 +19,23 @@ vi.mock('../routes/admin-all-reports', async () => {
   };
 });
 
-import '../admin-all-reports-element';
+import '../system-settings-neo-element';
 
 afterEach(async () => {
   await act(async () => {
     document.body.replaceChildren();
     await Promise.resolve();
   });
-  window.history.replaceState(null, '', '/admin/all-reports');
+  window.history.replaceState(null, '', '/admin/system-settings-neo');
 });
 
-describe('admin-all-reports custom element', () => {
+describe('system-settings-neo custom element', () => {
   // Regression: https://github.com/echoua/echo/issues/3598
-  it('provides snackbar context when opening the RER report tab directly', async () => {
-    window.history.replaceState(null, '', '/admin/all-reports?tab=rer-report');
+  it('provides snackbar context when opening Reports settings directly', async () => {
+    window.history.replaceState(null, '', '/admin/system-settings-neo#reports');
 
     await act(async () => {
-      document.body.append(document.createElement('admin-all-reports'));
+      document.body.append(document.createElement('system-settings-neo'));
       await Promise.resolve();
     });
 

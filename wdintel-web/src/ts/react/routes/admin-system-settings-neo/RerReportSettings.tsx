@@ -36,7 +36,15 @@ function sameIds(left: readonly string[], right: readonly string[]): boolean {
   return left.every((id) => rightIds.has(id));
 }
 
-export function RerReportSettings() {
+export function RerReportSettings({
+  disabled = false,
+  onEnabledChange,
+  onSavingChange,
+}: {
+  disabled?: boolean;
+  onEnabledChange?: (enabled: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
+}) {
   const { notify } = usePowerSnackbar();
   const [enabled, setEnabled] = useState(false);
   const [logins, setLogins] = useState<Login[]>([]);
@@ -149,10 +157,13 @@ export function RerReportSettings() {
     const previousEnabled = enabled;
     setEnabled(nextEnabled);
     setSavingSetting(true);
+    onSavingChange?.(true);
     setError(null);
     try {
       const settings = await setRerReportEnabled(nextEnabled);
       setEnabled(settings.rerReportEnabled);
+      onEnabledChange?.(settings.rerReportEnabled);
+      window.dispatchEvent(new Event('system-settings-saved'));
       notify({ severity: 'success', message: 'Налаштування звіту РЕР збережено.' });
     } catch (nextError) {
       const message = `Не вдалося зберегти налаштування: ${errorMessage(nextError)}`;
@@ -161,6 +172,7 @@ export function RerReportSettings() {
       notify({ severity: 'error', message });
     } finally {
       setSavingSetting(false);
+      onSavingChange?.(false);
     }
   }
 
@@ -198,7 +210,7 @@ export function RerReportSettings() {
           control={
             <Switch
               checked={enabled}
-              disabled={loading || !settingsLoaded || savingSetting}
+              disabled={disabled || loading || !settingsLoaded || savingSetting}
               onChange={(_, checked) => void updateEnabled(checked)}
               slotProps={{ input: { 'aria-label': 'enable rer report' } }}
             />

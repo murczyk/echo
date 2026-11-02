@@ -1,10 +1,9 @@
 use crate::config::{
     DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_CANCELLED_ERROR_STATUS,
-    REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    REPORT_HISTORY_CONCURRENCY_LOCK, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
     REPORT_HISTORY_DOWNLOAD_ATTEMPTS_PER_REPORT_LIMIT,
     REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
-    REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GENERIC_ERROR_STATUS,
-    REPORT_HISTORY_GLOBAL_WORKER_COUNT,
+    REPORT_HISTORY_GENERIC_ERROR_STATUS,
     REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
     REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS,
     REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS, REPORT_HISTORY_RECORD_LIMIT,
@@ -53,9 +52,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration as StdDuration;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use uuid::Uuid;
 
@@ -79,8 +77,26 @@ const REPORT_OBJECT_PREFIX: &str = "reports";
 const REPORT_TIMEOUT_LOGIN: &str = "system";
 const REPORT_CRASH_RECOVERY_LOGIN: &str = "system";
 
-static REPORT_HISTORY_GLOBAL_GATE: LazyLock<Semaphore> =
-    LazyLock::new(|| Semaphore::new(REPORT_HISTORY_GLOBAL_WORKER_COUNT));
+static REPORT_HISTORY_RUNNING: AtomicUsize = AtomicUsize::new(0);
+
+struct ReportWorkerPermit;
+
+impl ReportWorkerPermit {
+    fn try_acquire(limit: i64) -> Option<Self> {
+        REPORT_HISTORY_RUNNING
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |running| {
+                (running < limit as usize).then_some(running + 1)
+            })
+            .ok()
+            .map(|_| Self)
+    }
+}
+
+impl Drop for ReportWorkerPermit {
+    fn drop(&mut self) {
+        REPORT_HISTORY_RUNNING.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "source", rename_all = "snake_case")]
@@ -2906,18 +2922,14 @@ pub fn spawn_report_history_workers(
     env: std::sync::Arc<Env>,
 ) {
     for (worker_name, report_kind) in worker_report_kinds() {
-        for worker_idx in 0..report_worker_count(report_kind) {
-            let env = env.clone();
-            let report_kind = report_kind.to_string();
-            let worker_name = report_worker_name(worker_name, worker_idx);
-            crate::utils::worker_watch::spawn_named_worker(
-                worker_name,
-                bg_set,
-                async move {
-                    run_report_history_worker_nofail(env, report_kind).await;
-                },
-            );
-        }
+        let env = env.clone();
+        crate::utils::worker_watch::spawn_named_worker(
+            worker_name,
+            bg_set,
+            async move {
+                run_report_history_worker_nofail(env, report_kind).await;
+            },
+        );
     }
     let unknown_env = env.clone();
     crate::utils::worker_watch::spawn_named_worker(
@@ -2937,71 +2949,91 @@ pub fn spawn_report_history_workers(
     );
 }
 
-fn report_worker_count(report_kind: &str) -> usize {
-    if report_kind == KIND_ETALONKA {
-        REPORT_HISTORY_ETALONKA_WORKER_COUNT
-    } else {
-        1
-    }
-}
-
-fn report_worker_name(worker_name: &str, worker_idx: usize) -> String {
-    if worker_idx == 0 {
-        worker_name.to_string()
-    } else {
-        format!("{worker_name}_{worker_idx}")
-    }
-}
-
 async fn run_report_history_worker_nofail(
     env: std::sync::Arc<Env>,
-    report_kind: String,
+    report_kind: &'static str,
 ) {
+    let mut running = JoinSet::new();
     loop {
-        let permit = match REPORT_HISTORY_GLOBAL_GATE.acquire().await {
-            Ok(permit) => permit,
+        while let Some(result) = running.try_join_next() {
+            log_report_task_result(result);
+        }
+        match claim_next_report_for_worker(&env.dbx, report_kind, running.len())
+            .await
+        {
+            Ok(Some((report_history, permit))) => {
+                let env = env.clone();
+                running.spawn(async move {
+                    process_claimed_report(env.as_ref(), report_history).await;
+                    drop(permit);
+                });
+                continue;
+            }
+            Ok(None) => {}
             Err(err) => {
-                error!("report history global gate closed: {err:?}");
-                return;
-            }
-        };
-        match take_next_report(&env.dbx, &report_kind).await {
-            Ok(Some(report_history)) => {
-                let report_id = report_history.id;
-                let rss_before = report_worker_rss_kib();
-                log::info!(
-                    "report history job starting: id={report_id}, kind={report_kind}, rss_kib={rss_before:?}"
-                );
-                if let Err(err) =
-                    process_report(env.as_ref(), report_history).await
-                {
-                    error!("report history worker failed: {err:?}");
-                }
-                drop(permit);
-                let rss_before_trim = report_worker_rss_kib();
-                let trim_result = report_worker_malloc_trim();
-                let rss_after_trim = report_worker_rss_kib();
-                log::info!(
-                    "report history job released memory: id={report_id}, kind={report_kind}, rss_before_kib={rss_before:?}, rss_before_trim_kib={rss_before_trim:?}, rss_after_trim_kib={rss_after_trim:?}, malloc_trim={trim_result:?}"
-                );
-            }
-            Ok(None) => {
-                drop(permit);
-                tokio::time::sleep(std::time::Duration::from_secs(
-                    WORKER_IDLE_SLEEP_SECS,
-                ))
-                .await;
-            }
-            Err(err) => {
-                drop(permit);
                 error!("failed to take next report history row: {err:?}");
-                tokio::time::sleep(std::time::Duration::from_secs(
-                    WORKER_IDLE_SLEEP_SECS,
-                ))
-                .await;
             }
         }
+        tokio::select! {
+            Some(result) = running.join_next(), if !running.is_empty() => {
+                log_report_task_result(result);
+            }
+            _ = tokio::time::sleep(StdDuration::from_secs(WORKER_IDLE_SLEEP_SECS)) => {}
+        }
     }
+}
+
+async fn claim_next_report_for_worker(
+    dbx: &DatabaseConnection,
+    report_kind: &str,
+    running_count: usize,
+) -> Result<Option<(report_history::Model, ReportWorkerPermit)>, AppError> {
+    let concurrency = crate::system_settings::report_concurrency_settings(dbx)
+        .await
+        .c(h!())?;
+    let kind_limit = if report_kind == KIND_ETALONKA {
+        concurrency.etalonka
+    } else {
+        concurrency.per_kind
+    };
+    if running_count >= kind_limit as usize {
+        return Ok(None);
+    }
+    let Some(permit) = ReportWorkerPermit::try_acquire(concurrency.global)
+    else {
+        return Ok(None);
+    };
+    Ok(take_next_report(dbx, report_kind)
+        .await
+        .context(h!())?
+        .map(|report| (report, permit)))
+}
+
+fn log_report_task_result(result: Result<(), tokio::task::JoinError>) {
+    if let Err(err) = result {
+        error!("report history task failed: {err:?}");
+    }
+}
+
+async fn process_claimed_report(
+    env: &Env,
+    report_history: report_history::Model,
+) {
+    let report_id = report_history.id;
+    let report_kind = report_history.report_kind.clone();
+    let rss_before = report_worker_rss_kib();
+    log::info!(
+        "report history job starting: id={report_id}, kind={report_kind}, rss_kib={rss_before:?}"
+    );
+    if let Err(err) = process_report(env, report_history).await {
+        error!("report history worker failed: {err:?}");
+    }
+    let rss_before_trim = report_worker_rss_kib();
+    let trim_result = report_worker_malloc_trim();
+    let rss_after_trim = report_worker_rss_kib();
+    log::info!(
+        "report history job released memory: id={report_id}, kind={report_kind}, rss_before_kib={rss_before:?}, rss_before_trim_kib={rss_before_trim:?}, rss_after_trim_kib={rss_after_trim:?}, malloc_trim={trim_result:?}"
+    );
 }
 
 fn report_worker_rss_kib() -> Option<u64> {
@@ -3117,15 +3149,38 @@ async fn take_next_report(
     report_kind: &str,
 ) -> Result<Option<report_history::Model>, AppError> {
     let txn = dbx.begin().await.c(h!())?;
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [REPORT_HISTORY_CONCURRENCY_LOCK.into()],
+    ))
+    .await
+    .c(h!())?;
+    let concurrency = crate::system_settings::report_concurrency_settings(&txn)
+        .await
+        .c(h!())?;
     let serialize_by_user = report_kind == KIND_ETALONKA;
+    let kind_concurrency = if serialize_by_user {
+        concurrency.etalonka
+    } else {
+        concurrency.per_kind
+    };
     let stmt = Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
-        with next_report as (
+        with active_reports as materialized (
+            select report_kind from report_history where status = 'in_progress'
+        ), next_report as (
             select id
             from report_history
             where status = 'planned'
               and report_kind = $1
+              and (
+                  select count(*) from active_reports
+              ) < $3
+              and (
+                  select count(*) from active_reports where report_kind = $1
+              ) < $4
               and (planned_for_ts is null or planned_for_ts <= now() at time zone 'utc')
               and (
                   $2 = false
@@ -3173,7 +3228,12 @@ async fn take_next_report(
         where id in (select id from next_report)
         returning *
         "#,
-        [report_kind.into(), serialize_by_user.into()],
+        [
+            report_kind.into(),
+            serialize_by_user.into(),
+            concurrency.global.into(),
+            kind_concurrency.into(),
+        ],
     );
     let report_history = report_history::Model::find_by_statement(stmt)
         .one(&txn)
@@ -4839,6 +4899,242 @@ mod tests {
         .insert(dbx)
         .await
         .c(h!())?)
+    }
+
+    #[test]
+    #[serial]
+    fn issue_3974_running_report_permits_survive_limit_reduction_until_work_finishes(
+    ) {
+        let first = ReportWorkerPermit::try_acquire(2).unwrap();
+        let second = ReportWorkerPermit::try_acquire(2).unwrap();
+        assert!(ReportWorkerPermit::try_acquire(2).is_none());
+        assert!(ReportWorkerPermit::try_acquire(1).is_none());
+        drop(first);
+        assert!(ReportWorkerPermit::try_acquire(1).is_none());
+        let third = ReportWorkerPermit::try_acquire(3).unwrap();
+        drop(second);
+        drop(third);
+        assert!(ReportWorkerPermit::try_acquire(1).is_some());
+    }
+
+    async fn claim_reports_concurrently(
+        dbx: &DatabaseConnection,
+        report_kinds: &[&str],
+    ) -> Result<Vec<report_history::Model>, AppError> {
+        let mut tasks = JoinSet::new();
+        for report_kind in report_kinds {
+            let dbx = dbx.clone();
+            let report_kind = report_kind.to_string();
+            tasks.spawn(
+                async move { take_next_report(&dbx, &report_kind).await },
+            );
+        }
+        let mut claimed = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            if let Some(report) = result.c(h!())?.context(h!())? {
+                claimed.push(report);
+            }
+        }
+        Ok(claimed)
+    }
+
+    async fn queue_concurrency_test_reports(
+        dbx: &DatabaseConnection,
+        login: &str,
+        report_kind: &str,
+        count: usize,
+    ) -> Result<(), AppError> {
+        for _ in 0..count {
+            insert_report_history(
+                dbx,
+                login,
+                report_kind,
+                STATUS_PLANNED,
+                Utc::now().naive_utc(),
+                None,
+                None,
+            )
+            .await
+            .context(h!())?;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3974_cancelled_reports_hold_worker_capacity_until_execution_finishes(
+    ) -> Result<(), AppError> {
+        let (env, _guard) = crate::functest::tests::cleanup_locked()
+            .await
+            .context(h!())?;
+        system_settings::ActiveModel {
+            report_global_concurrency: Set(Some(1)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .c(h!())?;
+        queue_concurrency_test_reports(&env.dbx, "Tester", KIND_GOI, 2)
+            .await
+            .context(h!())?;
+        let (report, permit) =
+            claim_next_report_for_worker(&env.dbx, KIND_GOI, 0)
+                .await
+                .context(h!())?
+                .unwrap();
+        mark_report_cancelled(&env.dbx, report.id, "Скасовано користувачем")
+            .await
+            .context(h!())?;
+        assert!(claim_next_report_for_worker(&env.dbx, KIND_GOI, 0)
+            .await
+            .context(h!())?
+            .is_none());
+        drop(permit);
+        assert!(claim_next_report_for_worker(&env.dbx, KIND_GOI, 0)
+            .await
+            .context(h!())?
+            .is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3974_concurrent_claims_respect_global_limit_and_live_reduction(
+    ) -> Result<(), AppError> {
+        let (env, _guard) = crate::functest::tests::cleanup_locked()
+            .await
+            .context(h!())?;
+        let settings = system_settings::ActiveModel {
+            report_global_concurrency: Set(Some(2)),
+            report_kind_concurrency: Set(Some(3)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .c(h!())?;
+        queue_concurrency_test_reports(&env.dbx, "Tester", KIND_GOI, 3)
+            .await
+            .context(h!())?;
+        queue_concurrency_test_reports(
+            &env.dbx,
+            "Tester",
+            KIND_SUMMARY_TABLE,
+            3,
+        )
+        .await
+        .context(h!())?;
+        let claimed = claim_reports_concurrently(
+            &env.dbx,
+            &[
+                KIND_GOI,
+                KIND_SUMMARY_TABLE,
+                KIND_GOI,
+                KIND_SUMMARY_TABLE,
+                KIND_GOI,
+                KIND_SUMMARY_TABLE,
+            ],
+        )
+        .await
+        .context(h!())?;
+        assert_eq!(claimed.len(), 2);
+        let mut settings = settings.into_active_model();
+        settings.report_global_concurrency = Set(Some(1));
+        settings.update(&env.dbx).await.c(h!())?;
+        assert!(take_next_report(&env.dbx, KIND_GOI)
+            .await
+            .context(h!())?
+            .is_none());
+        for (index, report) in claimed.into_iter().enumerate() {
+            let mut report = report.into_active_model();
+            report.status = Set(STATUS_DONE.to_string());
+            report.update(&env.dbx).await.c(h!())?;
+            let next =
+                take_next_report(&env.dbx, KIND_GOI).await.context(h!())?;
+            assert_eq!(next.is_some(), index == 1);
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3974_concurrent_claims_respect_kind_limits_and_etalonka_user_serialization(
+    ) -> Result<(), AppError> {
+        let (env, _guard) = crate::functest::tests::cleanup_locked()
+            .await
+            .context(h!())?;
+        let settings = system_settings::ActiveModel {
+            report_global_concurrency: Set(Some(6)),
+            report_kind_concurrency: Set(Some(1)),
+            report_etalonka_concurrency: Set(Some(2)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .c(h!())?;
+        mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                login: Set("report-concurrency-bob".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        for kind in [KIND_GOI, KIND_SUMMARY_TABLE, KIND_ETALONKA] {
+            queue_concurrency_test_reports(&env.dbx, "Tester", kind, 3)
+                .await
+                .context(h!())?;
+        }
+        queue_concurrency_test_reports(
+            &env.dbx,
+            "report-concurrency-bob",
+            KIND_ETALONKA,
+            2,
+        )
+        .await
+        .context(h!())?;
+        let claimed = claim_reports_concurrently(
+            &env.dbx,
+            &[
+                KIND_GOI,
+                KIND_GOI,
+                KIND_SUMMARY_TABLE,
+                KIND_SUMMARY_TABLE,
+                KIND_ETALONKA,
+                KIND_ETALONKA,
+                KIND_ETALONKA,
+                KIND_ETALONKA,
+            ],
+        )
+        .await
+        .context(h!())?;
+        assert_eq!(claimed.len(), 4);
+        let etalonka_users: HashSet<_> = claimed
+            .iter()
+            .filter(|report| report.report_kind == KIND_ETALONKA)
+            .map(|report| report.requested_by_login_id)
+            .collect();
+        assert_eq!(etalonka_users.len(), 2);
+        let mut settings = settings.into_active_model();
+        settings.report_kind_concurrency = Set(Some(3));
+        settings.report_etalonka_concurrency = Set(Some(1));
+        settings.update(&env.dbx).await.c(h!())?;
+        let claimed = claim_reports_concurrently(
+            &env.dbx,
+            &[KIND_GOI, KIND_GOI, KIND_GOI],
+        )
+        .await
+        .context(h!())?;
+        assert_eq!(claimed.len(), 2);
+        assert!(take_next_report(&env.dbx, KIND_ETALONKA)
+            .await
+            .context(h!())?
+            .is_none());
+        assert!(take_next_report(&env.dbx, KIND_SUMMARY_TABLE)
+            .await
+            .context(h!())?
+            .is_none());
+        Ok(())
     }
 
     fn timestamp_to_db_precision(

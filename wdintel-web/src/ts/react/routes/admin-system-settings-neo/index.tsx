@@ -41,6 +41,8 @@ import { APP_TIME_ZONE } from '../../utils/misc';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { AdminControlPanelNeoSection } from '../admin-control-panel-neo';
 import { CacheBackfillSection } from './CacheBackfillSection';
+import { RerReportSettings } from './RerReportSettings';
+import { ReportWorkerRestart } from './ReportWorkerRestart';
 import {
   readSystemSettingsTab,
   replaceSystemSettingsTabUrl,
@@ -80,6 +82,9 @@ type SystemSettingsForm = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: SystemSettingsItem['reportGlobalConcurrency'];
+  reportKindConcurrency: SystemSettingsItem['reportKindConcurrency'];
+  reportEtalonkaConcurrency: SystemSettingsItem['reportEtalonkaConcurrency'];
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
@@ -125,6 +130,9 @@ type SystemSettingsPayload = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: SystemSettingsItem['reportGlobalConcurrency'];
+  reportKindConcurrency: SystemSettingsItem['reportKindConcurrency'];
+  reportEtalonkaConcurrency: SystemSettingsItem['reportEtalonkaConcurrency'];
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   pelengBoundsEnabled: boolean;
@@ -170,6 +178,9 @@ const EMPTY_FORM: SystemSettingsForm = {
   doNotStoreDuplicateEchoimFailures: false,
   goiAssociationMessageUidWorkerEnabled: false,
   reportChunkingHours: 24,
+  reportGlobalConcurrency: 4,
+  reportKindConcurrency: 1,
+  reportEtalonkaConcurrency: 2,
   limitBigReports: false,
   enableAudioTranscription: false,
   pelengBoundsEnabled: false,
@@ -268,6 +279,9 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     doNotStoreDuplicateEchoimFailures: item?.doNotStoreDuplicateEchoimFailures ?? false,
     goiAssociationMessageUidWorkerEnabled: item?.goiAssociationMessageUidWorkerEnabled ?? false,
     reportChunkingHours: item?.reportChunkingHours ?? 24,
+    reportGlobalConcurrency: item?.reportGlobalConcurrency ?? 4,
+    reportKindConcurrency: item?.reportKindConcurrency ?? 1,
+    reportEtalonkaConcurrency: item?.reportEtalonkaConcurrency ?? 2,
     limitBigReports: item?.limitBigReports ?? false,
     enableAudioTranscription: item?.enableAudioTranscription ?? false,
     pelengBoundsEnabled: item?.pelengBoundsEnabled ?? false,
@@ -313,6 +327,9 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.doNotStoreDuplicateEchoimFailures === b.doNotStoreDuplicateEchoimFailures &&
     a.goiAssociationMessageUidWorkerEnabled === b.goiAssociationMessageUidWorkerEnabled &&
     a.reportChunkingHours === b.reportChunkingHours &&
+    a.reportGlobalConcurrency === b.reportGlobalConcurrency &&
+    a.reportKindConcurrency === b.reportKindConcurrency &&
+    a.reportEtalonkaConcurrency === b.reportEtalonkaConcurrency &&
     a.limitBigReports === b.limitBigReports &&
     a.enableAudioTranscription === b.enableAudioTranscription &&
     a.pelengBoundsEnabled === b.pelengBoundsEnabled &&
@@ -417,6 +434,9 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     doNotStoreDuplicateEchoimFailures: form.doNotStoreDuplicateEchoimFailures,
     goiAssociationMessageUidWorkerEnabled: form.goiAssociationMessageUidWorkerEnabled,
     reportChunkingHours: form.reportChunkingHours,
+    reportGlobalConcurrency: form.reportGlobalConcurrency,
+    reportKindConcurrency: form.reportKindConcurrency,
+    reportEtalonkaConcurrency: form.reportEtalonkaConcurrency,
     limitBigReports: form.limitBigReports,
     enableAudioTranscription: form.enableAudioTranscription,
     pelengBoundsEnabled: form.pelengBoundsEnabled,
@@ -567,6 +587,16 @@ function ApiSettingsSection({
   );
 }
 
+function validateReportConcurrencySettings(form: SystemSettingsForm): string | null {
+  return [
+    form.reportGlobalConcurrency,
+    form.reportKindConcurrency,
+    form.reportEtalonkaConcurrency,
+  ].every((value) => Number.isInteger(value) && value > 0 && value <= 2147483647)
+    ? null
+    : 'Кількість одночасних звітів має бути додатним цілим числом до 2147483647.';
+}
+
 function validateApiRateLimitSettings(form: SystemSettingsForm): string | null {
   if (
     ![form.apiRateLimitReplenishIntervalMs, form.apiRateLimitBurstSize].every(
@@ -686,28 +716,61 @@ function MainSettingsSection({
           onChange={(checked) => patchForm({ goiAssociationMessageUidWorkerEnabled: checked })}
         />
       </MainSettingsGroup>
-
-      <MainSettingsGroup title="Звіти">
-        <TextField
-          label={
-            <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
-          }
-          type="number"
-          value={form.reportChunkingHours}
-          onChange={(event) => {
-            const next = Number(event.target.value);
-            patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
-          }}
-          inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
-        />
-
-        <MainSettingsSwitchRow
-          checked={form.limitBigReports}
-          label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
-          onChange={(checked) => patchForm({ limitBigReports: checked })}
-        />
-      </MainSettingsGroup>
     </Stack>
+  );
+}
+
+function ReportSettingsSection({
+  form,
+  patchForm,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+}) {
+  return (
+    <MainSettingsGroup title="Звіти">
+      <TextField
+        label="Одночасних звітів загалом"
+        type="number"
+        value={form.reportGlobalConcurrency}
+        onChange={(event) => patchForm({ reportGlobalConcurrency: Number(event.target.value) })}
+        inputProps={{ min: 1, max: 2147483647, step: 1 }}
+        helperText="Зміни застосовуються до нових завдань. Поточні звіти завершуються без переривання."
+      />
+      <TextField
+        label="Одночасних звітів кожного типу (крім еталонки)"
+        type="number"
+        value={form.reportKindConcurrency}
+        onChange={(event) => patchForm({ reportKindConcurrency: Number(event.target.value) })}
+        inputProps={{ min: 1, max: 2147483647, step: 1 }}
+      />
+      <TextField
+        label="Одночасних звітів еталонки"
+        type="number"
+        value={form.reportEtalonkaConcurrency}
+        onChange={(event) => patchForm({ reportEtalonkaConcurrency: Number(event.target.value) })}
+        inputProps={{ min: 1, max: 2147483647, step: 1 }}
+        helperText="Звіти еталонки одного користувача виконуються послідовно."
+      />
+      <TextField
+        label={
+          <InfoLabel label="Вікно обробки звітів (в годинах)" tooltip={REPORT_CHUNKING_TOOLTIP} />
+        }
+        type="number"
+        value={form.reportChunkingHours}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          patchForm({ reportChunkingHours: Number.isFinite(next) ? next : 24 });
+        }}
+        inputProps={{ min: 1, max: REPORT_CHUNKING_HOURS_MAX, step: 1 }}
+      />
+
+      <MainSettingsSwitchRow
+        checked={form.limitBigReports}
+        label="Обмежити неоптимізовані звіти лімітом в 10 тис. рядків"
+        onChange={(checked) => patchForm({ limitBigReports: checked })}
+      />
+    </MainSettingsGroup>
   );
 }
 
@@ -1203,6 +1266,7 @@ function OrbitIntegrationsSection({
 }
 
 export function AdminSystemSettingsNeoPage() {
+  const [rerSettingSaving, setRerSettingSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<SystemSettingsTab>(readSystemSettingsTab);
   const [saved, setSaved] = useState<SystemSettingsForm>(EMPTY_FORM);
   const [form, setForm] = useState<SystemSettingsForm>(EMPTY_FORM);
@@ -1322,6 +1386,9 @@ export function AdminSystemSettingsNeoPage() {
       doNotStoreDuplicateEchoimFailures: payload.doNotStoreDuplicateEchoimFailures,
       goiAssociationMessageUidWorkerEnabled: payload.goiAssociationMessageUidWorkerEnabled,
       reportChunkingHours: payload.reportChunkingHours,
+      reportGlobalConcurrency: payload.reportGlobalConcurrency,
+      reportKindConcurrency: payload.reportKindConcurrency,
+      reportEtalonkaConcurrency: payload.reportEtalonkaConcurrency,
       limitBigReports: payload.limitBigReports,
       enableAudioTranscription: payload.enableAudioTranscription,
       pelengBoundsEnabled: payload.pelengBoundsEnabled,
@@ -1361,11 +1428,12 @@ export function AdminSystemSettingsNeoPage() {
 
   async function handleSaveSystemSettings(event?: FormEvent) {
     event?.preventDefault();
-    if (saveInProgress) return;
+    if (saveInProgress || rerSettingSaving) return;
     if (!isDirty) return;
 
     const nextForm = normalizeForm(form);
     const validationError =
+      validateReportConcurrencySettings(nextForm) ??
       validateApiRateLimitSettings(nextForm) ??
       validateMediaCacheSettings(nextForm) ??
       validatePelengBounds(nextForm);
@@ -1440,6 +1508,12 @@ export function AdminSystemSettingsNeoPage() {
                 label="Аналіз"
                 id="system-settings-neo-tab-analysis"
                 aria-controls="system-settings-neo-panel-analysis"
+              />
+              <Tab
+                value="reports"
+                label="Звіти"
+                id="system-settings-neo-tab-reports"
+                aria-controls="system-settings-neo-panel-reports"
               />
               <Tab
                 value="control"
@@ -1554,6 +1628,20 @@ export function AdminSystemSettingsNeoPage() {
                   </Box>
 
                   <Box
+                    id="system-settings-neo-panel-reports"
+                    role="tabpanel"
+                    hidden={activeTab !== 'reports'}
+                    aria-labelledby="system-settings-neo-tab-reports"
+                  >
+                    {activeTab === 'reports' ? (
+                      <Stack spacing={3}>
+                        <ReportSettingsSection form={form} patchForm={patchForm} />
+                        <ReportWorkerRestart />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
                     id="system-settings-neo-panel-control"
                     role="tabpanel"
                     hidden={activeTab !== 'control'}
@@ -1621,7 +1709,7 @@ export function AdminSystemSettingsNeoPage() {
                   <PowerButton
                     variant="contained"
                     type="submit"
-                    disabled={saveInProgress || loadInProgress || !isDirty}
+                    disabled={saveInProgress || rerSettingSaving || loadInProgress || !isDirty}
                     startIcon={saveInProgress ? <CircularProgress size={18} /> : undefined}
                   >
                     зберегти
@@ -1631,6 +1719,23 @@ export function AdminSystemSettingsNeoPage() {
             </CardContent>
           </Box>
         </Card>
+        {activeTab === 'reports' ? (
+          <Card variant="outlined" sx={{ borderRadius: 0, boxShadow: 'none', minWidth: 0 }}>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Звіт РЕР
+              </Typography>
+              <RerReportSettings
+                disabled={saveInProgress}
+                onSavingChange={setRerSettingSaving}
+                onEnabledChange={(enabled) => {
+                  setForm((previous) => ({ ...previous, rerReportEnabled: enabled }));
+                  setSaved((previous) => ({ ...previous, rerReportEnabled: enabled }));
+                }}
+              />
+            </CardContent>
+          </Card>
+        ) : null}
       </Stack>
     </Box>
   );

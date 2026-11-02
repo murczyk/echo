@@ -23,3 +23,7 @@ export async function restartEcho(payload: RestartEchoPayload): Promise<boolean>
 export async function restartDatasource(datasourceId: number): Promise<boolean> {
   return postJson<boolean>('/api/admin/restart-datasource', datasourceId);
 }
+
+export async function restartReportWorker(): Promise<boolean> {
+  return postJson<boolean>('/api/admin/restart-report-worker');
+}
