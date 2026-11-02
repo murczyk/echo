@@ -342,11 +342,19 @@ async function installMocks(page: Page, roles = ['Cyber']): Promise<ApiTracker> 
       });
       return;
     }
+    if (pathname === '/api/device/filter-options') {
+      await fulfillJson(route, { aors: [], creators: [], tags: [] });
+      return;
+    }
     if (pathname === '/api/device/unit-stats') {
       await fulfillJson(route, { units: [] });
       return;
     }
     if (pathname === '/api/device/aors') {
+      await fulfillJson(route, []);
+      return;
+    }
+    if (pathname === '/api/device/tags') {
       await fulfillJson(route, []);
       return;
     }
@@ -601,8 +609,8 @@ for (const routeName of ['list', 'details']) {
     );
     await page.goto(routeName === 'list' ? '/devices' : `/devices/${DEVICE_ID}`);
     if (routeName === 'list') {
-      await page.getByRole('button', { name: 'Дії', exact: true }).click();
-      await page.getByRole('menuitem', { name: 'Редагувати' }).click();
+      await expect(page.getByRole('button', { name: 'Дії', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: 'Редагувати', exact: true }).click();
     } else {
       await page.getByRole('button', { name: 'Редагувати пристрій', exact: true }).click();
     }
@@ -611,6 +619,9 @@ for (const routeName of ['list', 'details']) {
     });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByRole('textbox', { name: 'Зовнішнє посилання' })).toBeEditable();
+    await expect(drawer.getByRole('textbox', { name: 'Опис пристрою' })).toBeEditable();
+    await expect(drawer.getByRole('combobox', { name: 'Теги', exact: true })).toHaveCount(0);
+    await expect(drawer.getByRole('button', { name: 'Архівувати', exact: true })).toHaveCount(0);
     await expect(drawer.getByRole('textbox', { name: /^Назва/ })).toHaveCount(0);
     await expect(drawer.getByRole('combobox', { name: 'Смуги' })).toHaveCount(0);
     await expect(drawer.getByRole('combobox', { name: 'Підрозділ' })).toHaveCount(0);
@@ -655,6 +666,10 @@ for (const routeName of ['list', 'details']) {
       }
       if (path === '/api/device/aors') return fulfillJson(route, aors);
       if (path === '/api/device/units') return fulfillJson(route, { units });
+      if (path === '/api/device/archive') {
+        device = { ...device, archived: true };
+        return fulfillJson(route, device);
+      }
       if (path === '/api/device/update') {
         const patch = route.request().postDataJSON();
         updates.push(patch);
@@ -670,8 +685,7 @@ for (const routeName of ['list', 'details']) {
     });
     const openEditor = async () => {
       if (routeName === 'list') {
-        await page.getByRole('button', { name: 'Дії', exact: true }).click();
-        await page.getByRole('menuitem', { name: 'Редагувати' }).click();
+        await page.getByRole('button', { name: 'Редагувати', exact: true }).click();
       } else {
         await page.getByRole('button', { name: 'Редагувати пристрій', exact: true }).click();
       }
@@ -713,6 +727,17 @@ for (const routeName of ['list', 'details']) {
     await drawer.getByRole('button', { name: 'Зберегти', exact: true }).click();
     await expect(drawer).toContainText('Вкажіть назву пристрою.');
     expect(updates).toHaveLength(2);
+    if (routeName === 'details') {
+      await drawer.getByRole('button', { name: 'Архівувати', exact: true }).click();
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Архівувати', exact: true })
+        .click();
+      await expect(drawer).toBeHidden();
+      await expect(
+        page.getByRole('button', { name: 'Редагувати пристрій', exact: true }),
+      ).toHaveCount(0);
+    }
   });
 }
 
@@ -1155,33 +1180,202 @@ for (const width of [1440, 390]) {
   });
 }
 
-test('@smoke device creation requires and submits a name for Cyber', async ({ page }) => {
-  const browserFailures: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') browserFailures.push(`console: ${message.text()}`);
-  });
-  page.on('pageerror', (error) => browserFailures.push(`pageerror: ${error.message}`));
-  page.on('response', (response) => {
-    if (response.status() >= 400) {
-      browserFailures.push(`response: ${response.status()} ${response.url()}`);
+test('@regression #3926 device rating, tags, sorting and archive work on desktop and mobile', async ({
+  page,
+}, testInfo) => {
+  await installMocks(page, ['Cyber']);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  let device = {
+    id: DEVICE_ID,
+    name: 'Device Alpha',
+    rating: 2,
+    description: null as string | null,
+    tags: ['Перший', 'Другий', 'Третій', 'Четвертий'],
+    aors: [],
+    unit: null,
+    external_url: null,
+    custom_fields: {},
+    created_by: 'operator',
+    archived: false,
+    created_at: NOW,
+    updated_at: NOW,
+    archived_at: null as string | null,
+    audio_forwarding_configured: false,
+    stats: null,
+  };
+  const updates: Array<Record<string, unknown>> = [];
+  const sorts: string[][] = [];
+  let archives = 0;
+  let unarchives = 0;
+  await page.route('**/api/device/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/device/list') {
+      const request = route.request().postDataJSON();
+      sorts.push(request.sort_by);
+      const matches =
+        request.archived_filter === 'all' ||
+        device.archived === (request.archived_filter === 'archived_only');
+      return fulfillJson(route, {
+        list: matches ? [device] : [],
+        total: matches ? 1 : 0,
+        has_more: false,
+        status_counts: { active: device.archived ? 0 : 1, archived: device.archived ? 1 : 0 },
+      });
     }
+    if (path === '/api/device/detail') return fulfillJson(route, device);
+    if (path === '/api/device/tags') return fulfillJson(route, ['Існуючий']);
+    if (path === '/api/device/update') {
+      const patch = route.request().postDataJSON();
+      updates.push(patch);
+      device = { ...device, ...patch };
+      return fulfillJson(route, device);
+    }
+    if (path === '/api/device/unarchive') {
+      expect(route.request().postDataJSON()).toEqual({ device_id: DEVICE_ID });
+      unarchives += 1;
+      device = { ...device, archived: false, archived_at: null };
+      return fulfillJson(route, device);
+    }
+    if (path === '/api/device/archive') {
+      expect(route.request().postDataJSON()).toEqual({ device_id: DEVICE_ID });
+      archives += 1;
+      device = { ...device, archived: true, archived_at: NOW };
+      return fulfillJson(route, device);
+    }
+    return route.fallback();
+  });
+  await page.route('**/api/user/author-identities', (route) =>
+    fulfillJson(route, {
+      authors: [
+        {
+          id: '00000000-0000-0000-0000-000000000001',
+          login: 'operator',
+          display_name: 'Демо · Кібер Альфа',
+          delta_login: null,
+        },
+      ],
+    }),
+  );
+  await page.goto('/devices');
+  const table = page.getByRole('table', { name: 'Пристрої', exact: true });
+  await expect.poll(() => sorts.at(-1)).toEqual(['last_content_at_desc']);
+  const statusGroup = page.getByRole('group', { name: 'Стан пристроїв' });
+  await expect(statusGroup.getByRole('button', { name: 'Активні', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  const creator = table.getByRole('cell').filter({ hasText: 'Демо · Кібер Альфа' });
+  await expect(creator).toBeVisible();
+  await expect(creator.getByRole('button')).toHaveCount(0);
+  await creator.click();
+  await expect(page.getByRole('dialog', { name: 'Інформація про автора' })).toHaveCount(0);
+  await expect(table.getByRole('columnheader', { name: 'Стан', exact: true })).toHaveCount(0);
+  await expect(table.getByRole('img', { name: 'Активний', exact: true })).toBeVisible();
+  const tags = table.getByRole('cell').filter({ hasText: 'Перший' });
+  await expect(tags.getByText('Четвертий', { exact: true })).toHaveCount(0);
+  await tags.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Четвертий');
+  await table
+    .locator('label')
+    .filter({ hasText: /^4 із 5$/ })
+    .click();
+  await expect.poll(() => updates.at(-1)?.rating).toBe(4);
+  await expect(table.getByLabel('4 із 5', { exact: true })).toBeEnabled();
+  await table
+    .locator('label')
+    .filter({ hasText: /^4 із 5$/ })
+    .click();
+  await expect.poll(() => updates.at(-1)?.rating).toBe(0);
+  await expect(table.getByLabel('Без оцінки', { exact: true })).toBeEnabled();
+  await table
+    .locator('label')
+    .filter({ hasText: /^4 із 5$/ })
+    .click();
+  await expect.poll(() => updates.at(-1)?.rating).toBe(4);
+  for (const [title, key] of [
+    ['Смуги', 'aors'],
+    ['Підрозділ', 'unit'],
+    ['Створив', 'created_by'],
+    ['Активність', 'last_content_at'],
+    ['Розмір', 'content_bytes'],
+  ]) {
+    await table
+      .getByRole('columnheader')
+      .filter({ hasText: title })
+      .getByText(title, { exact: true })
+      .click();
+    await expect.poll(() => sorts.at(-1)?.[0]).toMatch(new RegExp(`^${key}_(asc|desc)$`));
+  }
+  await expect(table.getByRole('button', { name: 'Дії', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Створити/ })).toHaveCount(0);
+  await table.getByRole('button', { name: 'Редагувати', exact: true }).click();
+  const drawer = page
+    .locator('.MuiDrawer-paper')
+    .filter({ has: page.getByRole('heading', { name: 'Редагувати пристрій' }) });
+  await drawer.getByRole('textbox', { name: 'Опис пристрою' }).fill('Опис для операторів');
+  const tagInput = drawer.getByRole('combobox', { name: 'Теги', exact: true });
+  await tagInput.fill('Існуючий');
+  await page.getByRole('option', { name: 'Існуючий', exact: true }).click();
+  await tagInput.fill('Новий');
+  await tagInput.press('Enter');
+  await drawer.getByRole('button', { name: 'Зберегти', exact: true }).click();
+  await expect(drawer).toBeHidden();
+  expect(updates.at(-1)).toMatchObject({
+    description: 'Опис для операторів',
+    tags: ['Перший', 'Другий', 'Третій', 'Четвертий', 'Існуючий', 'Новий'],
+  });
+  await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+  await page.screenshot({
+    path: testInfo.outputPath('devices-desktop-dark.png'),
+    animations: 'disabled',
   });
 
-  const tracker = await installMocks(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('link', { name: 'Device Alpha', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Редагувати', exact: true }).click();
+  await drawer.getByRole('button', { name: 'Архівувати', exact: true }).click();
+  const confirmation = page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('heading', { name: 'Архівувати пристрій?' }) });
+  await confirmation.getByRole('button', { name: 'Скасувати', exact: true }).click();
+  expect(archives).toBe(0);
+  await drawer.getByRole('button', { name: 'Закрити форму', exact: true }).click();
+  await expect(drawer).toHaveCount(0);
+  await page.getByRole('button', { name: 'Редагувати', exact: true }).click();
 
-  await page.goto('/devices', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Створити пристрій' }).click();
-
-  const nameInput = page.getByRole('textbox', { name: 'Назва', exact: true });
-  await expect(nameInput).toBeVisible();
-  await expect(nameInput).toHaveAttribute('required', '');
-  await nameInput.fill('  Device Bravo  ');
-  await expect(nameInput).toHaveAttribute('aria-invalid', 'false');
-  await page.getByRole('button', { name: 'Створити', exact: true }).click();
-
-  await expect.poll(() => tracker.submittedCreateName).toBe('Device Bravo');
-  await expect(page.getByRole('textbox', { name: 'Назва', exact: true })).toBeHidden();
-  expect(browserFailures).toEqual([]);
+  await expect(drawer.getByRole('textbox', { name: 'Опис пристрою' })).toHaveValue(
+    'Опис для операторів',
+  );
+  await page.screenshot({
+    path: testInfo.outputPath('device-edit-mobile-dark.png'),
+    animations: 'disabled',
+  });
+  await drawer.getByRole('button', { name: 'Архівувати', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Архівувати', exact: true }).click();
+  await expect.poll(() => archives).toBe(1);
+  await expect(page.getByRole('link', { name: 'Device Alpha', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Архів', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Device Alpha', exact: true })).toBeVisible();
+  await expect(page.getByRole('img', { name: 'Архівний', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Редагувати', exact: true }).click();
+  await expect(drawer.getByRole('textbox', { name: 'Опис пристрою' })).toBeDisabled();
+  await expect(drawer.getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
+  await drawer.getByRole('button', { name: 'Розархівувати', exact: true }).click();
+  const restore = page
+    .getByRole('dialog')
+    .filter({ has: page.getByRole('heading', { name: 'Розархівувати пристрій?' }) });
+  await restore.getByRole('button', { name: 'Розархівувати', exact: true }).click();
+  await expect.poll(() => unarchives).toBe(1);
+  await page.getByRole('button', { name: 'Активні', exact: true }).click();
+  await expect(page.getByRole('img', { name: 'Активний', exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.getByRole('button', { name: 'Архів', exact: true }).click();
+  device = { ...device, archived: true, archived_at: NOW };
+  await page.reload();
+  await table.getByRole('button', { name: 'Редагувати', exact: true }).click();
+  await drawer.getByRole('button', { name: 'Розархівувати', exact: true }).click();
+  await restore.getByRole('button', { name: 'Розархівувати', exact: true }).click();
+  await expect.poll(() => unarchives).toBe(2);
 });
 
 // Regression: https://github.com/echoua/echo/pull/3500
@@ -1500,4 +1694,541 @@ test('@regression #3757 file URL expands ancestors and highlights a file beyond 
   await page.getByRole('button', { name: 'До файлів', exact: true }).click();
   await expect(page).toHaveURL(`/devices/${DEVICE_ID}`);
   await expect(page.getByTestId(`device-file-${fileId}`)).toBeVisible();
+});
+
+test('@regression #3926 system setting switches file-type activity to file/audio uploads', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await installMocks(page, ['Admin', 'Cyber']);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+  const old = new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86400000).toISOString().slice(0, 10);
+  let enabled = false;
+  let failSave = false;
+  let audioOnly = false;
+  const patches: unknown[] = [];
+  await page.route('**/api/admin/device/settings', async (route) => {
+    const body = route.request().postDataJSON();
+    if ('activitySplitFilesAudio' in body) {
+      patches.push(body);
+      if (failSave) {
+        failSave = false;
+        return route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ message: 'Save failed' }),
+        });
+      }
+      enabled = body.activitySplitFilesAudio;
+    }
+    return fulfillJson(route, { hasMattermostWebhook: true, activitySplitFilesAudio: enabled });
+  });
+  await page.route('**/api/device/list', (route) =>
+    fulfillJson(route, {
+      list: [
+        {
+          id: DEVICE_ID,
+          name: 'Activity Alpha',
+          rating: 0,
+          tags: [],
+          aors: [],
+          unit: null,
+          created_by: 'operator',
+          archived: false,
+          created_at: NOW,
+          updated_at: NOW,
+          archived_at: null,
+          activity_split_files_audio: enabled,
+          audio_days: enabled
+            ? [{ day: audioOnly ? old : today, content_count: 3, content_bytes: 300 }]
+            : null,
+          stats: {
+            directory_count: 0,
+            file_count: audioOnly ? 0 : 6,
+            content_count: audioOnly ? 0 : 6,
+            content_bytes: audioOnly ? 0 : 600,
+            first_content_at: NOW,
+            last_content_at: NOW,
+            content_pending: false,
+            backfilled_at: NOW,
+            extensions: [],
+            days: audioOnly
+              ? []
+              : [
+                  { day: today, extension: 'pdf', content_count: 2, content_bytes: 200 },
+                  { day: today, extension: 'jpg', content_count: 3, content_bytes: 300 },
+                  { day: today, extension: 'wav', content_count: 1, content_bytes: 100 },
+                ],
+          },
+        },
+      ],
+      total: 1,
+      has_more: false,
+      status_counts: { active: 1, archived: 0 },
+    }),
+  );
+  await page.goto('/devices');
+  const fileChart = page.getByRole('img', { name: 'Завантаження файлів за днями', exact: true });
+  const colorCount = (chart: ReturnType<Page['getByRole']>, index: number) =>
+    chart
+      .locator(`g[data-day-index="${index}"]`)
+      .evaluate(
+        (group) =>
+          new Set(
+            [...group.querySelectorAll('path, rect')]
+              .map((node) => node.getAttribute('fill'))
+              .filter((color) => color && color !== 'currentColor'),
+          ).size,
+      );
+  await expect(fileChart).toBeVisible();
+  expect(await colorCount(fileChart, 6)).toBe(3);
+  await fileChart.locator('g[data-day-index="6"]').hover();
+  await expect(page.getByRole('tooltip')).toContainText('Документи');
+  await expect(
+    page.getByRole('tooltip').getByText('Аудіо', { exact: true }).locator('../..'),
+  ).toHaveText(/Аудіо\s*1\s*·/);
+  await page.goto('/admin/device-analytics?tab=general');
+  await expect(
+    page.getByRole('tab', { name: 'Основні налаштування', exact: true }),
+  ).toHaveAttribute('aria-selected', 'true');
+  const toggle = page.getByRole('checkbox', { name: 'Розбивка «Файли / Аудіо»', exact: true });
+  await expect(toggle).toBeEnabled();
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  failSave = true;
+  await page.getByRole('button', { name: 'Зберегти відображення', exact: true }).click();
+  await expect(
+    page
+      .getByRole('alert')
+      .filter({ hasText: 'Не вдалося зберегти налаштування активності' })
+      .first(),
+  ).toBeVisible();
+  expect(enabled).toBe(false);
+  await page.getByRole('button', { name: 'Зберегти відображення', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Зберегти відображення', exact: true }),
+  ).toBeDisabled();
+  expect(patches).toEqual([{ activitySplitFilesAudio: true }, { activitySplitFilesAudio: true }]);
+  await page.reload();
+  await expect(toggle).toBeChecked();
+  await page.goto('/devices');
+  const uploadChart = page.getByRole('img', {
+    name: 'Завантаження файлів та аудіо за днями',
+    exact: true,
+  });
+  await expect(uploadChart).toBeVisible();
+  expect(await colorCount(uploadChart, 6)).toBe(2);
+  await uploadChart.locator('g[data-day-index="6"]').hover();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip.getByText('Файли', { exact: true }).locator('../..')).toHaveText(
+    /Файли\s*6\s*·/,
+  );
+  await expect(tooltip.getByText('Аудіо', { exact: true }).locator('../..')).toHaveText(
+    /Аудіо\s*3\s*·/,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(uploadChart).toBeVisible();
+  expect(await colorCount(uploadChart, 6)).toBe(2);
+  audioOnly = true;
+  await page.reload();
+  await expect(uploadChart.locator('g[data-day-index="0"]')).toHaveAttribute('opacity', '0.4');
+  await page.goto('/admin/device-analytics?tab=general');
+  await expect(toggle).toBeEnabled();
+  await toggle.uncheck();
+  await page.getByRole('button', { name: 'Зберегти відображення', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Зберегти відображення', exact: true }),
+  ).toBeDisabled();
+  await page.goto('/devices');
+  await expect(page.getByText('Нема активності', { exact: true })).toBeVisible();
+  await expect(uploadChart).toHaveCount(0);
+});
+
+test('@regression #3926 sidebar facets combine and persist for read-only users on desktop and mobile', async ({
+  page,
+}, testInfo) => {
+  await installMocks(page, ['CyberViewer']);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const units = [
+    { id: 7, name: 'Unit Alpha' },
+    { id: 8, name: 'Unit Bravo' },
+  ];
+  const aors = [
+    { id: 4, name: 'Північ' },
+    { id: 5, name: 'Південь' },
+  ];
+  const devices = [
+    ['Alpha', 'author-a', 4, 7, 'Пріоритет', false],
+    ['Bravo', 'author-b', 4, 8, 'Інший', false],
+    ['Charlie', 'author-a', 5, 7, 'Інший', false],
+    ['Archive', 'author-b', 5, 8, 'Архівний', true],
+  ].map(([name, creator, aor, unit, tag, archived], index) => ({
+    id: `018f0000-0000-7000-8000-00000000010${index}`,
+    name,
+    created_by: creator,
+    aors: aors.filter((item) => item.id === aor),
+    unit: units.find((item) => item.id === unit),
+    tags: [tag],
+    archived,
+    archived_at: archived ? NOW : null,
+    rating: 0,
+    created_at: NOW,
+    updated_at: NOW,
+    stats: null,
+    audio_days: null,
+    activity_split_files_audio: false,
+  }));
+  const requests: Array<Record<string, any>> = [];
+  let editCatalogRequests = 0;
+  await page.route('**/api/device/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/device/filter-options')
+      return fulfillJson(route, {
+        aors,
+        creators: [
+          { login: 'author-a', display_name: 'Автор Альфа' },
+          { login: 'author-b', display_name: null },
+        ],
+        tags: ['Пріоритет', 'Інший', 'Архівний'],
+      });
+    if (path === '/api/device/unit-stats')
+      return fulfillJson(route, { units: units.map((unit) => ({ unit, count: 2 })) });
+    if (['/api/device/units', '/api/device/aors', '/api/device/tags'].includes(path))
+      editCatalogRequests += 1;
+    if (path !== '/api/device/list') return route.fallback();
+    const req = route.request().postDataJSON();
+    requests.push(req);
+    const filtered = devices.filter(
+      (device) =>
+        (!req.aor_ids?.length || device.aors.some((aor) => req.aor_ids.includes(aor.id))) &&
+        (!req.created_by?.length || req.created_by.includes(device.created_by)) &&
+        (!req.tags?.length || device.tags.some((tag) => req.tags.includes(tag))) &&
+        (!req.unit_ids?.length || req.unit_ids.includes(device.unit?.id)) &&
+        (!req.filter_text || String(device.name).includes(req.filter_text)),
+    );
+    const matches = filtered.filter(
+      (device) =>
+        req.archived_filter === 'all' ||
+        device.archived === (req.archived_filter === 'archived_only'),
+    );
+    return fulfillJson(route, {
+      list: matches,
+      total: matches.length,
+      has_more: false,
+      status_counts: {
+        active: filtered.filter((device) => !device.archived).length,
+        archived: filtered.filter((device) => device.archived).length,
+      },
+    });
+  });
+  await page.goto('/devices');
+  const rows = page.getByRole('table', { name: 'Пристрої', exact: true }).getByRole('row');
+  await expect(rows).toHaveCount(4);
+  await page.getByRole('button', { name: 'Розгорнути ліву панель', exact: true }).click();
+  async function select(label: string, value: string) {
+    const input = page.getByRole('combobox', { name: label, exact: true });
+    await input.fill(value);
+    await page.getByRole('option', { name: value, exact: true }).click();
+    await input.press('Escape');
+  }
+  async function clear(label: string, button: string) {
+    const input = page.getByRole('combobox', { name: label, exact: true });
+    await input.click();
+    await page.getByRole('button', { name: button, exact: true }).click();
+    await input.press('Escape');
+  }
+  await select('Смуги', 'Північ');
+  await expect(rows).toHaveCount(3);
+  await select('Створив', 'Автор Альфа');
+  await expect(rows).toHaveCount(2);
+  await select('Теги', 'Пріоритет');
+  await expect
+    .poll(() => requests.at(-1))
+    .toMatchObject({ aor_ids: [4], created_by: ['author-a'], tags: ['Пріоритет'] });
+  await expect(page.getByRole('link', { name: 'Alpha', exact: true })).toBeVisible();
+  const savedUrl = page.url();
+  await page.reload();
+  await expect(rows).toHaveCount(2);
+  await page.getByRole('button', { name: 'Розгорнути ліву панель', exact: true }).click();
+  await expect(
+    page
+      .getByRole('combobox', { name: 'Теги', exact: true })
+      .locator('..')
+      .getByText('Пріоритет', { exact: true }),
+  ).toBeVisible();
+  await clear('Смуги', 'Очистити смуги');
+  await select('Теги', 'Інший');
+  await expect(rows).toHaveCount(3);
+  await clear('Створив', 'Очистити створювачів');
+  await expect(rows).toHaveCount(4);
+  await page
+    .getByRole('list', { name: 'Дерево підрозділів' })
+    .getByText('Unit Alpha', { exact: true })
+    .click();
+  await expect.poll(() => requests.at(-1)?.unit_ids).toEqual([7]);
+  await expect(rows).toHaveCount(3);
+  await page.screenshot({
+    path: testInfo.outputPath('device-sidebar-filters-desktop.png'),
+    animations: 'disabled',
+  });
+  await page.locator('#active-filters-button').click();
+  await page.getByRole('button', { name: 'Очистити все', exact: true }).click();
+  await expect
+    .poll(() => requests.at(-1))
+    .toMatchObject({
+      aor_ids: null,
+      created_by: null,
+      tags: null,
+      unit_ids: null,
+      archived_filter: 'active_only',
+    });
+  await expect(rows).toHaveCount(4);
+  await page.goto(savedUrl);
+  await expect(rows).toHaveCount(2);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Показати панель фільтрів', exact: true }).click();
+  await clear('Теги', 'Очистити теги');
+  await select('Теги', 'Архівний');
+  await page.getByRole('button', { name: 'Сховати панель фільтрів', exact: true }).click();
+  await expect(page.getByText('Пристрої не знайдено', { exact: true })).toBeVisible();
+  await expect.poll(() => requests.at(-1)?.tags).toEqual(['Архівний']);
+  await page.screenshot({
+    path: testInfo.outputPath('device-sidebar-filters-mobile.png'),
+    animations: 'disabled',
+  });
+  expect(editCatalogRequests).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('@regression #3926 virtual device list appends skeleton rows and discards stale continuations', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(60_000);
+  await installMocks(page, ['Cyber']);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const devices = Array.from({ length: 350 }, (_, index) => ({
+    id: `018f0000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+    name: `Device ${String(index).padStart(3, '0')}`,
+    rating: 0,
+    tags: [],
+    aors: [],
+    unit: null,
+    created_by: 'operator',
+    archived: false,
+    created_at: NOW,
+    updated_at: NOW,
+    archived_at: null,
+    stats: null,
+    audio_days: null,
+    activity_split_files_audio: false,
+  }));
+  const archived = Array.from({ length: 120 }, (_, index) => ({
+    ...devices[0],
+    id: `018f0000-0000-7000-8000-${String(350 + index).padStart(12, '0')}`,
+    name: `Archive ${index}`,
+    archived: true,
+    archived_at: NOW,
+  }));
+  const requests: Array<{ offset: number; filter_text: string | null; archived_filter: string }> =
+    [];
+  let holdOffset: number | null = null;
+  let pending: Route | null = null;
+  let failNextAppend = false;
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  function responseFor(route: Route) {
+    const req = route.request().postDataJSON();
+    const filtered = [...devices, ...archived].filter(
+      (device) => !req.filter_text || device.name.includes(req.filter_text),
+    );
+    const matches = filtered.filter(
+      (device) =>
+        req.archived_filter === 'all' ||
+        device.archived === (req.archived_filter === 'archived_only'),
+    );
+    return {
+      list: matches.slice(req.offset, req.offset + req.limit),
+      total: matches.length,
+      has_more: req.offset + req.limit < matches.length,
+      status_counts: {
+        active: filtered.filter((device) => !device.archived).length,
+        archived: filtered.filter((device) => device.archived).length,
+      },
+    };
+  }
+  await page.route('**/api/device/list', async (route) => {
+    const req = route.request().postDataJSON();
+    requests.push(req);
+    if (req.offset === holdOffset) {
+      pending = route;
+      return;
+    }
+    if (req.offset === 100 && failNextAppend) {
+      failNextAppend = false;
+      return route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'pagination unavailable' }),
+      });
+    }
+    return fulfillJson(route, responseFor(route));
+  });
+  const table = page.getByRole('table', { name: 'Пристрої', exact: true });
+  const scroll = page.locator('#devices-table-scroll');
+  const placeholders = page.locator('tbody tr[id^="device-loading-row-"]');
+  const loading = page.getByText('Завантаження наступних пристроїв', { exact: true });
+  async function frames() {
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+  }
+  async function bottom() {
+    await scroll.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+      for (let index = 0; index < 5; index += 1) node.dispatchEvent(new Event('scroll'));
+    });
+  }
+  function responseAt(offset: number) {
+    return page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/device/list' &&
+        response.request().postDataJSON().offset === offset &&
+        response.status() === 200,
+    );
+  }
+  await page.goto('/devices');
+  await expect(table.getByRole('link', { name: 'Device 000', exact: true })).toBeVisible();
+  expect(await table.locator('tbody tr').count()).toBeLessThan(100);
+  for (const name of [
+    'Перейти до першої або останньої сторінки',
+    'Попередня сторінка',
+    'Наступна сторінка',
+    'Завантажити ще',
+  ]) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+  await expect(page.getByRole('button', { name: /Створити/ })).toHaveCount(0);
+  expect(
+    Math.abs(
+      await scroll.evaluate((node) => window.innerHeight - node.getBoundingClientRect().bottom),
+    ),
+  ).toBeLessThanOrEqual(2);
+  requests.length = 0;
+  holdOffset = 100;
+  await bottom();
+  await expect.poll(() => requests.filter((request) => request.offset === 100).length).toBe(1);
+  await bottom();
+  expect(requests.filter((request) => request.offset === 100)).toHaveLength(1);
+  await expect(placeholders).toHaveCount(3);
+  await expect(placeholders.locator('button, a, input')).toHaveCount(0);
+  await expect(table.getByRole('link', { name: 'Device 099', exact: true })).toBeVisible();
+  await placeholders.last().scrollIntoViewIfNeeded();
+  await expect(placeholders.last()).toBeInViewport();
+  await page.screenshot({
+    path: testInfo.outputPath('devices-loading-rows.png'),
+    animations: 'disabled',
+  });
+  const firstPending = pending!;
+  pending = null;
+  holdOffset = 200;
+  await fulfillJson(firstPending, responseFor(firstPending));
+  await expect(placeholders).toHaveCount(0);
+  await bottom();
+  await expect.poll(() => pending !== null).toBe(true);
+  await expect(table.getByRole('link', { name: 'Device 199', exact: true })).toBeVisible();
+  expect(requests.map((request) => request.offset)).toEqual([100, 200]);
+  const search = page.getByPlaceholder('Пошук', { exact: true });
+  await search.fill('Device 34');
+  await expect(table.getByRole('link', { name: 'Device 340', exact: true })).toBeVisible();
+  holdOffset = null;
+  await fulfillJson(pending!, responseFor(pending!)).catch(() => undefined);
+  pending = null;
+  await expect(table.getByRole('link', { name: 'Device 340', exact: true })).toBeVisible();
+  expect(requests.at(-1)).toMatchObject({ offset: 0, filter_text: 'Device 34' });
+  await search.fill('');
+  await expect(table.getByRole('link', { name: 'Device 000', exact: true })).toBeVisible();
+  requests.length = 0;
+  for (const offset of [100, 200, 300]) {
+    const response = responseAt(offset);
+    await bottom();
+    await (await response).finished();
+    await frames();
+    await expect(loading).toHaveCount(0);
+  }
+  await bottom();
+  await frames();
+  await expect(table.getByRole('link', { name: 'Device 349', exact: true })).toBeVisible();
+  expect(requests.map((request) => request.offset)).toEqual([100, 200, 300]);
+  expect(await table.locator('tbody tr').count()).toBeLessThan(100);
+  await page.getByRole('button', { name: 'Архів', exact: true }).click();
+  await expect(table.getByRole('link', { name: 'Archive 0', exact: true })).toBeVisible();
+  await frames();
+  expect(await scroll.evaluate((node) => node.scrollTop)).toBe(0);
+  expect(
+    requests
+      .filter((request) => request.archived_filter === 'archived_only')
+      .map((request) => request.offset),
+  ).toEqual([0]);
+  await page.getByRole('button', { name: 'Активні', exact: true }).click();
+  await expect(table.getByRole('link', { name: 'Device 000', exact: true })).toBeVisible();
+  failNextAppend = true;
+  await bottom();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Помилка завантаження пристроїв' }),
+  ).toBeVisible();
+  await expect(placeholders).toHaveCount(0);
+  const failedCount = requests.length;
+  await bottom();
+  await frames();
+  expect(requests).toHaveLength(failedCount);
+  const retried = responseAt(100);
+  await page.getByRole('button', { name: 'Повторити', exact: true }).click();
+  await (await retried).finished();
+  await frames();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Помилка завантаження пристроїв' }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath('device-virtual-scroll-desktop.png'),
+    animations: 'disabled',
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/devices');
+  const mobile = page.getByTestId('devices-mobile-scroll');
+  await expect(mobile.locator('ul > li')).toHaveCount(100);
+  await expect(page.getByRole('button', { name: 'Наступна сторінка', exact: true })).toHaveCount(0);
+  holdOffset = 100;
+  await mobile.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+  });
+  await expect(
+    page.getByRole('status', { name: 'Завантаження пристроїв', exact: true }),
+  ).toBeVisible();
+  await expect(mobile.locator('ul > li')).toHaveCount(100);
+  await expect.poll(() => pending !== null).toBe(true);
+  await page
+    .getByRole('status', { name: 'Завантаження пристроїв', exact: true })
+    .scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath('devices-loading-cards.png'),
+    animations: 'disabled',
+  });
+  holdOffset = null;
+  await fulfillJson(pending!, responseFor(pending!));
+  pending = null;
+  await expect(mobile.locator('ul > li')).toHaveCount(200);
+  await expect(
+    page.getByRole('status', { name: 'Завантаження пристроїв', exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({
+    path: testInfo.outputPath('device-virtual-scroll-mobile.png'),
+    animations: 'disabled',
+  });
+  expect(errors).toEqual([]);
 });

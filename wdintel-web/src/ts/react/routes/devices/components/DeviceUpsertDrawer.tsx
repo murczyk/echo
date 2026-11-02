@@ -1,6 +1,9 @@
 import { DeviceAudioForwardingFields } from './DeviceAudioForwardingFields';
 import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
+import ArchiveIcon from '@mui/icons-material/Archive';
+import UnarchiveIcon from '@mui/icons-material/Unarchive';
+import { DeviceMetadataFields } from './DeviceMetadataFields';
 import {
   Autocomplete,
   Box,
@@ -35,6 +38,7 @@ const EMPTY_CUSTOM_FIELD_ROW_ERRORS: Record<string, DeviceCustomFieldDraftError>
 type Props = {
   open: boolean;
   deviceId?: string;
+  archived?: boolean;
   mode: 'create' | 'edit';
   fieldPermissions: DeviceFieldPermissions;
   form: DeviceUpsertForm | null;
@@ -49,6 +53,7 @@ type Props = {
   onClose: () => void;
   onChange: (form: DeviceUpsertForm | null) => void;
   onSave: (form: DeviceUpsertForm) => void;
+  onArchive?: () => void;
 };
 
 type TouchedField = 'name' | 'externalUrl';
@@ -69,6 +74,7 @@ function selectedLookupOption(
 export function DeviceUpsertDrawer({
   open,
   deviceId,
+  archived = false,
   mode,
   fieldPermissions,
   form,
@@ -83,6 +89,7 @@ export function DeviceUpsertDrawer({
   onClose,
   onChange,
   onSave,
+  onArchive,
 }: Props) {
   const mobile = useDeviceMobileLayout();
   const titleId = 'device-upsert-drawer-title';
@@ -93,7 +100,7 @@ export function DeviceUpsertDrawer({
     [fieldPermissions, form, nameRequired],
   );
   const formBlocked =
-    saving || (mode === 'edit' && fieldPermissions.analyticalData && referenceLoading);
+    archived || saving || (mode === 'edit' && fieldPermissions.analyticalData && referenceLoading);
   const saveLabel = mode === 'create' ? 'Створити' : 'Зберегти';
   const drawerTitle = mode === 'create' ? 'Створити пристрій' : 'Редагувати пристрій';
   const canTrySave = form !== null && !formBlocked && (mode === 'create' || hasChanges);
@@ -144,7 +151,7 @@ export function DeviceUpsertDrawer({
   const customFieldRows = showCollectionErrors
     ? (validation?.customFieldRows ?? EMPTY_CUSTOM_FIELD_ROW_ERRORS)
     : EMPTY_CUSTOM_FIELD_ROW_ERRORS;
-  const noEditChanges = mode === 'edit' && form !== null && !hasChanges;
+  const noEditChanges = mode === 'edit' && !archived && form !== null && !hasChanges;
 
   return (
     <Drawer
@@ -192,6 +199,11 @@ export function DeviceUpsertDrawer({
           {fieldPermissions.analyticalData && referenceLoading ? (
             <PowerAlert severity="info">Завантажуємо довідники…</PowerAlert>
           ) : null}
+          {archived ? (
+            <PowerAlert severity="info">
+              Архівований пристрій. Для редагування розархівуйте його.
+            </PowerAlert>
+          ) : null}
           {noEditChanges ? (
             <PowerAlert severity="info">Немає змін для збереження.</PowerAlert>
           ) : null}
@@ -204,6 +216,15 @@ export function DeviceUpsertDrawer({
 
           {form ? (
             <>
+              {open && mode === 'edit' ? (
+                <DeviceMetadataFields
+                  form={form}
+                  permissions={fieldPermissions}
+                  disabled={formBlocked}
+                  errors={{ ...serverFieldErrors, ...(submitted ? (validation ?? {}) : {}) }}
+                  onChange={patchForm}
+                />
+              ) : null}
               {fieldPermissions.sourceData ? (
                 <>
                   <TextField
@@ -309,7 +330,17 @@ export function DeviceUpsertDrawer({
       </Box>
 
       <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
-        <Stack direction="row" spacing={1} justifyContent="flex-end">
+        <Stack direction={mobile ? 'column' : 'row'} spacing={1} justifyContent="flex-end">
+          {mode === 'edit' && fieldPermissions.analyticalData && onArchive ? (
+            <PowerButton
+              color={archived ? 'primary' : 'error'}
+              startIcon={archived ? <UnarchiveIcon /> : <ArchiveIcon />}
+              onClick={onArchive}
+              disabled={saving}
+            >
+              {archived ? 'Розархівувати' : 'Архівувати'}
+            </PowerButton>
+          ) : null}
           <PowerButton
             className={mobile ? '!min-h-echo-control-lg flex-1' : undefined}
             onClick={onClose}

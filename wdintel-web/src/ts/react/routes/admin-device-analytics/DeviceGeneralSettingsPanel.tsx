@@ -6,12 +6,22 @@ import { PowerButton } from '../../components/PowerButton';
 import { PowerForm } from '../../components/PowerForm';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { updateDeviceSettings } from '../../services/api/devices';
+import { DeviceActivitySettingsPanel } from './DeviceActivitySettingsPanel';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 export function DeviceGeneralSettingsPanel() {
+  return (
+    <Stack spacing={3}>
+      <DeviceActivitySettingsPanel />
+      <DeviceMattermostSettingsPanel />
+    </Stack>
+  );
+}
+
+function DeviceMattermostSettingsPanel() {
   const [hasMattermostWebhook, setHasMattermostWebhook] = useState(false);
   const [mattermostWebhookUrl, setMattermostWebhookUrl] = useState('');
   const [loading, setLoading] = useState(true);

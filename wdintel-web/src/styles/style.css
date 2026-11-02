@@ -77,6 +77,11 @@
   padding-top: var(--app-shell-content-gap);
 }
 
+.app-shell--with-content-gap.app-shell--without-bottom-gap {
+  --app-shell-bottom-offset: 0px;
+  padding-bottom: 0;
+}
+
 .app-shell-fill-height {
   height: calc(100vh - var(--app-shell-total-offset));
 }

@@ -78,6 +78,9 @@ vi.mock('.././components/DeviceAnalyticsPanel', () => ({
 }));
 
 const activeDevice: DeviceDetails = {
+  rating: 0,
+  tags: [],
+  description: null,
   audioForwardingConfigured: false,
   id: DEVICE_ID,
   name: 'Device Alpha',

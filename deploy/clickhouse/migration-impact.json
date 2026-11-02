@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20261030_143441_device_activity_breakdown": {
+      "changes": [{ "table": "public.device_settings", "strategy": "excluded" }]
+    },
+    "echo:m20261030_114640_device_rating_description": {
+      "changes": [{ "table": "public.device", "strategy": "cdc_additive" }]
+    },
     "echo:m20261026_190000_message_card_text_size": {
       "changes": [
         {

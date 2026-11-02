@@ -24,6 +24,7 @@ mod read {
             .c(h!())?)
     }
 
+    #[cfg(test)]
     pub(in crate::devices) async fn list(
         main_db: &DatabaseConnection,
         login: &login::Model,
@@ -38,6 +39,18 @@ mod read {
         login: &login::Model,
     ) -> Result<Vec<DeviceUnitStat>, AppError> {
         Ok(query::unit_stats(main_db, login).await.c(h!())?)
+    }
+
+    pub(in crate::devices) async fn list_with_stats(
+        main_db: &DatabaseConnection,
+        file_db: Option<&DatabaseConnection>,
+        login: &login::Model,
+        command: ListDevicesCommand,
+    ) -> Result<ListDevicesResult, AppError> {
+        let command = normalize_list_command(command).c(h!())?;
+        Ok(query::list_with_stats(main_db, file_db, login, command)
+            .await
+            .c(h!())?)
     }
 
     fn normalize_list_command(
@@ -72,6 +85,21 @@ mod read {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect(),
+            created_by: command
+                .created_by
+                .into_iter()
+                .filter(|value| !value.trim().is_empty())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            tags: command
+                .tags
+                .into_iter()
+                .map(|tag| tag.trim().to_lowercase())
+                .filter(|tag| !tag.is_empty())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
             limit: pagination.limit,
             offset: pagination.offset,
             sort_by: normalize_list_sort(command.sort_by).c(h!())?,
@@ -82,7 +110,7 @@ mod read {
         sort_by: Vec<DeviceListSort>,
     ) -> Result<Vec<DeviceListSort>, AppError> {
         let sort_by = if sort_by.is_empty() {
-            vec![DeviceListSort::UpdatedAtDesc]
+            vec![DeviceListSort::LastContentAtDesc]
         } else {
             sort_by
         };
@@ -90,6 +118,30 @@ mod read {
         let mut normalized = Vec::with_capacity(sort_by.len());
         for sort in sort_by {
             let (field, descending) = match sort {
+                DeviceListSort::AorsAsc => (DeviceSortField::Aors, false),
+                DeviceListSort::AorsDesc => (DeviceSortField::Aors, true),
+                DeviceListSort::UnitAsc => (DeviceSortField::Unit, false),
+                DeviceListSort::UnitDesc => (DeviceSortField::Unit, true),
+                DeviceListSort::CreatedByAsc => {
+                    (DeviceSortField::CreatedBy, false)
+                }
+                DeviceListSort::CreatedByDesc => {
+                    (DeviceSortField::CreatedBy, true)
+                }
+                DeviceListSort::LastContentAtAsc => {
+                    (DeviceSortField::LastContentAt, false)
+                }
+                DeviceListSort::LastContentAtDesc => {
+                    (DeviceSortField::LastContentAt, true)
+                }
+                DeviceListSort::ContentBytesAsc => {
+                    (DeviceSortField::ContentBytes, false)
+                }
+                DeviceListSort::ContentBytesDesc => {
+                    (DeviceSortField::ContentBytes, true)
+                }
+                DeviceListSort::RatingAsc => (DeviceSortField::Rating, false),
+                DeviceListSort::RatingDesc => (DeviceSortField::Rating, true),
                 DeviceListSort::DisplayTitleAsc => {
                     (DeviceSortField::DisplayTitle, false)
                 }
@@ -128,6 +180,12 @@ mod read {
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
     enum DeviceSortField {
+        Aors,
+        Unit,
+        CreatedBy,
+        LastContentAt,
+        ContentBytes,
+        Rating,
         DisplayTitle,
         CreatedAt,
         UpdatedAt,
@@ -206,6 +264,8 @@ mod write {
                     organism_id: Set(access::organism_id(login).c(h!())?),
                     unit_id: Set(None),
                     tags: Set(serde_json::json!([])),
+                    rating: Set(None),
+                    description: Set(None),
                     external_url: Set(external_url),
                     custom_fields: Set(custom_fields_to_json(custom_fields)),
                     archived: Set(false),
@@ -313,6 +373,9 @@ mod write {
 
     struct NormalizedUpdateDevice {
         device_id: Uuid,
+        rating: DevicePatchField<i32>,
+        tags: DevicePatchField<Vec<String>>,
+        description: DevicePatchField<Option<String>>,
         external_url: DevicePatchField<Option<String>>,
         custom_fields: DevicePatchField<BTreeMap<String, Option<String>>>,
         name: DevicePatchField<String>,
@@ -325,6 +388,21 @@ mod write {
     ) -> Result<NormalizedUpdateDevice, AppError> {
         Ok(NormalizedUpdateDevice {
             device_id: command.device_id,
+            rating: normalize_patch_field(command.rating, |rating| {
+                if !(0..=crate::devices::config::DEVICE_RATING_MAX).contains(&rating) {
+                    return Err(form_error("rating", "Оцінка має бути від 0 до 5"));
+                }
+                Ok(rating)
+            }).c(h!())?,
+            tags: normalize_patch_field(command.tags, normalize_tags).c(h!())?,
+            description: normalize_patch_field(command.description, |description| {
+                let description = description.map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty());
+                if description.as_ref().is_some_and(|value| value.chars().count() > crate::devices::config::DEVICE_DESCRIPTION_MAX_CHARS) {
+                    return Err(form_error("description", "Опис задовгий"));
+                }
+                Ok(description)
+            }).c(h!())?,
             external_url: normalize_patch_field(
                 command.external_url,
                 |external_url| {
@@ -360,6 +438,30 @@ mod write {
                 Ok(DevicePatchField::Value(normalize(value).c(h!())?))
             }
         }
+    }
+
+    fn normalize_tags(tags: Vec<String>) -> Result<Vec<String>, AppError> {
+        use crate::devices::config::{
+            DEVICE_TAGS_MAX_COUNT, DEVICE_TAG_MAX_CHARS,
+        };
+        if tags.len() > DEVICE_TAGS_MAX_COUNT {
+            return Err(form_error("tags", "Забагато тегів"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let mut normalized = Vec::new();
+        for tag in tags {
+            let tag = tag.trim().to_string();
+            if tag.is_empty() || tag.chars().count() > DEVICE_TAG_MAX_CHARS {
+                return Err(form_error(
+                    "tags",
+                    "Тег має містити від 1 до 64 символів",
+                ));
+            }
+            if seen.insert(tag.to_lowercase()) {
+                normalized.push(tag);
+            }
+        }
+        Ok(normalized)
     }
 
     async fn lock_references(
@@ -433,6 +535,29 @@ mod write {
         };
 
         Ok(DeviceChanges {
+            rating: match command.rating {
+                DevicePatchField::Value(rating)
+                    if rating != device.rating.unwrap_or(0) =>
+                {
+                    Some(rating)
+                }
+                _ => None,
+            },
+            tags: match command.tags {
+                DevicePatchField::Value(tags) => {
+                    let tags = serde_json::json!(tags);
+                    (tags != device.tags).then_some(tags)
+                }
+                _ => None,
+            },
+            description: match command.description {
+                DevicePatchField::Value(description)
+                    if description != device.description =>
+                {
+                    Some(description)
+                }
+                _ => None,
+            },
             external_url,
             custom_fields,
             name,
@@ -460,7 +585,7 @@ mod mapping {
         ListDevicesResult,
     };
     use super::super::types::{
-        DeviceDetails, DeviceListItem, DeviceStatusCounts,
+        DeviceAudioDayStat, DeviceDetails, DeviceListItem, DeviceStatusCounts,
         DeviceUnitStat as DeviceUnitStatDto, DeviceUnitStatsRsp,
         ListDevicesRsp, UnitSummary,
     };
@@ -475,6 +600,9 @@ mod mapping {
     ) -> DeviceDetails {
         DeviceDetails {
             id: device.id.hyphenated().to_string(),
+            rating: device.rating,
+            tags: device.tags,
+            description: device.description,
             name: device.name,
             aors: device.aors.into_iter().map(map_aor).collect(),
             unit: device.unit.map(map_unit),
@@ -492,7 +620,9 @@ mod mapping {
     pub(in crate::devices) fn map_device_list(
         result: ListDevicesResult,
         mut stats: Option<HashMap<Uuid, DeviceStats>>,
+        mut audio_days: Option<HashMap<Uuid, Vec<DeviceAudioDayStat>>>,
     ) -> ListDevicesRsp {
+        let activity_split_files_audio = result.activity_split_files_audio;
         ListDevicesRsp {
             list: result
                 .devices
@@ -501,7 +631,15 @@ mod mapping {
                     let device_stats = stats
                         .as_mut()
                         .and_then(|stats| stats.remove(&device.id));
-                    map_device_list_item(device, device_stats)
+                    let device_audio_days = audio_days
+                        .as_mut()
+                        .and_then(|days| days.remove(&device.id));
+                    map_device_list_item(
+                        device,
+                        device_stats,
+                        device_audio_days,
+                        activity_split_files_audio,
+                    )
                 })
                 .collect(),
             total: result.total,
@@ -530,9 +668,13 @@ mod mapping {
     fn map_device_list_item(
         device: DeviceCurrentState,
         stats: Option<DeviceStats>,
+        audio_days: Option<Vec<DeviceAudioDayStat>>,
+        activity_split_files_audio: bool,
     ) -> DeviceListItem {
         DeviceListItem {
             id: device.id.hyphenated().to_string(),
+            rating: device.rating,
+            tags: device.tags,
             name: device.name,
             aors: device.aors.into_iter().map(map_aor).collect(),
             unit: device.unit.map(map_unit),
@@ -542,6 +684,8 @@ mod mapping {
             updated_at: format_datetime(device.updated_at),
             archived_at: device.archived_at.map(format_datetime),
             stats,
+            audio_days,
+            activity_split_files_audio,
         }
     }
 
@@ -563,7 +707,9 @@ mod mapping {
 pub(in crate::devices) use mapping::{
     map_device_details, map_device_list, map_device_unit_stats,
 };
-pub(in crate::devices) use read::{list, read, unit_stats};
+#[cfg(test)]
+pub(in crate::devices) use read::list;
+pub(in crate::devices) use read::{list_with_stats, read, unit_stats};
 pub(in crate::devices) use write::{create, update};
 
 pub(super) mod custom_fields {

@@ -1,5 +1,105 @@
 use super::*;
 
+// PR #3949 / #3926: cached activity backfills audio and preserves file statistics across rollback.
+#[tokio::test]
+#[serial_test::serial]
+async fn activity_index_migration_backfills_audio_and_preserves_file_stats() {
+    let (config, database_url) = isolated_file_registry_config().await;
+    {
+        let db = connect_runtime(&config, Mode::Debug)
+            .await
+            .unwrap()
+            .unwrap();
+        let connection = db.connection();
+        let migrations = wdfiles_migration::Migrator::migrations();
+        let prior = migrations
+            .iter()
+            .position(|migration| {
+                migration.name()
+                    == "m20261031_111058_device_list_activity_order"
+            })
+            .unwrap();
+        wdfiles_migration::Migrator::up(connection, Some(prior as u32))
+            .await
+            .unwrap();
+        let fixture = AudioFixture::new();
+        let audio_only = AudioFixture::new();
+        let transaction = connection.begin().await.unwrap();
+        transaction.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres, r#"
+insert into device_content_stat(device_id, epoch, content_count, content_bytes, first_content_at, last_content_at, updated_at)
+values ($1, 7, 1, 123, '2026-10-01', '2026-10-01', now())
+"#, [fixture.device_id.into()])).await.unwrap();
+        for audio in [&fixture, &audio_only] {
+            insert_ingest(&transaction, audio, &audio.audio_id.to_string())
+                .await;
+            validate_ingest(&transaction, audio).await;
+            insert_audio(&transaction, audio, &audio.audio_id.to_string())
+                .await
+                .unwrap();
+        }
+        transaction
+            .execute_unprepared("update device_audio_ingest set status='ready'")
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+        wdfiles_migration::Migrator::up(connection, Some(1))
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            let rows = connection.query_all_raw(Statement::from_string(DbBackend::Postgres, r#"
+select device_id, epoch, content_count, content_bytes, (last_audio_at at time zone 'UTC')::text as last_audio_at
+from device_content_stat order by device_id
+"#)).await.unwrap();
+            assert_eq!(rows.len(), 2);
+            for row in rows {
+                assert!(row
+                    .try_get::<String>("", "last_audio_at")
+                    .unwrap()
+                    .starts_with("2026-10-04 00:01:00"));
+                let has_files = row.try_get::<Uuid>("", "device_id").unwrap()
+                    == fixture.device_id;
+                assert_eq!(
+                    row.try_get::<i64>("", "epoch").unwrap(),
+                    if has_files { 7 } else { 1 }
+                );
+                assert_eq!(
+                    row.try_get::<i64>("", "content_count").unwrap(),
+                    if has_files { 1 } else { 0 }
+                );
+                assert_eq!(
+                    row.try_get::<i64>("", "content_bytes").unwrap(),
+                    if has_files { 123 } else { 0 }
+                );
+            }
+            wdfiles_migration::Migrator::down(connection, Some(1))
+                .await
+                .unwrap();
+            wdfiles_migration::Migrator::up(connection, Some(1))
+                .await
+                .unwrap();
+        }
+        let transaction = connection.begin().await.unwrap();
+        let rolled_back = AudioFixture::new();
+        insert_ingest(&transaction, &rolled_back, "rollback.wav").await;
+        validate_ingest(&transaction, &rolled_back).await;
+        insert_audio(&transaction, &rolled_back, "rollback.wav")
+            .await
+            .unwrap();
+        transaction.execute_unprepared("update device_audio_ingest set status='ready' where status='storing'").await.unwrap();
+        transaction.rollback().await.unwrap();
+        let count = connection
+            .query_one_raw(Statement::from_string(
+                DbBackend::Postgres,
+                "select count(*)::bigint as count from device_content_stat",
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(count.try_get::<i64>("", "count").unwrap(), 2);
+    }
+    sqlx::Postgres::drop_database(&database_url).await.unwrap();
+}
+
 #[tokio::test]
 #[serial_test::serial]
 async fn device_audio_schema_preserves_existing_files() {

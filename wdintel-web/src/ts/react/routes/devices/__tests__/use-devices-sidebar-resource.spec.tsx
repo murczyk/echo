@@ -10,6 +10,7 @@ import { useDevicesSidebarResource } from '.././use-devices-sidebar-resource';
 const devicesApiMock = vi.hoisted(() => ({
   getDeviceUnitStats: vi.fn(),
   listDeviceUnits: vi.fn(),
+  listDeviceFilterOptions: vi.fn(),
 }));
 vi.mock('../../../services/api/devices', () => devicesApiMock);
 
@@ -31,6 +32,7 @@ async function flush() {
 
 beforeEach(() => {
   devicesApiMock.listDeviceUnits.mockResolvedValue([]);
+  devicesApiMock.listDeviceFilterOptions.mockResolvedValue({ aors: [], creators: [], tags: [] });
   devicesApiMock.getDeviceUnitStats.mockResolvedValue([]);
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -69,6 +71,12 @@ describe('useDevicesSidebarResource', () => {
   });
 
   it('does not load the full unit catalog without analytical write access', async () => {
+    const filterOptions = {
+      aors: [{ id: 1, name: 'AOR' }],
+      creators: [{ login: 'author', displayName: null }],
+      tags: ['Tag'],
+    };
+    devicesApiMock.listDeviceFilterOptions.mockResolvedValue(filterOptions);
     const unitStats = [{ unit: { id: 7, name: 'Visible unit' }, count: 3 }];
     devicesApiMock.getDeviceUnitStats.mockResolvedValue(unitStats);
 
@@ -80,6 +88,8 @@ describe('useDevicesSidebarResource', () => {
     expect(devicesApiMock.listDeviceUnits).not.toHaveBeenCalled();
     expect(devicesApiMock.getDeviceUnitStats).toHaveBeenCalledTimes(1);
     expect(latest?.units).toEqual([]);
+    expect(latest?.filterOptions).toEqual(filterOptions);
+    expect(devicesApiMock.listDeviceFilterOptions).toHaveBeenCalledTimes(1);
     expect(latest?.unitStats).toEqual(unitStats);
   });
 });

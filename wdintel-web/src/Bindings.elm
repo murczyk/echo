@@ -5814,7 +5814,19 @@ deviceArchivedFilterEncoder enum =
             Json.Encode.string "all"
 
 type DeviceListSortBy
-    = DisplayTitleAsc
+    = AorsAsc
+    | AorsDesc
+    | UnitAsc
+    | UnitDesc
+    | CreatedByAsc
+    | CreatedByDesc
+    | LastContentAtAsc
+    | LastContentAtDesc
+    | ContentBytesAsc
+    | ContentBytesDesc
+    | RatingAsc
+    | RatingDesc
+    | DisplayTitleAsc
     | DisplayTitleDesc
     | DeviceCreatedAtAsc
     | DeviceCreatedAtDesc
@@ -5825,6 +5837,30 @@ type DeviceListSortBy
 deviceListSortByEncoder : DeviceListSortBy -> Json.Encode.Value
 deviceListSortByEncoder enum =
     case enum of
+        AorsAsc ->
+            Json.Encode.string "aors_asc"
+        AorsDesc ->
+            Json.Encode.string "aors_desc"
+        UnitAsc ->
+            Json.Encode.string "unit_asc"
+        UnitDesc ->
+            Json.Encode.string "unit_desc"
+        CreatedByAsc ->
+            Json.Encode.string "created_by_asc"
+        CreatedByDesc ->
+            Json.Encode.string "created_by_desc"
+        LastContentAtAsc ->
+            Json.Encode.string "last_content_at_asc"
+        LastContentAtDesc ->
+            Json.Encode.string "last_content_at_desc"
+        ContentBytesAsc ->
+            Json.Encode.string "content_bytes_asc"
+        ContentBytesDesc ->
+            Json.Encode.string "content_bytes_desc"
+        RatingAsc ->
+            Json.Encode.string "rating_asc"
+        RatingDesc ->
+            Json.Encode.string "rating_desc"
         DisplayTitleAsc ->
             Json.Encode.string "display_title_asc"
         DisplayTitleDesc ->
@@ -5920,6 +5956,8 @@ deviceStatsEncoder struct =
 
 type alias DeviceListItem =
     { id : String
+    , rating : Int
+    , tags : List (String)
     , name : Maybe (String)
     , aors : List (AorSummary)
     , unit : Maybe (UnitSummary)
@@ -5929,6 +5967,8 @@ type alias DeviceListItem =
     , updatedAt : String
     , archivedAt : Maybe (String)
     , stats : Maybe (DeviceStats)
+    , audioDays : Maybe (List (DeviceAudioDayStat))
+    , activitySplitFilesAudio : Bool
     }
 
 
@@ -5936,6 +5976,8 @@ deviceListItemEncoder : DeviceListItem -> Json.Encode.Value
 deviceListItemEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
+        , ( "rating", (Json.Encode.int) struct.rating )
+        , ( "tags", (Json.Encode.list (Json.Encode.string)) struct.tags )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
         , ( "aors", (Json.Encode.list (aorSummaryEncoder)) struct.aors )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (unitSummaryEncoder)) struct.unit )
@@ -5945,11 +5987,62 @@ deviceListItemEncoder struct =
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
         , ( "archived_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.archivedAt )
         , ( "stats", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceStatsEncoder)) struct.stats )
+        , ( "audio_days", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (deviceAudioDayStatEncoder))) struct.audioDays )
+        , ( "activity_split_files_audio", (Json.Encode.bool) struct.activitySplitFilesAudio )
+        ]
+
+
+type alias DeviceFilterOptions =
+    { aors : List (AorSummary)
+    , creators : List (DeviceCreatorFilterOption)
+    , tags : List (String)
+    }
+
+
+deviceFilterOptionsEncoder : DeviceFilterOptions -> Json.Encode.Value
+deviceFilterOptionsEncoder struct =
+    Json.Encode.object
+        [ ( "aors", (Json.Encode.list (aorSummaryEncoder)) struct.aors )
+        , ( "creators", (Json.Encode.list (deviceCreatorFilterOptionEncoder)) struct.creators )
+        , ( "tags", (Json.Encode.list (Json.Encode.string)) struct.tags )
+        ]
+
+
+type alias DeviceCreatorFilterOption =
+    { login : String
+    , displayName : Maybe (String)
+    }
+
+
+deviceCreatorFilterOptionEncoder : DeviceCreatorFilterOption -> Json.Encode.Value
+deviceCreatorFilterOptionEncoder struct =
+    Json.Encode.object
+        [ ( "login", (Json.Encode.string) struct.login )
+        , ( "display_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.displayName )
+        ]
+
+
+type alias DeviceAudioDayStat =
+    { day : String
+    , contentCount : Int
+    , contentBytes : Int
+    }
+
+
+deviceAudioDayStatEncoder : DeviceAudioDayStat -> Json.Encode.Value
+deviceAudioDayStatEncoder struct =
+    Json.Encode.object
+        [ ( "day", (Json.Encode.string) struct.day )
+        , ( "content_count", (Json.Encode.int) struct.contentCount )
+        , ( "content_bytes", (Json.Encode.int) struct.contentBytes )
         ]
 
 
 type alias DeviceDetails =
     { id : String
+    , rating : Int
+    , tags : List (String)
+    , description : Maybe (String)
     , name : Maybe (String)
     , aors : List (AorSummary)
     , unit : Maybe (UnitSummary)
@@ -5968,6 +6061,9 @@ deviceDetailsEncoder : DeviceDetails -> Json.Encode.Value
 deviceDetailsEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.string) struct.id )
+        , ( "rating", (Json.Encode.int) struct.rating )
+        , ( "tags", (Json.Encode.list (Json.Encode.string)) struct.tags )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
         , ( "aors", (Json.Encode.list (aorSummaryEncoder)) struct.aors )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (unitSummaryEncoder)) struct.unit )
@@ -6001,6 +6097,8 @@ type alias ListDevicesReq =
     , archivedFilter : Maybe (DeviceArchivedFilter)
     , aorIds : Maybe (List (Int))
     , unitIds : Maybe (List (Int))
+    , createdBy : Maybe (List (String))
+    , tags : Maybe (List (String))
     , limit : Maybe (Int)
     , offset : Maybe (Int)
     , sortBy : List (DeviceListSortBy)
@@ -6014,6 +6112,8 @@ listDevicesReqEncoder struct =
         , ( "archived_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchivedFilterEncoder)) struct.archivedFilter )
         , ( "aor_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.aorIds )
         , ( "unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.unitIds )
+        , ( "created_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.createdBy )
+        , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tags )
         , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
         , ( "offset", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.offset )
         , ( "sort_by", (Json.Encode.list (deviceListSortByEncoder)) struct.sortBy )
@@ -6082,6 +6182,9 @@ createDeviceReqEncoder struct =
 
 type alias UpdateDeviceReq =
     { deviceId : String
+    , rating : Maybe (Int)
+    , tags : Maybe (List (String))
+    , description : Maybe (String)
     , externalUrl : Maybe (String)
     , customFields : Maybe (Dict String (Maybe (String)))
     , name : Maybe (String)
@@ -6095,6 +6198,9 @@ updateDeviceReqEncoder : UpdateDeviceReq -> Json.Encode.Value
 updateDeviceReqEncoder struct =
     Json.Encode.object
         [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "rating", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.rating )
+        , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.tags )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "external_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.externalUrl )
         , ( "custom_fields", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.dict identity (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)))) struct.customFields )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
@@ -8426,6 +8532,7 @@ tagMatchEncoder enum =
 type alias DeviceSettingsReq =
     { mattermostWebhookUrl : Maybe (String)
     , clearMattermostWebhook : Bool
+    , activitySplitFilesAudio : Maybe (Bool)
     }
 
 
@@ -8434,11 +8541,13 @@ deviceSettingsReqEncoder struct =
     Json.Encode.object
         [ ( "mattermost_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
         , ( "clear_mattermost_webhook", (Json.Encode.bool) struct.clearMattermostWebhook )
+        , ( "activity_split_files_audio", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.activitySplitFilesAudio )
         ]
 
 
 type alias DeviceSettingsItem =
     { hasMattermostWebhook : Bool
+    , activitySplitFilesAudio : Bool
     }
 
 
@@ -8446,6 +8555,7 @@ deviceSettingsItemEncoder : DeviceSettingsItem -> Json.Encode.Value
 deviceSettingsItemEncoder struct =
     Json.Encode.object
         [ ( "has_mattermost_webhook", (Json.Encode.bool) struct.hasMattermostWebhook )
+        , ( "activity_split_files_audio", (Json.Encode.bool) struct.activitySplitFilesAudio )
         ]
 
 
@@ -23576,6 +23686,114 @@ deviceListSortByDecoder =
             |> Json.Decode.andThen
                 (\x ->
                     case x of
+                        "aors_asc" ->
+                            Json.Decode.succeed AorsAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "aors_desc" ->
+                            Json.Decode.succeed AorsDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "unit_asc" ->
+                            Json.Decode.succeed UnitAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "unit_desc" ->
+                            Json.Decode.succeed UnitDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "created_by_asc" ->
+                            Json.Decode.succeed CreatedByAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "created_by_desc" ->
+                            Json.Decode.succeed CreatedByDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "last_content_at_asc" ->
+                            Json.Decode.succeed LastContentAtAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "last_content_at_desc" ->
+                            Json.Decode.succeed LastContentAtDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "content_bytes_asc" ->
+                            Json.Decode.succeed ContentBytesAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "content_bytes_desc" ->
+                            Json.Decode.succeed ContentBytesDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "rating_asc" ->
+                            Json.Decode.succeed RatingAsc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "rating_desc" ->
+                            Json.Decode.succeed RatingDesc
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
                         "display_title_asc" ->
                             Json.Decode.succeed DisplayTitleAsc
                         unexpected ->
@@ -23672,6 +23890,8 @@ deviceListItemDecoder : Json.Decode.Decoder DeviceListItem
 deviceListItemDecoder =
     Json.Decode.succeed DeviceListItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rating" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (aorSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (unitSummaryDecoder))))
@@ -23681,12 +23901,40 @@ deviceListItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "stats" (Json.Decode.nullable (deviceStatsDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio_days" (Json.Decode.nullable (Json.Decode.list (deviceAudioDayStatDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_split_files_audio" (Json.Decode.bool)))
+
+
+deviceFilterOptionsDecoder : Json.Decode.Decoder DeviceFilterOptions
+deviceFilterOptionsDecoder =
+    Json.Decode.succeed DeviceFilterOptions
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (aorSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "creators" (Json.Decode.list (deviceCreatorFilterOptionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (Json.Decode.string))))
+
+
+deviceCreatorFilterOptionDecoder : Json.Decode.Decoder DeviceCreatorFilterOption
+deviceCreatorFilterOptionDecoder =
+    Json.Decode.succeed DeviceCreatorFilterOption
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.nullable (Json.Decode.string))))
+
+
+deviceAudioDayStatDecoder : Json.Decode.Decoder DeviceAudioDayStat
+deviceAudioDayStatDecoder =
+    Json.Decode.succeed DeviceAudioDayStat
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "day" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_bytes" (Json.Decode.int)))
 
 
 deviceDetailsDecoder : Json.Decode.Decoder DeviceDetails
 deviceDetailsDecoder =
     Json.Decode.succeed DeviceDetails
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rating" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (aorSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (unitSummaryDecoder))))
@@ -23714,6 +23962,8 @@ listDevicesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archived_filter" (Json.Decode.nullable (deviceArchivedFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "offset" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.list (deviceListSortByDecoder))))
@@ -23753,6 +24003,9 @@ updateDeviceReqDecoder : Json.Decode.Decoder UpdateDeviceReq
 updateDeviceReqDecoder =
     Json.Decode.succeed UpdateDeviceReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rating" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.nullable (Json.Decode.dict (Json.Decode.nullable (Json.Decode.string))))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
@@ -25410,12 +25663,14 @@ deviceSettingsReqDecoder =
     Json.Decode.succeed DeviceSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermost_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clear_mattermost_webhook" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_split_files_audio" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 deviceSettingsItemDecoder : Json.Decode.Decoder DeviceSettingsItem
 deviceSettingsItemDecoder =
     Json.Decode.succeed DeviceSettingsItem
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_mattermost_webhook" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "activity_split_files_audio" (Json.Decode.bool)))
 
 
 organismDecoder : Json.Decode.Decoder Organism
