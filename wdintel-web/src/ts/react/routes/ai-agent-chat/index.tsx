@@ -436,11 +436,13 @@ export function MarkdownContent({
   citations,
   fileCitations = [],
   maps,
+  inertMaps = false,
 }: {
   children: string;
   citations: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps: AiAgentMapSummary[];
+  inertMaps?: boolean;
 }) {
   return (
     <Box
@@ -449,11 +451,19 @@ export function MarkdownContent({
         '& > :first-of-type': { mt: 0 },
         '& > :last-child': { mb: 0 },
         '& p': { my: 1 },
+        '& h1, & h2, & h3, & h4, & h5, & h6': { mt: 2, mb: 1, fontWeight: 600, lineHeight: 1.3 },
+        '& h1': { fontSize: '1.375rem' },
+        '& h2': { fontSize: '1.25rem' },
+        '& h3': { fontSize: '1.125rem' },
+        '& h4, & h5, & h6': { fontSize: '1rem' },
         '& ul, & ol': { my: 1, pl: 3 },
+        '& ul': { listStyle: 'disc' },
+        '& ol': { listStyle: 'decimal' },
         '& li': { mb: 0.5 },
         '& a:not(.echo-chip)': { color: 'text.primary', textDecoration: 'underline' },
         '& blockquote': { m: 0, my: 1, pl: 2, borderLeft: 2, borderColor: 'divider' },
         '& code': {
+          color: 'inherit',
           px: 0.5,
           py: 0.125,
           borderRadius: 0.5,
@@ -467,7 +477,12 @@ export function MarkdownContent({
         '& th, & td': { border: 1, borderColor: 'divider', px: 1, py: 0.75, textAlign: 'left' },
       }}
     >
-      <CitationMarkdown citations={citations} fileCitations={fileCitations} maps={maps}>
+      <CitationMarkdown
+        citations={citations}
+        fileCitations={fileCitations}
+        maps={maps}
+        inertMaps={inertMaps}
+      >
         {children}
       </CitationMarkdown>
     </Box>

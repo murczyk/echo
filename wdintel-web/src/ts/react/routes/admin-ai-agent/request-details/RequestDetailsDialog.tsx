@@ -36,23 +36,27 @@ function RequestDialogTitle({
 }) {
   return (
     <DialogTitle component="div">
-      <div className="flex flex-wrap items-center gap-echo-sm pr-echo-2xl">
+      <div className="flex items-center gap-echo-sm pr-echo-2xl">
         <Typography
           id={titleId}
           variant="h6"
           component="h2"
-          className="min-w-0 [overflow-wrap:anywhere]"
+          noWrap
+          title={request.conversation.title || undefined}
+          className="min-w-0"
         >
           {request.conversation.title || 'Запит ШІ'}
         </Typography>
-        <PowerChip label={live.state} color={statusColor(live.state)} selected />
-        <PowerChip
-          label={`Перевірка: ${request.reviewState}`}
-          color={statusColor(request.reviewState)}
-        />
-        {request.severity ? (
-          <PowerChip label={request.severity} color={statusColor(request.severity)} selected />
-        ) : null}
+        <span className="flex shrink-0 items-center gap-echo-sm">
+          <PowerChip label={live.state} color={statusColor(live.state)} selected />
+          <PowerChip
+            label={`Перевірка: ${request.reviewState}`}
+            color={statusColor(request.reviewState)}
+          />
+          {request.severity ? (
+            <PowerChip label={request.severity} color={statusColor(request.severity)} selected />
+          ) : null}
+        </span>
       </div>
       <Typography variant="body2" color="text.secondary">
         {[

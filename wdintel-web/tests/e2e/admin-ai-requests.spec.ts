@@ -232,6 +232,29 @@ function requestDetail(id: string, completed: boolean): AiAgentAdminRequestDetai
   };
 }
 
+/** WCAG contrast between an element's text and the nearest painted background behind it. */
+function textContrast(text: Element): number {
+  const channels = (value: string) => {
+    const srgb = value.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/);
+    if (srgb) return srgb.slice(1, 4).map(Number);
+    return (value.match(/[\d.]+/g) ?? []).slice(0, 3).map((part) => Number(part) / 255);
+  };
+  const luminance = (value: string) => {
+    const [r, g, b] = channels(value).map((channel) =>
+      channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  let surface = text.parentElement!;
+  while (getComputedStyle(surface).backgroundColor === 'rgba(0, 0, 0, 0)')
+    surface = surface.parentElement!;
+  const [light, dark] = [
+    luminance(getComputedStyle(text).color),
+    luminance(getComputedStyle(surface).backgroundColor),
+  ].sort((a, b) => b - a);
+  return (light + 0.05) / (dark + 0.05);
+}
+
 test('AI request details render the dialogue like the chat and follow a running request live', async ({
   page,
 }) => {
@@ -286,6 +309,10 @@ test('AI request details render the dialogue like the chat and follow a running 
   await expect(current.locator('strong')).toHaveText('streamed');
   await expect.poll(() => state.gets.filter((id) => id === DETAIL_CURRENT).length).toBe(2);
   await expect(dialog.getByText('completed', { exact: true }).first()).toBeVisible();
+  // The dark theme once painted the prompt bubble near-white under white text.
+  await page.evaluate(() => document.documentElement.setAttribute('data-bs-theme', 'dark'));
+  const prompt = current.getByText(`Question ${DETAIL_CURRENT}`, { exact: true });
+  await expect.poll(() => prompt.evaluate(textContrast)).toBeGreaterThan(4.5);
 
   const jump = dialog.getByRole('button', { name: 'До поточного запиту', exact: true });
   await expect(jump).toHaveCount(0);

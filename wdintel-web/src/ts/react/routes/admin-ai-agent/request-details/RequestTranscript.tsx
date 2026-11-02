@@ -67,7 +67,7 @@ function UserBubble({
 }) {
   const preset = message?.reasoningPreset;
   return (
-    <div className="max-w-[95%] self-end rounded-echo-md border-1 border-solid border-echo-border bg-echo-hover px-echo-lg py-echo-md echo-lg:max-w-[80%]">
+    <div className="max-w-[95%] self-end rounded-echo-md border-1 border-solid border-echo-border bg-[color-mix(in_srgb,var(--echo-color-primary)_12%,var(--echo-color-dialog-surface))] px-echo-lg py-echo-md echo-lg:max-w-[80%]">
       <Typography variant="caption" color="text.secondary" component="p" className="mb-echo-xs">
         {[login, preset ? REASONING_LABELS[preset] : null, formatDateTime(createdAt)]
           .filter(Boolean)
@@ -130,15 +130,17 @@ function AssistantBubble({
   fileCitations?: AiAgentFileCitation[];
 }) {
   return (
-    <div className="w-full self-start rounded-echo-md border-1 border-solid border-echo-border bg-echo-surface-raised px-echo-lg py-echo-md">
+    <div className="w-full self-start rounded-echo-md border-1 border-solid border-echo-border bg-echo-dialog-surface px-echo-lg py-echo-md">
       <Typography variant="caption" color="text.secondary" component="p" className="mb-echo-xs">
         ЕХО Агент
         {message?.completionMetadata?.coverageLimited ? ' · Охоплення джерел неповне' : ''}
       </Typography>
-      <MarkdownContent citations={citations} fileCitations={fileCitations} maps={[]}>
+      <MarkdownContent citations={citations} fileCitations={fileCitations} maps={maps} inertMaps>
         {content}
       </MarkdownContent>
-      <InertChips items={mapChips(maps)} />
+      <InertChips
+        items={mapChips(maps.filter((summary) => !content.includes(`](echo-map:${summary.id})`)))}
+      />
     </div>
   );
 }
@@ -155,7 +157,7 @@ function OtherTurn({
   return (
     <article
       data-testid={`admin-ai-turn-${turn.requestId}`}
-      className="group relative -mx-echo-sm flex flex-col gap-echo-sm rounded-echo-md p-echo-sm transition-colors focus-within:bg-echo-surface hover:bg-echo-surface"
+      className="group relative -mx-echo-sm flex flex-col gap-echo-sm rounded-echo-md border-1 border-solid border-transparent p-echo-sm transition-colors focus-within:border-echo-border hover:border-echo-border"
     >
       {turn.user ? (
         <UserBubble
@@ -174,7 +176,7 @@ function OtherTurn({
             size="small"
             aria-label="Відкрити цей запит"
             onClick={() => onOpenRequest(turn.requestId)}
-            className="border-1! border-solid! border-echo-border! bg-echo-surface-raised!"
+            className="border-1! border-solid! border-echo-border! bg-echo-dialog-surface!"
           >
             <OpenInNewIcon fontSize="small" />
           </PowerIconButton>
@@ -244,12 +246,14 @@ function CurrentTurn({
   live,
   turn,
   turnRef,
+  highlighted,
   onReconnect,
 }: {
   detail: AiAgentAuditRequestDetail;
   live: LiveRequest;
   turn: Turn;
   turnRef: RefObject<HTMLElement>;
+  highlighted: boolean;
   onReconnect: () => void;
 }) {
   const active = !isTerminalRequestState(live.state);
@@ -261,11 +265,13 @@ function CurrentTurn({
       ref={turnRef}
       data-testid="admin-ai-current-turn"
       aria-current="true"
-      className="-mx-echo-sm flex scroll-mt-echo-lg flex-col gap-echo-sm rounded-echo-md border-1 border-solid border-echo-primary p-echo-sm"
+      className={`-mx-echo-sm flex scroll-mt-echo-lg flex-col gap-echo-sm rounded-echo-md border-1 border-solid p-echo-sm ${highlighted ? 'border-echo-primary' : 'border-transparent'}`}
     >
-      <span className="self-start">
-        <PowerChip label="Поточний запит" color="primary" selected />
-      </span>
+      {highlighted ? (
+        <span className="self-start">
+          <PowerChip label="Поточний запит" color="primary" selected />
+        </span>
+      ) : null}
       <UserBubble
         login={detail.humanLogin}
         content={turn.user?.content ?? detail.prompt}
@@ -349,14 +355,15 @@ export function RequestTranscript({
   const scrollRef = useRef<HTMLDivElement>(null);
   const turnRef = useRef<HTMLElement>(null);
   const position = useCurrentTurnPosition(scrollRef, turnRef, detail.id);
+  const turns = transcriptTurns(detail);
   return (
-    <div className="relative h-full min-h-0">
+    <div className="relative h-full min-h-0 bg-echo-background">
       <div
         ref={scrollRef}
         data-testid="admin-ai-request-transcript"
         className="flex h-full flex-col gap-echo-md overflow-y-auto px-echo-xl py-echo-lg"
       >
-        {transcriptTurns(detail).map((turn) =>
+        {turns.map((turn) =>
           turn.requestId === detail.id ? (
             <CurrentTurn
               key={turn.requestId}
@@ -364,6 +371,7 @@ export function RequestTranscript({
               live={live}
               turn={turn}
               turnRef={turnRef}
+              highlighted={turns.length > 1}
               onReconnect={onReconnect}
             />
           ) : (

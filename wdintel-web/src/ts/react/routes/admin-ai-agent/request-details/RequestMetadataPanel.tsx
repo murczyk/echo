@@ -12,8 +12,8 @@ import { RequestDuration } from '../../ai-agent-chat/RequestActivity';
 import { formatDateTime, statusColor } from '../format';
 import { isTerminalRequestState } from './live-request';
 
-function formatSeconds(seconds: number | null | undefined): string {
-  if (isNullOrUndefined(seconds)) return '—';
+function formatSeconds(seconds: number | null | undefined): string | null {
+  if (isNullOrUndefined(seconds)) return null;
   if (seconds < 60) return `${seconds} с`;
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
@@ -48,6 +48,28 @@ function MetaRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+type OptionalRow = [label: string, value: ReactNode];
+
+/** Rows recorded only for newer requests; hidden when the request has no value. */
+function OptionalRows({ rows, empty }: { rows: OptionalRow[]; empty?: string }) {
+  const present = rows.filter(([, value]) => isPresent(value) && value !== '');
+  if (present.length === 0 && empty)
+    return (
+      <Typography variant="body2" color="text.secondary">
+        {empty}
+      </Typography>
+    );
+  return (
+    <MetaList>
+      {present.map(([label, value]) => (
+        <MetaRow key={label} label={label}>
+          {value}
+        </MetaRow>
+      ))}
+    </MetaList>
+  );
+}
+
 function CopyableValue({ value }: { value: string }) {
   const { notify } = usePowerSnackbar();
   async function copy() {
@@ -60,7 +82,7 @@ function CopyableValue({ value }: { value: string }) {
   }
   return (
     <span className="flex min-w-0 items-center gap-echo-xs">
-      <Typography variant="caption" component="code" className="font-mono [overflow-wrap:anywhere]">
+      <Typography variant="caption" component="span" className="font-mono [overflow-wrap:anywhere]">
         {value}
       </Typography>
       <Tooltip title="Копіювати">
@@ -76,12 +98,14 @@ function EngineSection({ request }: { request: AiAgentAuditRequestDetail }) {
   const { metadata } = request;
   return (
     <Section title="Модель">
-      <MetaList>
-        <MetaRow label="Провайдер">{request.providerName}</MetaRow>
-        <MetaRow label="Модель">{metadata.aiEngineModelName}</MetaRow>
-        <MetaRow label="API">{metadata.providerApi}</MetaRow>
-        <MetaRow label="Хост">{metadata.aiEngineHost}</MetaRow>
-      </MetaList>
+      <OptionalRows
+        rows={[
+          ['Провайдер', request.providerName],
+          ['Модель', metadata.aiEngineModelName],
+          ['API', metadata.providerApi],
+          ['Хост', metadata.aiEngineHost],
+        ]}
+      />
     </Section>
   );
 }
@@ -91,19 +115,24 @@ function ExecutionSection({ request }: { request: AiAgentAuditRequestDetail }) {
   const efforts = [metadata.reasoningEffort, metadata.checkpointEffort, metadata.synthesisEffort];
   return (
     <Section title="Виконання">
-      <MetaList>
-        <MetaRow label="Режим">
-          {metadata.reasoningPreset ? REASONING_LABELS[metadata.reasoningPreset] : null}
-        </MetaRow>
-        <MetaRow label="Зусилля">
-          {efforts.some(isPresent) ? efforts.map((effort) => effort ?? '—').join(' / ') : null}
-        </MetaRow>
-        <MetaRow label="Ліміт часу">{formatSeconds(metadata.maxRuntimeSeconds)}</MetaRow>
-        <MetaRow label="Фіналізація">{formatSeconds(metadata.finalizationSeconds)}</MetaRow>
-        {metadata.completionMetadata?.coverageLimited ? (
-          <MetaRow label="Охоплення">Неповне: {metadata.completionMetadata.reason}</MetaRow>
-        ) : null}
-      </MetaList>
+      <OptionalRows
+        empty="Параметри виконання для цього запиту не збережено."
+        rows={[
+          ['Режим', metadata.reasoningPreset ? REASONING_LABELS[metadata.reasoningPreset] : null],
+          [
+            'Зусилля',
+            efforts.some(isPresent) ? efforts.map((effort) => effort ?? '—').join(' / ') : null,
+          ],
+          ['Ліміт часу', formatSeconds(metadata.maxRuntimeSeconds)],
+          ['Фіналізація', formatSeconds(metadata.finalizationSeconds)],
+          [
+            'Охоплення',
+            metadata.completionMetadata?.coverageLimited
+              ? `Неповне: ${metadata.completionMetadata.reason}`
+              : null,
+          ],
+        ]}
+      />
     </Section>
   );
 }
@@ -132,6 +161,7 @@ function TimingSection({
               createdAt={startedAt}
               finishedAt={finishedAt}
               active={!isTerminalRequestState(live.state)}
+              variant="body2"
             />
           ) : null}
         </MetaRow>
