@@ -2007,14 +2007,14 @@ struct InboxUnitStatsRow {
 }
 
 async fn query_inbox_unit_stats(
-    db: &DatabaseConnection,
+    connection: crate::read_query::ReadConnection<'_>,
     query: String,
 ) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
     let rows = InboxUnitStatsRow::find_by_statement(Statement::from_string(
         DbBackend::Postgres,
         query,
     ))
-    .all(&crate::read_query::connection(db))
+    .all(&connection)
     .await
     .c(h!())?;
     Ok(rows
@@ -2048,9 +2048,16 @@ async fn load_inbox_unit_stats(
     else {
         return Ok(Vec::new());
     };
-    query_inbox_unit_stats(analytics_db.unwrap_or(&env.dbx), query)
-        .await
-        .c(h!())
+    let db = analytics_db.unwrap_or(&env.dbx);
+    // Without analytics, a lower bound selects the fresh tail. Its message-first
+    // query reads only those minutes, so it skips the shared SQL slots.
+    let connection =
+        if analytics_db.is_none() && created_at_lower_bound.is_some() {
+            crate::read_query::fresh_tail_connection(db)
+        } else {
+            crate::read_query::connection(db)
+        };
+    query_inbox_unit_stats(connection, query).await.c(h!())
 }
 
 fn merge_inbox_unit_stats(
@@ -6371,7 +6378,12 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        let units = query_inbox_unit_stats(&env.dbx, query).await.unwrap();
+        let units = query_inbox_unit_stats(
+            crate::read_query::connection(&env.dbx),
+            query,
+        )
+        .await
+        .unwrap();
         assert_eq!(units.len(), 2);
         assert_eq!(
             units
