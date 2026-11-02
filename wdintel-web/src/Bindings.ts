@@ -5793,6 +5793,9 @@ export type SystemSettingsItem = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: number;
+  reportKindConcurrency: number;
+  reportEtalonkaConcurrency: number;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
@@ -5841,6 +5844,9 @@ export type CreateSystemSettingsReq = {
   doNotStoreDuplicateEchoimFailures: boolean;
   goiAssociationMessageUidWorkerEnabled: boolean;
   reportChunkingHours: number;
+  reportGlobalConcurrency: number | null;
+  reportKindConcurrency: number | null;
+  reportEtalonkaConcurrency: number | null;
   limitBigReports: boolean;
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;

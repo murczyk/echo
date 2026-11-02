@@ -1,4 +1,9 @@
-use crate::config::ANALYSIS_AOR_FILTER_ENABLED_DEFAULT;
+use crate::config::{
+    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+    REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT,
+    REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT,
+    REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT,
+};
 use crate::users::{ensure_admin, login_id_from_identity};
 pub mod types;
 pub mod worker;
@@ -27,6 +32,45 @@ use sea_orm::{
 pub struct ReportGenerationSettings {
     pub chunking_hours: i64,
     pub limit_big_reports: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReportConcurrencySettings {
+    pub global: i64,
+    pub per_kind: i64,
+    pub etalonka: i64,
+}
+
+impl ReportConcurrencySettings {
+    fn from_settings(settings: Option<&system_settings::Model>) -> Self {
+        Self {
+            global: i64::from(
+                settings
+                    .and_then(|settings| settings.report_global_concurrency)
+                    .unwrap_or(REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT),
+            ),
+            per_kind: i64::from(
+                settings
+                    .and_then(|settings| settings.report_kind_concurrency)
+                    .unwrap_or(REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT),
+            ),
+            etalonka: i64::from(
+                settings
+                    .and_then(|settings| settings.report_etalonka_concurrency)
+                    .unwrap_or(REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT),
+            ),
+        }
+    }
+}
+
+pub async fn report_concurrency_settings<C>(
+    dbx: &C,
+) -> anyhow::Result<ReportConcurrencySettings>
+where
+    C: ConnectionTrait,
+{
+    let settings = get_active_system_settings(dbx).await.c(h!())?;
+    Ok(ReportConcurrencySettings::from_settings(settings.as_ref()))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +117,7 @@ impl PelengBounds {
 fn map_system_settings_item(
     settings: system_settings::Model,
 ) -> Result<SystemSettingsItem, AppError> {
+    let concurrency = ReportConcurrencySettings::from_settings(Some(&settings));
     Ok(SystemSettingsItem {
         id: settings.id,
         rer_analysis_units_exact_match_only_default: settings
@@ -113,6 +158,9 @@ fn map_system_settings_item(
         goi_association_message_uid_worker_enabled: settings
             .goi_association_message_uid_worker_enabled,
         report_chunking_hours: i64::from(settings.report_chunking_hours),
+        report_global_concurrency: concurrency.global,
+        report_kind_concurrency: concurrency.per_kind,
+        report_etalonka_concurrency: concurrency.etalonka,
         limit_big_reports: settings.limit_big_reports,
         enable_audio_transcription: settings.enable_audio_transcription,
         show_classic_duty: settings.show_classic_duty,
@@ -617,6 +665,29 @@ fn validate_report_generation_settings(
     Ok(())
 }
 
+fn reconcile_report_concurrency_settings(
+    req: &mut CreateSystemSettingsReq,
+    settings: Option<&system_settings::Model>,
+) -> Result<(), AppError> {
+    let concurrency = ReportConcurrencySettings::from_settings(settings);
+    for (value, default) in [
+        (&mut req.report_global_concurrency, concurrency.global),
+        (&mut req.report_kind_concurrency, concurrency.per_kind),
+        (&mut req.report_etalonka_concurrency, concurrency.etalonka),
+    ] {
+        let value = value.get_or_insert(default);
+        if !(1..=i64::from(i32::MAX)).contains(value) {
+            return Err(AppError::BL {
+                msg: format!(
+                    "Кількість одночасних звітів має бути додатним цілим числом до {}",
+                    i32::MAX
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_rer_duty_test_replay_settings(
     req: &CreateSystemSettingsReq,
 ) -> Result<(), AppError> {
@@ -711,6 +782,21 @@ fn system_settings_active_model(
         report_chunking_hours: Set(req
             .report_chunking_hours
             .try_into()
+            .c(h!())?),
+        report_global_concurrency: Set(req
+            .report_global_concurrency
+            .map(i32::try_from)
+            .transpose()
+            .c(h!())?),
+        report_kind_concurrency: Set(req
+            .report_kind_concurrency
+            .map(i32::try_from)
+            .transpose()
+            .c(h!())?),
+        report_etalonka_concurrency: Set(req
+            .report_etalonka_concurrency
+            .map(i32::try_from)
+            .transpose()
             .c(h!())?),
         limit_big_reports: Set(req.limit_big_reports),
         enable_audio_transcription: Set(req.enable_audio_transcription),
@@ -811,6 +897,8 @@ async fn create_system_settings_for_login(
         .unwrap_or(false);
     let mut req = req.clone();
     reconcile_api_rate_limit_settings(&mut req, settings.as_ref());
+    reconcile_report_concurrency_settings(&mut req, settings.as_ref())
+        .context(h!())?;
     validate_api_rate_limit_settings(&req).context(h!())?;
     req.ai_position_highlights_enabled = Some(
         req.ai_position_highlights_enabled
@@ -1204,6 +1292,68 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn issue_3974_report_concurrency_saves_preserve_omitted_limits_and_activate_history(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let historical =
+            insert_settings(&env.dbx, Utc::now().naive_utc(), false).await;
+        let mut req = settings_req(false);
+        req.report_global_concurrency = Some(8);
+        req.report_kind_concurrency = Some(3);
+        req.report_etalonka_concurrency = Some(4);
+        let saved = create_system_settings_for_login(&env.dbx, &login, &req)
+            .await
+            .unwrap();
+        let item = map_system_settings_item(saved).unwrap();
+        assert_eq!(
+            (
+                item.report_global_concurrency,
+                item.report_kind_concurrency,
+                item.report_etalonka_concurrency
+            ),
+            (8, 3, 4)
+        );
+        let saved = create_system_settings_for_login(
+            &env.dbx,
+            &login,
+            &settings_req(true),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            (
+                saved.report_global_concurrency,
+                saved.report_kind_concurrency,
+                saved.report_etalonka_concurrency
+            ),
+            (Some(8), Some(3), Some(4))
+        );
+        for invalid in [0, -1, i64::from(i32::MAX) + 1] {
+            let mut req = req.clone();
+            req.report_global_concurrency = Some(invalid);
+            assert!(create_system_settings_for_login(&env.dbx, &login, &req)
+                .await
+                .is_err());
+        }
+        let restored =
+            activate_system_settings_for_login(&env.dbx, &login, historical.id)
+                .await
+                .unwrap();
+        let item = map_system_settings_item(restored).unwrap();
+        assert_eq!(
+            (
+                item.report_global_concurrency,
+                item.report_kind_concurrency,
+                item.report_etalonka_concurrency
+            ),
+            (4, 1, 2)
+        );
     }
 
     #[tokio::test]
@@ -1995,6 +2145,9 @@ mod tests {
             goi_association_message_uid_worker_enabled: false,
             report_chunking_hours:
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT,
+            report_global_concurrency: None,
+            report_kind_concurrency: None,
+            report_etalonka_concurrency: None,
             limit_big_reports: false,
             enable_audio_transcription: false,
             show_classic_duty: true,
@@ -2079,6 +2232,9 @@ mod tests {
             report_chunking_hours: Set(
                 crate::config::RER_REPORT_CHUNKING_HOURS_DEFAULT as i32,
             ),
+            report_global_concurrency: Set(None),
+            report_kind_concurrency: Set(None),
+            report_etalonka_concurrency: Set(None),
             limit_big_reports: Set(false),
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),

@@ -104,7 +104,6 @@ for (const width of [1280, 390]) {
       'Обробка повідомлень',
       'Можливості системи',
       'Службова обробка',
-      'Звіти',
     ];
     for (const title of titles) {
       const heading = page.getByRole('heading', { name: title });

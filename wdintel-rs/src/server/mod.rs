@@ -1183,6 +1183,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(self::monitoring::monitoring)
             // .service(api_logout)
             .service(crate::server::admin::restart_echo)
+            .service(crate::server::admin::restart_report_worker)
             .service(crate::server::admin::restart_datasource)
             .service(
                 crate::stats::cache_backfill::start_group_stats_cache_backfill,

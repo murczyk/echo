@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
 }));
 
+vi.mock('../RerReportSettings', () => ({ RerReportSettings: () => <div>Звіт РЕР</div> }));
+
 vi.mock('../../../services/api/system-settings', () => ({
   listSystemSettings: mocks.list,
   createSystemSettings: mocks.save,
@@ -192,8 +194,11 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => root.unmount());
   });
   it('loads report defaults and saves normalized report settings', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#reports');
     const { container, root } = await renderPage();
-    const hoursInput = container.querySelector<HTMLInputElement>('input[type="number"]');
+    const hoursInput = container.querySelector<HTMLInputElement>(
+      'input[type="number"][value="24"]',
+    );
     const limitLabel = Array.from(container.querySelectorAll('label')).find((label) =>
       label.textContent?.includes('Обмежити неоптимізовані звіти'),
     );

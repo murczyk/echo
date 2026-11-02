@@ -84,6 +84,9 @@ pub struct SystemSettingsItem {
     pub do_not_store_duplicate_echoim_failures: bool,
     pub goi_association_message_uid_worker_enabled: bool,
     pub report_chunking_hours: i64,
+    pub report_global_concurrency: i64,
+    pub report_kind_concurrency: i64,
+    pub report_etalonka_concurrency: i64,
     pub limit_big_reports: bool,
     pub enable_audio_transcription: bool,
     pub show_classic_duty: bool,
@@ -160,6 +163,12 @@ pub struct CreateSystemSettingsReq {
     pub goi_association_message_uid_worker_enabled: bool,
     #[serde(default = "default_report_chunking_hours")]
     pub report_chunking_hours: i64,
+    #[serde(default)]
+    pub report_global_concurrency: Option<i64>,
+    #[serde(default)]
+    pub report_kind_concurrency: Option<i64>,
+    #[serde(default)]
+    pub report_etalonka_concurrency: Option<i64>,
     #[serde(default)]
     pub limit_big_reports: bool,
     #[serde(default)]

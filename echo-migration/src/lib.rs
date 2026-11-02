@@ -517,6 +517,7 @@ mod m20261029_104825_message_reply_component_locks;
 
 mod m20261031_080043_message_card_quick_action;
 mod m20261031_104502_role_message_settings;
+mod m20261102_131738_report_concurrency_settings;
 
 pub struct Migrator;
 
@@ -1219,6 +1220,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261031_104502_role_message_settings::Migration),
             Box::new(m20261031_155820_api_sender::Migration),
             Box::new(m20261101_151245_ai_agent_uploads::Migration),
+            Box::new(m20261102_131738_report_concurrency_settings::Migration),
         ]
     }
 }

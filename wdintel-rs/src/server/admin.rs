@@ -75,10 +75,107 @@ pub async fn restart_echo(
     Ok(Json(true))
 }
 
+#[post("/api/admin/restart-report-worker")]
+pub async fn restart_report_worker(
+    env: actix_web::web::Data<Env>,
+    user: actix_identity::Identity,
+) -> Result<Json<bool>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let output = tokio::process::Command::new("systemctl")
+        .args(["restart", crate::config::REPORT_HISTORY_WORKER_SERVICE])
+        .output()
+        .await
+        .c(h!())?;
+    if !output.status.success() {
+        return Err(AppError::BL {
+            msg: format!(
+                "Не вдалося перезапустити обробник звітів: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        });
+    }
+    Ok(Json(true))
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct RestartEchoRequest {
     pub restart_postgres: Option<bool>,
     pub restart_outdated_sources: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_identity::{Identity, IdentityMiddleware};
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::{
+        cookie::Key, http::StatusCode, test, web, App, HttpMessage,
+        HttpRequest, HttpResponse,
+    };
+
+    async fn login(
+        req: HttpRequest,
+        id: web::Path<uuid::Uuid>,
+    ) -> HttpResponse {
+        Identity::login(&req.extensions(), id.to_string()).unwrap();
+        HttpResponse::Ok().finish()
+    }
+
+    #[actix_web::test]
+    #[serial_test::serial]
+    async fn issue_3974_report_worker_restart_requires_admin_before_running_systemctl(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let actor = crate::functest::tests::mk_login(
+            &env.dbx,
+            crate::entities::login::ActiveModel {
+                roles: Set(serde_json::json!(["Rer"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(env))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(store, Key::generate()))
+                .route("/test-login/{id}", web::post().to(login))
+                .service(restart_report_worker),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/restart-report-worker")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test-login/{}", actor.id))
+                .to_request(),
+        )
+        .await;
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/restart-report-worker")
+                .cookie(cookie)
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 }

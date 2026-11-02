@@ -136,6 +136,11 @@
     "echo:m20261013_094137_inbox_unit_selection": {
       "changes": [{ "table": "public.sigint_inbox_item_unit_selection", "strategy": "excluded" }]
     },
+    "echo:m20261102_131738_report_concurrency_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261012_155351_api_rate_limit": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }
