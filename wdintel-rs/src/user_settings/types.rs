@@ -72,6 +72,39 @@ pub enum MessageTimeBasis {
     PartialEq,
     Eq,
     Clone,
+    Copy,
+    Default,
+)]
+pub enum MessageCardQuickAction {
+    #[default]
+    #[serde(rename = "createReport")]
+    QuickActionCreateReport,
+    #[serde(rename = "reply")]
+    QuickActionReply,
+    #[serde(rename = "important")]
+    QuickActionImportant,
+    #[serde(rename = "bookmark")]
+    QuickActionBookmark,
+    #[serde(rename = "copyText")]
+    QuickActionCopyText,
+    #[serde(rename = "copyLink")]
+    QuickActionCopyLink,
+    #[serde(rename = "edit")]
+    QuickActionEdit,
+    #[serde(rename = "delete")]
+    QuickActionDelete,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct UserDutySettingsDto {
@@ -98,6 +131,8 @@ pub struct UserDutySettingsDto {
     pub large_media_previews: bool,
     #[serde(default)]
     pub large_message_card_text: bool,
+    #[serde(default)]
+    pub message_card_quick_action: MessageCardQuickAction,
     #[serde(default = "default_media_summary_enabled")]
     pub media_summary_enabled: bool,
     #[serde(default)]
@@ -135,6 +170,7 @@ impl Default for UserDutySettingsDto {
             duty_collapse_media_previews: false,
             large_media_previews: false,
             large_message_card_text: false,
+            message_card_quick_action: MessageCardQuickAction::default(),
             media_summary_enabled: false,
             ai_position_highlights_enabled: false,
             message_sort_by: MessageTimeBasis::MessageInterception,

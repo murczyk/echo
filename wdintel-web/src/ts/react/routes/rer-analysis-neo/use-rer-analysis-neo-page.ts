@@ -1726,6 +1726,7 @@ export function useRerAnalysisNeoPage(
     collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     largeMediaPreviews: dutySettings.largeMediaPreviews,
     largeMessageCardText: dutySettings.largeMessageCardText,
+    messageCardQuickAction: dutySettings.messageCardQuickAction,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,

@@ -1,3 +1,4 @@
+import type { MessageCardQuickAction } from '../../../../Bindings';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
   CallsignInfoRes,
@@ -303,6 +304,7 @@ export type AnalysisPageState = {
   collapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
+  messageCardQuickAction: MessageCardQuickAction;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;

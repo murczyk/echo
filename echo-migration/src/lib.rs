@@ -515,6 +515,7 @@ mod m20261022_151553_iggy_unit_refresh_queue;
 
 mod m20261029_104825_message_reply_component_locks;
 
+mod m20261031_080043_message_card_quick_action;
 mod m20261031_104502_role_message_settings;
 
 pub struct Migrator;
@@ -1212,6 +1213,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261026_190000_message_card_text_size::Migration),
             Box::new(m20261027_153932_ai_worker_fallback_monitoring::Migration),
             Box::new(m20261029_104825_message_reply_component_locks::Migration),
+            Box::new(m20261031_080043_message_card_quick_action::Migration),
             Box::new(m20261030_114640_device_rating_description::Migration),
             Box::new(m20261030_143441_device_activity_breakdown::Migration),
             Box::new(m20261031_104502_role_message_settings::Migration),

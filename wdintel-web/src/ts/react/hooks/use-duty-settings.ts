@@ -11,19 +11,22 @@ import {
   fetchUserSettings,
   saveUserSettings,
   type UserDutySettings,
+  type UserDutySettingsUpdate,
+  type MessageCardQuickAction,
   type MessageTextPreviewLineLimit,
   type MessageTimeBasis,
 } from '../services/api/user-settings';
 
 type DutySettingsValue = UserDutySettings;
 
-type DutySettingsSaveRequest = DutySettingsValue;
+type DutySettingsSaveRequest = UserDutySettingsUpdate;
 
 export type DutySettingsHook = DutySettingsValue & {
   loadInProgress: boolean;
   loadError: string | null;
   saveError: string | null;
   saveInProgress: boolean;
+  setMessageCardQuickAction: (value: MessageCardQuickAction) => void;
   setTagsLayout: (value: TagsLayoutVariant) => void;
   setDisableAutoScroll: (value: boolean) => void;
   setAnalysisMapInSidebar: (value: boolean) => void;
@@ -50,6 +53,7 @@ function normalizeDutySettings(
   const messageTextPreviewLines = settings?.messageTextPreviewLines;
 
   return {
+    messageCardQuickAction: settings?.messageCardQuickAction ?? 'createReport',
     messageSortBy: settings?.messageSortBy === 'creation' ? 'creation' : 'interception',
     messageTextPreviewLines: messageTextPreviewLines === undefined ? 20 : messageTextPreviewLines,
     tagsLayout: settings?.tagsLayout ?? DEFAULT_DUTY_TAGS_LAYOUT,
@@ -165,7 +169,11 @@ export function useDutySettings(): DutySettingsHook {
   const scheduleSave = useCallback(
     (nextSettings: DutySettingsSaveRequest) => {
       setSaveError(null);
-      pendingSaveRef.current = nextSettings;
+      pendingSaveRef.current = {
+        ...nextSettings,
+        messageCardQuickAction:
+          nextSettings.messageCardQuickAction ?? pendingSaveRef.current?.messageCardQuickAction,
+      };
       void flushSaveQueue();
     },
     [flushSaveQueue],
@@ -177,6 +185,8 @@ export function useDutySettings(): DutySettingsHook {
     loadError,
     saveError,
     saveInProgress,
+    setMessageCardQuickAction: (value) =>
+      setSettings((current) => ({ ...current, messageCardQuickAction: value })),
     setTagsLayout: (value) => setSettings((current) => ({ ...current, tagsLayout: value })),
     setDisableAutoScroll: (value) =>
       setSettings((current) => ({ ...current, disableAutoScroll: value })),

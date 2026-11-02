@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20261031_080043_message_card_quick_action": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20261030_143441_device_activity_breakdown": {
       "changes": [{ "table": "public.device_settings", "strategy": "excluded" }]
     },

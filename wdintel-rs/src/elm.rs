@@ -67,6 +67,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
     elm_rs::export!("Bindings", &mut target, {
         encoders: [
+            crate::user_settings::types::MessageCardQuickAction,
             Name, Open, Visibility, Snippet, Tessellate, Coordinates,
             LineString, Point, Placemark, Href, Scale, Icon, Key, MultiGeometry,
             Pair, IconStyle, LabelStyle, BalloonStyle, LineStyle, PolyStyle,
@@ -2125,6 +2126,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::user_settings::types::DutyTagsLayout,
             crate::user_settings::types::MessageTextPreviewLines,
             crate::user_settings::types::MessageTimeBasis,
+            crate::user_settings::types::MessageCardQuickAction,
             crate::user_settings::types::UserDutySettingsDto,
         ],
         queries: [],
@@ -2292,6 +2294,10 @@ fn patch_backward_compatible_decoders(
 ) -> Result<String, AppError> {
     let output = patch_rer_duty_query_state_wf_decoder(output).context(h!())?;
     Ok(output
+        .replace(
+            r#"Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "messageCardQuickAction" (messageCardQuickActionDecoder), Json.Decode.succeed QuickActionCreateReport ]"#,
+        )
         .replace(
             r#"Json.Decode.field "largeMessageCardText" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]"#,

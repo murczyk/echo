@@ -2,8 +2,8 @@ use crate::users::login_id_from_identity;
 pub mod types;
 
 pub use types::{
-    DutyTagsLayout, MessageTextPreviewLines, MessageTimeBasis,
-    UserDutySettingsDto,
+    DutyTagsLayout, MessageCardQuickAction, MessageTextPreviewLines,
+    MessageTimeBasis, UserDutySettingsDto,
 };
 
 use crate::entities::sea_orm_active_enums::{
@@ -23,7 +23,25 @@ use sea_orm::{
     ConnectionTrait, DatabaseConnection, EntityTrait, QueryFilter, QuerySelect,
 };
 
-fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
+async fn default_message_card_quick_action(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<MessageCardQuickAction> {
+    let hide_networks = crate::system_settings::get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.hide_networks)
+        .unwrap_or(false);
+    Ok(if hide_networks {
+        MessageCardQuickAction::QuickActionCreateReport
+    } else {
+        MessageCardQuickAction::QuickActionCopyText
+    })
+}
+
+fn model_to_dto(
+    m: &user_settings::Model,
+    default_quick_action: MessageCardQuickAction,
+) -> UserDutySettingsDto {
     UserDutySettingsDto {
         tags_layout: match m.tags_layout {
             DbTagsLayout::Full => DutyTagsLayout::Full,
@@ -49,6 +67,16 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         duty_collapse_media_previews: m.duty_collapse_media_previews,
         large_media_previews: m.large_media_previews.unwrap_or(false),
         large_message_card_text: m.large_message_card_text.unwrap_or(false),
+        message_card_quick_action: m
+            .message_card_quick_action
+            .as_ref()
+            .and_then(|action| {
+                serde_json::from_value::<MessageCardQuickAction>(
+                    serde_json::Value::String(action.clone()),
+                )
+                .ok()
+            })
+            .unwrap_or(default_quick_action),
         media_summary_enabled: m.media_summary_enabled,
         ai_position_highlights_enabled: m
             .ai_position_highlights_enabled
@@ -70,6 +98,9 @@ fn preserve_omitted_compatibility_fields(
 ) {
     if body.get("largeMessageCardText").is_none() {
         incoming.large_message_card_text = existing.large_message_card_text;
+    }
+    if body.get("messageCardQuickAction").is_none() {
+        incoming.message_card_quick_action = existing.message_card_quick_action;
     }
     if body.get("largeMediaPreviews").is_none() {
         incoming.large_media_previews = existing.large_media_previews;
@@ -94,14 +125,19 @@ pub async fn user_settings_get(
 ) -> Result<Json<UserDutySettingsDto>, AppError> {
     let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
+    let default_quick_action =
+        default_message_card_quick_action(&env.dbx).await.c(h!())?;
     let row = user_settings::Entity::find()
         .filter(user_settings::Column::LoginId.eq(login_id))
         .one(&env.dbx)
         .await
         .c(h!())?;
     let dto = match row {
-        Some(m) => model_to_dto(&m),
-        None => UserDutySettingsDto::default(),
+        Some(m) => model_to_dto(&m, default_quick_action),
+        None => UserDutySettingsDto {
+            message_card_quick_action: default_quick_action,
+            ..Default::default()
+        },
     };
     Ok(Json(dto))
 }
@@ -115,7 +151,9 @@ pub async fn user_settings_put(
     let login_id = login_id_from_identity(&user)?;
     load_login(&env.dbx, &login_id).await.c(h!())?;
     let body = req.into_inner();
+    let quick_action_changed = body.get("messageCardQuickAction").is_some();
     let needs_existing = body.get("largeMessageCardText").is_none()
+        || body.get("messageCardQuickAction").is_none()
         || body.get("largeMediaPreviews").is_none()
         || body.get("messageSortBy").is_none()
         || body.get("messageAutoParseEnabled").is_none()
@@ -123,13 +161,18 @@ pub async fn user_settings_put(
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
     if needs_existing {
+        let default_quick_action =
+            default_message_card_quick_action(&env.dbx).await.c(h!())?;
         let existing = user_settings::Entity::find()
             .filter(user_settings::Column::LoginId.eq(login_id))
             .one(&env.dbx)
             .await
             .c(h!())?
-            .map(|settings| model_to_dto(&settings))
-            .unwrap_or_default();
+            .map(|settings| model_to_dto(&settings, default_quick_action))
+            .unwrap_or(UserDutySettingsDto {
+                message_card_quick_action: default_quick_action,
+                ..Default::default()
+            });
         preserve_omitted_compatibility_fields(&body, &mut dto, &existing);
     }
     let now = Utc::now().naive_utc();
@@ -164,6 +207,14 @@ pub async fn user_settings_put(
         duty_collapse_media_previews: Set(dto.duty_collapse_media_previews),
         large_media_previews: Set(Some(dto.large_media_previews)),
         large_message_card_text: Set(Some(dto.large_message_card_text)),
+        message_card_quick_action: if quick_action_changed {
+            Set(serde_json::to_value(dto.message_card_quick_action)
+                .c(h!())?
+                .as_str()
+                .map(str::to_owned))
+        } else {
+            NotSet
+        },
         media_summary_enabled: Set(dto.media_summary_enabled),
         ai_position_highlights_enabled: Set(Some(
             dto.ai_position_highlights_enabled,
@@ -197,6 +248,10 @@ pub async fn user_settings_put(
                 user_settings::Column::MessageAutoParseEnabled,
                 user_settings::Column::UpdatedAt,
             ])
+            .update_columns(
+                quick_action_changed
+                    .then_some(user_settings::Column::MessageCardQuickAction),
+            )
             .to_owned(),
     )
     .exec(&env.dbx)
