@@ -246,6 +246,108 @@ test('Admin Users creation supports password authentication without Delta @regre
 });
 
 for (const width of [1280, 390]) {
+  test(`Admin Users creation copies Delta input into local login at ${width}px @regression`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installAdminUsersApiMocks(page);
+    await page.goto('/admin/users-neo');
+    await page.getByRole('button', { name: 'Додати користувача' }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
+    const localLogin = dialog.getByRole('textbox', { name: 'Логін', exact: true });
+    const deltaLogin = dialog.getByRole('textbox', { name: 'Delta логін', exact: true });
+    await deltaLogin.pressSequentially('d');
+    await expect(localLogin).toHaveValue('d');
+    await deltaLogin.pressSequentially('elta-user');
+    await expect(localLogin).toHaveValue('delta-user');
+    await localLogin.fill('local-user');
+    await expect(deltaLogin).toHaveValue('delta-user');
+    await deltaLogin.fill('another-delta-user');
+    await expect(localLogin).toHaveValue('another-delta-user');
+    await deltaLogin.clear();
+    await expect(localLogin).toHaveValue('');
+    await dialog.getByLabel('Вхід за паролем').check();
+    await deltaLogin.fill('dual-method-user');
+    await expect(localLogin).toHaveValue('dual-method-user');
+  });
+}
+
+test('Admin Users creation submits copied logins and clears stale login feedback on Delta changes @regression', async ({
+  page,
+}) => {
+  await installAdminUsersApiMocks(page);
+  const payloads: unknown[] = [];
+  await page.route('**/api/login/create', (route) => {
+    payloads.push(route.request().postDataJSON());
+    return payloads.length === 1
+      ? route.fulfill({ status: 400, json: [['login', 'Логін зайнятий']] })
+      : route.fulfill({ json: { ...login, id: 'created-login', login: 'available-user' } });
+  });
+  await page.goto('/admin/users-neo');
+  const addUser = page.getByRole('button', { name: 'Додати користувача' });
+  await addUser.click();
+  const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
+  const localLogin = dialog.getByRole('textbox', { name: 'Логін', exact: true });
+  const deltaLogin = dialog.getByRole('textbox', { name: 'Delta логін', exact: true });
+  await deltaLogin.fill('taken-user');
+  await expect(localLogin).toHaveValue('taken-user');
+  await dialog.getByRole('combobox', { name: 'Організм', exact: true }).click();
+  await page.getByRole('option', { name: 'Організм', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Додати', exact: true }).click();
+  await expect(dialog.getByText('Логін зайнятий', { exact: true })).toBeVisible();
+  expect(payloads).toEqual([
+    expect.objectContaining({ login: 'taken-user', delta_login: 'taken-user' }),
+  ]);
+
+  await deltaLogin.fill('available-user');
+  await expect(localLogin).toHaveValue('available-user');
+  await expect(localLogin).toHaveAttribute('aria-invalid', 'false');
+  await expect(dialog.getByText('Логін зайнятий', { exact: true })).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Додати', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(payloads).toHaveLength(2);
+  expect(payloads[1]).toMatchObject({
+    login: 'available-user',
+    delta_login: 'available-user',
+    password_auth_enabled: false,
+    password: null,
+  });
+
+  await addUser.click();
+  await expect(deltaLogin).toHaveValue('');
+  await expect(localLogin).toHaveValue('');
+  await expect(deltaLogin).toBeFocused();
+});
+
+test('Admin Users creation supports password authentication without Delta @regression', async ({
+  page,
+}) => {
+  await installAdminUsersApiMocks(page);
+  await page.route('**/api/login/create', (route) =>
+    route.fulfill({ json: { ...login, login: 'password-user', deltaLogin: null } }),
+  );
+  await page.goto('/admin/users-neo');
+  await page.getByRole('button', { name: 'Додати користувача' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
+  await dialog.getByRole('textbox', { name: 'Логін', exact: true }).fill('password-user');
+  await dialog.getByLabel('Вхід за паролем').check();
+  await dialog.getByRole('textbox', { name: 'Пароль', exact: true }).fill('secret-password');
+  await dialog.getByRole('combobox', { name: 'Організм', exact: true }).click();
+  await page.getByRole('option', { name: 'Організм', exact: true }).click();
+  const requestPromise = page.waitForRequest('**/api/login/create');
+  await dialog.getByRole('button', { name: 'Додати', exact: true }).click();
+  const request = await requestPromise;
+  expect(request.postDataJSON()).toMatchObject({
+    login: 'password-user',
+    delta_login: null,
+    password: 'secret-password',
+    password_auth_enabled: true,
+  });
+  await expect(dialog).toBeHidden();
+});
+
+for (const width of [1280, 390]) {
   test(`Admin Users dialogs follow visual keyboard order at ${width}px @regression`, async ({
     page,
   }) => {

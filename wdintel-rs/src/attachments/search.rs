@@ -34,6 +34,52 @@ pub(crate) fn chunk_terms_predicate_with_mode(
     search_mode: Option<AnalysisSearchMode>,
     values: &mut Vec<Value>,
 ) -> anyhow::Result<String> {
+    terms_predicate(query, search_mode, values, CHUNK_TERMS)
+}
+
+/// Any-term superset over `chunk` and `media.file_name`, including negated terms.
+pub(crate) fn attachment_terms_predicate_with_mode(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    values: &mut Vec<Value>,
+) -> anyhow::Result<String> {
+    terms_predicate(query, search_mode, values, ATTACHMENT_TERMS)
+}
+
+/// Any-term superset over `audio_search.file_name`, including negated terms.
+pub(crate) fn audio_terms_predicate_with_mode(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    values: &mut Vec<Value>,
+) -> anyhow::Result<String> {
+    terms_predicate(query, search_mode, values, AUDIO_TERMS)
+}
+
+#[derive(Clone, Copy)]
+struct TermColumns {
+    chunk: bool,
+    file_name: Option<&'static str>,
+}
+
+const CHUNK_TERMS: TermColumns = TermColumns {
+    chunk: true,
+    file_name: None,
+};
+const ATTACHMENT_TERMS: TermColumns = TermColumns {
+    chunk: true,
+    file_name: Some("media.file_name"),
+};
+const AUDIO_TERMS: TermColumns = TermColumns {
+    chunk: false,
+    file_name: Some("audio_search.file_name"),
+};
+
+fn terms_predicate(
+    query: &str,
+    search_mode: Option<AnalysisSearchMode>,
+    values: &mut Vec<Value>,
+    columns: TermColumns,
+) -> anyhow::Result<String> {
     let search_mode = search_mode.unwrap_or_default();
     anyhow::ensure!(
         query.chars().count() <= crate::config::ATTACHMENT_MAX_QUERY_CHARS,
@@ -54,25 +100,52 @@ pub(crate) fn chunk_terms_predicate_with_mode(
         let token = token.strip_prefix('-').unwrap_or(token);
         if !token.is_empty() {
             if search_mode == AnalysisSearchMode::Fuzzy {
-                let tsquery = term_tsquery(token, prefixes, values, false);
-                predicates.push(format!("chunk.search_tsv @@ {tsquery}"));
+                predicates.extend(fuzzy_term_predicates(
+                    token, prefixes, values, columns,
+                ));
             } else {
-                predicates.push(chunk_literal_predicate(
+                predicates.push(attachment_literal_predicate(
                     &literal_pattern(token),
                     search_mode,
                     values,
+                    columns,
                 ));
             }
         }
     }
     for pattern in parts.ilike.into_iter().chain(parts.not_ilike) {
-        predicates.push(chunk_literal_predicate(&pattern, search_mode, values));
+        predicates.push(attachment_literal_predicate(
+            &pattern,
+            search_mode,
+            values,
+            columns,
+        ));
     }
     Ok(if predicates.is_empty() {
         "false".into()
     } else {
         predicates.join(" or ")
     })
+}
+
+fn fuzzy_term_predicates(
+    token: &str,
+    prefixes: bool,
+    values: &mut Vec<Value>,
+    columns: TermColumns,
+) -> Vec<String> {
+    let mut predicates = Vec::new();
+    if columns.chunk {
+        let tsquery = term_tsquery(token, prefixes, values, false);
+        predicates.push(format!("chunk.search_tsv @@ {tsquery}"));
+    }
+    if let Some(file_name) = columns.file_name {
+        let pattern = bind(values, literal_pattern(token));
+        predicates.push(format!(
+            "coalesce({file_name},'') ilike {pattern} escape '\\'"
+        ));
+    }
+    predicates
 }
 
 pub fn text_predicate(
@@ -406,13 +479,21 @@ fn literal_operator(
     }
 }
 
-fn chunk_literal_predicate(
+fn attachment_literal_predicate(
     pattern: &str,
     search_mode: AnalysisSearchMode,
     values: &mut Vec<Value>,
+    columns: TermColumns,
 ) -> String {
     let operator = literal_operator(pattern, search_mode, values);
-    format!("(chunk.text {operator} or chunk.member {operator} or chunk.summary {operator})")
+    let mut predicates = Vec::new();
+    if columns.chunk {
+        predicates.push(format!("chunk.text {operator} or chunk.member {operator} or chunk.summary {operator}"));
+    }
+    if let Some(file_name) = columns.file_name {
+        predicates.push(format!("coalesce({file_name},'') {operator}"));
+    }
+    format!("({})", predicates.join(" or "))
 }
 
 fn message_literal_predicate(
