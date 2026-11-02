@@ -28,6 +28,7 @@ import {
   REASONING_LABELS,
 } from '../../ai-agent-chat';
 import { formatFileSize } from '../../ai-agent-chat/ComposerAttachments';
+import { ConversationMapsContext } from '../../ai-agent-chat/map-documents';
 import { RequestActivity, RequestDuration } from '../../ai-agent-chat/RequestActivity';
 import { formatDateTime } from '../format';
 import { isTerminalRequestState } from './live-request';
@@ -356,34 +357,41 @@ export function RequestTranscript({
   const turnRef = useRef<HTMLElement>(null);
   const position = useCurrentTurnPosition(scrollRef, turnRef, detail.id);
   const turns = transcriptTurns(detail);
+  // Answers may link maps created in earlier turns, as in the chat.
+  const conversationMaps = [
+    ...detail.conversation.messages.flatMap((message) => message.maps ?? []),
+    ...(live.maps ?? []),
+  ];
   return (
     <div className="relative h-full min-h-0 bg-echo-background">
-      <div
-        ref={scrollRef}
-        data-testid="admin-ai-request-transcript"
-        className="flex h-full flex-col gap-echo-md overflow-y-auto px-echo-xl py-echo-lg"
-      >
-        {turns.map((turn) =>
-          turn.requestId === detail.id ? (
-            <CurrentTurn
-              key={turn.requestId}
-              detail={detail}
-              live={live}
-              turn={turn}
-              turnRef={turnRef}
-              highlighted={turns.length > 1}
-              onReconnect={onReconnect}
-            />
-          ) : (
-            <OtherTurn
-              key={turn.requestId}
-              turn={turn}
-              login={detail.humanLogin}
-              onOpenRequest={onOpenRequest}
-            />
-          ),
-        )}
-      </div>
+      <ConversationMapsContext.Provider value={conversationMaps}>
+        <div
+          ref={scrollRef}
+          data-testid="admin-ai-request-transcript"
+          className="flex h-full flex-col gap-echo-md overflow-y-auto px-echo-xl py-echo-lg"
+        >
+          {turns.map((turn) =>
+            turn.requestId === detail.id ? (
+              <CurrentTurn
+                key={turn.requestId}
+                detail={detail}
+                live={live}
+                turn={turn}
+                turnRef={turnRef}
+                highlighted={turns.length > 1}
+                onReconnect={onReconnect}
+              />
+            ) : (
+              <OtherTurn
+                key={turn.requestId}
+                turn={turn}
+                login={detail.humanLogin}
+                onOpenRequest={onOpenRequest}
+              />
+            ),
+          )}
+        </div>
+      </ConversationMapsContext.Provider>
       {position !== CurrentTurnPosition.Visible ? (
         <div className="absolute bottom-echo-lg left-1/2 -translate-x-1/2">
           <PowerButton
