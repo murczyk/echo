@@ -7,6 +7,7 @@ use crate::devices::config::{
     DEVICE_STATS_BACKFILL_BATCH_SIZE, DEVICE_STATS_LIVE_LOCK_TIMEOUT_MS,
     DEVICE_STATS_TIMEZONE,
 };
+use crate::devices::files::archive::enqueue::SqlxConnection;
 use crate::devices::files::types::{
     DeviceDayStat, DeviceExtensionStat, DeviceStats,
 };
@@ -136,31 +137,70 @@ pub(in crate::devices) async fn record_content_completed_in(
     // the stats row lock and undoes partial writes on any error. A skipped
     // upload stays pending (`content_pending`) until the next rebuild.
     let savepoint = transaction.begin().await.context(h!())?;
-    let result = async {
-        savepoint
-            .execute_unprepared(&format!(
-                "set local lock_timeout = '{DEVICE_STATS_LIVE_LOCK_TIMEOUT_MS}ms'"
-            ))
-            .await
-            .context(h!())?;
-        let epoch = lock_content_stat(&savepoint, device_id, now)
-            .await
-            .context(h!())?;
-        apply_uploads_in(&savepoint, device_id, epoch, &[upload_id], now)
-            .await
-            .context(h!())
+    let result =
+        record_content_completed(&savepoint, device_id, upload_id, now).await;
+    match result {
+        Ok(()) => savepoint.commit().await.context(h!()),
+        Err(error) => {
+            savepoint.rollback().await.context(h!())?;
+            warn_content_skipped(upload_id, &error);
+            Ok(())
+        }
     }
+}
+
+/// [`record_content_completed_in`] for async publications, which run on the
+/// sqlx connection of the publication transaction.
+pub(in crate::devices) async fn record_content_completed_sqlx_in(
+    connection: &mut sqlx::PgConnection,
+    device_id: Uuid,
+    upload_id: Uuid,
+    now: DateTime<FixedOffset>,
+) -> Result<()> {
+    let mut savepoint = sqlx::Connection::begin(&mut *connection)
+        .await
+        .context(h!())?;
+    let result = record_content_completed(
+        &SqlxConnection(tokio::sync::Mutex::new(&mut *savepoint)),
+        device_id,
+        upload_id,
+        now,
+    )
     .await;
     match result {
         Ok(()) => savepoint.commit().await.context(h!()),
         Err(error) => {
             savepoint.rollback().await.context(h!())?;
-            crate::types::warn!(
-                "Device stats skipped for upload {upload_id}: {error:#}"
-            );
+            warn_content_skipped(upload_id, &error);
             Ok(())
         }
     }
+}
+
+async fn record_content_completed(
+    savepoint: &impl ConnectionTrait,
+    device_id: Uuid,
+    upload_id: Uuid,
+    now: DateTime<FixedOffset>,
+) -> Result<()> {
+    savepoint
+        .execute_unprepared(&format!(
+            "set local lock_timeout = '{DEVICE_STATS_LIVE_LOCK_TIMEOUT_MS}ms'"
+        ))
+        .await
+        .context(h!())?;
+    let epoch = lock_content_stat(savepoint, device_id, now)
+        .await
+        .context(h!())?;
+    apply_uploads_in(savepoint, device_id, epoch, &[upload_id], now)
+        .await
+        .context(h!())
+}
+
+fn warn_content_skipped(upload_id: Uuid, error: &anyhow::Error) {
+    crate::types::warn!(
+        "Device stats skipped for upload {upload_id}: {error:#}"
+    );
 }
 
 /// Errors are contained in a savepoint so stats never fail a sync batch. No
@@ -214,7 +254,7 @@ async fn increment_tree_in(
 }
 
 async fn lock_content_stat(
-    transaction: &DatabaseTransaction,
+    transaction: &impl ConnectionTrait,
     device_id: Uuid,
     now: DateTime<FixedOffset>,
 ) -> Result<i64> {
@@ -234,7 +274,7 @@ async fn lock_content_stat(
 }
 
 async fn apply_uploads_in(
-    transaction: &DatabaseTransaction,
+    transaction: &impl ConnectionTrait,
     device_id: Uuid,
     epoch: i64,
     upload_ids: &[Uuid],

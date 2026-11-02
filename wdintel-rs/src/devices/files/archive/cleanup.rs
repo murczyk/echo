@@ -9,33 +9,32 @@ pub(super) async fn sweep(
     config: &S3Config,
     scratch: &Path,
 ) -> Result<()> {
-    tokio::time::timeout(
-        std::time::Duration::from_secs(
+    // The budget bounds the S3 pass only; unfinished rows resume next tick.
+    let deadline = tokio::time::Instant::now()
+        + std::time::Duration::from_secs(
             DEVICE_FILE_ARCHIVE_CLEANUP_BUDGET_SECONDS,
-        ),
-        sweep_inner(db, config, scratch),
-    )
-    .await
-    .c(h!())?
-    .c(h!())
-}
-
-async fn sweep_inner(
-    db: &DatabaseConnection,
-    config: &S3Config,
-    scratch: &Path,
-) -> Result<()> {
+        );
     let storage = crate::storage::build_s3_operator(config).c(h!())?;
+    let client = super::storage::Client::new(config).c(h!())?;
     let rows=db.query_all_raw(Statement::from_string(DbBackend::Postgres,
         "select id,state,attempts from file_archive where state<>'running' and next_cleanup_at<=clock_timestamp() and updated_at<clock_timestamp()-interval '120 seconds' order by next_cleanup_at,id limit 64")).await.c(h!())?;
     for row in rows {
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
         let id: uuid::Uuid = row.try_get("", "id").c(h!())?;
         let state: String = row.try_get("", "state").c(h!())?;
         let attempt: i64 = row.try_get("", "attempts").c(h!())?;
         db.execute_raw(Statement::from_sql_and_values(DbBackend::Postgres,
             "update file_archive set next_cleanup_at=clock_timestamp()+interval '120 seconds' where id=$1",[id.into()])).await.c(h!())?;
-        let result =
-            sweep_objects(db, config, &storage, id, &state, attempt).await;
+        let Ok(result) = tokio::time::timeout_at(
+            deadline,
+            sweep_objects(db, &client, &storage, id, &state, attempt),
+        )
+        .await
+        else {
+            break;
+        };
         if let Err(error) = result {
             crate::types::warn!("Archive cleanup {id}: {error:#}");
         }
@@ -68,14 +67,13 @@ async fn sweep_inner(
 
 async fn sweep_objects(
     db: &DatabaseConnection,
-    config: &S3Config,
+    client: &super::storage::Client,
     storage: &opendal::Operator,
     id: uuid::Uuid,
     state: &str,
     attempt: i64,
 ) -> Result<()> {
     let prefix = format!("device-file-archive/{id}/");
-    let client = super::storage::Client::new(config).c(h!())?;
     for (key, upload) in client.unfinished(&prefix).await.c(h!())? {
         if removable(&key, &prefix, state, attempt) {
             client.abort(&key, &upload).await.c(h!())?;

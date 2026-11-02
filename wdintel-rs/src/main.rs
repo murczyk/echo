@@ -1076,6 +1076,23 @@ pub struct OneoffRebuildDeviceStatsPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-complete-spooled-device-files\n  wdintel-rs --mode=live oneoff-complete-spooled-device-files --upload-id <uuid> --apply"
+)]
+pub struct OneoffCompleteSpooledDeviceFilesPs {
+    /// Upload to recover; repeat for several. Scans the whole spool when omitted.
+    #[arg(long = "upload-id")]
+    pub upload_ids: Vec<Uuid>,
+    /// Inspect at most this many uploads.
+    #[arg(long)]
+    pub limit: Option<usize>,
+    /// Reopen expired uploads and create async finalization jobs; only reports
+    /// when omitted.
+    #[arg(long, action)]
+    pub apply: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct OneoffReprocessAudioTranscriberPs {
     #[arg(long)]
     pub source_id: Uuid,
@@ -1312,6 +1329,8 @@ enum Cmd {
     ),
     /// Rebuilds device stats one device at a time (all devices by default).
     OneoffRebuildDeviceStats(OneoffRebuildDeviceStatsPs),
+    /// Create async finalization jobs for fully spooled device file uploads.
+    OneoffCompleteSpooledDeviceFiles(OneoffCompleteSpooledDeviceFilesPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
@@ -2257,6 +2276,10 @@ async fn async_main(
         }
         Cmd::OneoffRebuildDeviceStats(ps) => {
             devices::files::stats::rebuild_oneoff(mode, ps).await
+        }
+        Cmd::OneoffCompleteSpooledDeviceFiles(ps) => {
+            devices::files::content::recover::complete_spooled_oneoff(mode, ps)
+                .await
         }
         Cmd::OneoffRequeueAudioTranscriber(ps) => {
             transcriber::backfill::requeue_terminal(mode, ps).await

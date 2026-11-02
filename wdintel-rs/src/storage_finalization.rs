@@ -49,7 +49,11 @@ impl ManagedStorage {
             "managed storage must be prefix-free"
         );
         let builder = super::s3_builder(&config).context(h!())?;
-        let operator = Operator::new(builder).context(h!())?.finish();
+        // A transient 5xx on one part must not abort a multi-GB upload.
+        let operator = Operator::new(builder)
+            .context(h!())?
+            .layer(super::s3_retry_layer())
+            .finish();
         Ok(Self {
             operator,
             config,
@@ -349,12 +353,36 @@ impl ManagedStorage {
             sha256: object.source_sha256,
             is_encrypted: object.is_encrypted,
         };
-        if self
-            .verify(managed, guard, timeout)
-            .await
-            .context(h!())?
-            .is_err()
+        // The probe and the readback share one phase deadline, so a stalled
+        // endpoint cannot hold the slots past the phase timeout.
+        let deadline = tokio::time::Instant::now() + timeout;
+        match tokio::time::timeout_at(
+            deadline,
+            self.operator.stat(&managed.object_key),
+        )
+        .await
         {
+            Ok(Err(error)) if error.kind() == opendal::ErrorKind::NotFound => {
+                return Ok(Reconciliation::Missing(object.attempt_id));
+            }
+            Ok(_) => {}
+            Err(_) => {
+                log::warn!(
+                    "managed object reconciliation probe timed out for {}",
+                    object.attempt_id
+                );
+                return Ok(Reconciliation::Unresolved);
+            }
+        }
+        let remaining =
+            deadline.saturating_duration_since(tokio::time::Instant::now());
+        if let Err(error) =
+            self.verify(managed, guard, remaining).await.context(h!())?
+        {
+            log::warn!(
+                "managed object reconciliation unresolved for {}: {error:#}",
+                object.attempt_id
+            );
             return Ok(Reconciliation::Unresolved);
         }
         if !query::record_verified(db, claim, object.attempt_id)

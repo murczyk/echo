@@ -364,7 +364,8 @@ async fn cleanup_s3_denial_retains_debt_and_allows_next_archive_3830() {
         let scratch = tempfile::tempdir().unwrap();
         let result =
             super::cleanup::sweep(&db, &server.config, scratch.path()).await;
-        assert_eq!(result.is_err(), delayed);
+        // S3 failures are per-row warnings; an exhausted budget ends the pass.
+        assert!(result.is_ok());
 
         assert_eq!(server.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         let row = db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,

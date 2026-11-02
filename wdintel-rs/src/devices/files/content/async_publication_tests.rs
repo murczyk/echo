@@ -278,6 +278,20 @@ async fn phase4_accepted_publication_uses_verified_key_after_legacy_expiry() {
         .bind(fixture.claim.job_id).bind(&fixture.upload.object_key).fetch_one(db.get_postgres_connection_pool()).await.unwrap();
     assert_eq!(canonical.get::<String, _>("phase"), "retired");
     assert!(canonical.get::<bool, _>("late_write_possible"));
+    // The fixture device is new, so publication creates its stats row.
+    let stats = sqlx::query("select s.epoch,s.content_count,s.content_bytes,u.stats_epoch,(select sum(content_count) from device_content_stat_extension where device_id=s.device_id)::bigint as extension_count,(select sum(content_count) from device_content_stat_day where device_id=s.device_id)::bigint as day_count from device_content_stat s join file_content_upload u on u.device_id=s.device_id where u.id=$1")
+        .bind(fixture.upload.id).fetch_one(db.get_postgres_connection_pool()).await.unwrap();
+    assert_eq!(stats.get::<i64, _>("content_count"), 1);
+    assert_eq!(
+        stats.get::<i64, _>("content_bytes"),
+        fixture.upload.upload_length as i64
+    );
+    assert_eq!(
+        stats.get::<i64, _>("stats_epoch"),
+        stats.get::<i64, _>("epoch")
+    );
+    assert_eq!(stats.get::<i64, _>("extension_count"), 1);
+    assert_eq!(stats.get::<i64, _>("day_count"), 1);
 }
 
 #[tokio::test]
@@ -293,6 +307,13 @@ async fn phase4_accepted_publication_rolls_back_all_selected_evidence() {
         .unwrap();
     transaction.rollback().await.unwrap();
     fixture.assert_unpublished(db).await;
+    assert!(!sqlx::query_scalar::<_, bool>(
+        "select exists(select 1 from device_content_stat where device_id=$1)"
+    )
+    .bind(fixture.upload.device_id)
+    .fetch_one(db.get_postgres_connection_pool())
+    .await
+    .unwrap());
     assert_eq!(
         sqlx::query_scalar::<_, String>(
             "select phase from device_upload_finalization_attempt where id=$1"

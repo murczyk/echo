@@ -6,8 +6,11 @@ use sea_query_sqlx::SqlxValues;
 use sqlx::{PgConnection, Postgres};
 use tokio::sync::Mutex;
 
-// Reuse archive admission on the publication transaction's physical connection.
-pub(super) struct EnqueueConnection<'a>(pub Mutex<&'a mut PgConnection>);
+// Reuse sea-orm writers (archive admission, device stats) on the publication
+// transaction's physical connection.
+pub(in crate::devices::files) struct SqlxConnection<'a>(
+    pub Mutex<&'a mut PgConnection>,
+);
 
 fn query(
     statement: &Statement,
@@ -23,7 +26,7 @@ fn query(
 }
 
 #[async_trait::async_trait]
-impl ConnectionTrait for EnqueueConnection<'_> {
+impl ConnectionTrait for SqlxConnection<'_> {
     fn get_database_backend(&self) -> DbBackend {
         DbBackend::Postgres
     }
