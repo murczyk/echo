@@ -47,8 +47,9 @@ export function useConversationFiles(conversationId: string | null, refreshToken
   return { documents, uploads, failed, retry: () => setRetry((value) => value + 1) };
 }
 
-/** One document's versions; head moves run one at a time and a conflict
- * reloads the current state. */
+/** One document's versions; head moves run one at a time, a conflict
+ * reloads the current state and a move finishing after the user switched
+ * documents is not shown. */
 export function useDocumentWorkspace(documentId: string | null, refreshToken: number) {
   const { notify } = usePowerSnackbar();
   const [workspace, setWorkspace] = useState<AiAgentDocumentWorkspace | null>(null);
@@ -56,8 +57,10 @@ export function useDocumentWorkspace(documentId: string | null, refreshToken: nu
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const busyRef = useRef(false);
+  const documentRef = useRef(documentId);
 
   useEffect(() => {
+    documentRef.current = documentId;
     if (!documentId) {
       setWorkspace(null);
       return;
@@ -80,14 +83,14 @@ export function useDocumentWorkspace(documentId: string | null, refreshToken: nu
       busyRef.current = true;
       setBusy(true);
       try {
-        setWorkspace(
-          await setAiAgentDocumentHead({
-            documentId: workspace.document.id,
-            expectedRevision: workspace.document.headRevision,
-            revision,
-          }),
-        );
+        const next = await setAiAgentDocumentHead({
+          documentId: workspace.document.id,
+          expectedRevision: workspace.document.headRevision,
+          revision,
+        });
+        if (next.document.id === documentRef.current) setWorkspace(next);
       } catch (error) {
+        if (workspace.document.id !== documentRef.current) return;
         if (error instanceof HttpRequestError && error.status === 409) {
           notify({ severity: 'warning', message: 'Документ змінився. Показуємо поточну версію.' });
           setReload((value) => value + 1);

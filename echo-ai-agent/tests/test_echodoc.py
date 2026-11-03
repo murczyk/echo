@@ -11,6 +11,8 @@ sys.path.insert(0, str(PYTHON_ROOT))
 
 try:
     import docx
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
     from docx.shared import Pt
 except ImportError:  # the template installs python3-docx; CI hosts may not
     docx = None
@@ -118,6 +120,16 @@ class EditTest(unittest.TestCase):
         self.assertTrue(copied.italic)
         self.assertEqual(copied.font.size, Pt(9))
 
+    def test_fill_table_rows_copied_from_a_repeating_header_do_not_repeat(self):
+        document = echodoc.blank()
+        table = document.add_table(rows=1, cols=2)
+        table.rows[0].cells[0].text = 'Дата'
+        table.rows[0]._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
+        echodoc.fill_table(table, [['01.10', 'a'], ['02.10', 'b']])
+        table = reopen(document, self.directory).tables[0]
+        self.assertEqual([row._tr.trPr is not None and row._tr.trPr.find(qn('w:tblHeader')) is not None
+                          for row in table.rows], [True, False, False])
+
     def test_fill_table_rejects_rows_wider_than_the_template(self):
         document = report()
         with self.assertRaisesRegex(ValueError, 'row 0 has 4 values but the template row has 3 cells'):
@@ -202,7 +214,7 @@ class SaveTest(unittest.TestCase):
     def test_as_new_and_duplicate_saves(self):
         document = echodoc.open('d-1')
         self.assertIsNone(echodoc.save(document, as_new=True, title='Копія')['documentId'])
-        echodoc.save(document)
+        self.assertIsNone(echodoc.save(document)['title'])
         state.reset()
         echodoc.save(document)
         with self.assertRaisesRegex(RuntimeError, 'already saved'):

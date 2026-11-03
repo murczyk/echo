@@ -239,7 +239,7 @@ fn save_request(
     if Uuid::parse_str(key).is_err() {
         return Err(bl("idempotencyKey must be a UUID"));
     }
-    let document_id = optional_uuid(query.document_id.as_deref())?;
+    let document_id = optional_uuid(query.document_id.as_deref()).c(h!())?;
     if document_id.is_some() && query.expected_revision.is_none() {
         return Err(bl("expectedRevision is required to update a document"));
     }
@@ -256,7 +256,8 @@ fn save_request(
             query.summary.as_deref(),
             AI_AGENT_DOCUMENT_SUMMARY_MAX_CHARS,
         ),
-        source_upload_id: optional_uuid(query.source_upload_id.as_deref())?,
+        source_upload_id: optional_uuid(query.source_upload_id.as_deref())
+            .c(h!())?,
     })
 }
 
@@ -304,14 +305,14 @@ pub(super) async fn save_agent_output(
     query: &AgentDocumentSaveQuery,
     bytes: Bytes,
 ) -> Result<AgentSavedDocument, AppError> {
-    let save = save_request(query)?;
+    let save = save_request(query).c(h!())?;
     if let Some(saved) =
         replayed(&env.dbx, request.id, &save.key).await.c(h!())?
     {
         return Ok(saved);
     }
-    validate::validate_docx(&bytes)?;
-    let destination = destination(&env.dbx, request, &save).await?;
+    validate::validate_docx(&bytes).c(h!())?;
+    let destination = destination(&env.dbx, request, &save).await.c(h!())?;
     let stored = StoredFile {
         sha256: sha256::digest(bytes.as_ref()),
         size_bytes: bytes.len() as i64,
@@ -320,11 +321,17 @@ pub(super) async fn save_agent_output(
             .c(h!())?,
     };
     let storage_key = stored.storage_key.clone();
-    let result = record(env, request, &save, destination, stored).await;
-    if result.is_err() {
-        store::delete(env, &storage_key).await;
+    match record(env, request, &save, destination, stored).await {
+        Ok(Recorded::Saved(saved)) => Ok(saved),
+        Ok(Recorded::Replayed(saved)) => {
+            store::delete(env, &storage_key).await;
+            Ok(saved)
+        }
+        Err(error) => {
+            store::delete(env, &storage_key).await;
+            Err(error)
+        }
     }
-    result
 }
 
 /// The database part of a save, for a file already in storage.
@@ -335,14 +342,16 @@ pub(super) async fn save_stored(
     query: &AgentDocumentSaveQuery,
     stored: StoredFile,
 ) -> Result<AgentSavedDocument, AppError> {
-    let save = save_request(query)?;
+    let save = save_request(query).c(h!())?;
     if let Some(saved) =
         replayed(&env.dbx, request.id, &save.key).await.c(h!())?
     {
         return Ok(saved);
     }
-    let destination = destination(&env.dbx, request, &save).await?;
-    record(env, request, &save, destination, stored).await
+    let destination = destination(&env.dbx, request, &save).await.c(h!())?;
+    match record(env, request, &save, destination, stored).await? {
+        Recorded::Saved(saved) | Recorded::Replayed(saved) => Ok(saved),
+    }
 }
 
 pub(super) struct StoredFile {
@@ -384,8 +393,11 @@ async fn destination(
         (Some(document), None) => document.title.clone(),
         (None, None) => return Err(bl("title is required for a new document")),
     };
+    // A renamed document without a requested file name downloads under its new title.
     let file_name = match (&existing, &save.file_name) {
-        (Some(document), None) => document.file_name.clone(),
+        (Some(document), None) if document.title == title => {
+            document.file_name.clone()
+        }
         (_, requested) => validate::file_name(requested.as_deref(), &title),
     };
     Ok(Destination {
@@ -395,27 +407,81 @@ async fn destination(
     })
 }
 
+async fn advisory_lock(
+    txn: &sea_orm::DatabaseTransaction,
+    key: String,
+) -> anyhow::Result<()> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock(hashtext($1))",
+        [key.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+enum Recorded {
+    Saved(AgentSavedDocument),
+    /// A retry of a save that committed meanwhile; the new file is unused.
+    Replayed(AgentSavedDocument),
+}
+
+/// Saves of one request are serialized, so a retry racing its first attempt
+/// replays that attempt's result instead of saving twice.
 async fn record(
     env: &Env,
     request: &ai_agent_request::Model,
     save: &SaveRequest,
     destination: Destination,
     stored: StoredFile,
-) -> Result<AgentSavedDocument, AppError> {
-    match destination.document_id {
-        Some(document_id) => {
-            append_revision(
-                env,
-                request,
-                save,
-                document_id,
-                destination,
-                stored,
-            )
-            .await
-        }
-        None => create_document(env, request, save, destination, stored).await,
+) -> Result<Recorded, AppError> {
+    let source_upload_id =
+        match (destination.document_id, save.source_upload_id) {
+            (None, Some(id)) => {
+                crate::ai_agent::uploads::agent_api::visible_uploads(
+                    env, request,
+                )
+                .await
+                .c(h!())?
+                .iter()
+                .any(|upload| upload.id == id)
+                .then_some(id)
+            }
+            _ => None,
+        };
+    let txn = env.dbx.begin().await.c(h!())?;
+    advisory_lock(&txn, format!("ai_agent_document_save:{}", request.id))
+        .await
+        .c(h!())?;
+    if let Some(saved) = replayed(&txn, request.id, &save.key).await.c(h!())? {
+        return Ok(Recorded::Replayed(saved));
     }
+    ensure_save_budget(&txn, request.id).await.c(h!())?;
+    let saved = match destination.document_id {
+        Some(document_id) => append_revision(
+            &txn,
+            request,
+            save,
+            document_id,
+            destination,
+            stored,
+        )
+        .await
+        .c(h!())?,
+        None => create_document(
+            &txn,
+            request,
+            save,
+            source_upload_id,
+            destination,
+            stored,
+        )
+        .await
+        .c(h!())?,
+    };
+    txn.commit().await.c(h!())?;
+    Ok(Recorded::Saved(saved))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -458,29 +524,17 @@ async fn insert_revision(
 }
 
 async fn create_document(
-    env: &Env,
+    txn: &sea_orm::DatabaseTransaction,
     request: &ai_agent_request::Model,
     save: &SaveRequest,
+    source_upload_id: Option<Uuid>,
     destination: Destination,
     stored: StoredFile,
 ) -> Result<AgentSavedDocument, AppError> {
-    let source_upload_id = match save.source_upload_id {
-        Some(id) => {
-            crate::ai_agent::uploads::agent_api::visible_uploads(env, request)
-                .await
-                .c(h!())?
-                .iter()
-                .any(|upload| upload.id == id)
-                .then_some(id)
-        }
-        None => None,
-    };
-    let txn = env.dbx.begin().await.c(h!())?;
-    txn.execute_raw(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        "select pg_advisory_xact_lock(hashtext($1))",
-        [format!("ai_agent_document:{}", request.conversation_id).into()],
-    ))
+    advisory_lock(
+        txn,
+        format!("ai_agent_document:{}", request.conversation_id),
+    )
     .await
     .c(h!())?;
     let count = ai_agent_document::Entity::find()
@@ -488,7 +542,7 @@ async fn create_document(
             ai_agent_document::Column::ConversationId
                 .eq(request.conversation_id),
         )
-        .count(&txn)
+        .count(txn)
         .await
         .c(h!())?;
     if count >= AI_AGENT_DOCUMENT_MAX_PER_CONVERSATION {
@@ -509,27 +563,21 @@ async fn create_document(
         created_at: Set(now),
         updated_at: Set(now),
     }
-    .insert(&txn)
+    .insert(txn)
     .await
     .c(h!())?;
-    let saved =
-        insert_revision(&txn, request, save, &document, 1, None, stored, true)
-            .await
-            .c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(saved)
+    insert_revision(txn, request, save, &document, 1, None, stored, true).await
 }
 
 async fn append_revision(
-    env: &Env,
+    txn: &sea_orm::DatabaseTransaction,
     request: &ai_agent_request::Model,
     save: &SaveRequest,
     document_id: Uuid,
     destination: Destination,
     stored: StoredFile,
 ) -> Result<AgentSavedDocument, AppError> {
-    let txn = env.dbx.begin().await.c(h!())?;
-    let document = lock_document(&txn, document_id).await.c(h!())?;
+    let document = lock_document(txn, document_id).await.c(h!())?;
     if Some(document.head_revision) != save.expected_revision {
         return Err(stale(document.head_revision));
     }
@@ -538,7 +586,7 @@ async fn append_revision(
         .column_as(ai_agent_document_revision::Column::Revision.max(), "latest")
         .filter(ai_agent_document_revision::Column::DocumentId.eq(document.id))
         .into_tuple::<Option<i32>>()
-        .one(&txn)
+        .one(txn)
         .await
         .c(h!())?
         .flatten()
@@ -554,9 +602,9 @@ async fn append_revision(
     active.title = Set(destination.title);
     active.file_name = Set(destination.file_name);
     active.updated_at = Set(Utc::now().naive_utc());
-    let document = active.update(&txn).await.c(h!())?;
-    let saved = insert_revision(
-        &txn,
+    let document = active.update(txn).await.c(h!())?;
+    insert_revision(
+        txn,
         request,
         save,
         &document,
@@ -566,9 +614,6 @@ async fn append_revision(
         false,
     )
     .await
-    .c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(saved)
 }
 
 /// Validates the document the user had open and records it for the worker.
@@ -579,7 +624,8 @@ pub(crate) async fn store_request_target(
     request_id: Uuid,
     target: &AiAgentDocumentTarget,
 ) -> Result<(), AppError> {
-    let document_id = crate::ai_agent::access::parse_uuid(&target.document_id)?;
+    let document_id =
+        crate::ai_agent::access::parse_uuid(&target.document_id).c(h!())?;
     let document = ai_agent_document::Entity::find_by_id(document_id)
         .filter(ai_agent_document::Column::HumanLoginId.eq(human_login_id))
         .one(txn)

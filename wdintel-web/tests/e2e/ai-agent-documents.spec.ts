@@ -216,3 +216,57 @@ test('@regression #3985 below the Echo breakpoint the conversation files open as
   await page.keyboard.press('Escape');
   await expect(panel).toHaveCount(0);
 });
+
+test('@regression #3985 an undo finishing after switching documents leaves the newly opened document shown', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installDocuments(page);
+  const otherId = '66666666-6666-4666-8666-666666666666';
+  const other: AiAgentDocumentSummary = {
+    ...summary(1),
+    id: otherId,
+    title: 'Довідка',
+    fileName: 'Довідка.docx',
+    sourceUploadId: null,
+  };
+  await page.route('**/api/ai-agent/documents/list', (route) =>
+    route.fulfill({ json: { documents: [summary(2), other] } }),
+  );
+  await page.route('**/api/ai-agent/documents/workspace', (route) =>
+    route.fulfill({
+      json:
+        route.request().postDataJSON().documentId === otherId
+          ? { ...workspace(1), document: other, revisions: workspace(1).revisions.slice(1) }
+          : workspace(2),
+    }),
+  );
+  await page.route(`**/api/ai-agent/documents/${otherId}/revisions/*/file`, (route) =>
+    route.fulfill({ contentType: 'application/octet-stream', body: docx }),
+  );
+  let releaseHead = () => {};
+  const held = new Promise<void>((resolve) => (releaseHead = resolve));
+  await page.route('**/api/ai-agent/documents/head', async (route) => {
+    await held;
+    await route.fulfill({ json: workspace(1) });
+  });
+
+  const chat = page.locator('ai-agent-chat');
+  await chat.getByRole('button', { name: 'Відкрити документ «Звіт за жовтень», версія 2' }).click();
+  const panel = page.getByRole('region', { name: 'Документи розмови' });
+  await panel.getByRole('button', { name: 'Повернути попередню версію' }).click();
+  await expect(panel.getByLabel('Зберігаємо')).toBeVisible();
+  await panel.getByRole('button', { name: /Довідка/ }).click();
+  await expect(panel.getByRole('link', { name: 'Завантажити Довідка.docx' })).toBeVisible();
+
+  releaseHead();
+  await expect(panel.getByLabel('Зберігаємо')).toHaveCount(0);
+  await expect(panel.getByRole('link', { name: 'Завантажити Довідка.docx' })).toHaveAttribute(
+    'href',
+    `/api/ai-agent/documents/${otherId}/revisions/1/file`,
+  );
+  await expect(
+    panel.frameLocator('iframe').getByText('Device DOCX content — тільки читання'),
+  ).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Документ: Довідка · v1' })).toBeVisible();
+});

@@ -41,13 +41,14 @@ async fn owned_document(
     let human = access::current_human_login(&env.dbx, user, false)
         .await
         .c(h!())?;
-    let document =
-        ai_agent_document::Entity::find_by_id(access::parse_uuid(document_id)?)
-            .filter(ai_agent_document::Column::HumanLoginId.eq(human.id))
-            .one(&env.dbx)
-            .await
-            .c(h!())?
-            .ok_or(AppError::NotFound)?;
+    let document = ai_agent_document::Entity::find_by_id(
+        access::parse_uuid(document_id).c(h!())?,
+    )
+    .filter(ai_agent_document::Column::HumanLoginId.eq(human.id))
+    .one(&env.dbx)
+    .await
+    .c(h!())?
+    .ok_or(AppError::NotFound)?;
     owned_conversation(env, human.id, document.conversation_id)
         .await
         .c(h!())?;
@@ -66,7 +67,7 @@ pub async fn list_documents(
     let conversation = owned_conversation(
         &env,
         human.id,
-        access::parse_uuid(&req.conversation_id)?,
+        access::parse_uuid(&req.conversation_id).c(h!())?,
     )
     .await
     .c(h!())?;
@@ -103,7 +104,9 @@ pub async fn set_document_head(
     let document = owned_document(&env, &user, &req.document_id)
         .await
         .c(h!())?;
-    Ok(Json(revisions::set_head(&env, document.id, &req).await?))
+    Ok(Json(
+        revisions::set_head(&env, document.id, &req).await.c(h!())?,
+    ))
 }
 
 /// Downloads one revision as an opaque attachment; generated files never

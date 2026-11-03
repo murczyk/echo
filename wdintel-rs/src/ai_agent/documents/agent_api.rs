@@ -63,7 +63,7 @@ pub async fn agent_source(
     let (storage_key, revision) =
         match (query.upload_id.as_deref(), query.document_id.as_deref()) {
             (Some(upload_id), None) => {
-                let upload_id = access::parse_uuid(upload_id)?;
+                let upload_id = access::parse_uuid(upload_id).c(h!())?;
                 let upload = visible_uploads(&env, &request)
                     .await
                     .c(h!())?
@@ -79,7 +79,7 @@ pub async fn agent_source(
             }
             (None, Some(document_id)) => {
                 let document = ai_agent_document::Entity::find_by_id(
-                    access::parse_uuid(document_id)?,
+                    access::parse_uuid(document_id).c(h!())?,
                 )
                 .filter(
                     ai_agent_document::Column::ConversationId
@@ -124,7 +124,7 @@ pub async fn agent_save(
     payload: web::Payload,
 ) -> Result<Json<AgentSavedDocument>, AppError> {
     let request = running_request(&env, &http).await.c(h!())?;
-    let bytes = read_bounded(payload).await?;
+    let bytes = read_bounded(payload).await.c(h!())?;
     Ok(Json(
         revisions::save_agent_output(&env, &request, &query, bytes)
             .await
@@ -135,7 +135,7 @@ pub async fn agent_save(
 async fn read_bounded(mut payload: web::Payload) -> Result<Bytes, AppError> {
     let mut body = web::BytesMut::new();
     while let Some(chunk) = payload.next().await {
-        let chunk = chunk?;
+        let chunk = chunk.c(h!())?;
         if body.len().saturating_add(chunk.len()) > AI_AGENT_DOCUMENT_MAX_BYTES
         {
             return Err(AppError::BL {

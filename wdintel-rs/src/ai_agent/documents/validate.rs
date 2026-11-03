@@ -8,6 +8,8 @@ use crate::config::{
     AI_AGENT_DOCUMENT_FILE_STEM_MAX_CHARS, AI_AGENT_DOCUMENT_MAX_BYTES,
 };
 use crate::error::AppError;
+use crate::h;
+use crate::types::ShortContext;
 use quick_xml::events::Event;
 use std::io::{Cursor, Read};
 
@@ -42,7 +44,8 @@ pub(super) fn validate_docx(bytes: &[u8]) -> Result<(), AppError> {
         &mut archive,
         AI_AGENT_DOCUMENT_ARCHIVE_MAX_ENTRIES,
         AI_AGENT_DOCUMENT_ARCHIVE_MAX_EXPANDED_BYTES,
-    )?;
+    )
+    .c(h!())?;
     for index in 0..archive.len() {
         let entry = archive
             .by_index_raw(index)
@@ -58,7 +61,8 @@ pub(super) fn validate_docx(bytes: &[u8]) -> Result<(), AppError> {
             return Err(invalid("Документи з макросами не підтримуються"));
         }
     }
-    let main_part = main_part_name(&read_content_types(&mut archive)?)?;
+    let main_part =
+        main_part_name(&read_content_types(&mut archive).c(h!())?).c(h!())?;
     if archive.index_for_name(&main_part).is_none() {
         return Err(invalid("У документі немає основної частини"));
     }

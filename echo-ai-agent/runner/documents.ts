@@ -334,7 +334,7 @@ const ECHODOC_API = `Library (python-docx is available as docx): import echodoc
 - echodoc.copy_blocks(doc, start, end, after) duplicates blocks start..end after block \`after\` (-1 = at the start); echodoc.delete_blocks(doc, start, end).
 - fig, ax = echodoc.figure(width_cm=16, height_cm=9) gives a matplotlib figure and axes; echodoc.add_chart(paragraph, fig, width_cm=16) inserts it as an image.
 - echodoc.inputs["prompt"], ["messages"] and ["files"] hold the user's prompt and the Echo messages and file sections retrieved in this request; echodoc.inputs["uploads"] lists {uploadId, fileName, text} of attached files whose full text fits the context (parse data from it instead of retyping it); echodoc.log(...) and print() output is returned.
-- echodoc.save(doc, title=None, file_name=None, summary=None, as_new=False): a document opened from a documentId source is saved as its new version; anything else (an upload, blank(), or as_new=True) becomes a new document titled \`title\`. Save each document once, at most ${OUTPUT_LIMIT} per script.`;
+- echodoc.save(doc, title=None, file_name=None, summary=None, as_new=False): a document opened from a documentId source is saved as its new version; anything else (an upload, blank(), or as_new=True) becomes a new document titled \`title\`; pass title/file_name with a new version to rename it. Save each document once, at most ${OUTPUT_LIMIT} per script.`;
 
 const SCRIPT_EXAMPLE = `Example (fill an uploaded report template with new data):
 import echodoc
@@ -422,11 +422,13 @@ export function createDocumentTools(registry: DocumentRegistry, transport: Docum
       query.documentId = output.documentId;
       query.expectedRevision = String(expected);
     } else {
-      query.title = (output.title ?? source?.title ?? "Документ").slice(0, 200);
-      if (output.fileName) query.fileName = output.fileName;
       if (source?.uploadId) query.sourceUploadId = source.uploadId;
       if (source?.documentId) query.sourceDocumentId = source.documentId;
     }
+    // A new version keeps its document's title and file name unless the script renames it.
+    const title = output.title ?? (output.documentId ? null : source?.title ?? "Документ");
+    if (title) query.title = title.slice(0, 200);
+    if (output.fileName) query.fileName = output.fileName;
     const saved = await upload(query, bytes, signal);
     registry.recordSave(saved);
     emit({ type: "document_artifact", documentId: saved.documentId, revision: saved.revision });

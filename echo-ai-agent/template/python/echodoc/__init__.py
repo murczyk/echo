@@ -151,6 +151,7 @@ def save(doc, *, title=None, file_name=None, summary=None, as_new=False):
     A document opened from an earlier version of a conversation document is
     saved as that document's next version unless `as_new` is true; everything
     else becomes a new document titled `title` (default: the source title).
+    A version keeps its document's title and file name unless they are given.
     `summary` is a short note shown in the version list. Each document can be
     saved once per script, and at most `inputs["maxOutputs"]` (default 4)
     files per script.
@@ -171,11 +172,14 @@ def save(doc, *, title=None, file_name=None, summary=None, as_new=False):
     Path(target).parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(target))
     preview = outline(docx.Document(str(target)), 0, OUTPUT_OUTLINE_BLOCKS)["text"]
+    output_title = _cut(title, TITLE_MAX_CHARS)
+    if not document_id:
+        output_title = output_title or (_cut(source.get("title"), TITLE_MAX_CHARS) if source else None) or "Документ"
     output = {
         "path": relative,
         "source": source.get("index") if source else None,
         "documentId": document_id,
-        "title": _cut(title, TITLE_MAX_CHARS) or (_cut(source.get("title"), TITLE_MAX_CHARS) if source else None) or "Документ",
+        "title": output_title,
         "fileName": _cut(file_name, TITLE_MAX_CHARS),
         "summary": _cut(summary, SUMMARY_MAX_CHARS),
         "outline": preview,

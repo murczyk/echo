@@ -292,7 +292,8 @@ def fill_table(table, rows, header_rows=1, template_row=None, footer_rows=0):
     unchanged. Each new row is a copy of `template_row` (0-based row index,
     default: the first data row, or the last header row when there is none)
     so borders, shading, heights and fonts are
-    kept; every cell gets its value via set_text. Merged cells (gridSpan) count
+    kept, but a copied header row does not repeat on every page; every cell
+    gets its value via set_text. Merged cells (gridSpan) count
     once: a row needs at most as many values as the template row has cells;
     missing values leave cells empty. Returns the number of rows written.
     """
@@ -315,6 +316,10 @@ def fill_table(table, rows, header_rows=1, template_row=None, footer_rows=0):
             raise ValueError(f"template_row must be 0..{len(existing) - 1}")
         template = existing[template_row]
     template = copy.deepcopy(template)
+    trpr = template.find(ooxml.TRPR)
+    if trpr is not None:
+        for flag in list(trpr.iterchildren(ooxml.TBL_HEADER)):
+            trpr.remove(flag)
     cells = len(list(template.iterchildren(ooxml.TC)))
     clones = []
     for number, values in enumerate(rows):

@@ -10,7 +10,8 @@ use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
+    PaginatorTrait, QueryFilter, TransactionTrait,
 };
 use serde_json::json;
 use serial_test::serial;
@@ -209,15 +210,17 @@ async fn issue_3985_agent_saves_versions_inside_its_conversation() {
         .unwrap();
     assert_eq!(replayed, created);
 
-    let second = save_stored(
-        &env,
-        &request,
-        &new_version(&created.document_id, 1),
-        stored(),
-    )
-    .await
-    .unwrap();
-    assert_eq!((second.revision, second.created), (2, false));
+    let renamed = AgentDocumentSaveQuery {
+        title: Some("Звіт за жовтень".to_string()),
+        ..new_version(&created.document_id, 1)
+    };
+    let second = save_stored(&env, &request, &renamed, stored())
+        .await
+        .unwrap();
+    assert_eq!(
+        (second.revision, second.created, second.file_name.as_str()),
+        (2, false, "Звіт за жовтень.docx")
+    );
     let stale = save_stored(
         &env,
         &request,
@@ -250,7 +253,7 @@ async fn issue_3985_agent_saves_versions_inside_its_conversation() {
             .await
             .unwrap();
     assert_eq!(payload["document"]["revision"], 2);
-    assert_eq!(payload["document"]["title"], "Звіт");
+    assert_eq!(payload["document"]["title"], "Звіт за жовтень");
 
     let target = AiAgentDocumentTarget {
         document_id: created.document_id.clone(),
@@ -267,6 +270,37 @@ async fn issue_3985_agent_saves_versions_inside_its_conversation() {
     .await;
     assert!(elsewhere.is_err());
     drop(txn);
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3985_a_retry_racing_its_first_save_stores_one_version() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let request = fixture.request(&env).await;
+    let create = new_document(Uuid::now_v7());
+    let (first, retry) = tokio::join!(
+        save_stored(&env, &request, &create, stored()),
+        save_stored(&env, &request, &create, stored()),
+    );
+    let created = first.unwrap();
+    assert_eq!(retry.unwrap(), created);
+    let update = new_version(&created.document_id, 1);
+    let (first, retry) = tokio::join!(
+        save_stored(&env, &request, &update, stored()),
+        save_stored(&env, &request, &update, stored()),
+    );
+    let updated = first.unwrap();
+    assert_eq!((retry.unwrap(), updated.revision), (updated.clone(), 2));
+    let documents = ai_agent_document::Entity::find()
+        .filter(
+            ai_agent_document::Column::ConversationId
+                .eq(fixture.conversation.id),
+        )
+        .count(&env.dbx)
+        .await
+        .unwrap();
+    assert_eq!(documents, 1);
 }
 
 #[actix_web::test]

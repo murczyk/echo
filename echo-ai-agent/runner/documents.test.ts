@@ -118,14 +118,14 @@ test("#3985 a saved script output becomes a new version and a document_artifact 
   const run: DocumentScriptRunner = async (given, code, sources) => {
     inputs = { given, code, sources };
     return outcome([
-      { path: "out/1.docx", source: 1, documentId, title: null, fileName: null, summary: "Дані за жовтень", outline: "[0] ¶ Title: Звіт за жовтень" },
+      { path: "out/1.docx", source: 1, documentId, title: "Звіт за жовтень", fileName: null, summary: "Дані за жовтень", outline: "[0] ¶ Title: Звіт за жовтень" },
       { path: "out/2.docx", source: 2, documentId: null, title: "Довідка", fileName: "dovidka.docx", summary: null, outline: "" },
     ], { "out/1.docx": docx(10), "out/2.docx": docx(12) });
   };
   const { events, downloads, execute, registry } = documentTools(run, async (query, bytes) => {
     uploads.push({ query, size: bytes.byteLength });
     return query.documentId
-      ? { documentId, revision: 4, title: "Звіт за вересень", fileName: "zvit.docx", sizeBytes: bytes.byteLength, created: false }
+      ? { documentId, revision: 4, title: query.title ?? listed.title, fileName: "zvit.docx", sizeBytes: bytes.byteLength, created: false }
       : { documentId: "019fc7f7-9770-7f83-9c1a-211af29b02e3", revision: 1, title: "Довідка", fileName: "dovidka.docx", sizeBytes: bytes.byteLength, created: true };
   });
   const text = await execute("echo_document_script", { code: "import echodoc", sources: [{ documentId }, { uploadId }] });
@@ -137,6 +137,7 @@ test("#3985 a saved script output becomes a new version and a document_artifact 
   assert.equal(uploads[0].query.documentId, documentId);
   assert.equal(uploads[0].query.expectedRevision, "3");
   assert.equal(uploads[0].query.summary, "Дані за жовтень");
+  assert.deepEqual([uploads[0].query.title, uploads[0].query.fileName], ["Звіт за жовтень", undefined]);
   assert.equal(uploads[1].query.title, "Довідка");
   assert.equal(uploads[1].query.sourceUploadId, uploadId);
   assert.ok(uploads[0].query.idempotencyKey !== uploads[1].query.idempotencyKey);
@@ -144,7 +145,7 @@ test("#3985 a saved script output becomes a new version and a document_artifact 
     { type: "document_artifact", documentId, revision: 4 },
     { type: "document_artifact", documentId: "019fc7f7-9770-7f83-9c1a-211af29b02e3", revision: 1 },
   ]);
-  assert.match(text, /\[Звіт за вересень\]\(echo-document:019fc7f7-9770-7f83-9c1a-211af29b02e1\)/);
+  assert.match(text, /\[Звіт за жовтень\]\(echo-document:019fc7f7-9770-7f83-9c1a-211af29b02e1\)/);
   assert.match(text, /\[0\] ¶ Title: Звіт за жовтень/);
   assert.equal(registry.get(documentId)?.headRevision, 4);
   assert.ok(registry.knows("019fc7f7-9770-7f83-9c1a-211af29b02e3"));
