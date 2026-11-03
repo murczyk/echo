@@ -41,6 +41,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::ai_agent_conversation::Entity")]
     AiAgentConversation,
+    #[sea_orm(has_many = "super::ai_agent_document::Entity")]
+    AiAgentDocument,
     #[sea_orm(has_many = "super::ai_agent_map::Entity")]
     AiAgentMap,
     #[sea_orm(has_many = "super::ai_agent_settings::Entity")]
@@ -224,6 +226,12 @@ pub enum Relation {
 impl Related<super::ai_agent_conversation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentConversation.def()
+    }
+}
+
+impl Related<super::ai_agent_document::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentDocument.def()
     }
 }
 

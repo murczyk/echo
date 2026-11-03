@@ -71,6 +71,8 @@ def load_suite(suite_id, development_only=False):
 
 
 PYTHON_LIBRARY = ROOT / 'echo-ai-agent/template/python/echomap'
+# Sandbox hardening shared by echomap/run.py and echodoc/run.py.
+PYTHON_SANDBOX = ROOT / 'echo-ai-agent/template/python/echosandbox.py'
 
 
 def python_library_files():
@@ -82,7 +84,7 @@ def runner_fingerprint(ref):
     if ref:
         return subprocess.check_output(['git', 'rev-parse', f'{ref}^{{commit}}'], cwd=ROOT, text=True).strip()
     paths = sorted(path for path in (ROOT / 'echo-ai-agent/runner').glob('*.ts') if not path.name.endswith('.test.ts'))
-    paths += python_library_files()
+    paths += python_library_files() + [PYTHON_SANDBOX]
     return hashlib.sha256(b''.join(path.name.encode() + path.read_bytes() for path in paths)).hexdigest()
 
 
@@ -231,6 +233,7 @@ def run(args):
         (run_dir / 'python/echomap').mkdir(parents=True)
         for path in python_library_files():
             shutil.copyfile(path, run_dir / 'python/echomap' / path.name)
+        shutil.copyfile(PYTHON_SANDBOX, run_dir / 'python' / PYTHON_SANDBOX.name)
     (run_dir / 'cases.json').write_text(json.dumps(cases, ensure_ascii=False) + '\n')
     shutil.copyfile(directory / 'dataset.json', run_dir / 'dataset.json')
     metadata = {'schemaVersion': 1, 'suite': manifest['id'], 'datasetRevision': manifest['revision'],

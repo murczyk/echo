@@ -16458,6 +16458,162 @@ aiAgentUploadIdReqEncoder struct =
         ]
 
 
+type alias AiAgentDocumentSummary =
+    { id : String
+    , conversationId : String
+    , title : String
+    , fileName : String
+    , headRevision : Int
+    , sizeBytes : Int
+    , sourceUploadId : Maybe (String)
+    , createdAt : Int
+    , updatedAt : Int
+    }
+
+
+aiAgentDocumentSummaryEncoder : AiAgentDocumentSummary -> Json.Encode.Value
+aiAgentDocumentSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "conversationId", (Json.Encode.string) struct.conversationId )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "fileName", (Json.Encode.string) struct.fileName )
+        , ( "headRevision", (Json.Encode.int) struct.headRevision )
+        , ( "sizeBytes", (Json.Encode.int) struct.sizeBytes )
+        , ( "sourceUploadId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.sourceUploadId )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias AiAgentDocumentRevisionInfo =
+    { revision : Int
+    , parentRevision : Maybe (Int)
+    , origin : String
+    , summary : Maybe (String)
+    , requestId : Maybe (String)
+    , sizeBytes : Int
+    , createdAt : Int
+    }
+
+
+aiAgentDocumentRevisionInfoEncoder : AiAgentDocumentRevisionInfo -> Json.Encode.Value
+aiAgentDocumentRevisionInfoEncoder struct =
+    Json.Encode.object
+        [ ( "revision", (Json.Encode.int) struct.revision )
+        , ( "parentRevision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.parentRevision )
+        , ( "origin", (Json.Encode.string) struct.origin )
+        , ( "summary", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.summary )
+        , ( "requestId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.requestId )
+        , ( "sizeBytes", (Json.Encode.int) struct.sizeBytes )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiAgentDocumentArtifact =
+    { documentId : String
+    , revision : Int
+    , title : String
+    , fileName : String
+    , sizeBytes : Int
+    }
+
+
+aiAgentDocumentArtifactEncoder : AiAgentDocumentArtifact -> Json.Encode.Value
+aiAgentDocumentArtifactEncoder struct =
+    Json.Encode.object
+        [ ( "documentId", (Json.Encode.string) struct.documentId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        , ( "title", (Json.Encode.string) struct.title )
+        , ( "fileName", (Json.Encode.string) struct.fileName )
+        , ( "sizeBytes", (Json.Encode.int) struct.sizeBytes )
+        ]
+
+
+type alias AiAgentDocumentTarget =
+    { documentId : String
+    , revision : Int
+    }
+
+
+aiAgentDocumentTargetEncoder : AiAgentDocumentTarget -> Json.Encode.Value
+aiAgentDocumentTargetEncoder struct =
+    Json.Encode.object
+        [ ( "documentId", (Json.Encode.string) struct.documentId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        ]
+
+
+type alias AiAgentDocumentListReq =
+    { conversationId : String
+    }
+
+
+aiAgentDocumentListReqEncoder : AiAgentDocumentListReq -> Json.Encode.Value
+aiAgentDocumentListReqEncoder struct =
+    Json.Encode.object
+        [ ( "conversationId", (Json.Encode.string) struct.conversationId )
+        ]
+
+
+type alias AiAgentDocumentListRsp =
+    { documents : List (AiAgentDocumentSummary)
+    }
+
+
+aiAgentDocumentListRspEncoder : AiAgentDocumentListRsp -> Json.Encode.Value
+aiAgentDocumentListRspEncoder struct =
+    Json.Encode.object
+        [ ( "documents", (Json.Encode.list (aiAgentDocumentSummaryEncoder)) struct.documents )
+        ]
+
+
+type alias AiAgentDocumentWorkspaceReq =
+    { documentId : String
+    }
+
+
+aiAgentDocumentWorkspaceReqEncoder : AiAgentDocumentWorkspaceReq -> Json.Encode.Value
+aiAgentDocumentWorkspaceReqEncoder struct =
+    Json.Encode.object
+        [ ( "documentId", (Json.Encode.string) struct.documentId )
+        ]
+
+
+type alias AiAgentDocumentWorkspaceRsp =
+    { document : AiAgentDocumentSummary
+    , revisions : List (AiAgentDocumentRevisionInfo)
+    , undoRevision : Maybe (Int)
+    , redoRevision : Maybe (Int)
+    }
+
+
+aiAgentDocumentWorkspaceRspEncoder : AiAgentDocumentWorkspaceRsp -> Json.Encode.Value
+aiAgentDocumentWorkspaceRspEncoder struct =
+    Json.Encode.object
+        [ ( "document", (aiAgentDocumentSummaryEncoder) struct.document )
+        , ( "revisions", (Json.Encode.list (aiAgentDocumentRevisionInfoEncoder)) struct.revisions )
+        , ( "undoRevision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.undoRevision )
+        , ( "redoRevision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.redoRevision )
+        ]
+
+
+type alias AiAgentDocumentHeadReq =
+    { documentId : String
+    , expectedRevision : Int
+    , revision : Int
+    }
+
+
+aiAgentDocumentHeadReqEncoder : AiAgentDocumentHeadReq -> Json.Encode.Value
+aiAgentDocumentHeadReqEncoder struct =
+    Json.Encode.object
+        [ ( "documentId", (Json.Encode.string) struct.documentId )
+        , ( "expectedRevision", (Json.Encode.int) struct.expectedRevision )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        ]
+
+
 type alias AiAgentMessageItem =
     { reasoningPreset : Maybe (AiAgentReasoningPreset)
     , maxRuntimeSeconds : Maybe (Int)
@@ -16471,6 +16627,7 @@ type alias AiAgentMessageItem =
     , citations : List (AiAgentMessageCitation)
     , fileCitations : List (AiAgentFileCitation)
     , maps : List (AiAgentMapSummary)
+    , documents : List (AiAgentDocumentArtifact)
     , attachments : List (AiAgentUploadItem)
     }
 
@@ -16490,6 +16647,7 @@ aiAgentMessageItemEncoder struct =
         , ( "citations", (Json.Encode.list (aiAgentMessageCitationEncoder)) struct.citations )
         , ( "fileCitations", (Json.Encode.list (aiAgentFileCitationEncoder)) struct.fileCitations )
         , ( "maps", (Json.Encode.list (aiAgentMapSummaryEncoder)) struct.maps )
+        , ( "documents", (Json.Encode.list (aiAgentDocumentArtifactEncoder)) struct.documents )
         , ( "attachments", (Json.Encode.list (aiAgentUploadItemEncoder)) struct.attachments )
         ]
 
@@ -16522,6 +16680,7 @@ type alias AiAgentRequestCreateReq =
     , aiEngineId : Maybe (String)
     , prompt : String
     , mapEdit : Maybe (AiAgentMapEditTarget)
+    , documentTarget : Maybe (AiAgentDocumentTarget)
     , uploadIds : List (String)
     }
 
@@ -16534,6 +16693,7 @@ aiAgentRequestCreateReqEncoder struct =
         , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
         , ( "prompt", (Json.Encode.string) struct.prompt )
         , ( "mapEdit", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentMapEditTargetEncoder)) struct.mapEdit )
+        , ( "documentTarget", (Maybe.withDefault Json.Encode.null << Maybe.map (aiAgentDocumentTargetEncoder)) struct.documentTarget )
         , ( "uploadIds", (Json.Encode.list (Json.Encode.string)) struct.uploadIds )
         ]
 
@@ -30863,6 +31023,84 @@ aiAgentUploadIdReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
 
 
+aiAgentDocumentSummaryDecoder : Json.Decode.Decoder AiAgentDocumentSummary
+aiAgentDocumentSummaryDecoder =
+    Json.Decode.succeed AiAgentDocumentSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "headRevision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sizeBytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceUploadId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+aiAgentDocumentRevisionInfoDecoder : Json.Decode.Decoder AiAgentDocumentRevisionInfo
+aiAgentDocumentRevisionInfoDecoder =
+    Json.Decode.succeed AiAgentDocumentRevisionInfo
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parentRevision" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "summary" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "requestId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sizeBytes" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiAgentDocumentArtifactDecoder : Json.Decode.Decoder AiAgentDocumentArtifact
+aiAgentDocumentArtifactDecoder =
+    Json.Decode.succeed AiAgentDocumentArtifact
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documentId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "title" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileName" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sizeBytes" (Json.Decode.int)))
+
+
+aiAgentDocumentTargetDecoder : Json.Decode.Decoder AiAgentDocumentTarget
+aiAgentDocumentTargetDecoder =
+    Json.Decode.succeed AiAgentDocumentTarget
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documentId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+
+
+aiAgentDocumentListReqDecoder : Json.Decode.Decoder AiAgentDocumentListReq
+aiAgentDocumentListReqDecoder =
+    Json.Decode.succeed AiAgentDocumentListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "conversationId" (Json.Decode.string)))
+
+
+aiAgentDocumentListRspDecoder : Json.Decode.Decoder AiAgentDocumentListRsp
+aiAgentDocumentListRspDecoder =
+    Json.Decode.succeed AiAgentDocumentListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documents" (Json.Decode.list (aiAgentDocumentSummaryDecoder))))
+
+
+aiAgentDocumentWorkspaceReqDecoder : Json.Decode.Decoder AiAgentDocumentWorkspaceReq
+aiAgentDocumentWorkspaceReqDecoder =
+    Json.Decode.succeed AiAgentDocumentWorkspaceReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documentId" (Json.Decode.string)))
+
+
+aiAgentDocumentWorkspaceRspDecoder : Json.Decode.Decoder AiAgentDocumentWorkspaceRsp
+aiAgentDocumentWorkspaceRspDecoder =
+    Json.Decode.succeed AiAgentDocumentWorkspaceRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "document" (aiAgentDocumentSummaryDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revisions" (Json.Decode.list (aiAgentDocumentRevisionInfoDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "undoRevision" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "redoRevision" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiAgentDocumentHeadReqDecoder : Json.Decode.Decoder AiAgentDocumentHeadReq
+aiAgentDocumentHeadReqDecoder =
+    Json.Decode.succeed AiAgentDocumentHeadReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documentId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expectedRevision" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+
+
 aiAgentMessageItemDecoder : Json.Decode.Decoder AiAgentMessageItem
 aiAgentMessageItemDecoder =
     Json.Decode.succeed AiAgentMessageItem
@@ -30878,6 +31116,7 @@ aiAgentMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "citations" (Json.Decode.list (aiAgentMessageCitationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fileCitations" (Json.Decode.list (aiAgentFileCitationDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maps" (Json.Decode.list (aiAgentMapSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documents" (Json.Decode.list (aiAgentDocumentArtifactDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments" (Json.Decode.list (aiAgentUploadItemDecoder))))
 
 
@@ -30900,6 +31139,7 @@ aiAgentRequestCreateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mapEdit" (Json.Decode.nullable (aiAgentMapEditTargetDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "documentTarget" (Json.Decode.nullable (aiAgentDocumentTargetDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uploadIds" (Json.Decode.list (Json.Decode.string))))
 
 

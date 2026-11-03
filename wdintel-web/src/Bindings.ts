@@ -6392,6 +6392,66 @@ export type AiAgentUploadIdReq = {
   id: string;
 };
 
+export type AiAgentDocumentSummary = {
+  id: string;
+  conversationId: string;
+  title: string;
+  fileName: string;
+  headRevision: number;
+  sizeBytes: number;
+  sourceUploadId: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type AiAgentDocumentRevisionInfo = {
+  revision: number;
+  parentRevision: number | null;
+  origin: string;
+  summary: string | null;
+  requestId: string | null;
+  sizeBytes: number;
+  createdAt: number;
+};
+
+export type AiAgentDocumentArtifact = {
+  documentId: string;
+  revision: number;
+  title: string;
+  fileName: string;
+  sizeBytes: number;
+};
+
+export type AiAgentDocumentTarget = {
+  documentId: string;
+  revision: number;
+};
+
+export type AiAgentDocumentListReq = {
+  conversationId: string;
+};
+
+export type AiAgentDocumentListRsp = {
+  documents: Array<AiAgentDocumentSummary>;
+};
+
+export type AiAgentDocumentWorkspaceReq = {
+  documentId: string;
+};
+
+export type AiAgentDocumentWorkspaceRsp = {
+  document: AiAgentDocumentSummary;
+  revisions: Array<AiAgentDocumentRevisionInfo>;
+  undoRevision: number | null;
+  redoRevision: number | null;
+};
+
+export type AiAgentDocumentHeadReq = {
+  documentId: string;
+  expectedRevision: number;
+  revision: number;
+};
+
 export type AiAgentMessageItem = {
   reasoningPreset: AiAgentReasoningPreset | null;
   maxRuntimeSeconds: number | null;
@@ -6405,6 +6465,7 @@ export type AiAgentMessageItem = {
   citations: Array<AiAgentMessageCitation>;
   fileCitations: Array<AiAgentFileCitation>;
   maps: Array<AiAgentMapSummary>;
+  documents: Array<AiAgentDocumentArtifact>;
   attachments: Array<AiAgentUploadItem>;
 };
 
@@ -6423,6 +6484,7 @@ export type AiAgentRequestCreateReq = {
   aiEngineId: string | null;
   prompt: string;
   mapEdit: AiAgentMapEditTarget | null;
+  documentTarget: AiAgentDocumentTarget | null;
   uploadIds: Array<string>;
 };
 

@@ -140,6 +140,27 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
+        path: "/api/ai-agent/documents/ai/list",
+        skill: "document_list",
+        label: "Переглядаю документи розмови",
+        request_kind: "documentList",
+    },
+    ReadOnlyRoute {
+        method: "GET",
+        path: "/api/ai-agent/documents/ai/source",
+        skill: "document_source",
+        label: "Відкриваю документ",
+        request_kind: "documentSource",
+    },
+    ReadOnlyRoute {
+        method: "POST",
+        path: "/api/ai-agent/documents/ai/save",
+        skill: "document_save",
+        label: "Зберігаю документ",
+        request_kind: "documentSave",
+    },
+    ReadOnlyRoute {
+        method: "POST",
         path: "/api/ai-agent/maps/prepare",
         skill: "map_prepare",
         label: "Готую точки мапи",
@@ -353,6 +374,9 @@ mod tests {
                     | "uploadRead"
                     | "uploadSearch"
                     | "uploadImage"
+                    | "documentList"
+                    | "documentSource"
+                    | "documentSave"
             ));
         }
         let daily_activity = ROUTES

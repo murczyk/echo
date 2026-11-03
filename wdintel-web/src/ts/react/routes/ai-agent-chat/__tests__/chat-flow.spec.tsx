@@ -148,7 +148,7 @@ async function selectConversation() {
 const REASONING_PRESETS = [
   { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
   { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
-  { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+  { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
 ];
 const SECOND_PROVIDER = {
   ...PROVIDER,
@@ -361,7 +361,7 @@ describe('AiAgentChat request queue', () => {
           reasoningPresets: [
             { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'low' },
             { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'high' },
-            { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+            { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
           ],
         },
       ],
@@ -428,6 +428,24 @@ describe('AiAgentChat request queue', () => {
       expect.objectContaining({ providerId: 'provider-2', reasoningPreset: 'fast' }),
     );
     expect(selector('Глибина аналізу').textContent).toContain('Швидкий');
+  });
+
+  it('#3985 shows each mode with its time limit and Deep as up to four hours', async () => {
+    await remountWithProviders([PROVIDER]);
+    await act(async () =>
+      selector('Глибина аналізу').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+    );
+    await flush();
+    const options = Array.from(document.body.querySelectorAll('[role="option"]')).map(
+      (item) => item.textContent,
+    );
+    expect(options).toEqual([
+      'Швидкийдо 2 хв',
+      'Збалансованийдо 5 хв',
+      'Глибокийдо 4 год; нові повідомлення чекатимуть у черзі',
+    ]);
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    expect(selector('Глибина аналізу').textContent).toBe('Глибокий');
   });
 
   it('keeps Deep one-shot and falls back to the remembered preset', async () => {

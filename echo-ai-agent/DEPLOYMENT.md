@@ -365,3 +365,47 @@ messages carry their parsed DMR metadata (`dmr`: color code, call group, sender)
 and a query such as `144.8450 Мишаня Якудза, СС3` is read as color code 3, not
 as a callsign. Verify that a request naming `163.935` reads messages stored as
 `163.9350`, and that a `СС3` request reports color codes from message metadata.
+
+## Conversation documents (release 2026.11.03.4)
+
+Apply the `m20261103_120000_ai_agent_documents` migration with the matching
+application, then upgrade the approved installation's namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.03.4`, previewing with
+`--dry-run` first. The release also contains the frequency normalization of
+`2026.11.03.3`; `2026.11.03.1` and `2026.11.03.2` were this work's staging
+builds. The release template adds the Debian `python3-docx`,
+`python3-lxml`, `python3-matplotlib`, `python3-openpyxl` and `fonts-dejavu-core`
+packages and the `echodoc` library; the build warns when python-docx cannot be
+imported. The runner accepts the new `documents` and `documentTarget` payload
+fields and registers the `echo_document_*` tools only when the library and
+namespace isolation are available. Echo requires the exact harness release, so
+chat requests report that the agent is updating until the namespace matches.
+
+Verify the rollout this way:
+- Attach a .docx report and ask for the same report with new data: the answer
+  links a new document whose preview keeps the template's headers and tables.
+- Ask for a change in a follow-up: the document gets a new version and the
+  previous one stays in its version list.
+- A document request on the previous runner release is rejected as updating.
+
+See [conversation documents](DOCUMENTS.md).
+
+## Template reports and 4-hour Deep (release 2026.11.03.4)
+
+The same release and upgrade as conversation documents above. The runner accepts the new budget tiers: Deep runs up to
+4 hours (`maxRuntimeSeconds` 14400) with larger tool, API, provider-call and
+event limits, and Fast or Balanced requests that build a document get 30 minutes
+(`documentTask: true`). Deep requests queued before the deploy keep their
+30-minute policy.
+
+A Deep run holds its user's running slot and one of the six agent slots for its
+duration. A backend restart or a lost worker lease fails running requests, so
+deploys interrupt long Deep runs; the control panel's upgrade waits until the
+namespace has no queued or running request.
+
+Verify the rollout this way:
+- Attach a .docx report and ask, in Balanced, for the same report from Echo data
+  for a period: the policy shows `maxRuntimeSeconds` 1800 and `documentTask`
+  true; the agent outlines the template, searches Echo for the period without
+  the template's own callsigns, saves the filled document and links it.
+- A Deep request's policy shows `maxRuntimeSeconds` 14400.

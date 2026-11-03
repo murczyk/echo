@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "release": "2026.11.03.3",
+  "release": "2026.11.03.4",
   "runnerProtocolVersion": 1,
   "nodeVersion": "24.19.0",
   "piVersion": "0.83.0",
   "supportedRunnerReleases": [
+    "2026.11.03.4",
     "2026.11.03.3",
     "2026.11.03.2",
     "2026.11.03.1",
@@ -80,7 +81,9 @@
     "m20261005_050621_attachment_documents",
     "m20261006_082251_device_document_settings",
     "m20261011_112422_ai_agent_completion_event",
-    "m20261011_112649_ai_agent_work_memory"
+    "m20261011_112649_ai_agent_work_memory",
+    "m20261101_151245_ai_agent_uploads",
+    "m20261103_120000_ai_agent_documents"
   ],
   "namespaceTemplates": true
 }

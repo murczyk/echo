@@ -5,11 +5,14 @@ pub use super::ai_agent_chat_mattermost_notification::Entity as AiAgentChatMatte
 pub use super::ai_agent_container::Entity as AiAgentContainer;
 pub use super::ai_agent_conversation::Entity as AiAgentConversation;
 pub use super::ai_agent_dispatcher::Entity as AiAgentDispatcher;
+pub use super::ai_agent_document::Entity as AiAgentDocument;
+pub use super::ai_agent_document_revision::Entity as AiAgentDocumentRevision;
 pub use super::ai_agent_echo_proxy::Entity as AiAgentEchoProxy;
 pub use super::ai_agent_engine_runtime_profile::Entity as AiAgentEngineRuntimeProfile;
 pub use super::ai_agent_map::Entity as AiAgentMap;
 pub use super::ai_agent_map_revision::Entity as AiAgentMapRevision;
 pub use super::ai_agent_request::Entity as AiAgentRequest;
+pub use super::ai_agent_request_document_target::Entity as AiAgentRequestDocumentTarget;
 pub use super::ai_agent_request_event::Entity as AiAgentRequestEvent;
 pub use super::ai_agent_request_map_target::Entity as AiAgentRequestMapTarget;
 pub use super::ai_agent_security_review::Entity as AiAgentSecurityReview;

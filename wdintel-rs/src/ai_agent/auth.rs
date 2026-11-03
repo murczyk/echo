@@ -66,6 +66,9 @@ struct ProviderCapabilityGrant {
     execution_policy: Option<ExecutionPolicy>,
     #[serde(default)]
     deadline_at: Option<i64>,
+    /// Provider calls this request may make; older grants use the base limit.
+    #[serde(default)]
+    call_limit: Option<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -151,6 +154,8 @@ pub async fn issue_provider_capability(
         || provider_capability_ttl(&model_name),
         |policy| policy.max_runtime_seconds + 60,
     );
+    let call_limit =
+        reasoning::limits(execution_policy.as_ref()).provider_calls;
     let grant = serde_json::to_string(&ProviderCapabilityGrant {
         login_id,
         request_id,
@@ -160,6 +165,7 @@ pub async fn issue_provider_capability(
         checkpoint,
         execution_policy,
         deadline_at,
+        call_limit: Some(call_limit),
     })
     .c(h!())?;
     let mut redis = env.redis.clone();
@@ -195,11 +201,12 @@ async fn read_provider_capability(
 local value = redis.call('GET', KEYS[1])
 if not value then return {false, 0} end
 local grant = cjson.decode(value)
-local limit = tonumber(ARGV[1])
+local total = tonumber(grant.callLimit) or tonumber(ARGV[1])
+local limit = total
 if grant.executionPolicy and grant.executionPolicy ~= cjson.null and ARGV[2] ~= 'synthesis' then limit = limit - 1 end
 local current = tonumber(redis.call('GET', KEYS[2]) or '0')
 if current >= limit then
-  if limit < tonumber(ARGV[1]) and current == limit then return {value, current + 1} end
+  if limit < total and current == limit then return {value, current + 1} end
   return {false, current + 1}
 end
 local calls = redis.call('INCR', KEYS[2])
@@ -240,13 +247,16 @@ pub async fn authorize_provider_call(
     let (raw, calls) = read_provider_capability(env, &digest, purpose)
         .await
         .c(h!())?;
-    if calls > AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT {
-        return Ok(None);
-    }
     let Some(raw) = raw else {
         return Ok(None);
     };
     let grant: ProviderCapabilityGrant = serde_json::from_str(&raw).c(h!())?;
+    let call_limit = grant
+        .call_limit
+        .unwrap_or(AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT);
+    if calls > call_limit {
+        return Ok(None);
+    }
     let mut research_deadline_reached = false;
     if let Some(policy) = &grant.execution_policy {
         let Some(deadline) = grant.deadline_at else {
@@ -330,8 +340,7 @@ pub async fn authorize_provider_call(
     }
     authorization.research_limit_reached = grant.execution_policy.is_some()
         && purpose != ProviderPurpose::Synthesis
-        && (research_deadline_reached
-            || calls == AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT);
+        && (research_deadline_reached || calls == call_limit);
     authorization.execution_policy = grant.execution_policy;
     authorization.deadline_at = grant.deadline_at;
     Ok(Some(authorization))

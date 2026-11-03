@@ -519,6 +519,7 @@ mod m20261031_080043_message_card_quick_action;
 mod m20261031_104502_role_message_settings;
 mod m20261102_131738_report_concurrency_settings;
 mod m20261103_073829_important_notify_all_flag;
+mod m20261103_120000_ai_agent_documents;
 
 pub struct Migrator;
 
@@ -1223,6 +1224,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261101_151245_ai_agent_uploads::Migration),
             Box::new(m20261102_131738_report_concurrency_settings::Migration),
             Box::new(m20261103_073829_important_notify_all_flag::Migration),
+            Box::new(m20261103_120000_ai_agent_documents::Migration),
         ]
     }
 }

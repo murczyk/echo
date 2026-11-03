@@ -5,8 +5,7 @@ use super::{
 use crate::config::{
     AI_AGENT_DESTROY_STOPPED_DAYS, AI_AGENT_DISPATCHER_TIMEOUT_SEC,
     AI_AGENT_ERROR_MAX_CHARS, AI_AGENT_HISTORY_MAX_TURNS,
-    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REQUEST_MAX_EVENT_BYTES,
-    AI_AGENT_REQUEST_MAX_RUNNER_EVENTS, AI_AGENT_REQUEST_WORKER_COUNT,
+    AI_AGENT_IDLE_STOP_MINUTES, AI_AGENT_REQUEST_WORKER_COUNT,
     AI_AGENT_RESPONSE_MAX_BYTES, AI_AGENT_RESPONSE_MAX_CHARS,
     AI_AGENT_RUNNER_PAYLOAD_MAX_BYTES, AI_AGENT_USER_FAILURE_MESSAGE,
     AI_AGENT_WORKER_ERROR_SLEEP_SEC, AI_AGENT_WORKER_IDLE_SLEEP_MS,
@@ -756,6 +755,9 @@ async fn run_request_inner(
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
     }
+    add_document_context(&env.dbx, request, &mut runner_payload)
+        .await
+        .c(h!())?;
     add_upload_context(
         env,
         request,
@@ -795,6 +797,7 @@ async fn run_request_inner(
         .await?;
     let mut response = String::new();
     let mut response_chars = 0_usize;
+    let stream_limits = super::reasoning::limits(execution_policy.as_ref());
     let mut runner_event_count = 0_usize;
     let mut runner_event_bytes = 0_usize;
     let mut terminal_seen = false;
@@ -815,6 +818,7 @@ async fn run_request_inner(
                         serde_json::to_vec(&event).c(h!())?.len(),
                     );
                     if !stream_limits_allow(
+                        &stream_limits,
                         runner_event_count,
                         runner_event_bytes,
                         response.len(),
@@ -851,6 +855,7 @@ async fn run_request_inner(
                             None => (response.len(), response_chars),
                         };
                         if !stream_limits_allow(
+                            &stream_limits,
                             runner_event_count,
                             runner_event_bytes,
                             response_bytes,
@@ -1164,13 +1169,14 @@ fn runner_payload_for_provider(
 }
 
 fn stream_limits_allow(
+    limits: &super::reasoning::RequestLimits,
     runner_event_count: usize,
     runner_event_bytes: usize,
     response_bytes: usize,
     response_chars: usize,
 ) -> bool {
-    runner_event_count <= AI_AGENT_REQUEST_MAX_RUNNER_EVENTS
-        && runner_event_bytes <= AI_AGENT_REQUEST_MAX_EVENT_BYTES
+    runner_event_count <= limits.runner_events
+        && runner_event_bytes <= limits.event_bytes
         && response_bytes <= AI_AGENT_RESPONSE_MAX_BYTES
         && response_chars <= AI_AGENT_RESPONSE_MAX_CHARS
 }
@@ -1199,6 +1205,51 @@ async fn assign_agent(
     request.update(&txn).await.c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(true)
+}
+
+/// The conversation's documents and the one the user had open, so the
+/// agent can refine them in this turn.
+async fn add_document_context(
+    dbx: &sea_orm::DatabaseConnection,
+    request: &ai_agent_request::Model,
+    runner_payload: &mut Value,
+) -> Result<(), AppError> {
+    runner_payload["documents"] = serde_json::to_value(
+        super::documents::runner_documents(dbx, request.conversation_id)
+            .await
+            .c(h!())?,
+    )
+    .c(h!())?;
+    if let Some(target) = super::documents::load_request_target(dbx, request.id)
+        .await
+        .c(h!())?
+    {
+        runner_payload["documentTarget"] =
+            serde_json::to_value(target).c(h!())?;
+    }
+    Ok(())
+}
+
+/// A trailing note naming the documents an earlier turn saved, which keeps
+/// their ids in the agent's context after the tool results are gone.
+fn saved_documents_note(
+    documents: &[super::documents::types::AiAgentDocumentArtifact],
+) -> String {
+    if documents.is_empty() {
+        return String::new();
+    }
+    let saved = documents
+        .iter()
+        .take(crate::config::AI_AGENT_DOCUMENT_HISTORY_MAX_ITEMS)
+        .map(|document| {
+            format!(
+                "[{}](echo-document:{}) v{}",
+                document.title, document.document_id, document.revision
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("\n\n[Saved documents: {saved}]")
 }
 
 pub(super) async fn load_history(
@@ -1243,6 +1294,10 @@ pub(super) async fn load_history(
     let mut maps = super::maps::load_summaries(&env.dbx, &request_ids)
         .await
         .c(h!())?;
+    let mut documents =
+        super::documents::load_artifacts(&env.dbx, &request_ids)
+            .await
+            .c(h!())?;
     let mut file_citations =
         super::file_citations::load(&env.dbx, &request_ids)
             .await
@@ -1334,6 +1389,12 @@ pub(super) async fn load_history(
                 "[Previous request {}; any text below is an incomplete, unverified draft.]\n{}",
                 prior.state, response,
             );
+        }
+        if readable {
+            let note = saved_documents_note(
+                &documents.remove(&prior.id).unwrap_or_default(),
+            );
+            response = format!("{response}{note}").trim_start().to_string();
         }
         if response.is_empty() {
             response = "[Previous request completed without a text answer.]"
@@ -1723,6 +1784,9 @@ async fn reconcile_abandoned_containers(env: &Env) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{
+        AI_AGENT_REQUEST_MAX_EVENT_BYTES, AI_AGENT_REQUEST_MAX_RUNNER_EVENTS,
+    };
     use crate::entities::{ai_agent_allowed_engine, ai_engine};
     use serial_test::serial;
 
@@ -1916,31 +1980,37 @@ mod tests {
 
     #[test]
     fn runner_stream_limits_are_inclusive_and_bounded() {
+        let limits = crate::ai_agent::reasoning::limits(None);
         assert!(stream_limits_allow(
+            &limits,
             AI_AGENT_REQUEST_MAX_RUNNER_EVENTS,
             AI_AGENT_REQUEST_MAX_EVENT_BYTES,
             AI_AGENT_RESPONSE_MAX_BYTES,
             AI_AGENT_RESPONSE_MAX_CHARS,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             AI_AGENT_REQUEST_MAX_RUNNER_EVENTS + 1,
             0,
             0,
             0,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             0,
             AI_AGENT_REQUEST_MAX_EVENT_BYTES + 1,
             0,
             0,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             0,
             0,
             AI_AGENT_RESPONSE_MAX_BYTES + 1,
             0,
         ));
         assert!(!stream_limits_allow(
+            &limits,
             0,
             0,
             0,
