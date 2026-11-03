@@ -13,14 +13,16 @@ export function readLinkedMessageReferenceFromWindow(): string | null {
   return readLinkedMessageReference(new URL(window.location.href).searchParams);
 }
 
-export function removeLinkedMessageReferenceFromWindowUrl(): void {
+// `keepInHistory` pushes the link-free URL so browser Back returns to the linked message.
+export function removeLinkedMessageReferenceFromWindowUrl({
+  keepInHistory = false,
+}: { keepInHistory?: boolean } = {}): void {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
+  if (!LINKED_MESSAGE_PARAMS.some((name) => url.searchParams.has(name))) return;
   for (const name of LINKED_MESSAGE_PARAMS) url.searchParams.delete(name);
   const query = url.searchParams.toString();
-  window.history.replaceState(
-    {},
-    '',
-    `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
-  );
+  const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
+  if (keepInHistory) window.history.pushState({}, '', href);
+  else window.history.replaceState({}, '', href);
 }

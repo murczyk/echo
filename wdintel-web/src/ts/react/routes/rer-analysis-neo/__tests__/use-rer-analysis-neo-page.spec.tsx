@@ -1578,6 +1578,62 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
   });
 
+  it('keeps the linked-message context when an overlay layer pops back to the same URL', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    const linkedUrl = window.location.href;
+
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(linkedUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    const browsingUrl = window.location.href;
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(browsingUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('lands on the linked message again when Back restores its URL after scrolling away', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    const linkedUrl = window.location.href;
+    const historyLength = window.history.length;
+    const landingKey = latest!.linkedMessageLandingKey;
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+
+    expect(window.history.length).toBe(historyLength + 1);
+    expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+
+    window.history.replaceState(window.history.state, '', linkedUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(2);
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[1]?.[0]).toMatchObject({
+      messageRef: 'target-uid',
+    });
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    expect(latest?.linkedMessageLandingKey).toBe(landingKey + 1);
+    expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3689
   it('finishes a linked-context refresh when the 41-message response is displayed in a 40-message window', async () => {
     const baseWindow = buildDirectLinkWindow();

@@ -135,6 +135,11 @@ date boundaries. The before/after counts and pagination totals describe only tha
 period; widening the date selection explicitly loads and counts the wider period.
 No direct-link request counts all history.
 
+Scrolling or paging away from the linked message removes the reference from the
+URL in a new history entry, so browser Back restores the linked URL and lands on
+the message again. History layers that only close an overlay, such as an
+attachment preview, return to the same URL and leave the linked view unchanged.
+
 Regression coverage:
 
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/helpers.spec.ts`
