@@ -7,6 +7,7 @@ export type Message = [
   number,
   {
     message_uid?: string | null;
+    message_uuid?: string | null;
     freq?: string | null;
     coords?: string | null;
     text: string;
