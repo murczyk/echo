@@ -20,6 +20,8 @@ import {
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
+  mentionedFrequencies,
+  normalizeFrequency,
   unitLookupRequestBody,
   interceptionContextRequestBody,
   messagesByIdRequestBody,
@@ -633,6 +635,49 @@ test("passes unit filters to inbox requests and validates them", () => {
   assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnits: [" "] }, context));
 });
 
+test("incident 01a1a1d8: normalizes user-written frequencies to the stored four-decimal form", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 1 },
+    selectedFrequencies: ["163.935", "163,9350", " 163.93 ", "27.135"],
+  };
+  const body = inboxMessagesRequestBody(params, context);
+  assert.deepEqual(body.selected_freqs, ["163.9350", "163.9300", "27.1350"]);
+  assert.equal(body.search, undefined);
+  assert.equal(normalizeFrequency("163.9350"), "163.9350");
+  for (const invalid of ["163", "163.93501", "abc", "163.935 МГц"])
+    assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [invalid] }, context));
+  assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [] }, context));
+});
+
+test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their stored form", () => {
+  assert.deepEqual(
+    mentionedFrequencies([
+      "02.11.2026, 13:49:43\n150.4750\n47.392477 36.056984 449.500.000",
+      "Проаналізуй з іншими частотами 163.935 та 163,935, хвиля 169.3500МГц",
+    ]),
+    [
+      { written: "150.4750", stored: "150.4750" },
+      { written: "163.935", stored: "163.9350" },
+      { written: "163,935", stored: "163.9350" },
+      { written: "169.3500", stored: "169.3500" },
+    ],
+  );
+  const prompt = systemPrompt(
+    validatePayload(
+      {
+        ...normalPayload,
+        history: [{ role: "user", content: "Що на 165.55?" }],
+        prompt: "Проаналізуй з іншими частотами 163.935 та дай прив'язку де найбільше схожих позивних",
+      },
+      false,
+    ),
+  );
+  assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
+  assert.match(prompt, /selectedFrequencies/);
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
+});
+
 test("builds bounded read-only unit lookup requests", () => {
   assert.deepEqual(unitLookupRequestBody({ query: " 3 дшб 104 дшп " }), {
     filter_text: "3 дшб 104 дшп",
@@ -991,7 +1036,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.01.1",
+    harnessRelease: "2026.11.03.1",
   });
 });
 

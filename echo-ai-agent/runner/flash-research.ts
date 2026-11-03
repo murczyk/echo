@@ -280,7 +280,7 @@ export class FlashResearch {
   ): boolean {
     if (tool !== "inbox_messages" || query?.before_id_noninclusive == null)
       return false;
-    if (!query.search) return true;
+    if (!query.search && !query.selected_freqs) return true;
     const limit = this.tuning.searchedPageLimit;
     if (limit === undefined) return false;
     const scope = retrievalKey(`echo_${tool}`, query);

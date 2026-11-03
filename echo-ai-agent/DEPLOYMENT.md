@@ -350,3 +350,13 @@ image parts. Verify the rollout this way:
   image on a vision engine.
 
 See [the upload pipeline](../wdintel-rs/src/ai_agent/uploads/README.md).
+
+## Frequency normalization (release 2026.11.03.1)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.03.1`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+The inbox tool accepts `selectedFrequencies`; the runner normalizes them to
+Echo's stored four-decimal form (`163.935` → `163.9350`) and the system prompt
+lists every frequency named in the conversation with its stored form. Verify
+that a request naming `163.935` reads messages stored as `163.9350`.
