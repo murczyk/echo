@@ -504,6 +504,15 @@ async fn important_add(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).context(h!())?;
     let notification_group = if req.notify_group {
+        if !crate::system_settings::important_notify_all_enabled(&env.dbx)
+            .await
+            .context(h!())?
+        {
+            return Err(AppError::BL {
+                msg: "Сповіщення всіх вимкнено в системних налаштуваннях"
+                    .into(),
+            });
+        }
         let group_master_key = req
             .group_master_key
             .as_deref()
@@ -1683,5 +1692,83 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn echo_3987_disabled_notify_all_rejects_group_notification() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login_row = find_test_login(&env.dbx).await.unwrap();
+        let inbox_item = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::ImportantNotifyAllEnabled,
+                Expr::value(Some(false)),
+            )
+            .filter(system_settings::Column::Deleted.eq(false))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let session_store = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(session_store, Key::generate()))
+                .route("/test/login/{login_id}", web::post().to(login))
+                .service(important_add),
+        )
+        .await;
+        let login_response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{}", login_row.id))
+                .to_request(),
+        )
+        .await;
+        let session_cookie = login_response
+            .response()
+            .cookies()
+            .next()
+            .unwrap()
+            .into_owned();
+        let add = |notify_group: bool, group_master_key: Option<&str>| {
+            test::TestRequest::post()
+                .uri("/api/rer/important/add")
+                .cookie(session_cookie.clone())
+                .set_json(ImportantAddReq {
+                    message_id: inbox_item.id,
+                    group_master_key: group_master_key.map(str::to_owned),
+                    notify_group,
+                    operation_id: Some(Uuid::now_v7()),
+                })
+                .to_request()
+        };
+        let personal_marks = || {
+            sigint_important::Entity::find()
+                .filter(
+                    sigint_important::Column::LoginId.eq(Some(login_row.id)),
+                )
+                .filter(
+                    sigint_important::Column::SignalMessageId.eq(inbox_item.id),
+                )
+                .filter(sigint_important::Column::Deleted.eq(false))
+                .count(&env.dbx)
+        };
+
+        let rejected =
+            test::call_service(&app, add(true, Some("group-master-key"))).await;
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(personal_marks().await.unwrap(), 0);
+
+        let personal = test::call_service(&app, add(false, None)).await;
+        assert_eq!(personal.status(), StatusCode::OK);
+        assert_eq!(personal_marks().await.unwrap(), 1);
     }
 }

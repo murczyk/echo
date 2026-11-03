@@ -42,6 +42,8 @@ pub struct SystemSettingsCurrentRsp {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: bool,
+    #[serde(default = "default_important_notify_all_enabled")]
+    pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
@@ -99,6 +101,8 @@ pub struct SystemSettingsItem {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: bool,
+    #[serde(default = "default_important_notify_all_enabled")]
+    pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default = "default_api_rate_limit_replenish_interval_ms")]
@@ -189,6 +193,8 @@ pub struct CreateSystemSettingsReq {
     pub analysis_aor_filter_enabled: bool,
     #[serde(default)]
     pub ai_position_highlights_enabled: Option<bool>,
+    #[serde(default)]
+    pub important_notify_all_enabled: Option<bool>,
     #[serde(default = "default_true")]
     pub two_factor_auth_enabled: bool,
     #[serde(default)]
@@ -217,6 +223,10 @@ fn default_api_rate_limit_burst_size() -> i64 {
 
 fn default_analysis_aor_filter_enabled() -> bool {
     crate::config::ANALYSIS_AOR_FILTER_ENABLED_DEFAULT
+}
+
+fn default_important_notify_all_enabled() -> bool {
+    crate::config::IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT
 }
 
 fn default_true() -> bool {

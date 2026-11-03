@@ -29,6 +29,7 @@ type SystemSettingsItemRaw = {
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
+  important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
@@ -78,6 +79,7 @@ type SystemSettingsCurrentRspRaw = {
   duty_exclude_menu_enabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'] | null;
   analysis_aor_filter_enabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'] | null;
   ai_position_highlights_enabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'] | null;
+  important_notify_all_enabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'] | null;
@@ -121,6 +123,7 @@ type CreateSystemSettingsReqRaw = {
   duty_exclude_menu_enabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysis_aor_filter_enabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   ai_position_highlights_enabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  important_notify_all_enabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'] | null;
   api_rate_limit_replenish_interval_ms?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   api_rate_limit_burst_size?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   two_factor_auth_enabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
@@ -177,6 +180,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
@@ -226,6 +230,7 @@ export type SystemSettingsCurrent = {
   dutyExcludeMenuEnabled: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  importantNotifyAllEnabled: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   twoFactorAuthEnabled: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
@@ -265,6 +270,7 @@ export type CreateSystemSettingsInput = {
   dutyExcludeMenuEnabled?: SystemSettingsCurrentRsp['dutyExcludeMenuEnabled'];
   analysisAorFilterEnabled?: SystemSettingsCurrentRsp['analysisAorFilterEnabled'];
   aiPositionHighlightsEnabled?: SystemSettingsCurrentRsp['aiPositionHighlightsEnabled'];
+  importantNotifyAllEnabled?: SystemSettingsCurrentRsp['importantNotifyAllEnabled'];
   apiRateLimitReplenishIntervalMs?: BackendSystemSettingsItem['apiRateLimitReplenishIntervalMs'];
   apiRateLimitBurstSize?: BackendSystemSettingsItem['apiRateLimitBurstSize'];
   twoFactorAuthEnabled?: SystemSettingsCurrentRsp['twoFactorAuthEnabled'];
@@ -318,6 +324,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
+    importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
@@ -369,6 +376,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     dutyExcludeMenuEnabled: raw.duty_exclude_menu_enabled ?? true,
     analysisAorFilterEnabled: raw.analysis_aor_filter_enabled ?? true,
     aiPositionHighlightsEnabled: raw.ai_position_highlights_enabled ?? false,
+    importantNotifyAllEnabled: raw.important_notify_all_enabled ?? true,
     apiRateLimitReplenishIntervalMs: raw.api_rate_limit_replenish_interval_ms ?? 500,
     apiRateLimitBurstSize: raw.api_rate_limit_burst_size ?? 5,
     twoFactorAuthEnabled: raw.two_factor_auth_enabled ?? true,
@@ -417,6 +425,7 @@ export async function createSystemSettings(
     duty_exclude_menu_enabled: input.dutyExcludeMenuEnabled ?? true,
     analysis_aor_filter_enabled: input.analysisAorFilterEnabled ?? true,
     ai_position_highlights_enabled: input.aiPositionHighlightsEnabled ?? false,
+    important_notify_all_enabled: input.importantNotifyAllEnabled ?? null,
     api_rate_limit_replenish_interval_ms: input.apiRateLimitReplenishIntervalMs,
     api_rate_limit_burst_size: input.apiRateLimitBurstSize,
     two_factor_auth_enabled: input.twoFactorAuthEnabled ?? true,

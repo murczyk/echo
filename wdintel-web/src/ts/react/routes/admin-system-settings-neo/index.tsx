@@ -62,6 +62,7 @@ type SystemSettingsForm = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  importantNotifyAllEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
   apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
@@ -110,6 +111,7 @@ type SystemSettingsPayload = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  importantNotifyAllEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
   apiRateLimitBurstSize: number;
   twoFactorAuthEnabled: boolean;
@@ -158,6 +160,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   dutyExcludeMenuEnabled: true,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
+  importantNotifyAllEnabled: true,
   apiRateLimitReplenishIntervalMs: 500,
   apiRateLimitBurstSize: 5,
   twoFactorAuthEnabled: true,
@@ -256,6 +259,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
+    importantNotifyAllEnabled: item?.importantNotifyAllEnabled ?? true,
     apiRateLimitReplenishIntervalMs: item?.apiRateLimitReplenishIntervalMs ?? 500,
     apiRateLimitBurstSize: item?.apiRateLimitBurstSize ?? 5,
     twoFactorAuthEnabled: item?.twoFactorAuthEnabled ?? true,
@@ -307,6 +311,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
+    a.importantNotifyAllEnabled === b.importantNotifyAllEnabled &&
     a.apiRateLimitReplenishIntervalMs === b.apiRateLimitReplenishIntervalMs &&
     a.apiRateLimitBurstSize === b.apiRateLimitBurstSize &&
     a.twoFactorAuthEnabled === b.twoFactorAuthEnabled &&
@@ -414,6 +419,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
+    importantNotifyAllEnabled: form.importantNotifyAllEnabled,
     apiRateLimitReplenishIntervalMs: form.apiRateLimitReplenishIntervalMs,
     apiRateLimitBurstSize: form.apiRateLimitBurstSize,
     twoFactorAuthEnabled: form.twoFactorAuthEnabled,
@@ -1084,6 +1090,16 @@ function NotificationsSettingsSection({
       <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
         Нотифікації
       </Typography>
+      <MainSettingsSwitchRow
+        checked={form.importantNotifyAllEnabled}
+        label={
+          <InfoLabel
+            label="«Сповістити всіх» при позначенні важливим"
+            tooltip="Коли вимкнено, вікно «Сповістити всіх?» не показується: повідомлення одразу позначається важливим без сповіщення групи."
+          />
+        }
+        onChange={(checked) => patchForm({ importantNotifyAllEnabled: checked })}
+      />
       <TextField
         fullWidth
         label="Discord webhook для помилок Echo REST API"
@@ -1372,6 +1388,7 @@ export function AdminSystemSettingsNeoPage() {
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
+      importantNotifyAllEnabled: payload.importantNotifyAllEnabled,
       apiRateLimitReplenishIntervalMs: payload.apiRateLimitReplenishIntervalMs,
       apiRateLimitBurstSize: payload.apiRateLimitBurstSize,
       twoFactorAuthEnabled: payload.twoFactorAuthEnabled,
