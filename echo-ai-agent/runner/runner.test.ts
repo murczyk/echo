@@ -20,6 +20,7 @@ import {
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
+  mentionedColorCodes,
   mentionedFrequencies,
   normalizeFrequency,
   unitLookupRequestBody,
@@ -677,6 +678,47 @@ test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their 
   assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
   assert.match(prompt, /only the frequencies the current request is about/);
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
+});
+
+test("#3998 reads СС3 in a user query as the DMR color code", () => {
+  assert.deepEqual(
+    mentionedColorCodes([
+      "144.8450 Мишаня Якудза, СС3",
+      "CC: 7 і код кольору 12, 🎨5, cc03, СС-300, сс16, ссылка 3",
+    ]),
+    [
+      { written: "СС3", colorCode: "3" },
+      { written: "CC: 7", colorCode: "7" },
+      { written: "код кольору 12", colorCode: "12" },
+      { written: "🎨5", colorCode: "5" },
+      { written: "cc03", colorCode: "3" },
+    ],
+  );
+  const prompt = systemPrompt(
+    validatePayload({ ...normalPayload, history: [], prompt: "144.8450 Мишаня Якудза, СС3" }, false),
+  );
+  assert.match(prompt, /stored Echo form: 144\.8450\./);
+  assert.match(prompt, /DMR color codes named in this conversation: СС3 = color code 3\. They are radio network metadata, not callsigns/);
+  assert.match(prompt, /is the DMR color code \(0–15\) of a radio network/);
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /DMR color codes named/);
+});
+
+test("#3998 exposes parsed DMR metadata on retrieved messages", () => {
+  const item = (id: number, metadata: unknown) => [id, { message_uid: `uid-${id}`, freq: "144.8450", text: "СС: 3 👥: 24538🔐", metadata }];
+  const response = compactInboxResponse({
+    inbox_items: [
+      item(2, [
+        { color_code: "3", color_code_start_index: 0, call_group_id: "24538", sender_id: null, hash_id: "2324D327" },
+        { color_code: "3", call_group_id: "24538" },
+        { color_code: " ", call_group_id: null },
+      ]),
+      item(1, []),
+    ],
+    page_limit: 20,
+  });
+  const messages = response.messages as Array<Record<string, unknown>>;
+  assert.deepEqual(messages[0].dmr, [{ colorCode: "3", callGroupId: "24538" }]);
+  assert.equal("dmr" in messages[1], false);
 });
 
 test("builds bounded read-only unit lookup requests", () => {
