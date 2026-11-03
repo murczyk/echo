@@ -529,7 +529,9 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
   });
 
-  it('restores a selected group filter from browser storage', async () => {
+  // Regression: https://github.com/echoua/echo/issues/3982
+  it('starts a fresh navigation with default filters and restores filters only from the URL', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo');
     renderHook(['Rer']);
     await act(async () => {
       latest?.selectGroupScope({ kind: 'group', masterKey: 'group-b' });
@@ -537,30 +539,26 @@ describe('useRerAnalysisNeoPage', () => {
     await act(async () => {
       latest?.updateQueryState({ freqsSelected: ['222.2'] });
     });
+    const filteredUrl = window.location.href;
 
     act(() => root?.unmount());
     root = null;
     latest = null;
-    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
+    window.history.replaceState({}, '', '/rer-analysis-neo');
+    renderHook(['Rer']);
+
+    expect(latest?.queryState.freqsSelected).toEqual([]);
+    expect(latest?.queryState.groupsSelected).toEqual([]);
+    expect(window.localStorage.getItem('rer-analysis-neo-scope-filters-v1')).toBeNull();
+
+    act(() => root?.unmount());
+    root = null;
+    latest = null;
+    window.history.replaceState({}, '', filteredUrl);
     renderHook(['Rer']);
 
     expect(latest?.queryState.freqsSelected).toEqual(['222.2']);
     expect(latest?.queryState.groupsSelected).toEqual(['group-b']);
-  });
-
-  it('ignores malformed stored group filters', () => {
-    window.localStorage.setItem(
-      'rer-analysis-neo-scope-filters-v1',
-      JSON.stringify({
-        version: 1,
-        scopes: { 'group:group-b': { callsignsSelected: 'not-an-array' } },
-      }),
-    );
-    window.history.replaceState({}, '', '/rer-analysis-neo?group=group-b');
-
-    renderHook(['Rer']);
-
-    expect(latest?.queryState.callsignsSelected).toEqual([]);
   });
 
   it('restores the group scope filter from browser history', async () => {

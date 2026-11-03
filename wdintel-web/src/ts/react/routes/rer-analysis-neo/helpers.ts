@@ -7,7 +7,6 @@ import type {
   SavedFilter,
 } from '../../../../Bindings';
 import {
-  hasRerAnalysisQueryStateParams,
   parseRerAnalysisQueryStateFromSearchParams,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
@@ -180,12 +179,6 @@ export function parseQueryStateFromWindow(): AnalysisQueryState {
     ...(flatStateFromUrl ?? {}),
     ...(onlyWithMedia != null ? { onlyWithMedia } : {}),
   };
-}
-
-export function hasQueryStateInWindow(): boolean {
-  if (typeof window === 'undefined') return false;
-  const searchParams = new URL(window.location.href).searchParams;
-  return hasRerAnalysisQueryStateParams(searchParams) || searchParams.has(ONLY_WITH_MEDIA_PARAM);
 }
 
 export function parseNewestFirstFromWindow(): boolean {

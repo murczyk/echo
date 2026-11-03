@@ -26,7 +26,6 @@ import {
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
   hasMeaningfulUiFiltersBeyondDateRange,
-  hasQueryStateInWindow,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
   normalizeQueryState,
@@ -72,10 +71,6 @@ import {
   groupFilterScope,
   type GroupScope,
 } from '../shared/group-navigation';
-import {
-  persistAnalysisScopeFilters,
-  readAnalysisScopeFilters,
-} from './analysis-scope-filter-state';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -171,21 +166,14 @@ export function useRerAnalysisNeoPage(
   const [initialNow] = useState(() => new Date());
   const [initialParsedQueryState] = useState(parseQueryStateFromWindow);
   const [initialGroupScope] = useState(readAnalysisGroupScopeFromUrl);
-  const [initialHasQueryState] = useState(hasQueryStateInWindow);
-  const [initialQueryState] = useState<AnalysisQueryState>(() => {
-    const state = initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed);
-    const storedFilters =
-      initialHasQueryState || threadMessageId != null
-        ? null
-        : readAnalysisScopeFilters({ kind: 'all' });
-    return normalizeQueryState({
-      ...state,
-      ...storedFilters,
+  const [initialQueryState] = useState<AnalysisQueryState>(() =>
+    normalizeQueryState({
+      ...initState(initialParsedQueryState, initialNow, initialRadioFeaturesAllowed),
       ...(initialGroupScope.kind === 'group'
         ? { groupsSelected: [initialGroupScope.masterKey] }
         : {}),
-    });
-  });
+    }),
+  );
   const [queryState, setQueryState] = useState<AnalysisQueryState>(initialQueryState);
   const groupScope = useMemo(
     () => groupFilterScope(queryState.groupsSelected),
@@ -685,11 +673,6 @@ export function useRerAnalysisNeoPage(
     setTargetMessageContextResponsePending(false);
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
-
-  useEffect(() => {
-    if (threadMessageId != null) return;
-    persistAnalysisScopeFilters({ kind: 'all' }, queryState);
-  }, [queryState, threadMessageId]);
 
   useEffect(() => {
     const onPopState = () => {

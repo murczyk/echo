@@ -91,13 +91,13 @@
 - **User action or external event:** the user changes filters, opens a direct message, follows a map link, or restores query state.
 - **Expected observable result:** date-only differences do not mark a saved filter dirty, non-date differences do, `onlyWithMedia` affects UI dirty state but not saved-filter equality, initial `unitsExactMatchOnly` is null, defaults span one day with Rer access or 90 days otherwise in the application timezone, direct links preserve or recenter the interception or creation range as described below and do not fall back when creation time is unavailable, saved filters reset adjacent-frequency expansion, and only `showMap=true` enables the map.
 - **Loading/empty/error/success behavior:** unavailable creation time leaves the current direct-link range unchanged.
-- **URL, localStorage, or user-settings persistence:** URL `showMap` is accepted only for the literal value `true`; saved-filter equality intentionally excludes `onlyWithMedia`.
+- **URL, localStorage, or user-settings persistence:** filters persist only in URL params, never in browser storage; opening the route without params (new tab, menu link) starts from the reset defaults. URL `showMap` is accepted only for the literal value `true`; saved-filter equality intentionally excludes `onlyWithMedia`.
 - **API endpoint and compatibility requirements:** initial null unit matching preserves the backend default.
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** applying a saved filter clears stale adjacent-frequency expansion.
-- **Source implementation:** `routes/rer-analysis-neo/helpers.ts`.
-- **Existing test(s):** No direct default-suite test; behavior is preserved by this contract.
-- **Original Echo issue/PR, if known:** none recorded.
+- **Source implementation:** `routes/rer-analysis-neo/helpers.ts` and `routes/rer-analysis-neo/use-rer-analysis-neo-page.ts`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx` (URL-only filter persistence).
+- **Original Echo issue/PR, if known:** URL-only filter persistence: [#2380](https://github.com/echoua/echo/issues/2380), [#3982](https://github.com/echoua/echo/issues/3982).
 
 ## Analysis direct-link dates
 
