@@ -1,11 +1,13 @@
 import { transformCamelToSnake } from '../../src/ts/snake-to-camel';
 import { readFile } from 'node:fs/promises';
+import { createServer, request as proxyRequest } from 'node:http';
 import { expect, test } from '@playwright/test';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
 // Regression: https://github.com/echoua/echo/issues/3064
-test('@smoke @regression #3064 #3757 file citations preview and download pinned revisions and recheck access', async ({
+test('@smoke @regression #3064 #3757 #3928 file citations preview and download pinned revisions and recheck access', async ({
   page,
+  baseURL,
 }) => {
   await installAnalysisNeoApiMocks(page);
   const source = {
@@ -15,7 +17,8 @@ test('@smoke @regression #3064 #3757 file citations preview and download pinned 
     extractionRevision: '33333333-3333-4333-8333-333333333333',
     section: 2,
   };
-  const href = `/devices/${source.deviceId}?file=${source.fileId}&revision=3&extraction=${source.extractionRevision}&section=2`;
+  const href = `/devices/${source.deviceId}/files?file=${source.fileId}&revision=3&extraction=${source.extractionRevision}&section=2`;
+  const legacyHref = href.replace('/files?', '?');
   const conversation = {
     id: '44444444-4444-4444-8444-444444444444',
     title: 'File citations',
@@ -45,7 +48,7 @@ test('@smoke @regression #3064 #3757 file citations preview and download pinned 
             requestState: 'completed',
             role: 'assistant',
             createdAt: 1,
-            content: `Позиція з документа. [файл](${href})`,
+            content: `Позиція з документа. [файл](${legacyHref}) [файл](${href}) [інша ревізія](${legacyHref.replace('revision=3', 'revision=4')})`,
             citations: [],
             fileCitations: [source],
           },
@@ -91,15 +94,14 @@ test('@smoke @regression #3064 #3757 file citations preview and download pinned 
       },
     });
   });
-  await page.route(
-    `**/api/device/files/${source.deviceId}/${source.fileId}/revisions/3/content`,
-    (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'text/plain; charset=utf-8',
-        headers: { 'content-length': String(bytes.length) },
-        body: route.request().method() === 'HEAD' ? '' : bytes,
-      }),
+  const contentPath = `/api/device/files/${source.deviceId}/${source.fileId}/revisions/3/content`;
+  await page.route(`**${contentPath}`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/plain; charset=utf-8',
+      headers: { 'content-length': String(bytes.length) },
+      body: route.request().method() === 'HEAD' ? '' : bytes,
+    }),
   );
   await page.route('**/api/device/files/ai/read', (route) => {
     const req = route.request().postDataJSON();
@@ -146,8 +148,40 @@ test('@smoke @regression #3064 #3757 file citations preview and download pinned 
       },
     });
   });
-  await page.goto(`/?conversation=${conversation.id}`);
-  const chip = page.locator('ai-agent-chat').getByRole('link', { name: 'positions.txt · рев. 3' });
+  const server = createServer((request, response) => {
+    if (new URL(request.url!, 'http://localhost').pathname === contentPath) {
+      response.writeHead(available ? 200 : 403, {
+        'content-type': 'text/plain; charset=utf-8',
+        'content-length': String(available ? bytes.length : 0),
+        'content-disposition': 'attachment; filename="positions.txt"',
+      });
+      response.end(available && request.method !== 'HEAD' ? bytes : undefined);
+      return;
+    }
+    const proxy = proxyRequest(
+      new URL(request.url!, baseURL),
+      { method: request.method, headers: request.headers },
+      (upstream) => {
+        response.writeHead(upstream.statusCode!, upstream.headers);
+        upstream.pipe(response);
+      },
+    );
+    proxy.on('error', () => response.writeHead(502).end());
+    request.pipe(proxy);
+  });
+  page.once('close', () => {
+    server.closeAllConnections();
+    server.close();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as { port: number };
+  await page.goto(`http://127.0.0.1:${address.port}/?conversation=${conversation.id}`);
+  const chat = page.locator('ai-agent-chat');
+  const chips = chat.getByRole('link', { name: 'positions.txt · рев. 3' });
+  await expect(chips).toHaveCount(2, { timeout: 20000 });
+  await expect(chips.nth(1)).toHaveAttribute('href', href);
+  await expect(chat.getByText('Неперевірене джерело', { exact: true })).toHaveCount(1);
+  const chip = chips.first();
   await expect(chip).toBeVisible({ timeout: 20000 });
   await expect(chip).toHaveAttribute('href', href);
   await chip.click();

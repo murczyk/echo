@@ -1,6 +1,7 @@
 import { Box, Stack, Typography, useMediaQuery } from '@mui/material';
 import { useMemo } from 'react';
 
+import { hasRole } from '../../utils/roles';
 import { PageErrorState } from '../../components/PageErrorState';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
@@ -222,6 +223,11 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
           open={page.editDialogOpen}
           mode="edit"
           deviceId={page.editDeviceId}
+          canRebuildStats={hasRole(authUserRoles, 'Admin')}
+          onStatsRebuilt={() => {
+            void page.reload();
+            void page.reloadSidebar();
+          }}
           archived={page.editArchived}
           onArchive={() => {
             if (page.editDeviceId) page.requestArchive(page.editDeviceId);

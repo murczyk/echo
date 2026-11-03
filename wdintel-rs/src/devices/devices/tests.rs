@@ -2408,6 +2408,13 @@ from device_audio_ingest where id = $1
     async fn file_audio_activity_counts_upload_days_and_sorts_before_pagination(
     ) {
         let (env, _guard) = cleanup_locked().await.unwrap();
+        crate::entities::system_settings::ActiveModel {
+            devices_section_enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
         let db = env.file_registry_db.as_ref().unwrap().connection();
         let actor = insert_login(&env.dbx, &[ROLE_CYBER]).await;
         let mut ids = Vec::new();
@@ -2459,6 +2466,26 @@ from device_audio_ingest where id = $1
         ] {
             insert_audio_activity(db, device_id, at, size, published).await;
         }
+        let full = crate::devices::audio::read_activity(
+            &env.device_audio,
+            actor.id,
+            ids[0],
+        )
+        .await
+        .unwrap();
+        assert_eq!(full.uploaded_count, 3);
+        assert_eq!(full.days.len(), 2);
+        assert_eq!(full.days[0].content_count, 1);
+        assert_eq!(full.days[1].content_bytes, 50);
+        let unpublished = crate::devices::audio::read_activity(
+            &env.device_audio,
+            actor.id,
+            ids[2],
+        )
+        .await
+        .unwrap();
+        assert_eq!(unpublished.uploaded_count, 0);
+        assert!(unpublished.days.is_empty());
         let days =
             crate::devices::audio::activity::read_recent_or_none(db, &ids)
                 .await
@@ -2509,6 +2536,24 @@ on conflict (device_id) do update set
             true,
         )
         .await;
+        let full = crate::devices::audio::read_activity(
+            &env.device_audio,
+            actor.id,
+            ids[0],
+        )
+        .await
+        .unwrap();
+        assert_eq!(full.uploaded_count, 4);
+        assert_eq!(full.days.len(), 3);
+        assert_eq!(full.days[0].content_bytes, 1);
+        let source = insert_login(&env.dbx, &["DeviceSource"]).await;
+        assert!(crate::devices::audio::read_activity(
+            &env.device_audio,
+            source.id,
+            ids[0],
+        )
+        .await
+        .is_err());
         for enabled in [false, true] {
             crate::entities::device_settings::ActiveModel {
                 id: Set(crate::devices::config::DEVICE_SETTINGS_ID),

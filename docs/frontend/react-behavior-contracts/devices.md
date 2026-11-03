@@ -1,5 +1,11 @@
 # Device contracts
 
+## Device page URL filters
+
+- **Original Echo issue:** #3928.
+- **Expected observable result:** `sync_id` scopes file browsing and session controls only on `/devices/:id/files`. Overview, Journal, and Audio ignore it, including malformed or unavailable session IDs, and navigation to those pages drops it. Browser Back and Forward restore tag filters from the URL, keeping controls and API requests consistent on the same page.
+- **Existing tests:** `wdintel-web/tests/e2e/device-details.spec.ts`.
+
 ## Device-detail response ordering
 
 - **Status:** inferred characterization

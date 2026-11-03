@@ -36,5 +36,5 @@ export function fileCitationHref(source: AiAgentFileCitation): string {
   const query = new URLSearchParams({ file: source.fileId, revision: String(source.revision) });
   if (source.extractionRevision) query.set('extraction', source.extractionRevision);
   if (source.section != null) query.set('section', String(source.section));
-  return `/devices/${source.deviceId}?${query}`;
+  return `/devices/${source.deviceId}/files?${query}`;
 }

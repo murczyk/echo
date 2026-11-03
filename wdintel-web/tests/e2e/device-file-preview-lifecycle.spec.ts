@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
 import type {
@@ -136,7 +137,7 @@ test('@regression retained historical text uses session tree/search revision and
     await expect(pane).toContainText(`Ревізія ${current.file.revision} · Поточна`);
     await expectOriginalBytes(page, pane, 'current-text');
     await page.goto(`/devices/${backend.fixtures.deviceId}?sync_id=${old.file.syncId}`);
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await openDeviceSection(page, 'Файли');
     await page
       .getByRole('button', { name: /Вибрати каталог C:/ })
       .first()

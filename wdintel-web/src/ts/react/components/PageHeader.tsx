@@ -6,6 +6,7 @@ type ResponsiveSpacing = number | string | { xs?: number | string; sm?: number |
 
 type Props = {
   title: ReactNode;
+  titleComponent?: 'h1' | 'div';
   titleInfo?: ReactNode;
   titleLeadingActions?: ReactNode;
   titleLeadingGap?: ResponsiveSpacing;
@@ -25,6 +26,7 @@ type Props = {
 
 export function PageHeader({
   title,
+  titleComponent = 'h1',
   titleInfo,
   titleLeadingActions,
   titleLeadingGap = 1,
@@ -80,7 +82,7 @@ export function PageHeader({
           </Box>
         ) : null}
         <Typography
-          component="h1"
+          component={titleComponent}
           variant="h5"
           sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
           className={titleClassName}

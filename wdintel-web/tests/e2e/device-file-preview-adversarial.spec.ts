@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -487,7 +488,7 @@ test('@regression thousand-file catalogue fetches no unselected bytes or preview
         content.push(request.url());
     });
     await page.goto(`/devices/${backend.fixtures.deviceId}`);
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await openDeviceSection(page, 'Файли');
     await page
       .getByRole('button', { name: /Вибрати каталог C:/ })
       .first()

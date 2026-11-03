@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -236,7 +237,7 @@ test('#3778 @regression ZIP history keeps nested bytes and source counts after t
         }
       }
       await page.goto(`/devices/${deviceId}?sync_id=${file.syncId}`);
-      await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+      await openDeviceSection(page, 'Файли');
       const fileTree = page.getByTestId('device-files-tree');
       for (const name of ['preview', fixture.id]) {
         await fileTree
@@ -367,7 +368,7 @@ async function openArchiveTree(page: Page, issue?: 'corrupt' | 'empty-path' | 'e
     };
     await page.context().addCookies((await reader.storageState()).cookies);
     await page.goto(`/devices/${backend.fixtures.deviceId}`, { waitUntil: 'domcontentloaded' });
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await openDeviceSection(page, 'Файли');
     await page.getByRole('button', { name: 'Розгорнути каталог preview', exact: true }).click();
     await page
       .getByRole('button', { name: 'Розгорнути каталог archive-tree', exact: true })

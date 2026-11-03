@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Page } from '@playwright/test';
 import {
   audioDetail,
@@ -89,7 +90,7 @@ test.describe('@regression real device audio transcription', () => {
   async function open(page: Page, id = first.id) {
     await page.context().addCookies((await backend.reader.storageState()).cookies);
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     const player = await selectAudio(page, id);
     await expect(field(page)).toBeVisible();
     return player;
@@ -155,8 +156,8 @@ test.describe('@regression real device audio transcription', () => {
       'true',
     );
     await page.getByRole('button', { name: 'Автоматична', exact: true }).click();
-    await page.getByRole('tab', { name: 'Аналітика', exact: true }).click();
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аналітика');
+    await openDeviceSection(page, 'Аудіо');
     await expect(field(page)).toHaveValue('Ручний текст');
     expect(
       (await audioDetail(backend.reader, device.id, first.id)).automaticTranscription.text,
@@ -183,7 +184,7 @@ test.describe('@regression real device audio transcription', () => {
     const another = await secondContext.newPage();
     try {
       await another.goto(`/devices/${device.id}`);
-      await another.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(another, 'Аудіо');
       await selectAudio(another, first.id);
       await expect(field(another)).toHaveValue(literal);
     } finally {
@@ -198,7 +199,7 @@ test.describe('@regression real device audio transcription', () => {
     await save(page, long);
     expect((await audioDetail(backend.reader, device.id, first.id)).transcription.text).toBe(long);
     await page.reload();
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     const reread = page.waitForResponse((response) =>
       response.url().endsWith('/api/device/audio/detail'),
     );
@@ -245,7 +246,7 @@ test.describe('@regression real device audio transcription', () => {
     const other = await otherContext.newPage();
     try {
       await other.goto(`/devices/${device.id}`);
-      await other.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(other, 'Аудіо');
       await selectAudio(other, first.id);
       await expect(field(other)).toHaveValue('base');
       await save(other, 'server-two');
@@ -311,7 +312,7 @@ test.describe('@regression real device audio transcription', () => {
     );
     await page.context().addCookies((await backend.reader.storageState()).cookies);
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await page.locator(`[data-audio-id="${first.id}"]`).click();
     await expect(page.locator('[data-device-audio-editor]')).toContainText('Помилка читання');
     await expect(field(page)).toHaveCount(0);
@@ -340,7 +341,7 @@ test.describe('@regression real device audio transcription', () => {
     await clickSave(page);
     await committed.promise;
     await field(page).fill('newer draft');
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
     await expect(leave(page).getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
     release.resolve();
     await expect(leave(page)).toBeVisible();
@@ -353,7 +354,7 @@ test.describe('@regression real device audio transcription', () => {
     await page.unroute(`**${savePath}`);
     await save(page, 'newer draft');
   });
-  test('record and tab decisions preserve playback on Cancel, discard local edits and wait for Save', async ({
+  test('record and page decisions preserve playback on Cancel, discard local edits and wait for Save', async ({
     page,
   }) => {
     const player = await open(page);
@@ -367,7 +368,7 @@ test.describe('@regression real device audio transcription', () => {
     expect(await old.evaluate((element) => element.isConnected)).toBe(true);
     expect((await nativeState(player)).paused).toBe(false);
     await expect(field(page)).toHaveValue('discard me');
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
     await leave(page).getByRole('button', { name: 'Скасувати', exact: true }).click();
     expect((await nativeState(player)).paused).toBe(false);
     await page.waitForTimeout(410);
@@ -381,12 +382,9 @@ test.describe('@regression real device audio transcription', () => {
       await old.evaluate((element) => element.audio.paused && !element.audio.getAttribute('src')),
     ).toBe(true);
     await field(page).fill('saved second');
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
     await leave(page).getByRole('button', { name: 'Зберегти', exact: true }).click();
-    await expect(page.getByRole('tab', { name: 'Файли', exact: true })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    await expect(page).toHaveURL(`/devices/${device.id}`);
     expect((await audioDetail(backend.reader, device.id, second.id)).transcription.text).toBe(
       'saved second',
     );
@@ -455,7 +453,7 @@ test.describe('@regression real device audio transcription', () => {
         const { requestNavigation } = await import('/src/ts/browser/navigation-guard.ts');
         await requestNavigation(`/devices/${id}`);
       }, device.id);
-      await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(page, 'Аудіо');
       await selectAudio(page, first.id);
       await field(page).fill('navigation draft');
       await page.evaluate(async () => {
@@ -485,7 +483,7 @@ test.describe('@regression real device audio transcription', () => {
       await expect(page.locator('#map-container-guard-proof .leaflet-map-pane')).toHaveCount(0);
       await page.evaluate(() => history.forward());
       await expect(page).toHaveURL(original);
-      await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(page, 'Аудіо');
       await selectAudio(page, first.id);
       await field(page).fill('navbar draft');
       await page.getByRole('button', { name: /parent-cyber/ }).click();
@@ -519,7 +517,7 @@ test.describe('@regression real device audio transcription', () => {
     const leaving = page.reload();
     await (await confirmed).accept();
     await leaving;
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await selectAudio(page, first.id);
     await expect(field(page)).toHaveValue('last saved');
   });
@@ -537,9 +535,9 @@ test.describe('@regression real device audio transcription', () => {
     expect(page.url()).toBe(original);
     expect((await nativeState(player)).paused).toBe(false);
     await expect(field(page)).toHaveValue('saved before Back');
-    await page.getByRole('button', { name: 'До списку пристроїв', exact: true }).click();
+    await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
     await leave(page).getByRole('button', { name: 'Зберегти', exact: true }).click();
-    await expect(page).toHaveURL(/\/devices$/);
+    await expect(page).toHaveURL(`/devices/${device.id}`);
     expect((await audioDetail(backend.reader, device.id, first.id)).transcription.text).toBe(
       'saved before Back',
     );
@@ -552,7 +550,7 @@ test.describe('@regression real device audio transcription', () => {
       'saved before Back',
     );
   });
-  for (const context of ['record', 'tab', 'device', 'filter'] as const)
+  for (const context of ['record', 'page', 'device', 'filter'] as const)
     test(`Save, Discard and Cancel guard the ${context} context`, async ({ page }) => {
       for (const decision of ['Скасувати', 'Відкинути', 'Зберегти']) {
         await serverSave('confirmed');
@@ -565,7 +563,8 @@ test.describe('@regression real device audio transcription', () => {
         const draft = `${context}:${decision}`;
         await field(page).fill(draft);
         if (context === 'record') await page.locator(`[data-audio-id="${second.id}"]`).click();
-        if (context === 'tab') await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+        if (context === 'page')
+          await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
         if (context === 'filter') await toggleAudioFilter(page);
         if (context === 'device') {
           await page.evaluate((id) => {
@@ -593,10 +592,7 @@ test.describe('@regression real device audio transcription', () => {
             'aria-pressed',
             'true',
           );
-          await expect(page.getByRole('tab', { name: 'Аудіо', exact: true })).toHaveAttribute(
-            'aria-selected',
-            'true',
-          );
+          await expect(page).toHaveURL(`/devices/${device.id}/audio`);
           await expectAudioFilter(page, false);
           await field(page).fill('confirmed');
         } else {
@@ -605,11 +601,7 @@ test.describe('@regression real device audio transcription', () => {
               'aria-pressed',
               'true',
             );
-          if (context === 'tab')
-            await expect(page.getByRole('tab', { name: 'Файли', exact: true })).toHaveAttribute(
-              'aria-selected',
-              'true',
-            );
+          if (context === 'page') await expect(page).toHaveURL(`/devices/${device.id}`);
           if (context === 'device')
             await expect(page).toHaveURL(new RegExp(`/devices/${otherDevice.id}$`));
           if (context === 'filter') await expectAudioFilter(page, true);
@@ -711,7 +703,7 @@ test.describe('@regression real device audio transcription', () => {
       ),
     );
     await field(page).fill('local logout draft');
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
     await expect(leave(page)).toBeVisible();
     let unloads = 0;
     page.on('dialog', async (dialog) => {
@@ -992,7 +984,7 @@ test('@regression device ASR completes before opening and preserves manual fallb
     contexts.push(context);
     const page = await context.newPage();
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await selectAudio(page, fresh.id);
     await expect(field(page)).toHaveValue('Автоматична транскрипція');
     await expect(
@@ -1046,7 +1038,7 @@ test('@regression device ASR completes before opening and preserves manual fallb
     contexts.push(viewerContext);
     const viewerPage = await viewerContext.newPage();
     await viewerPage.goto(`/devices/${device.id}`);
-    await viewerPage.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(viewerPage, 'Аудіо');
     await selectAudio(viewerPage, fresh.id);
     await expect(field(viewerPage)).toHaveAttribute('readonly', '');
     expect(
@@ -1130,7 +1122,7 @@ test('@regression device ASR interactive cached historical admission coalesces t
     contexts.push(context);
     const page = await context.newPage();
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     const player = await selectAudio(page, old.id);
     await ready(player);
     await player.evaluate((element) => element.play());
@@ -1238,7 +1230,7 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
     contexts.push(otherContext);
     const otherPage = await otherContext.newPage();
     await otherPage.goto(`/devices/${device.id}`);
-    await otherPage.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(otherPage, 'Аудіо');
     await selectAudio(otherPage, audio.id);
     await expect(otherPage.locator('[data-device-audio-asr-status]')).toHaveText(
       'Мовлення не виявлено',
@@ -1249,7 +1241,7 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
     contexts.push(context);
     const page = await context.newPage();
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     const player = await selectAudio(page, audio.id);
     await expect(page.locator('[data-device-audio-asr-status]')).toHaveText('Мовлення не виявлено');
     await expect(field(page)).toHaveAttribute('readonly', '');
@@ -1297,7 +1289,7 @@ test('@regression device ASR interactive viewer retry observes cross-session ter
     expect((await nativeState(player)).paused).toBe(false);
     expect((await audioAsrFixture()).inferences - before.inferences).toBe(1);
     await otherPage.reload();
-    await otherPage.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(otherPage, 'Аудіо');
     await selectAudio(otherPage, audio.id);
     await expect(field(otherPage)).toHaveValue('Автоматична транскрипція');
     console.log(
@@ -1348,7 +1340,7 @@ test('@regression device ASR lost response recovers through the native queue wit
       .toBe('retry_wait');
     const page = await context.newPage();
     await page.goto(`/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await selectAudio(page, audio.id);
     await expect(
       page.getByRole('button', { name: 'Повторити транскрибацію', exact: true }),

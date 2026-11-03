@@ -2984,6 +2984,15 @@ export type ReceiveDeviceAudioRsp = {
   audio: DeviceAudio;
 };
 
+export type DeviceAudioActivityReq = {
+  deviceId: string;
+};
+
+export type DeviceAudioActivityRsp = {
+  uploadedCount: number;
+  days: Array<DeviceAudioDayStat>;
+};
+
 export type ListDeviceAudioReq = {
   deviceId: string;
   unprocessedOnly: boolean;

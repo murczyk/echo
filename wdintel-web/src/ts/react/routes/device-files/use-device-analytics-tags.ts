@@ -10,6 +10,7 @@ import type { DeviceFileLoadError } from './types';
 export type DeviceAnalyticsTagsState = {
   tags: AnalyticsTag[];
   loading: boolean;
+  loaded: boolean;
   error: DeviceFileLoadError | null;
   reload: () => Promise<void>;
 };
@@ -23,6 +24,7 @@ export function useDeviceAnalyticsTags({
 }): DeviceAnalyticsTagsState {
   const [tags, setTags] = useState<AnalyticsTag[]>([]);
   const [loading, setLoading] = useState(enabled);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<DeviceFileLoadError | null>(null);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -40,6 +42,7 @@ export function useDeviceAnalyticsTags({
       const rsp = await listAnalyticsTags({ deviceId }, { signal: controller.signal });
       if (requestSeqRef.current !== seq || controller.signal.aborted) return;
       setTags(rsp.tags);
+      setLoaded(true);
     } catch (loadError) {
       if (requestSeqRef.current !== seq || controller.signal.aborted || isAbortError(loadError)) {
         return;
@@ -59,11 +62,12 @@ export function useDeviceAnalyticsTags({
     requestSeqRef.current += 1;
     abortRef.current?.abort();
     setTags([]);
+    setLoaded(false);
     setError(null);
     setLoading(enabled);
     if (enabled) void load();
     return () => abortRef.current?.abort();
   }, [deviceId, enabled, load]);
 
-  return { tags, loading, error, reload: load };
+  return { tags, loading, loaded, error, reload: load };
 }

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceDetails, DeviceAudioDetails } from '../../../../../Bindings';
 import { createNeoMuiTheme } from '../../../mui-theme';
 import { DeviceDetailsPage } from '.././index';
+import { DeviceDetailsSection } from '../page-route';
 import {
   listDeviceAudio,
   getDeviceAudioDetail,
@@ -151,6 +152,7 @@ beforeEach(() => {
   });
   pageMock.useDeviceAnalyticsTags.mockReturnValue({
     tags: [],
+    loaded: true,
     loading: false,
     error: null,
     reload: vi.fn(),
@@ -168,11 +170,11 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderPage(authUserRoles: string[] = ['Cyber']) {
+function renderPage(authUserRoles: string[] = ['Cyber'], section = DeviceDetailsSection.Overview) {
   act(() => {
     root?.render(
       <ThemeProvider theme={testTheme}>
-        <DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={authUserRoles} />
+        <DeviceDetailsPage deviceId={DEVICE_ID} authUserRoles={authUserRoles} section={section} />
       </ThemeProvider>,
     );
   });
@@ -182,7 +184,7 @@ describe('DeviceDetailsPage layout', () => {
   it('renders target device metadata and only the supported edit action', () => {
     renderPage();
 
-    const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
+    const leftPanel = container?.querySelector('[data-testid="device-details-overview"]');
     const leftPanelText = leftPanel?.textContent ?? '';
     const deviceNameLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
       (element) => element.textContent === activeDevice.name,
@@ -210,14 +212,16 @@ describe('DeviceDetailsPage layout', () => {
     expect(deviceNameLink?.querySelector('[data-testid="OpenInNewIcon"]')).not.toBeNull();
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
-    const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
-    expect(tabs).toHaveLength(4);
-    expect(tabs.map((tab) => tab.textContent)).toEqual([
-      'Аналітичні відомості',
-      'Файли',
-      'Журнал',
-      'Аудіо',
+    const links = Array.from(
+      container?.querySelectorAll('nav[aria-label="Меню пристрою"] a') ?? [],
+    );
+    expect(container?.querySelector('[role="tab"]')).toBeNull();
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      `/devices/${DEVICE_ID}/files`,
+      `/devices/${DEVICE_ID}/journal`,
+      `/devices/${DEVICE_ID}/audio`,
     ]);
+    expect(links.map((link) => link.textContent)).toEqual(['Файли', 'Журнал', 'Аудіо']);
     expect(
       container
         ?.querySelector('[data-testid="device-analytics-panel"]')
@@ -231,10 +235,10 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('[data-testid="device-file-content-pane"]')).toBeNull();
     expect(container?.querySelector('button[aria-label="Згорнути ліву панель"]')).not.toBeNull();
 
-    const journalTab = tabs.find((tab) => tab.textContent === 'Журнал');
-    act(() => journalTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    renderPage(['Cyber'], DeviceDetailsSection.Journal);
 
-    expect(container?.querySelector('[data-testid="device-details-left-panel"]')).not.toBeNull();
+    expect(container?.querySelector('[data-testid="device-details-navigation"]')).toBeNull();
+    expect(container?.querySelector('button[aria-label="До пристрою"]')).not.toBeNull();
     expect(container?.querySelector('[data-testid="device-file-journal"]')).not.toBeNull();
     expect(container?.querySelector('[data-testid="device-files-sidebar"]')).toBeNull();
     expect(pageMock.useDeviceFileJournal).toHaveBeenLastCalledWith({
@@ -244,10 +248,10 @@ describe('DeviceDetailsPage layout', () => {
       tagFilter: { tagIds: [], tagMatch: 'any', untagged: false },
     });
 
-    const filesTab = tabs.find((tab) => tab.textContent === 'Файли');
-    act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    renderPage(['Cyber'], DeviceDetailsSection.Files);
+    expect(container?.querySelector('[data-testid="device-details-navigation"]')).toBeNull();
 
-    expect(container?.querySelector('[data-testid="device-details-left-panel"]')).toBeNull();
+    expect(container?.querySelector('[data-testid="device-details-overview"]')).toBeNull();
     const filesSidebar = container?.querySelector('[data-testid="device-files-sidebar"]');
     expect(filesSidebar).not.toBeNull();
     expect(filesSidebar?.closest('[hidden]')).toBeNull();
@@ -283,7 +287,7 @@ describe('DeviceDetailsPage layout', () => {
 
     renderPage();
 
-    const leftPanel = container?.querySelector('[data-testid="device-details-left-panel"]');
+    const leftPanel = container?.querySelector('[data-testid="device-details-overview"]');
     const deviceNameLink = Array.from(leftPanel?.querySelectorAll('a') ?? []).find(
       (element) => element.textContent === activeDevice.name,
     );
@@ -309,10 +313,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(container?.querySelector('button[aria-label="Редагувати пристрій"]')).toBeNull();
     expect(container?.textContent).not.toContain('Відновити');
     expect(container?.querySelector('[aria-label="Архівний"]')).not.toBeNull();
-    const filesTab = Array.from(container?.querySelectorAll('[role="tab"]') ?? []).find(
-      (tab) => tab.textContent === 'Файли',
-    );
-    act(() => filesTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    renderPage(['Cyber'], DeviceDetailsSection.Files);
     const filesSidebar = container?.querySelector('[data-testid="device-files-sidebar"]');
     expect(filesSidebar).not.toBeNull();
     expect(container?.querySelector('[data-testid="device-file-content-pane"]')).not.toBeNull();
@@ -327,12 +328,9 @@ it('keeps_audio_usable_when_file_sessions_fail', async () => {
     refreshVersion: 0,
     refresh: vi.fn(),
   });
-  await act(async () => renderPage(['Cyber']));
-  const tab = container!.querySelector<HTMLButtonElement>('#device-details-audio-tab')!;
-  await act(async () => tab.click());
-  expect(
-    container!.querySelector('#device-details-audio-panel')?.getAttribute('aria-labelledby'),
-  ).toBe(tab.id);
+  await act(async () => renderPage(['Cyber'], DeviceDetailsSection.Audio));
+  expect(container!.querySelector('[role="region"][aria-label="Аудіо"]')).not.toBeNull();
+  expect(container!.querySelector('[data-testid="device-details-navigation"]')).toBeNull();
   expect(container!.textContent).toContain('Аудіоматеріалів немає.');
   expect(container!.textContent).not.toContain('Сесія недоступна');
   expect(vi.mocked(listDeviceAudio)).toHaveBeenCalledWith(
@@ -409,8 +407,7 @@ it('#3645 reopens the same mobile audio with manual text after returning from th
     )!;
   const row = () => container!.querySelector<HTMLButtonElement>('[data-audio-id="audio-one"]')!;
   try {
-    await act(async () => renderPage());
-    await act(async () => button('Аудіо').click());
+    await act(async () => renderPage(['Cyber'], DeviceDetailsSection.Audio));
     await act(async () => row().click());
     await act(async () => button('Автоматична').click());
     expect(container!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe(
@@ -423,8 +420,8 @@ it('#3645 reopens the same mobile audio with manual text after returning from th
     expect(container!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('manual text');
     expect(button('Ручна').getAttribute('aria-pressed')).toBe('true');
     await act(async () => button('Автоматична').click());
-    await act(async () => button('Аналітика').click());
-    await act(async () => button('Аудіо').click());
+    await act(async () => renderPage());
+    await act(async () => renderPage(['Cyber'], DeviceDetailsSection.Audio));
     expect(container!.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('manual text');
   } finally {
     media.mockRestore();

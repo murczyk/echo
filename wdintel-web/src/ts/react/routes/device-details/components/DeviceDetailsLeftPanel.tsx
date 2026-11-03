@@ -1,6 +1,18 @@
 import { AuthorLabel } from '../../../components/AuthorLabel';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import { Box, Chip, Divider, Link, Skeleton, Stack, Typography } from '@mui/material';
+import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
+  Box,
+  Chip,
+  Divider,
+  Link,
+  Skeleton,
+  Stack,
+  Typography,
+} from '@mui/material';
 import type { ReactNode } from 'react';
 
 import type { DeviceDetails } from '../../../../../Bindings';
@@ -10,6 +22,7 @@ import { formatDeviceLifecycleLabel } from '../helpers';
 type Props = {
   device: DeviceDetails | null;
   loading: boolean;
+  embedded?: boolean;
 };
 
 type FieldConfig = {
@@ -43,59 +56,53 @@ function DeviceDetailsLeftPanelSkeleton() {
   );
 }
 
-function FieldRow({ label, value }: { label: string; value: ReactNode }) {
+function FieldList({
+  fields,
+  horizontal = false,
+}: {
+  fields: FieldConfig[];
+  horizontal?: boolean;
+}) {
   return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '180px minmax(0,1fr)' },
-        gap: 1,
-        alignItems: 'start',
-        minWidth: 0,
-      }}
+    <dl
+      className={
+        horizontal
+          ? `m-0 grid grid-cols-1 gap-echo-lg echo-sm:grid-cols-2 ${fields.length === 3 ? 'echo-xl:grid-cols-3' : 'echo-xl:grid-cols-5'}`
+          : 'm-0 flex flex-col gap-echo-lg'
+      }
     >
-      <Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 600 }}>
-        {label}
-      </Typography>
-      <Box sx={{ minWidth: 0 }}>{value}</Box>
-    </Box>
+      {fields.map((field) => (
+        <div key={field.key} className="min-w-0">
+          <dt className="mb-echo-sm font-medium">{field.label}</dt>
+          <dd className="m-0 min-w-0">{field.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
 function SectionTitle({ children }: { children: ReactNode }) {
   return (
-    <Typography
-      variant="overline"
-      sx={{
-        display: 'block',
-        fontSize: '0.95rem',
-        lineHeight: 1.2,
-        fontWeight: 700,
-        letterSpacing: '0.04em',
-        color: 'text.primary',
-      }}
-    >
+    <Typography component="h3" variant="overline" fontWeight={400}>
       {children}
     </Typography>
   );
 }
 
-function FieldList({ fields }: { fields: FieldConfig[] }) {
+function DeviceSection({
+  title,
+  fields,
+  horizontal = false,
+}: {
+  title?: string;
+  fields: FieldConfig[];
+  horizontal?: boolean;
+}) {
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {fields.map((field) => (
-        <FieldRow key={field.key} label={field.label} value={field.value} />
-      ))}
-    </Box>
-  );
-}
-
-function DeviceSection({ title, fields }: { title: string; fields: FieldConfig[] }) {
-  return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <SectionTitle>{title}</SectionTitle>
-      <FieldList fields={fields} />
-    </Box>
+    <section className="flex flex-col gap-echo-md p-echo-lg">
+      {title ? <SectionTitle>{title}</SectionTitle> : null}
+      <FieldList fields={fields} horizontal={horizontal} />
+    </section>
   );
 }
 
@@ -234,18 +241,25 @@ function buildAdditionalFields(device: DeviceDetails): FieldConfig[] {
   ];
 }
 
-function DeviceCustomFieldsSection({ device }: { device: DeviceDetails }) {
+function DeviceCustomFieldsSection({
+  device,
+  horizontal,
+}: {
+  device: DeviceDetails;
+  horizontal: boolean;
+}) {
   const customFields = Object.entries(device.customFields).sort(([left], [right]) =>
     left.localeCompare(right),
   );
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <section className="flex flex-col gap-echo-md p-echo-lg">
       <SectionTitle>Кастомні поля</SectionTitle>
       {customFields.length === 0 ? (
         <DeviceTextValue muted>Кастомні поля відсутні.</DeviceTextValue>
       ) : (
         <FieldList
+          horizontal={horizontal}
           fields={customFields.map(([key, value]) => ({
             key,
             label: key,
@@ -253,47 +267,78 @@ function DeviceCustomFieldsSection({ device }: { device: DeviceDetails }) {
           }))}
         />
       )}
-    </Box>
+    </section>
   );
 }
 
-function DeviceLeftPanelContent({ device }: { device: DeviceDetails }) {
+function DeviceLeftPanelContent({
+  device,
+  horizontal = false,
+}: {
+  device: DeviceDetails;
+  horizontal?: boolean;
+}) {
   return (
     <>
-      <DeviceSection title="Основне" fields={buildMainFields(device)} />
+      <DeviceSection
+        title={horizontal ? undefined : 'Основне'}
+        fields={buildMainFields(device)}
+        horizontal={horizontal}
+      />
       <Divider />
-      <DeviceCustomFieldsSection device={device} />
+      <DeviceCustomFieldsSection device={device} horizontal={horizontal} />
       <Divider />
-      <DeviceSection title="Додатково" fields={buildAdditionalFields(device)} />
+      <DeviceSection
+        title="Додатково"
+        fields={buildAdditionalFields(device)}
+        horizontal={horizontal}
+      />
     </>
   );
 }
 
-export function DeviceDetailsLeftPanel({ device, loading }: Props) {
+export function DeviceDetailsLeftPanel({ device, loading, embedded = false }: Props) {
+  const content =
+    loading && device === null ? (
+      <DeviceDetailsLeftPanelSkeleton />
+    ) : device ? (
+      <DeviceLeftPanelContent device={device} horizontal={embedded} />
+    ) : null;
+
+  if (embedded) {
+    return (
+      <Accordion
+        disableGutters
+        variant="outlined"
+        data-testid="device-details-overview"
+        className="!m-0 !rounded-echo-xl !bg-echo-background before:!hidden"
+      >
+        <AccordionSummary
+          expandIcon={<ChevronRightIcon />}
+          id="device-overview-header"
+          aria-controls="device-overview-content"
+          className="!min-h-[64px]"
+          sx={{
+            '& .MuiAccordionSummary-expandIconWrapper.Mui-expanded': { transform: 'rotate(90deg)' },
+          }}
+        >
+          <Typography component="h2" variant="h5" fontWeight={400}>
+            Основне
+          </Typography>
+        </AccordionSummary>
+        <AccordionDetails id="device-overview-content" className="!p-0">
+          {content}
+        </AccordionDetails>
+      </Accordion>
+    );
+  }
+
   return (
     <aside
       data-testid="device-details-left-panel"
-      className="h-full min-h-0 flex flex-col box-border overflow-auto bg-echo-surface border border-echo-border rounded-echo-md"
+      className="h-full min-h-0 overflow-auto rounded-echo-md border border-echo-border bg-echo-surface"
     >
-      <Box
-        sx={{
-          minHeight: 0,
-          p: 2,
-          pr: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2.5,
-          boxSizing: 'border-box',
-          overflow: 'visible',
-          position: 'relative',
-        }}
-      >
-        {loading && device === null ? (
-          <DeviceDetailsLeftPanelSkeleton />
-        ) : device ? (
-          <DeviceLeftPanelContent device={device} />
-        ) : null}
-      </Box>
+      {content}
     </aside>
   );
 }

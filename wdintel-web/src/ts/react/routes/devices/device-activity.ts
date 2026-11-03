@@ -56,6 +56,15 @@ export function buildDeviceActivity(
   return buildActivityDays(stats.days, days, currentYear);
 }
 
+export function buildDeviceAudioActivity(days: DeviceAudioDayStat[]): DeviceActivityDay[] {
+  return buildUploadActivityDays(
+    [],
+    days,
+    [...new Set(days.map(({ day }) => day))].sort(),
+    currentKyivYear(),
+  );
+}
+
 export type DeviceRecentActivity =
   /** Exactly the `DEVICE_LIST_ACTIVITY_DAYS` days ending today. */
   | { kind: 'recent'; days: DeviceActivityDay[] }

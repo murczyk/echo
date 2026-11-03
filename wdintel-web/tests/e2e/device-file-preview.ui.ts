@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, type Page } from '@playwright/test';
 import {
   localFilePreviewBackend,
@@ -93,7 +94,7 @@ export async function openDeviceFilePreviewEntry(
   const reader = await backend.login('reader');
   await page.context().addCookies((await reader.storageState()).cookies);
   await page.goto(`/devices/${backend.fixtures.deviceId}`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+  await openDeviceSection(page, 'Файли');
   await page
     .getByRole('button', { name: /Вибрати каталог C:/ })
     .first()

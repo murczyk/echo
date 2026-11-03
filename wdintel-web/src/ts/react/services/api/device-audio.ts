@@ -1,4 +1,6 @@
 import type {
+  DeviceAudioActivityReq,
+  DeviceAudioActivityRsp,
   DeviceAudioAsrSettingsReq,
   DeviceAudioAsrSettingsRsp,
   SetDeviceAudioAsrSettingsReq,
@@ -19,6 +21,15 @@ import type {
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { headResponse, postJson, type RequestOptions } from './client';
+
+export async function getDeviceAudioActivity(
+  req: DeviceAudioActivityReq,
+  options?: RequestOptions,
+): Promise<DeviceAudioActivityRsp> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/audio/activity', transformCamelToSnake(req), options),
+  );
+}
 
 export async function listDeviceAudio(
   req: ListDeviceAudioReq,

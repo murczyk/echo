@@ -6,6 +6,20 @@ use uuid::Uuid;
 
 #[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct DeviceAudioActivityReq {
+    #[serde(deserialize_with = "deserialize_canonical_uuid")]
+    pub device_id: String,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeviceAudioActivityRsp {
+    pub uploaded_count: u64,
+    pub days: Vec<crate::devices::devices::types::DeviceAudioDayStat>,
+}
+
+#[derive(Elm, ElmEncode, ElmDecode, Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DeviceAudio {
     pub id: String,
     pub device_id: String,

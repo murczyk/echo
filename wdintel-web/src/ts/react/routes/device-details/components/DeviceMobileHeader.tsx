@@ -2,7 +2,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import HistoryIcon from '@mui/icons-material/History';
 import InfoIcon from '@mui/icons-material/Info';
-import { Skeleton } from '@mui/material';
 
 import type { DeviceDetails, SyncSummary } from '../../../../../Bindings';
 import { PowerButton } from '../../../components/PowerButton';
@@ -11,9 +10,16 @@ import { navigateWithinSpa } from '../../../utils/browser';
 import { formatDeviceLifecycleLabel } from '../helpers';
 import { DeviceSyncSessionFilter } from './DeviceSyncSessionFilter';
 import { selectDeviceSyncSession } from '../url-state';
+import { DeviceAudioForwardingWarning } from './DeviceAudioForwardingWarning';
+import type { DeviceDetailsSection } from '../page-route';
+import { DeviceBreadcrumbs } from './DeviceBreadcrumbs';
 
 export function DeviceMobileHeader({
   device,
+  deviceId,
+  section,
+  backHref,
+  backLabel,
   canEdit,
   editSubmitting,
   onEdit,
@@ -23,11 +29,15 @@ export function DeviceMobileHeader({
   session,
 }: {
   device: DeviceDetails | null;
+  deviceId: string;
+  section: DeviceDetailsSection;
+  backHref: string;
+  backLabel: string;
   canEdit: boolean;
   editSubmitting: boolean;
   onEdit: () => void;
   onInfo: () => void;
-  onSessions: () => void;
+  onSessions?: () => void;
   syncId: string | null;
   session: SyncSummary | null;
 }) {
@@ -36,15 +46,19 @@ export function DeviceMobileHeader({
       <div className="flex min-w-0 items-center gap-echo-sm">
         <PowerIconButton
           className="!size-echo-control-lg shrink-0"
-          aria-label="До списку пристроїв"
-          onClick={() => navigateWithinSpa('/devices')}
+          aria-label={backLabel}
+          onClick={() => navigateWithinSpa(backHref)}
         >
           <ArrowBackIcon />
         </PowerIconButton>
         <div className="min-w-0 flex-1">
-          <h1 className="m-0 text-[17px]! font-semibold! [overflow-wrap:anywhere]">
-            {device ? (device.name ?? 'Без назви') : <Skeleton />}
-          </h1>
+          <div className="text-[17px] font-semibold">
+            <DeviceBreadcrumbs
+              deviceId={deviceId}
+              deviceName={device ? (device.name ?? 'Без назви') : null}
+              section={section}
+            />
+          </div>
           {device ? (
             <span
               className={
@@ -57,6 +71,7 @@ export function DeviceMobileHeader({
             </span>
           ) : null}
         </div>
+        <DeviceAudioForwardingWarning configured={device?.audioForwardingConfigured} />
         {canEdit ? (
           <PowerIconButton
             className="!size-echo-control-lg shrink-0"
@@ -68,7 +83,7 @@ export function DeviceMobileHeader({
           </PowerIconButton>
         ) : null}
       </div>
-      <div className="grid grid-cols-2 gap-echo-sm">
+      <div className={onSessions ? 'grid grid-cols-2 gap-echo-sm' : 'grid gap-echo-sm'}>
         <PowerButton
           className="!min-h-echo-control-lg"
           variant="outlined"
@@ -77,14 +92,16 @@ export function DeviceMobileHeader({
         >
           Про пристрій
         </PowerButton>
-        <PowerButton
-          className="!min-h-echo-control-lg"
-          variant="outlined"
-          startIcon={<HistoryIcon />}
-          onClick={onSessions}
-        >
-          Сесії
-        </PowerButton>
+        {onSessions ? (
+          <PowerButton
+            className="!min-h-echo-control-lg"
+            variant="outlined"
+            startIcon={<HistoryIcon />}
+            onClick={onSessions}
+          >
+            Сесії
+          </PowerButton>
+        ) : null}
       </div>
       {syncId !== null ? (
         <div className="min-w-0">

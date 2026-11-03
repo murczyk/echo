@@ -124,7 +124,8 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
     );
   }
 
-  const file = context.files.get(href ?? '');
+  const fileHref = href?.replace(/^(\/devices\/[^/?]+)\?/, '$1/files?');
+  const file = context.files.get(fileHref ?? '');
   if (file) return <FileCitationChip source={file} />;
   if (href?.startsWith('/devices/') && href.includes('?file='))
     return <EchoChip label="Неперевірене джерело" />;

@@ -30,6 +30,48 @@ group by 1, 2
 order by 1, 2
 "#;
 
+const READ_FULL_AUDIO_DAYS_SQL: &str = r#"
+select (created_at at time zone $2)::date as day,
+       count(*)::bigint as content_count,
+       sum(source_size_bytes)::bigint as content_bytes
+from device_audio
+where device_id = $1
+group by 1
+order by 1
+"#;
+
+pub(in crate::devices) async fn read_full(
+    db: &DatabaseConnection,
+    device_id: Uuid,
+) -> Result<Vec<DeviceAudioDayStat>> {
+    let rows = db
+        .query_all_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            READ_FULL_AUDIO_DAYS_SQL,
+            [device_id.into(), DEVICE_STATS_TIMEZONE.into()],
+        ))
+        .await
+        .context(h!())?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(DeviceAudioDayStat {
+                day: row
+                    .try_get::<NaiveDate>("", "day")
+                    .context(h!())?
+                    .to_string(),
+                content_count: u64::try_from(
+                    row.try_get::<i64>("", "content_count").context(h!())?,
+                )
+                .context(h!())?,
+                content_bytes: u64::try_from(
+                    row.try_get::<i64>("", "content_bytes").context(h!())?,
+                )
+                .context(h!())?,
+            })
+        })
+        .collect()
+}
+
 pub(in crate::devices) async fn read_recent_or_none(
     db: &DatabaseConnection,
     device_ids: &[Uuid],

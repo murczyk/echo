@@ -3,6 +3,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import SaveIcon from '@mui/icons-material/Save';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import UnarchiveIcon from '@mui/icons-material/Unarchive';
+import { DeviceStatsRebuildAction } from './DeviceStatsRebuildAction';
 import { DeviceMetadataFields } from './DeviceMetadataFields';
 import {
   Autocomplete,
@@ -39,6 +40,8 @@ type Props = {
   open: boolean;
   deviceId?: string;
   archived?: boolean;
+  canRebuildStats?: boolean;
+  onStatsRebuilt?: () => void;
   mode: 'create' | 'edit';
   fieldPermissions: DeviceFieldPermissions;
   form: DeviceUpsertForm | null;
@@ -75,6 +78,8 @@ export function DeviceUpsertDrawer({
   open,
   deviceId,
   archived = false,
+  canRebuildStats = false,
+  onStatsRebuilt,
   mode,
   fieldPermissions,
   form,
@@ -325,6 +330,14 @@ export function DeviceUpsertDrawer({
                 </>
               ) : null}
             </>
+          ) : null}
+          {open && mode === 'edit' && deviceId && canRebuildStats ? (
+            <DeviceStatsRebuildAction
+              key={deviceId}
+              deviceId={deviceId}
+              disabled={saving}
+              onRebuilt={onStatsRebuilt}
+            />
           ) : null}
         </Stack>
       </Box>

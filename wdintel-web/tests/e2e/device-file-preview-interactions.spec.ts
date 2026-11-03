@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -645,7 +646,7 @@ async function customSource(
 async function openCustom(page: Page, backend: FilePreviewBackend, source: Source) {
   await page.context().addCookies((await (await backend.login('reader')).storageState()).cookies);
   await page.goto(`/devices/${backend.fixtures.deviceId}`);
-  await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+  await openDeviceSection(page, 'Файли');
   await page
     .getByRole('button', { name: /Вибрати каталог C:/ })
     .first()

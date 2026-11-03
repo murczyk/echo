@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { act, type ReactNode } from 'react';
+import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -7,24 +7,24 @@ import { DeviceAnalyticsPanel } from '.././DeviceAnalyticsPanel';
 
 const mocks = vi.hoisted(() => ({
   getDeviceAnalyticsSummary: vi.fn(),
-  listDeviceAnalyticsFiles: vi.fn(),
   reanalyzeDevice: vi.fn(),
   redirectToLogin: vi.fn(),
+  getDeviceAudioActivity: vi.fn(),
 }));
 
 vi.mock('../../../../services/api/devices', () => ({
   getDeviceAnalyticsSummary: mocks.getDeviceAnalyticsSummary,
-  listDeviceAnalyticsFiles: mocks.listDeviceAnalyticsFiles,
   reanalyzeDevice: mocks.reanalyzeDevice,
+}));
+
+vi.mock('../../../../services/api/device-audio', () => ({
+  getDeviceAudioActivity: mocks.getDeviceAudioActivity,
 }));
 
 vi.mock('../../../../auth-redirect', () => ({ redirectToLogin: mocks.redirectToLogin }));
 
-vi.mock('../../../device-files/components/DeviceAnalyticsTagFilterControls', () => ({
-  DeviceAnalyticsTagFilterControls: () => <div>Фільтри тегів</div>,
-}));
-
 const tagsState = {
+  loaded: true,
   tags: [
     { id: 'tag-1', name: 'Звіти' },
     { id: 'tag-2', name: 'Архіви' },
@@ -39,6 +39,10 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.getDeviceAudioActivity.mockResolvedValue({
+    uploadedCount: 3,
+    days: [{ day: '2026-11-02', contentCount: 3, contentBytes: 3000 }],
+  });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -55,10 +59,7 @@ async function flush() {
   });
 }
 
-function renderPanel(
-  onTagFilterChange = vi.fn(),
-  options: { isAdmin?: boolean; children?: ReactNode } = {},
-) {
+function renderPanel(options: { isAdmin?: boolean } = {}) {
   act(() => {
     root.render(
       <DeviceAnalyticsPanel
@@ -66,8 +67,6 @@ function renderPanel(
         enabled
         isAdmin={options.isAdmin ?? false}
         tagsState={tagsState}
-        tagFilter={{ tagIds: [], tagMatch: 'any', untagged: false }}
-        onTagFilterChange={onTagFilterChange}
       />,
     );
   });
@@ -89,7 +88,7 @@ function bodyButtonContaining(text: string): HTMLButtonElement {
   return button;
 }
 describe('DeviceAnalyticsPanel', () => {
-  it('renders only active tags with files and lazily paginates a generic tag widget', async () => {
+  it('renders only active tags with files and preserves file counters', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
       totalFileCount: 18,
       filesWithContentCount: 7,
@@ -102,63 +101,15 @@ describe('DeviceAnalyticsPanel', () => {
         },
       ],
     });
-    mocks.listDeviceAnalyticsFiles
-      .mockResolvedValueOnce({
-        files: [
-          {
-            fileId: 'file-1',
-            name: 'report.pdf',
-            absolutePath: 'C:\\reports\\report.pdf',
-            fileEntryCreatedAt: '2026-08-06T12:00:00Z',
-          },
-        ],
-        nextCursor: 'cursor-1',
-      })
-      .mockResolvedValueOnce({
-        files: [
-          {
-            fileId: 'file-2',
-            name: 'report-2.pdf',
-            absolutePath: 'C:\\reports\\report-2.pdf',
-            fileEntryCreatedAt: '2026-08-06T11:00:00Z',
-          },
-        ],
-        nextCursor: null,
-      });
-    const onTagFilterChange = vi.fn();
-
-    renderPanel(onTagFilterChange);
+    renderPanel();
     await flush();
 
     expect(container.textContent).toContain('Файлів з контентом / усього7/18');
-    expect(container.textContent).toContain('Проаналізовано файлів12');
+    expect(container.textContent).toContain('Завантажено аудіо3');
     expect(container.textContent).toContain('Звіти');
     expect(container.textContent).not.toContain('Архіви');
     expect(container.textContent).toContain('5 файлів');
     expect(container.textContent).not.toContain('0 файлів');
-
-    act(() => buttonContaining('Звіти').click());
-    await flush();
-    expect(mocks.listDeviceAnalyticsFiles).toHaveBeenCalledWith(
-      { deviceId: 'device-1', syncId: null, tagId: 'tag-1', limit: 10, cursor: null },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-    expect(container.textContent).toContain('report.pdf');
-
-    act(() => buttonContaining('Використати як фільтр').click());
-    expect(onTagFilterChange).toHaveBeenCalledWith({
-      tagIds: ['tag-1'],
-      tagMatch: 'any',
-      untagged: false,
-    });
-
-    act(() => buttonContaining('Завантажити ще').click());
-    await flush();
-    expect(mocks.listDeviceAnalyticsFiles).toHaveBeenLastCalledWith(
-      { deviceId: 'device-1', syncId: null, tagId: 'tag-1', limit: 10, cursor: 'cursor-1' },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
-    expect(container.textContent).toContain('report-2.pdf');
   });
 
   it('shows an empty state when active tags have no files', async () => {
@@ -182,8 +133,8 @@ describe('DeviceAnalyticsPanel', () => {
     expect(container.textContent).not.toContain('0 файлів');
   });
 
-  it('keeps a failed widget retryable and exposes device reanalysis only to Admin', async () => {
-    mocks.getDeviceAnalyticsSummary.mockResolvedValue({
+  it('keeps failed analytics retryable and confirms device reanalysis for Admin', async () => {
+    mocks.getDeviceAnalyticsSummary.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({
       totalFileCount: 1,
       filesWithContentCount: 1,
       analyzedFileCount: 1,
@@ -195,21 +146,16 @@ describe('DeviceAnalyticsPanel', () => {
         },
       ],
     });
-    mocks.listDeviceAnalyticsFiles
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockResolvedValueOnce({ files: [], nextCursor: null });
     mocks.reanalyzeDevice.mockResolvedValue({ run: { runId: 'run-1' } });
 
-    renderPanel(vi.fn(), { isAdmin: true });
+    renderPanel({ isAdmin: true });
     await flush();
-    act(() => buttonContaining('Звіти').click());
-    await flush();
-    expect(container.textContent).toContain('Помилка завантаження файлів тегу «Звіти»');
+    expect(container.textContent).toContain('Помилка завантаження аналітичних відомостей');
 
     act(() => buttonContaining('Повторити').click());
     await flush();
-    expect(mocks.listDeviceAnalyticsFiles).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain('Файлів із цим тегом немає.');
+    expect(container.textContent).not.toContain('Помилка завантаження аналітичних відомостей');
+    expect(container.textContent).toContain('Звіти');
 
     act(() => buttonContaining('Запустити повторний аналіз пристрою').click());
     await flush();

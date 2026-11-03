@@ -1,4 +1,4 @@
-import { Box, FormControlLabel, Stack, Switch, TextField, Typography } from '@mui/material';
+import { FormControlLabel, Switch, TextField, Typography } from '@mui/material';
 
 import type { AnalyticsTag, TagMatch } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -23,7 +23,7 @@ export function DeviceAnalyticsTagFilterControls({
     .filter((tag): tag is AnalyticsTag => tag !== undefined);
 
   return (
-    <Box component="section" aria-labelledby="device-tag-filter-title">
+    <section aria-labelledby="device-tag-filter-title" className="min-w-0">
       <Typography id="device-tag-filter-title" variant="subtitle2" sx={{ mb: 1 }}>
         Фільтр за тегами
       </Typography>
@@ -41,12 +41,12 @@ export function DeviceAnalyticsTagFilterControls({
           {tagsState.error.message}
         </PowerAlert>
       ) : null}
-      <Stack
-        direction={compact ? 'column' : { xs: 'column', md: 'row' }}
-        spacing={1.5}
-        useFlexGap
-        flexWrap="wrap"
-        alignItems={compact ? 'stretch' : { md: 'flex-start' }}
+      <div
+        className={
+          compact
+            ? 'flex min-w-0 flex-col gap-echo-md'
+            : 'grid min-w-0 grid-cols-1 items-start gap-echo-md echo-md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]'
+        }
       >
         <PowerAutocomplete<AnalyticsTag>
           options={tagsState.tags}
@@ -67,7 +67,7 @@ export function DeviceAnalyticsTagFilterControls({
               size="small"
             />
           )}
-          sx={compact ? { minWidth: 0 } : { minWidth: 0, flex: { xs: 1, md: '1 1 320px' } }}
+          className="min-w-0"
         />
         <TextField
           select
@@ -77,7 +77,7 @@ export function DeviceAnalyticsTagFilterControls({
           disabled={filter.untagged || filter.tagIds.length < 2}
           fullWidth={compact}
           onChange={(event) => onChange({ ...filter, tagMatch: event.target.value as TagMatch })}
-          sx={compact ? undefined : { width: 150, maxWidth: '100%' }}
+          className="min-w-0"
           SelectProps={{ native: true }}
         >
           <option value="any">Будь-який</option>
@@ -95,7 +95,7 @@ export function DeviceAnalyticsTagFilterControls({
           label="Без тегів"
           sx={{ minHeight: 40, m: 0, whiteSpace: 'nowrap' }}
         />
-      </Stack>
-    </Box>
+      </div>
+    </section>
   );
 }

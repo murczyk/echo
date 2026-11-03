@@ -7704,6 +7704,32 @@ receiveDeviceAudioRspEncoder struct =
         ]
 
 
+type alias DeviceAudioActivityReq =
+    { deviceId : String
+    }
+
+
+deviceAudioActivityReqEncoder : DeviceAudioActivityReq -> Json.Encode.Value
+deviceAudioActivityReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        ]
+
+
+type alias DeviceAudioActivityRsp =
+    { uploadedCount : Int
+    , days : List (DeviceAudioDayStat)
+    }
+
+
+deviceAudioActivityRspEncoder : DeviceAudioActivityRsp -> Json.Encode.Value
+deviceAudioActivityRspEncoder struct =
+    Json.Encode.object
+        [ ( "uploaded_count", (Json.Encode.int) struct.uploadedCount )
+        , ( "days", (Json.Encode.list (deviceAudioDayStatEncoder)) struct.days )
+        ]
+
+
 type alias ListDeviceAudioReq =
     { deviceId : String
     , unprocessedOnly : Bool
@@ -25196,6 +25222,19 @@ receiveDeviceAudioRspDecoder : Json.Decode.Decoder ReceiveDeviceAudioRsp
 receiveDeviceAudioRspDecoder =
     Json.Decode.succeed ReceiveDeviceAudioRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "audio" (deviceAudioDecoder)))
+
+
+deviceAudioActivityReqDecoder : Json.Decode.Decoder DeviceAudioActivityReq
+deviceAudioActivityReqDecoder =
+    Json.Decode.succeed DeviceAudioActivityReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+
+
+deviceAudioActivityRspDecoder : Json.Decode.Decoder DeviceAudioActivityRsp
+deviceAudioActivityRspDecoder =
+    Json.Decode.succeed DeviceAudioActivityRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uploaded_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "days" (Json.Decode.list (deviceAudioDayStatDecoder))))
 
 
 listDeviceAudioReqDecoder : Json.Decode.Decoder ListDeviceAudioReq

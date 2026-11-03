@@ -963,6 +963,15 @@ shouldRedirectUnauthorizedPage path user =
         Route.Path.Devices_Id_ _ ->
             not (Core.Auth.canReadDevices user)
 
+        Route.Path.Devices_Id__Files _ ->
+            not (Core.Auth.canReadDevices user)
+
+        Route.Path.Devices_Id__Journal _ ->
+            not (Core.Auth.canReadDevices user)
+
+        Route.Path.Devices_Id__Audio _ ->
+            not (Core.Auth.canReadDevices user)
+
         _ ->
             Shared.Components.AdminRoute.adminRouteIsBlocked path user
 

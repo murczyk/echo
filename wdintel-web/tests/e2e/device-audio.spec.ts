@@ -1,3 +1,4 @@
+import { openDeviceSection } from './device-pages.ui';
 import './device-audio-settings';
 import './device-audio-processing';
 import './device-audio-text';
@@ -110,8 +111,8 @@ test('@regression device audio accepts real TUS independently of FileSync and re
       try {
         const page = await context.newPage();
         await page.goto(`/devices/${device.id}?sync_id=${randomUUID()}`);
-        await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
-        const panel = page.getByRole('tabpanel', { name: 'Аудіо', exact: true });
+        await openDeviceSection(page, 'Аудіо');
+        const panel = page.getByRole('region', { name: 'Аудіо', exact: true });
         const sidebar = page.getByTestId('device-audio-sidebar');
         await expect(sidebar).toBeVisible();
         const filters = sidebar.getByRole('button', { name: 'Фільтри аудіо', exact: true });
@@ -170,7 +171,7 @@ test('@regression device audio accepts real TUS independently of FileSync and re
           await expect(entry.getByRole('img', { name: 'Необроблене', exact: true })).toBeVisible();
         }
         await page.reload();
-        await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+        await openDeviceSection(page, 'Аудіо');
         await expect(sidebar.locator('time')).toHaveCount(10);
         await settings.click();
         await expect(showStart).toHaveAttribute('aria-checked', 'true');
@@ -178,7 +179,7 @@ test('@regression device audio accepts real TUS independently of FileSync and re
         await expect(settings).toBeFocused();
         const selected = sidebar.locator('[data-audio-id]').first();
         await selected.click();
-        await page.getByRole('button', { name: 'Згорнути праву панель' }).click();
+        await expect(page.getByRole('button', { name: /праву панель/ })).toHaveCount(0);
         await expect(selected).toHaveAttribute('aria-pressed', 'true');
         await page.setViewportSize({ width: 390, height: 844 });
         await expect(panel).toBeVisible();
@@ -214,14 +215,14 @@ test('@regression device audio accepts real TUS independently of FileSync and re
           true,
         );
         await page.reload();
-        await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+        await openDeviceSection(page, 'Аудіо');
         await expect(sidebar.locator(`[data-audio-id="${rows[1].id}"]`)).toHaveText(rows[1].name);
         await expect(sidebar.locator('time')).toHaveCount(0);
         await page.screenshot({
           path: testInfo.outputPath(`audio-filenames-${timezoneId.replace('/', '-')}.png`),
         });
         await page.goto(`/devices/${empty.id}`);
-        await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+        await openDeviceSection(page, 'Аудіо');
         await expect(page.getByTestId('device-audio-sidebar')).toContainText(
           'Аудіоматеріалів немає.',
         );
@@ -282,7 +283,7 @@ test('@regression device audio accepts real TUS independently of FileSync and re
     try {
       const page = await context.newPage();
       await page.goto(`/devices/${withFiles.id}?sync_id=${sync.sync.syncId}`);
-      await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(page, 'Аудіо');
       const selected = page.locator('[data-audio-id]');
       await expect(selected).toHaveText('independent.wav');
       await toggleAudioStartTime(page);
@@ -437,7 +438,7 @@ test('@regression device audio retries real list failures and traverses all 51 r
         return route.continue();
       });
       await page.goto(`/devices/${device.id}`);
-      await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+      await openDeviceSection(page, 'Аудіо');
       const panel = page.getByTestId('device-audio-sidebar');
       await expect(panel.getByRole('alert')).toContainText('Помилка завантаження аудіо');
       await expect(panel).not.toContainText('Аудіоматеріалів немає.');
@@ -542,7 +543,7 @@ test.describe('@regression native device audio playback', () => {
   async function open(page: Page, origin = '') {
     await page.context().addCookies((await backend.reader.storageState()).cookies);
     await page.goto(`${origin}/devices/${device.id}`);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     await expect(page.locator('[data-audio-id]')).toHaveCount(11);
   }
 
@@ -747,7 +748,7 @@ test.describe('@regression native device audio playback', () => {
     expect((await nativeState(player)).paused).toBe(false);
     await player.evaluate((element: CustomAudioPlayer) => element.clearABRepeat());
     const old = await remember(player);
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await openDeviceSection(page, 'Файли');
     await expect(page.locator('[data-device-audio-player]')).toHaveCount(0);
     expect(
       await old.evaluate(
@@ -765,7 +766,7 @@ test.describe('@regression native device audio playback', () => {
         (element: CustomAudioPlayer) => element.audio.paused && !element.audio.getAttribute('src'),
       ),
     ).toBe(true);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     player = page.locator('[data-device-audio-player] custom-audio-player');
     await playing(player);
     const deviceOld = await remember(player);
@@ -784,10 +785,11 @@ test.describe('@regression native device audio playback', () => {
       history.pushState({}, '', `/devices/${id}`);
       window.dispatchEvent(new PopStateEvent('popstate'));
     }, device.id);
-    await page.getByRole('tab', { name: 'Аудіо', exact: true }).click();
+    await openDeviceSection(page, 'Аудіо');
     player = await selectAudio(page, wav.id);
     await playing(player);
     const pageOld = await remember(player);
+    await page.getByRole('button', { name: 'До пристрою', exact: true }).click();
     await page.getByRole('button', { name: 'До списку пристроїв', exact: true }).click();
     await expect(page).toHaveURL('/devices');
     await expect(page.locator('device-details-page')).toHaveCount(0);
@@ -927,7 +929,7 @@ test.describe('@regression native device audio playback', () => {
         () => 'rejected',
       ),
     }));
-    await page.getByRole('tab', { name: 'Файли', exact: true }).click();
+    await openDeviceSection(page, 'Файли');
     releaseExit();
     await exitOld.evaluate((element: CustomAudioPlayer) => {
       element.retryCurrentSource();
