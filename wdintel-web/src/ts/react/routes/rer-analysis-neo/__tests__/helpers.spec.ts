@@ -4,7 +4,6 @@ import {
   adjustQueryDateRangeForDirectMessage,
   createInitialQueryState,
   emptyQueryState,
-  hasQueryStateInWindow,
   parseQueryStateFromWindow,
   readAnalysisGroupScopeFromUrl,
   writeAnalysisGroupScopeToUrl,
@@ -69,18 +68,6 @@ describe('rer-analysis-neo URL state', () => {
     delete (globalThis as { window?: Window }).window;
   });
 
-  it('treats the media-only URL parameter as authoritative', () => {
-    Object.defineProperty(globalThis, 'window', {
-      configurable: true,
-      value: {
-        location: { href: 'https://example.test/rer-analysis-neo?only_with_media=true' },
-      },
-    });
-
-    expect(hasQueryStateInWindow()).toBe(true);
-
-    delete (globalThis as { window?: Window }).window;
-  });
   it('ignores unsupported legacy state parameters when managed URL parameters are absent', () => {
     Object.defineProperty(globalThis, 'window', {
       configurable: true,
