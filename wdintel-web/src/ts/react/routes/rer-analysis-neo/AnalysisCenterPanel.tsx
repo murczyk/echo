@@ -465,7 +465,7 @@ export function AnalysisCenterPanel({
               page.groupNavigation.scope.kind === 'group'
                 ? page.groupNavigation.scope.masterKey
                 : 'all'
-            }`}
+            }|${page.linkedMessageLandingKey}`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}

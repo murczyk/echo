@@ -25,6 +25,7 @@ import {
   createInitialQueryState,
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
+  analysisQueryStateUrlKey,
   hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
@@ -71,6 +72,7 @@ import {
   groupFilterScope,
   type GroupScope,
 } from '../shared/group-navigation';
+import { useRouteUrlOwnership } from './use-route-url-ownership';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -152,6 +154,7 @@ export function useRerAnalysisNeoPage(
   authUserName: string | null,
   authUserRoles: readonly string[] = [],
 ): AnalysisPageViewModel {
+  const ownsWindowUrl = useRouteUrlOwnership();
   const [threadMessageId, setThreadMessageId] = useState(readThreadMessageId);
   const exitThread = useCallback(() => {
     const url = new URL(window.location.href);
@@ -244,9 +247,9 @@ export function useRerAnalysisNeoPage(
         return;
       }
       setVisibleMessagesPageIndexState(normalizedPageIndex);
-      writeMessagesPageIndexToWindowUrl(normalizedPageIndex);
+      if (ownsWindowUrl()) writeMessagesPageIndexToWindowUrl(normalizedPageIndex);
     },
-    [initialMessagesPageIndex],
+    [initialMessagesPageIndex, ownsWindowUrl],
   );
   const [rightPanelOpen, setRightPanelOpen] = useState(
     () => initialPanelQueryState.rightPanelOpen ?? false,
@@ -256,6 +259,7 @@ export function useRerAnalysisNeoPage(
   );
   const replyNavigationRef = useRef(false);
   const [replyNavigationVersion, setReplyNavigationVersion] = useState(0);
+  const [linkedMessageLandingKey, setLinkedMessageLandingKey] = useState(0);
   const [loadedReplyTarget, setLoadedReplyTarget] = useState<{ messageId: number } | null>(null);
   const [targetMessageUid, setTargetMessageUid] = useState(() =>
     threadMessageId == null ? parseMessageUidFromWindow() : null,
@@ -496,6 +500,7 @@ export function useRerAnalysisNeoPage(
         fromDateTimeStr: period.fromDateTimeStr,
         toDateTimeStr: period.toDateTimeStr,
       }));
+      if (!ownsWindowUrl()) return;
       pushQueryStateToUrl(period, newestFirst, {
         leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
         rightPanelOpen,
@@ -618,6 +623,7 @@ export function useRerAnalysisNeoPage(
     targetMessageContextActive,
     targetMessageUid,
     replyNavigationVersion,
+    linkedMessageLandingKey,
   ]);
 
   const navigateReply = useCallback<ReplyNavigation>(
@@ -664,6 +670,12 @@ export function useRerAnalysisNeoPage(
     removeMessageUidFromWindowUrl();
   }, []);
 
+  const releaseTargetMessageFocus = useCallback(() => {
+    targetMessageControllerRef.current?.cancel();
+    setTargetMessageFocusActive(false);
+    removeMessageUidFromWindowUrl({ keepInHistory: true });
+  }, []);
+
   const clearTargetMessageContext = useCallback(() => {
     targetMessageControllerRef.current?.cancel();
     setLoadedReplyTarget(null);
@@ -674,32 +686,95 @@ export function useRerAnalysisNeoPage(
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
 
+  const landOnLinkedMessage = useCallback(
+    (reference: string, linkedQueryState: AnalysisQueryState) => {
+      targetMessageControllerRef.current?.cancel();
+      replyNavigationRef.current = false;
+      targetMessageLoadedRef.current = false;
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: linkedQueryState.fromDateTimeStr,
+        toDateTimeStr: linkedQueryState.toDateTimeStr,
+        search: linkedQueryState.search,
+        searchMode: linkedQueryState.searchMode,
+      };
+      setLoadedReplyTarget(null);
+      setDirectMessageError(null);
+      setTargetMessageQueryState(linkedQueryState);
+      setTargetMessageUid(reference);
+      setTargetMessageFocusActive(true);
+      setHighlightTargetMessage(true);
+      setTargetMessageContextActive(true);
+      setTargetMessageContextResponsePending(true);
+      setTargetMessageLoading(true);
+      setLinkedMessageLandingKey((key) => key + 1);
+      setCenterTabState('messages');
+    },
+    [],
+  );
+
+  // Overlay history layers (attachment previews, drawers) pop back to the same URL, so the
+  // handler must only react to what the restored URL actually changes.
   useEffect(() => {
     const onPopState = () => {
-      setThreadMessageId(readThreadMessageId());
-      replyNavigationRef.current = false;
-      clearTargetMessageContext();
-      setTargetMessageUid(null);
+      if (!ownsWindowUrl()) return;
+      const nextThreadMessageId = readThreadMessageId();
+      const linkedReference = nextThreadMessageId == null ? parseMessageUidFromWindow() : null;
       const nextGroupScope = readAnalysisGroupScopeFromUrl();
-      if (!groupScopesEqual(groupScope, nextGroupScope)) {
+      const groupScopeChanged = !groupScopesEqual(groupScope, nextGroupScope);
+      if (groupScopeChanged) {
         groupScopeTransitionRequestedRef.current = true;
       }
       const historyState = initState(parseQueryStateFromWindow(), new Date(), radioFeaturesAllowed);
-      setQueryState((current) =>
-        normalizeQueryState({
-          ...historyState,
-          messageTimeBasis: current.messageTimeBasis,
-          radioFeaturesAllowed: current.radioFeaturesAllowed,
-          groupsSelected:
-            nextGroupScope.kind === 'group'
-              ? [nextGroupScope.masterKey]
-              : historyState.groupsSelected,
-        }),
-      );
+      const nextQueryState = normalizeQueryState({
+        ...historyState,
+        messageTimeBasis: queryState.messageTimeBasis,
+        radioFeaturesAllowed: queryState.radioFeaturesAllowed,
+        groupsSelected:
+          nextGroupScope.kind === 'group'
+            ? [nextGroupScope.masterKey]
+            : historyState.groupsSelected,
+      });
+      const queryStateChanged =
+        analysisQueryStateUrlKey(nextQueryState) !== analysisQueryStateUrlKey(effectiveQueryState);
+      setThreadMessageId(nextThreadMessageId);
+      if (linkedReference != null) {
+        if (
+          linkedReference !== targetMessageUid ||
+          !targetMessageContextActive ||
+          !targetMessageFocusActive
+        ) {
+          landOnLinkedMessage(linkedReference, nextQueryState);
+        }
+      } else if (
+        queryStateChanged ||
+        groupScopeChanged ||
+        nextThreadMessageId !== threadMessageId
+      ) {
+        replyNavigationRef.current = false;
+        clearTargetMessageContext();
+        setTargetMessageUid(null);
+      } else if (targetMessageFocusActive && !replyNavigationRef.current) {
+        // Forward to the entry pushed when the reader left the linked message.
+        targetMessageControllerRef.current?.cancel();
+        setTargetMessageFocusActive(false);
+      }
+      if (queryStateChanged) setQueryState(nextQueryState);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed]);
+  }, [
+    clearTargetMessageContext,
+    effectiveQueryState,
+    groupScope,
+    landOnLinkedMessage,
+    ownsWindowUrl,
+    queryState,
+    radioFeaturesAllowed,
+    targetMessageContextActive,
+    targetMessageFocusActive,
+    targetMessageUid,
+    threadMessageId,
+  ]);
 
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
@@ -771,13 +846,14 @@ export function useRerAnalysisNeoPage(
     if (
       threadMessageId == null ||
       data.threadAnchorId == null ||
-      data.threadAnchorId === threadMessageId
+      data.threadAnchorId === threadMessageId ||
+      !ownsWindowUrl()
     )
       return;
     const url = new URL(window.location.href);
     url.searchParams.set(THREAD_MESSAGE_PARAM, String(data.threadAnchorId));
     window.history.replaceState({}, '', `${url.pathname}?${url.searchParams}`);
-  }, [threadMessageId, data.threadAnchorId]);
+  }, [threadMessageId, data.threadAnchorId, ownsWindowUrl]);
   useEffect(() => {
     const previous = previousMessageGroupInfosRef.current;
     previousMessageGroupInfosRef.current = data.groupInfos;
@@ -934,7 +1010,7 @@ export function useRerAnalysisNeoPage(
   const loadDirectAdjacentPage = useCallback(
     async (targetPageIndex: number) => {
       if (!targetMessageContextActive || directTargetMessageIndex == null) return false;
-      clearTargetMessageFocus();
+      releaseTargetMessageFocus();
       const firstLoadedMessageIndex = data.firstLoadedMessageIndex;
       const lastLoadedMessageIndex = firstLoadedMessageIndex + data.messages.length - 1;
       const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
@@ -963,7 +1039,7 @@ export function useRerAnalysisNeoPage(
       data.loadFocusedLater,
       data.firstLoadedMessageIndex,
       data.messages.length,
-      clearTargetMessageFocus,
+      releaseTargetMessageFocus,
       directTargetMessageIndex,
       newestFirst,
       requestLoadedMessagesPage,
@@ -1272,6 +1348,7 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     if (deviceAccess.status === 'loading' || deviceAccess.status === 'error') return;
+    if (!ownsWindowUrl()) return;
     pushQueryStateToUrl(effectiveQueryState, newestFirst, {
       leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
       rightPanelOpen,
@@ -1282,6 +1359,7 @@ export function useRerAnalysisNeoPage(
     leftPanelOpen,
     leftPanelStateReady,
     newestFirst,
+    ownsWindowUrl,
     rightPanelOpen,
   ]);
 
@@ -1561,12 +1639,12 @@ export function useRerAnalysisNeoPage(
       canLoadLater: data.focusedHasMoreLater,
       loadingEarlier: contextLoading || data.focusedLoadingEarlier,
       loadingLater: contextLoading || data.focusedLoadingLater,
-      onClearFocus: clearTargetMessageFocus,
+      onClearFocus: releaseTargetMessageFocus,
       onLoadEarlier: data.loadFocusedEarlier,
       onLoadLater: data.loadFocusedLater,
     };
   }, [
-    clearTargetMessageFocus,
+    releaseTargetMessageFocus,
     data.focusedHasMoreEarlier,
     data.focusedHasMoreLater,
     data.focusedLoadingEarlier,
@@ -1682,6 +1760,7 @@ export function useRerAnalysisNeoPage(
     messagePageNavigationTarget,
     messageViewportPreservationKey,
     messageEdgeLoadRetryKey,
+    linkedMessageLandingKey,
     messageViewportPreserving,
     visibleMessagesPageIndex,
     newestFirst,

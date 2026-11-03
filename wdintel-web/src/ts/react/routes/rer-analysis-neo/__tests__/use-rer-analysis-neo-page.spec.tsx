@@ -562,6 +562,7 @@ describe('useRerAnalysisNeoPage', () => {
   });
 
   it('restores the group scope filter from browser history', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo');
     renderHook(['Rer']);
     await act(async () => {
       latest?.updateQueryState({ freqsSelected: ['111.1'] });
@@ -574,6 +575,41 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.groupNavigation.scope).toEqual({ kind: 'all' });
     expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3992
+  it('leaves the next route URL untouched when SPA navigation leaves analysis', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/rer-analysis-neo?filterPanelOpen=true&fromDateTime=2026-11-03T00%3A00&toDateTime=2026-11-04T00%3A00&leftPanelOpen=false&rightPanelOpen=false',
+    );
+    renderHook(['Rer']);
+    await flushEffects();
+
+    // requestNavigation commits the next URL and dispatches popstate before Elm unmounts the page.
+    await act(async () => {
+      window.history.pushState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await flushEffects();
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps URL ownership across the trailing-slash alias of the analysis route', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo/');
+    renderHook(['Rer']);
+    await flushEffects();
+
+    window.history.pushState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    expect(new URL(window.location.href).searchParams.getAll('freqs')).toEqual(['222.2']);
   });
 
   it('keeps a group scope transition pending until that scope commits its messages', async () => {
@@ -1576,6 +1612,85 @@ describe('useRerAnalysisNeoPage', () => {
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+  });
+
+  it('keeps the linked-message context when an overlay layer pops back to the same URL', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    const linkedUrl = window.location.href;
+
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(linkedUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    const browsingUrl = window.location.href;
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(browsingUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('lands on the linked message again when Back restores its URL after scrolling away', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    const linkedUrl = window.location.href;
+    const historyLength = window.history.length;
+    const landingKey = latest!.linkedMessageLandingKey;
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+
+    expect(window.history.length).toBe(historyLength + 1);
+    expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+
+    window.history.replaceState(window.history.state, '', linkedUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(2);
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls[1]?.[0]).toMatchObject({
+      messageRef: 'target-uid',
+    });
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+    expect(latest?.linkedMessageLandingKey).toBe(landingKey + 1);
+    expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
+  });
+
+  it('releases the linked focus when Forward restores the browsing URL', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    const linkedUrl = window.location.href;
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    const browsingUrl = window.location.href;
+    window.history.replaceState(window.history.state, '', linkedUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+
+    window.history.replaceState(window.history.state, '', browsingUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(browsingUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(2);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3689
