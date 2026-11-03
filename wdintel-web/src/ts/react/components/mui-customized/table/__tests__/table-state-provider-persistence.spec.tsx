@@ -10,6 +10,7 @@ import { TableStateProvider, useTableStateContext } from '../table-state-provide
 
 const TABLE_ID = 'sorting-spec';
 const DEFAULT_SORTING: MRT_SortingState = [{ id: 'activity', desc: true }];
+const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'mrt-row-actions', 'name', 'rating', 'tags'];
 
 let container: HTMLDivElement;
 let root: Root | null = null;
@@ -20,7 +21,13 @@ function Probe() {
   return null;
 }
 
-function render(sanitizeSorting?: (value: MRT_SortingState) => MRT_SortingState) {
+function render({
+  sanitizeSorting,
+  isDynamicColumnId,
+}: {
+  sanitizeSorting?: (value: MRT_SortingState) => MRT_SortingState;
+  isDynamicColumnId?: (columnId: string) => boolean;
+} = {}) {
   root?.unmount();
   root = createRoot(container);
   act(() => {
@@ -28,7 +35,8 @@ function render(sanitizeSorting?: (value: MRT_SortingState) => MRT_SortingState)
       <TableStateProvider
         tableId={TABLE_ID}
         defaultColumnVisibility={{}}
-        defaultColumnOrder={[]}
+        defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+        isDynamicColumnId={isDynamicColumnId}
         defaultSorting={DEFAULT_SORTING}
         persistSorting
         sanitizeSorting={sanitizeSorting}
@@ -39,7 +47,7 @@ function render(sanitizeSorting?: (value: MRT_SortingState) => MRT_SortingState)
   });
 }
 
-describe('TableStateProvider persisted sorting', () => {
+describe('TableStateProvider persisted state', () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     window.localStorage.clear();
@@ -101,8 +109,29 @@ describe('TableStateProvider persisted sorting', () => {
       JSON.stringify([{ id: 'removedColumn', desc: true }]),
     );
 
-    render((value) => (value[0]?.id === 'removedColumn' ? DEFAULT_SORTING : value));
+    render({
+      sanitizeSorting: (value) => (value[0]?.id === 'removedColumn' ? DEFAULT_SORTING : value),
+    });
 
     expect(latest?.sorting).toEqual(DEFAULT_SORTING);
+  });
+
+  // #3999: a dragged custom field column (e.g. `device_id`) lost its position on reload because
+  // the stored order was reset and overwritten for containing a column absent from the default.
+  it('keeps the stored position of dynamic columns across reloads', () => {
+    const stored = [
+      'mrt-row-numbers',
+      'mrt-row-actions',
+      'tags',
+      'name',
+      'customField:device_id',
+      'rating',
+    ];
+    window.localStorage.setItem(`columnOrder-${TABLE_ID}`, JSON.stringify(stored));
+
+    render({ isDynamicColumnId: (columnId) => columnId.startsWith('customField:') });
+
+    expect(latest?.columnOrder).toEqual(stored);
+    expect(window.localStorage.getItem(`columnOrder-${TABLE_ID}`)).toBe(JSON.stringify(stored));
   });
 });

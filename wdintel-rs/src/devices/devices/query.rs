@@ -334,18 +334,21 @@ async fn read_custom_field_keys(
     main_db: &DatabaseConnection,
     query: Select<device::Entity>,
 ) -> Result<Vec<String>, AppError> {
-    let rows = query
+    // Deduplicate in PostgreSQL so only key names leave the database, not
+    // whole custom_fields documents (`device_custom_fields_object_check`
+    // guarantees a JSON object).
+    Ok(query
         .select_only()
-        .column(device::Column::CustomFields)
-        .into_tuple::<serde_json::Value>()
+        .expr_as(
+            Expr::cust("jsonb_object_keys(device.custom_fields)"),
+            "custom_field_key",
+        )
+        .distinct()
+        .order_by_asc(Expr::cust("custom_field_key"))
+        .into_tuple::<String>()
         .all(main_db)
         .await
-        .c(h!())?;
-    let mut keys = BTreeSet::new();
-    for row in rows {
-        keys.extend(custom_fields_from_json(&row).c(h!())?.into_keys());
-    }
-    Ok(keys.into_iter().collect())
+        .c(h!())?)
 }
 
 async fn read_tag_options(

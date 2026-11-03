@@ -1895,6 +1895,8 @@ mod mapping_tests {
                     "rating": 0,
                     "tags": [],
                     "name": "Mapped device",
+                    "description": null,
+                    "custom_fields": {"inventory_id": "42"},
                     "aors": [{"id": 7, "name": "AOR"}],
                     "unit": {"id": 8, "name": "Unit"},
                     "created_by": "reader",
