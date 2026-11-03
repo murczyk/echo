@@ -32,14 +32,36 @@ describe('getPointPopupTemplate', () => {
   it('renders callsign tokens from marked popup text', () => {
     const message = buildMessage({
       text_marked: [
-        { CNCallsignC: { text: 'БОРОДА', begin: 0, end: 6, etalon: 'БОРОДА' } },
+        { CNCallsignC: { text: 'борода', begin: 0, end: 6, etalon: 'БОРОДА' } },
       ] as unknown as Message[1]['text_marked'],
     });
 
     const html = getPointPopupTemplate([message], []);
 
-    expect(html).toContain('БОРОДА');
-    expect(html).toContain('badge-highlighed-token--callsign');
+    expect(html).toContain('<span style="font-weight: 600;">БОРОДА</span>');
+    expect(html).not.toContain('badge-highlighed-token');
+  });
+
+  it('links the message by uuid via the m param', () => {
+    const message = buildMessage({
+      message_uid: 'legacy-uid',
+      message_uuid: '0b7f6c1e-1d2a-4c3b-9e8f-7a6b5c4d3e2f',
+    });
+
+    const html = getPointPopupTemplate([message], []);
+
+    expect(html).toContain(
+      'href="/rer-analysis-neo?m=0b7f6c1e-1d2a-4c3b-9e8f-7a6b5c4d3e2f" target="_blank"',
+    );
+    expect(html).not.toContain('legacy-uid');
+  });
+
+  it('omits the message link without a uuid', () => {
+    const message = buildMessage({ message_uid: 'legacy-uid' });
+
+    const html = getPointPopupTemplate([message], []);
+
+    expect(html).not.toContain('Посилання');
   });
 
   it('keeps AI position text in the popup', () => {
