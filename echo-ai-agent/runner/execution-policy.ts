@@ -151,11 +151,12 @@ export interface BudgetEvidence {
 
 function evidenceRecords(
   evidence: BudgetEvidence,
-): { text: string; citation: string }[] {
+): { text: string; citation: string; dmr?: Record<string, unknown> }[] {
   return [
     ...evidence.messages.map((message) => ({
       text: message.text,
       citation: citationHref(message),
+      ...(message.dmr ? { dmr: message.dmr } : {}),
     })),
     ...evidence.files.map((section) => ({
       text: section.text,

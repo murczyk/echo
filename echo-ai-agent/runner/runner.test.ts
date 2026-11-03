@@ -20,6 +20,9 @@ import {
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
+  mentionedColorCodes,
+  mentionedFrequencies,
+  normalizeFrequency,
   unitLookupRequestBody,
   interceptionContextRequestBody,
   messagesByIdRequestBody,
@@ -633,6 +636,111 @@ test("passes unit filters to inbox requests and validates them", () => {
   assert.throws(() => inboxMessagesRequestBody({ ...params, selectedUnits: [" "] }, context));
 });
 
+test("incident 01a1a1d8: normalizes user-written frequencies to the stored four-decimal form", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 1 },
+    selectedFrequencies: ["163.935", "163,9350", " 163.93 ", "27.135", "3330"],
+  };
+  const body = inboxMessagesRequestBody(params, context);
+  // Integer-only values stay unchanged, as Echo stores «Частота: 3330».
+  assert.deepEqual(body.selected_freqs, ["163.9350", "163.9300", "27.1350", "3330"]);
+  assert.equal(body.search, undefined);
+  assert.equal(normalizeFrequency("163.9350"), "163.9350");
+  for (const invalid of ["16", "163.93501", "abc", "163.935 МГц"])
+    assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [invalid] }, context));
+  assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [] }, context));
+});
+
+test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their stored form", () => {
+  assert.deepEqual(
+    mentionedFrequencies([
+      "02.11.2026, 13:49:43\n150.4750\n47.392477 36.056984 449.500.000",
+      "Проаналізуй з іншими частотами 163.935 та 163,935, хвиля 169.3500МГц",
+    ]),
+    [
+      { written: "150.4750", stored: "150.4750" },
+      { written: "163.935", stored: "163.9350" },
+      { written: "163,935", stored: "163.9350" },
+      { written: "169.3500", stored: "169.3500" },
+    ],
+  );
+  const prompt = systemPrompt(
+    validatePayload(
+      {
+        ...normalPayload,
+        history: [{ role: "user", content: "Що на 165.55?" }],
+        prompt: "Проаналізуй з іншими частотами 163.935 та дай прив'язку де найбільше схожих позивних",
+      },
+      false,
+    ),
+  );
+  assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
+  assert.match(prompt, /only the frequencies the current request is about/);
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
+});
+
+test("#3998 reads СС3 in a user query as the DMR color code", () => {
+  assert.deepEqual(
+    mentionedColorCodes([
+      "144.8450 Мишаня Якудза, СС3",
+      "CC: 7 і код кольору 12, 🎨5, cc03, СС-300, сс16, ссылка 3",
+    ]),
+    [
+      { written: "СС3", colorCode: "3" },
+      { written: "CC: 7", colorCode: "7" },
+      { written: "код кольору 12", colorCode: "12" },
+      { written: "🎨5", colorCode: "5" },
+      { written: "cc03", colorCode: "3" },
+    ],
+  );
+  const prompt = systemPrompt(
+    validatePayload({ ...normalPayload, history: [], prompt: "144.8450 Мишаня Якудза, СС3" }, false),
+  );
+  assert.match(prompt, /stored Echo form: 144\.8450\./);
+  assert.match(prompt, /DMR color codes named in this conversation: СС3 = color code 3\. They are radio network metadata, not callsigns/);
+  assert.match(prompt, /is the DMR color code \(0–15\) of a radio network/);
+  assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /DMR color codes named/);
+});
+
+test("#3998 exposes parsed DMR metadata on retrieved messages", async () => {
+  const item = (id: number, metadata: unknown) => [id, { message_uid: `uid-${id}`, freq: "144.8450", text: "СС: 3 👥: 24538🔐", metadata }];
+  const response = compactInboxResponse({
+    inbox_items: [
+      item(2, [
+        { color_code: "3", color_code_start_index: 0, call_group_id: "24538", sender_id: null, hash_id: "2324D327" },
+        { color_code: "3", call_group_id: "24538" },
+        { color_code: " ", call_group_id: null },
+      ]),
+      item(1, []),
+      item(4, [{ color_code: "03" }, { color_code: "3" }]),
+    ],
+    page_limit: 20,
+  });
+  const messages = response.messages as Array<Record<string, unknown>>;
+  assert.deepEqual(messages[0].dmr, { colorCodes: ["3"], callGroups: [{ id: "24538" }] });
+  assert.equal("dmr" in messages[1], false);
+  // Retained evidence for final synthesis keeps the same projection.
+  const { prepareMessageCitations } = await import("./citations.ts");
+  const prepared = prepareMessageCitations("inbox_messages", { inbox_items: [item(2, [{ color_code: "03", sender_id: "7" }]), item(1, [])] });
+  assert.deepEqual(prepared.messages.map((message) => message.dmr), [{ colorCodes: ["3"], senders: [{ id: "7" }] }, undefined]);
+  // A zero-padded source code equals the user's «СС3».
+  assert.deepEqual(messages[2].dmr, { colorCodes: ["3"] });
+  // Every color code of a nine-code list survives; long id lists are marked truncated.
+  const wide = compactInboxResponse({
+    inbox_items: [item(3, [
+      ...Array.from({ length: 9 }, (_, code) => ({ color_code: String(code), sender_id: "7" })),
+      ...Array.from({ length: 40 }, (_, index) => ({ call_group_id: String(1000 + index) })),
+    ])],
+    page_limit: 20,
+  });
+  const dmr = (wide.messages as Array<Record<string, any>>)[0].dmr;
+  assert.deepEqual(dmr.colorCodes, ["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
+  assert.deepEqual(dmr.senders, [{ id: "7" }]);
+  assert.equal(dmr.callGroups.length, 32);
+  assert.equal(dmr.truncated, true);
+});
+
 test("builds bounded read-only unit lookup requests", () => {
   assert.deepEqual(unitLookupRequestBody({ query: " 3 дшб 104 дшп " }), {
     filter_text: "3 дшб 104 дшп",
@@ -991,7 +1099,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.01.1",
+    harnessRelease: "2026.11.03.1",
   });
 });
 

@@ -29,12 +29,75 @@ export function validateCitations(value: unknown): MessageCitation[] {
   });
 }
 
+// DMR color codes are 0-15, so every distinct valid code fits; id lists are bounded.
+export const DMR_COLOR_CODE_MAX = 15;
+const DMR_COLOR_CODE_LIMIT = DMR_COLOR_CODE_MAX + 1;
+const DMR_ID_LIMIT = 32;
+const DMR_METADATA_VALUE_MAX_CHARACTERS = 64;
+
+// "03" in a source header and "3" in a user query are the same color code.
+export function canonicalColorCode(value: string): string {
+  return /^\d+$/.test(value) ? String(Number(value)) : value;
+}
+
+function dmrValue(record: JsonObject, field: string): string | undefined {
+  const value = record[field];
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, DMR_METADATA_VALUE_MAX_CHARACTERS)
+    : undefined;
+}
+
+class BoundedDmrList {
+  readonly entries = new Map<string, JsonObject | string>();
+  truncated = false;
+  private readonly limit: number;
+  constructor(limit: number) {
+    this.limit = limit;
+  }
+
+  add(key: string | undefined, entry: JsonObject | string): void {
+    if (!key || this.entries.has(key)) return;
+    if (this.entries.size >= this.limit) this.truncated = true;
+    else this.entries.set(key, entry);
+  }
+}
+
+function dmrIdEntry(record: JsonObject, idField: string, nameField: string): [string | undefined, JsonObject] {
+  const id = dmrValue(record, idField);
+  const name = dmrValue(record, nameField);
+  return [id || name ? `${id ?? ""}\u0000${name ?? ""}` : undefined, { ...(id ? { id } : {}), ...(name ? { name } : {}) }];
+}
+
+// Parsed DMR metadata, deduplicated per message; truncated marks incomplete lists.
+export function projectDmrMetadata(value: unknown): JsonObject | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const colorCodes = new BoundedDmrList(DMR_COLOR_CODE_LIMIT);
+  const callGroups = new BoundedDmrList(DMR_ID_LIMIT);
+  const senders = new BoundedDmrList(DMR_ID_LIMIT);
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as JsonObject;
+    const colorCode = dmrValue(record, "color_code");
+    const canonical = colorCode && canonicalColorCode(colorCode);
+    colorCodes.add(canonical, canonical ?? "");
+    callGroups.add(...dmrIdEntry(record, "call_group_id", "call_group_name"));
+    senders.add(...dmrIdEntry(record, "sender_id", "sender_name"));
+  }
+  const dmr: JsonObject = {};
+  for (const [key, list] of Object.entries({ colorCodes, callGroups, senders }))
+    if (list.entries.size) dmr[key] = [...list.entries.values()];
+  if (!Object.keys(dmr).length) return undefined;
+  return colorCodes.truncated || callGroups.truncated || senders.truncated ? { ...dmr, truncated: true } : dmr;
+}
+
 /** Full message text kept beside its citation for map scripts. */
 export interface CitedMessage extends MessageCitation {
   text: string;
   datetime: string;
   author: string;
   group: string;
+  /** Parsed DMR metadata, kept for synthesis when it is absent from the text. */
+  dmr?: JsonObject;
 }
 
 export function prepareMessageCitations(
@@ -73,6 +136,7 @@ export function prepareMessageCitations(
     if (identifier.length > 512) return item;
     const citation = { messageId: item[0], messageIdentifier: identifier };
     citations.push(citation);
+    const dmr = projectDmrMetadata(message.metadata);
     messages.push({
       ...citation,
       text: message.text,
@@ -85,6 +149,7 @@ export function prepareMessageCitations(
         typeof message.group_master_key === "string"
           ? message.group_master_key
           : "",
+      ...(dmr ? { dmr } : {}),
     });
     return [item[0], { ...message, citation: citationHref(citation) }];
   };

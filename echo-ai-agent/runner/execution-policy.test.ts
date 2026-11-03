@@ -91,6 +91,27 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
   );
 });
 
+test("#3998 final synthesis keeps parsed DMR metadata beside the message text", async () => {
+  let serialized = "";
+  await synthesizeBudgetEvidence(
+    {
+      engine,
+      apiKey: "fixture-capability",
+      policy,
+      systemPrompt: "Summarize evidence",
+      prompt: "144.8450 Мишаня Якудза, СС3",
+      evidence: { messages: [{ ...evidence.messages[0], dmr: { colorCodes: ["3"], callGroups: [{ id: "24538" }] } }], files: [] },
+      maxTokens: 8192,
+      signal: new AbortController().signal,
+    },
+    async (_engine, context) => {
+      serialized = JSON.stringify(context.messages);
+      return { stopReason: "stop", content: [{ type: "text", text: "done" }] } as any;
+    },
+  );
+  assert.match(serialized, /\\"dmr\\":\{\\"colorCodes\\":\[\\"3\\"\]/);
+});
+
 test("#3724 reserves finalization after the original deadline without restarting on checkpoints", (t) => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
   let stopped = 0;
