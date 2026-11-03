@@ -109,10 +109,10 @@
 - **User action or external event:** `requestNavigation` commits the next URL with `pushState` and dispatches `popstate` before Elm unmounts the previous page.
 - **Expected observable result:** the leaving page neither reads nor writes the new URL, so `/rer-analysis-neo?…` followed by the logo lands on a bare `/`. The home chat owns its query: a conversation URL is `/?conversation=<id>`, starting a new conversation returns to `/`, and params left by other pages are dropped.
 - **Loading/empty/error/success behavior:** async results that arrive after the URL changed but before unmount do not write the URL.
-- **URL, localStorage, or user-settings persistence:** Analysis writes its query only while the window pathname matches the pathname it mounted on. The chat writes only on `/`.
+- **URL, localStorage, or user-settings persistence:** Analysis reads and writes its query only while the window pathname matches the pathname it mounted on, ignoring trailing slashes (`/rer-analysis-neo/` and `/rer-analysis-neo` are one route). The chat writes only on `/`.
 - **API endpoint and compatibility requirements:** none.
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** the synthetic `popstate` from SPA navigation reaches every still-mounted page listener.
-- **Source implementation:** `routes/rer-analysis-neo/use-rer-analysis-neo-page.ts`, `routes/ai-agent-chat/conversation-url.ts`, `browser/navigation-guard.ts`.
+- **Source implementation:** `routes/rer-analysis-neo/use-route-url-ownership.ts`, `routes/rer-analysis-neo/use-rer-analysis-neo-page.ts`, `routes/rer-analysis-neo/AnalysisPageLayout.tsx`, `routes/ai-agent-chat/conversation-url.ts`, `browser/navigation-guard.ts`.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`, `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/conversation-url.spec.ts`
 - **Original Echo issue/PR, if known:** [#3992](https://github.com/echoua/echo/issues/3992)

@@ -69,6 +69,7 @@ import {
   groupFilterScope,
   type GroupScope,
 } from '../shared/group-navigation';
+import { useRouteUrlOwnership } from './use-route-url-ownership';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -150,13 +151,7 @@ export function useRerAnalysisNeoPage(
   authUserName: string | null,
   authUserRoles: readonly string[] = [],
 ): AnalysisPageViewModel {
-  // SPA navigation commits the next URL and dispatches popstate before Elm unmounts this page,
-  // so URL reads and writes must stop once the window has left the route.
-  const [routePathname] = useState(() => window.location.pathname);
-  const ownsWindowUrl = useCallback(
-    () => window.location.pathname === routePathname,
-    [routePathname],
-  );
+  const ownsWindowUrl = useRouteUrlOwnership();
   const [threadMessageId, setThreadMessageId] = useState(readThreadMessageId);
   const exitThread = useCallback(() => {
     const url = new URL(window.location.href);

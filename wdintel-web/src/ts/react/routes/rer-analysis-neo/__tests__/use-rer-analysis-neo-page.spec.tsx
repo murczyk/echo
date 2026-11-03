@@ -594,6 +594,20 @@ describe('useRerAnalysisNeoPage', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('keeps URL ownership across the trailing-slash alias of the analysis route', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo/');
+    renderHook(['Rer']);
+    await flushEffects();
+
+    window.history.pushState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    expect(new URL(window.location.href).searchParams.getAll('freqs')).toEqual(['222.2']);
+  });
+
   it('keeps a group scope transition pending until that scope commits its messages', async () => {
     renderHook(['Rer']);
     if (currentAnalysisData == null) throw new Error('analysis data not initialized');
