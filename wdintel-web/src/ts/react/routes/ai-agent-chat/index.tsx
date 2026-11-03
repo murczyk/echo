@@ -157,6 +157,13 @@ export const REASONING_LABELS: Record<AiAgentReasoningPreset, string> = {
   deep: 'Глибокий',
 };
 
+/** The ceiling of a mode, e.g. «до 4 год»; the agent finishes earlier when done. */
+export function runtimeLimitLabel(seconds: number): string {
+  return seconds >= 3600
+    ? `до ${Math.round(seconds / 3600)} год`
+    : `до ${Math.round(seconds / 60)} хв`;
+}
+
 const TERMINAL_STATES = new Set<AiAgentRequestState>(['completed', 'failed', 'cancelled']);
 const AUTO_SCROLL_BOTTOM_THRESHOLD_PX = 48;
 const GENERIC_REQUEST_FAILURE = 'Не вдалося виконати запит. Спробуйте ще раз.';
@@ -1861,11 +1868,19 @@ export function AiAgentChat({
                         saveRememberedReasoningPreset(preset);
                       }}
                       inputProps={{ 'aria-label': 'Глибина аналізу' }}
+                      renderValue={(value) => REASONING_LABELS[value]}
                       sx={{ fontSize: '0.75rem', color: 'text.secondary' }}
                     >
                       {selectedProvider.reasoningPresets.map((option) => (
                         <MenuItem key={option.preset} value={option.preset}>
-                          {REASONING_LABELS[option.preset]}
+                          <ListItemText
+                            primary={REASONING_LABELS[option.preset]}
+                            secondary={
+                              option.maxRuntimeSeconds >= 3600
+                                ? `${runtimeLimitLabel(option.maxRuntimeSeconds)}; нові повідомлення чекатимуть у черзі`
+                                : runtimeLimitLabel(option.maxRuntimeSeconds)
+                            }
+                          />
                         </MenuItem>
                       ))}
                     </Select>

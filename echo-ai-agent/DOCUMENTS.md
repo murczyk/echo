@@ -40,7 +40,13 @@ when the user sent the message with a document open, `documentTarget`. The
 system prompt tells the model to prefer the uploaded template, to fill it only
 with supplied or retrieved data, to link every saved document as
 `[title](echo-document:<documentId>)` and never to claim a save that the tool
-did not report. Links to documents that are neither listed nor saved in the
+did not report. For a report "like" an attached one, the template's concrete
+content (callsigns, units, places, dates, figures) is only a format sample: the
+model outlines the template, collects the facts with Echo tools for the
+requested period across the user's groups, fills and saves the template, and
+says that nothing was found only after searching. In bounded research the
+document is saved before research ends, since the final synthesis has no tools.
+Links to documents that are neither listed nor saved in the
 request keep only their label. Failed document tools show a fixed category in
 the activity list.
 
@@ -96,7 +102,9 @@ just ai-control-panel upgrade --host <h> --release 2026.11.03.1
 ```
 
 Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється.
-Повторіть запит за кілька хвилин.». See the
+Повторіть запит за кілька хвилин.». Release `2026.11.03.2` needs no migration; see
+[template reports and 4-hour Deep](DEPLOYMENT.md#template-reports-and-4-hour-deep-release-2026110332).
+See the
 [deployment notes](DEPLOYMENT.md#conversation-documents-release-2026110331) for
 verification.
 

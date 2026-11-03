@@ -890,7 +890,7 @@ for (const width of [1280, 320]) {
               reasoningPresets: [
                 { preset: 'fast', maxRuntimeSeconds: 120, reasoningEffort: 'none' },
                 { preset: 'balanced', maxRuntimeSeconds: 300, reasoningEffort: 'medium' },
-                { preset: 'deep', maxRuntimeSeconds: 1800, reasoningEffort: 'max' },
+                { preset: 'deep', maxRuntimeSeconds: 14_400, reasoningEffort: 'max' },
               ],
             },
           ],
@@ -912,9 +912,13 @@ for (const width of [1280, 320]) {
     await page.waitForTimeout(800);
     await expect(page.getByRole('tooltip')).toHaveCount(0);
     await selector.click();
-    await expect(page.getByRole('option')).toHaveText(['Швидкий', 'Збалансований', 'Глибокий']);
+    await expect(page.getByRole('option')).toHaveText([
+      'Швидкийдо 2 хв',
+      'Збалансованийдо 5 хв',
+      'Глибокийдо 4 год; нові повідомлення чекатимуть у черзі',
+    ]);
     await expect(page.getByRole('tooltip')).toHaveCount(0);
-    await page.getByRole('option', { name: 'Глибокий', exact: true }).click();
+    await page.getByRole('option', { name: /^Глибокий/ }).click();
     await page.getByPlaceholder('Повідомлення').fill('Докладне дослідження');
     await page.getByRole('button', { name: 'Надіслати', exact: true }).click();
     await expect.poll(() => submitted).toEqual(['deep']);

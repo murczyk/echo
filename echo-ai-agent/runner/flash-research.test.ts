@@ -970,6 +970,7 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
     ["fast", 120, 30],
     ["balanced", 300, 60],
     ["deep", 1800, 120],
+    ["deep", 14_400, 300],
   ] as const) {
     const original = {
       ...policy,

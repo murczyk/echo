@@ -97,6 +97,12 @@ the cancellation race. Stopping preserves the composer draft, partial response
 and published maps. The backend revokes request credentials and terminates the
 runner; switching conversations only detaches the browser stream.
 
+The mode menu shows each mode's time limit (`runtimeLimitLabel`): Deep runs up
+to 4 hours, and while it runs the user's next messages wait in the queue. The
+event stream (`stream.ts`) reconnects after each drop; only consecutive failed
+connections count toward its retry limit, so a multi-hour request survives
+network interruptions.
+
 Each request shows a softly pulsating current-action title beside elapsed time
 and cancel/reconnect controls. An optional second line contains factual dates,
 source scope, or message counts. Both lines truncate visually and retain their

@@ -2,8 +2,8 @@ use super::revisions::{self, save_stored, StoredFile};
 use super::types::*;
 use super::validate;
 use crate::entities::{
-    ai_agent_conversation, ai_agent_document, ai_agent_request, ai_engine,
-    login,
+    ai_agent_conversation, ai_agent_document, ai_agent_request,
+    ai_agent_upload, ai_engine, login,
 };
 use crate::error::AppError;
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
@@ -367,4 +367,142 @@ async fn issue_3985_restoring_a_version_branches_like_undo() {
         .await
         .unwrap();
     assert_eq!(undone.redo_revision, Some(3));
+}
+
+async fn upload(
+    env: &Env,
+    human_login_id: Uuid,
+    conversation_id: Option<Uuid>,
+    file_name: &str,
+) -> String {
+    let now = Utc::now().naive_utc();
+    ai_agent_upload::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        human_login_id: Set(human_login_id),
+        conversation_id: Set(conversation_id),
+        request_id: Set(None),
+        file_name: Set(file_name.to_string()),
+        extension: Set(file_name.rsplit('.').next().unwrap().to_string()),
+        content_type: Set("application/octet-stream".to_string()),
+        size_bytes: Set(10),
+        sha256: Set("0".repeat(64)),
+        storage_key: Set(format!("test/{}", Uuid::now_v7())),
+        preview_key: Set(None),
+        state: Set("ready".to_string()),
+        extractor_job_id: Set(None),
+        chunk_count: Set(1),
+        text_chars: Set(10),
+        warnings: Set(json!([])),
+        last_error: Set(None),
+        attempts: Set(0),
+        lease: Set(None),
+        lease_until: Set(None),
+        next_attempt_at: Set(now),
+        created_at: Set(now),
+        updated_at: Set(now),
+    }
+    .insert(&env.dbx)
+    .await
+    .unwrap()
+    .id
+    .to_string()
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3985_report_requests_in_short_modes_get_time_to_build_the_document(
+) {
+    use crate::ai_agent::reasoning;
+    use crate::ai_agent::types::AiAgentReasoningPreset as Preset;
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let human = fixture.human.id;
+    let conversation = Some(fixture.conversation.id);
+    let detect =
+        |conversation, prompt: &'static str, uploads: Vec<String>, open| {
+            let env = env.clone();
+            async move {
+                super::is_document_request(
+                    &env.dbx,
+                    human,
+                    conversation,
+                    prompt,
+                    &uploads,
+                    open,
+                )
+                .await
+                .unwrap()
+            }
+        };
+    let template = upload(&env, human, None, "Звіт за вересень.docx").await;
+    let order = upload(&env, human, None, "наказ.pdf").await;
+    assert!(
+        detect(None, "Зроби такий самий за жовтень", vec![template], false)
+            .await
+    );
+    assert!(!detect(None, "Що в наказі?", vec![order], false).await);
+    let stranger = Fixture::new(&env).await;
+    let foreign = upload(&env, stranger.human.id, None, "чужий.docx").await;
+    assert!(!detect(None, "Що тут?", vec![foreign], false).await);
+    assert!(detect(conversation, "Додай колонку", vec![], true).await);
+
+    // The template was attached in an earlier message of the conversation.
+    assert!(
+        !detect(conversation, "Використай документ як шаблон", vec![], false)
+            .await
+    );
+    upload(&env, human, conversation, "Звіт про перехоплення.docx").await;
+    assert!(
+        detect(conversation, "Використай документ як шаблон", vec![], false)
+            .await
+    );
+    assert!(!detect(conversation, "Хто такий САТУРН?", vec![], false).await);
+
+    let engine = &fixture.ai_engine;
+    let balanced =
+        reasoning::resolve(&env.config, engine, Preset::Balanced, false);
+    let document =
+        reasoning::resolve(&env.config, engine, Preset::Balanced, true);
+    // The test engine runs bounded research, which doubles the summary reserve.
+    assert_eq!(
+        (
+            document.max_runtime_seconds,
+            document.finalization_seconds,
+            document.document_task
+        ),
+        (1800, 240, true)
+    );
+    assert_eq!(document.reasoning_effort, balanced.reasoning_effort);
+    assert!(serde_json::to_value(&balanced)
+        .unwrap()
+        .get("documentTask")
+        .is_none());
+    let deep = reasoning::resolve(&env.config, engine, Preset::Deep, true);
+    assert_eq!(
+        (
+            deep.max_runtime_seconds,
+            deep.finalization_seconds,
+            deep.document_task
+        ),
+        (14_400, 600, false)
+    );
+    let long = reasoning::limits(Some(&deep));
+    let short = reasoning::limits(Some(&document));
+    assert_eq!(
+        (
+            long.api_calls,
+            long.provider_calls,
+            long.runner_events,
+            long.provider_turn_timeout_sec
+        ),
+        (1024, 2048, 50_000, Some(1800))
+    );
+    assert_eq!(
+        (
+            short.api_calls,
+            short.provider_calls,
+            short.provider_turn_timeout_sec
+        ),
+        (128, 256, None)
+    );
 }

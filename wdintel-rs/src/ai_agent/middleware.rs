@@ -2,9 +2,8 @@ use super::auth::{
     api_call_count_key, credential_key, AgentSessionBinding, CredentialGrant,
 };
 use crate::config::{
-    AI_AGENT_API_CALL_LIMIT, AI_AGENT_CORRELATION_HEADER,
-    AI_AGENT_CREDENTIAL_TTL_SEC, AI_AGENT_ROLE_API,
-    AI_AGENT_SESSION_BINDING_KEY,
+    AI_AGENT_CORRELATION_HEADER, AI_AGENT_CREDENTIAL_TTL_SEC,
+    AI_AGENT_ROLE_API, AI_AGENT_SESSION_BINDING_KEY,
 };
 use crate::entities::{ai_agent_request, login};
 use crate::types::{warn, Env};
@@ -182,22 +181,25 @@ async fn authorize_agent_request(
     let work_append = req.method() == actix_web::http::Method::POST
         && path == crate::config::AI_AGENT_WORK_APPEND_PATH
         && env.config.ai_agent_work_memory_enabled == Some(true);
-    let request_is_active = match active_request {
-        Some(request) => match super::reasoning::request_policy(&request)
-            .map_err(actix_web::error::ErrorInternalServerError)?
-        {
-            Some(policy) => {
-                super::reasoning::deadline_millis(&request, &policy)
-                    .is_some_and(|deadline| {
-                        chrono::Utc::now().timestamp_millis()
-                            < deadline
-                                - if work_append {
-                                    0
-                                } else {
-                                    policy.finalization_seconds as i64 * 1000
-                                }
-                    })
-            }
+    let policy = active_request
+        .as_ref()
+        .map(super::reasoning::request_policy)
+        .transpose()
+        .map_err(actix_web::error::ErrorInternalServerError)?
+        .flatten();
+    let call_limit = super::reasoning::limits(policy.as_ref()).api_calls;
+    let request_is_active = match &active_request {
+        Some(request) => match &policy {
+            Some(policy) => super::reasoning::deadline_millis(request, policy)
+                .is_some_and(|deadline| {
+                    chrono::Utc::now().timestamp_millis()
+                        < deadline
+                            - if work_append {
+                                0
+                            } else {
+                                policy.finalization_seconds as i64 * 1000
+                            }
+                }),
             None => true,
         },
         None => false,
@@ -222,8 +224,8 @@ return value
     .invoke_async(&mut env.redis.clone())
     .await
     .map_err(actix_web::error::ErrorInternalServerError)?;
-    if call_count > AI_AGENT_API_CALL_LIMIT {
-        if call_count == AI_AGENT_API_CALL_LIMIT + 1 {
+    if call_count > call_limit {
+        if call_count == call_limit + 1 {
             let payload = serde_json::json!({
                 "tool": "echo_api",
                 "method": req.method().as_str(),

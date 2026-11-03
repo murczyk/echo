@@ -24,7 +24,11 @@ export async function streamAiAgentEventsWithReconnect(input: {
         requestId: input.requestId,
         afterSequence: input.getAfterSequence(),
         signal: input.signal,
-        onEvent: input.onEvent,
+        onEvent: (event) => {
+          // A long request may drop and resume many times; only consecutive failures count.
+          reconnects = 0;
+          input.onEvent(event);
+        },
       });
     } catch (error) {
       lastError = error;

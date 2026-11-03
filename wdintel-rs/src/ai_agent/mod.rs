@@ -371,12 +371,26 @@ pub async fn create_request(
                 .to_string(),
         });
     }
+    let document_task = reasoning::enabled(&env.config)
+        && documents::is_document_request(
+            &txn,
+            human.id,
+            existing_conversation
+                .as_ref()
+                .map(|conversation| conversation.id),
+            &prompt,
+            &req.upload_ids,
+            req.document_target.is_some(),
+        )
+        .await
+        .c(h!())?;
     let execution_policy = reasoning::enabled(&env.config)
         .then(|| {
             reasoning::resolve(
                 &env.config,
                 &ai_engine,
                 req.reasoning_preset.unwrap_or_default(),
+                document_task,
             )
         })
         .map(serde_json::to_value)
