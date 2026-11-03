@@ -284,6 +284,7 @@ export type AnalysisPageState = {
   messagePageNavigationTarget: number | null;
   messageViewportPreservationKey: number;
   messageEdgeLoadRetryKey: number;
+  linkedMessageLandingKey: number;
   messageViewportPreserving: boolean;
   visibleMessagesPageIndex: number;
   newestFirst: boolean;

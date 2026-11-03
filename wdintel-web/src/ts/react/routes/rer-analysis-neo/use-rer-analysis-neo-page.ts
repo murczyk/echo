@@ -25,6 +25,7 @@ import {
   createInitialQueryState,
   createResetQueryState,
   adjustQueryDateRangeForDirectMessage,
+  analysisQueryStateUrlKey,
   hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
@@ -258,6 +259,7 @@ export function useRerAnalysisNeoPage(
   );
   const replyNavigationRef = useRef(false);
   const [replyNavigationVersion, setReplyNavigationVersion] = useState(0);
+  const [linkedMessageLandingKey, setLinkedMessageLandingKey] = useState(0);
   const [loadedReplyTarget, setLoadedReplyTarget] = useState<{ messageId: number } | null>(null);
   const [targetMessageUid, setTargetMessageUid] = useState(() =>
     threadMessageId == null ? parseMessageUidFromWindow() : null,
@@ -621,6 +623,7 @@ export function useRerAnalysisNeoPage(
     targetMessageContextActive,
     targetMessageUid,
     replyNavigationVersion,
+    linkedMessageLandingKey,
   ]);
 
   const navigateReply = useCallback<ReplyNavigation>(
@@ -667,6 +670,12 @@ export function useRerAnalysisNeoPage(
     removeMessageUidFromWindowUrl();
   }, []);
 
+  const releaseTargetMessageFocus = useCallback(() => {
+    targetMessageControllerRef.current?.cancel();
+    setTargetMessageFocusActive(false);
+    removeMessageUidFromWindowUrl({ keepInHistory: true });
+  }, []);
+
   const clearTargetMessageContext = useCallback(() => {
     targetMessageControllerRef.current?.cancel();
     setLoadedReplyTarget(null);
@@ -677,33 +686,95 @@ export function useRerAnalysisNeoPage(
     clearTargetMessageFocus();
   }, [clearTargetMessageFocus]);
 
+  const landOnLinkedMessage = useCallback(
+    (reference: string, linkedQueryState: AnalysisQueryState) => {
+      targetMessageControllerRef.current?.cancel();
+      replyNavigationRef.current = false;
+      targetMessageLoadedRef.current = false;
+      directQueryBoundaryRef.current = {
+        fromDateTimeStr: linkedQueryState.fromDateTimeStr,
+        toDateTimeStr: linkedQueryState.toDateTimeStr,
+        search: linkedQueryState.search,
+        searchMode: linkedQueryState.searchMode,
+      };
+      setLoadedReplyTarget(null);
+      setDirectMessageError(null);
+      setTargetMessageQueryState(linkedQueryState);
+      setTargetMessageUid(reference);
+      setTargetMessageFocusActive(true);
+      setHighlightTargetMessage(true);
+      setTargetMessageContextActive(true);
+      setTargetMessageContextResponsePending(true);
+      setTargetMessageLoading(true);
+      setLinkedMessageLandingKey((key) => key + 1);
+      setCenterTabState('messages');
+    },
+    [],
+  );
+
+  // Overlay history layers (attachment previews, drawers) pop back to the same URL, so the
+  // handler must only react to what the restored URL actually changes.
   useEffect(() => {
     const onPopState = () => {
       if (!ownsWindowUrl()) return;
-      setThreadMessageId(readThreadMessageId());
-      replyNavigationRef.current = false;
-      clearTargetMessageContext();
-      setTargetMessageUid(null);
+      const nextThreadMessageId = readThreadMessageId();
+      const linkedReference = nextThreadMessageId == null ? parseMessageUidFromWindow() : null;
       const nextGroupScope = readAnalysisGroupScopeFromUrl();
-      if (!groupScopesEqual(groupScope, nextGroupScope)) {
+      const groupScopeChanged = !groupScopesEqual(groupScope, nextGroupScope);
+      if (groupScopeChanged) {
         groupScopeTransitionRequestedRef.current = true;
       }
       const historyState = initState(parseQueryStateFromWindow(), new Date(), radioFeaturesAllowed);
-      setQueryState((current) =>
-        normalizeQueryState({
-          ...historyState,
-          messageTimeBasis: current.messageTimeBasis,
-          radioFeaturesAllowed: current.radioFeaturesAllowed,
-          groupsSelected:
-            nextGroupScope.kind === 'group'
-              ? [nextGroupScope.masterKey]
-              : historyState.groupsSelected,
-        }),
-      );
+      const nextQueryState = normalizeQueryState({
+        ...historyState,
+        messageTimeBasis: queryState.messageTimeBasis,
+        radioFeaturesAllowed: queryState.radioFeaturesAllowed,
+        groupsSelected:
+          nextGroupScope.kind === 'group'
+            ? [nextGroupScope.masterKey]
+            : historyState.groupsSelected,
+      });
+      const queryStateChanged =
+        analysisQueryStateUrlKey(nextQueryState) !== analysisQueryStateUrlKey(effectiveQueryState);
+      setThreadMessageId(nextThreadMessageId);
+      if (linkedReference != null) {
+        if (
+          linkedReference !== targetMessageUid ||
+          !targetMessageContextActive ||
+          !targetMessageFocusActive
+        ) {
+          landOnLinkedMessage(linkedReference, nextQueryState);
+        }
+      } else if (
+        queryStateChanged ||
+        groupScopeChanged ||
+        nextThreadMessageId !== threadMessageId
+      ) {
+        replyNavigationRef.current = false;
+        clearTargetMessageContext();
+        setTargetMessageUid(null);
+      } else if (targetMessageFocusActive && !replyNavigationRef.current) {
+        // Forward to the entry pushed when the reader left the linked message.
+        targetMessageControllerRef.current?.cancel();
+        setTargetMessageFocusActive(false);
+      }
+      if (queryStateChanged) setQueryState(nextQueryState);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [clearTargetMessageContext, groupScope, ownsWindowUrl, queryState, radioFeaturesAllowed]);
+  }, [
+    clearTargetMessageContext,
+    effectiveQueryState,
+    groupScope,
+    landOnLinkedMessage,
+    ownsWindowUrl,
+    queryState,
+    radioFeaturesAllowed,
+    targetMessageContextActive,
+    targetMessageFocusActive,
+    targetMessageUid,
+    threadMessageId,
+  ]);
 
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
@@ -939,7 +1010,7 @@ export function useRerAnalysisNeoPage(
   const loadDirectAdjacentPage = useCallback(
     async (targetPageIndex: number) => {
       if (!targetMessageContextActive || directTargetMessageIndex == null) return false;
-      clearTargetMessageFocus();
+      releaseTargetMessageFocus();
       const firstLoadedMessageIndex = data.firstLoadedMessageIndex;
       const lastLoadedMessageIndex = firstLoadedMessageIndex + data.messages.length - 1;
       const targetMessageIndex = targetPageIndex * ANALYSIS_MESSAGES_PAGE_SIZE;
@@ -968,7 +1039,7 @@ export function useRerAnalysisNeoPage(
       data.loadFocusedLater,
       data.firstLoadedMessageIndex,
       data.messages.length,
-      clearTargetMessageFocus,
+      releaseTargetMessageFocus,
       directTargetMessageIndex,
       newestFirst,
       requestLoadedMessagesPage,
@@ -1568,12 +1639,12 @@ export function useRerAnalysisNeoPage(
       canLoadLater: data.focusedHasMoreLater,
       loadingEarlier: contextLoading || data.focusedLoadingEarlier,
       loadingLater: contextLoading || data.focusedLoadingLater,
-      onClearFocus: clearTargetMessageFocus,
+      onClearFocus: releaseTargetMessageFocus,
       onLoadEarlier: data.loadFocusedEarlier,
       onLoadLater: data.loadFocusedLater,
     };
   }, [
-    clearTargetMessageFocus,
+    releaseTargetMessageFocus,
     data.focusedHasMoreEarlier,
     data.focusedHasMoreLater,
     data.focusedLoadingEarlier,
@@ -1689,6 +1760,7 @@ export function useRerAnalysisNeoPage(
     messagePageNavigationTarget,
     messageViewportPreservationKey,
     messageEdgeLoadRetryKey,
+    linkedMessageLandingKey,
     messageViewportPreserving,
     visibleMessagesPageIndex,
     newestFirst,

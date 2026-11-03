@@ -204,8 +204,9 @@ export function writeMessagesPageIndexToWindowUrl(pageIndex: number): void {
     url.searchParams.set(MESSAGES_PAGE_PARAM, String(normalizedPageIndex + 1));
   }
   const query = url.searchParams.toString();
+  // Keep the current history state: an open attachment preview owns this entry's overlay layer.
   window.history.replaceState(
-    {},
+    window.history.state,
     '',
     `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
   );
@@ -403,7 +404,21 @@ export function pushQueryStateToUrl(
   if (panelState) {
     writeAnalysisPanelQueryState(url.searchParams, panelState);
   }
-  window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`);
+  window.history.replaceState(
+    window.history.state,
+    '',
+    `${url.pathname}?${url.searchParams.toString()}`,
+  );
+}
+
+// Compares query states by the filter params they write to the URL, so a history entry
+// can be matched against the state that produced it.
+export function analysisQueryStateUrlKey(state: AnalysisQueryState): string {
+  const searchParams = new URLSearchParams();
+  writeRerAnalysisQueryStateToSearchParams(searchParams, state);
+  if (state.onlyWithMedia) searchParams.set(ONLY_WITH_MEDIA_PARAM, 'true');
+  searchParams.sort();
+  return searchParams.toString();
 }
 
 export function normalizeQueryState(state: AnalysisQueryState): AnalysisQueryState {
