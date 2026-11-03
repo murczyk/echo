@@ -1,16 +1,62 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
+import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import {
   createLoadedInboxResponse,
   createOverflowingInboxResponse,
   installAnalysisNeoApiMocks,
 } from './analysis-neo.fixtures';
+import {
+  buildMessageCardMediaPreviewInboxResponse,
+  installMessageCardMediaPreviewAssetRoutes,
+} from './message-card-media-preview.fixtures';
 
 async function setupAnalysisNeoPage(
   page: Parameters<typeof installAnalysisNeoApiMocks>[0],
   options?: Parameters<typeof installAnalysisNeoApiMocks>[1],
 ) {
   await installAnalysisNeoApiMocks(page, options);
+}
+
+function buildLinkedMessageFeed(): { response: InboxMessagesRspRaw; targetId: number } {
+  const mediaResponse = buildMessageCardMediaPreviewInboxResponse();
+  const [targetId, targetMessage] = mediaResponse.inbox_items[0];
+  const [, filler] = createLoadedInboxResponse().inbox_items[0];
+  const fillers = (firstId: number) =>
+    Array.from({ length: 12 }, (_, index) => [
+      firstId + index,
+      {
+        ...filler,
+        messageUid: `linked-history-filler-${firstId + index}`,
+        text: `Linked history filler ${firstId + index}`,
+      },
+    ]) as InboxMessagesRspRaw['inbox_items'];
+  return {
+    response: {
+      ...mediaResponse,
+      inbox_items: [...fillers(500), [targetId, targetMessage], ...fillers(600)],
+    },
+    targetId,
+  };
+}
+
+async function openLinkedMessageInFeed(page: Page) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const { response, targetId } = buildLinkedMessageFeed();
+  const targetUid = response.inbox_items.find(([id]) => id === targetId)![1].messageUid!;
+  await installMessageCardMediaPreviewAssetRoutes(page);
+  await setupAnalysisNeoPage(page, { inboxResponse: response });
+  await page.route('**/api/rer-importer/get-inbox', (route) =>
+    route.fulfill({
+      json: { ...response, around_message_messages_before: 12, around_message_messages_after: 12 },
+    }),
+  );
+  await page.goto(`/rer-analysis-neo?m=${targetUid}`);
+  const target = page.locator(`[data-message-id="${targetId}"]`);
+  await expect(target).toBeInViewport();
+  await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+  await expect.poll(() => new URL(page.url()).searchParams.get('m')).toBe(targetUid);
+  return { target, targetUid };
 }
 
 // Regression: https://github.com/echoua/echo/pull/3268
@@ -157,6 +203,43 @@ test.describe('@smoke @regression', () => {
       });
     });
   }
+
+  test('@regression keeps a linked message after closing its attachment preview', async ({
+    page,
+  }) => {
+    const { target, targetUid } = await openLinkedMessageInFeed(page);
+    const media = target.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+    if ((await media.getAttribute('aria-expanded')) !== 'true') await media.click();
+
+    await target.getByRole('button', { name: 'Відкрити зображення' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Перегляд зображення' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Закрити', exact: true }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => new URL(page.url()).searchParams.get('m')).toBe(targetUid);
+    await expect(target).toBeInViewport();
+    await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+  });
+
+  test('@regression returns to a linked message with browser Back after scrolling away', async ({
+    page,
+  }) => {
+    const { target, targetUid } = await openLinkedMessageInFeed(page);
+    const historyLength = await page.evaluate(() => window.history.length);
+
+    await target.hover();
+    await page.mouse.wheel(0, 2400);
+    await expect.poll(() => new URL(page.url()).searchParams.has('m')).toBe(false);
+    await expect(target).not.toBeInViewport();
+    expect(await page.evaluate(() => window.history.length)).toBe(historyLength + 1);
+
+    await page.goBack();
+
+    await expect.poll(() => new URL(page.url()).searchParams.get('m')).toBe(targetUid);
+    await expect(target).toBeInViewport();
+    await expect(target).toHaveAttribute('data-message-feed-highlighted', 'true');
+  });
 
   test('analysis neo summary flow loads a known row', async ({ page }) => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
