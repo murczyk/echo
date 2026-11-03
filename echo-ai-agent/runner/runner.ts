@@ -1079,12 +1079,16 @@ function selectedCallsignsBody(input: JsonObject): JsonObject {
 }
 
 const FREQUENCY_RE = /^(\d{2,4})[.,](\d{1,4})$/;
+const INTEGER_FREQUENCY_RE = /^\d{3,5}$/;
 const MENTIONED_FREQUENCY_RE = /(?<![\p{L}\p{N}.,])(\d{3}[.,]\d{2,4})(?![\p{N}]|[.,]\p{N})/gu;
 const MENTIONED_FREQUENCY_LIMIT = 16;
 
-// Mirrors wdintel-rs rer_importer::frequency::etalon: Echo stores four decimals.
+// Mirrors wdintel-rs rer_importer::frequency::etalon: Echo stores four decimals,
+// while integer-only values such as «Частота: 3330» are stored unchanged.
 export function normalizeFrequency(value: string): string | undefined {
-  const match = FREQUENCY_RE.exec(value.trim());
+  const trimmed = value.trim();
+  if (INTEGER_FREQUENCY_RE.test(trimmed)) return trimmed;
+  const match = FREQUENCY_RE.exec(trimmed);
   return match ? `${match[1]}.${match[2].padEnd(4, "0")}` : undefined;
 }
 
@@ -1099,7 +1103,7 @@ function selectedFrequenciesBody(input: JsonObject): JsonObject {
   }
   const frequencies = input.selectedFrequencies.map((frequency) => {
     const normalized = normalizeFrequency(requireString(frequency, "selected frequency", 32));
-    if (!normalized) throw new Error("selected frequency must look like 163.935 or 163.9350");
+    if (!normalized) throw new Error("selected frequency must look like 163.935, 163.9350 or 3330");
     return normalized;
   });
   return { selected_freqs: [...new Set(frequencies)] };
@@ -1121,7 +1125,7 @@ function frequencyGuidance(payload: RunnerPayload): string {
   const mentions = mentionedFrequencies(texts);
   if (!mentions.length) return "";
   const pairs = mentions.map(({ written, stored }) => (written === stored ? stored : `${written} = ${stored}`)).join(", ");
-  return `\n\nFrequencies named in this conversation, with their stored Echo form: ${pairs}. Each pair is the same frequency; tool results show the four-decimal form. Pass them in selectedFrequencies when reading inbox messages.`;
+  return `\n\nFrequencies named in this conversation, with their stored Echo form: ${pairs}. Each pair is the same frequency; tool results show the four-decimal form. This is reference only: pass in selectedFrequencies only the frequencies the current request is about.`;
 }
 
 function selectedUnitsBody(input: JsonObject): JsonObject {

@@ -639,13 +639,14 @@ test("incident 01a1a1d8: normalizes user-written frequencies to the stored four-
   const context = validatePayload(normalPayload, false).timeContext!;
   const params = {
     period: { kind: "relative_days", days: 1 },
-    selectedFrequencies: ["163.935", "163,9350", " 163.93 ", "27.135"],
+    selectedFrequencies: ["163.935", "163,9350", " 163.93 ", "27.135", "3330"],
   };
   const body = inboxMessagesRequestBody(params, context);
-  assert.deepEqual(body.selected_freqs, ["163.9350", "163.9300", "27.1350"]);
+  // Integer-only values stay unchanged, as Echo stores «Частота: 3330».
+  assert.deepEqual(body.selected_freqs, ["163.9350", "163.9300", "27.1350", "3330"]);
   assert.equal(body.search, undefined);
   assert.equal(normalizeFrequency("163.9350"), "163.9350");
-  for (const invalid of ["163", "163.93501", "abc", "163.935 МГц"])
+  for (const invalid of ["16", "163.93501", "abc", "163.935 МГц"])
     assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [invalid] }, context));
   assert.throws(() => inboxMessagesRequestBody({ ...params, selectedFrequencies: [] }, context));
 });
@@ -674,7 +675,7 @@ test("incident 01a1a1d8: tells the agent that mentioned frequencies equal their 
     ),
   );
   assert.match(prompt, /stored Echo form: 165\.55 = 165\.5500, 163\.935 = 163\.9350\. Each pair is the same frequency/);
-  assert.match(prompt, /selectedFrequencies/);
+  assert.match(prompt, /only the frequencies the current request is about/);
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /Frequencies named in this conversation/);
 });
 
