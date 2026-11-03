@@ -96,7 +96,15 @@ fn fixed_inbox_votes_cannot_be_replaced_or_dropped_for_another_cluster_2133() {
             &[],
             &fixed,
         ),
-        vec![None; 4]
+        vec![Some(0), Some(0), None, None]
+    );
+    assert_eq!(
+        elect_settlements_with_fixed(
+            &[draft("A", &[]), draft("B", &[(2, 0.1, 1.0)])],
+            &[],
+            &fixed,
+        ),
+        vec![None; 2]
     );
 }
 
@@ -114,7 +122,7 @@ fn selects_strict_majority_and_leaves_outliers_unresolved_2133() {
 }
 
 #[test]
-fn missing_and_ineligible_names_count_against_majority_2133() {
+fn missing_and_ineligible_names_do_not_block_resolved_locations_2133() {
     assert_eq!(
         chosen(vec![
             draft("A", &[(1, 0.0, 1.0)]),
@@ -122,7 +130,7 @@ fn missing_and_ineligible_names_count_against_majority_2133() {
             draft("MISSING", &[]),
             draft("DISTANT", &[(3, 0.0, 150_001.0)]),
         ]),
-        vec![None; 4]
+        vec![Some(1), Some(2), None, None]
     );
     assert_eq!(
         chosen(vec![
@@ -132,6 +140,18 @@ fn missing_and_ineligible_names_count_against_majority_2133() {
         ]),
         vec![Some(1), Some(2), None]
     );
+    for candidates in [vec![(1, 0.0, 1.0)], vec![(1, 0.0, 1.0), (2, 0.1, 2.0)]]
+    {
+        let expected = (candidates.len() == 1).then_some(1);
+        assert_eq!(
+            chosen(vec![
+                draft("A", &candidates),
+                draft("MISSING", &[]),
+                draft("DISTANT", &[(3, 0.0, 150_001.0)]),
+            ]),
+            vec![expected, None, None]
+        );
+    }
 }
 
 #[test]

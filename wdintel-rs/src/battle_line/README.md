@@ -33,14 +33,16 @@ ranked against the active Battle Line/AOR segment before the pure election in
 `settlement_clusters.rs`, retaining the existing west/east distance limits.
 Network candidates still use the configured JSON catalog scope and fallback.
 
-Without an anchor, each distinct normalized location name has one vote,
-including names with no eligible candidates. The election first maximizes the
+Without an anchor, each distinct normalized location name with eligible
+candidates has one vote. Missing and ineligible names remain undefined without
+counting against the majority, so a single unambiguous eligible name can resolve
+even when all other names are undefined. The election first maximizes the
 number of names whose candidates are all less than 30 km apart, then minimizes
 their total pairwise distance and total distance to the Battle Line. A result
-requires strictly more than half of all names. Unfitting names remain
-unresolved; tied best results leave the whole set unresolved. Distances within 1
-mm of the minimum at each scoring level count as tied, independently of candidate
-order. One name with several eligible canonical settlements remains
+requires strictly more than half of the names with eligible candidates. Unfitting
+names remain unresolved; tied best results leave the whole set unresolved.
+Distances within 1 mm of the minimum at each scoring level count as tied,
+independently of candidate order. One name with several eligible canonical settlements remains
 unresolved. The search examines at most 100,000 states and 64 names; exceeding
 either bound leaves the set unresolved.
 

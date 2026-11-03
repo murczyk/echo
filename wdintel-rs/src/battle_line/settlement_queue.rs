@@ -2360,20 +2360,34 @@ from battle_line_version where id = $2
         .await
         .unwrap();
         let mut cache = SettlementResolutionCache::default();
-        for (name, expected) in [
-            ("#2133 db'only", Some(2_133_101)),
-            ("#2133 JSON ONLY", None),
-            ("#2133 INVALID", None),
-        ] {
-            let request = insert_cluster_test_item(&txn, &[(name, None, None)])
-                .await
-                .unwrap();
+        let request = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 db'only", None, None),
+                ("#2133 JSON ONLY", None, None),
+                ("#2133 INVALID", None, None),
+            ],
+        )
+        .await
+        .unwrap();
+        for _ in 0..2 {
             resolve_claimed_item(&txn, request.item_id, version, &mut cache)
                 .await
                 .unwrap();
             let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
-            assert_eq!(rows[0].settlement_id, expected, "{name}");
-            assert_eq!(rows[0].is_undefined, Some(expected.is_none()));
+            assert_eq!(
+                rows.iter()
+                    .map(|row| (row.settlement_id, row.is_undefined))
+                    .collect::<Vec<_>>(),
+                vec![
+                    (Some(2_133_101), Some(false)),
+                    (None, Some(true)),
+                    (None, Some(true)),
+                ]
+            );
+            requeue_unresolved_item_settlements(&txn, &[request.item_id])
+                .await
+                .unwrap();
         }
         txn.rollback().await.unwrap();
     }
@@ -2538,7 +2552,7 @@ from battle_line_version where id = $2
             ("|#2133 SHARED|#2133 FOREST|", vec![None, None]),
             (
                 "|#2133 A|#2133 B|#2133 SHARED|#2133 FOREST|",
-                vec![None, None, None, None],
+                vec![Some(2_133_101), None, Some(2_133_103), None],
             ),
             (
                 "|#2133 A|#2133 SHARED|#2133 FOREST|",
