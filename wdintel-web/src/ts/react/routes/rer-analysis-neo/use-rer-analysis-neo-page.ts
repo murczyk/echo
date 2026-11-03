@@ -753,6 +753,10 @@ export function useRerAnalysisNeoPage(
         replyNavigationRef.current = false;
         clearTargetMessageContext();
         setTargetMessageUid(null);
+      } else if (targetMessageFocusActive && !replyNavigationRef.current) {
+        // Forward to the entry pushed when the reader left the linked message.
+        targetMessageControllerRef.current?.cancel();
+        setTargetMessageFocusActive(false);
       }
       if (queryStateChanged) setQueryState(nextQueryState);
     };

@@ -1670,6 +1670,29 @@ describe('useRerAnalysisNeoPage', () => {
     expect(new URL(window.location.href).searchParams.get('m')).toBe('target-uid');
   });
 
+  it('releases the linked focus when Forward restores the browsing URL', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(buildDirectLinkWindow());
+    renderHook();
+    await flushEffects();
+    const linkedUrl = window.location.href;
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    const browsingUrl = window.location.href;
+    window.history.replaceState(window.history.state, '', linkedUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.focusActive).toBe(true);
+
+    window.history.replaceState(window.history.state, '', browsingUrl);
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await flushEffects();
+
+    expect(window.location.href).toBe(browsingUrl);
+    expect(latest?.directMessageNavigation?.targetMessageId).toBe(50);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(2);
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3689
   it('finishes a linked-context refresh when the 41-message response is displayed in a 40-message window', async () => {
     const baseWindow = buildDirectLinkWindow();
