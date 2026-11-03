@@ -74,7 +74,10 @@ import {
   deliveredCitations,
   needsCitationRepair,
   preserveRequestedCitation,
+  canonicalColorCode,
+  DMR_COLOR_CODE_MAX,
   prepareMessageCitations,
+  projectDmrMetadata,
   validateCitations,
   type CitedMessage,
   type MessageCitation,
@@ -1083,11 +1086,7 @@ const INTEGER_FREQUENCY_RE = /^\d{3,5}$/;
 const MENTIONED_FREQUENCY_RE = /(?<![\p{L}\p{N}.,])(\d{3}[.,]\d{2,4})(?![\p{N}]|[.,]\p{N})/gu;
 const MENTIONED_FREQUENCY_LIMIT = 16;
 const MENTIONED_COLOR_CODE_RE = /(?<![\p{L}\p{N}])(?:(?:[CcСс]{2}|🎨)[\s:=-]*|код\s+кольору\s*:?\s*)(\d{1,2})(?!\p{N})/giu;
-const DMR_COLOR_CODE_MAX = 15;
-// Color codes are 0-15, so every distinct valid code fits; id lists are bounded.
-const DMR_COLOR_CODE_LIMIT = DMR_COLOR_CODE_MAX + 1;
-const DMR_ID_LIMIT = 32;
-const DMR_METADATA_VALUE_MAX_CHARACTERS = 64;
+
 
 // Mirrors wdintel-rs rer_importer::frequency::etalon: Echo stores four decimals,
 // while integer-only values such as «Частота: 3330» are stored unchanged.
@@ -1132,7 +1131,7 @@ export function mentionedColorCodes(texts: string[]): { written: string; colorCo
   for (const text of texts) {
     for (const match of text.matchAll(MENTIONED_COLOR_CODE_RE)) {
       if (mentions.size >= MENTIONED_FREQUENCY_LIMIT) break;
-      const colorCode = String(Number(match[1]));
+      const colorCode = canonicalColorCode(match[1]);
       if (Number(colorCode) <= DMR_COLOR_CODE_MAX && !mentions.has(match[0].trim()))
         mentions.set(match[0].trim(), colorCode);
     }
@@ -1740,55 +1739,6 @@ function groupNamesFrom(value: JsonObject): Map<string, string> {
     }
   }
   return groupNames;
-}
-
-function dmrValue(record: JsonObject, field: string): string | undefined {
-  const value = record[field];
-  return typeof value === "string" && value.trim()
-    ? value.trim().slice(0, DMR_METADATA_VALUE_MAX_CHARACTERS)
-    : undefined;
-}
-
-class BoundedDmrList {
-  readonly entries = new Map<string, JsonObject | string>();
-  truncated = false;
-  private readonly limit: number;
-  constructor(limit: number) {
-    this.limit = limit;
-  }
-
-  add(key: string | undefined, entry: JsonObject | string): void {
-    if (!key || this.entries.has(key)) return;
-    if (this.entries.size >= this.limit) this.truncated = true;
-    else this.entries.set(key, entry);
-  }
-}
-
-function dmrIdEntry(record: JsonObject, idField: string, nameField: string): [string | undefined, JsonObject] {
-  const id = dmrValue(record, idField);
-  const name = dmrValue(record, nameField);
-  return [id || name ? `${id ?? ""}\u0000${name ?? ""}` : undefined, { ...(id ? { id } : {}), ...(name ? { name } : {}) }];
-}
-
-// Parsed DMR metadata, deduplicated per message; truncated marks incomplete lists.
-function projectDmrMetadata(value: unknown): JsonObject | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const colorCodes = new BoundedDmrList(DMR_COLOR_CODE_LIMIT);
-  const callGroups = new BoundedDmrList(DMR_ID_LIMIT);
-  const senders = new BoundedDmrList(DMR_ID_LIMIT);
-  for (const item of value) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const record = item as JsonObject;
-    const colorCode = dmrValue(record, "color_code");
-    colorCodes.add(colorCode, colorCode ?? "");
-    callGroups.add(...dmrIdEntry(record, "call_group_id", "call_group_name"));
-    senders.add(...dmrIdEntry(record, "sender_id", "sender_name"));
-  }
-  const dmr: JsonObject = {};
-  for (const [key, list] of Object.entries({ colorCodes, callGroups, senders }))
-    if (list.entries.size) dmr[key] = [...list.entries.values()];
-  if (!Object.keys(dmr).length) return undefined;
-  return colorCodes.truncated || callGroups.truncated || senders.truncated ? { ...dmr, truncated: true } : dmr;
 }
 
 function projectMessageFields(

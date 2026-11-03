@@ -703,7 +703,7 @@ test("#3998 reads СС3 in a user query as the DMR color code", () => {
   assert.doesNotMatch(systemPrompt(validatePayload(normalPayload, false)), /DMR color codes named/);
 });
 
-test("#3998 exposes parsed DMR metadata on retrieved messages", () => {
+test("#3998 exposes parsed DMR metadata on retrieved messages", async () => {
   const item = (id: number, metadata: unknown) => [id, { message_uid: `uid-${id}`, freq: "144.8450", text: "СС: 3 👥: 24538🔐", metadata }];
   const response = compactInboxResponse({
     inbox_items: [
@@ -713,12 +713,19 @@ test("#3998 exposes parsed DMR metadata on retrieved messages", () => {
         { color_code: " ", call_group_id: null },
       ]),
       item(1, []),
+      item(4, [{ color_code: "03" }, { color_code: "3" }]),
     ],
     page_limit: 20,
   });
   const messages = response.messages as Array<Record<string, unknown>>;
   assert.deepEqual(messages[0].dmr, { colorCodes: ["3"], callGroups: [{ id: "24538" }] });
   assert.equal("dmr" in messages[1], false);
+  // Retained evidence for final synthesis keeps the same projection.
+  const { prepareMessageCitations } = await import("./citations.ts");
+  const prepared = prepareMessageCitations("inbox_messages", { inbox_items: [item(2, [{ color_code: "03", sender_id: "7" }]), item(1, [])] });
+  assert.deepEqual(prepared.messages.map((message) => message.dmr), [{ colorCodes: ["3"], senders: [{ id: "7" }] }, undefined]);
+  // A zero-padded source code equals the user's «СС3».
+  assert.deepEqual(messages[2].dmr, { colorCodes: ["3"] });
   // Every color code of a nine-code list survives; long id lists are marked truncated.
   const wide = compactInboxResponse({
     inbox_items: [item(3, [
