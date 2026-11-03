@@ -28,6 +28,7 @@ const EVENT_TYPES: &[&str] = &[
     "message_citations",
     "file_citations",
     "map_artifact",
+    "document_artifact",
     "completion",
     "cancellation",
     "error",
@@ -53,6 +54,7 @@ const RUNNER_EVENT_TYPES: &[&str] = &[
     "message_citations",
     "file_citations",
     "map_artifact",
+    "document_artifact",
 ];
 
 pub async fn append_runner(
@@ -133,9 +135,43 @@ async fn append_while_running(
         txn.commit().await.c(h!())?;
         return Ok(true);
     }
+    if event_type == "document_artifact" {
+        let payload = super::documents::artifact_event_payload(
+            &txn, request_id, &payload,
+        )
+        .await
+        .c(h!())?;
+        if document_artifact_recorded(&txn, request_id, &payload)
+            .await
+            .c(h!())?
+        {
+            txn.commit().await.c(h!())?;
+            return Ok(true);
+        }
+        append_in_transaction(&txn, request_id, event_type, payload).await?;
+        txn.commit().await.c(h!())?;
+        return Ok(true);
+    }
     append_in_transaction(&txn, request_id, event_type, payload).await?;
     txn.commit().await.c(h!())?;
     Ok(true)
+}
+
+/// A replayed runner event for an already announced revision is a no-op.
+async fn document_artifact_recorded(
+    txn: &DatabaseTransaction,
+    request_id: Uuid,
+    payload: &Value,
+) -> Result<bool, AppError> {
+    let existing = ai_agent_request_event::Entity::find()
+        .filter(ai_agent_request_event::Column::RequestId.eq(request_id))
+        .filter(
+            ai_agent_request_event::Column::EventType.eq("document_artifact"),
+        )
+        .all(txn)
+        .await
+        .c(h!())?;
+    Ok(existing.iter().any(|event| event.payload == *payload))
 }
 
 pub(super) async fn replace_message_citations(
@@ -484,6 +520,14 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
     if event_type == "map_artifact" {
         let document = super::maps::parse(&payload)?;
         payload = serde_json::json!({ "document": document });
+    }
+    if event_type == "document_artifact" {
+        let document_id = payload.get("documentId")?.as_str()?.to_string();
+        let revision = payload.get("revision")?.as_i64()?;
+        payload = serde_json::json!({
+            "documentId": document_id,
+            "revision": revision,
+        });
     }
     if event_type == "assistant_snapshot" {
         let text = payload.get("text").and_then(Value::as_str)?;

@@ -1,9 +1,11 @@
 import AddCommentOutlinedIcon from '@mui/icons-material/AddCommentOutlined';
 import CloseIcon from '@mui/icons-material/Close';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
 import {
+  Badge,
   Box,
   CircularProgress,
   Divider,
@@ -18,9 +20,19 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { FormEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FormEvent,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type {
   AiAgentActivityPresentation,
+  AiAgentDocumentArtifact,
   AiAgentReasoningPreset,
   AiAgentCompletionMetadata,
   AiAgentMapEditTarget,
@@ -40,6 +52,19 @@ import {
 const MapWorkspace = lazy(() =>
   import('./MapWorkspace').then((module) => ({ default: module.MapWorkspace })),
 );
+const DocumentWorkspace = lazy(() =>
+  import('./DocumentWorkspace').then((module) => ({ default: module.DocumentWorkspace })),
+);
+import type { DocumentEditTarget } from './DocumentWorkspace';
+import { DocumentEditContext } from './DocumentEditContext';
+import {
+  ConversationDocumentsContext,
+  DocumentChip,
+  DocumentSelectionContext,
+  documentHref,
+  latestDocuments,
+  type DocumentFileSelection,
+} from './document-files';
 import { ConversationHistoryItem } from './ConversationHistoryItem';
 import {
   rememberedProviderId,
@@ -111,6 +136,7 @@ export type LiveRequest = {
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
   attachments?: AiAgentUpload[];
   lastSequence: number;
   streamError: string | null;
@@ -267,6 +293,7 @@ export function activeRequestsFromConversation(
       citations: assistantByRequestId.get(message.requestId)?.citations ?? [],
       fileCitations: assistantByRequestId.get(message.requestId)?.fileCitations ?? [],
       maps: assistantByRequestId.get(message.requestId)?.maps ?? [],
+      documents: assistantByRequestId.get(message.requestId)?.documents ?? [],
       attachments: message.attachments ?? [],
       progress: [],
       tools: [],
@@ -394,6 +421,13 @@ export function applyAiAgentEvent(request: LiveRequest, event: AiAgentEvent): Li
         citations.set(citation.messageIdentifier, citation);
       return { ...next, citations: [...citations.values()] };
     }
+    case 'document_artifact': {
+      if (!event.document) return next;
+      return {
+        ...next,
+        documents: latestDocuments([...(request.documents ?? []), event.document]),
+      };
+    }
     case 'map_artifact': {
       if (!event.map || event.map.requestId !== request.id) return next;
       const maps = request.maps ?? [];
@@ -436,12 +470,14 @@ export function MarkdownContent({
   citations,
   fileCitations = [],
   maps,
+  documents = [],
   inertMaps = false,
 }: {
   children: string;
   citations: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
   inertMaps?: boolean;
 }) {
   return (
@@ -481,6 +517,7 @@ export function MarkdownContent({
         citations={citations}
         fileCitations={fileCitations}
         maps={maps}
+        documents={documents}
         inertMaps={inertMaps}
       >
         {children}
@@ -494,12 +531,17 @@ function AssistantMessage({
   citations = [],
   fileCitations = [],
   maps = [],
+  documents = [],
 }: {
   content: string;
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
 }) {
+  const unreferencedDocuments = documents.filter(
+    (document) => !content.includes(`](${documentHref(document.documentId)})`),
+  );
   const mainMap = [...maps].reverse().find((summary) => summary.isMain);
   const unreferencedMaps = maps.filter(
     (summary) => summary.id !== mainMap?.id && !content.includes(`](echo-map:${summary.id})`),
@@ -521,9 +563,21 @@ function AssistantMessage({
       <Typography variant="caption" color="text.secondary" component="div" sx={{ mb: 0.5 }}>
         ЕХО Агент
       </Typography>
-      <MarkdownContent citations={citations} fileCitations={fileCitations} maps={maps}>
+      <MarkdownContent
+        citations={citations}
+        fileCitations={fileCitations}
+        maps={maps}
+        documents={documents}
+      >
         {content}
       </MarkdownContent>
+      {unreferencedDocuments.length ? (
+        <p className="flex flex-wrap gap-echo-xs">
+          {unreferencedDocuments.map((document) => (
+            <DocumentChip key={document.documentId} document={document} />
+          ))}
+        </p>
+      ) : null}
       {unreferencedMaps.length ? (
         <p className="flex flex-wrap gap-echo-xs">
           {unreferencedMaps.map((summary) => (
@@ -563,6 +617,7 @@ function ConversationMessage({
           citations={message.citations}
           fileCitations={message.fileCitations}
           maps={message.maps}
+          documents={message.documents}
         />
       </Stack>
     );
@@ -626,12 +681,13 @@ function ConversationMessage({
 function LiveResponse({ request }: { request: LiveRequest }) {
   return (
     <Stack spacing={1.5} alignItems="flex-start">
-      {request.assistantText || request.maps?.length ? (
+      {request.assistantText || request.maps?.length || request.documents?.length ? (
         <AssistantMessage
           content={request.assistantText}
           citations={request.citations}
           fileCitations={request.fileCitations}
           maps={request.maps}
+          documents={request.documents}
         />
       ) : null}
 
@@ -739,6 +795,7 @@ function LiveRequestView({
     citations: [],
     fileCitations: [],
     maps: [],
+    documents: [],
     attachments: request.attachments ?? [],
     content: request.prompt,
     createdAt: request.createdAt,
@@ -813,6 +870,12 @@ export function AiAgentChat({
   const [mapEditEnabled, setMapEditEnabled] = useState(true);
   const [mapSelectionCount, setMapSelectionCount] = useState(0);
   const mapOpenerRef = useRef<HTMLElement | null>(null);
+  const [documentsOpen, setDocumentsOpen] = useState(false);
+  const [documentSelection, setDocumentSelection] = useState<DocumentFileSelection | null>(null);
+  const [documentTarget, setDocumentTarget] = useState<DocumentEditTarget | null>(null);
+  const [documentEditEnabled, setDocumentEditEnabled] = useState(true);
+  const [documentRefreshToken, setDocumentRefreshToken] = useState(0);
+  const documentOpenerRef = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const liveRequestsRef = useRef<LiveRequest[]>([]);
@@ -1071,6 +1134,7 @@ export function AiAgentChat({
           citations: assistantMessage?.citations ?? request.citations,
           fileCitations: assistantMessage?.fileCitations ?? request.fileCitations,
           maps: assistantMessage?.maps ?? request.maps,
+          documents: assistantMessage?.documents ?? request.documents,
         };
       }),
     );
@@ -1086,6 +1150,10 @@ export function AiAgentChat({
     setMessages([]);
     setSelectedMap(null);
     mapOpenerRef.current = null;
+    setDocumentsOpen(false);
+    setDocumentSelection(null);
+    setDocumentTarget(null);
+    documentOpenerRef.current = null;
     clearLiveRequests();
     setDraft('');
     composerAttachments.discardAll(sendingUploadIdsRef.current);
@@ -1115,6 +1183,16 @@ export function AiAgentChat({
 
   function handleEvent(requestId: string, event: AiAgentEvent) {
     updateLiveRequest(requestId, (request) => applyAiAgentEvent(request, event));
+    if (event.type === 'document_artifact' && event.document) {
+      const saved = event.document;
+      setDocumentRefreshToken((token) => token + 1);
+      // Follow the agent's new version of the document that is open.
+      setDocumentSelection((current) =>
+        current?.kind === 'document' && current.documentId === saved.documentId
+          ? { kind: 'document', documentId: saved.documentId, revision: saved.revision }
+          : current,
+      );
+    }
     if (event.type === 'error') {
       notify({ severity: 'error', message: GENERIC_REQUEST_FAILURE });
     }
@@ -1166,6 +1244,7 @@ export function AiAgentChat({
     const current = liveRequestsRef.current.find((request) => request.id === requestId);
     if (!controller.signal.aborted && current && TERMINAL_STATES.has(current.state)) {
       setMapRefreshToken((token) => token + 1);
+      setDocumentRefreshToken((token) => token + 1);
       const edited = editedMapsRef.current.get(requestId);
       if (edited) {
         editedMapsRef.current.delete(requestId);
@@ -1263,12 +1342,17 @@ export function AiAgentChat({
         mapTarget.mapId === selectedMap.id
           ? mapTarget
           : null;
+      const documentEdit =
+        documentsOpen && documentEditEnabled && documentTarget
+          ? { documentId: documentTarget.documentId, revision: documentTarget.revision }
+          : null;
       const created = await submitAiAgentRequest({
         conversationId: activeConversationIdRef.current,
         providerId,
         message: prompt,
         ...(configuration?.reasoningPresetsEnabled ? { reasoningPreset: preset } : {}),
         ...(mapEdit ? { mapEdit } : {}),
+        ...(documentEdit ? { documentTarget: documentEdit } : {}),
         ...(uploadIds.length ? { uploadIds } : {}),
       });
       if (uploadIds.length) composerAttachments.clearSent(uploadIds);
@@ -1356,8 +1440,29 @@ export function AiAgentChat({
 
   function selectMap(summary: AiAgentMapSummary, opener: HTMLElement) {
     mapOpenerRef.current = opener;
+    setDocumentsOpen(false);
     setSelectedMap(summary);
     setMapEditEnabled(true);
+  }
+
+  const openDocuments = useCallback(
+    (selection: DocumentFileSelection | null, opener: HTMLElement) => {
+      documentOpenerRef.current = opener;
+      setSelectedMap(null);
+      setDocumentSelection(selection);
+      setDocumentsOpen(true);
+      setDocumentEditEnabled(true);
+    },
+    [],
+  );
+
+  function closeDocuments() {
+    setDocumentsOpen(false);
+    setDocumentTarget(null);
+    window.requestAnimationFrame(() => {
+      if (documentOpenerRef.current?.isConnected)
+        documentOpenerRef.current.focus({ preventScroll: true });
+    });
   }
 
   function closeMap() {
@@ -1378,6 +1483,23 @@ export function AiAgentChat({
     ],
     [messages, liveRequests],
   );
+
+  const conversationDocuments = useMemo(
+    () =>
+      latestDocuments([
+        ...messages.flatMap((message) => message.documents ?? []),
+        ...liveRequests.flatMap((request) => request.documents ?? []),
+      ]),
+    [messages, liveRequests],
+  );
+  const conversationFileCount =
+    conversationDocuments.length +
+    new Set(
+      [
+        ...messages.flatMap((message) => message.attachments ?? []),
+        ...liveRequests.flatMap((request) => request.attachments ?? []),
+      ].map((upload) => upload.id),
+    ).size;
 
   const selectedProvider = useMemo(
     () => configuration?.providers.find((provider) => provider.id === providerId) ?? null,
@@ -1466,7 +1588,8 @@ export function AiAgentChat({
       <Stack
         data-testid="ai-agent-chat-pane"
         sx={{
-          flex: selectedMap ? { xs: 1, lg: `0 0 ${AI_AGENT_CHAT_MAP_DOCK_WIDTH}` } : 1,
+          flex:
+            selectedMap || documentsOpen ? { xs: 1, lg: `0 0 ${AI_AGENT_CHAT_MAP_DOCK_WIDTH}` } : 1,
           minWidth: 0,
           minHeight: 0,
           position: 'relative',
@@ -1574,6 +1697,7 @@ export function AiAgentChat({
                       citations: [],
                       fileCitations: [],
                       maps: [],
+                      documents: [],
                       attachments: pendingSubmission.attachments,
                       content: pendingSubmission.prompt,
                       createdAt: pendingSubmission.createdAt,
@@ -1622,6 +1746,14 @@ export function AiAgentChat({
                   }
                 />
               ) : null}
+              {documentsOpen && documentTarget ? (
+                <DocumentEditContext
+                  title={documentTarget.title}
+                  revision={documentTarget.revision}
+                  enabled={documentEditEnabled}
+                  onToggle={() => setDocumentEditEnabled((enabled) => !enabled)}
+                />
+              ) : null}
               <ComposerAttachments
                 attachments={composerAttachments.attachments}
                 onRemove={composerAttachments.remove}
@@ -1663,6 +1795,23 @@ export function AiAgentChat({
                   sx={{ minWidth: 0 }}
                 >
                   <AttachFileButton disabled={composerDisabled} onFiles={addComposerFiles} />
+                  {activeConversationId && conversationFileCount ? (
+                    <Tooltip title="Файли розмови">
+                      <IconButton
+                        aria-label={`Файли розмови: ${conversationFileCount}`}
+                        aria-pressed={documentsOpen}
+                        onClick={(event) =>
+                          documentsOpen
+                            ? closeDocuments()
+                            : openDocuments(documentSelection, event.currentTarget)
+                        }
+                      >
+                        <Badge badgeContent={conversationFileCount} color="primary" max={99}>
+                          <FolderOpenOutlinedIcon fontSize="small" />
+                        </Badge>
+                      </IconButton>
+                    </Tooltip>
+                  ) : null}
                   <Select
                     variant="standard"
                     disableUnderline
@@ -1786,11 +1935,33 @@ export function AiAgentChat({
           />
         </Suspense>
       ) : null}
+      {documentsOpen && activeConversationId ? (
+        <Suspense fallback={null}>
+          <DocumentWorkspace
+            key={activeConversationId}
+            conversationId={activeConversationId}
+            selection={documentSelection}
+            refreshToken={documentRefreshToken}
+            onSelect={setDocumentSelection}
+            onClose={closeDocuments}
+            onTargetChange={setDocumentTarget}
+            onUseTemplate={(upload) =>
+              setDraft((current) => current || `Створи документ за зразком «${upload.fileName}»: `)
+            }
+          />
+        </Suspense>
+      ) : null}
     </Box>
   );
   return (
     <ConversationMapsContext.Provider value={conversationMaps}>
-      <MapSelectionContext.Provider value={selectMap}>{view}</MapSelectionContext.Provider>
+      <MapSelectionContext.Provider value={selectMap}>
+        <ConversationDocumentsContext.Provider value={conversationDocuments}>
+          <DocumentSelectionContext.Provider value={openDocuments}>
+            {view}
+          </DocumentSelectionContext.Provider>
+        </ConversationDocumentsContext.Provider>
+      </MapSelectionContext.Provider>
     </ConversationMapsContext.Provider>
   );
 }

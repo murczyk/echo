@@ -667,7 +667,9 @@ test('@regression #3064 failed chat retries preserve the prompt, provider and dr
       aiEngineId: 'engine',
       prompt: originalPrompt,
       mapEdit: null,
+      documentTarget: null,
       reasoningPreset: null,
+      uploadIds: [],
     });
     await expect(retry).toBeDisabled();
     await expect(input).toHaveValue(draft);
@@ -699,7 +701,9 @@ test('@regression #3064 failed chat retries preserve the prompt, provider and dr
       aiEngineId: 'engine',
       prompt: originalPrompt,
       mapEdit: null,
+      documentTarget: null,
       reasoningPreset: null,
+      uploadIds: [],
     });
     await expect(chat.getByTestId('live-request-request-retry-3')).toContainText(
       'Повторний запит завершено.',

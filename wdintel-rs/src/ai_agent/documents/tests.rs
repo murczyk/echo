@@ -1,0 +1,336 @@
+use super::revisions::{self, save_stored, StoredFile};
+use super::types::*;
+use super::validate;
+use crate::entities::{
+    ai_agent_conversation, ai_agent_document, ai_agent_request, ai_engine,
+    login,
+};
+use crate::error::AppError;
+use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
+use crate::types::Env;
+use chrono::Utc;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, EntityTrait, TransactionTrait,
+};
+use serde_json::json;
+use serial_test::serial;
+use std::io::{Cursor, Write};
+use uuid::Uuid;
+
+const MAIN_PART: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+
+fn package(entries: &[(&str, &str)]) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, content) in entries {
+        writer
+            .start_file(*name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(content.as_bytes()).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+fn content_types(main_type: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="{main_type}"/></Types>"#
+    )
+}
+
+#[test]
+fn issue_3985_only_plain_word_documents_are_stored() {
+    let mut docx = Cursor::new(Vec::new());
+    docx_rs::Docx::new()
+        .add_paragraph(
+            docx_rs::Paragraph::new()
+                .add_run(docx_rs::Run::new().add_text("Звіт")),
+        )
+        .build()
+        .pack(&mut docx)
+        .unwrap();
+    assert!(validate::validate_docx(docx.get_ref()).is_ok());
+
+    let main = content_types(MAIN_PART);
+    let body = ("word/document.xml", "<w:document/>");
+    assert!(validate::validate_docx(b"not a zip").is_err());
+    assert!(validate::validate_docx(&package(&[(
+        "[Content_Types].xml",
+        &main
+    )]))
+    .is_err());
+    assert!(validate::validate_docx(&package(&[
+        ("[Content_Types].xml", &main),
+        body,
+        ("word/vbaProject.bin", "macro"),
+    ]))
+    .is_err());
+    let macros =
+        content_types("application/vnd.ms-word.document.macroEnabled.main+xml");
+    assert!(validate::validate_docx(&package(&[
+        ("[Content_Types].xml", &macros),
+        body,
+    ]))
+    .is_err());
+}
+
+#[test]
+fn issue_3985_download_names_are_plain_docx_names() {
+    assert_eq!(
+        validate::file_name(Some("../../etc/passwd"), "Звіт"),
+        "passwd.docx"
+    );
+    assert_eq!(
+        validate::file_name(Some("Звіт: жовтень.doc"), "Звіт"),
+        "Звіт жовтень.docx"
+    );
+    assert_eq!(
+        validate::file_name(None, "Звіт за 01.11"),
+        "Звіт за 01.11.docx"
+    );
+}
+
+struct Fixture {
+    human: login::Model,
+    conversation: ai_agent_conversation::Model,
+    ai_engine: ai_engine::Model,
+}
+
+impl Fixture {
+    async fn new(env: &Env) -> Self {
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        let human = mk_login(
+            &env.dbx,
+            login::ActiveModel {
+                organism_id: Set(Some(organism.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("document-test-{}", Uuid::now_v7())),
+            url: Set("http://127.0.0.1:8000/v1".to_string()),
+            model_name: Set("test".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let conversation = ai_agent_conversation::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            human_login_id: Set(human.id),
+            ai_engine_id: Set(ai_engine.id),
+            title: Set("Documents".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        Self {
+            human,
+            conversation,
+            ai_engine,
+        }
+    }
+
+    async fn request(&self, env: &Env) -> ai_agent_request::Model {
+        let now = Utc::now().naive_utc();
+        ai_agent_request::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            conversation_id: Set(self.conversation.id),
+            human_login_id: Set(self.human.id),
+            ai_engine_id: Set(self.ai_engine.id),
+            prompt: Set("Заповни звіт".to_string()),
+            state: Set("running".to_string()),
+            queued_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+}
+
+fn stored() -> StoredFile {
+    StoredFile {
+        storage_key: format!("test/{}", Uuid::now_v7()),
+        sha256: "0".repeat(64),
+        size_bytes: 10,
+    }
+}
+
+fn new_document(key: Uuid) -> AgentDocumentSaveQuery {
+    AgentDocumentSaveQuery {
+        idempotency_key: key.to_string(),
+        title: Some("Звіт".to_string()),
+        ..Default::default()
+    }
+}
+
+fn new_version(document_id: &str, expected: i32) -> AgentDocumentSaveQuery {
+    AgentDocumentSaveQuery {
+        idempotency_key: Uuid::now_v7().to_string(),
+        document_id: Some(document_id.to_string()),
+        expected_revision: Some(expected),
+        summary: Some("Оновив таблицю".to_string()),
+        ..Default::default()
+    }
+}
+
+fn current_revision(error: &AppError) -> Option<i64> {
+    match error {
+        AppError::ConflictJson { body } => body["currentRevision"].as_i64(),
+        _ => None,
+    }
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3985_agent_saves_versions_inside_its_conversation() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let request = fixture.request(&env).await;
+    let key = Uuid::now_v7();
+    let created = save_stored(&env, &request, &new_document(key), stored())
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            created.revision,
+            created.created,
+            created.file_name.as_str()
+        ),
+        (1, true, "Звіт.docx")
+    );
+    let replayed = save_stored(&env, &request, &new_document(key), stored())
+        .await
+        .unwrap();
+    assert_eq!(replayed, created);
+
+    let second = save_stored(
+        &env,
+        &request,
+        &new_version(&created.document_id, 1),
+        stored(),
+    )
+    .await
+    .unwrap();
+    assert_eq!((second.revision, second.created), (2, false));
+    let stale = save_stored(
+        &env,
+        &request,
+        &new_version(&created.document_id, 1),
+        stored(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(current_revision(&stale), Some(2));
+
+    let stranger = Fixture::new(&env).await;
+    let foreign = stranger.request(&env).await;
+    let denied = save_stored(
+        &env,
+        &foreign,
+        &new_version(&created.document_id, 2),
+        stored(),
+    )
+    .await;
+    assert!(matches!(denied, Err(AppError::NotFound)));
+
+    let announced = json!({"documentId": created.document_id, "revision": 2});
+    assert!(
+        super::artifact_event_payload(&env.dbx, foreign.id, &announced)
+            .await
+            .is_err()
+    );
+    let payload =
+        super::artifact_event_payload(&env.dbx, request.id, &announced)
+            .await
+            .unwrap();
+    assert_eq!(payload["document"]["revision"], 2);
+    assert_eq!(payload["document"]["title"], "Звіт");
+
+    let target = AiAgentDocumentTarget {
+        document_id: created.document_id.clone(),
+        revision: 2,
+    };
+    let txn = env.dbx.begin().await.unwrap();
+    let elsewhere = super::store_request_target(
+        &txn,
+        stranger.human.id,
+        stranger.conversation.id,
+        foreign.id,
+        &target,
+    )
+    .await;
+    assert!(elsewhere.is_err());
+    drop(txn);
+}
+
+#[actix_web::test]
+#[serial]
+async fn issue_3985_restoring_a_version_branches_like_undo() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let fixture = Fixture::new(&env).await;
+    let request = fixture.request(&env).await;
+    let created =
+        save_stored(&env, &request, &new_document(Uuid::now_v7()), stored())
+            .await
+            .unwrap();
+    save_stored(
+        &env,
+        &request,
+        &new_version(&created.document_id, 1),
+        stored(),
+    )
+    .await
+    .unwrap();
+    let document_id = Uuid::parse_str(&created.document_id).unwrap();
+    let head = |expected_revision, revision| AiAgentDocumentHeadReq {
+        document_id: created.document_id.clone(),
+        expected_revision,
+        revision,
+    };
+
+    let restored = revisions::set_head(&env, document_id, &head(2, 1))
+        .await
+        .unwrap();
+    assert_eq!(
+        (
+            restored.document.head_revision,
+            restored.undo_revision,
+            restored.redo_revision
+        ),
+        (1, None, Some(2))
+    );
+    let stale = revisions::set_head(&env, document_id, &head(2, 2))
+        .await
+        .unwrap_err();
+    assert_eq!(current_revision(&stale), Some(1));
+
+    let branched = save_stored(
+        &env,
+        &request,
+        &new_version(&created.document_id, 1),
+        stored(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(branched.revision, 3);
+    let document = ai_agent_document::Entity::find_by_id(document_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let workspace = revisions::workspace(&env.dbx, &document).await.unwrap();
+    assert_eq!(workspace.revisions[0].revision, 3);
+    assert_eq!(workspace.revisions[0].parent_revision, Some(1));
+    assert_eq!(workspace.undo_revision, Some(1));
+
+    let undone = revisions::set_head(&env, document_id, &head(3, 1))
+        .await
+        .unwrap();
+    assert_eq!(undone.redo_revision, Some(3));
+}

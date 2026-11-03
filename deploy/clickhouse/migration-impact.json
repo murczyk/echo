@@ -980,6 +980,14 @@
         { "table": "public.api_sender", "strategy": "excluded" }
       ]
     },
+    "echo:m20261103_120000_ai_agent_documents": {
+      "changes": [
+        { "table": "public.ai_agent_document", "strategy": "excluded" },
+        { "table": "public.ai_agent_document_revision", "strategy": "excluded" },
+        { "table": "public.ai_agent_request_document_target", "strategy": "excluded" },
+        { "table": "public.ai_agent_request_event", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261101_151245_ai_agent_uploads": {
       "changes": [
         { "table": "public.ai_agent_engine_runtime_profile", "strategy": "excluded" },

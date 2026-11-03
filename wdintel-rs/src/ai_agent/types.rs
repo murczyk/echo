@@ -158,6 +158,8 @@ pub struct AiAgentMessageItem {
     #[serde(default)]
     pub maps: Vec<super::maps::types::AiAgentMapSummary>,
     #[serde(default)]
+    pub documents: Vec<super::documents::types::AiAgentDocumentArtifact>,
+    #[serde(default)]
     pub attachments: Vec<super::uploads::types::AiAgentUploadItem>,
 }
 
@@ -186,6 +188,8 @@ pub struct AiAgentRequestCreateReq {
     pub prompt: String,
     #[serde(default)]
     pub map_edit: Option<super::maps::types::AiAgentMapEditTarget>,
+    #[serde(default)]
+    pub document_target: Option<super::documents::types::AiAgentDocumentTarget>,
     #[serde(default)]
     pub upload_ids: Vec<String>,
 }

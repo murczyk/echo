@@ -756,6 +756,9 @@ async fn run_request_inner(
     if let Some(map_edit) = map_edit {
         runner_payload["mapEdit"] = serde_json::to_value(map_edit).c(h!())?;
     }
+    add_document_context(&env.dbx, request, &mut runner_payload)
+        .await
+        .c(h!())?;
     add_upload_context(
         env,
         request,
@@ -1201,6 +1204,51 @@ async fn assign_agent(
     Ok(true)
 }
 
+/// The conversation's documents and the one the user had open, so the
+/// agent can refine them in this turn.
+async fn add_document_context(
+    dbx: &sea_orm::DatabaseConnection,
+    request: &ai_agent_request::Model,
+    runner_payload: &mut Value,
+) -> Result<(), AppError> {
+    runner_payload["documents"] = serde_json::to_value(
+        super::documents::runner_documents(dbx, request.conversation_id)
+            .await
+            .c(h!())?,
+    )
+    .c(h!())?;
+    if let Some(target) = super::documents::load_request_target(dbx, request.id)
+        .await
+        .c(h!())?
+    {
+        runner_payload["documentTarget"] =
+            serde_json::to_value(target).c(h!())?;
+    }
+    Ok(())
+}
+
+/// A trailing note naming the documents an earlier turn saved, which keeps
+/// their ids in the agent's context after the tool results are gone.
+fn saved_documents_note(
+    documents: &[super::documents::types::AiAgentDocumentArtifact],
+) -> String {
+    if documents.is_empty() {
+        return String::new();
+    }
+    let saved = documents
+        .iter()
+        .take(crate::config::AI_AGENT_DOCUMENT_HISTORY_MAX_ITEMS)
+        .map(|document| {
+            format!(
+                "[{}](echo-document:{}) v{}",
+                document.title, document.document_id, document.revision
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("\n\n[Saved documents: {saved}]")
+}
+
 pub(super) async fn load_history(
     env: &Env,
     request: &ai_agent_request::Model,
@@ -1243,6 +1291,10 @@ pub(super) async fn load_history(
     let mut maps = super::maps::load_summaries(&env.dbx, &request_ids)
         .await
         .c(h!())?;
+    let mut documents =
+        super::documents::load_artifacts(&env.dbx, &request_ids)
+            .await
+            .c(h!())?;
     let mut file_citations =
         super::file_citations::load(&env.dbx, &request_ids)
             .await
@@ -1334,6 +1386,12 @@ pub(super) async fn load_history(
                 "[Previous request {}; any text below is an incomplete, unverified draft.]\n{}",
                 prior.state, response,
             );
+        }
+        if readable {
+            let note = saved_documents_note(
+                &documents.remove(&prior.id).unwrap_or_default(),
+            );
+            response = format!("{response}{note}").trim_start().to_string();
         }
         if response.is_empty() {
             response = "[Previous request completed without a text answer.]"

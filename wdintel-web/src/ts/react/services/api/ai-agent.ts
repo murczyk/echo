@@ -24,6 +24,14 @@ import type {
   AiAgentConversationSummary,
   AiAgentConversationUpdateReq,
   AiAgentDispatcherItem,
+  AiAgentDocumentArtifact,
+  AiAgentDocumentHeadReq,
+  AiAgentDocumentListReq,
+  AiAgentDocumentListRsp,
+  AiAgentDocumentSummary,
+  AiAgentDocumentTarget,
+  AiAgentDocumentWorkspaceReq,
+  AiAgentDocumentWorkspaceRsp,
   AiAgentDispatcherUpdateReq,
   AiAgentEchoProxyItem,
   AiAgentEchoProxyListRsp,
@@ -113,6 +121,7 @@ export type AiAgentEventType =
   | 'message_citations'
   | 'file_citations'
   | 'map_artifact'
+  | 'document_artifact'
   | 'completion_metadata'
   | 'completion'
   | 'cancellation'
@@ -133,6 +142,7 @@ export type AiAgentEvent = {
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   map?: AiAgentMapSummary | null;
+  document?: AiAgentDocumentArtifact | null;
   sourceTitle: string | null;
   sourceUrl: string | null;
   method: string | null;
@@ -264,6 +274,27 @@ function mapSummary(value: unknown, requestId: string): AiAgentMapSummary | null
   };
 }
 
+function documentArtifact(value: unknown): AiAgentDocumentArtifact | null {
+  if (!value || typeof value !== 'object') return null;
+  const document = value as AiAgentDocumentArtifact;
+  if (
+    typeof document.documentId !== 'string' ||
+    typeof document.title !== 'string' ||
+    typeof document.fileName !== 'string' ||
+    !Number.isSafeInteger(document.revision) ||
+    document.revision < 1 ||
+    !Number.isSafeInteger(document.sizeBytes)
+  )
+    return null;
+  return {
+    documentId: document.documentId,
+    revision: document.revision,
+    title: document.title,
+    fileName: document.fileName,
+    sizeBytes: document.sizeBytes,
+  };
+}
+
 export async function getAiAgentMap(
   summary: AiAgentMapSummary,
   signal?: AbortSignal,
@@ -389,6 +420,7 @@ function normalizeMessage(value: AiAgentMessageItem): AiAgentMessage {
     requestState: requestState(value.requestState),
     role: value.role,
     maps: value.maps ?? [],
+    documents: value.documents ?? [],
     fileCitations: value.fileCitations ?? [],
     attachments: value.attachments ?? [],
   };
@@ -431,6 +463,7 @@ export function normalizeAiAgentEvent(
     activityPresentation: value.activityPresentation ?? null,
     activityOnly: value.activityOnly ?? false,
     map: value.eventType === 'map_artifact' ? mapSummary(payload.document, requestId) : null,
+    document: value.eventType === 'document_artifact' ? documentArtifact(payload.document) : null,
     fileCitations:
       value.eventType === 'file_citations' && Array.isArray(payload.citations)
         ? payload.citations.filter(
@@ -637,6 +670,7 @@ export async function submitAiAgentRequest(input: {
   message: string;
   reasoningPreset?: AiAgentReasoningPreset | null;
   mapEdit?: AiAgentMapEditTarget | null;
+  documentTarget?: AiAgentDocumentTarget | null;
   uploadIds?: string[];
 }): Promise<AiAgentRequestCreated> {
   const req: AiAgentRequestCreateReq = {
@@ -645,6 +679,7 @@ export async function submitAiAgentRequest(input: {
     prompt: input.message,
     reasoningPreset: input.reasoningPreset ?? null,
     mapEdit: input.mapEdit ?? null,
+    documentTarget: input.documentTarget ?? null,
     uploadIds: input.uploadIds ?? [],
   };
   const response = await postJson<AiAgentRequestCreateRsp>('/api/ai-agent/requests/create', req);
@@ -681,6 +716,48 @@ export async function deleteAiAgentUpload(id: string): Promise<void> {
 
 export function aiAgentUploadUrl(id: string): string {
   return `/api/ai-agent/uploads/${encodeURIComponent(id)}/original`;
+}
+
+/** Uploads already sent in a conversation, oldest first. */
+export async function listAiAgentConversationUploads(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<AiAgentUpload[]> {
+  const req: AiAgentUploadListReq = { conversationId, ids: [] };
+  const uploads = (
+    await postJson<AiAgentUploadListRsp>('/api/ai-agent/uploads/list', req, { signal })
+  ).uploads;
+  return uploads.filter((upload) => upload.requestId !== null);
+}
+
+export type AiAgentDocument = AiAgentDocumentSummary;
+export type AiAgentDocumentWorkspace = AiAgentDocumentWorkspaceRsp;
+
+export async function listAiAgentDocuments(
+  conversationId: string,
+  signal?: AbortSignal,
+): Promise<AiAgentDocument[]> {
+  const req: AiAgentDocumentListReq = { conversationId };
+  return (await postJson<AiAgentDocumentListRsp>('/api/ai-agent/documents/list', req, { signal }))
+    .documents;
+}
+
+export async function getAiAgentDocumentWorkspace(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<AiAgentDocumentWorkspace> {
+  const req: AiAgentDocumentWorkspaceReq = { documentId };
+  return postJson<AiAgentDocumentWorkspace>('/api/ai-agent/documents/workspace', req, { signal });
+}
+
+export async function setAiAgentDocumentHead(
+  req: AiAgentDocumentHeadReq,
+): Promise<AiAgentDocumentWorkspace> {
+  return postJson<AiAgentDocumentWorkspace>('/api/ai-agent/documents/head', req);
+}
+
+export function aiAgentDocumentFileUrl(documentId: string, revision: number): string {
+  return `/api/ai-agent/documents/${encodeURIComponent(documentId)}/revisions/${revision}/file`;
 }
 
 export async function cancelAiAgentRequest(id: string): Promise<AiAgentRequestState> {

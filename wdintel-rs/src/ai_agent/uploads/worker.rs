@@ -26,6 +26,9 @@ pub async fn run_nofail(env: Arc<Env>, cancel: CancellationToken) {
             if let Err(err) = cleanup(&env).await {
                 error!("AI upload cleanup failed: {err:#}");
             }
+            if let Err(err) = crate::ai_agent::documents::cleanup(&env).await {
+                error!("AI document cleanup failed: {err:#}");
+            }
             next_cleanup = Instant::now()
                 + Duration::from_secs(AI_AGENT_UPLOAD_CLEANUP_INTERVAL_SECS);
         }
