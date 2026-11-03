@@ -60,6 +60,7 @@ pub struct Model {
     pub messenger_media_cache_min_free_gib: Option<i64>,
     pub rer_report_enabled: Option<bool>,
     pub ai_position_highlights_enabled: Option<bool>,
+    pub important_notify_all_enabled: Option<bool>,
     pub hide_networks: Option<bool>,
     pub api_rate_limit_replenish_interval_ms: Option<i32>,
     pub api_rate_limit_burst_size: Option<i32>,

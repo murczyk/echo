@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261103_073829_important_notify_all_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261031_080043_message_card_quick_action": {
       "changes": [
         {

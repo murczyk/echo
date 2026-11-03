@@ -14873,6 +14873,7 @@ type alias SystemSettingsCurrentRsp =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Int
     , apiRateLimitBurstSize : Int
@@ -14917,6 +14918,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
+        , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
         , ( "api_rate_limit_burst_size", (Json.Encode.int) struct.apiRateLimitBurstSize )
@@ -14966,6 +14968,7 @@ type alias SystemSettingsItem =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Int
     , apiRateLimitBurstSize : Int
@@ -15021,6 +15024,7 @@ systemSettingsItemEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
+        , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
         , ( "api_rate_limit_burst_size", (Json.Encode.int) struct.apiRateLimitBurstSize )
@@ -15081,6 +15085,7 @@ type alias CreateSystemSettingsReq =
     , dutyExcludeMenuEnabled : Bool
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Maybe (Bool)
+    , importantNotifyAllEnabled : Maybe (Bool)
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Maybe (Int)
     , apiRateLimitBurstSize : Maybe (Int)
@@ -15131,6 +15136,7 @@ createSystemSettingsReqEncoder struct =
         , ( "duty_exclude_menu_enabled", (Json.Encode.bool) struct.dutyExcludeMenuEnabled )
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiPositionHighlightsEnabled )
+        , ( "important_notify_all_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.apiRateLimitReplenishIntervalMs )
         , ( "api_rate_limit_burst_size", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.apiRateLimitBurstSize )
@@ -30060,6 +30066,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_burst_size" (Json.Decode.int)))
@@ -30110,6 +30117,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_burst_size" (Json.Decode.int)))
@@ -30165,6 +30173,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_exclude_menu_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_burst_size" (Json.Decode.nullable (Json.Decode.int))))

@@ -1,5 +1,5 @@
 use crate::config::{
-    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
     REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT,
@@ -209,6 +209,9 @@ fn map_system_settings_item(
         ai_position_highlights_enabled: settings
             .ai_position_highlights_enabled
             .unwrap_or(false),
+        important_notify_all_enabled: settings
+            .important_notify_all_enabled
+            .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
         analysis_aor_filter_enabled: settings
             .analysis_aor_filter_enabled
             .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
@@ -415,6 +418,17 @@ where
         .c(h!())?
         .map(|settings| settings.enable_audio_transcription)
         .unwrap_or(false))
+}
+
+pub async fn important_notify_all_enabled<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.important_notify_all_enabled)
+        .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT))
 }
 
 pub async fn bot_tags_disabled<C>(dbx: &C) -> Result<bool, AppError>
@@ -806,6 +820,7 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        important_notify_all_enabled: Set(req.important_notify_all_enabled),
         api_rate_limit_replenish_interval_ms: Set(Some(
             req.api_rate_limit_replenish_interval_ms
                 .unwrap_or(
@@ -903,11 +918,19 @@ async fn create_system_settings_for_login(
     req.ai_position_highlights_enabled = Some(
         req.ai_position_highlights_enabled
             .or_else(|| {
-                settings.and_then(|settings| {
+                settings.as_ref().and_then(|settings| {
                     settings.ai_position_highlights_enabled
                 })
             })
             .unwrap_or(false),
+    );
+    req.important_notify_all_enabled = Some(
+        req.important_notify_all_enabled
+            .or_else(|| {
+                settings
+                    .and_then(|settings| settings.important_notify_all_enabled)
+            })
+            .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
     );
     deactivate_active_settings(&txn, login).await.c(h!())?;
     let created = system_settings_active_model(
@@ -1073,6 +1096,9 @@ pub async fn current_system_settings(
             ai_position_highlights_enabled: settings
                 .ai_position_highlights_enabled
                 .unwrap_or(false),
+            important_notify_all_enabled: settings
+                .important_notify_all_enabled
+                .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
             analysis_aor_filter_enabled: settings
                 .analysis_aor_filter_enabled
                 .unwrap_or(ANALYSIS_AOR_FILTER_ENABLED_DEFAULT),
@@ -1114,6 +1140,7 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            important_notify_all_enabled: IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
             api_rate_limit_replenish_interval_ms:
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
             api_rate_limit_burst_size:
@@ -1590,6 +1617,46 @@ mod tests {
                     .unwrap()
                     .id,
                 saved.id
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn legacy_admin_saves_preserve_important_notify_all_3987() {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let mut legacy_body =
+            serde_json::to_value(settings_req(false)).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("important_notify_all_enabled");
+        let legacy_req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        assert_eq!(legacy_req.important_notify_all_enabled, None);
+        let mut req = settings_req(false);
+        for (incoming, expected) in [
+            (Some(false), false),
+            (None, false),
+            (Some(true), true),
+            (None, true),
+        ] {
+            req.important_notify_all_enabled = incoming;
+            let req = if incoming.is_none() {
+                &legacy_req
+            } else {
+                &req
+            };
+            let saved = create_system_settings_for_login(&env.dbx, &login, req)
+                .await
+                .unwrap();
+            assert_eq!(saved.important_notify_all_enabled, Some(expected));
+            assert_eq!(
+                important_notify_all_enabled(&env.dbx).await.unwrap(),
+                expected
             );
         }
     }
@@ -2158,6 +2225,7 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            important_notify_all_enabled: Some(true),
             api_rate_limit_replenish_interval_ms: Some(
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
             ),
@@ -2246,6 +2314,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            important_notify_all_enabled: Set(None),
             api_rate_limit_replenish_interval_ms: Set(None),
             api_rate_limit_burst_size: Set(None),
             two_factor_auth_enabled: Set(None),

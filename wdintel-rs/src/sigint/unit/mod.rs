@@ -4178,6 +4178,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),
             messenger_media_cache_enabled: Set(None),
