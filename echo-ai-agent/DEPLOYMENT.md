@@ -364,12 +364,13 @@ and a query such as `144.8450 Мишаня Якудза, СС3` is read as color
 as a callsign. Verify that a request naming `163.935` reads messages stored as
 `163.9350`, and that a `СС3` request reports color codes from message metadata.
 
-## Conversation documents (release 2026.11.03.1)
+## Conversation documents (release 2026.11.03.2)
 
 Apply the `m20261103_120000_ai_agent_documents` migration with the matching
 application, then upgrade the approved installation's namespace with
-`ai-control-panel upgrade --host <host> --release 2026.11.03.1`, previewing with
-`--dry-run` first. The release template adds the Debian `python3-docx`,
+`ai-control-panel upgrade --host <host> --release 2026.11.03.2`, previewing with
+`--dry-run` first. The release also contains the frequency normalization of
+`2026.11.03.1`. The release template adds the Debian `python3-docx`,
 `python3-lxml`, `python3-matplotlib`, `python3-openpyxl` and `fonts-dejavu-core`
 packages and the `echodoc` library; the build warns when python-docx cannot be
 imported. The runner accepts the new `documents` and `documentTarget` payload
@@ -388,9 +389,7 @@ See [conversation documents](DOCUMENTS.md).
 
 ## Template reports and 4-hour Deep (release 2026.11.03.2)
 
-No migration. Deploy the matching Echo build, then upgrade the approved
-namespace with `ai-control-panel upgrade --host <host> --release 2026.11.03.2`
-(`--dry-run` first). The runner accepts the new budget tiers: Deep runs up to
+The same release and upgrade as conversation documents above. The runner accepts the new budget tiers: Deep runs up to
 4 hours (`maxRuntimeSeconds` 14400) with larger tool, API, provider-call and
 event limits, and Fast or Balanced requests that build a document get 30 minutes
 (`documentTask: true`). Deep requests queued before the deploy keep their

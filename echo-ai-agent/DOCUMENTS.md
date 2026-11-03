@@ -92,20 +92,20 @@ conversation. Downloads are owner-only attachments. See
 
 ## Rollout
 
-Release `2026.11.03.1` requires migration `m20261103_120000_ai_agent_documents`
+Release `2026.11.03.2` requires migration `m20261103_120000_ai_agent_documents`
 and the matching backend and frontend. Deploy the migration and Echo build,
 restart the backend and workers, then upgrade each approved namespace:
 
 ```sh
-just ai-control-panel upgrade --host <h> --release 2026.11.03.1 --dry-run
-just ai-control-panel upgrade --host <h> --release 2026.11.03.1
+just ai-control-panel upgrade --host <h> --release 2026.11.03.2 --dry-run
+just ai-control-panel upgrade --host <h> --release 2026.11.03.2
 ```
 
 Until the namespace is upgraded, chat requests fail with «ШІ-агент оновлюється.
-Повторіть запит за кілька хвилин.». Release `2026.11.03.2` needs no migration; see
+Повторіть запит за кілька хвилин.». See
 [template reports and 4-hour Deep](DEPLOYMENT.md#template-reports-and-4-hour-deep-release-2026110332).
 See the
-[deployment notes](DEPLOYMENT.md#conversation-documents-release-2026110331) for
+[deployment notes](DEPLOYMENT.md#conversation-documents-release-2026110332) for
 verification.
 
 ## Verification
