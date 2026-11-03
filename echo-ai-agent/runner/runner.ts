@@ -1125,7 +1125,7 @@ function frequencyGuidance(payload: RunnerPayload): string {
   const mentions = mentionedFrequencies(texts);
   if (!mentions.length) return "";
   const pairs = mentions.map(({ written, stored }) => (written === stored ? stored : `${written} = ${stored}`)).join(", ");
-  return `\n\nFrequencies named in this conversation, with their stored Echo form: ${pairs}. Each pair is the same frequency; tool results show the four-decimal form. This is reference only: pass in selectedFrequencies only the frequencies the current request is about.`;
+  return `\n\nFrequencies named in this conversation, with their stored Echo form: ${pairs}. Each pair is the same frequency; tool results show the stored form. This is reference only: pass in selectedFrequencies only the frequencies the current request is about.`;
 }
 
 function selectedUnitsBody(input: JsonObject): JsonObject {
