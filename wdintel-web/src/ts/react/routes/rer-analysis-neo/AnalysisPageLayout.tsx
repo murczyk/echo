@@ -45,6 +45,7 @@ import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { useObservedWidth } from '../../hooks/use-observed-width';
 import { AnalysisRightDock } from './AnalysisRightDock';
 import { analysisWorkspaceColumns, shouldInlineAnalysisLeftPanel } from './analysis-editor-layout';
+import { useRouteUrlOwnership } from './use-route-url-ownership';
 import {
   recordAnalysisDebugPageSnapshot,
   summarizeAnalysisDebugFilters,
@@ -73,6 +74,7 @@ export function RerAnalysisNeoPage({
   );
   const [filterPanelOpen, setFilterPanelOpen] = useState(initialFilterPanelOpen ?? false);
   const filterPanelTouchedRef = useRef(initialFilterPanelOpen != null);
+  const ownsWindowUrl = useRouteUrlOwnership();
   const [editorSourceMessageId, setEditorSourceMessageId] = useState<number | null>(null);
   const editorRef = useRef<ManageMessageEditorHandle>(null);
   const editorInitialFocusTargetRef = useRef<HTMLElement | null>(null);
@@ -147,8 +149,8 @@ export function RerAnalysisNeoPage({
     filterPanelTouchedRef.current = true;
     const next = !page.hideNetworks;
     setFilterPanelOpen(editorOpen ? false : next);
-    replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
-  }, [editorOpen, page.hideNetworks, page.networkVisibilityReady]);
+    if (ownsWindowUrl()) replaceAnalysisPanelQueryStateInUrl({ filterPanelOpen: next });
+  }, [editorOpen, ownsWindowUrl, page.hideNetworks, page.networkVisibilityReady]);
   useEffect(() => {
     if (!filterPanelOpen) return;
     const sections = ['tags', 'groups', 'senders'] as const;

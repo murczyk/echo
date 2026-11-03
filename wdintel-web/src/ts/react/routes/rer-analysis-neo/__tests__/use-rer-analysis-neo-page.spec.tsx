@@ -558,6 +558,7 @@ describe('useRerAnalysisNeoPage', () => {
   });
 
   it('restores the group scope filter from browser history', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo');
     renderHook(['Rer']);
     await act(async () => {
       latest?.updateQueryState({ freqsSelected: ['111.1'] });
@@ -570,6 +571,41 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.groupNavigation.scope).toEqual({ kind: 'all' });
     expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/3992
+  it('leaves the next route URL untouched when SPA navigation leaves analysis', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/rer-analysis-neo?filterPanelOpen=true&fromDateTime=2026-11-03T00%3A00&toDateTime=2026-11-04T00%3A00&leftPanelOpen=false&rightPanelOpen=false',
+    );
+    renderHook(['Rer']);
+    await flushEffects();
+
+    // requestNavigation commits the next URL and dispatches popstate before Elm unmounts the page.
+    await act(async () => {
+      window.history.pushState({}, '', '/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await flushEffects();
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps URL ownership across the trailing-slash alias of the analysis route', async () => {
+    window.history.replaceState({}, '', '/rer-analysis-neo/');
+    renderHook(['Rer']);
+    await flushEffects();
+
+    window.history.pushState({}, '', '/rer-analysis-neo?freqs=111.1');
+    act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+    await act(async () => {
+      latest?.updateQueryState({ freqsSelected: ['222.2'] });
+    });
+
+    expect(new URL(window.location.href).searchParams.getAll('freqs')).toEqual(['222.2']);
   });
 
   it('keeps a group scope transition pending until that scope commits its messages', async () => {
