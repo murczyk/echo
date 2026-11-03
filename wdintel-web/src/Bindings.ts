@@ -2313,6 +2313,8 @@ export type DeviceListItem = {
   rating: number;
   tags: Array<string>;
   name: string | null;
+  description: string | null;
+  customFields: Record<string, string>;
   aors: Array<AorSummary>;
   unit: UnitSummary | null;
   createdBy: string;
@@ -2329,6 +2331,7 @@ export type DeviceFilterOptions = {
   aors: Array<AorSummary>;
   creators: Array<DeviceCreatorFilterOption>;
   tags: Array<string>;
+  customFieldKeys: Array<string>;
 };
 
 export type DeviceCreatorFilterOption = {

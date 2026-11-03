@@ -5990,6 +5990,8 @@ type alias DeviceListItem =
     , rating : Int
     , tags : List (String)
     , name : Maybe (String)
+    , description : Maybe (String)
+    , customFields : Dict String (String)
     , aors : List (AorSummary)
     , unit : Maybe (UnitSummary)
     , createdBy : String
@@ -6010,6 +6012,8 @@ deviceListItemEncoder struct =
         , ( "rating", (Json.Encode.int) struct.rating )
         , ( "tags", (Json.Encode.list (Json.Encode.string)) struct.tags )
         , ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
+        , ( "custom_fields", (Json.Encode.dict identity (Json.Encode.string)) struct.customFields )
         , ( "aors", (Json.Encode.list (aorSummaryEncoder)) struct.aors )
         , ( "unit", (Maybe.withDefault Json.Encode.null << Maybe.map (unitSummaryEncoder)) struct.unit )
         , ( "created_by", (Json.Encode.string) struct.createdBy )
@@ -6027,6 +6031,7 @@ type alias DeviceFilterOptions =
     { aors : List (AorSummary)
     , creators : List (DeviceCreatorFilterOption)
     , tags : List (String)
+    , customFieldKeys : List (String)
     }
 
 
@@ -6036,6 +6041,7 @@ deviceFilterOptionsEncoder struct =
         [ ( "aors", (Json.Encode.list (aorSummaryEncoder)) struct.aors )
         , ( "creators", (Json.Encode.list (deviceCreatorFilterOptionEncoder)) struct.creators )
         , ( "tags", (Json.Encode.list (Json.Encode.string)) struct.tags )
+        , ( "custom_field_keys", (Json.Encode.list (Json.Encode.string)) struct.customFieldKeys )
         ]
 
 
@@ -24002,6 +24008,8 @@ deviceListItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rating" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_fields" (Json.Decode.dict (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (aorSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.nullable (unitSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_by" (Json.Decode.string)))
@@ -24020,6 +24028,7 @@ deviceFilterOptionsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aors" (Json.Decode.list (aorSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "creators" (Json.Decode.list (deviceCreatorFilterOptionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "custom_field_keys" (Json.Decode.list (Json.Decode.string))))
 
 
 deviceCreatorFilterOptionDecoder : Json.Decode.Decoder DeviceCreatorFilterOption

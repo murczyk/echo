@@ -1106,7 +1106,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
         &reader.login,
         reader.organism_id.unwrap(),
         Some("AOR device"),
-        json!({}),
+        json!({"serial_no": "SN-Zeta_42"}),
         false,
         None,
     );
@@ -1139,6 +1139,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     );
     uuid_match.created_at = Set(now - chrono::Duration::hours(2));
     uuid_match.updated_at = Set(now - chrono::Duration::hours(2));
+    uuid_match.description = Set(Some("Roof Antenna_7".into()));
     let uuid_match = uuid_match.insert(&env.dbx).await.unwrap();
 
     let mut archived = device_active_model(
@@ -1172,10 +1173,18 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
     assert_eq!(result.status_counts.archived, 1);
     assert_eq!(result.total, 3);
 
-    for (filter_text, expected_id) in [
-        ("%".to_string(), named.id),
-        ("Needle%Alpha".to_string(), named.id),
-        (uuid_match.id.to_string(), uuid_match.id),
+    for (filter_text, expected_ids) in [
+        ("%".to_string(), vec![named.id]),
+        ("Needle%Alpha".to_string(), vec![named.id]),
+        (uuid_match.id.to_string(), vec![uuid_match.id]),
+        // Custom field values match case-insensitively and literally.
+        ("zeta_42".to_string(), vec![aor_device.id]),
+        ("zeta%42".to_string(), vec![]),
+        // Descriptions match case-insensitively and literally.
+        ("antenna_7".to_string(), vec![uuid_match.id]),
+        ("antenna%7".to_string(), vec![]),
+        // Custom field keys are not searchable.
+        ("serial_no".to_string(), vec![]),
     ] {
         let mut command = list_command();
         command.filter_text = Some(filter_text);
@@ -1186,7 +1195,7 @@ async fn list_and_unit_stats_follow_target_filters_sorts_and_counts() {
                 .iter()
                 .map(|device| device.id)
                 .collect::<Vec<_>>(),
-            vec![expected_id],
+            expected_ids,
         );
     }
 

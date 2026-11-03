@@ -32,7 +32,12 @@ async function flush() {
 
 beforeEach(() => {
   devicesApiMock.listDeviceUnits.mockResolvedValue([]);
-  devicesApiMock.listDeviceFilterOptions.mockResolvedValue({ aors: [], creators: [], tags: [] });
+  devicesApiMock.listDeviceFilterOptions.mockResolvedValue({
+    aors: [],
+    creators: [],
+    tags: [],
+    customFieldKeys: [],
+  });
   devicesApiMock.getDeviceUnitStats.mockResolvedValue([]);
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -75,6 +80,7 @@ describe('useDevicesSidebarResource', () => {
       aors: [{ id: 1, name: 'AOR' }],
       creators: [{ login: 'author', displayName: null }],
       tags: ['Tag'],
+      customFieldKeys: ['inventory_id'],
     };
     devicesApiMock.listDeviceFilterOptions.mockResolvedValue(filterOptions);
     const unitStats = [{ unit: { id: 7, name: 'Visible unit' }, count: 3 }];
