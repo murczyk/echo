@@ -717,8 +717,21 @@ test("#3998 exposes parsed DMR metadata on retrieved messages", () => {
     page_limit: 20,
   });
   const messages = response.messages as Array<Record<string, unknown>>;
-  assert.deepEqual(messages[0].dmr, [{ colorCode: "3", callGroupId: "24538" }]);
+  assert.deepEqual(messages[0].dmr, { colorCodes: ["3"], callGroups: [{ id: "24538" }] });
   assert.equal("dmr" in messages[1], false);
+  // Every color code of a nine-code list survives; long id lists are marked truncated.
+  const wide = compactInboxResponse({
+    inbox_items: [item(3, [
+      ...Array.from({ length: 9 }, (_, code) => ({ color_code: String(code), sender_id: "7" })),
+      ...Array.from({ length: 40 }, (_, index) => ({ call_group_id: String(1000 + index) })),
+    ])],
+    page_limit: 20,
+  });
+  const dmr = (wide.messages as Array<Record<string, any>>)[0].dmr;
+  assert.deepEqual(dmr.colorCodes, ["0", "1", "2", "3", "4", "5", "6", "7", "8"]);
+  assert.deepEqual(dmr.senders, [{ id: "7" }]);
+  assert.equal(dmr.callGroups.length, 32);
+  assert.equal(dmr.truncated, true);
 });
 
 test("builds bounded read-only unit lookup requests", () => {
