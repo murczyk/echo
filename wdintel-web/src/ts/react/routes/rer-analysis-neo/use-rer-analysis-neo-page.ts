@@ -71,6 +71,7 @@ import {
   groupFilterScope,
   type GroupScope,
 } from '../shared/group-navigation';
+import { useRouteUrlOwnership } from './use-route-url-ownership';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -152,6 +153,7 @@ export function useRerAnalysisNeoPage(
   authUserName: string | null,
   authUserRoles: readonly string[] = [],
 ): AnalysisPageViewModel {
+  const ownsWindowUrl = useRouteUrlOwnership();
   const [threadMessageId, setThreadMessageId] = useState(readThreadMessageId);
   const exitThread = useCallback(() => {
     const url = new URL(window.location.href);
@@ -244,9 +246,9 @@ export function useRerAnalysisNeoPage(
         return;
       }
       setVisibleMessagesPageIndexState(normalizedPageIndex);
-      writeMessagesPageIndexToWindowUrl(normalizedPageIndex);
+      if (ownsWindowUrl()) writeMessagesPageIndexToWindowUrl(normalizedPageIndex);
     },
-    [initialMessagesPageIndex],
+    [initialMessagesPageIndex, ownsWindowUrl],
   );
   const [rightPanelOpen, setRightPanelOpen] = useState(
     () => initialPanelQueryState.rightPanelOpen ?? false,
@@ -496,6 +498,7 @@ export function useRerAnalysisNeoPage(
         fromDateTimeStr: period.fromDateTimeStr,
         toDateTimeStr: period.toDateTimeStr,
       }));
+      if (!ownsWindowUrl()) return;
       pushQueryStateToUrl(period, newestFirst, {
         leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
         rightPanelOpen,
@@ -676,6 +679,7 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     const onPopState = () => {
+      if (!ownsWindowUrl()) return;
       setThreadMessageId(readThreadMessageId());
       replyNavigationRef.current = false;
       clearTargetMessageContext();
@@ -699,7 +703,7 @@ export function useRerAnalysisNeoPage(
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [clearTargetMessageContext, groupScope, queryState, radioFeaturesAllowed]);
+  }, [clearTargetMessageContext, groupScope, ownsWindowUrl, queryState, radioFeaturesAllowed]);
 
   const onLinkedMessageMounted = useCallback((messageId: number) => {
     if (pendingLinkedMessageLandingRef.current?.messageId === messageId) {
@@ -771,13 +775,14 @@ export function useRerAnalysisNeoPage(
     if (
       threadMessageId == null ||
       data.threadAnchorId == null ||
-      data.threadAnchorId === threadMessageId
+      data.threadAnchorId === threadMessageId ||
+      !ownsWindowUrl()
     )
       return;
     const url = new URL(window.location.href);
     url.searchParams.set(THREAD_MESSAGE_PARAM, String(data.threadAnchorId));
     window.history.replaceState({}, '', `${url.pathname}?${url.searchParams}`);
-  }, [threadMessageId, data.threadAnchorId]);
+  }, [threadMessageId, data.threadAnchorId, ownsWindowUrl]);
   useEffect(() => {
     const previous = previousMessageGroupInfosRef.current;
     previousMessageGroupInfosRef.current = data.groupInfos;
@@ -1272,6 +1277,7 @@ export function useRerAnalysisNeoPage(
 
   useEffect(() => {
     if (deviceAccess.status === 'loading' || deviceAccess.status === 'error') return;
+    if (!ownsWindowUrl()) return;
     pushQueryStateToUrl(effectiveQueryState, newestFirst, {
       leftPanelOpen: leftPanelStateReady ? leftPanelOpen : null,
       rightPanelOpen,
@@ -1282,6 +1288,7 @@ export function useRerAnalysisNeoPage(
     leftPanelOpen,
     leftPanelStateReady,
     newestFirst,
+    ownsWindowUrl,
     rightPanelOpen,
   ]);
 
