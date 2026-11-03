@@ -351,11 +351,13 @@ image parts. Verify the rollout this way:
 
 See [the upload pipeline](../wdintel-rs/src/ai_agent/uploads/README.md).
 
-## Frequency normalization and DMR color codes (release 2026.11.03.1)
+## Frequency normalization and DMR color codes (release 2026.11.03.3)
 
 Deploy the matching application, then upgrade the approved installation's
-namespace with `ai-control-panel upgrade --host <host> --release 2026.11.03.1`,
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.03.3`,
 previewing with `--dry-run` first. No migration or provider change is needed.
+Releases `2026.11.03.1` and `2026.11.03.2` belong to the #3985 branch; the first
+is already published on the shared host with different bytes.
 The inbox tool accepts `selectedFrequencies`; the runner normalizes them to
 Echo's stored four-decimal form (`163.935` → `163.9350`) and the system prompt
 lists every frequency named in the conversation with its stored form. Retrieved
