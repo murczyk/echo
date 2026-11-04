@@ -14,25 +14,34 @@ else
     export GITHUB_BASE_REF="${GITHUB_BASE_REF:-main}"
 fi
 
-python3 -m unittest scripts/ci/test_check_analytics_migrations.py
+python3 -m unittest scripts/ci/test_check_analytics_migrations.py scripts/ci/test_ci_scope.py
 python3 scripts/ci/check_analytics_migrations.py
-bash deploy/clickhouse/tests/test-resnapshot-table.sh
-bash deploy/clickhouse/tests/test-resnapshot-batch.sh
-bash deploy/clickhouse/tests/test-analytics-health-probe-timeout.sh
-bash deploy/clickhouse/tests/test-source-resnapshot-table.sh
-bash deploy/clickhouse/tests/test-manage-system-logs.sh
-bash deploy/clickhouse/tests/test-source-verify-deploy.sh
-bash deploy/clickhouse/tests/test-control-bundle.sh
-bash deploy/clickhouse/tests/test-cdc-only-table-selection.sh
-bash deploy/clickhouse/tests/test-attachment-history.sh
-bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
-bash deploy/clickhouse/tests/test-clickhouse-memory-limit.sh
-bash deploy/clickhouse/tests/test-reconcile-if-needed.sh
-bash deploy/clickhouse/tests/test-source-preflight.sh
+
+# Compare with `skip` so a ci_scope.py failure still runs these tests.
+clickhouse_scope="$(python3 scripts/ci/ci_scope.py clickhouse)" || true
+if [[ "$clickhouse_scope" == "skip" ]]; then
+    echo "Skipping ClickHouse script tests: this pull request does not change them."
+else
+    bash deploy/clickhouse/tests/test-resnapshot-table.sh
+    bash deploy/clickhouse/tests/test-resnapshot-batch.sh
+    bash deploy/clickhouse/tests/test-analytics-health-probe-timeout.sh
+    bash deploy/clickhouse/tests/test-source-resnapshot-table.sh
+    bash deploy/clickhouse/tests/test-manage-system-logs.sh
+    bash deploy/clickhouse/tests/test-source-verify-deploy.sh
+    bash deploy/clickhouse/tests/test-control-bundle.sh
+    bash deploy/clickhouse/tests/test-cdc-only-table-selection.sh
+    bash deploy/clickhouse/tests/test-attachment-history.sh
+    bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
+    bash deploy/clickhouse/tests/test-clickhouse-memory-limit.sh
+    bash deploy/clickhouse/tests/test-reconcile-if-needed.sh
+    bash deploy/clickhouse/tests/test-source-preflight.sh
+fi
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
-bash deploy/clickhouse/tests/test-analytics-schema-reconcile-lock.sh
-bash deploy/clickhouse/tests/test-source-repair-role.sh
+if [[ "$clickhouse_scope" != "skip" ]]; then
+    bash deploy/clickhouse/tests/test-analytics-schema-reconcile-lock.sh
+    bash deploy/clickhouse/tests/test-source-repair-role.sh
+fi
 
 # CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
 export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"
@@ -47,8 +56,6 @@ export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
 echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 
 bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
-echo "Migrating test databases..."
-cargo run -p wdintel-rs -- --mode=test migrate
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage

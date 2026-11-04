@@ -8,8 +8,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  # A newer PR or main commit contains the older one, so only the latest needs testing.
+  # Each stable push keeps a unique group because it publishes a release.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && 'main') || github.run_id }}
+  # A running main check always finishes, so a burst of merges cannot starve it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   agent-management:
