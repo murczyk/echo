@@ -23,11 +23,12 @@ with reports as materialized (
     select r.requested_by_login_id::text id,
         coalesce(l.login, 'Видалений обліковий запис') label, count(*)::bigint count
     from successful r left join login l on l.id = r.requested_by_login_id
+    where $4
     group by r.requested_by_login_id, l.login limit $3
 ), days as (
     select to_char(created_at, 'YYYY-MM-DD') id,
         to_char(created_at, 'YYYY-MM-DD') label, count(*)::bigint count
-    from successful group by 1, 2
+    from successful where $4 group by 1, 2
 )
 select jsonb_build_object(
     'total', (select count(*) from reports),
@@ -76,6 +77,7 @@ async fn aggregate(
     env: &Env,
     period: &KpiPeriod,
     sql: &str,
+    extra_values: &[sea_orm::Value],
 ) -> anyhow::Result<serde_json::Value> {
     let (since, until) = period.bounds().c(h!())?;
     let transaction = read_transaction(env).await.c(h!())?;
@@ -86,7 +88,9 @@ async fn aggregate(
             since.into(),
             until.into(),
             ((KPI_HISTORY_MAX_GROUPS + 1) as i64).into(),
-        ],
+        ]
+        .into_iter()
+        .chain(extra_values.iter().cloned()),
     ))
     .one(&transaction)
     .await
@@ -103,7 +107,25 @@ pub(super) async fn reports(
     env: &Env,
     period: &KpiPeriod,
 ) -> anyhow::Result<KpiReportsRsp> {
-    let value = aggregate(env, period, REPORTS_SQL).await.c(h!())?;
+    report_aggregate(env, period, true).await.c(h!())
+}
+
+pub(super) async fn report_metrics(
+    env: &Env,
+    period: &KpiPeriod,
+) -> anyhow::Result<KpiReportsRsp> {
+    report_aggregate(env, period, false).await.c(h!())
+}
+
+async fn report_aggregate(
+    env: &Env,
+    period: &KpiPeriod,
+    include_breakdowns: bool,
+) -> anyhow::Result<KpiReportsRsp> {
+    let value =
+        aggregate(env, period, REPORTS_SQL, &[include_breakdowns.into()])
+            .await
+            .c(h!())?;
     let result: KpiReportsRsp = serde_json::from_value(value).c(h!())?;
     anyhow::ensure!(
         result.by_kind.len() <= KPI_HISTORY_MAX_GROUPS
@@ -117,6 +139,8 @@ pub(super) async fn notifications(
     env: &Env,
     period: &KpiPeriod,
 ) -> anyhow::Result<KpiNotificationsRsp> {
-    let value = aggregate(env, period, NOTIFICATIONS_SQL).await.c(h!())?;
+    let value = aggregate(env, period, NOTIFICATIONS_SQL, &[])
+        .await
+        .c(h!())?;
     serde_json::from_value(value).c(h!())
 }

@@ -1964,6 +1964,23 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    if env.metrics.is_some()
+        && config.signoz_kpi_metrics_enabled.unwrap_or(false)
+    {
+        let kpi_env = env.clone();
+        let kpi_cancel = cancel_token.clone();
+        spawn_named_worker(
+            "kpi_metrics_worker",
+            &mut background_tasks,
+            async move {
+                crate::kpi::metrics::run_nofail(kpi_env, kpi_cancel).await;
+            },
+        );
+    } else if config.signoz_kpi_metrics_enabled.unwrap_or(false) {
+        log::warn!(
+            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check signoz_metrics_enabled and signoz_metrics_endpoint"
+        );
+    }
     let deployment_maintenance = web::Data::new(
         crate::event_stream::DeploymentMaintenanceState::default(),
     );

@@ -1,4 +1,5 @@
 mod history;
+pub(crate) mod metrics;
 mod observations;
 pub mod types;
 
