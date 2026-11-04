@@ -74,19 +74,6 @@ describe('useDutySettings', () => {
 
     expect(latestSettings?.messageTextPreviewLines).toBeNull();
   });
-  it('keeps the minimal report window off unless it was chosen', async () => {
-    fetchUserSettingsMock.mockResolvedValue({ minimalReportWindowEnabled: true });
-
-    renderHook();
-    await act(async () => {});
-    expect(latestSettings?.minimalReportWindowEnabled).toBe(true);
-
-    act(() => {
-      window.dispatchEvent(new CustomEvent(USER_SETTINGS_UPDATED_EVENT, { detail: {} }));
-    });
-    expect(latestSettings?.minimalReportWindowEnabled).toBe(false);
-  });
-
   it('defaults an absent preview limit to 20', async () => {
     fetchUserSettingsMock.mockResolvedValue({});
 

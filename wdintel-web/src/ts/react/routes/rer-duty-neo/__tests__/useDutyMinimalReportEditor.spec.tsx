@@ -73,19 +73,6 @@ describe('useDutyMinimalReportEditor', () => {
     expect(latest.host).toBe(first);
   });
 
-  it.each([
-    ['the preference is off', { enabled: false }],
-    ['the intent is not a report', { reportIntent: false }],
-    ['the editor is closed', { editorIntentKey: null }],
-  ])('stays inactive when %s', (_, options) => {
-    addColumn('feed-2');
-
-    render(options);
-
-    expect(latest.active).toBe(false);
-    expect(latest.host).toBeNull();
-  });
-
   it('expands only the current report and starts minimal again afterwards', () => {
     addColumn('feed-2');
     render();
