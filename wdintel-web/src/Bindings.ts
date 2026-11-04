@@ -927,6 +927,8 @@ export type SignalGroupEntry = {
   isAviationGroup: boolean;
   aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   groupStats: SignalGroupStats;
   adminData: GroupAdminData | null;
   areasOfResponsibility: Array<AreaOfResponsibility> | null;
@@ -947,6 +949,8 @@ export type OrphanSignalGroupEntry = {
   isAviationGroup: boolean;
   aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   isArchived: boolean;
   datasourceId: number | null;
   createdAt: number;
@@ -3603,6 +3607,8 @@ export type ZoneDatasourceGroup = {
   isAviationGroup: boolean;
   aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   allowedUsers: Array<string>;
   allowedUserDetails: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
@@ -3646,6 +3652,8 @@ export type ZoneDatasourceGroupUpdateReq = {
   isAviationGroup: boolean | null;
   aiTranscriptAnalysisEnabled: boolean | null;
   fetchNewMessages: boolean | null;
+  isSigintUnitMandatory: boolean | null;
+  isDeviceMandatory: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -3669,6 +3677,8 @@ export type MyAdminSignalGroup = {
   datasourceKind: string | null;
   isGroupSecret: boolean;
   disableNetworkAssignment: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   allowedUsers: Array<SignalGroupLogin>;
   allowedOrganismIds: Array<number>;
   adminLogins: Array<SignalGroupLogin>;
@@ -3679,6 +3689,8 @@ export type MyAdminSignalGroupUpdateReq = {
   masterKey: string;
   isSecret: boolean;
   disableNetworkAssignment: boolean;
+  isSigintUnitMandatory: boolean | null;
+  isDeviceMandatory: boolean | null;
   userLogins: Array<string>;
   organismIds: Array<number>;
   adminLogins: Array<string>;
@@ -3957,6 +3969,29 @@ export type Unit = {
   hasOrbit: boolean;
   orbitUnitIds: Array<string>;
   orbitUnitGenerativeNames: Array<string>;
+};
+
+export type UnitHierarchyGroup = {
+  id: string;
+  label: string;
+  level: number;
+  parentIndex: number | null;
+};
+
+export type UnitHierarchyUnit = {
+  id: number;
+  name: string;
+  groupIndex: number | null;
+};
+
+export type UnitHierarchyRsp = {
+  revision: string;
+  groups: Array<UnitHierarchyGroup>;
+  units: Array<UnitHierarchyUnit>;
+};
+
+export type UnitHierarchyReq = {
+  knownRevision: string | null;
 };
 
 export type UnitCombatType = {
@@ -5711,28 +5746,6 @@ export type UpsertApiSenderReq = {
 export type DeleteApiSenderReq = {
   apiId: string;
   senderUuid: string;
-};
-
-export type RoleMessageSettings = {
-  role: string;
-  unitRequired: boolean;
-  deviceRequired: boolean;
-  allowUnitCreation: boolean;
-};
-
-export type RoleMessageSettingsKey = {
-  role: string;
-};
-
-export type RoleMessageSettingsListRsp = {
-  settings: Array<RoleMessageSettings>;
-  roles: Array<string>;
-};
-
-export type MessageCreationSettings = {
-  unitRequired: boolean;
-  deviceRequired: boolean;
-  allowUnitCreation: boolean;
 };
 
 export type SystemSettingsCurrentRsp = {
@@ -7950,6 +7963,8 @@ export type GroupUpdateReq = {
   isAviationGroup: boolean | null;
   aiTranscriptAnalysisEnabled: boolean | null;
   fetchNewMessages: boolean | null;
+  isSigintUnitMandatory: boolean | null;
+  isDeviceMandatory: boolean | null;
 };
 
 export type NativeGroupSettings = {
@@ -7967,6 +7982,8 @@ export type NativeGroupSettings = {
   disableNetworkAssignment: boolean;
   isAviationGroup: boolean;
   aiTranscriptAnalysisEnabled: boolean | null;
+  isSigintUnitMandatory: boolean | null;
+  isDeviceMandatory: boolean | null;
 };
 
 export type NativeGroupCreateReq = {

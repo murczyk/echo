@@ -189,6 +189,8 @@ pub struct GroupUpdateReq {
     pub is_aviation_group: Option<bool>,
     pub ai_transcript_analysis_enabled: Option<bool>,
     pub fetch_new_messages: Option<bool>,
+    pub is_sigint_unit_mandatory: Option<bool>,
+    pub is_device_mandatory: Option<bool>,
 }
 
 pub struct UnstageResult {

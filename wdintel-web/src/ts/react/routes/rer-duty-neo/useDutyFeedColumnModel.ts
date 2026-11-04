@@ -211,8 +211,6 @@ function buildFeedFilterPanel(
       highlightSignalsEnabled: feed.highlightSignalsEnabled,
       onlyMyUnitTagsEnabled: feed.onlyMyUnitTagsEnabled,
       unitsExactMatchOnly: feed.filter.unitsExactMatchOnly ?? undefined,
-      unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
-      unitHierarchyLoading: deps.feeds.unitHierarchyLoading,
       reloadFreqsLoading,
       groupCatalogLoading,
       groupCatalogError,
@@ -289,20 +287,6 @@ function buildFeedFilterPanel(
           unitsDenied: excludeValues.length ? excludeValues : null,
         }),
       onUnitStatsError: deps.feeds.setError,
-      onUnitsIncludeChildrenChange: (unitsIncludeChildren: boolean) => {
-        const filter = { ...feed.filter, unitsIncludeChildren };
-        if ((filter.unitsSelected?.length ?? 0) + (filter.unitsDenied?.length ?? 0) > 0) {
-          applyFilter(feed.id, filter);
-        } else {
-          setMessageFeeds((previous) => {
-            const next = previous.map((item) =>
-              item.id === feed.id ? { ...item, filter, unitsIncludeChildren } : item,
-            );
-            deps.feeds.persistStateToUrl(next);
-            return next;
-          });
-        }
-      },
       onUnitsExactMatchOnlyChange: (v: boolean) =>
         applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
       ...buildLocationFilterActions(feed, deps.feeds),
@@ -365,7 +349,7 @@ function buildFeedFilterPanel(
                   adjacentFreqsRange: 0,
                   highlightSignalsEnabled: false,
                   onlyMyUnitTagsEnabled: false,
-                  unitsIncludeChildren: false,
+                  unitsIncludeChildren: true,
                 }
               : item,
           ),

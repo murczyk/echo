@@ -33,6 +33,7 @@ const hoisted = vi.hoisted(() => ({
     >
   >,
   feedLoadGenerations: {} as Record<string, number>,
+  feedReady: true,
   messageFeeds: [] as Array<{
     id: string;
     items: Array<[number, { textMarked?: Array<{ CNCallsignC?: { text?: string } }> }]>;
@@ -202,6 +203,7 @@ vi.mock('../useRerDutyFeedState', () => ({
       flushPendingNewerMessages: vi.fn(),
       pollNow: hoisted.pollNow,
       getFeedLoadGeneration: (feedId: string) => hoisted.feedLoadGenerations[feedId] ?? 0,
+      isFeedReady: () => hoisted.feedReady,
       buildReqForFeed: vi.fn(
         (
           feed: {
@@ -589,9 +591,64 @@ describe('useRerDutyFeeds', () => {
 });
 describe('useRerDutyFeeds inbox refreshes', () => {
   beforeEach(() => {
+    hoisted.feedReady = true;
     hoisted.fetchMessagesByIds.mockClear();
     hoisted.fetchMessagesByIdsMatchingFilters.mockReset();
   });
+
+  it.each([false, true])(
+    '#3527 preserves messages while the hierarchy is pending before reconciliation: %s',
+    async (startsPending) => {
+      const localContainer = document.createElement('div');
+      const localRoot = createRoot(localContainer);
+      hoisted.messageFeeds = [
+        {
+          id: 'mf-0',
+          items: [[2, { text: 'current', textMarked: [], inboxTags: [] }]],
+          filter: { selectedUnitIds: [20, 21] },
+        },
+      ] as never;
+      hoisted.feedReady = !startsPending;
+      let resolveRefresh!: (items: never[]) => void;
+      if (!startsPending) {
+        hoisted.fetchMessagesByIdsMatchingFilters.mockReturnValueOnce(
+          new Promise((resolve) => {
+            resolveRefresh = resolve;
+          }),
+        );
+      }
+      document.body.appendChild(localContainer);
+      try {
+        await act(async () => localRoot.render(React.createElement(TestHarness)));
+        let refresh: Promise<void> | undefined;
+        await act(async () => {
+          refresh = hoisted.onInboxChangedMessageIds([2]);
+        });
+        hoisted.feedReady = false;
+        if (!startsPending) {
+          await act(async () => {
+            resolveRefresh([]);
+            await refresh;
+          });
+        }
+        expect(latest?.messageFeeds[0].items[0]?.[1].text).toBe('current');
+        expect(hoisted.fetchMessagesByIdsMatchingFilters).toHaveBeenCalledTimes(
+          startsPending ? 0 : 1,
+        );
+
+        hoisted.feedReady = true;
+        hoisted.fetchMessagesByIdsMatchingFilters.mockResolvedValue([]);
+        await act(async () => {
+          await hoisted.onInboxChangedMessageIds([2]);
+        });
+        expect(latest?.messageFeeds[0].items).toEqual([]);
+      } finally {
+        hoisted.feedReady = true;
+        await act(async () => localRoot.unmount());
+        localContainer.remove();
+      }
+    },
+  );
 
   it.each([
     ['#3527', { selectedUnitIds: [21, 22] }],

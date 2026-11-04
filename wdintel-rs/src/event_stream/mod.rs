@@ -383,6 +383,11 @@ pub async fn fanout(
     event: EventMsg,
 ) -> Result<(), AppError> {
     // println!("> piped_fanout: event = {event:?}");
+    if event.event_type == EventType::ETUnitChanged {
+        crate::sigint::unit::hierarchy::mark_dirty(redis)
+            .await
+            .c(h!())?;
+    }
     let sessions = crate::session::get_all_sessions(redis).await.c(h!())?;
     if sessions.is_empty() {
         return Ok(());

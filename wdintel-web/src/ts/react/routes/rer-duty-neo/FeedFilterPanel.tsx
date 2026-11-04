@@ -55,8 +55,6 @@ export type FeedFilterPanelModel = {
     highlightSignalsEnabled?: boolean;
     onlyMyUnitTagsEnabled?: boolean;
     unitsExactMatchOnly?: boolean | null;
-    unitsIncludeChildren?: boolean;
-    unitHierarchyLoading?: boolean;
     reloadFreqsLoading: boolean;
     groupCatalogLoading?: boolean;
     groupCatalogError?: GroupCatalogError | null;
@@ -80,7 +78,6 @@ export type FeedFilterPanelModel = {
     onPostsChange?: (v: string[]) => void;
     onPostsDeniedChange?: (v: string[]) => void;
     onPostsModeTransfer: (next: FeedFilterModeTransfer) => void;
-    onUnitsIncludeChildrenChange?: (value: boolean) => void;
     onUnitStatsError?: (message: string) => void;
     onUnitsChange?: (v: string[]) => void;
     onUnitsDeniedChange?: (v: string[]) => void;

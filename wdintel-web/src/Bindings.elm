@@ -2403,6 +2403,8 @@ type alias SignalGroupEntry =
     , isAviationGroup : Bool
     , aiTranscriptAnalysisEnabled : Bool
     , fetchNewMessages : Bool
+    , isSigintUnitMandatory : Bool
+    , isDeviceMandatory : Bool
     , groupStats : SignalGroupStats
     , adminData : Maybe (GroupAdminData)
     , areasOfResponsibility : Maybe (List (AreaOfResponsibility))
@@ -2421,6 +2423,8 @@ signalGroupEntryEncoder struct =
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "ai_transcript_analysis_enabled", (Json.Encode.bool) struct.aiTranscriptAnalysisEnabled )
         , ( "fetch_new_messages", (Json.Encode.bool) struct.fetchNewMessages )
+        , ( "is_sigint_unit_mandatory", (Json.Encode.bool) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Json.Encode.bool) struct.isDeviceMandatory )
         , ( "group_stats", (signalGroupStatsEncoder) struct.groupStats )
         , ( "admin_data", (Maybe.withDefault Json.Encode.null << Maybe.map (groupAdminDataEncoder)) struct.adminData )
         , ( "areas_of_responsibility", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (areaOfResponsibilityEncoder))) struct.areasOfResponsibility )
@@ -2451,6 +2455,8 @@ type alias OrphanSignalGroupEntry =
     , isAviationGroup : Bool
     , aiTranscriptAnalysisEnabled : Bool
     , fetchNewMessages : Bool
+    , isSigintUnitMandatory : Bool
+    , isDeviceMandatory : Bool
     , isArchived : Bool
     , datasourceId : Maybe (Int)
     , createdAt : Int
@@ -2472,6 +2478,8 @@ orphanSignalGroupEntryEncoder struct =
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "ai_transcript_analysis_enabled", (Json.Encode.bool) struct.aiTranscriptAnalysisEnabled )
         , ( "fetch_new_messages", (Json.Encode.bool) struct.fetchNewMessages )
+        , ( "is_sigint_unit_mandatory", (Json.Encode.bool) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Json.Encode.bool) struct.isDeviceMandatory )
         , ( "is_archived", (Json.Encode.bool) struct.isArchived )
         , ( "datasource_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.datasourceId )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
@@ -9321,6 +9329,8 @@ type alias ZoneDatasourceGroup =
     , isAviationGroup : Bool
     , aiTranscriptAnalysisEnabled : Bool
     , fetchNewMessages : Bool
+    , isSigintUnitMandatory : Bool
+    , isDeviceMandatory : Bool
     , allowedUsers : List (String)
     , allowedUserDetails : List (SignalGroupLogin)
     , allowedOrganismIds : List (Int)
@@ -9344,6 +9354,8 @@ zoneDatasourceGroupEncoder struct =
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "ai_transcript_analysis_enabled", (Json.Encode.bool) struct.aiTranscriptAnalysisEnabled )
         , ( "fetch_new_messages", (Json.Encode.bool) struct.fetchNewMessages )
+        , ( "is_sigint_unit_mandatory", (Json.Encode.bool) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Json.Encode.bool) struct.isDeviceMandatory )
         , ( "allowed_users", (Json.Encode.list (Json.Encode.string)) struct.allowedUsers )
         , ( "allowed_user_details", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUserDetails )
         , ( "allowed_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.allowedOrganismIds )
@@ -9423,6 +9435,8 @@ type alias ZoneDatasourceGroupUpdateReq =
     , isAviationGroup : Maybe (Bool)
     , aiTranscriptAnalysisEnabled : Maybe (Bool)
     , fetchNewMessages : Maybe (Bool)
+    , isSigintUnitMandatory : Maybe (Bool)
+    , isDeviceMandatory : Maybe (Bool)
     , userLogins : List (String)
     , organismIds : List (Int)
     , adminLogins : List (String)
@@ -9444,6 +9458,8 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
         , ( "ai_transcript_analysis_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiTranscriptAnalysisEnabled )
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
+        , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -9479,6 +9495,8 @@ type alias MyAdminSignalGroup =
     , datasourceKind : Maybe (String)
     , isGroupSecret : Bool
     , disableNetworkAssignment : Bool
+    , isSigintUnitMandatory : Bool
+    , isDeviceMandatory : Bool
     , allowedUsers : List (SignalGroupLogin)
     , allowedOrganismIds : List (Int)
     , adminLogins : List (SignalGroupLogin)
@@ -9495,6 +9513,8 @@ myAdminSignalGroupEncoder struct =
         , ( "datasource_kind", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.datasourceKind )
         , ( "is_group_secret", (Json.Encode.bool) struct.isGroupSecret )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
+        , ( "is_sigint_unit_mandatory", (Json.Encode.bool) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Json.Encode.bool) struct.isDeviceMandatory )
         , ( "allowed_users", (Json.Encode.list (signalGroupLoginEncoder)) struct.allowedUsers )
         , ( "allowed_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.allowedOrganismIds )
         , ( "admin_logins", (Json.Encode.list (signalGroupLoginEncoder)) struct.adminLogins )
@@ -9506,6 +9526,8 @@ type alias MyAdminSignalGroupUpdateReq =
     { masterKey : String
     , isSecret : Bool
     , disableNetworkAssignment : Bool
+    , isSigintUnitMandatory : Maybe (Bool)
+    , isDeviceMandatory : Maybe (Bool)
     , userLogins : List (String)
     , organismIds : List (Int)
     , adminLogins : List (String)
@@ -9519,6 +9541,8 @@ myAdminSignalGroupUpdateReqEncoder struct =
         [ ( "master_key", (Json.Encode.string) struct.masterKey )
         , ( "is_secret", (Json.Encode.bool) struct.isSecret )
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
+        , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -10243,6 +10267,68 @@ unitEncoder struct =
         , ( "has_orbit", (Json.Encode.bool) struct.hasOrbit )
         , ( "orbit_unit_ids", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitIds )
         , ( "orbit_unit_generative_names", (Json.Encode.list (Json.Encode.string)) struct.orbitUnitGenerativeNames )
+        ]
+
+
+type alias UnitHierarchyGroup =
+    { id : String
+    , label : String
+    , level : Int
+    , parentIndex : Maybe (Int)
+    }
+
+
+unitHierarchyGroupEncoder : UnitHierarchyGroup -> Json.Encode.Value
+unitHierarchyGroupEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "level", (Json.Encode.int) struct.level )
+        , ( "parent_index", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.parentIndex )
+        ]
+
+
+type alias UnitHierarchyUnit =
+    { id : Int
+    , name : String
+    , groupIndex : Maybe (Int)
+    }
+
+
+unitHierarchyUnitEncoder : UnitHierarchyUnit -> Json.Encode.Value
+unitHierarchyUnitEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "group_index", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.groupIndex )
+        ]
+
+
+type alias UnitHierarchyRsp =
+    { revision : String
+    , groups : List (UnitHierarchyGroup)
+    , units : List (UnitHierarchyUnit)
+    }
+
+
+unitHierarchyRspEncoder : UnitHierarchyRsp -> Json.Encode.Value
+unitHierarchyRspEncoder struct =
+    Json.Encode.object
+        [ ( "revision", (Json.Encode.string) struct.revision )
+        , ( "groups", (Json.Encode.list (unitHierarchyGroupEncoder)) struct.groups )
+        , ( "units", (Json.Encode.list (unitHierarchyUnitEncoder)) struct.units )
+        ]
+
+
+type alias UnitHierarchyReq =
+    { knownRevision : Maybe (String)
+    }
+
+
+unitHierarchyReqEncoder : UnitHierarchyReq -> Json.Encode.Value
+unitHierarchyReqEncoder struct =
+    Json.Encode.object
+        [ ( "known_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownRevision )
         ]
 
 
@@ -14781,66 +14867,6 @@ deleteApiSenderReqEncoder struct =
     Json.Encode.object
         [ ( "api_id", (Json.Encode.string) struct.apiId )
         , ( "sender_uuid", (Json.Encode.string) struct.senderUuid )
-        ]
-
-
-type alias RoleMessageSettings =
-    { role : String
-    , unitRequired : Bool
-    , deviceRequired : Bool
-    , allowUnitCreation : Bool
-    }
-
-
-roleMessageSettingsEncoder : RoleMessageSettings -> Json.Encode.Value
-roleMessageSettingsEncoder struct =
-    Json.Encode.object
-        [ ( "role", (Json.Encode.string) struct.role )
-        , ( "unitRequired", (Json.Encode.bool) struct.unitRequired )
-        , ( "deviceRequired", (Json.Encode.bool) struct.deviceRequired )
-        , ( "allowUnitCreation", (Json.Encode.bool) struct.allowUnitCreation )
-        ]
-
-
-type alias RoleMessageSettingsKey =
-    { role : String
-    }
-
-
-roleMessageSettingsKeyEncoder : RoleMessageSettingsKey -> Json.Encode.Value
-roleMessageSettingsKeyEncoder struct =
-    Json.Encode.object
-        [ ( "role", (Json.Encode.string) struct.role )
-        ]
-
-
-type alias RoleMessageSettingsListRsp =
-    { settings : List (RoleMessageSettings)
-    , roles : List (String)
-    }
-
-
-roleMessageSettingsListRspEncoder : RoleMessageSettingsListRsp -> Json.Encode.Value
-roleMessageSettingsListRspEncoder struct =
-    Json.Encode.object
-        [ ( "settings", (Json.Encode.list (roleMessageSettingsEncoder)) struct.settings )
-        , ( "roles", (Json.Encode.list (Json.Encode.string)) struct.roles )
-        ]
-
-
-type alias MessageCreationSettings =
-    { unitRequired : Bool
-    , deviceRequired : Bool
-    , allowUnitCreation : Bool
-    }
-
-
-messageCreationSettingsEncoder : MessageCreationSettings -> Json.Encode.Value
-messageCreationSettingsEncoder struct =
-    Json.Encode.object
-        [ ( "unitRequired", (Json.Encode.bool) struct.unitRequired )
-        , ( "deviceRequired", (Json.Encode.bool) struct.deviceRequired )
-        , ( "allowUnitCreation", (Json.Encode.bool) struct.allowUnitCreation )
         ]
 
 
@@ -20406,6 +20432,8 @@ type alias GroupUpdateReq =
     , isAviationGroup : Maybe (Bool)
     , aiTranscriptAnalysisEnabled : Maybe (Bool)
     , fetchNewMessages : Maybe (Bool)
+    , isSigintUnitMandatory : Maybe (Bool)
+    , isDeviceMandatory : Maybe (Bool)
     }
 
 
@@ -20423,6 +20451,8 @@ groupUpdateReqEncoder struct =
         , ( "is_aviation_group", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isAviationGroup )
         , ( "ai_transcript_analysis_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiTranscriptAnalysisEnabled )
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
+        , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
         ]
 
 
@@ -20441,6 +20471,8 @@ type alias NativeGroupSettings =
     , disableNetworkAssignment : Bool
     , isAviationGroup : Bool
     , aiTranscriptAnalysisEnabled : Maybe (Bool)
+    , isSigintUnitMandatory : Maybe (Bool)
+    , isDeviceMandatory : Maybe (Bool)
     }
 
 
@@ -20461,6 +20493,8 @@ nativeGroupSettingsEncoder struct =
         , ( "disable_network_assignment", (Json.Encode.bool) struct.disableNetworkAssignment )
         , ( "is_aviation_group", (Json.Encode.bool) struct.isAviationGroup )
         , ( "ai_transcript_analysis_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiTranscriptAnalysisEnabled )
+        , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
+        , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
         ]
 
 
@@ -22346,6 +22380,8 @@ orphanSignalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_transcript_analysis_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archived" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -22430,6 +22466,8 @@ signalGroupEntryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_transcript_analysis_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_stats" (signalGroupStatsDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_data" (Json.Decode.nullable (groupAdminDataDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "areas_of_responsibility" (Json.Decode.nullable (Json.Decode.list (areaOfResponsibilityDecoder)))))
@@ -26626,6 +26664,8 @@ zoneDatasourceGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_transcript_analysis_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_user_details" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_organism_ids" (Json.Decode.list (Json.Decode.int))))
@@ -26677,6 +26717,8 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_transcript_analysis_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -26704,6 +26746,8 @@ myAdminSignalGroupDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_kind" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_group_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_users" (Json.Decode.list (signalGroupLoginDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowed_organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (signalGroupLoginDecoder))))
@@ -26716,6 +26760,8 @@ myAdminSignalGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "master_key" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_secret" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -27472,6 +27518,37 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_generative_names" (Json.Decode.list (Json.Decode.string))))
+
+
+unitHierarchyGroupDecoder : Json.Decode.Decoder UnitHierarchyGroup
+unitHierarchyGroupDecoder =
+    Json.Decode.succeed UnitHierarchyGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "level" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_index" (Json.Decode.nullable (Json.Decode.int))))
+
+
+unitHierarchyUnitDecoder : Json.Decode.Decoder UnitHierarchyUnit
+unitHierarchyUnitDecoder =
+    Json.Decode.succeed UnitHierarchyUnit
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_index" (Json.Decode.nullable (Json.Decode.int))))
+
+
+unitHierarchyRspDecoder : Json.Decode.Decoder UnitHierarchyRsp
+unitHierarchyRspDecoder =
+    Json.Decode.succeed UnitHierarchyRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (unitHierarchyGroupDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitHierarchyUnitDecoder))))
+
+
+unitHierarchyReqDecoder : Json.Decode.Decoder UnitHierarchyReq
+unitHierarchyReqDecoder =
+    Json.Decode.succeed UnitHierarchyReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_revision" (Json.Decode.nullable (Json.Decode.string))))
 
 
 unitCombatTypeDecoder : Json.Decode.Decoder UnitCombatType
@@ -30166,36 +30243,6 @@ deleteApiSenderReqDecoder =
     Json.Decode.succeed DeleteApiSenderReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_uuid" (Json.Decode.string)))
-
-
-roleMessageSettingsDecoder : Json.Decode.Decoder RoleMessageSettings
-roleMessageSettingsDecoder =
-    Json.Decode.succeed RoleMessageSettings
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unitRequired" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deviceRequired" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowUnitCreation" (Json.Decode.bool)))
-
-
-roleMessageSettingsKeyDecoder : Json.Decode.Decoder RoleMessageSettingsKey
-roleMessageSettingsKeyDecoder =
-    Json.Decode.succeed RoleMessageSettingsKey
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "role" (Json.Decode.string)))
-
-
-roleMessageSettingsListRspDecoder : Json.Decode.Decoder RoleMessageSettingsListRsp
-roleMessageSettingsListRspDecoder =
-    Json.Decode.succeed RoleMessageSettingsListRsp
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settings" (Json.Decode.list (roleMessageSettingsDecoder))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "roles" (Json.Decode.list (Json.Decode.string))))
-
-
-messageCreationSettingsDecoder : Json.Decode.Decoder MessageCreationSettings
-messageCreationSettingsDecoder =
-    Json.Decode.succeed MessageCreationSettings
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unitRequired" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deviceRequired" (Json.Decode.bool)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowUnitCreation" (Json.Decode.bool)))
 
 
 systemSettingsCurrentRspDecoder : Json.Decode.Decoder SystemSettingsCurrentRsp
@@ -33247,6 +33294,8 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_transcript_analysis_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 nativeGroupSettingsDecoder : Json.Decode.Decoder NativeGroupSettings
@@ -33266,6 +33315,8 @@ nativeGroupSettingsDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disable_network_assignment" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_aviation_group" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_transcript_analysis_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 nativeGroupCreateReqDecoder : Json.Decode.Decoder NativeGroupCreateReq

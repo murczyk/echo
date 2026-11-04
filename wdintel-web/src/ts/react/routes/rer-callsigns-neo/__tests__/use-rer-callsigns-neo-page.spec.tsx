@@ -12,6 +12,11 @@ const loadMockState = vi.hoisted(() => ({
   loaded: false,
 }));
 
+vi.mock('../../../services/api/units', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../services/api/units')>()),
+  getUnitHierarchy: vi.fn(async () => ({ revision: 'callsigns', groups: [], units: [] })),
+}));
+
 vi.mock('../use-rer-callsigns-neo-page.load', () => ({
   useRerCallsignsNeoPageLoad: ({
     setUser,

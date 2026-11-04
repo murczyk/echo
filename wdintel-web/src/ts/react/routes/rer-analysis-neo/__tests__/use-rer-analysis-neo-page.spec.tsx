@@ -15,7 +15,6 @@ import type {
 import type { AnalysisPageViewModel } from '../types';
 import { buildInboxReq, createResetQueryState } from '../helpers';
 import { useRerAnalysisNeoPage } from '../use-rer-analysis-neo-page';
-import { buildUnitFilterOptions } from '../../../utils/unit-search';
 
 const userSettingsMock = vi.hoisted(() => ({
   fetchUserSettings: vi.fn(),
@@ -24,7 +23,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const currentUserMock = vi.hoisted(() => ({ fetchCurrentUser: vi.fn() }));
-const unitCatalogMock = vi.hoisted(() => ({ getAllUnitsList: vi.fn() }));
+const unitCatalogMock = vi.hoisted(() => ({ getUnitHierarchy: vi.fn() }));
 const groupCatalogMock = vi.hoisted(() => ({ groups: vi.fn(), details: vi.fn() }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxWindow: vi.fn(),
@@ -386,7 +385,9 @@ describe('useRerAnalysisNeoPage', () => {
       disableBotTags: false,
     });
     currentUserMock.fetchCurrentUser.mockReset();
-    unitCatalogMock.getAllUnitsList.mockReset().mockResolvedValue([]);
+    unitCatalogMock.getUnitHierarchy
+      .mockReset()
+      .mockResolvedValue({ revision: 'empty', groups: [], units: [] });
     currentUserMock.fetchCurrentUser.mockResolvedValue({ name: 'tester' } as User);
     inboxMessagesMock.fetchInboxItemContext.mockReset();
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
@@ -1500,13 +1501,12 @@ describe('useRerAnalysisNeoPage', () => {
   it.each(['unit-id:10', 'unit-parent:group:2:6 А'])(
     '#3527 waits for the hierarchy before opening a direct window for %s',
     async (parent) => {
-      const template = buildUnitFilterOptions([])[0];
-      const catalog = deferred<Array<typeof template>>();
-      unitCatalogMock.getAllUnitsList.mockReturnValue(catalog.promise);
+      const catalog = deferred<import('../../../../../Bindings').UnitHierarchyRsp>();
+      unitCatalogMock.getUnitHierarchy.mockReturnValue(catalog.promise);
       const params = new URLSearchParams({
         m: 'target-uid',
         units: parent,
-        unitsIncludeChildren: 'true',
+        unitsIncludeChildren: 'false',
         fromDateTime: '2026-08-28T00:00',
         toDateTime: '2026-08-29T00:00',
       });
@@ -1516,10 +1516,22 @@ describe('useRerAnalysisNeoPage', () => {
       await flushEffects();
       expect(inboxMessagesMock.fetchInboxWindow).not.toHaveBeenCalled();
       await act(async () => {
-        catalog.resolve([
-          ...(parent === 'unit-id:10' ? [{ ...template, id: 10, name: '6 А', army: '6 А' }] : []),
-          { ...template, id: 11, name: '1 мср', army: '6 А', company: '1 мср' },
-        ]);
+        catalog.resolve({
+          revision: parent,
+          groups: [
+            { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
+            {
+              id: 'group:2:6 А|3:__EMPTY__|4:__EMPTY__|5:__EMPTY__|6:__EMPTY__|7:__EMPTY__|8:1 мср',
+              label: '1 мср',
+              level: 8,
+              parentIndex: 0,
+            },
+          ],
+          units: [
+            ...(parent === 'unit-id:10' ? [{ id: 10, name: '6 А', groupIndex: 0 }] : []),
+            { id: 11, name: '1 мср', groupIndex: 1 },
+          ],
+        });
       });
       await flushEffects();
       expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(

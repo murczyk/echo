@@ -534,6 +534,8 @@ mod m20261010_085100_settlement_alias;
 mod m20261010_094039_settlement_alias_lookup_indexes;
 mod m20261010_110158_ai_settlement_worker_groups;
 
+mod m20261104_083000_group_message_requirements;
+
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
@@ -1225,6 +1227,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261102_131738_report_concurrency_settings::Migration),
             Box::new(m20261103_073829_important_notify_all_flag::Migration),
             Box::new(m20261103_120000_ai_agent_documents::Migration),
+            Box::new(m20261104_083000_group_message_requirements::Migration),
         ]
     }
 }

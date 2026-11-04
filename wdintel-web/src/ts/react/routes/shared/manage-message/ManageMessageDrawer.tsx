@@ -746,16 +746,9 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
                       {autoParseSettingsLoadError}
                     </PowerAlert>
                   ) : null}
-                  {drawerState.creationSettingsError ? (
-                    <PowerAlert
-                      severity="error"
-                      autoHideDuration={null}
-                      dismissible={false}
-                      action={
-                        <Button onClick={drawerState.retryCreationSettings}>Повторити</Button>
-                      }
-                    >
-                      Не вдалося завантажити налаштування ролей: {drawerState.creationSettingsError}
+                  {drawerState.deviceRequired && !props.cyberEchoEnabled ? (
+                    <PowerAlert severity="error" dismissible={false}>
+                      Для цієї групи обов’язкова назва пристрою. У вас немає доступу до пристроїв.
                     </PowerAlert>
                   ) : null}
                   {reportCopyError ? (

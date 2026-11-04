@@ -34,13 +34,6 @@ vi.mock('../../../services/api/direct-submit', () => ({
   searchCallsignNames,
   searchFreqs,
 }));
-vi.mock('../../../services/api/role-message-settings', () => ({
-  getMessageCreationSettings: vi.fn().mockResolvedValue({
-    unitRequired: false,
-    deviceRequired: false,
-    allowUnitCreation: true,
-  }),
-}));
 vi.mock('../../../services/api/inbox-reference-data', () => ({
   getUserSigintGroups,
   getGroupInfosBatch,

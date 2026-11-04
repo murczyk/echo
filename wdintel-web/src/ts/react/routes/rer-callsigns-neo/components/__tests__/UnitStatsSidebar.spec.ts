@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * @vitest-environment happy-dom
+ */
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { describe, expect, it, vi } from 'vitest';
 
-import { buildUnitTree } from '../UnitStatsSidebar';
+import { buildUnitTree, UnitStatsSidebar } from '../UnitStatsSidebar';
 import type { UnitStatView } from '../../types';
+import { readUnitHierarchyTree } from '../../../shared/unit-hierarchy';
 
 const EMPTY_UNIT_HIERARCHY = {
   armyRegion: '',
@@ -20,6 +26,44 @@ const EMPTY_UNIT_HIERARCHY = {
   other: '',
 } as const;
 describe('UnitStatsSidebar hierarchy', () => {
+  it.each([true, false])(
+    '#3527 keeps counts and unit filtering available without a cached hierarchy (desktop: %s)',
+    (isDesktopLayout) => {
+      const container = document.createElement('div');
+      document.body.append(container);
+      const root = createRoot(container);
+      const onPickUnitFilter = vi.fn();
+      try {
+        act(() => {
+          root.render(
+            createElement(UnitStatsSidebar, {
+              stats: [{ ...EMPTY_UNIT_HIERARCHY, unitId: 1, unitName: 'Fallback unit', count: 7 }],
+              cachedTree: null,
+              open: true,
+              isDesktopLayout,
+              loading: false,
+              onPickUnitFilter,
+            }),
+          );
+        });
+        const unit = container.querySelector<HTMLButtonElement>(
+          '[aria-label="Фільтрувати за підрозділом Fallback unit, позивних 7"]',
+        );
+        expect(unit).not.toBeNull();
+        act(() => unit!.click());
+        expect(onPickUnitFilter).toHaveBeenCalledWith({
+          kind: 'leaf',
+          label: 'Fallback unit',
+          unitName: 'Fallback unit',
+          unitId: 1,
+        });
+      } finally {
+        act(() => root.unmount());
+        container.remove();
+      }
+    },
+  );
+
   it('separates same-named armies by their full regional path', () => {
     const stats: UnitStatView[] = [
       {
@@ -43,5 +87,23 @@ describe('UnitStatsSidebar hierarchy', () => {
     ];
 
     expect(buildUnitTree(stats).map((node) => node.label)).toEqual(['R1', 'R2']);
+    const tree = readUnitHierarchyTree({
+      revision: '3527',
+      groups: [
+        { id: 'group:0:R1', label: 'R1', level: 0, parentIndex: null },
+        { id: 'group:0:R1|1:D1', label: 'D1', level: 1, parentIndex: 0 },
+        { id: 'group:0:R1|1:D1|2:A', label: 'A', level: 2, parentIndex: 1 },
+        { id: 'group:0:R2', label: 'R2', level: 0, parentIndex: null },
+        { id: 'group:0:R2|1:D1', label: 'D1', level: 1, parentIndex: 3 },
+        { id: 'group:0:R2|1:D1|2:A', label: 'A', level: 2, parentIndex: 4 },
+      ],
+      units: stats.map((row, index) => ({
+        id: row.unitId,
+        name: row.unitName,
+        groupIndex: index * 3 + 2,
+      })),
+    });
+    expect(buildUnitTree(stats, tree)).toEqual(buildUnitTree(stats));
+    expect(buildUnitTree(stats.slice(1), tree).map((node) => node.label)).toEqual(['R2']);
   });
 });

@@ -1,3 +1,4 @@
+import { GroupMessageRequirements } from '../shared/group-navigation/GroupMessageRequirements';
 import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -82,6 +83,8 @@ type MyGroupEditState = {
   group: MyAdminSignalGroup;
   isSecret: boolean;
   disableNetworkAssignment: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   selectedUsers: SignalGroupLogin[];
   selectedOrganismIds: number[];
   selectedAdmins: SignalGroupLogin[];
@@ -386,6 +389,14 @@ function MyGroupEditDialog(props: {
           }
           label={<DisableNetworkAssignmentLabel />}
         />
+        <GroupMessageRequirements
+          isSigintUnitMandatory={editDialog?.isSigintUnitMandatory ?? false}
+          isDeviceMandatory={editDialog?.isDeviceMandatory ?? false}
+          disabled={editDialog?.isSaving}
+          onChange={(requirements) =>
+            editDialog && setEditDialog({ ...editDialog, ...requirements })
+          }
+        />
         {editDialog?.isSecret ? (
           <Autocomplete
             multiple
@@ -529,6 +540,8 @@ export function SettingsMyGroupsSection({
       group,
       isSecret: group.isGroupSecret,
       disableNetworkAssignment: group.disableNetworkAssignment,
+      isSigintUnitMandatory: group.isSigintUnitMandatory ?? false,
+      isDeviceMandatory: group.isDeviceMandatory ?? false,
       selectedUsers: group.allowedUsers,
       selectedOrganismIds: group.allowedOrganismIds,
       selectedAdmins: group.adminLogins,
@@ -559,6 +572,8 @@ export function SettingsMyGroupsSection({
         masterKey: editDialog.group.masterKey,
         isSecret: editDialog.isSecret,
         disableNetworkAssignment: editDialog.disableNetworkAssignment,
+        isSigintUnitMandatory: editDialog.isSigintUnitMandatory,
+        isDeviceMandatory: editDialog.isDeviceMandatory,
         userLogins: editDialog.isSecret
           ? editDialog.selectedUsers.map((login) => login.loginId)
           : [],

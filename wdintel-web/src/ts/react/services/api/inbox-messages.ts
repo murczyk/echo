@@ -373,6 +373,10 @@ function normalizeSignalGroupEntry(
       raw.ai_transcript_analysis_enabled ??
       false) as boolean,
     fetchNewMessages: (raw.fetchNewMessages ?? raw.fetch_new_messages ?? true) as boolean,
+    isSigintUnitMandatory: (raw.isSigintUnitMandatory ??
+      raw.is_sigint_unit_mandatory ??
+      false) as boolean,
+    isDeviceMandatory: (raw.isDeviceMandatory ?? raw.is_device_mandatory ?? false) as boolean,
     groupStats:
       groupStats && typeof groupStats.activityLastDay === 'number' ? groupStats : defaultGroupStats,
     adminData: (raw.adminData ?? raw.admin_data ?? null) as GroupAdminData | null,

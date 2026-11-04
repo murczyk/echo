@@ -1,6 +1,5 @@
 import * as z from 'zod';
 import dayjs from 'dayjs';
-import type { MessageCreationSettings } from '../../../../../Bindings';
 import { parseCoordinateBlock } from '../../../../maps/coordinate-parser';
 import {
   isMessageUnitSelectionValid,
@@ -69,7 +68,7 @@ export function makeMessageSchema(
   groupOptional = false,
   reportTextRequired = false,
   radioFeaturesAllowed = true,
-  creationSettings?: Pick<MessageCreationSettings, 'unitRequired' | 'deviceRequired'>,
+  creationSettings?: { unitRequired: boolean; deviceRequired: boolean },
 ) {
   return z
     .object({

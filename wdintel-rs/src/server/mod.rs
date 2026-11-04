@@ -1572,11 +1572,6 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::sigint::device_name::device_name_resolve)
-            .service(crate::users::role_settings::list)
-            .service(crate::users::role_settings::create)
-            .service(crate::users::role_settings::update)
-            .service(crate::users::role_settings::delete)
-            .service(crate::users::role_settings::current)
             .service(crate::users::list_logins)
             .service(crate::users::create_login)
             .service(crate::users::create_delta_login)
@@ -1686,6 +1681,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::zone::my_admin_group_edit_reference)
             .service(crate::sigint::zone::my_admin_group_update)
             .service(crate::sigint::unit::list_units)
+            .service(crate::sigint::unit::hierarchy::unit_hierarchy)
             .service(crate::sigint::unit::combat_type::list_combat_types)
             .service(crate::sigint::unit::unit_status_counts)
             .service(crate::sigint::unit::list_units_by_id)
@@ -1968,6 +1964,23 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    if env.metrics.is_some()
+        && config.signoz_kpi_metrics_enabled.unwrap_or(false)
+    {
+        let kpi_env = env.clone();
+        let kpi_cancel = cancel_token.clone();
+        spawn_named_worker(
+            "kpi_metrics_worker",
+            &mut background_tasks,
+            async move {
+                crate::kpi::metrics::run_nofail(kpi_env, kpi_cancel).await;
+            },
+        );
+    } else if config.signoz_kpi_metrics_enabled.unwrap_or(false) {
+        log::warn!(
+            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check signoz_metrics_enabled and signoz_metrics_endpoint"
+        );
+    }
     let deployment_maintenance = web::Data::new(
         crate::event_stream::DeploymentMaintenanceState::default(),
     );

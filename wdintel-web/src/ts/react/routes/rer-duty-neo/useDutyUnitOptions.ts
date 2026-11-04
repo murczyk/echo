@@ -10,7 +10,6 @@ import { INBOX_COUNT_POLL_INTERVAL_MS } from './utils';
 const EMPTY_OPTIONS: UnitCountOption[] = [];
 
 export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
-  const enabled = panel.toggles.unitsIncludeChildren ?? false;
   const request = panel.sources.unitStatsReq;
   const requestKey = request
     ? JSON.stringify({
@@ -28,7 +27,6 @@ export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
   } | null>(null);
   const countsRef = useRef(counts);
   countsRef.current = counts;
-  const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useInboxChangedMessageIds({
@@ -48,13 +46,9 @@ export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
   );
   const { onUnitStatsError } = panel.actions;
   useEffect(() => {
-    if (!requestKey || !enabled) {
-      setLoading(false);
-      return;
-    }
+    if (!requestKey) return;
     if (countsRef.current?.key === requestKey && countsRef.current.revision === revision) return;
     const controller = new AbortController();
-    setLoading(true);
     fetchInboxUnitStats(JSON.parse(requestKey), { signal: controller.signal })
       .then(({ units }) => {
         if (controller.signal.aborted) return;
@@ -75,19 +69,15 @@ export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
           onUnitStatsError?.(
             `Не вдалося завантажити кількість повідомлень за підрозділами: ${String(error)}`,
           );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [enabled, onUnitStatsError, requestKey, revision]);
+  }, [onUnitStatsError, requestKey, revision]);
   const options = useMemo(
     () => (counts?.key === requestKey ? counts.options : EMPTY_OPTIONS),
     [counts, requestKey],
   );
-  const parents = useUnitParentOptions(enabled, options, panel.sources.unitHierarchy);
+  const parents = useUnitParentOptions(true, options, panel.sources.unitHierarchy);
   return {
     options: parents.options,
-    loading: (enabled && loading) || parents.loading || panel.toggles.unitHierarchyLoading === true,
   };
 }

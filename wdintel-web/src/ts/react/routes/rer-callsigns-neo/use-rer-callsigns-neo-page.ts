@@ -26,6 +26,7 @@ import {
 import { useRerCallsignsNeoPageActions } from './use-rer-callsigns-neo-page.actions';
 import { useRerCallsignsNeoPageLoad } from './use-rer-callsigns-neo-page.load';
 import { buildSelectableUnitOptions } from '../../utils/unit-search';
+import { useUnitHierarchyCatalog } from '../shared/use-unit-children-filter';
 import type {
   CallsignDraftRow,
   CallsignEditForm,
@@ -59,6 +60,11 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     [radioFeaturesAllowed, storedSort],
   );
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => readInitialSidebarOpenFromUrl());
+  const { tree: unitHierarchyTree, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
+    sidebarOpen,
+    (text) => setStatus({ kind: 'error', text }),
+    unitStats,
+  );
   const [selectedSidebarUnitFilter, setSelectedSidebarUnitFilter] =
     useState<SelectedSidebarUnitFilter | null>(() => readInitialSidebarFilterFromUrl());
   const [addUnitId, setAddUnitId] = useState<number | null>(null);
@@ -287,6 +293,8 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     rows,
     sort,
     unitStatsView,
+    unitHierarchyTree,
+    unitHierarchyLoading,
     loading,
     loadingMore,
     refreshing,
