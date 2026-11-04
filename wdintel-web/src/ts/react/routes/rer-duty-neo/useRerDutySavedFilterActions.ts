@@ -64,7 +64,7 @@ export function useRerDutySavedFilterActions(params: Params) {
           name: trimmed,
           req: {
             ...feed.filter,
-            unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
+            unitsIncludeChildren: true,
           },
         });
         params.setSavedFilters(list);
@@ -96,7 +96,7 @@ export function useRerDutySavedFilterActions(params: Params) {
       const filter = normalizeFeed(saved.req as unknown as Record<string, unknown>);
       params.applyFilter(feedId, {
         ...filter,
-        unitsIncludeChildren: filter.unitsIncludeChildren ?? false,
+        unitsIncludeChildren: true,
       });
     },
     [params.applyFilter, setSavedFilterNameForFeed, setSavedFilterSelectionForFeed],
@@ -117,7 +117,7 @@ export function useRerDutySavedFilterActions(params: Params) {
           name: selectedSaved.name,
           req: {
             ...feed.filter,
-            unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
+            unitsIncludeChildren: true,
           },
         });
         params.setSavedFilters(list);

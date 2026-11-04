@@ -168,6 +168,39 @@ describe('useAnalysisSavedFilters', () => {
   });
 
   it.each([false, true])(
+    '#3527 preserves dirty state while a saved parent filter awaits catalog recovery: metadata=%s',
+    async (withMetadata) => {
+      const { queryState, savedFilter } = buildLegacyUnitFilter();
+      if (withMetadata) {
+        savedFilter.unitFilter = { values: ['unit-id:20'], includeChildren: false };
+      }
+      analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([savedFilter]);
+      await renderHook([], { ...queryState, unitsSelected: [], unitHierarchy: null });
+      await flushEffects();
+      await act(async () => latest?.applySavedFilter(savedFilter));
+      expect(latest?.isDirty).toBe(false);
+      expect(buildAnalysisReq(currentQueryState!)).toBeNull();
+
+      await act(async () => setCurrentQueryState?.(queryState));
+      expect(latest?.isDirty).toBe(false);
+      await act(async () => setCurrentQueryState?.({ ...queryState, unitHierarchy: null }));
+      expect(latest?.isDirty).toBe(false);
+
+      await act(async () =>
+        setCurrentQueryState?.({
+          ...currentQueryState!,
+          unitsSelected: ['unit-id:21'],
+        }),
+      );
+      expect(latest?.isDirty).toBe(true);
+      await act(async () =>
+        setCurrentQueryState?.({ ...queryState, unitHierarchy: null, search: 'changed' }),
+      );
+      expect(latest?.isDirty).toBe(true);
+    },
+  );
+
+  it.each([false, true])(
     '#3527 automatically matches a legacy parent filter when the catalog starts pending: %s',
     async (catalogPending) => {
       const { queryState, savedFilter } = buildLegacyUnitFilter();

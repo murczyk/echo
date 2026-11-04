@@ -239,29 +239,29 @@ let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 let latest: HookResult | null = null;
 
+function Harness({ queryStateOverrides }: { queryStateOverrides: PartialQueryState }) {
+  latest = useAnalysisData({
+    authUserName: null,
+    currentUser: null,
+    centerTab: 'messages',
+    newestFirst: true,
+    onError: hoisted.onError,
+    onUnauthorized: hoisted.onUnauthorized,
+    queryState: { ...emptyQueryState(), ...queryStateOverrides },
+    rightSidebarVisible: false,
+    rightSidebarTab: null,
+    shouldLoadNewCallsigns: false,
+    deferInitialLoad: false,
+    rightPanelOpen: false,
+  });
+  return null;
+}
+
 function renderHook(queryStateOverrides: PartialQueryState = {}) {
   if (container == null) throw new Error('container not initialized');
-  const Harness = () => {
-    latest = useAnalysisData({
-      authUserName: null,
-      currentUser: null,
-      centerTab: 'messages',
-      newestFirst: true,
-      onError: hoisted.onError,
-      onUnauthorized: hoisted.onUnauthorized,
-      queryState: { ...emptyQueryState(), ...queryStateOverrides },
-      rightSidebarVisible: false,
-      rightSidebarTab: null,
-      shouldLoadNewCallsigns: false,
-      deferInitialLoad: false,
-      rightPanelOpen: false,
-    });
-    return null;
-  };
-
-  root = createRoot(container);
+  root ??= createRoot(container);
   act(() => {
-    root?.render(React.createElement(Harness));
+    root?.render(React.createElement(Harness, { queryStateOverrides }));
   });
 }
 
@@ -357,7 +357,7 @@ describe('useAnalysisData inbox refreshes', () => {
       fromDateTimeStr: '2026-10-30T00:00',
       toDateTimeStr: '2026-10-31T00:00',
       unitsSelected: ['unit-id:20'],
-      unitsIncludeChildren: true,
+      unitsIncludeChildren: false,
     });
     await act(async () => {
       await hoisted.onInboxChangedMessageIds([1]);
@@ -381,7 +381,7 @@ describe('useAnalysisData inbox refreshes', () => {
       fromDateTimeStr: '2026-10-30T00:00',
       toDateTimeStr: '2026-10-31T00:00',
       unitsSelected: ['unit-id:20'],
-      unitsIncludeChildren: true,
+      unitsIncludeChildren: false,
       unitHierarchy,
     });
     await act(async () => {
@@ -394,6 +394,60 @@ describe('useAnalysisData inbox refreshes', () => {
     );
     expect(latest!.messages).toEqual([]);
   });
+
+  it.each([false, true])(
+    '#3527 rejects stale list and map reconciliation when the catalog becomes pending: %s',
+    async (pending) => {
+      const unit = buildUnitFilterOptions([])[0];
+      const parent = { ...unit, id: 20, name: '27 омсбр', army: '6 А', brigade: '27 омсбр' };
+      const child = { ...parent, id: 21, name: '1 мср', company: '1 мср' };
+      const unitHierarchy = buildUnitHierarchyIndex([parent, child]);
+      const nextHierarchy = buildUnitHierarchyIndex([parent, { ...child, id: 22 }]);
+      const message = inboxMessage({ text: 'current' });
+      hoisted.messages = [[1, message]];
+      hoisted.mapOpenMessages = [[1, message]];
+      let resolveRefresh!: (items: Array<[number, InboxMessage]>) => void;
+      hoisted.fetchMessageIdsMatchingFilters.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+      const query = {
+        fromDateTimeStr: '2026-10-30T00:00',
+        toDateTimeStr: '2026-10-31T00:00',
+        unitsSelected: ['unit-id:20'],
+        unitsIncludeChildren: false,
+        unitHierarchy,
+      };
+      renderHook(query);
+      let refresh: Promise<void> | undefined;
+      await act(async () => {
+        refresh = hoisted.onInboxChangedMessageIds([1]);
+        await vi.waitFor(() =>
+          expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledOnce(),
+        );
+      });
+      renderHook({ ...query, unitHierarchy: pending ? null : nextHierarchy });
+      await act(async () => {
+        resolveRefresh([]);
+        await refresh;
+      });
+      expect(latest!.messages).toEqual([[1, message]]);
+      expect(latest!.mapAttrs.messages).toEqual([[1, message]]);
+
+      if (pending) renderHook({ ...query, unitHierarchy: nextHierarchy });
+      await act(async () => {
+        await hoisted.onInboxChangedMessageIds([1]);
+      });
+      expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenLastCalledWith(
+        [1],
+        expect.objectContaining({ selectedUnitIds: [20, 22] }),
+        expect.anything(),
+      );
+      expect(latest!.messages).toEqual([]);
+      expect(latest!.mapAttrs.messages).toEqual([]);
+    },
+  );
   it('#3780 preserves list and map identity for unchanged broadcast payloads', async () => {
     const message = inboxMessage({ text: 'displayed' });
     hoisted.messages = [[1, message]];

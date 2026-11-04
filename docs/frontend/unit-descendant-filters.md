@@ -30,18 +30,23 @@ Saved Analysis filters retain the original selection in optional
 can still use the snapshot. Duty saved filters and short URLs retain
 `units_include_children` for compatibility. Older URLs and saved filters with
 descendants disabled now include descendants too; the legacy flag does not
-affect filtering or mark a saved filter dirty. These values use existing
-JSON/short-state storage and require no schema migration.
+affect filtering or mark a saved filter dirty. New and updated saved filters
+write the enabled policy, including newly added Duty feeds. These values use
+existing JSON/short-state storage and require no schema migration.
 
 Legacy Analysis filters without `unit_filter` metadata are compared after
 expanding their saved unit selections through the live hierarchy. Applying one
 does not mark it dirty, and automatic matching waits for the hierarchy to load.
+During catalog recovery, dirty-state comparisons use the last available
+hierarchy; before the first catalog load, they compare the saved selections.
+Changing selections or other filters still marks the filter dirty.
 
 Inbox reconciliation uses the expanded filters, removes messages whose edited
 unit no longer matches, and rejects responses for obsolete scopes. Duty retains
-its creation-time ordering and unread-state contract. Analysis direct-message
-and reply windows wait for the same hierarchy and never turn an unresolved
-request into an unrestricted around-message request.
+its creation-time ordering and unread-state contract. Explicit Duty reloads and
+reconciliation also wait until selected and excluded parents can expand.
+Analysis direct-message and reply windows wait for the same hierarchy and never
+turn an unresolved request into an unrestricted around-message request.
 
 Regression coverage:
 

@@ -63,6 +63,7 @@ type Params = {
       sinceIdNoninclusive?: number | null;
     },
   ) => InboxMessagesReq;
+  isFeedReady: (feed: MessageFeedState) => boolean;
   getFeedLoadGeneration: (feedId: string) => number;
   mergeInboxCallsigns: (
     feedId: string,
@@ -179,7 +180,7 @@ export function useRerDutyInitialLoad(params: Params) {
     ) => {
       const current = paramsRef.current;
       const feed = current.messageFeeds.find((candidate) => candidate.id === feedId);
-      if (!feed) return;
+      if (!feed || !current.isFeedReady(feed)) return;
       current.controllersByFeedIdRef.current[feedId]?.abort();
       const controller = new AbortController();
       current.controllersByFeedIdRef.current[feedId] = controller;

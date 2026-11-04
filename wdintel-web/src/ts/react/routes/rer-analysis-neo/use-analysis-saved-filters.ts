@@ -14,6 +14,7 @@ import {
   queryStateMatchesSavedFilter,
 } from './helpers';
 import type { AnalysisQueryState } from './types';
+import { buildUnitHierarchyIndex } from '../shared/unit-children-filter';
 
 type Props = {
   allFrequencies: string[];
@@ -54,6 +55,8 @@ export function useAnalysisSavedFilters({
   const [savedFilterName, setSavedFilterName] = useState('');
   const [saveInFlight, setSaveInFlight] = useState(false);
   const hasSyncedLoadedSavedFilterRef = useRef(false);
+  const comparisonHierarchyRef = useRef(queryState.unitHierarchy);
+  if (queryState.unitHierarchy) comparisonHierarchyRef.current = queryState.unitHierarchy;
 
   const loadedSavedFilter = useMemo(
     () => savedFilters.find((savedFilter) => savedFilter.id === loadedSavedFilterId) ?? null,
@@ -62,7 +65,15 @@ export function useAnalysisSavedFilters({
 
   const isDirty = useMemo(() => {
     if (!loadedSavedFilter) return false;
-    return !queryStateMatchesSavedFilter(queryState, loadedSavedFilter, allFrequencies);
+    return !queryStateMatchesSavedFilter(
+      {
+        ...queryState,
+        unitHierarchy:
+          queryState.unitHierarchy ?? comparisonHierarchyRef.current ?? buildUnitHierarchyIndex([]),
+      },
+      loadedSavedFilter,
+      allFrequencies,
+    );
   }, [allFrequencies, loadedSavedFilter, queryState]);
 
   const loadSavedFilters = useCallback(async () => {
@@ -138,7 +149,7 @@ export function useAnalysisSavedFilters({
           req,
           unitFilter: {
             values: queryState.unitsSelected,
-            includeChildren: queryState.unitsIncludeChildren ?? false,
+            includeChildren: true,
           },
         });
         setSavedFilters(next);
@@ -198,7 +209,7 @@ export function useAnalysisSavedFilters({
         req,
         unitFilter: {
           values: queryState.unitsSelected,
-          includeChildren: queryState.unitsIncludeChildren ?? false,
+          includeChildren: true,
         },
       });
       setSavedFilters(next);
