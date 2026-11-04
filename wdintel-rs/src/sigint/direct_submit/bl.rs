@@ -1228,6 +1228,13 @@ async fn persist_direct_submit_item(
 ) -> Result<SubmittedInboxItem, AppError> {
     let (datasource_id, groups) = match signal_group {
         Some(signal_group) => {
+            if signal_message_id.is_none() {
+                crate::messenger::group::requirements::validate(
+                    &signal_group,
+                    &submit_item,
+                )
+                .c(h!())?;
+            }
             crate::messenger::group::native::lock_for_publish_if_native(
                 txn,
                 &signal_group.master_key,

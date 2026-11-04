@@ -93,6 +93,19 @@ pub(crate) async fn submit_generic_inbox_item(
     let item = parse_missing_submit_unit(env, txn, &groups, item)
         .await
         .c(h!())?;
+    let keys = groups
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let destination_groups = crate::entities::signal_group::Entity::find()
+        .filter(crate::entities::signal_group::Column::MasterKey.is_in(keys))
+        .all(txn)
+        .await
+        .c(h!())?;
+    for group in destination_groups {
+        crate::messenger::group::requirements::validate(&group, &item)
+            .c(h!())?;
+    }
     let device_name_id = item.device_name_id;
     let submitted = submit_inbox_item_with_groups(
         env.as_ref(),
@@ -309,23 +322,6 @@ async fn submit_inbox_item_with_groups_inner(
     signal_message_uuid: Option<uuid::Uuid>,
     source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
-    if signal_message_id.is_none() {
-        let keys = groups
-            .iter()
-            .map(|(key, _)| key.clone())
-            .collect::<Vec<_>>();
-        let destination_groups = crate::entities::signal_group::Entity::find()
-            .filter(
-                crate::entities::signal_group::Column::MasterKey.is_in(keys),
-            )
-            .all(txn)
-            .await
-            .c(h!())?;
-        for group in destination_groups {
-            crate::messenger::group::requirements::validate(&group, &item)
-                .c(h!())?;
-        }
-    }
     if let Some(device_name_id) = item.device_name_id {
         crate::sigint::direct_submit::query::validate_device_name_id(
             txn,

@@ -17,8 +17,8 @@ impl MigrationTrait for Migration {
             .execute_unprepared(
                 r#"
 alter table signal_group
-    add column is_sigint_unit_mandatory boolean default false,
-    add column is_device_mandatory boolean default false;
+    add column is_sigint_unit_mandatory boolean,
+    add column is_device_mandatory boolean;
 drop table role_message_settings;
                 "#,
             )
