@@ -642,11 +642,11 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
       wasOpenRef.current = props.open;
     }, [props.open]);
 
-    // The panel has no attachment list, so a pasted file must not stay invisible.
-    const hasNewAttachments = uppyFiles.length > 0;
+    // The panel has no attachment list, so a pasted file or its rejection must not stay invisible.
+    const attachmentsNeedPanel = uppyFiles.length > 0 || Boolean(drawerState.attachmentErrorMsg);
     useEffect(() => {
-      if (hasNewAttachments) expandMinimalReport?.();
-    }, [expandMinimalReport, hasNewAttachments]);
+      if (attachmentsNeedPanel) expandMinimalReport?.();
+    }, [attachmentsNeedPanel, expandMinimalReport]);
 
     const handleDeleteConfirm = async () => {
       if (reportDeleteId == null || deleteInFlight) return;

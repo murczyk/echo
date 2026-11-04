@@ -7096,6 +7096,46 @@ describe('ManageMessageDrawer edit mode', () => {
       await act(async () => root.unmount());
     });
 
+    it('expands to show a rejected pasted attachment', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      const media = Array.from({ length: 20 }, (_, index) => ({
+        id: `media-${index}`,
+        contentType: 'image/jpeg',
+        fileName: `photo-${index}.jpg`,
+        sizeBytes: 10,
+        href: `/media/${index}.jpg`,
+        transcription: null,
+      })) as InboxMessage['media'];
+      await act(async () =>
+        root.render(
+          reportDrawer(
+            { host, onExpand },
+            { reportSource: { id: 42, message: buildMessage({ media }) } },
+          ),
+        ),
+      );
+      const paste = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, 'clipboardData', {
+        value: {
+          items: [
+            {
+              kind: 'file',
+              getAsFile: () => new File(['image'], 'over-limit.png', { type: 'image/png' }),
+            },
+          ],
+        },
+      });
+
+      await act(async () => {
+        host.querySelector('textarea')?.dispatchEvent(paste);
+        await Promise.resolve();
+      });
+
+      expect(paste.defaultPrevented).toBe(true);
+      expect(onExpand).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
     it('expands when a field hidden by the panel fails validation', async () => {
       const { host, onExpand, root } = setUpMinimalReport({
         ...minimalPayload,

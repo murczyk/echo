@@ -159,6 +159,34 @@ test.describe('#4008 minimal report window', () => {
     await expect(panel).toHaveCount(0);
   });
 
+  test('keeps the panel actions reachable on a short viewport', async ({ page }) => {
+    await openThreeColumnDuty(page, true);
+    await openReportFromColumn(page, 1);
+    const panel = page.locator('[data-manage-message-presentation="minimal"]');
+    await expect(panel).toBeVisible();
+    await page.setViewportSize({ width: 1920, height: 350 });
+    const reportText = panel.getByRole('textbox', { name: 'Текст розвіддонесення' });
+    await reportText.fill(Array.from({ length: 8 }, (_, line) => `Рядок ${line}`).join('\n'));
+
+    // A real wheel gesture: programmatic scrolling also moves overflow-hidden boxes.
+    await panel.getByRole('heading').hover();
+    await page.mouse.wheel(0, 1000);
+
+    const submit = panel.getByRole('button', { name: 'Створити', exact: true });
+    await expect
+      .poll(async () => {
+        const [panelBox, submitBox] = await Promise.all([
+          panel.boundingBox(),
+          submit.boundingBox(),
+        ]);
+        return submitBox!.y + submitBox!.height - (panelBox!.y + panelBox!.height);
+      })
+      .toBeLessThanOrEqual(0);
+    const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+    await submit.click();
+    await submitted;
+  });
+
   test('keeps the full side panel while the option is off', async ({ page }) => {
     await openThreeColumnDuty(page, false);
 

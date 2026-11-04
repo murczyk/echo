@@ -49,7 +49,7 @@ function OriginalReportText({ text }: { text: string }) {
     <section
       aria-label="Текст оригінального повідомлення"
       tabIndex={0}
-      className="max-h-[30vh] min-h-0 shrink overflow-y-auto overscroll-contain"
+      className="max-h-[30vh] min-h-12 shrink overflow-y-auto overscroll-contain"
     >
       <Typography variant="body2" className="whitespace-pre-wrap break-words">
         {text}
@@ -111,7 +111,11 @@ export function MinimalReportEditor({
       data-manage-message-presentation="minimal"
       className="absolute inset-x-echo-sm bottom-echo-sm z-[5] flex max-h-[calc(100%-16px)] min-h-0 flex-col overflow-hidden rounded-echo-md border-1 border-solid border-echo-border bg-echo-surface shadow-echo-lg"
     >
-      <div ref={rootRef} tabIndex={-1} className="flex min-h-0 flex-col gap-echo-sm p-echo-sm">
+      <div
+        ref={rootRef}
+        tabIndex={-1}
+        className="flex min-h-0 flex-col gap-echo-sm overflow-y-auto overscroll-contain p-echo-sm"
+      >
         <div className="flex min-w-0 items-center justify-between gap-echo-sm">
           <Typography id={titleId} component="h2" variant="subtitle2" noWrap>
             {title}
