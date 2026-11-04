@@ -717,26 +717,6 @@ pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
 pub const ROLE_NO2FA: &str = "No2FA";
 pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
-pub const USER_ROLE_SETTINGS_ROLES: &[&str] = &[
-    "Admin",
-    "Api",
-    "ApiAgent",
-    "Rer",
-    "Bpla",
-    "Full",
-    "Basic",
-    "UnitsEditor",
-    "NetworkEditor",
-    "CallsignsEditor",
-    "Cyber",
-    "CyberViewer",
-    "CyberViewerRestricted",
-    "AdvancedReports",
-    "DeleteMsg",
-    "NoAutoLogout",
-    "No2FA",
-    "MessengerIngest",
-];
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
@@ -1477,7 +1457,6 @@ pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 DELETE FROM api_sender;
-DELETE FROM role_message_settings;
 DELETE FROM ai_worker_progress;
 DELETE FROM ai_transcript_analysis_job;
 DELETE FROM ai_transcript_analysis_test_message;

@@ -114,6 +114,8 @@ pub struct OrphanSignalGroupEntry {
     pub is_aviation_group: bool,
     pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
+    pub is_sigint_unit_mandatory: bool,
+    pub is_device_mandatory: bool,
     pub is_archived: bool,
     /// Ідентифікатор джерела даних, з якого походить група (може бути None)
     pub datasource_id: Option<i64>,
@@ -135,6 +137,8 @@ pub struct SignalGroupEntry {
     pub is_aviation_group: bool,
     pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
+    pub is_sigint_unit_mandatory: bool,
+    pub is_device_mandatory: bool,
     pub group_stats: SignalGroupStats,
     pub admin_data: Option<GroupAdminData>,
     pub areas_of_responsibility: Option<Vec<AreaOfResponsibility>>,
@@ -147,7 +151,7 @@ impl Serialize for OrphanSignalGroupEntry {
         S: serde::Serializer,
     {
         let mut state =
-            serializer.serialize_struct("OrphanSignalGroupEntry", 17)?;
+            serializer.serialize_struct("OrphanSignalGroupEntry", 19)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -181,6 +185,25 @@ impl Serialize for OrphanSignalGroupEntry {
             &self.areas_of_responsibility,
         )?;
         state.serialize_field("color_key", &self.color_key)?;
+        state
+            .serialize_field(
+                "is_sigint_unit_mandatory",
+                &self.is_sigint_unit_mandatory,
+            )
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
+        state
+            .serialize_field("is_device_mandatory", &self.is_device_mandatory)
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
         state.end()
     }
 }
@@ -190,7 +213,7 @@ impl Serialize for SignalGroupEntry {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("SignalGroupEntry", 14)?;
+        let mut state = serializer.serialize_struct("SignalGroupEntry", 16)?;
         state.serialize_field("master_key", &self.master_key)?;
         state.serialize_field("name", &self.name)?;
         state.serialize_field("ignore_operativny", &self.ignore_operativny)?;
@@ -221,6 +244,25 @@ impl Serialize for SignalGroupEntry {
             &self.areas_of_responsibility,
         )?;
         state.serialize_field("color_key", &self.color_key)?;
+        state
+            .serialize_field(
+                "is_sigint_unit_mandatory",
+                &self.is_sigint_unit_mandatory,
+            )
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
+        state
+            .serialize_field("is_device_mandatory", &self.is_device_mandatory)
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
         state.end()
     }
 }
@@ -331,6 +373,8 @@ mod tests {
     #[test]
     fn signal_group_entry_serializes_legacy_aliases() {
         let signal_group = SignalGroupEntry {
+            is_sigint_unit_mandatory: false,
+            is_device_mandatory: false,
             master_key: "group.1".to_string(),
             name: "Group 1".to_string(),
             ignore_operativny: false,
@@ -356,6 +400,8 @@ mod tests {
     #[test]
     fn orphan_signal_group_entry_serializes_legacy_aliases() {
         let signal_group = OrphanSignalGroupEntry {
+            is_sigint_unit_mandatory: false,
+            is_device_mandatory: false,
             master_key: "group.1".to_string(),
             name: "Group 1".to_string(),
             ignore_operativny: false,

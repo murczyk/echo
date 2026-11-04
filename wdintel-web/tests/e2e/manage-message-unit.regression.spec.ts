@@ -283,7 +283,7 @@ test('@regression #3535 ambiguous unit names preserved the form and displayed th
   expect(submissions).toHaveLength(0);
 });
 
-test('@regression #3535 message writers created full units without unit editing permissions', async ({
+test('@regression #3935 message writers without UnitsEditor could not create units', async ({
   page,
 }) => {
   await installAnalysisNeoApiMocks(page, {
@@ -291,21 +291,12 @@ test('@regression #3535 message writers created full units without unit editing 
     userRoles: ['Rer'],
   });
   await installUnitApi(page);
-  let duplicateChecks = 0;
-  await page.route('**/api/sigint/unit/create-duplicate-candidates', (route) => {
-    duplicateChecks += 1;
-    return route.fulfill({ status: 403, json: { error: 'UnitsEditor required' } });
-  });
   await page.goto('/rer-analysis-neo');
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
-  await page.getByRole('combobox', { name: 'Група', exact: true }).click();
-  await page.getByRole('option', { name: 'editor-e2e-group', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Текст повідомлення' }).fill('3535 writer-created unit');
   await page.getByRole('combobox', { name: 'Підрозділ' }).fill(newUnitName);
-  await page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` }).click();
-  await saveNewUnit(page);
-  expect(duplicateChecks).toBe(0);
-  await expect(page.getByRole('button', { name: 'Створити', exact: true })).toBeEnabled();
+  await expect(page.getByRole('option', { name: `Додати Підрозділ «${newUnitName}»` })).toHaveCount(
+    0,
+  );
 });
 
 test('@regression #3535 echelon ordering kept brigades before recent subordinate units', async ({

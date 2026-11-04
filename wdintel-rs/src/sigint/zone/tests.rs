@@ -286,6 +286,8 @@ async fn test_bl_szd_group_update_01() {
     .await
     .unwrap();
     let req = ZoneDatasourceGroupUpdateReq {
+        is_sigint_unit_mandatory: Some(true),
+        is_device_mandatory: Some(true),
         id: szd.id,
         color_key: Some(SignalGroupColor::Blue),
         is_secret: false,
@@ -306,6 +308,7 @@ async fn test_bl_szd_group_update_01() {
 
     assert!(res.aor.is_some());
     assert!(res.is_aviation_group);
+    assert!(res.is_sigint_unit_mandatory && res.is_device_mandatory);
     assert_eq!(res.color_key, SignalGroupColor::Blue);
     assert!(!res.fetch_new_messages);
     assert!(
@@ -437,6 +440,8 @@ async fn test_secret_group_update_preserves_ai_managed_logins() {
     .unwrap();
 
     let req = ZoneDatasourceGroupUpdateReq {
+        is_sigint_unit_mandatory: None,
+        is_device_mandatory: None,
         id: szd.id,
         color_key: Some(SignalGroupColor::DeepPurple),
         is_secret: true,

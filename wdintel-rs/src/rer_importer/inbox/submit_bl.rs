@@ -44,6 +44,11 @@ pub(crate) async fn submit_generic_inbox_message(
     logins: &Vec<uuid::Uuid>,
     item: InboxSubmitItem,
 ) -> Result<SubmittedInboxItem, AppError> {
+    if item.device_name_id.is_some() {
+        crate::devices::access::require_message_devices(&env.dbx, login)
+            .await
+            .c(h!())?;
+    }
     let txn = env.dbx.begin().await.c(h!())?;
     let datasource = datasource::Entity::find()
         .filter(datasource::Column::ApiLoginId.eq(*login))
@@ -88,6 +93,20 @@ pub(crate) async fn submit_generic_inbox_item(
     let item = parse_missing_submit_unit(env, txn, &groups, item)
         .await
         .c(h!())?;
+    let keys = groups
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let destination_groups = crate::entities::signal_group::Entity::find()
+        .filter(crate::entities::signal_group::Column::MasterKey.is_in(keys))
+        .all(txn)
+        .await
+        .c(h!())?;
+    for group in destination_groups {
+        crate::messenger::group::requirements::validate(&group, &item)
+            .c(h!())?;
+    }
+    let device_name_id = item.device_name_id;
     let submitted = submit_inbox_item_with_groups(
         env.as_ref(),
         txn,
@@ -100,6 +119,16 @@ pub(crate) async fn submit_generic_inbox_item(
     )
     .await
     .c(h!())?;
+    if let Some(device_name_id) = device_name_id {
+        crate::entities::sigint_inbox_item::ActiveModel {
+            id: Set(submitted.inbox_id),
+            device_name_id: Set(Some(device_name_id)),
+            ..Default::default()
+        }
+        .update(txn)
+        .await
+        .c(h!())?;
+    }
     if let Some(sender_login) = sender_login {
         crate::api_senders::attribute_message(
             txn,
@@ -293,6 +322,14 @@ async fn submit_inbox_item_with_groups_inner(
     signal_message_uuid: Option<uuid::Uuid>,
     source_group_master_key: Option<&str>,
 ) -> Result<SubmittedInboxItem, AppError> {
+    if let Some(device_name_id) = item.device_name_id {
+        crate::sigint::direct_submit::query::validate_device_name_id(
+            txn,
+            device_name_id,
+        )
+        .await
+        .c(h!())?;
+    }
     let mut prepared = prepare_inbox_submit_item(
         txn,
         groups,

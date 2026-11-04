@@ -202,6 +202,10 @@ export async function getGroupInfosBatch(
       r.aiTranscriptAnalysisEnabled ??
       false) as boolean,
     fetchNewMessages: (r.fetch_new_messages ?? r.fetchNewMessages ?? true) as boolean,
+    isSigintUnitMandatory: (r.is_sigint_unit_mandatory ??
+      r.isSigintUnitMandatory ??
+      false) as boolean,
+    isDeviceMandatory: (r.is_device_mandatory ?? r.isDeviceMandatory ?? false) as boolean,
     groupStats: (r.group_stats ?? r.groupStats) as SignalGroupStats,
     adminData: (r.admin_data ?? r.adminData ?? null) as GroupAdminData | null,
     areasOfResponsibility: (r.areas_of_responsibility ?? r.areasOfResponsibility ?? null) as

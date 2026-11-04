@@ -17,8 +17,6 @@ import {
   MenuItem,
   Stack,
   Switch,
-  Tab,
-  Tabs,
   TextField,
   Tooltip,
 } from '@mui/material';
@@ -72,7 +70,6 @@ import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { MessengerProfileSelect } from './MessengerProfileSelect';
 import { UserUuidValue } from './UserUuidValue';
-import { RoleSettingsTab } from './RoleSettingsTab';
 import { ApiSenders } from './ApiSenders';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -1981,31 +1978,5 @@ function AllUsersTab() {
 }
 
 export function AdminUsersNeoPage() {
-  const [tab, setTab] = useState('users');
-  return (
-    <div className="flex h-full min-h-0 flex-col gap-echo-lg">
-      <Tabs value={tab} onChange={(_, value: string) => setTab(value)} aria-label="Користувачі">
-        <Tab
-          value="users"
-          label="Всі користувачі"
-          id="all-users-tab"
-          aria-controls="all-users-panel"
-        />
-        <Tab
-          value="roles"
-          label="Налаштування ролей"
-          id="role-settings-tab"
-          aria-controls="role-settings-panel"
-        />
-      </Tabs>
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        role="tabpanel"
-        id={tab === 'users' ? 'all-users-panel' : 'role-settings-panel'}
-        aria-labelledby={tab === 'users' ? 'all-users-tab' : 'role-settings-tab'}
-      >
-        {tab === 'users' ? <AllUsersTab /> : <RoleSettingsTab />}
-      </div>
-    </div>
-  );
+  return <AllUsersTab />;
 }
