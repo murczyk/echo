@@ -80,6 +80,11 @@ for (const analysis of [false, true]) {
     const statsEndpoint = analysis
       ? '/api/rer/analysis/stats/units'
       : '/api/rer-importer/get-inbox-unit-stats';
+    if (analysis) {
+      await page.route('**/api/rer/analysis/stats/units/count', async (route) => {
+        await route.fulfill({ json: units.length });
+      });
+    }
     await page.route(`**${statsEndpoint}`, async (route) => {
       countRequests += 1;
       const filtered = route.request().postDataJSON().selected_freqs?.length > 0;
@@ -133,6 +138,8 @@ for (const analysis of [false, true]) {
     const parent = page.getByRole('option', { name: /^27 омсбр/ });
     await expect(parent).toContainText('11');
     await expect(page.getByRole('option', { name: /^6 А/ })).toContainText('11');
+    if (analysis)
+      await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи4');
     await expect(page.getByRole('option', { name: /Регіон|Округ/ })).toHaveCount(0);
     expect(countRequests).toBe(countBeforeSelection);
     await parent.click();
@@ -155,6 +162,8 @@ for (const analysis of [false, true]) {
       .poll(() => inboxRequests.at(-1)?.selected_unit_ids?.slice().sort())
       .toEqual([21, 22]);
     const countBeforeFrequency = countRequests;
+    if (analysis)
+      await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи1 з 4');
     if (analysis) await page.getByRole('button', { name: /^Частоти/ }).click();
     const frequency = analysis
       ? page.getByRole('combobox', { name: 'Частоти', exact: true })
