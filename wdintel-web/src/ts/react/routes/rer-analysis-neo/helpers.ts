@@ -878,7 +878,10 @@ export function queryStateMatchesSavedFilter(
     );
   }
   const stateKey = queryStateComparisonKey(state, allFrequencies);
-  const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
+  const savedFilterKey = queryStateComparisonKey(
+    queryStateFromSavedFilter(savedFilter, state),
+    allFrequencies,
+  );
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;
 
   return stateKey === savedFilterKey;

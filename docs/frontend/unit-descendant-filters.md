@@ -33,6 +33,10 @@ descendants disabled now include descendants too; the legacy flag does not
 affect filtering or mark a saved filter dirty. These values use existing
 JSON/short-state storage and require no schema migration.
 
+Legacy Analysis filters without `unit_filter` metadata are compared after
+expanding their saved unit selections through the live hierarchy. Applying one
+does not mark it dirty, and automatic matching waits for the hierarchy to load.
+
 Inbox reconciliation uses the expanded filters, removes messages whose edited
 unit no longer matches, and rejects responses for obsolete scopes. Duty retains
 its creation-time ordering and unread-state contract. Analysis direct-message
@@ -45,6 +49,7 @@ Regression coverage:
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.core.inbox-refresh.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`
+- `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-saved-filters.spec.tsx`
 - `wdintel-web/tests/e2e/unit-children-filter.spec.ts`
 - `wdintel-rs/src/rer_importer/inbox/mod.rs`
 - `wdintel-rs/src/rer_importer/analysis/tests.rs`

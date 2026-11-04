@@ -98,6 +98,7 @@ export function useAnalysisSavedFilters({
     );
     if (isNullOrUndefined(matchedSavedFilter)) {
       if (queryState.adjacentFreqsRange > 0 && allFrequencies.length === 0) return;
+      if (queryState.unitsSelected.length > 0 && !queryState.unitHierarchy) return;
       hasSyncedLoadedSavedFilterRef.current = true;
       return;
     }
