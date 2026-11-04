@@ -206,7 +206,7 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     unitsSelected: null,
     unitsDenied: null,
-    unitsIncludeChildren: false,
+    unitsIncludeChildren: true,
     selectedDeviceNames: null,
     deniedDeviceNames: null,
     selectedUnitIds: null,
@@ -339,7 +339,6 @@ export function filtersEqual(a: RerDutyFeedFilterState, b: RerDutyFeedFilterStat
     optArrEqual(a.postsDenied, b.postsDenied) &&
     optArrEqual(a.unitsSelected, b.unitsSelected) &&
     optArrEqual(a.unitsDenied, b.unitsDenied) &&
-    (a.unitsIncludeChildren ?? false) === (b.unitsIncludeChildren ?? false) &&
     optArrEqual(a.selectedDeviceNames, b.selectedDeviceNames) &&
     optArrEqual(a.deniedDeviceNames, b.deniedDeviceNames) &&
     (a.unitsExactMatchOnly ?? false) === (b.unitsExactMatchOnly ?? false) &&
@@ -392,14 +391,10 @@ export function buildInboxReq(opts: {
 }): InboxMessagesReq {
   const selectedUnits = expandUnitSelections(
     opts.filter.unitsSelected ?? [],
-    opts.unitsIncludeChildren ?? false,
+    true,
     opts.unitHierarchy,
   );
-  const deniedUnits = expandUnitSelections(
-    opts.filter.unitsDenied ?? [],
-    opts.unitsIncludeChildren ?? false,
-    opts.unitHierarchy,
-  );
+  const deniedUnits = expandUnitSelections(opts.filter.unitsDenied ?? [], true, opts.unitHierarchy);
   const f = { ...opts.filter, unitsSelected: selectedUnits, unitsDenied: deniedUnits };
   const selectedUnitIds = (f.unitsSelected ?? []).flatMap((value) => {
     const unitId = getCanonicalUnitIdValue(value);

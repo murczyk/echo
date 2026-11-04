@@ -25,6 +25,8 @@ import {
 } from '../utils';
 import { persistDutyFilterState, readPersistedDutyFilterState } from '../duty-filter-persistence';
 import { useRerDutyFeedState } from '../useRerDutyFeedState';
+import { getAllUnitsList } from '../../../services/api/units';
+import { buildUnitFilterOptions } from '../../../utils/unit-search';
 
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
@@ -38,6 +40,50 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
   });
 
   afterEach(fixture.cleanup);
+  it('#3527 defers explicit reloads until legacy include and exclude parents can expand', async () => {
+    const catalog = deferred<Awaited<ReturnType<typeof getAllUnitsList>>>();
+    vi.mocked(getAllUnitsList).mockReturnValueOnce(catalog.promise);
+    persistDutyFilterState({
+      messageFeeds: [
+        [
+          'mf-0',
+          {
+            ...emptyFilter(),
+            unitsSelected: ['unit-id:20'],
+            unitsDenied: ['unit-id:30'],
+            unitsIncludeChildren: false,
+          },
+        ],
+      ],
+    });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      await apiRef.current!.loadFeedInitialMessages('mf-0', { highlightSignalsEnabled: true });
+    });
+    expect(hoisted.fetchInboxMessages).not.toHaveBeenCalled();
+    const unit = buildUnitFilterOptions([])[0];
+    await act(async () => {
+      catalog.resolve([
+        { ...unit, id: 20, name: '27 омсбр', army: '6 А', brigade: '27 омсбр' },
+        { ...unit, id: 21, name: '1 мср', army: '6 А', brigade: '27 омсбр', company: '1 мср' },
+        { ...unit, id: 30, name: '28 омсбр', army: '6 А', brigade: '28 омсбр' },
+        { ...unit, id: 31, name: '2 мср', army: '6 А', brigade: '28 омсбр', company: '2 мср' },
+      ]);
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ selectedUnitIds: [20, 21], deniedUnitIds: [30, 31] }),
+      expect.anything(),
+    );
+  });
+
   it('#3780 restarts initial searches after Strict Mode cleanup', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,

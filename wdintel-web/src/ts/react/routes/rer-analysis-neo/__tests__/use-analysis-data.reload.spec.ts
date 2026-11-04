@@ -3,6 +3,7 @@ import type { SetStateAction } from 'react';
 
 import type { CountStatsRsp, Network, Unit } from '../../../../../Bindings';
 import { HttpRequestError, isUnauthorizedError } from '../../../services/api/client';
+import { buildUnitHierarchyIndex } from '../../shared/unit-children-filter';
 import { buildAnalysisReq, emptyQueryState } from '../helpers';
 import {
   loadFilterSectionData,
@@ -435,6 +436,7 @@ describe('reloadAnalysisData', () => {
         fromDateTimeStr: '2026-04-01T00:00',
         toDateTimeStr: '2026-04-02T00:00',
         unitsSelected: ['unit-id:17'],
+        unitHierarchy: buildUnitHierarchyIndex([]),
       },
       reloadRequestRef: { current: 0 },
       setAorEntries: vi.fn(),
@@ -505,7 +507,11 @@ describe('reloadAnalysisData', () => {
     const onError = vi.fn();
 
     startAnalysisCountsLoad(
-      buildAnalysisReq({ ...buildQueryState(), unitsSelected: ['unit-id:17'] })!,
+      buildAnalysisReq({
+        ...buildQueryState(),
+        unitsSelected: ['unit-id:17'],
+        unitHierarchy: buildUnitHierarchyIndex([]),
+      })!,
       {
         isStale: () => false,
         onError,
@@ -565,6 +571,7 @@ describe('reloadAnalysisData', () => {
     const req = buildAnalysisReq({
       ...buildQueryState(),
       unitsSelected: ['unit-id:17'],
+      unitHierarchy: buildUnitHierarchyIndex([]),
     })!;
     const releases: Array<() => void> = [];
     let activeRequests = 0;

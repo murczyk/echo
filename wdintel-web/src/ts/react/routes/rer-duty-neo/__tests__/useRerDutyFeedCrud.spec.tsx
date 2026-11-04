@@ -145,6 +145,7 @@ describe('useRerDutyFeedCrud', () => {
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
       groupScopeMasterKey: null,
+      unitsIncludeChildren: true,
     });
     expect(latest.current?.persistedStates).toHaveLength(1);
     expect(latest.current?.persistedStates[0]).toEqual(latest.current?.messageFeeds);
