@@ -3,7 +3,8 @@ use super::types::{
 };
 use crate::config::{
     ROLE_CYBER_VIEWER_RESTRICTED, SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY,
-    SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, SIGINT_UNIT_TREE_REDIS_KEY,
+    SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, SIGINT_UNIT_TREE_RECONCILE_SECS,
+    SIGINT_UNIT_TREE_REDIS_KEY,
 };
 use crate::entities::sigint_unit;
 use crate::error::AppError;
@@ -88,23 +89,47 @@ pub(crate) async fn invalidate_after<T>(
     operation: impl std::future::Future<Output = Result<T, AppError>>,
 ) -> Result<T, AppError> {
     let result = operation.await;
-    mark_dirty_for_mode(mode).await.c(h!())?;
-    result
+    let invalidation = mark_dirty_for_mode(mode).await.c(h!());
+    match result {
+        Ok(value) => {
+            invalidation.c(h!())?;
+            Ok(value)
+        }
+        Err(error) => {
+            if let Err(invalidation) = invalidation {
+                log::error!(
+                    "unit hierarchy invalidation also failed: {invalidation:#}"
+                );
+            }
+            Err(error).c(h!()).map_err(AppError::from)
+        }
+    }
 }
 
 async fn read_cached(
     redis: &mut impl ConnectionLike,
 ) -> anyhow::Result<Option<UnitHierarchyRsp>> {
-    let (dirty, tree): (Option<bool>, Option<String>) = redis::cmd("MGET")
-        .arg(&[SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, SIGINT_UNIT_TREE_REDIS_KEY])
+    let (dirty, tree, ttl): (Option<bool>, Option<String>, i64) = redis::pipe()
+        .atomic()
+        .get(SIGINT_UNIT_TREE_DIRTY_REDIS_KEY)
+        .get(SIGINT_UNIT_TREE_REDIS_KEY)
+        .ttl(SIGINT_UNIT_TREE_REDIS_KEY)
         .query_async(redis)
         .await
         .c(h!())?;
-    if dirty.unwrap_or(false) {
+    if dirty.unwrap_or(false) || ttl < 0 {
         return Ok(None);
     }
-    tree.map(|tree| serde_json::from_str(&tree).c(h!()))
-        .transpose()
+    let Some(tree) = tree else {
+        return Ok(None);
+    };
+    match serde_json::from_str(&tree) {
+        Ok(tree) => Ok(Some(tree)),
+        Err(error) => {
+            log::warn!("rebuilding invalid unit hierarchy cache: {error}");
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) async fn load(env: &Env) -> anyhow::Result<UnitHierarchyRsp> {
@@ -142,7 +167,7 @@ async fn rebuild(env: &Env) -> anyhow::Result<Option<UnitHierarchyRsp>> {
         .query_async::<()>(&mut redis)
         .await
         .c(h!())?;
-    let tree = build(load_sources(&transaction).await.c(h!())?);
+    let tree = build(load_sources(&transaction).await.c(h!())?).c(h!())?;
     let published = publish(&mut redis, &tree).await.c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(published.map(|()| tree))
@@ -155,7 +180,11 @@ async fn publish(
     let serialized = serde_json::to_string(tree).c(h!())?;
     redis::pipe()
         .atomic()
-        .set(SIGINT_UNIT_TREE_REDIS_KEY, serialized)
+        .set_ex(
+            SIGINT_UNIT_TREE_REDIS_KEY,
+            serialized,
+            SIGINT_UNIT_TREE_RECONCILE_SECS,
+        )
         .ignore()
         .set(SIGINT_UNIT_TREE_DIRTY_REDIS_KEY, false)
         .ignore()
@@ -196,9 +225,9 @@ async fn load_sources(
         .c(h!())
 }
 
-fn build(units: Vec<HierarchySource>) -> UnitHierarchyRsp {
+fn build(units: Vec<HierarchySource>) -> anyhow::Result<UnitHierarchyRsp> {
     let mut tree = UnitHierarchyRsp {
-        revision: uuid::Uuid::new_v4().to_string(),
+        revision: String::new(),
         groups: Vec::new(),
         units: Vec::with_capacity(units.len()),
     };
@@ -227,7 +256,8 @@ fn build(units: Vec<HierarchySource>) -> UnitHierarchyRsp {
             group_index,
         });
     }
-    tree
+    tree.revision = sha256::digest(serde_json::to_vec(&tree).c(h!())?);
+    Ok(tree)
 }
 
 fn append_groups(

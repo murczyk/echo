@@ -406,12 +406,13 @@ export function useRerAnalysisNeoPage(
         : { ...current, messageTimeBasis: dutySettings.messageSortBy },
     );
   }, [dutySettings.loadInProgress, dutySettings.messageSortBy]);
+  const directMessageUnitHierarchy = queryState.unitsSelected.length > 0 ? unitHierarchy : null;
   const directMessageWindowQueryState = useMemo(
     () =>
       effectiveRadioQuery(
         {
           ...linkedMessageQueryState,
-          unitHierarchy,
+          unitHierarchy: directMessageUnitHierarchy,
           unitsSelected: queryState.unitsSelected,
           unitsIncludeChildren: queryState.unitsIncludeChildren,
           unitsExactMatchOnly: queryState.unitsExactMatchOnly,
@@ -432,7 +433,7 @@ export function useRerAnalysisNeoPage(
       ),
     [
       linkedMessageQueryState,
-      unitHierarchy,
+      directMessageUnitHierarchy,
       queryState.unitsSelected,
       queryState.unitsIncludeChildren,
       queryState.unitsExactMatchOnly,

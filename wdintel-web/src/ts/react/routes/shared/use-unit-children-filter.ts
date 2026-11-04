@@ -14,11 +14,14 @@ type HierarchyCatalog = {
   tree: TreeNode[];
 };
 
-let pendingCatalog: Promise<HierarchyCatalog> | null = null;
+const UNIT_HIERARCHY_RECONCILE_MS = 60_000;
+const pendingCatalogs = new Map<string | null, Promise<HierarchyCatalog>>();
 
 function loadHierarchyCatalog(catalog: HierarchyCatalog | null): Promise<HierarchyCatalog> {
-  if (pendingCatalog) return pendingCatalog;
-  pendingCatalog = getUnitHierarchy(catalog?.revision ?? null)
+  const revision = catalog?.revision ?? null;
+  const pending = pendingCatalogs.get(revision);
+  if (pending) return pending;
+  const request = getUnitHierarchy(revision)
     .then((response) => {
       if (response) {
         const tree = readUnitHierarchyTree(response);
@@ -32,9 +35,10 @@ function loadHierarchyCatalog(catalog: HierarchyCatalog | null): Promise<Hierarc
       return catalog;
     })
     .finally(() => {
-      pendingCatalog = null;
+      pendingCatalogs.delete(revision);
     });
-  return pendingCatalog;
+  pendingCatalogs.set(revision, request);
+  return request;
 }
 
 export function useUnitHierarchyCatalog(
@@ -45,6 +49,7 @@ export function useUnitHierarchyCatalog(
   const [catalog, setCatalog] = useState<HierarchyCatalog | null>(null);
   const catalogRef = useRef(catalog);
   catalogRef.current = catalog;
+  const requestRef = useRef<Promise<HierarchyCatalog | null> | null>(null);
   const [failed, setFailed] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const onErrorRef = useRef(onError);
@@ -60,11 +65,18 @@ export function useUnitHierarchyCatalog(
       setFailed(false);
       setRefresh((value) => value + 1);
     };
+    const reconcile = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const interval = setInterval(reconcile, UNIT_HIERARCHY_RECONCILE_MS);
     window.addEventListener('online', refresh);
     window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', reconcile);
     return () => {
+      clearInterval(interval);
       window.removeEventListener('online', refresh);
       window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', reconcile);
     };
   }, [needed]);
   useEffect(() => {
@@ -74,14 +86,25 @@ export function useUnitHierarchyCatalog(
     }
     if (failed) return;
     let cancelled = false;
-    loadHierarchyCatalog(catalogRef.current)
+    const load = () =>
+      cancelled ? Promise.resolve(null) : loadHierarchyCatalog(catalogRef.current);
+    const previousRequest = requestRef.current;
+    const request = previousRequest ? previousRequest.catch(() => null).then(load) : load();
+    requestRef.current = request;
+    request
       .then((catalog) => {
-        if (!cancelled) setCatalog(catalog);
+        if (!cancelled && catalog) {
+          catalogRef.current = catalog;
+          setCatalog(catalog);
+        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
         setFailed(true);
         onErrorRef.current(`Не вдалося завантажити ієрархію підрозділів: ${String(error)}`);
+      })
+      .finally(() => {
+        if (requestRef.current === request) requestRef.current = null;
       });
     return () => {
       cancelled = true;

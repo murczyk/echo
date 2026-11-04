@@ -45,6 +45,8 @@ type GetUnitsPageOptions = GetUnitsListOptions & {
   afterUnitId?: number | null;
 };
 
+const UNIT_HIERARCHY_REQUEST_TIMEOUT_MS = 30_000;
+
 export const DEFAULT_LIST_UNITS_REQ: ListUnitsReq = {
   sortBy: null,
   afterUnitId: null,
@@ -130,8 +132,16 @@ export async function getUnitHierarchy(
   knownRevision: string | null,
 ): Promise<UnitHierarchyRsp | null> {
   const req: UnitHierarchyReq = { knownRevision };
-  const raw = await postJson<unknown>('/api/sigint/units/hierarchy', transformCamelToSnake(req));
-  return raw === null ? null : transformSnakeToCamel<UnitHierarchyRsp>(raw);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UNIT_HIERARCHY_REQUEST_TIMEOUT_MS);
+  try {
+    const raw = await postJson<unknown>('/api/sigint/units/hierarchy', transformCamelToSnake(req), {
+      signal: controller.signal,
+    });
+    return raw === null ? null : transformSnakeToCamel<UnitHierarchyRsp>(raw);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function getUnitsCursorPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {

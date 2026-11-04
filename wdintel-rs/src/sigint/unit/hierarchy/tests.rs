@@ -97,7 +97,44 @@ async fn regression_3527_cached_tree_tracks_committed_creates_edits_and_deletes(
         .del(SIGINT_UNIT_TREE_REDIS_KEY)
         .await
         .unwrap();
-    assert_ne!(load(&env).await.unwrap().revision, deleted.revision);
+    assert_eq!(load(&env).await.unwrap().revision, deleted.revision);
+    clear_cache(&env).await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn regression_3527_expired_tree_reconciles_missed_unit_changes() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    clear_cache(&env).await;
+    let original = load(&env).await.unwrap();
+    let ttl: i64 = env
+        .redis
+        .clone()
+        .ttl(SIGINT_UNIT_TREE_REDIS_KEY)
+        .await
+        .unwrap();
+    assert!(ttl > 0 && ttl <= SIGINT_UNIT_TREE_RECONCILE_SECS as i64);
+    let unit = mk_sigint_unit(
+        &env.dbx,
+        sigint_unit::ActiveModel {
+            name: Set("Missed notification".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(load(&env).await.unwrap().revision, original.revision);
+    let _: bool = env
+        .redis
+        .clone()
+        .expire(SIGINT_UNIT_TREE_REDIS_KEY, 0)
+        .await
+        .unwrap();
+    let reconciled = load(&env).await.unwrap();
+    assert_ne!(reconciled.revision, original.revision);
+    assert!(reconciled.units.iter().any(|entry| entry.id == unit.id));
+    mark_dirty(&mut env.redis.clone()).await.unwrap();
+    assert_eq!(load(&env).await.unwrap(), reconciled);
     clear_cache(&env).await;
 }
 
@@ -148,5 +185,46 @@ async fn regression_3527_concurrent_callers_share_one_rebuild() {
     let first = first.unwrap();
     assert_eq!(first.revision, second.unwrap().revision);
     assert_eq!(first.revision, third.unwrap().revision);
+    clear_cache(&env).await;
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn regression_3527_invalid_or_unbounded_cache_is_rebuilt_from_units() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    clear_cache(&env).await;
+    let original = load(&env).await.unwrap();
+    let unit = mk_sigint_unit(
+        &env.dbx,
+        sigint_unit::ActiveModel {
+            name: Set("Legacy cache missed this unit".to_string()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let _: () = env
+        .redis
+        .clone()
+        .set(
+            SIGINT_UNIT_TREE_REDIS_KEY,
+            serde_json::to_string(&original).unwrap(),
+        )
+        .await
+        .unwrap();
+    let upgraded = load(&env).await.unwrap();
+    assert!(upgraded.units.iter().any(|entry| entry.id == unit.id));
+    assert_ne!(upgraded.revision, original.revision);
+    let _: () = env
+        .redis
+        .clone()
+        .set_ex(
+            SIGINT_UNIT_TREE_REDIS_KEY,
+            "invalid JSON",
+            SIGINT_UNIT_TREE_RECONCILE_SECS,
+        )
+        .await
+        .unwrap();
+    assert_eq!(load(&env).await.unwrap(), upgraded);
     clear_cache(&env).await;
 }

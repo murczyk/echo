@@ -87,6 +87,7 @@ export function buildUnitTree(stats: UnitStatView[], cachedTree?: TreeNode[] | n
         if (node.kind === 'leaf') {
           const match = rows.get(node.unitId);
           if (!match) return [];
+          rows.delete(node.unitId);
           ranks.set(node.id, match.rank);
           return [
             {
@@ -108,7 +109,40 @@ export function buildUnitTree(stats: UnitStatView[], cachedTree?: TreeNode[] | n
         ];
       })
       .sort((left, right) => ranks.get(left.id)! - ranks.get(right.id)!);
-  return collapseTerminalSingleUnitGroups(visit(cachedTree));
+  const nodes = visit(cachedTree);
+  rows.forEach(({ row, rank }) => {
+    const id = `unit:${row.unitId}`;
+    ranks.set(id, rank);
+    nodes.push({
+      kind: 'leaf',
+      id,
+      unitId: row.unitId,
+      unitName: row.unitName,
+      label: row.unitName,
+      count: row.count,
+    });
+  });
+  nodes.sort((left, right) => ranks.get(left.id)! - ranks.get(right.id)!);
+  return collapseTerminalSingleUnitGroups(nodes);
+}
+
+function reconcileUnitStats(stats: UnitStatView[], cachedTree?: TreeNode[] | null): UnitStatView[] {
+  if (!cachedTree) return stats;
+  const current = new Map<number, Partial<UnitStatView>>();
+  const visit = (nodes: TreeNode[], hierarchy: Partial<UnitStatView>) => {
+    nodes.forEach((node) => {
+      if (node.kind === 'leaf') {
+        current.set(node.unitId, { ...hierarchy, unitName: node.unitName });
+      } else {
+        visit(
+          node.children,
+          Object.fromEntries(HIERARCHY_KEYS.map((key) => [key, node.hierarchy[key] ?? ''])),
+        );
+      }
+    });
+  };
+  visit(cachedTree, Object.fromEntries(HIERARCHY_KEYS.map((key) => [key, ''])));
+  return stats.map((row) => ({ ...row, ...current.get(row.unitId) }));
 }
 
 function collectGroupIds(nodes: TreeNode[]): string[] {
@@ -366,9 +400,10 @@ export function UnitStatsSidebar({
     () => normalizeSearchQuery(debouncedSearchInput),
     [debouncedSearchInput],
   );
+  const currentStats = useMemo(() => reconcileUnitStats(stats, cachedTree), [stats, cachedTree]);
   const filteredStats = useMemo(
-    () => stats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
-    [stats, normalizedSearchQuery],
+    () => currentStats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
+    [currentStats, normalizedSearchQuery],
   );
   const tree = useMemo(() => buildUnitTree(filteredStats, cachedTree), [filteredStats, cachedTree]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
