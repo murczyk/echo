@@ -1506,7 +1506,7 @@ describe('useRerAnalysisNeoPage', () => {
       const params = new URLSearchParams({
         m: 'target-uid',
         units: parent,
-        unitsIncludeChildren: 'true',
+        unitsIncludeChildren: 'false',
         fromDateTime: '2026-08-28T00:00',
         toDateTime: '2026-08-29T00:00',
       });

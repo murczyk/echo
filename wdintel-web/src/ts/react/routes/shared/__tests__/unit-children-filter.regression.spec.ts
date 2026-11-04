@@ -37,7 +37,7 @@ describe('unit descendants regression #3527', () => {
     ]);
     const req = buildInboxReq({
       filter: { ...emptyFilter(), unitsSelected: ['unit-id:40'] },
-      unitsIncludeChildren: true,
+      unitsIncludeChildren: false,
       unitHierarchy,
     });
     expect(req.selectedUnitIds).toEqual([40]);
@@ -48,7 +48,7 @@ describe('unit descendants regression #3527', () => {
       fromDateTimeStr: '2026-10-30T00:00',
       toDateTimeStr: '2026-10-31T00:00',
       unitsSelected: ['unit-id:20'],
-      unitsIncludeChildren: true,
+      unitsIncludeChildren: false,
     };
     expect(buildAnalysisReq(query)).toBeNull();
     expect(
@@ -56,7 +56,7 @@ describe('unit descendants regression #3527', () => {
     ).toEqual([20, 21, 22]);
   });
 
-  it('restores saved parent intent and clears descendants when applying an older filter', () => {
+  it('restores saved parent intent and always includes descendants for older filters', () => {
     const query = {
       ...emptyQueryState(),
       fromDateTimeStr: '2026-10-30T00:00',
@@ -87,11 +87,33 @@ describe('unit descendants regression #3527', () => {
     ).toEqual([20, 21, 22, 24]);
     expect(queryStateMatchesSavedFilter(query, saved)).toBe(true);
     expect(queryStateMatchesSavedFilter({ ...query, unitsIncludeChildren: false }, saved)).toBe(
-      false,
+      true,
     );
     expect(
+      queryStateFromSavedFilter(
+        { ...saved, unitFilter: { values: query.unitsSelected, includeChildren: false } },
+        query,
+      ).unitsIncludeChildren,
+    ).toBe(true);
+    expect(
+      queryStateMatchesSavedFilter(query, {
+        ...saved,
+        unitFilter: { values: query.unitsSelected, includeChildren: false },
+      }),
+    ).toBe(true);
+    expect(
       queryStateFromSavedFilter({ ...saved, unitFilter: null }, query).unitsIncludeChildren,
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      queryStateMatchesSavedFilter(
+        { ...query, unitsSelected: [] },
+        {
+          ...saved,
+          req: buildAnalysisReq({ ...query, unitsSelected: [] })!,
+          unitFilter: null,
+        },
+      ),
+    ).toBe(true);
   });
   it('adds both children and a parent’s own counts without crossing another army or adding higher echelons', () => {
     const options = aggregateUnitParentOptions(
@@ -126,14 +148,21 @@ describe('unit descendants regression #3527', () => {
       unitHierarchy: hierarchy,
     };
     expect(buildAnalysisReq(query)?.selectedUnitIds?.sort()).toEqual([20, 21, 22]);
-    expect(buildAnalysisReq({ ...query, unitsIncludeChildren: false })?.selectedUnitIds).toEqual([
-      20, 21,
-    ]);
+    expect(
+      buildAnalysisReq({ ...query, unitsIncludeChildren: false })?.selectedUnitIds?.sort(),
+    ).toEqual([20, 21, 22]);
+    const restoredDuty = buildInboxReq({
+      filter,
+      unitsIncludeChildren: false,
+      unitHierarchy: hierarchy,
+    });
+    expect(restoredDuty.selectedUnitIds?.sort()).toEqual([20, 21, 22]);
+    expect(restoredDuty.deniedUnitIds?.sort()).toEqual([10, 20, 21, 22]);
     expect(filter.unitsSelected).toEqual(selected);
     expect(query.unitsSelected).toEqual(selected);
   });
 
-  it('makes a parent selectable even when it has no catalog row, and does not broaden it to all messages when unchecked', () => {
+  it('always expands a parent without its own catalog row, including older disabled filters', () => {
     const withoutParent = buildUnitHierarchyIndex(units.filter((row) => row.id !== 20));
     const options = aggregateUnitParentOptions(
       [
@@ -153,8 +182,11 @@ describe('unit descendants regression #3527', () => {
       }).selectedUnitIds?.sort(),
     ).toEqual([21, 22]);
     expect(
-      buildInboxReq({ filter, unitsIncludeChildren: false, unitHierarchy: withoutParent })
-        .selectedUnitIds,
-    ).toEqual([0]);
+      buildInboxReq({
+        filter,
+        unitsIncludeChildren: false,
+        unitHierarchy: withoutParent,
+      }).selectedUnitIds?.sort(),
+    ).toEqual([21, 22]);
   });
 });

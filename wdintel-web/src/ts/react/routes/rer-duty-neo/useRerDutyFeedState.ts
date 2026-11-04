@@ -37,7 +37,6 @@ import {
 import type { DutyNotificationPollCycle } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
 import { useUnitHierarchyCatalog } from '../shared/use-unit-children-filter';
-import { isUnitParentValue } from '../shared/unit-children-filter';
 import { useRerDutyReferenceData } from './useRerDutyReferenceData';
 import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
 import { useRerDutyShortState } from './useRerDutyShortState';
@@ -232,23 +231,14 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     deps.hideNetworks === true || deps.networkVisibilityReady === false,
   );
 
-  const needsUnitHierarchy = messageFeeds.some(
-    (feed) =>
-      feed.unitsIncludeChildren ||
-      [...(feed.filter.unitsSelected ?? []), ...(feed.filter.unitsDenied ?? [])].some(
-        isUnitParentValue,
-      ),
-  );
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
-    needsUnitHierarchy,
+    true,
     setError,
   );
   const isFeedReady = useCallback(
     (feed: MessageFeedState) =>
       unitHierarchy !== null ||
-      ![...(feed.filter.unitsSelected ?? []), ...(feed.filter.unitsDenied ?? [])].some(
-        (value) => feed.unitsIncludeChildren || isUnitParentValue(value),
-      ),
+      (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) === 0,
     [unitHierarchy],
   );
   const effectiveFiltersReady = frequencyFiltersReady;
@@ -352,10 +342,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     previousUnitHierarchyRef.current = unitHierarchy;
     const feedIds = new Set(
       messageFeedsRef.current
-        .filter((feed) =>
-          [...(feed.filter.unitsSelected ?? []), ...(feed.filter.unitsDenied ?? [])].some(
-            (value) => feed.unitsIncludeChildren || isUnitParentValue(value),
-          ),
+        .filter(
+          (feed) =>
+            (feed.filter.unitsSelected?.length ?? 0) + (feed.filter.unitsDenied?.length ?? 0) > 0,
         )
         .map((feed) => feed.id),
     );

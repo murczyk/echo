@@ -1,4 +1,3 @@
-import { UnitChildrenCheckbox } from '../shared/UnitChildrenCheckbox';
 import { useRadioFeatures } from '../shared/RadioFeatures';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, FormControl, InputLabel, MenuItem, Select, Tooltip } from '@mui/material';
@@ -97,9 +96,6 @@ export type FeedFilterPanelViewProps = {
   posts: FeedFilterSelectionConfig<string>;
   locations: FeedFilterLocationsViewModel;
   units: FeedFilterSelectionConfig<string> & {
-    unitsIncludeChildren?: boolean;
-    unitHierarchyLoading?: boolean;
-    onUnitsIncludeChildrenChange?: (value: boolean) => void;
     showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
@@ -325,11 +321,6 @@ export function FeedFilterPanelView({
             getBulkPasteToken={units.getBulkPasteToken}
             getBulkPasteAliases={units.getBulkPasteAliases}
             getBulkCopyText={units.getBulkCopyText}
-          />
-          <UnitChildrenCheckbox
-            checked={units.unitsIncludeChildren ?? false}
-            loading={units.unitHierarchyLoading ?? false}
-            onChange={units.onUnitsIncludeChildrenChange ?? (() => {})}
           />
           {units.showExactMatchControl ? (
             <Box className="mt-3 flex w-full items-center gap-1">

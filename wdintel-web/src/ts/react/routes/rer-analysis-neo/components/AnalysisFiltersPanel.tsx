@@ -125,11 +125,7 @@ export function AnalysisFiltersPanel({
     });
     return [...optionsByValue.values()];
   }, [derived.unitsOptions, queryState.unitHierarchy, queryState.unitsSelected]);
-  const unitParents = useUnitParentOptions(
-    queryState.unitsIncludeChildren ?? false,
-    unitOptions,
-    queryState.unitHierarchy,
-  );
+  const unitParents = useUnitParentOptions(true, unitOptions, queryState.unitHierarchy);
   const derivedWithParents = { ...derived, unitsOptions: unitParents.options };
 
   const toggleSection = (section: FilterSectionId) => {
@@ -236,9 +232,6 @@ export function AnalysisFiltersPanel({
                   counts={counts}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derivedWithParents}
-                  unitHierarchyLoading={
-                    queryState.unitHierarchyLoading === true || unitParents.loading
-                  }
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}
@@ -304,9 +297,6 @@ export function AnalysisFiltersPanel({
                   counts={counts}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derivedWithParents}
-                  unitHierarchyLoading={
-                    queryState.unitHierarchyLoading === true || unitParents.loading
-                  }
                   expandedSections={expandedSections}
                   includeOnlyNewFreqs={includeOnlyNewFreqs}
                   filtersLoading={filtersLoading}

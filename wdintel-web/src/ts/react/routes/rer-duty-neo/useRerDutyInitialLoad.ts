@@ -25,7 +25,7 @@ export function createEmptyFeedState(
   filter: MessageFeedState['filter'],
   options: Partial<DutyFeedFilterOptions> = {},
 ): MessageFeedState {
-  const unitsIncludeChildren = filter.unitsIncludeChildren ?? options.unitsIncludeChildren ?? false;
+  const unitsIncludeChildren = true;
   filter = { ...filter, unitsIncludeChildren };
   return {
     id,

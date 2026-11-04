@@ -1,17 +1,16 @@
 # Descendant unit filters
 
 Analysis and Duty keep the user's unit selection separate from the concrete
-unit IDs sent to inbox, count, map, report, and reconciliation requests. With
-“включаючи дочірні підрозділи” enabled, a selection includes its own catalog
-rows and descendants within the same hierarchy path. The catalog includes
+unit IDs sent to inbox, count, map, report, and reconciliation requests. A
+selection always includes its own catalog rows and descendants within the same
+hierarchy path. The catalog includes
 inactive units. Region and military-district groups are not added as parent
 options; parents start at army level. Hierarchy path separators are escaped
 so unit names cannot merge unrelated paths.
 
-A parent without its own catalog row has a synthetic selection value. Turning
-descendants off keeps that selection and matches no messages; it must never
-become an unrestricted query or the undefined-unit filter. Excluding such a
-parent with descendants off excludes nothing. Missing catalogs block only
+A parent without its own catalog row has a synthetic selection value and
+matches its descendants. An unresolved selection must never become an
+unrestricted query or the undefined-unit filter. Missing catalogs block only
 requests that need expansion. Catalog failures are visible and retried, and
 browser focus/online recovery reloads the catalog and invalidates affected
 requests. Duty's other feeds can continue loading.
@@ -19,19 +18,20 @@ requests. Duty's other feeds can continue loading.
 Parent counts add the counts of their own rows and descendants. Leaf counts
 use distinct message IDs, including when a message has multiple link kinds.
 A message linked to two different descendant units contributes to both units'
-counts; the parent shows their sum. Toggling the checkbox aggregates those
-counts locally. Duty fetches leaf counts only when descendants are enabled,
-keeps cached counts across toggles, and coalesces inbox-change refreshes. Its
-unit facet preserves other include/exclude filters while omitting unit filters.
+counts; the parent shows their sum. Both pages load the hierarchy automatically
+and aggregate parent counts locally, without a checkbox or hierarchy progress
+bar. Duty fetches leaf counts automatically and coalesces inbox-change refreshes.
+Its unit facet preserves other include/exclude filters while omitting unit filters.
 Analytics history and the PostgreSQL recent tail use disjoint creation-time
 ranges, with PostgreSQL fallback if analytics fails.
 
-Saved Analysis filters retain the original selection and checkbox in optional
+Saved Analysis filters retain the original selection in optional
 `unit_filter` metadata alongside the concrete request snapshot. Older clients
 can still use the snapshot. Duty saved filters and short URLs retain
-`units_include_children`; older filters default to disabled. Applying a saved
-filter restores its choice, and changing the checkbox makes it dirty. These
-values use existing JSON/short-state storage and require no schema migration.
+`units_include_children` for compatibility. Older URLs and saved filters with
+descendants disabled now include descendants too; the legacy flag does not
+affect filtering or mark a saved filter dirty. These values use existing
+JSON/short-state storage and require no schema migration.
 
 Inbox reconciliation uses the expanded filters, removes messages whose edited
 unit no longer matches, and rejects responses for obsolete scopes. Duty retains

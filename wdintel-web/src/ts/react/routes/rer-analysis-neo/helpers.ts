@@ -24,7 +24,11 @@ import {
   getCanonicalUnitIdValue,
   getUnitIdFilterValue,
 } from '../../utils/unit-search';
-import { expandUnitSelections, isUnitParentValue } from '../shared/unit-children-filter';
+import {
+  buildUnitHierarchyIndex,
+  expandUnitSelections,
+  isUnitParentValue,
+} from '../shared/unit-children-filter';
 import type { AnalysisQueryState } from './types';
 import type { GroupScope } from '../shared/group-navigation';
 
@@ -115,7 +119,7 @@ export function emptyQueryState(): AnalysisQueryState {
     freqsSelected: [],
     callsignsSelected: [],
     unitsSelected: [],
-    unitsIncludeChildren: false,
+    unitsIncludeChildren: true,
     deviceNamesSelected: [],
     locationsSelected: [],
     postsSelected: [],
@@ -459,6 +463,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
 
   return {
     ...next,
+    unitsIncludeChildren: true,
     callsignsSelected: normalizeCallsignFilterValues(next.callsignsSelected),
     unitsSelected: normalizeUnknownUnitSelections(next.unitsSelected),
   };
@@ -469,12 +474,7 @@ export function buildAnalysisReq(
   allFrequencies: string[] = [],
 ): AnalysisStatsReq | null {
   const query = normalizeQueryState(state);
-  if (
-    !query.unitHierarchy &&
-    query.unitsSelected.length > 0 &&
-    (query.unitsIncludeChildren || query.unitsSelected.some(isUnitParentValue))
-  )
-    return null;
+  if (!query.unitHierarchy && query.unitsSelected.length > 0) return null;
   const sinceDateInclusiveMs = combineDateTimeInputToMs(query.fromDateTimeStr ?? '', APP_TIME_ZONE);
   const tillDateNoninclusiveMs = combineDateTimeInputToMs(query.toDateTimeStr ?? '', APP_TIME_ZONE);
 
@@ -496,11 +496,7 @@ export function buildAnalysisReq(
         )
       : query.freqsSelected;
   const units = partitionUnitSelections(
-    expandUnitSelections(
-      query.unitsSelected,
-      query.unitsIncludeChildren ?? false,
-      query.unitHierarchy,
-    ),
+    expandUnitSelections(query.unitsSelected, true, query.unitHierarchy),
   );
 
   return {
@@ -688,7 +684,7 @@ export function queryStateFromSavedFilter(
     sendersSelected: req.selectedSenders ?? [],
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
-    unitsIncludeChildren: savedFilter.unitFilter?.includeChildren ?? false,
+    unitsIncludeChildren: true,
     unitsSelected: savedFilter.unitFilter?.values ?? [
       ...(req.selectedUnitIds ?? []).map(getUnitIdFilterValue),
       ...(req.selectedUnits ?? []),
@@ -767,6 +763,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
 
   return normalizeQueryState({
     ...emptyQueryState(),
+    unitHierarchy: buildUnitHierarchyIndex([]),
     includeOnlyNewFreqs: false,
     fromDateTimeStr: formatDateTimeInputValueInTimeZone(
       new Date(normalized.sinceDateInclusiveMs),
@@ -877,11 +874,9 @@ export function queryStateMatchesSavedFilter(
     return (
       stateKey !== null &&
       stateKey === savedKey &&
-      (state.unitsIncludeChildren ?? false) === savedFilter.unitFilter.includeChildren &&
       JSON.stringify(state.unitsSelected) === JSON.stringify(savedFilter.unitFilter.values)
     );
   }
-  if (state.unitsIncludeChildren) return false;
   const stateKey = queryStateComparisonKey(state, allFrequencies);
   const savedFilterKey = analysisReqComparisonKey(savedFilter.req, allFrequencies);
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;

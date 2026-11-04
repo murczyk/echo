@@ -72,9 +72,6 @@ export type FeedFilterPanelViewModel = {
   posts: FeedFilterSelectionViewModel<string>;
   locations: FeedFilterLocationsViewModel;
   units: FeedFilterSelectionViewModel<string> & {
-    unitsIncludeChildren?: boolean;
-    unitHierarchyLoading?: boolean;
-    onUnitsIncludeChildrenChange?: (value: boolean) => void;
     showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
@@ -236,9 +233,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     [unitsCatalogKey],
   );
   const unitCounts = useDutyUnitOptions(panel);
-  const visibleUnitOptions = toggles.unitsIncludeChildren
-    ? unitCounts.options.map((option) => option.value)
-    : unitOptions;
+  const visibleUnitOptions = unitCounts.options.map((option) => option.value);
   const unitCountsByValue = new Map(unitCounts.options.map((option) => [option.value, option]));
   const unitLabel = (value: string) =>
     unitCountsByValue.get(value)?.label ??
@@ -364,12 +359,9 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onModeChange: unitSelectionState.setMode,
       onValueChange: unitSelectionState.setLocalValue,
       options: visibleUnitOptions,
-      unitsIncludeChildren: toggles.unitsIncludeChildren,
-      unitHierarchyLoading: unitCounts.loading,
-      onUnitsIncludeChildrenChange: actions.onUnitsIncludeChildrenChange,
       bulkPasteOptions: unitBulkPasteOptions,
       getOptionLabel: (value: string) =>
-        toggles.unitsIncludeChildren && unitCountsByValue.has(value)
+        unitCountsByValue.has(value)
           ? `${unitLabel(value)} (${unitCountsByValue.get(value)!.count})`
           : unitLabel(value),
       getOptionKey: (value: string) => value,

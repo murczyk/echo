@@ -26,7 +26,6 @@ import {
 } from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
 import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
-import { UnitChildrenCheckbox } from '../../shared/UnitChildrenCheckbox';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { buildAnalysisReq } from '../helpers';
 import { useCallsignPage } from '../use-callsign-page';
@@ -51,7 +50,6 @@ type Props = Pick<
   | 'updateQueryState'
 > & {
   threadOnly?: boolean;
-  unitHierarchyLoading?: boolean;
   derived: AnalysisFiltersPanelDerivedData;
   expandedSections: Record<FilterSectionId, boolean>;
   filtersLoading: boolean;
@@ -241,7 +239,6 @@ export function AnalysisFiltersPanelSections({
   options,
   queryState,
   unitsExactMatchOnlyDefault,
-  unitHierarchyLoading = false,
   analysisAorFilterEnabled,
   hideNetworks,
   hideGroupSelection,
@@ -491,14 +488,6 @@ export function AnalysisFiltersPanelSections({
             preserveInputOnSelect
             preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
-          />
-          <UnitChildrenCheckbox
-            checked={queryState.unitsIncludeChildren ?? false}
-            loading={
-              unitHierarchyLoading ||
-              (queryState.unitsIncludeChildren === true && isFilterSectionLoading('units'))
-            }
-            onChange={(unitsIncludeChildren) => updateQueryState({ unitsIncludeChildren })}
           />
           {queryState.unitsSelected.some(
             (value) => !isCanonicalUnitIdValue(value) && !isUnitParentValue(value),
