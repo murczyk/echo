@@ -29,6 +29,22 @@ vi.mock('@mui/material', () => ({
     <div {...props}>{children}</div>
   ),
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Checkbox: ({
+    checked,
+    disabled,
+    onChange,
+  }: {
+    checked?: boolean;
+    disabled?: boolean;
+    onChange?: (_event: unknown, value: boolean) => void;
+  }) => (
+    <input
+      type="checkbox"
+      checked={checked}
+      disabled={disabled}
+      onChange={(event) => onChange?.(event, event.target.checked)}
+    />
+  ),
   Chip: ({ label }: { label?: ReactNode }) => <span>{label}</span>,
   CircularProgress: () => <span>loading</span>,
   Collapse: ({ children, in: inProp }: { children: ReactNode; in?: boolean }) =>
