@@ -425,8 +425,12 @@ describe('MessageCard', () => {
   // Regression: https://github.com/echoua/echo/issues/3940
   it.each([
     { displayMode: 'duty' as const, featureStrictNetworks: false, hideNetworks: false },
+    { displayMode: 'duty' as const, featureStrictNetworks: false, hideNetworks: true },
+    { displayMode: 'analysis' as const, featureStrictNetworks: false, hideNetworks: false },
     { displayMode: 'analysis' as const, featureStrictNetworks: false, hideNetworks: true },
     { displayMode: 'duty' as const, featureStrictNetworks: true, hideNetworks: false },
+    { displayMode: 'duty' as const, featureStrictNetworks: true, hideNetworks: true },
+    { displayMode: 'analysis' as const, featureStrictNetworks: true, hideNetworks: false },
     { displayMode: 'analysis' as const, featureStrictNetworks: true, hideNetworks: true },
   ])(
     'ECHO-3940 switches header identity with РЕР mode in $displayMode cards',
@@ -435,19 +439,21 @@ describe('MessageCard', () => {
         displayMode,
         featureStrictNetworks,
         hideNetworks,
-        msg: buildMessage({ unit: 'Підрозділ 42' }),
+        msg: buildMessage({ unit: '  Підрозділ 42  ', freq: null }),
       });
       const headerUnit = view.container.querySelector('[data-message-card-header-unit-row="true"]');
+      const header = view.container.querySelector('[data-message-card-header-left="true"]');
+      const details = view.container.querySelector('.message-card-details-region');
 
       if (hideNetworks) {
         expect(headerUnit?.textContent).toContain('Підрозділ 42');
         expect(headerUnit?.textContent).not.toContain('Alpha');
+        expect(details?.textContent).not.toContain('Підрозділ 42');
       } else {
         expect(headerUnit).toBeNull();
-        expect(view.container.textContent).not.toContain('Підрозділ 42');
-        expect(
-          view.container.querySelector('[data-message-card-header-left="true"]')?.textContent,
-        ).toContain('Alpha');
+        expect(header?.textContent).not.toContain('Підрозділ 42');
+        expect(header?.textContent).toContain('Alpha');
+        expect(details?.querySelector('[title="Підрозділ 42"]')?.textContent).toBe('Підрозділ 42');
       }
       if (!featureStrictNetworks && !hideNetworks) {
         expect(
