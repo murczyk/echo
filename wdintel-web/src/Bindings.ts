@@ -974,6 +974,38 @@ export type SignalGroupsRsp = {
   data: Array<SignalGroupEntry>;
 };
 
+export type MessengersTelegramAccountId = {
+  userId: string;
+};
+
+export type MessengersDatasourceGroup = {
+  id: number;
+  groupMasterKey: string;
+  datasourceId: number;
+  name: string;
+  lastSyncAt: number;
+  createdAt: number;
+};
+
+export type MessengersAccountItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  displayName: string;
+  username: string | null;
+  phone: string | null;
+  status: string | null;
+  isActive: boolean | null;
+  isPaused: boolean | null;
+  lastSync: number | null;
+  telegram: MessengersTelegramAccountId | null;
+  datasourceGroup: MessengersDatasourceGroup;
+};
+
+export type MessengersAccountsListRsp = {
+  items: Array<MessengersAccountItem>;
+};
+
 export type BatchMessageCommentsReq = {
   messages: Array<MessageCommentsReq>;
 };

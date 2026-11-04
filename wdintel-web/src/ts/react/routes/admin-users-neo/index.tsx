@@ -93,6 +93,7 @@ const ROLE_OPTIONS = [
   'NoAutoLogout',
   'No2FA',
   'MessengerIngest',
+  'CyberMessengers',
 ];
 
 const STATUS_FILTER_OPTIONS = [

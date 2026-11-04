@@ -776,6 +776,7 @@ pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
 pub const ROLE_NO2FA: &str = "No2FA";
 pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
+pub const ROLE_CYBER_MESSENGERS: &str = "CyberMessengers";
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 /// Master keys of messenger account groups are this prefix plus the account id.

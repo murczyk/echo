@@ -84,6 +84,10 @@ hasRole role user =
         "MessengerIngest" ->
             List.member "MessengerIngest" user.roles
 
+        "CyberMessengers" ->
+            List.member "Admin" user.roles
+                || List.member "CyberMessengers" user.roles
+
         _ ->
             -- impossible! unknown role
             False

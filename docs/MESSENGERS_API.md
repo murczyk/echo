@@ -16,7 +16,7 @@ are removed from the RER inbox and analysis feeds; see
 
 | Route | Status | Request | Response |
 |---|---|---|---|
-| `POST /accounts/list` | Planned | `{}` | `MessengersAccountsListRsp` |
+| `POST /accounts/list` | Implemented | `{}` | `MessengersAccountsListRsp` |
 | `POST /accounts/get` | Planned | `MessengersAccountGetReq` | `MessengersAccountDetails` |
 | `POST /chats/list` | Planned | `MessengersChatsListReq` | `MessengersChatsListRsp` |
 | `POST /chats/members/list` | Planned | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
@@ -103,6 +103,17 @@ type MessengersAccountItem = {
   is_paused: boolean | null
   last_sync: number | null              // collector's last successful sync
   telegram: { user_id: string } | null
+  datasource_group: MessengersDatasourceGroup
+}
+
+// The Echo group that mirrors the account
+type MessengersDatasourceGroup = {
+  id: number
+  group_master_key: string              // "messenger_ingest.<account id>"
+  datasource_id: number
+  name: string                          // follows display_name
+  last_sync_at: number                  // epoch ms, last change by ingest
+  created_at: number                    // epoch ms
 }
 ```
 
@@ -122,7 +133,15 @@ Example response:
       "is_active": true,
       "is_paused": false,
       "last_sync": 1760430000000,
-      "telegram": { "user_id": "7012345678" }
+      "telegram": { "user_id": "7012345678" },
+      "datasource_group": {
+        "id": 4182,
+        "group_master_key": "messenger_ingest.0199e3a2-4c1b-7d2e-9f10-3a4b5c6d7e8f",
+        "datasource_id": 57,
+        "name": "Оператор 17",
+        "last_sync_at": 1760430000000,
+        "created_at": 1759000000000
+      }
     }
   ]
 }
@@ -142,7 +161,6 @@ type MessengersAccountDetails = MessengersAccountItem & {
   status_changed_at: number | null      // epoch ms
   notes: string | null
   created_at: number | null             // when the collector added the account
-  datasource_id: number
   chats_count: number                   // chats that are not deleted
 }
 ```

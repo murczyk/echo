@@ -404,6 +404,10 @@ pub(crate) fn role_matches(
         "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
         "No2FA" => roles.contains(&ROLE_NO2FA.to_string()),
         "MessengerIngest" => roles.contains(&ROLE_MESSENGER_INGEST.to_string()),
+        ROLE_CYBER_MESSENGERS => {
+            roles.contains(&ROLE_ADMIN.to_string())
+                || roles.contains(&ROLE_CYBER_MESSENGERS.to_string())
+        }
         role => {
             return Err(AppError::BL {
                 msg: format!("impossible! unknown role {role}"),

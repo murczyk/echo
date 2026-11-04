@@ -60,6 +60,7 @@ pub mod message_queue;
 pub mod message_reply;
 pub mod messenger;
 pub mod messenger_ingest;
+pub mod messengers;
 pub mod migration;
 pub mod ml;
 pub mod nlp;

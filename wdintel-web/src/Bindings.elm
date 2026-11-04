@@ -2530,6 +2530,86 @@ signalGroupsRspEncoder struct =
         ]
 
 
+type alias MessengersTelegramAccountId =
+    { userId : String
+    }
+
+
+messengersTelegramAccountIdEncoder : MessengersTelegramAccountId -> Json.Encode.Value
+messengersTelegramAccountIdEncoder struct =
+    Json.Encode.object
+        [ ( "user_id", (Json.Encode.string) struct.userId )
+        ]
+
+
+type alias MessengersDatasourceGroup =
+    { id : Int
+    , groupMasterKey : String
+    , datasourceId : Int
+    , name : String
+    , lastSyncAt : Int
+    , createdAt : Int
+    }
+
+
+messengersDatasourceGroupEncoder : MessengersDatasourceGroup -> Json.Encode.Value
+messengersDatasourceGroupEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "group_master_key", (Json.Encode.string) struct.groupMasterKey )
+        , ( "datasource_id", (Json.Encode.int) struct.datasourceId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "last_sync_at", (Json.Encode.int) struct.lastSyncAt )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias MessengersAccountItem =
+    { id : String
+    , messengerType : String
+    , externalId : String
+    , displayName : String
+    , username : Maybe (String)
+    , phone : Maybe (String)
+    , status : Maybe (String)
+    , isActive : Maybe (Bool)
+    , isPaused : Maybe (Bool)
+    , lastSync : Maybe (Int)
+    , telegram : Maybe (MessengersTelegramAccountId)
+    , datasourceGroup : MessengersDatasourceGroup
+    }
+
+
+messengersAccountItemEncoder : MessengersAccountItem -> Json.Encode.Value
+messengersAccountItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "messenger_type", (Json.Encode.string) struct.messengerType )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "display_name", (Json.Encode.string) struct.displayName )
+        , ( "username", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.username )
+        , ( "phone", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.phone )
+        , ( "status", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.status )
+        , ( "is_active", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isActive )
+        , ( "is_paused", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isPaused )
+        , ( "last_sync", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastSync )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
+        , ( "datasource_group", (messengersDatasourceGroupEncoder) struct.datasourceGroup )
+        ]
+
+
+type alias MessengersAccountsListRsp =
+    { items : List (MessengersAccountItem)
+    }
+
+
+messengersAccountsListRspEncoder : MessengersAccountsListRsp -> Json.Encode.Value
+messengersAccountsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersAccountItemEncoder)) struct.items )
+        ]
+
+
 type alias BatchMessageCommentsReq =
     { messages : List (MessageCommentsReq)
     }
@@ -22453,6 +22533,46 @@ signalGroupsRspDecoder : Json.Decode.Decoder SignalGroupsRsp
 signalGroupsRspDecoder =
     Json.Decode.succeed SignalGroupsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "data" (Json.Decode.list (signalGroupEntryDecoder))))
+
+
+messengersTelegramAccountIdDecoder : Json.Decode.Decoder MessengersTelegramAccountId
+messengersTelegramAccountIdDecoder =
+    Json.Decode.succeed MessengersTelegramAccountId
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_id" (Json.Decode.string)))
+
+
+messengersDatasourceGroupDecoder : Json.Decode.Decoder MessengersDatasourceGroup
+messengersDatasourceGroupDecoder =
+    Json.Decode.succeed MessengersDatasourceGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_sync_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+
+
+messengersAccountItemDecoder : Json.Decode.Decoder MessengersAccountItem
+messengersAccountItemDecoder =
+    Json.Decode.succeed MessengersAccountItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "display_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "username" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_active" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_paused" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_sync" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_group" (messengersDatasourceGroupDecoder)))
+
+
+messengersAccountsListRspDecoder : Json.Decode.Decoder MessengersAccountsListRsp
+messengersAccountsListRspDecoder =
+    Json.Decode.succeed MessengersAccountsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAccountItemDecoder))))
 
 
 signalGroupEntryDecoder : Json.Decode.Decoder SignalGroupEntry
