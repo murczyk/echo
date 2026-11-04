@@ -7096,24 +7096,21 @@ describe('ManageMessageDrawer edit mode', () => {
       await act(async () => root.unmount());
     });
 
-    it('expands to show a rejected pasted attachment', async () => {
-      const { host, onExpand, root } = setUpMinimalReport();
-      const media = Array.from({ length: 20 }, (_, index) => ({
-        id: `media-${index}`,
-        contentType: 'image/jpeg',
-        fileName: `photo-${index}.jpg`,
-        sizeBytes: 10,
-        href: `/media/${index}.jpg`,
-        transcription: null,
-      })) as InboxMessage['media'];
-      await act(async () =>
-        root.render(
-          reportDrawer(
-            { host, onExpand },
-            { reportSource: { id: 42, message: buildMessage({ media }) } },
-          ),
-        ),
-      );
+    const fullReportSource = {
+      id: 42,
+      message: buildMessage({
+        media: Array.from({ length: 20 }, (_, index) => ({
+          id: `media-${index}`,
+          contentType: 'image/jpeg',
+          fileName: `photo-${index}.jpg`,
+          sizeBytes: 10,
+          href: `/media/${index}.jpg`,
+          transcription: null,
+        })) as InboxMessage['media'],
+      }),
+    };
+
+    async function pasteRejectedFile(host: HTMLElement) {
       const paste = new Event('paste', { bubbles: true, cancelable: true });
       Object.defineProperty(paste, 'clipboardData', {
         value: {
@@ -7125,14 +7122,78 @@ describe('ManageMessageDrawer edit mode', () => {
           ],
         },
       });
-
       await act(async () => {
         host.querySelector('textarea')?.dispatchEvent(paste);
         await Promise.resolve();
       });
+      return paste;
+    }
+
+    it('expands to show a rejected pasted attachment', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      await act(async () =>
+        root.render(reportDrawer({ host, onExpand }, { reportSource: fullReportSource })),
+      );
+
+      const paste = await pasteRejectedFile(host);
 
       expect(paste.defaultPrevented).toBe(true);
       expect(onExpand).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+    });
+
+    it('does not carry a rejected attachment into the next report after closing', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      const ref = createRef<ManageMessageEditorHandle>();
+      const nextReport = { id: 43, message: buildMessage({ text: 'next source' }) };
+      await act(async () =>
+        root.render(reportDrawer({ host, onExpand }, { ref, reportSource: fullReportSource })),
+      );
+      await pasteRejectedFile(host);
+      expect(onExpand).toHaveBeenCalledTimes(1);
+
+      await act(async () => ref.current?.closeWithoutConfirmation());
+      await act(async () =>
+        root.render(reportDrawer(null, { ref, open: false, reportSource: null })),
+      );
+      // The Duty page builds a new expand callback for every intent.
+      const expandNext = vi.fn();
+      await act(async () =>
+        root.render(
+          reportDrawer(
+            { host, onExpand: expandNext },
+            { ref, reportSource: nextReport, intentKey: 'create-report:43' },
+          ),
+        ),
+      );
+
+      expect(expandNext).not.toHaveBeenCalled();
+      await act(async () => root.unmount());
+    });
+
+    it('does not carry a rejected attachment into a replacing report', async () => {
+      const { host, onExpand, root } = setUpMinimalReport();
+      const ref = createRef<ManageMessageEditorHandle>();
+      const nextReport = { id: 43, message: buildMessage({ text: 'next source' }) };
+      const firstIntent = { ref, reportSource: fullReportSource, intentKey: 'create-report:42' };
+      await act(async () => root.render(reportDrawer({ host, onExpand }, firstIntent)));
+      await pasteRejectedFile(host);
+      const expandNext = vi.fn();
+
+      await act(async () => {
+        ref.current?.requestIntentChange({
+          key: 'create-report:43',
+          commit: () =>
+            root.render(
+              reportDrawer(
+                { host, onExpand: expandNext },
+                { ref, reportSource: nextReport, intentKey: 'create-report:43' },
+              ),
+            ),
+        });
+      });
+
+      expect(expandNext).not.toHaveBeenCalled();
       await act(async () => root.unmount());
     });
 

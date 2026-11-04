@@ -1147,6 +1147,7 @@ export function useManageMessageDrawer({
     setDeviceNameInput('');
     setShowAdvanced(false);
     setErrorMsg(null);
+    setAttachmentErrorMsg(null);
     setReferenceDataError(null);
     setReportCopyError(null);
     pendingIntentChangeRef.current = null;
@@ -1229,13 +1230,14 @@ export function useManageMessageDrawer({
     (change: ManageMessageIntentChange) => {
       if (saving) return;
       if (!hasUnsavedChanges) {
+        setAttachmentErrorMsg(null);
         change.commit();
         return;
       }
       pendingIntentChangeRef.current = change;
       setDiscardConfirmationOpen(true);
     },
-    [hasUnsavedChanges, saving],
+    [hasUnsavedChanges, saving, setAttachmentErrorMsg],
   );
 
   const cancelDiscard = () => {
@@ -1251,6 +1253,7 @@ export function useManageMessageDrawer({
       uppy.cancelAll();
       reset();
       setErrorMsg(null);
+      setAttachmentErrorMsg(null);
       pendingIntentChange.commit();
       return;
     }
