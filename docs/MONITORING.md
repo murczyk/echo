@@ -228,6 +228,66 @@ another failure.
 
 ## Metrics
 
+### Admin KPI snapshots
+
+The API process collects the system-wide, unfiltered `/admin/kpi` values at
+startup and hourly while `signoz_kpi_metrics_enabled = true`,
+`signoz_metrics_enabled = true`, and `signoz_metrics_endpoint` is configured.
+KPI collection defaults to disabled when its flag is absent. Enable it on an
+approved rollout target after checking query plans/cost for that instance's
+data volume; 7/30/90-day API-quality refreshes can perform 508 six-hour reads
+per hour, bounded by the source budgets below. It uses the existing OTLP exporter
+and resource attributes (`service.name=wdintel-rs`, `host.name=public_host`,
+`service.instance.id=server_id`). Background/report processes do not collect
+these snapshots, and opening the dashboard is not required.
+
+All `echo.kpi.*` instruments are **gauges**, including names ending in
+`.count`: retained records and rolling-window populations can decrease. Query
+their latest values, not their rates or sums over time. Historical sources use
+`window=7d|30d|90d`; accounts use `current`, retained successful reports use
+`all`, and this API process's activity queue uses `process`.
+
+| Metric | Dimensions and meaning |
+| --- | --- |
+| `echo.kpi.source.available` | `source`, `window`; 1 for a successful, fresh snapshot, otherwise 0. |
+| `echo.kpi.source.updated_at` | `source`, `window`; snapshot's UTC end/as-of time in Unix seconds. |
+| `echo.kpi.accounts.count` | Current accounts in the admin list scope, including technical accounts. |
+| `echo.kpi.accounts.status.count` | `status=active|admin|inactive|organism|unknown`, matching dashboard precedence. |
+| `echo.kpi.accounts.recency.count` | `scope=active|blocked`, `recency=recent|aging|stale|missing|invalid`; sum both scopes to include active accounts. |
+| `echo.kpi.accounts.role.count` | `role`; each distinct role counts once per account. |
+| `echo.kpi.accounts.organism.count` | `organism_id`; missing associations use `missing`. |
+| `echo.kpi.accounts.direction.count` | `direction_id`; missing associations use `missing`. |
+| `echo.kpi.reports.count` | `status=done|failed|other`; sums to requests in the creation window. `window=all` exports only `done`. |
+| `echo.kpi.reports.kind.count` | `kind`; retained successful reports in the window. |
+| `echo.kpi.reports.generation.duration` | `statistic=median|p90`, seconds; same valid worker samples as the dashboard. |
+| `echo.kpi.reports.generation.samples` | `outcome=included|excluded`; successful reports included/excluded from duration sampling. |
+| `echo.kpi.notifications.count` | `status=queued|sending|sent|failed|skipped`; retained transport jobs, not device receipts. |
+| `echo.kpi.notifications.transport.duration` | `statistic=median|p90`, seconds from creation to sent time. |
+| `echo.kpi.notifications.transport.samples` | `outcome=included|excluded`; sent jobs with/without valid duration. |
+| `echo.kpi.activity.accounts.count` | Distinct observed account UUIDs; includes keep-alives and technical accounts, not human DAU/WAU/MAU. |
+| `echo.kpi.activity.unmapped_groups.count` | Observation groups without stable account UUIDs. |
+| `echo.kpi.activity.queue.count` | `outcome=enqueued|dropped`; events in this API process since startup. |
+| `echo.kpi.api.responses.count` | `status`; recorded `/api/` responses and middleware errors, deduplicated by request ID within status. |
+| `echo.kpi.api.errors.ratio` | `(4xx + 5xx) / recorded responses`, a fraction from 0 to 1. |
+
+Each value also has `source` and `window`. Missing Greptime configuration,
+empty observations, errors, and timeouts produce availability 0 and omit the
+affected values. Valid empty PostgreSQL history produces zero counts; absent
+duration samples omit percentiles. Each refresh replaces its source snapshot,
+so removed groups and percentiles disappear. Snapshots expire after two hours.
+
+Collection is sequential, cancellable, and never overlaps itself. It reuses
+the dashboard's read-only transactions and query limits; each source/window
+has a five-minute total budget. API-quality reads use adjacent six-hour slices,
+as the dashboard does, and publish only after every slice succeeds. Greptime
+retention/loss still limits coverage; availability does not establish complete
+history. No user IDs, account names, per-author/per-page breakdowns, or dates
+are metric labels. A source exceeding 500 points for one instrument/window is
+unavailable rather than silently truncated. Production query cost and fresh
+ingestion should be checked on the approved rollout target.
+
+### Other application metrics
+
 - `echo.device_files.synchronized.count`: кількість файлів, які API синхронізації пристроїв успішно створило або оновило, з атрибутом `operation`.
 - `echo.device_files.sync_batches.count`: кількість оброблених пакетів синхронізації файлів.
 - `echo.device_files.sync.duration`: гістограма тривалості обробки пакетів у секундах.

@@ -1964,6 +1964,19 @@ pub async fn main_server(
             .c(h!())?;
 
     let mut background_tasks: JoinSet<()> = JoinSet::new();
+    if env.metrics.is_some()
+        && config.signoz_kpi_metrics_enabled.unwrap_or(false)
+    {
+        let kpi_env = env.clone();
+        let kpi_cancel = cancel_token.clone();
+        spawn_named_worker(
+            "kpi_metrics_worker",
+            &mut background_tasks,
+            async move {
+                crate::kpi::metrics::run_nofail(kpi_env, kpi_cancel).await;
+            },
+        );
+    }
     let deployment_maintenance = web::Data::new(
         crate::event_stream::DeploymentMaintenanceState::default(),
     );

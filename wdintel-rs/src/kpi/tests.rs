@@ -100,6 +100,7 @@ async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
             .sum::<i64>(),
         3
     );
+    assert_history_metrics(&env, until).await.c(h!())?;
     assert!(KpiPeriod {
         since: period.until,
         until: period.since
@@ -112,6 +113,72 @@ async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
     }
     .bounds()
     .is_err());
+    Ok(())
+}
+
+async fn assert_history_metrics(
+    env: &Env,
+    until: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    use crate::config::*;
+    let (metrics, recorder) = crate::telemetry::Metrics::recording(&env.config);
+    super::metrics::collect(env, &metrics.kpi, until).await;
+    metrics.force_flush_for_test();
+    for (name, labels, expected) in [
+        (
+            KPI_METRICS_REPORTS,
+            vec![("window", "7d"), ("status", "done")],
+            6.0,
+        ),
+        (
+            KPI_METRICS_REPORTS,
+            vec![("window", "7d"), ("status", "failed")],
+            1.0,
+        ),
+        (
+            KPI_METRICS_REPORTS,
+            vec![("window", "all"), ("status", "done")],
+            8.0,
+        ),
+        (
+            KPI_METRICS_REPORT_DURATION,
+            vec![("window", "7d"), ("statistic", "median")],
+            20.0,
+        ),
+        (
+            KPI_METRICS_REPORT_SAMPLES,
+            vec![("window", "7d"), ("outcome", "excluded")],
+            4.0,
+        ),
+        (
+            KPI_METRICS_NOTIFICATIONS,
+            vec![("window", "7d"), ("status", "sent")],
+            2.0,
+        ),
+        (
+            KPI_METRICS_NOTIFICATION_DURATION,
+            vec![("window", "7d"), ("statistic", "median")],
+            10.0,
+        ),
+        (
+            KPI_METRICS_AVAILABLE,
+            vec![("source", "activity"), ("window", "7d")],
+            0.0,
+        ),
+        (
+            KPI_METRICS_AVAILABLE,
+            vec![("source", "requests"), ("window", "7d")],
+            0.0,
+        ),
+    ] {
+        assert_eq!(
+            recorder.gauge_f64_value(name, &labels),
+            Some(expected),
+            "{name}"
+        );
+    }
+    assert!(recorder.find(KPI_METRICS_ACTIVITY).is_none());
+    assert!(recorder.find(KPI_METRICS_API_RESPONSES).is_none());
     Ok(())
 }
 
