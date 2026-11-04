@@ -39,8 +39,9 @@ export function AnalysisSearchControls({
       <Autocomplete
         className={isCompactLayout ? 'w-[180px] min-w-0' : 'w-[220px] min-w-0'}
         freeSolo
+        disableClearable
         forcePopupIcon={false}
-        value={null}
+        value=""
         inputValue={search}
         open={suggestionsOpen && search.trim().length > 0}
         onOpen={() => setSuggestionsOpen(true)}
