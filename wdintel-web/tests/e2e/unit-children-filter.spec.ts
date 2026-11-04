@@ -104,8 +104,7 @@ for (const analysis of [false, true]) {
         inboxRequests.push(request.postDataJSON());
     });
     await page.goto(analysis ? '/rer-analysis-neo?filterPanelOpen=true' : '/rer-duty-neo');
-    if (analysis) await page.getByRole('button', { name: /^Підрозділи/ }).click();
-    else
+    if (!analysis)
       await page
         .getByRole('button', { name: /^Фільтри/ })
         .first()
@@ -117,7 +116,7 @@ for (const analysis of [false, true]) {
       page.getByRole('progressbar', { name: 'Завантаження ієрархії підрозділів' }),
     ).toHaveCount(0);
     await expect.poll(() => catalogRequests).toBeGreaterThan(0);
-    await expect.poll(() => countRequests).toBeGreaterThan(0);
+    if (!analysis) await expect.poll(() => countRequests).toBeGreaterThan(0);
     const initialCatalogRequests = catalogRequests;
     catalogReleased = true;
     releaseCatalog();
@@ -126,6 +125,11 @@ for (const analysis of [false, true]) {
     const catalogBeforeFocus = catalogRequests;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect.poll(() => catalogRequests).toBe(catalogBeforeFocus + 1);
+    if (analysis) {
+      await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи4');
+      await expect(page.getByRole('combobox', { name: 'Підрозділи', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: /^Підрозділи/ }).click();
+    }
     const countBeforeSelection = countRequests;
     const combo = analysis
       ? page.getByRole('combobox', { name: 'Підрозділи', exact: true })
@@ -138,8 +142,6 @@ for (const analysis of [false, true]) {
     const parent = page.getByRole('option', { name: /^27 омсбр/ });
     await expect(parent).toContainText('11');
     await expect(page.getByRole('option', { name: /^6 А/ })).toContainText('11');
-    if (analysis)
-      await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи4');
     await expect(page.getByRole('option', { name: /Регіон|Округ/ })).toHaveCount(0);
     expect(countRequests).toBe(countBeforeSelection);
     await parent.click();
