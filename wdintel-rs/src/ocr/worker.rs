@@ -967,7 +967,7 @@ mod tests {
             .unwrap();
         assert_eq!(job.attempts, 1);
         assert_eq!(job.discovered_at, generation);
-        handle.stop(true).await;
+        handle.stop(false).await;
         server.await.unwrap().unwrap();
         verify_direct_storage_recovery(&env, &media, job, config).await;
     }

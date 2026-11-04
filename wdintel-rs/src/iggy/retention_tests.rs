@@ -50,7 +50,7 @@ impl TopicServer {
     }
 
     async fn finish(self) -> Vec<(Method, String, Value)> {
-        self.handle.stop(true).await;
+        self.handle.stop(false).await;
         assert!(self.replies.lock().unwrap().is_empty());
         self.requests.lock().unwrap().clone()
     }
