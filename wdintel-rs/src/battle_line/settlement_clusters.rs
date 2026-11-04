@@ -196,12 +196,12 @@ fn elect_settlements_with_fixed(
         }
     }
     let mut chosen = vec![None; drafts.len()];
+    groups.retain(|group| group.fixed || !group.candidates.is_empty());
     if groups.is_empty()
         || groups.len() > BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES
     {
         return chosen;
     }
-    groups.retain(|group| group.fixed || !group.candidates.is_empty());
     if groups.len() == 1 && anchors.is_empty() {
         if let [candidate] = groups[0].candidates.as_slice() {
             apply_choice(drafts, &groups[0], candidate, &mut chosen);

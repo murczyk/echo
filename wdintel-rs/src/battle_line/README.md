@@ -24,6 +24,14 @@ Completed batches remain committed if it stops; rerun the same range to finish.
 Run it on a deployed environment only after obtaining approval for the target and
 time range.
 
+After an election-rule update, restarting workers does not retry rows already
+marked undefined. Unchanged location text also preserves these decisions. Use
+the explicit recalculation command above for an approved historical range; it
+reconsiders all names together, including existing links. Repeating it preserves
+row identities and emits only changed distinct settlement IDs. Network rows
+already marked undefined likewise wait for their location set or AOR configuration
+to change; inbox recalculation does not requeue network locations.
+
 ## Settlement election
 
 Inbox candidate loading reads names, aliases, and valid coordinates only from
@@ -42,9 +50,9 @@ their total pairwise distance and total distance to the Battle Line. A result
 requires strictly more than half of the names with eligible candidates. Unfitting
 names remain unresolved; tied best results leave the whole set unresolved.
 Distances within 1 mm of the minimum at each scoring level count as tied,
-independently of candidate order. One name with several eligible canonical settlements remains
-unresolved. The search examines at most 100,000 states and 64 names; exceeding
-either bound leaves the set unresolved.
+independently of candidate order. One name with several eligible canonical
+settlements remains unresolved. The search examines at most 100,000 states and
+64 eligible or fixed names; exceeding either bound leaves the set unresolved.
 
 `sigint_network_settlement` holds the same pending/resolved/unresolved state for
 network locations. Database triggers reconcile the complete normalized name set

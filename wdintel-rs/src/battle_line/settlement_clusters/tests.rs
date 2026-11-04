@@ -155,6 +155,31 @@ fn missing_and_ineligible_names_do_not_block_resolved_locations_2133() {
 }
 
 #[test]
+fn candidate_less_names_do_not_count_toward_search_limit_2133() {
+    let mut drafts = vec![draft("A", &[(1, 0.0, 1.0)])];
+    for index in 0..BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES {
+        drafts.push(draft(&format!("MISSING {index}"), &[]));
+        drafts.push(draft(&format!("DISTANT {index}"), &[(2, 0.0, 150_001.0)]));
+    }
+    let mut expected = vec![None; drafts.len()];
+    expected[0] = Some(0);
+    assert_eq!(elect_settlements(&drafts, &[]), expected);
+    let anchors = [SettlementAnchor {
+        settlement_id: 1,
+        coordinate: BattleLineCoordinate { lat: 0.0, lon: 0.0 },
+    }];
+    assert_eq!(elect_settlements(&drafts, &anchors), expected);
+    let fixed = BTreeMap::from([("A".to_string(), 1)]);
+    assert_eq!(elect_settlements_with_fixed(&drafts, &[], &fixed), expected);
+    drafts[0] = draft("A", &[]);
+    drafts.push(draft("B", &[(2, 0.0, 1.0)]));
+    assert_eq!(
+        elect_settlements_with_fixed(&drafts, &[], &fixed),
+        vec![None; drafts.len()]
+    );
+}
+
+#[test]
 fn rejects_tied_clusters_and_tied_majorities_2133() {
     assert_eq!(
         chosen(vec![
@@ -292,6 +317,16 @@ fn searches_previously_pruned_options_and_preserves_ambiguity_2133() {
 
 #[test]
 fn bounded_search_fails_closed_2133() {
+    let mut drafts = (0..=BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES)
+        .map(|index| draft(&format!("{index}"), &[(1, 0.0, 1.0)]))
+        .collect::<Vec<_>>();
+    assert_eq!(elect_settlements(&drafts, &[]), vec![None; drafts.len()]);
+    drafts.pop();
+    assert_eq!(elect_settlements(&drafts, &[]), vec![Some(0); drafts.len()]);
+    let mut expected = vec![Some(0); drafts.len()];
+    drafts.push(draft("MISSING", &[]));
+    expected.push(None);
+    assert_eq!(elect_settlements(&drafts, &[]), expected);
     let drafts = (0..18)
         .map(|index| {
             draft(
