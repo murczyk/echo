@@ -316,20 +316,11 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
-    if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
-        echo "Running cargo clippy..."
-        cargo clippy --all-targets --all-features -- -D warnings
-    else
-        echo "Skipping clippy in time-critical CI; run it locally or with workflow_dispatch"
-    fi
+    echo "Running cargo clippy..."
+    cargo clippy --all-targets --all-features -- -D warnings
 
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "Running curated Rust tests in CI with optimizations..."
-        cargo test --release --locked -p wdintel-rs
-    else
-        echo "Running curated Rust tests locally with optimizations..."
-        cargo test --release -p wdintel-rs
-    fi
+    echo "Running curated Rust tests locally with optimizations..."
+    cargo test --release -p wdintel-rs
 
 test: test-fe test-be
 

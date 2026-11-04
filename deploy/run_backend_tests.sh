@@ -14,7 +14,10 @@ else
     export GITHUB_BASE_REF="${GITHUB_BASE_REF:-main}"
 fi
 
-python3 -m unittest scripts/ci/test_check_analytics_migrations.py scripts/ci/test_ci_scope.py
+python3 -m unittest \
+    scripts/ci/test_check_analytics_migrations.py \
+    scripts/ci/test_ci_scope.py \
+    deploy/ci/test_run_rust_shards.py
 python3 scripts/ci/check_analytics_migrations.py
 
 # Compare with `skip` so a ci_scope.py failure still runs these tests.
@@ -46,16 +49,19 @@ fi
 # CI boxes may require extra time while PostgreSQL replays WAL / crash-recovery.
 export POSTGRES_STARTUP_TIMEOUT_SECS="${POSTGRES_STARTUP_TIMEOUT_SECS:-600}"
 
-# Set up branch-specific test database
-echo "Setting up test database..."
-source "$SCRIPT_DIR/setup_test_database.sh"
+# CI prepares its own disposable databases in run_rust_shards.py.
+if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+    # Set up branch-specific test database
+    echo "Setting up test database..."
+    source "$SCRIPT_DIR/setup_test_database.sh"
 
-# Export the database names for tests
-export TEST_DB_NAME="$DB_NAME"
-export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
-echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
+    # Export the database names for tests
+    export TEST_DB_NAME="$DB_NAME"
+    export TEST_WDFILE_DB_NAME="$FILE_REGISTRY_DB_NAME"
+    echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 
-bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
+    bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
+fi
 
 # Create storage directory and dummy files for CI
 mkdir -p ~/Downloads/storage
@@ -105,8 +111,22 @@ for ((i = 1; i <= PY_SERVICE_STARTUP_TIMEOUT_SECS; i++)); do
     sleep 1
 done
 
+run_rust_tests_in_shards() {
+    if [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" ]]; then
+        (cd wdintel-rs && cargo clippy --all-targets --all-features -- -D warnings)
+    fi
+    # This first wrapper call installs the venv, which parallel shards must not race to create.
+    bash "$SCRIPT_DIR/ci/with_test_storage.sh" true
+    CARGO_INCREMENTAL=1 RUSTC_WRAPPER="" \
+        "$REPO_ROOT/target/ci-test-storage-venv/bin/python" "$SCRIPT_DIR/ci/run_rust_shards.py"
+}
+
 # Run backend tests
 echo "Running backend tests..."
-bash "$SCRIPT_DIR/ci/with_test_storage.sh" just test-be
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    run_rust_tests_in_shards
+else
+    bash "$SCRIPT_DIR/ci/with_test_storage.sh" just test-be
+fi
 
 echo "Backend tests completed successfully!"
