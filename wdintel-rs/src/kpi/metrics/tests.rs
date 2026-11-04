@@ -1,7 +1,52 @@
 use super::*;
-use crate::functest::tests::cleanup_locked;
+use crate::functest::tests::{cleanup_locked, mk_login};
 use crate::telemetry::metrics::MetricsRecorder;
 use crate::telemetry::Metrics;
+
+// https://github.com/echoua/echo/issues/3826
+#[tokio::test]
+async fn account_recency_uses_time_after_loading_accounts() -> anyhow::Result<()>
+{
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let until = Utc::now() - chrono::Duration::minutes(1);
+    let (metrics, recorder) = Metrics::recording(&env.config);
+    collect_current(&env, &metrics.kpi, until).await;
+    metrics.force_flush_for_test();
+    let baseline = recorder
+        .gauge_f64_value(
+            KPI_METRICS_ACCOUNT_RECENCY,
+            &[("scope", "active"), ("recency", "recent")],
+        )
+        .unwrap();
+    for last_active_at in [Utc::now(), Utc::now() + chrono::Duration::days(1)] {
+        mk_login(
+            &env.dbx,
+            crate::entities::login::ActiveModel {
+                last_active_at: sea_orm::Set(Some(last_active_at.naive_utc())),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+    }
+    collect_current(&env, &metrics.kpi, until).await;
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder.gauge_f64_value(
+            KPI_METRICS_ACCOUNT_RECENCY,
+            &[("scope", "active"), ("recency", "recent")]
+        ),
+        Some(baseline + 1.0)
+    );
+    assert_eq!(
+        recorder.gauge_f64_value(
+            KPI_METRICS_ACCOUNT_RECENCY,
+            &[("scope", "active"), ("recency", "invalid")]
+        ),
+        Some(1.0)
+    );
+    Ok(())
+}
 
 // https://github.com/echoua/echo/issues/3826
 #[tokio::test]

@@ -63,7 +63,7 @@ async fn collect_current(env: &Env, exporter: &Exporter, until: DateTime<Utc>) {
         "accounts",
         "current",
         until,
-        accounts::collect(env, until),
+        accounts::collect(env),
     )
     .await;
     publish(

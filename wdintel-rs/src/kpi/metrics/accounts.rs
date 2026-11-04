@@ -65,10 +65,7 @@ impl Account {
     }
 }
 
-pub(super) async fn collect(
-    env: &Env,
-    until: DateTime<Utc>,
-) -> anyhow::Result<Option<Snapshot>> {
+pub(super) async fn collect(env: &Env) -> anyhow::Result<Option<Snapshot>> {
     let transaction = super::super::read_transaction(env).await.c(h!())?;
     let accounts = login::Entity::find()
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
@@ -94,7 +91,7 @@ pub(super) async fn collect(
         .await
         .c(h!())?;
     transaction.commit().await.c(h!())?;
-    snapshot(accounts, until).map(Some).c(h!())
+    snapshot(accounts, Utc::now()).map(Some).c(h!())
 }
 
 fn snapshot(
@@ -191,21 +188,43 @@ mod tests {
     use sea_orm::{ConnectionTrait, DatabaseBackend, Set, Statement};
 
     // https://github.com/echoua/echo/issues/3826
-    #[tokio::test]
-    async fn snapshots_preserve_admin_account_scope_and_replace_role_groups(
-    ) -> anyhow::Result<()> {
-        let (env, _guard) = cleanup_locked().await.c(h!())?;
+    #[test]
+    fn recency_preserves_millisecond_precision_at_age_boundaries() {
         let until =
             DateTime::from_timestamp_millis(Utc::now().timestamp_millis())
                 .unwrap()
                 + Duration::microseconds(750);
+        for (days, microseconds) in [(30, 100), (90, -250)] {
+            let account = Account {
+                deleted: false,
+                deactivation_reason: None,
+                organism_enabled: None,
+                last_active_at: Some(
+                    (until - Duration::days(days)
+                        + Duration::microseconds(microseconds))
+                    .naive_utc(),
+                ),
+                roles: serde_json::json!([]),
+                organism_id: None,
+                sigint_zone_id: None,
+            };
+            assert_eq!(account.recency(until), "aging");
+        }
+    }
+
+    // https://github.com/echoua/echo/issues/3826
+    #[tokio::test]
+    async fn snapshots_preserve_admin_account_scope_and_replace_role_groups(
+    ) -> anyhow::Result<()> {
+        let (env, _guard) = cleanup_locked().await.c(h!())?;
+        let until = Utc::now();
         let (metrics, recorder) =
             crate::telemetry::Metrics::recording(&env.config);
         metrics.kpi.publish(
             "accounts",
             "current",
             until.timestamp_millis(),
-            collect(&env, until).await,
+            collect(&env).await,
         );
         metrics.force_flush_for_test();
         let baseline =
@@ -235,7 +254,7 @@ mod tests {
             "accounts",
             "current",
             until.timestamp_millis(),
-            collect(&env, until).await,
+            collect(&env).await,
         );
         metrics.force_flush_for_test();
         assert_eq!(
@@ -282,7 +301,7 @@ mod tests {
             "accounts",
             "current",
             until.timestamp_millis(),
-            collect(&env, until).await,
+            collect(&env).await,
         );
         metrics.force_flush_for_test();
         assert!(recorder
@@ -365,15 +384,13 @@ mod tests {
         )
         .await
         .c(h!())?;
-        for (days, microseconds) in [(30, 100), (90, -250)] {
+        for days in [31, 89] {
             mk_login(
                 &env.dbx,
                 login::ActiveModel {
                     roles: Set(serde_json::json!([])),
                     last_active_at: Set(Some(
-                        (until - Duration::days(days)
-                            + Duration::microseconds(microseconds))
-                        .naive_utc(),
+                        (until - Duration::days(days)).naive_utc(),
                     )),
                     ..Default::default()
                 },
