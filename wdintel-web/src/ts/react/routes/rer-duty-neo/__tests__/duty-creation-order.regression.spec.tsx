@@ -63,6 +63,8 @@ function responseFor(path: string, body: Record<string, unknown>): unknown {
       return { locations: [{ location: 'КИЇВ', count: 1 }] };
     case '/api/sigint/units':
       return { units: [], show_load_more: false };
+    case '/api/sigint/units/hierarchy':
+      return { revision: 'test', groups: [], units: [] };
     case '/api/rer-importer/get-inbox':
       return inboxResponse(
         body.before_id_noninclusive != null
