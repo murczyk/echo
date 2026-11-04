@@ -14,7 +14,7 @@ echelons and distinct regional paths retain their existing filter identities.
 Rebuilds share a PostgreSQL advisory transaction lock. A dedicated Redis
 connection watches both keys before reading the units, then publishes the tree
 and clears the marker atomically. A concurrent invalidation aborts publication,
-leaving the next caller to rebuild again.
+and the current request retries with a fresh database transaction.
 
 Committed application writes invalidate the cache when publishing
 `ETUnitChanged`, even with no connected sessions. Unit, Etalon and ORBIT import

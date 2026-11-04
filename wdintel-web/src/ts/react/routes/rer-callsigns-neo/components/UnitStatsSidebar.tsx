@@ -370,10 +370,7 @@ export function UnitStatsSidebar({
     () => stats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
     [stats, normalizedSearchQuery],
   );
-  const tree = useMemo(
-    () => (cachedTree === null ? [] : buildUnitTree(filteredStats, cachedTree)),
-    [filteredStats, cachedTree],
-  );
+  const tree = useMemo(() => buildUnitTree(filteredStats, cachedTree), [filteredStats, cachedTree]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const total = filteredStats.reduce((sum, row) => sum + row.count, 0);
   const totalOverall = stats.reduce((sum, row) => sum + row.count, 0);

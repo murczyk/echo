@@ -108,9 +108,17 @@ async fn read_cached(
 }
 
 pub(crate) async fn load(env: &Env) -> anyhow::Result<UnitHierarchyRsp> {
-    if let Some(tree) = read_cached(&mut env.redis.clone()).await.c(h!())? {
-        return Ok(tree);
+    loop {
+        if let Some(tree) = read_cached(&mut env.redis.clone()).await.c(h!())? {
+            return Ok(tree);
+        }
+        if let Some(tree) = rebuild(env).await.c(h!())? {
+            return Ok(tree);
+        }
     }
+}
+
+async fn rebuild(env: &Env) -> anyhow::Result<Option<UnitHierarchyRsp>> {
     let transaction = env.dbx.begin().await.c(h!())?;
     transaction
         .execute_raw(Statement::from_sql_and_values(
@@ -127,7 +135,7 @@ pub(crate) async fn load(env: &Env) -> anyhow::Result<UnitHierarchyRsp> {
         .c(h!())?;
     if let Some(tree) = read_cached(&mut redis).await.c(h!())? {
         transaction.commit().await.c(h!())?;
-        return Ok(tree);
+        return Ok(Some(tree));
     }
     redis::cmd("WATCH")
         .arg(&[SIGINT_UNIT_TREE_REDIS_KEY, SIGINT_UNIT_TREE_DIRTY_REDIS_KEY])
@@ -135,9 +143,9 @@ pub(crate) async fn load(env: &Env) -> anyhow::Result<UnitHierarchyRsp> {
         .await
         .c(h!())?;
     let tree = build(load_sources(&transaction).await.c(h!())?);
-    publish(&mut redis, &tree).await.c(h!())?;
+    let published = publish(&mut redis, &tree).await.c(h!())?;
     transaction.commit().await.c(h!())?;
-    Ok(tree)
+    Ok(published.map(|()| tree))
 }
 
 async fn publish(
