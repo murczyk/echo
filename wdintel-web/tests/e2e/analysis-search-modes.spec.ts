@@ -104,7 +104,9 @@ test('@regression #3780 legacy saved filters reconcile omitted and explicit fuzz
   await page.route('**/api/rer/analysis/saved-filters', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify(savedReq ? [{ id: 3780, name: 'Старий пошук', req: savedReq }] : []),
+      body: JSON.stringify(
+        savedReq ? [{ id: 3780, name: 'Старий пошук', req: savedReq, unit_filter: null }] : [],
+      ),
     });
   });
   await page.goto('/rer-analysis');

@@ -249,7 +249,7 @@ export function useRerDutyFeeds(
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
       const refreshes = feedState.messageFeeds.flatMap((feed) => {
-        if (feed.loading) return [];
+        if (feed.loading || !feedState.isFeedReady(feed)) return [];
         const visibleMessageIds = new Set(
           [...feed.items, ...(feed.pendingNewerItems ?? [])].map(([messageId]) => messageId),
         );
@@ -302,6 +302,7 @@ export function useRerDutyFeeds(
                 (() => {
                   const currentFeed = current.find((feed) => feed.id === feedId);
                   if (currentFeed == null) return current;
+                  if (!feedStateRef.current.isFeedReady(currentFeed)) return current;
                   if (feedStateRef.current.getFeedLoadGeneration(feedId) !== loadGeneration)
                     return current;
                   const currentSignature = stableStringify(

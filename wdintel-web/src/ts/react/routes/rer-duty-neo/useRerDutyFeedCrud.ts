@@ -20,6 +20,7 @@ export function useRerDutyFeedCrud(
       forceReload = false,
       options: { preserveUnread?: boolean } = {},
     ) => {
+      f = { ...f, unitsIncludeChildren: true };
       const currentFeed = messageFeeds.find((feed) => feed.id === feedId);
       if (!currentFeed) return;
       if (!forceReload && filtersEqual(currentFeed.filter, f)) {
@@ -47,7 +48,7 @@ export function useRerDutyFeedCrud(
                     }
                   : {}),
                 filter: f,
-                unitsIncludeChildren: f.unitsIncludeChildren ?? feed.unitsIncludeChildren ?? false,
+                unitsIncludeChildren: true,
                 loading: true,
                 loadingOlder: false,
                 hasReachedStart: false,
@@ -127,6 +128,7 @@ export function useRerDutyFeedCrud(
       adjacentFreqsRange: 0,
       highlightSignalsEnabled: false,
       onlyMyUnitTagsEnabled: false,
+      unitsIncludeChildren: true,
     };
     setMessageFeeds((prev) => {
       if (prev.length >= MAX_MESSAGE_FEEDS || prev.some((w) => w.id === id)) return prev;

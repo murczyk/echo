@@ -68,6 +68,7 @@ vi.mock('../../services/api/networks', () => ({
 }));
 
 vi.mock('../../services/api/units', () => ({
+  getAllUnitsList: vi.fn(() => Promise.resolve([])),
   getUnitsList: vi.fn(() => Promise.resolve([])),
   getUnitsByIds: vi.fn(() => Promise.resolve([])),
 }));

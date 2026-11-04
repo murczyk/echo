@@ -55,7 +55,6 @@ import type {
 } from '../../../../Bindings';
 import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useUnitHierarchyCatalog } from '../shared/use-unit-children-filter';
-import { isUnitParentValue } from '../shared/unit-children-filter';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -358,10 +357,8 @@ export function useRerAnalysisNeoPage(
       ? 'callsigns'
       : selectedSidebarTab;
   const linkedMessageQueryState = replyNavigationVersion > 0 ? queryState : targetMessageQueryState;
-  const needsUnitHierarchy =
-    queryState.unitsIncludeChildren === true || queryState.unitsSelected.some(isUnitParentValue);
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
-    needsUnitHierarchy,
+    true,
     setPageError,
   );
   const effectiveQueryState = useMemo(
@@ -453,10 +450,7 @@ export function useRerAnalysisNeoPage(
   );
 
   const directMessageDefaultsPending =
-    (directMessageWindowQueryState.unitsSelected.length > 0 &&
-      (directMessageWindowQueryState.unitsIncludeChildren ||
-        directMessageWindowQueryState.unitsSelected.some(isUnitParentValue)) &&
-      unitHierarchy === null) ||
+    (directMessageWindowQueryState.unitsSelected.length > 0 && unitHierarchy === null) ||
     currentUserStatus === 'loading' ||
     (rerReportFilterAccessPending && targetMessageQueryState.onlyWithNetwork) ||
     queryStateWithResolvedRoleDate !== queryState ||
@@ -820,7 +814,7 @@ export function useRerAnalysisNeoPage(
     authUserName,
     currentUser,
     deferInitialLoad:
-      (needsUnitHierarchy && queryState.unitsSelected.length > 0 && unitHierarchy === null) ||
+      (queryState.unitsSelected.length > 0 && unitHierarchy === null) ||
       systemSettingsStatus === 'loading' ||
       deviceAccess.status === 'loading' ||
       (rerReportFilterAccessPending && queryState.onlyWithNetwork) ||

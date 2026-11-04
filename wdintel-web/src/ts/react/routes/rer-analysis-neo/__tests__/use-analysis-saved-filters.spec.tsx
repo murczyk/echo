@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SavedFilter } from '../../../../../Bindings';
 import { buildAnalysisReq, emptyQueryState } from '../helpers';
+import { buildUnitFilterOptions } from '../../../utils/unit-search';
+import { buildUnitHierarchyIndex } from '../../shared/unit-children-filter';
 import type { AnalysisQueryState } from '../types';
 import { useAnalysisSavedFilters } from '../use-analysis-saved-filters';
 
@@ -25,6 +27,7 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookResult | null = null;
 let currentQueryState: AnalysisQueryState | null = null;
+let setCurrentQueryState: ((queryState: AnalysisQueryState) => void) | null = null;
 
 function buildSavedFilter(): SavedFilter {
   const queryState = {
@@ -44,6 +47,37 @@ function buildSavedFilter(): SavedFilter {
   };
 }
 
+function buildLegacyUnitFilter() {
+  const unit = buildUnitFilterOptions([])[0];
+  const unitHierarchy = buildUnitHierarchyIndex([
+    { ...unit, id: 20, name: '27 омсбр', army: '6 А', brigade: '27 омсбр' },
+    {
+      ...unit,
+      id: 21,
+      name: '1 мср 27 омсбр',
+      army: '6 А',
+      brigade: '27 омсбр',
+      company: '1 мср',
+    },
+  ]);
+  const queryState = {
+    ...emptyQueryState(),
+    fromDateTimeStr: '2026-05-02T10:00',
+    toDateTimeStr: '2026-05-02T11:00',
+    unitsSelected: ['unit-id:20'],
+    unitHierarchy,
+  };
+  const req = buildAnalysisReq({ ...queryState, unitsSelected: [] });
+  if (req == null) throw new Error('expected request to build');
+  const savedFilter: SavedFilter = {
+    id: 2,
+    name: 'Legacy parent filter',
+    req: { ...req, selectedUnitIds: [20] },
+    unitFilter: null,
+  };
+  return { queryState, savedFilter };
+}
+
 function Harness({
   allFrequencies,
   queryState,
@@ -53,6 +87,7 @@ function Harness({
 }) {
   const [queryStateValue, setQueryStateValue] = useState(queryState);
   currentQueryState = queryStateValue;
+  setCurrentQueryState = setQueryStateValue;
   latest = useAnalysisSavedFilters({
     allFrequencies,
     onError: vi.fn(),
@@ -90,6 +125,7 @@ describe('useAnalysisSavedFilters', () => {
     document.body.appendChild(container);
     latest = null;
     currentQueryState = null;
+    setCurrentQueryState = null;
 
     analysisApiMock.listAnalysisSavedFilters.mockReset();
     analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([buildSavedFilter()]);
@@ -106,7 +142,88 @@ describe('useAnalysisSavedFilters', () => {
     container?.remove();
     container = null;
     latest = null;
+    setCurrentQueryState = null;
   });
+
+  it('#3527 keeps a legacy parent filter clean after applying it', async () => {
+    const { queryState, savedFilter } = buildLegacyUnitFilter();
+    analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([savedFilter]);
+    await renderHook([], { ...queryState, unitsSelected: [] });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.applySavedFilter(savedFilter);
+    });
+    await flushEffects();
+
+    expect(currentQueryState?.unitsSelected).toEqual(['unit-id:20']);
+    expect(buildAnalysisReq(currentQueryState!)?.selectedUnitIds).toEqual([20, 21]);
+    expect(latest?.loadedSavedFilter?.id).toBe(savedFilter.id);
+    expect(latest?.isDirty).toBe(false);
+
+    await act(async () => {
+      setCurrentQueryState?.({ ...currentQueryState!, unitsSelected: ['unit-id:21'] });
+    });
+    expect(latest?.isDirty).toBe(true);
+  });
+
+  it.each([false, true])(
+    '#3527 preserves dirty state while a saved parent filter awaits catalog recovery: metadata=%s',
+    async (withMetadata) => {
+      const { queryState, savedFilter } = buildLegacyUnitFilter();
+      if (withMetadata) {
+        savedFilter.unitFilter = { values: ['unit-id:20'], includeChildren: false };
+      }
+      analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([savedFilter]);
+      await renderHook([], { ...queryState, unitsSelected: [], unitHierarchy: null });
+      await flushEffects();
+      await act(async () => latest?.applySavedFilter(savedFilter));
+      expect(latest?.isDirty).toBe(false);
+      expect(buildAnalysisReq(currentQueryState!)).toBeNull();
+
+      await act(async () => setCurrentQueryState?.(queryState));
+      expect(latest?.isDirty).toBe(false);
+      await act(async () => setCurrentQueryState?.({ ...queryState, unitHierarchy: null }));
+      expect(latest?.isDirty).toBe(false);
+
+      await act(async () =>
+        setCurrentQueryState?.({
+          ...currentQueryState!,
+          unitsSelected: ['unit-id:21'],
+        }),
+      );
+      expect(latest?.isDirty).toBe(true);
+      await act(async () =>
+        setCurrentQueryState?.({ ...queryState, unitHierarchy: null, search: 'changed' }),
+      );
+      expect(latest?.isDirty).toBe(true);
+    },
+  );
+
+  it.each([false, true])(
+    '#3527 automatically matches a legacy parent filter when the catalog starts pending: %s',
+    async (catalogPending) => {
+      const { queryState, savedFilter } = buildLegacyUnitFilter();
+      analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([savedFilter]);
+      await renderHook([], {
+        ...queryState,
+        unitHierarchy: catalogPending ? null : queryState.unitHierarchy,
+      });
+      await flushEffects();
+
+      if (catalogPending) {
+        expect(latest?.loadedSavedFilter).toBeNull();
+        await act(async () => {
+          setCurrentQueryState?.(queryState);
+        });
+        await flushEffects();
+      }
+
+      expect(latest?.loadedSavedFilter?.id).toBe(savedFilter.id);
+      expect(latest?.savedFilterName).toBe(savedFilter.name);
+      expect(latest?.isDirty).toBe(false);
+    },
+  );
 
   it('reselects a saved filter after frequency options load', async () => {
     const queryState = {
