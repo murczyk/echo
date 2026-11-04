@@ -2360,20 +2360,122 @@ from battle_line_version where id = $2
         .await
         .unwrap();
         let mut cache = SettlementResolutionCache::default();
-        for (name, expected) in [
-            ("#2133 db'only", Some(2_133_101)),
-            ("#2133 JSON ONLY", None),
-            ("#2133 INVALID", None),
-        ] {
-            let request = insert_cluster_test_item(&txn, &[(name, None, None)])
+        let request = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 db'only", None, Some(true)),
+                ("#2133 JSON ONLY", None, Some(true)),
+                ("#2133 INVALID", None, Some(true)),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            resolve_claimed_item(&txn, request.item_id, version, &mut cache)
+                .await
+                .unwrap(),
+            None
+        );
+        for _ in 0..2 {
+            requeue_unresolved_item_settlements(&txn, &[request.item_id])
                 .await
                 .unwrap();
             resolve_claimed_item(&txn, request.item_id, version, &mut cache)
                 .await
                 .unwrap();
             let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
-            assert_eq!(rows[0].settlement_id, expected, "{name}");
-            assert_eq!(rows[0].is_undefined, Some(expected.is_none()));
+            assert_eq!(
+                rows.iter()
+                    .map(|row| (row.settlement_id, row.is_undefined))
+                    .collect::<Vec<_>>(),
+                vec![
+                    (Some(2_133_101), Some(false)),
+                    (None, Some(true)),
+                    (None, Some(true)),
+                ]
+            );
+            reconcile_item_locations(
+                &txn,
+                request.item_id,
+                request.item_uuid,
+                request.location_v2.as_deref(),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                cluster_test_rows(&txn, request.item_id).await.unwrap(),
+                rows
+            );
+        }
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn oneoff_repairs_undefined_mixed_name_clusters_idempotently_2133() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let version = setup_cluster_test_catalog(&env, &txn).await;
+        let request = insert_cluster_test_item(
+            &txn,
+            &[
+                ("#2133 A", None, Some(true)),
+                ("#2133 SHARED", None, Some(true)),
+                ("#2133 FOREST", None, Some(true)),
+                ("#2133 UNDEFINED", None, Some(true)),
+            ],
+        )
+        .await
+        .unwrap();
+        let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+        let row_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+        let items = [(Utc::now().naive_utc(), request.item_id)];
+        let item_locations = BTreeMap::from([(
+            request.item_id,
+            (request.location_v2, request.item_uuid),
+        )]);
+        let mut cache = SettlementResolutionCache::default();
+        for _ in 0..2 {
+            let (groups, skipped) =
+                group_oneoff_resolution_requests(&txn, &items, &item_locations)
+                    .await
+                    .unwrap();
+            assert_eq!(skipped, 0);
+            let mut stats = OneoffLinkInboxSettlementsStats::default();
+            assert_eq!(
+                process_oneoff_request_groups(
+                    &txn, groups, version, &mut cache, &mut stats,
+                )
+                .await
+                .unwrap(),
+                BTreeSet::from([request.item_id])
+            );
+            assert_eq!(
+                stats,
+                OneoffLinkInboxSettlementsStats {
+                    processed: 1,
+                    matched: 2,
+                    unmatched: 2,
+                    ..Default::default()
+                }
+            );
+            let rows = cluster_test_rows(&txn, request.item_id).await.unwrap();
+            assert_eq!(
+                rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+                row_ids
+            );
+            assert_eq!(
+                rows.iter()
+                    .map(|row| (row.settlement_id, row.is_undefined))
+                    .collect::<Vec<_>>(),
+                vec![
+                    (Some(2_133_101), Some(false)),
+                    (Some(2_133_103), Some(false)),
+                    (None, Some(true)),
+                    (None, Some(true)),
+                ]
+            );
         }
         txn.rollback().await.unwrap();
     }
@@ -2538,7 +2640,7 @@ from battle_line_version where id = $2
             ("|#2133 SHARED|#2133 FOREST|", vec![None, None]),
             (
                 "|#2133 A|#2133 B|#2133 SHARED|#2133 FOREST|",
-                vec![None, None, None, None],
+                vec![Some(2_133_101), None, Some(2_133_103), None],
             ),
             (
                 "|#2133 A|#2133 SHARED|#2133 FOREST|",

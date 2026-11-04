@@ -196,6 +196,7 @@ fn elect_settlements_with_fixed(
         }
     }
     let mut chosen = vec![None; drafts.len()];
+    groups.retain(|group| group.fixed || !group.candidates.is_empty());
     if groups.is_empty()
         || groups.len() > BATTLE_LINE_SETTLEMENT_ELECTION_MAX_NAMES
     {
