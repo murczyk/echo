@@ -16,6 +16,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type {
+  AiAgentDocumentArtifact,
   AiAgentMapSummary,
   AiAgentMessageCitation,
   AiAgentFileCitation,
@@ -24,6 +25,7 @@ import type {
 } from '../../../../Bindings';
 import { MapPreview } from './MapPreview';
 import { ConversationMapsContext } from './map-documents';
+import { ConversationDocumentsContext, DocumentChip, documentHref } from './document-files';
 import { EchoChip } from '../../components/EchoChip';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { fetchMessagesByIdsWithMetadata } from '../../services/api/inbox-messages';
@@ -94,6 +96,7 @@ const CitationContext = createContext<{
   registered: Map<string, AiAgentMessageCitation>;
   files: Map<string, AiAgentFileCitation>;
   maps: Map<string, AiAgentMapSummary>;
+  documents: Map<string, AiAgentDocumentArtifact>;
   inertMaps: boolean;
   resolved: Map<number, ResolvedCitation>;
   refresh: (id: number) => Promise<boolean>;
@@ -121,6 +124,15 @@ function CitationAnchor({ href, children: label }: ComponentProps<'a'>) {
       <MapPreview key={`${summary.requestId}:${summary.id}`} summary={summary} inline />
     ) : (
       <EchoChip label="Мапа недоступна" />
+    );
+  }
+
+  if (href?.startsWith('echo-document:')) {
+    const document = context.documents.get(href);
+    return document ? (
+      <DocumentChip document={document} inert={context.inertMaps} />
+    ) : (
+      <EchoChip label="Документ недоступний" />
     );
   }
 
@@ -168,17 +180,20 @@ export function CitationMarkdown({
   citations = EMPTY_CITATIONS,
   fileCitations = [],
   maps = [],
+  documents = [],
   inertMaps = false,
 }: {
   children: string;
   citations?: AiAgentMessageCitation[];
   fileCitations?: AiAgentFileCitation[];
   maps?: AiAgentMapSummary[];
+  documents?: AiAgentDocumentArtifact[];
   /** Show map links as their titles instead of owner-only previews. */
   inertMaps?: boolean;
 }) {
   const { notify } = usePowerSnackbar();
   const conversationMaps = useContext(ConversationMapsContext);
+  const conversationDocuments = useContext(ConversationDocumentsContext);
   const [resolved, setResolved] = useState(new Map<number, ResolvedCitation>());
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
@@ -272,6 +287,12 @@ export function CitationMarkdown({
           maps: new Map(
             [...conversationMaps, ...maps].map((summary) => [`echo-map:${summary.id}`, summary]),
           ),
+          documents: new Map(
+            [...conversationDocuments, ...documents].map((document) => [
+              documentHref(document.documentId),
+              document,
+            ]),
+          ),
           inertMaps,
         }}
       >
@@ -280,7 +301,11 @@ export function CitationMarkdown({
           disallowedElements={['img']}
           remarkPlugins={MARKDOWN_PLUGINS}
           components={MARKDOWN_COMPONENTS}
-          urlTransform={(url) => (url.startsWith('echo-map:') ? url : defaultUrlTransform(url))}
+          urlTransform={(url) =>
+            url.startsWith('echo-map:') || url.startsWith('echo-document:')
+              ? url
+              : defaultUrlTransform(url)
+          }
         >
           {children}
         </ReactMarkdown>

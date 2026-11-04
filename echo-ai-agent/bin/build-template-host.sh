@@ -89,6 +89,8 @@ push_template_files() {
     "$BUNDLE_DIR/runner/devices.ts" \
     "$BUNDLE_DIR/runner/maps.ts" \
     "$BUNDLE_DIR/runner/map-script.ts" \
+    "$BUNDLE_DIR/runner/python-sandbox.ts" \
+    "$BUNDLE_DIR/runner/documents.ts" \
     "$BUNDLE_DIR/runner/sidc-resolver.ts" \
     "$BUNDLE_DIR/runner/search-guidance.ts" \
     "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/"
@@ -103,6 +105,14 @@ push_template_files() {
     "$BUNDLE_DIR"/template/python/echomap/*.py \
     "$BUNDLE_DIR/template/python/echomap/app6d-catalog.json" \
     "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/python/echomap/"
+  incus exec "$AGENT_TEMPLATE" -- mkdir -p \
+    /var/tmp/echo-ai-agent-template/python/echodoc
+  incus file push \
+    "$BUNDLE_DIR/template/python/echosandbox.py" \
+    "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/python/"
+  incus file push \
+    "$BUNDLE_DIR"/template/python/echodoc/*.py \
+    "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/python/echodoc/"
 }
 
 [[ $EUID -eq 0 ]] || die "build-template-host.sh must run as root"

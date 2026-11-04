@@ -8,7 +8,6 @@ empty /tmp, /run and /proc, clean environment); this drops capabilities and
 adds resource limits.
 """
 
-import ctypes
 import os
 import resource
 import sys
@@ -23,32 +22,12 @@ LIMITS = {
 }
 
 
-PR_CAPBSET_DROP = 24
-PR_SET_NO_NEW_PRIVS = 38
-LINUX_CAPABILITY_VERSION_3 = 0x20080522
-
-
-def drop_capabilities():
-    """The script is root only inside its own user namespace, which owns the
-    tmpfs mounts hiding /tmp and /proc. Without capabilities it cannot unmount
-    them or regain privileges through exec."""
-    libc = ctypes.CDLL(None, use_errno=True)
-    for capability in range(64):
-        libc.prctl(PR_CAPBSET_DROP, capability, 0, 0, 0)
-    header = (ctypes.c_uint32 * 2)(LINUX_CAPABILITY_VERSION_3, 0)
-    data = (ctypes.c_uint32 * 6)()
-    if libc.capset(header, data) != 0:
-        raise OSError(ctypes.get_errno(), "capset failed")
-    if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        raise OSError(ctypes.get_errno(), "no_new_privs failed")
-
-
 def main():
     work = os.path.abspath(sys.argv[1])
-    drop_capabilities()
-    for limit, value in LIMITS.items():
-        resource.setrlimit(limit, (value, value))
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import echosandbox
+
+    echosandbox.harden(LIMITS)
     os.chdir(work)
     from echomap import state
 

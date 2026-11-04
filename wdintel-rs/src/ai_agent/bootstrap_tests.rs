@@ -698,28 +698,30 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
     for (preset, runtime, reserve) in [
         (Preset::Fast, 120, 60),
         (Preset::Balanced, 300, 120),
-        (Preset::Deep, 1800, 240),
+        (Preset::Deep, 14_400, 600),
     ] {
-        let flash_policy = reasoning::resolve(&config, &flash, preset);
-        let original = reasoning::resolve(&config, &engine, preset);
+        let flash_policy = reasoning::resolve(&config, &flash, preset, false);
+        let original = reasoning::resolve(&config, &engine, preset, false);
         assert_eq!(flash_policy.max_runtime_seconds, runtime, "#3572");
         assert_eq!(flash_policy.finalization_seconds, reserve, "#3572");
         assert_eq!(original.max_runtime_seconds, runtime, "#3572");
         // Every non-OpenAI engine reserves the longer synthesis window; OpenAI keeps the base.
         assert_eq!(original.finalization_seconds, reserve, "glm-5.3");
         assert_eq!(
-            reasoning::resolve(&config, &gemma, preset).finalization_seconds,
+            reasoning::resolve(&config, &gemma, preset, false)
+                .finalization_seconds,
             reserve,
             "gemma"
         );
         assert_eq!(
-            reasoning::resolve(&config, &sol, preset).finalization_seconds,
+            reasoning::resolve(&config, &sol, preset, false)
+                .finalization_seconds,
             reserve / 2,
             "gpt"
         );
         for openai in &openai_engines {
             assert_eq!(
-                reasoning::resolve(&config, openai, preset)
+                reasoning::resolve(&config, openai, preset, false)
                     .finalization_seconds,
                 reserve / 2,
                 "{}",
@@ -732,6 +734,7 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         &config,
         &engine,
         crate::ai_agent::types::AiAgentReasoningPreset::Balanced,
+        false,
     );
     let mut request = request.into_active_model();
     request.started_at = Set(Some(chrono::Utc::now().naive_utc()));

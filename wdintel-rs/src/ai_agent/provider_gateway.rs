@@ -186,6 +186,10 @@ async fn provider_call(
             api,
             deadline,
             request_id: Some(authorization.request_id),
+            turn_timeout_sec: super::reasoning::limits(
+                authorization.execution_policy.as_ref(),
+            )
+            .provider_turn_timeout_sec,
         },
     )
     .await
@@ -558,6 +562,7 @@ async fn proxy_provider_request(
             api: ProviderApi::OpenaiCompletions,
             deadline: None,
             request_id: None,
+            turn_timeout_sec: None,
         },
     )
     .await
@@ -567,6 +572,8 @@ struct ProviderCallContext {
     api: ProviderApi,
     deadline: Option<i64>,
     request_id: Option<uuid::Uuid>,
+    /// Longer turn timeout of a 4-hour Deep request; still capped by its deadline.
+    turn_timeout_sec: Option<u64>,
 }
 
 async fn proxy_provider_call(
@@ -580,6 +587,7 @@ async fn proxy_provider_call(
         api,
         deadline,
         request_id,
+        turn_timeout_sec,
     } = context;
     let started_at = Instant::now();
     let reasoning_effort_present = body.get("reasoning_effort").is_some()
@@ -595,7 +603,10 @@ async fn proxy_provider_call(
         .or_else(|| body.get("max_tokens"))
         .and_then(Value::as_u64);
     let request_bytes = body.to_string().len();
-    let timeout = provider_request_timeout(&ai_engine, streamed);
+    let timeout = turn_timeout_sec.map_or_else(
+        || provider_request_timeout(&ai_engine, streamed),
+        Duration::from_secs,
+    );
     let timeout = deadline.map_or(timeout, |deadline| {
         timeout.min(Duration::from_millis(
             deadline

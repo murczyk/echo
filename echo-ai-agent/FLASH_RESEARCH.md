@@ -5,10 +5,14 @@ engine (GLM-5.3, Gemma) uses it when [reasoning presets](../docs/ai/reasoning-pr
 give the request a budget; without presets those engines keep their unbudgeted
 path. OpenAI engines keep the generic path, where a failed final synthesis yields a
 short notice instead of raw source excerpts. The selected provider and total
-Fast/Balanced/Deep deadlines remain 120/300/1800 seconds. These engines reserve
-60/120/240 seconds of those deadlines for synthesis (Rust `reasoning::resolve`; the
-runner also accepts the base 30/60/120 so policies queued before the reserve was
-raised still validate). Flash without presets keeps its existing ten-minute deadline
+Fast/Balanced/Deep deadlines are 120/300/14400 seconds, and document requests
+in Fast or Balanced get 1800 seconds. These engines reserve 60/120/600 seconds
+(240 for documents) of those deadlines for synthesis (Rust `reasoning::resolve`;
+the runner also accepts the base 30/60/300/120 reserves, and Deep at the former
+1800/120, so policies queued before a change still validate). When the user asks
+for a document, it must be saved during research: the tool-free synthesis cannot
+create files, and when no Echo search ran it says so instead of reporting that
+Echo has no data. Flash without presets keeps its existing ten-minute deadline
 with a two-minute synthesis reserve; final generation keeps the legacy gateway's
 authorized `research` purpose.
 

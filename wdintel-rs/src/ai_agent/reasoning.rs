@@ -31,6 +31,48 @@ pub struct ExecutionPolicy {
     pub synthesis_effort: Option<String>,
     pub max_runtime_seconds: u64,
     pub finalization_seconds: u64,
+    /// A Fast or Balanced request that builds a document, on the document
+    /// tier's budget.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub document_task: bool,
+}
+
+/// Per-request counters and timeouts; a 4-hour Deep run gets larger ones so
+/// that the clock, not a counter, bounds its research.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RequestLimits {
+    pub api_calls: i64,
+    pub provider_calls: i64,
+    pub runner_events: usize,
+    pub event_bytes: usize,
+    /// One provider turn; `None` keeps the engine's default timeout.
+    pub provider_turn_timeout_sec: Option<u64>,
+}
+
+pub fn limits(policy: Option<&ExecutionPolicy>) -> RequestLimits {
+    if policy.is_some_and(|policy| {
+        policy.preset == AiAgentReasoningPreset::Deep
+            && policy.max_runtime_seconds >= config::AI_AGENT_DEEP_RUNTIME_SEC
+    }) {
+        RequestLimits {
+            api_calls: config::AI_AGENT_DEEP_API_CALL_LIMIT,
+            provider_calls:
+                config::AI_AGENT_DEEP_PROVIDER_CAPABILITY_CALL_LIMIT,
+            runner_events: config::AI_AGENT_DEEP_REQUEST_MAX_RUNNER_EVENTS,
+            event_bytes: config::AI_AGENT_DEEP_REQUEST_MAX_EVENT_BYTES,
+            provider_turn_timeout_sec: Some(
+                config::AI_AGENT_DEEP_PROVIDER_REQUEST_TIMEOUT_SEC,
+            ),
+        }
+    } else {
+        RequestLimits {
+            api_calls: config::AI_AGENT_API_CALL_LIMIT,
+            provider_calls: config::AI_AGENT_PROVIDER_CAPABILITY_CALL_LIMIT,
+            runner_events: config::AI_AGENT_REQUEST_MAX_RUNNER_EVENTS,
+            event_bytes: config::AI_AGENT_REQUEST_MAX_EVENT_BYTES,
+            provider_turn_timeout_sec: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -86,7 +128,7 @@ pub fn presets(
     ]
     .into_iter()
     .map(|preset| {
-        let policy = resolve(config, engine, preset);
+        let policy = resolve(config, engine, preset, false);
         AiAgentReasoningPresetItem {
             preset,
             max_runtime_seconds: policy.max_runtime_seconds as i32,
@@ -96,10 +138,14 @@ pub fn presets(
     .collect()
 }
 
+/// The policy of a new request. A Fast or Balanced request that builds a
+/// document keeps its reasoning effort but gets the document tier's time,
+/// enough to search Echo, fill the template and save it.
 pub fn resolve(
     config: &Config,
     engine: &ai_engine::Model,
     preset: AiAgentReasoningPreset,
+    document_task: bool,
 ) -> ExecutionPolicy {
     let verified = reasoning_available(config, engine);
     let name = engine.model_name.as_str();
@@ -145,7 +191,12 @@ pub fn resolve(
             };
             (ProviderApi::OpenaiCompletions, effort, effort)
         };
+    let document_task = document_task && preset != AiAgentReasoningPreset::Deep;
     let (max_runtime_seconds, finalization_seconds) = match preset {
+        _ if document_task => (
+            config::AI_AGENT_DOCUMENT_RUNTIME_SEC,
+            config::AI_AGENT_DOCUMENT_FINALIZATION_SEC,
+        ),
         AiAgentReasoningPreset::Fast => (
             config::AI_AGENT_FAST_RUNTIME_SEC,
             config::AI_AGENT_FAST_FINALIZATION_SEC,
@@ -172,6 +223,7 @@ pub fn resolve(
         } else {
             finalization_seconds
         },
+        document_task,
     }
 }
 

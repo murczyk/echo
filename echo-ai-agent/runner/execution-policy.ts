@@ -22,13 +22,40 @@ export interface ExecutionPolicy {
   synthesisEffort: string | null;
   maxRuntimeSeconds: number;
   finalizationSeconds: number;
+  /** A Fast or Balanced request that builds a document runs on the document tier. */
+  documentTask?: boolean;
 }
 
-const PRESETS = {
-  fast: [120, 30],
-  balanced: [300, 60],
-  deep: [1800, 120],
-} as const;
+interface BudgetTier {
+  runtime: number;
+  finalization: number;
+  toolCalls: number;
+}
+
+// Wall-clock runtime, base finalization reserve and tool calls of each budget tier;
+// they must match the backend's AI_AGENT_*_RUNTIME_SEC and request limits.
+export const TIERS = {
+  fast: { runtime: 120, finalization: 30, toolCalls: 128 },
+  balanced: { runtime: 300, finalization: 60, toolCalls: 128 },
+  document: { runtime: 1800, finalization: 120, toolCalls: 128 },
+  deep: { runtime: 14_400, finalization: 300, toolCalls: 1024 },
+} as const satisfies Record<string, BudgetTier>;
+// Deep requests queued before the 4-hour budget keep their 30-minute policy.
+const LEGACY_DEEP: BudgetTier = { runtime: 1800, finalization: 120, toolCalls: 128 };
+const DEFAULT_TOOL_CALLS = 128;
+
+function tiersFor(policy: ExecutionPolicy): readonly BudgetTier[] {
+  if (policy.documentTask === true)
+    return policy.preset === "deep" ? [] : [TIERS.document];
+  if (policy.preset === "deep") return [TIERS.deep, LEGACY_DEEP];
+  return Object.hasOwn(TIERS, policy.preset) ? [TIERS[policy.preset]] : [];
+}
+
+/** Tool calls one request may make under its policy. */
+export function toolCallLimit(policy?: ExecutionPolicy): number {
+  if (!policy) return DEFAULT_TOOL_CALLS;
+  return tiersFor(policy).find((tier) => tier.runtime === policy.maxRuntimeSeconds)?.toolCalls ?? DEFAULT_TOOL_CALLS;
+}
 const EFFORTS = new Set([null, "none", "low", "medium", "high", "max"]);
 const FINALIZATION_CLEANUP_MS = 1000;
 export const PURPOSE_HEADER = "x-echo-ai-purpose";
@@ -46,21 +73,22 @@ export function validateExecutionPolicy(
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("invalid executionPolicy");
   const policy = value as ExecutionPolicy;
-  const limits = Object.hasOwn(PRESETS, policy.preset)
-    ? PRESETS[policy.preset]
+  const tier = ["fast", "balanced", "deep"].includes(policy.preset) &&
+    [undefined, true, false].includes(policy.documentTask)
+    ? tiersFor(policy).find((candidate) =>
+        candidate.runtime === policy.maxRuntimeSeconds &&
+        finalizationMultipliers.some(
+          (multiplier) => policy.finalizationSeconds === candidate.finalization * multiplier,
+        ))
     : undefined;
   if (
-    !limits ||
+    !tier ||
     !["openai-completions", "openai-responses"].includes(policy.api) ||
     ![
       policy.reasoningEffort,
       policy.checkpointEffort,
       policy.synthesisEffort,
     ].every((effort) => EFFORTS.has(effort)) ||
-    policy.maxRuntimeSeconds !== limits[0] ||
-    !finalizationMultipliers.some(
-      (multiplier) => policy.finalizationSeconds === limits[1] * multiplier,
-    ) ||
     !Number.isSafeInteger(deadline) ||
     (deadline as number) < 1
   ) {
@@ -151,11 +179,12 @@ export interface BudgetEvidence {
 
 function evidenceRecords(
   evidence: BudgetEvidence,
-): { text: string; citation: string }[] {
+): { text: string; citation: string; dmr?: Record<string, unknown> }[] {
   return [
     ...evidence.messages.map((message) => ({
       text: message.text,
       citation: citationHref(message),
+      ...(message.dmr ? { dmr: message.dmr } : {}),
     })),
     ...evidence.files.map((section) => ({
       text: section.text,

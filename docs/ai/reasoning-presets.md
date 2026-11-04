@@ -1,7 +1,11 @@
 # Agent reasoning and research budgets
 
 The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
-Their limits remain 2, 5, and 30 minutes. Balanced is the default. The browser
+Their limits are 2 minutes, 5 minutes and 4 hours; the composer shows them in
+the mode menu. A Fast or Balanced request that builds a document (an open
+document, a .docx attached to the message, or a report request in a conversation
+with a .docx upload or a generated document) gets 30 minutes instead and keeps
+its reasoning effort; its policy carries `documentTask: true`. Balanced is the default. The browser
 remembers the last chosen Fast or Balanced in `localStorage`
 (`echo.ai-agent.reasoning-preset`). Deep is never remembered: successful
 submission, changing provider, and opening another conversation reset the
@@ -10,13 +14,20 @@ failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
 
 The limit starts when a worker claims the request, excluding queue time.
-Fast reserves its last 30 seconds, Balanced 60 seconds, and Deep 120 seconds
-for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
+Fast reserves its last 30 seconds, Balanced 60 seconds, a document request
+120 seconds, and Deep 300 seconds for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
 they run the [bounded research workflow](../../echo-ai-agent/FLASH_RESEARCH.md). Checkpoints, output recovery, citation repair, and provider
 retries share the original deadline and call counters. These are ceilings,
-not promised completion times. The normal tool ceiling remains 128 and the
-provider ceiling remains 256 calls, with one provider call reserved for final
-synthesis.
+not promised completion times: the agent finishes as soon as the work is done.
+The normal tool and Echo API ceilings are 128 and the provider ceiling is 256
+calls, with one provider call reserved for final synthesis. A 4-hour Deep
+request allows 1024 tool and API calls, 2048 provider calls, 50 000 runner
+events (64 MiB) and 30-minute provider turns (`reasoning::limits`).
+
+A Deep request holds its user's single running slot for as long as it runs:
+the user's next messages wait in the queue. A backend restart or a lost worker
+lease fails running requests (there is no resume), so long Deep runs are lost
+on a deploy; namespace upgrades wait until the namespace is idle.
 
 At the research limit, tools stop and the selected engine summarizes evidence
 with its lowest supported effort. This call cannot use tools. If synthesis

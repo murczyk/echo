@@ -919,6 +919,25 @@ test("incident 01a18e18: paging one search beyond the limit needs a coverage rea
   }
 });
 
+test("incident 01a1a1d8: frequency-filtered pages count as a focused search", async () => {
+  const research = new FlashResearch(() => sources, undefined, undefined, RESEARCH_TUNING);
+  await (research.tool(() => {}) as any).execute("save", updated);
+  const query = (cursor?: number) => ({
+    period,
+    selected_freqs: ["163.9350"],
+    ...(cursor ? { before_id_noninclusive: cursor } : {}),
+  });
+  for (const cursor of [undefined, 400, 300]) {
+    assert.doesNotThrow(() => research.beforeRetrieval("inbox_messages", query(cursor)));
+    research.record("echo_inbox_messages", query(cursor), { nextCursor: 1 });
+  }
+  await (research.tool(() => {}) as any).execute("save", updated);
+  assert.throws(
+    () => research.beforeRetrieval("inbox_messages", query(200)),
+    { message: FLASH_RESEARCH_PAGINATION_REQUIRED },
+  );
+});
+
 test("bounded research covers every non-OpenAI engine with a budget", () => {
   assert.equal(usesBoundedResearch(FLASH_ENGINE), true);
   assert.equal(usesBoundedResearch("glm-5.3", policy), true);
@@ -951,6 +970,7 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
     ["fast", 120, 30],
     ["balanced", 300, 60],
     ["deep", 1800, 120],
+    ["deep", 14_400, 300],
   ] as const) {
     const original = {
       ...policy,

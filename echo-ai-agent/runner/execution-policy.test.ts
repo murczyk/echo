@@ -9,6 +9,8 @@ import {
   budgetFallback,
   chooseBudgetAnswer,
   synthesizeBudgetEvidence,
+  toolCallLimit,
+  validateExecutionPolicy,
   type ExecutionPolicy,
 } from "./execution-policy.ts";
 import { fileCitationHref } from "./devices.ts";
@@ -89,6 +91,27 @@ test("#3746 validates partial follow-ups against current evidence, retaining his
     ]),
     `${fileAnswer}\n${oldMessageAnswer}\nEarlier [джерело](/rer-analysis-neo?m=historical-7)`,
   );
+});
+
+test("#3998 final synthesis keeps parsed DMR metadata beside the message text", async () => {
+  let serialized = "";
+  await synthesizeBudgetEvidence(
+    {
+      engine,
+      apiKey: "fixture-capability",
+      policy,
+      systemPrompt: "Summarize evidence",
+      prompt: "144.8450 Мишаня Якудза, СС3",
+      evidence: { messages: [{ ...evidence.messages[0], dmr: { colorCodes: ["3"], callGroups: [{ id: "24538" }] } }], files: [] },
+      maxTokens: 8192,
+      signal: new AbortController().signal,
+    },
+    async (_engine, context) => {
+      serialized = JSON.stringify(context.messages);
+      return { stopReason: "stop", content: [{ type: "text", text: "done" }] } as any;
+    },
+  );
+  assert.match(serialized, /\\"dmr\\":\{\\"colorCodes\\":\[\\"3\\"\]/);
 });
 
 test("#3724 reserves finalization after the original deadline without restarting on checkpoints", (t) => {
@@ -381,4 +404,23 @@ test("#3724 bounds early context recovery by the finalization allowance", (t) =>
   } finally {
     budget.dispose();
   }
+});
+
+test("#3985 document requests in short modes and Deep runs get their own budgets", () => {
+  const balanced = { ...policy, preset: "balanced" as const, maxRuntimeSeconds: 300, finalizationSeconds: 60 };
+  const document = { ...balanced, maxRuntimeSeconds: 1800, finalizationSeconds: 240, documentTask: true };
+  // A bounded engine's document request keeps Balanced effort with the doubled 30-minute reserve.
+  assert.equal(validateExecutionPolicy(document, 1000, [1, 2])?.maxRuntimeSeconds, 1800);
+  assert.throws(() => validateExecutionPolicy({ ...document, documentTask: false }, 1000, [1, 2]));
+  assert.throws(() => validateExecutionPolicy({ ...document, preset: "deep" }, 1000, [1, 2]));
+  assert.throws(() => validateExecutionPolicy({ ...document, documentTask: "yes" }, 1000, [1, 2]));
+  const deep = { ...policy, preset: "deep" as const, maxRuntimeSeconds: 14_400, finalizationSeconds: 600 };
+  assert.equal(validateExecutionPolicy(deep, 1000, [1, 2])?.maxRuntimeSeconds, 14_400);
+  // Deep requests queued before the 4-hour budget still run on their 30-minute policy.
+  const queued = { ...deep, maxRuntimeSeconds: 1800, finalizationSeconds: 240 };
+  assert.equal(validateExecutionPolicy(queued, 1000, [1, 2])?.maxRuntimeSeconds, 1800);
+  assert.deepEqual(
+    [toolCallLimit(undefined), toolCallLimit(balanced), toolCallLimit(document), toolCallLimit(queued), toolCallLimit(deep)],
+    [128, 128, 128, 128, 1024],
+  );
 });

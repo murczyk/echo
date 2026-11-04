@@ -68,6 +68,24 @@ Regression coverage:
 - `wdintel-web/src/ts/react/services/api/__tests__/ai-agent.spec.ts`
 - `wdintel-web/tests/e2e/ai-agent-maps.spec.ts`
 
+## Generated documents
+
+Answers that save a Word document link it as `[title](echo-document:<id>)`;
+`CitationMarkdown` renders the link as a `DocumentChip`, and documents the text
+does not link are listed below the answer. A chip, or the «Файли розмови» button
+beside the paperclip, opens `DocumentWorkspace` with the same layout as the map
+workspace. The centre shows `DocxPagePreview`: docx-preview renders the pages in
+a script-less sandboxed iframe whose CSP blocks every network load, and links do
+not navigate. The right panel lists the conversation's documents, the selected
+document's versions and the sent uploads; a .docx upload can prefill a «use as
+template» prompt. Restoring a version, undo and redo move the document head
+(`use-document-workspace.ts`). While a document is open, `DocumentEditContext` in
+the composer sends it as `documentTarget`; the agent may still change any document
+of the conversation. See the
+[agent tools and rollout](../../../../../../echo-ai-agent/DOCUMENTS.md).
+
+Regression coverage: `wdintel-web/tests/e2e/ai-agent-documents.spec.ts`.
+
 ## Live progress
 
 The composer shows **Зупинити** while this conversation has queued or running
@@ -78,6 +96,12 @@ and remain retryable, and a completed request keeps its final answer if it wins
 the cancellation race. Stopping preserves the composer draft, partial response
 and published maps. The backend revokes request credentials and terminates the
 runner; switching conversations only detaches the browser stream.
+
+The mode menu shows each mode's time limit (`runtimeLimitLabel`): Deep runs up
+to 4 hours, and while it runs the user's next messages wait in the queue. The
+event stream (`stream.ts`) reconnects after each drop; only consecutive failed
+connections count toward its retry limit, so a multi-hour request survives
+network interruptions.
 
 Each request shows a softly pulsating current-action title beside elapsed time
 and cancel/reconnect controls. An optional second line contains factual dates,
