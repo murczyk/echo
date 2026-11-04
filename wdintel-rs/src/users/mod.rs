@@ -20,7 +20,6 @@ use uuid::Uuid;
 pub mod display_name;
 pub mod login_totp;
 pub mod messenger_profile;
-pub mod role_settings;
 pub mod totp;
 pub mod totp_challenge;
 pub mod totp_crypto;

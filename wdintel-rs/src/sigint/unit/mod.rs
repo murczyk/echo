@@ -1190,14 +1190,9 @@ pub async fn list_units_by_id(
 pub(super) async fn ensure_unit_creation(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
-    req: &CreateUnitReq,
+    _req: &CreateUnitReq,
 ) -> Result<(), AppError> {
-    has_any_role(dbx, login, vec!["UnitsEditor", "Rer", "Cyber"])
-        .await
-        .c(h!())?;
-    if !req.duplicate_unit_ids.is_empty() {
-        has_role(dbx, login, "UnitsEditor").await.c(h!())?;
-    }
+    has_role(dbx, login, "UnitsEditor").await.c(h!())?;
     Ok(())
 }
 
@@ -1210,9 +1205,6 @@ pub async fn create_unit(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     ensure_unit_creation(&env.dbx, &login, &req).await.c(h!())?;
-    crate::users::role_settings::ensure_catalog_unit_creation(&env.dbx, &login)
-        .await
-        .c(h!())?;
 
     let (unit, can_view_orbit) =
         create_unit_for_login(&login, &env, req.into_inner())
@@ -1256,9 +1248,6 @@ pub async fn create_unit_with_auto_network(
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user).c(h!())?;
     ensure_unit_creation(&env.dbx, &login, &req.unit)
-        .await
-        .c(h!())?;
-    crate::users::role_settings::ensure_catalog_unit_creation(&env.dbx, &login)
         .await
         .c(h!())?;
 
@@ -4049,10 +4038,11 @@ mod tests {
     async fn issue_3535_unit_creation_preserved_write_role_boundaries() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         for (roles, allowed) in [
-            (vec!["Rer"], true),
-            (vec!["Cyber"], true),
-            (vec!["Full"], true),
+            (vec!["Rer"], false),
+            (vec!["Cyber"], false),
+            (vec!["Full"], false),
             (vec!["Admin"], true),
+            (vec!["Rer", "UnitsEditor"], true),
             (vec!["CyberViewer", "UnitsEditor"], true),
             (vec!["CyberViewer"], false),
             (vec!["Basic"], false),

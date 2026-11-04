@@ -692,6 +692,8 @@ pub struct InboxSubmitItem {
     #[serde(default)]
     pub unit: Option<String>,
     #[serde(default)]
+    pub device_name_id: Option<i64>,
+    #[serde(default)]
     pub locations: Vec<String>,
     #[serde(default)]
     pub group_names: Option<Vec<String>>,
@@ -723,6 +725,7 @@ impl Default for InboxSubmitItem {
             sender_id: None,
             post: None,
             unit: None,
+            device_name_id: None,
             locations: vec![],
             group_names: None,
             network: None,

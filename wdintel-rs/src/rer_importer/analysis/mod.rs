@@ -11756,6 +11756,8 @@ async fn collect_group_names(
             signal_group::Column::AiTranscriptAnalysisEnabled,
             signal_group::Column::ColorKey,
             signal_group::Column::FetchNewMessages,
+            signal_group::Column::IsSigintUnitMandatory,
+            signal_group::Column::IsDeviceMandatory,
         ])
         .filter(signal_group::Column::MasterKey.eq_any(group_keys.clone()))
         .into_tuple::<(
@@ -11768,6 +11770,8 @@ async fn collect_group_names(
             Option<bool>,
             Option<String>,
             Option<bool>,
+            Option<bool>,
+            Option<bool>,
         )>()
         .all(txn)
         .await
@@ -11775,7 +11779,7 @@ async fn collect_group_names(
     let mut resolved_keys = vec![];
     let keys: Vec<String> = signal_groups
         .iter()
-        .map(|(key, _, _, _, _, _, _, _, _)| key.clone())
+        .map(|(key, _, _, _, _, _, _, _, _, _, _)| key.clone())
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
@@ -11804,6 +11808,8 @@ async fn collect_group_names(
         ai_transcript_analysis_enabled,
         color_key,
         fetch_new_messages,
+        is_sigint_unit_mandatory,
+        is_device_mandatory,
     ) in signal_groups
     {
         if let Some(name) = name {
@@ -11822,6 +11828,9 @@ async fn collect_group_names(
                 ai_transcript_analysis_enabled: ai_transcript_analysis_enabled
                     .unwrap_or(false),
                 fetch_new_messages: fetch_new_messages.unwrap_or(true),
+                is_sigint_unit_mandatory: is_sigint_unit_mandatory
+                    .unwrap_or(false),
+                is_device_mandatory: is_device_mandatory.unwrap_or(false),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -11862,6 +11871,8 @@ async fn collect_group_names(
             is_aviation_group: false,
             ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
+            is_sigint_unit_mandatory: false,
+            is_device_mandatory: false,
             group_stats: stats,
             admin_data: group_admin_data,
             areas_of_responsibility: aors,

@@ -1,4 +1,4 @@
-import { canUseRadioFeatures } from '../../../utils/roles';
+import { canUseRadioFeatures, hasRole } from '../../../utils/roles';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -48,7 +48,6 @@ import {
 import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
-import { useMessageCreationSettings } from './useMessageCreationSettings';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
 import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
 import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
@@ -138,11 +137,6 @@ export function useManageMessageDrawer({
   const reportParentIdsKey = reportParentIds.join(',');
   const isReportMode = isReportCreateMode || isReportEditMode;
   const formReady = open && editTargetLoadState.status === 'idle';
-  const creationSettings = useMessageCreationSettings(formReady, currentUser?.id);
-  const creationSettingsBlocked = !isEditMode && creationSettings.blocked;
-  const unitRequired = !isEditMode && (creationSettings.settings?.unitRequired ?? false);
-  const deviceRequired =
-    !isEditMode && cyberEchoEnabled && (creationSettings.settings?.deviceRequired ?? false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -391,15 +385,30 @@ export function useManageMessageDrawer({
     referenceDataRetryAttempt,
   ]);
 
-  const resolver = useMemo(
-    () =>
+  const requirementsForGroup = useCallback(
+    (masterKey?: string) => {
+      const group = signalGroups.find(
+        (group) => group.masterKey === (masterKey || (isReplyMode ? initialGroupMasterKey : '')),
+      );
+      return {
+        unitRequired: !isEditMode && (group?.isSigintUnitMandatory ?? false),
+        deviceRequired: !isEditMode && (group?.isDeviceMandatory ?? false),
+      };
+    },
+    [signalGroups, isEditMode, isReplyMode, initialGroupMasterKey],
+  );
+  const resolver = useCallback<import('react-hook-form').Resolver<MessageFormData>>(
+    (values, context, options) =>
       zodResolver(
-        makeMessageSchema(isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed, {
-          unitRequired,
-          deviceRequired,
-        }),
-      ),
-    [isEditMode, isReportMode, isReplyMode, radioFeaturesAllowed, unitRequired, deviceRequired],
+        makeMessageSchema(
+          isEditMode,
+          isReplyMode,
+          isReportMode,
+          radioFeaturesAllowed,
+          requirementsForGroup(values.signalGroupMasterKey),
+        ),
+      )(values, context, options),
+    [isEditMode, isReplyMode, isReportMode, radioFeaturesAllowed, requirementsForGroup],
   );
 
   const methods = useForm<MessageFormData>({
@@ -411,9 +420,10 @@ export function useManageMessageDrawer({
 
   const { control, formState, getValues, setValue, reset, resetField } = methods;
   const formValues = useWatch({ control });
+  const { unitRequired, deviceRequired } = requirementsForGroup(formValues.signalGroupMasterKey);
   useEffect(() => {
-    if (creationSettings.settings) void methods.trigger(['unit', 'deviceName']);
-  }, [creationSettings.settings, methods]);
+    void methods.trigger(['unit', 'deviceName']);
+  }, [requirementsForGroup, unitRequired, deviceRequired, methods]);
   const { unitOptions, unitLoading, unitAllowCreate, unitSearchResults, defaultRecentUnit } =
     useMessageUnitOptions({
       active: formReady,
@@ -701,7 +711,7 @@ export function useManageMessageDrawer({
       parsing || parseStatus === 'debouncing' || (autoParseEnabled && parseStatus === 'error');
 
     return isManageMessageSubmitEligible({
-      busy: busy || creationSettingsBlocked || (isReportCreateMode && !reportCopyLoaded),
+      busy: busy || (isReportCreateMode && !reportCopyLoaded),
       parsing: parserBlocksSubmit,
       schemaValid:
         (formState.isValid || reportDestinationMissing) &&
@@ -736,7 +746,6 @@ export function useManageMessageDrawer({
     });
   }, [
     busy,
-    creationSettingsBlocked,
     unitRequired,
     deviceRequired,
     autoParseEnabled,
@@ -1207,7 +1216,7 @@ export function useManageMessageDrawer({
   };
 
   const { onSubmit } = useMessageSubmit({
-    busy: busy || creationSettingsBlocked,
+    busy,
     radioFeaturesAllowed,
     cyberEchoEnabled,
     isEditMode,
@@ -1272,11 +1281,9 @@ export function useManageMessageDrawer({
     setPostInput,
     unitOptions,
     unitLoading,
-    unitAllowCreate: unitAllowCreate && creationSettings.settings?.allowUnitCreation === true,
+    unitAllowCreate: unitAllowCreate && hasRole(currentUser?.roles, 'UnitsEditor'),
     unitRequired,
     deviceRequired,
-    creationSettingsError: creationSettings.error,
-    retryCreationSettings: creationSettings.retry,
     onUnitFocus,
     networkNameOptions,
     networkNameLoading,

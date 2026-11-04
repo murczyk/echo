@@ -417,9 +417,6 @@ pub async fn submit_signal_message(
     env: &Env,
     payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
-    crate::users::role_settings::validate_creation(&env.dbx, login, &payload)
-        .await
-        .c(h!())?;
     save_signal_message(login, env, None, payload).await
 }
 
@@ -438,6 +435,11 @@ async fn save_signal_message(
     signal_message_id: Option<i64>,
     mut payload: DirectSubmitPayload,
 ) -> Result<DirectSubmitRsp, AppError> {
+    if payload.create_unit {
+        crate::users::has_role(&env.dbx, login, "UnitsEditor")
+            .await
+            .c(h!())?;
+    }
     let is_new_message = signal_message_id.is_none();
     if payload.engaged_message_id.is_some()
         && (!is_new_message
@@ -1807,6 +1809,7 @@ fn direct_submit_payload_to_item(
         sender: Some(sender),
         sender_id: None,
         post: payload.post.clone(),
+        device_name_id: payload.device_name_id.flatten(),
         unit: payload.unit.clone(),
         locations: payload.locations.clone(),
         group_names: None,

@@ -89,6 +89,10 @@ type SignalGroupEntryLike = {
   ai_transcript_analysis_enabled?: boolean;
   fetchNewMessages?: boolean | null;
   fetch_new_messages?: boolean | null;
+  isSigintUnitMandatory?: boolean | null;
+  is_sigint_unit_mandatory?: boolean | null;
+  isDeviceMandatory?: boolean | null;
+  is_device_mandatory?: boolean | null;
   groupStats?: SignalGroupStatsLike | null;
   group_stats?: SignalGroupStatsLike | null;
   adminData?: GroupAdminDataLike | null;
@@ -117,6 +121,10 @@ type OrphanSignalGroupEntryLike = {
   ai_transcript_analysis_enabled?: boolean;
   fetchNewMessages?: boolean | null;
   fetch_new_messages?: boolean | null;
+  isSigintUnitMandatory?: boolean | null;
+  is_sigint_unit_mandatory?: boolean | null;
+  isDeviceMandatory?: boolean | null;
+  is_device_mandatory?: boolean | null;
   isArchived?: boolean;
   is_archived?: boolean;
   datasourceId?: number | null;
@@ -178,6 +186,10 @@ type ZoneDatasourceGroupLike = {
   ai_transcript_analysis_enabled?: boolean;
   fetchNewMessages?: boolean | null;
   fetch_new_messages?: boolean | null;
+  isSigintUnitMandatory?: boolean | null;
+  is_sigint_unit_mandatory?: boolean | null;
+  isDeviceMandatory?: boolean | null;
+  is_device_mandatory?: boolean | null;
   allowedUsers?: string[] | null;
   allowed_users?: string[] | null;
   allowedUserDetails?: SignalGroupLoginLike[] | null;
@@ -227,6 +239,10 @@ type MyAdminSignalGroupLike = {
   is_group_secret?: boolean;
   disableNetworkAssignment?: boolean;
   disable_network_assignment?: boolean;
+  isSigintUnitMandatory?: boolean | null;
+  is_sigint_unit_mandatory?: boolean | null;
+  isDeviceMandatory?: boolean | null;
+  is_device_mandatory?: boolean | null;
   allowedUsers?: SignalGroupLoginLike[] | null;
   allowed_users?: SignalGroupLoginLike[] | null;
   allowedOrganismIds?: Array<number | string> | null;
@@ -296,6 +312,8 @@ type ZoneDatasourceGroupUpdateReqBody = {
   is_aviation_group: boolean | null;
   ai_transcript_analysis_enabled: boolean | null;
   fetch_new_messages: boolean | null;
+  is_sigint_unit_mandatory: boolean | null;
+  is_device_mandatory: boolean | null;
   user_logins: string[];
   organism_ids: number[];
   admin_logins: string[];
@@ -314,6 +332,8 @@ type MyAdminSignalGroupUpdateReqBody = {
   master_key: string;
   is_secret: boolean;
   disable_network_assignment: boolean;
+  is_sigint_unit_mandatory: boolean | null;
+  is_device_mandatory: boolean | null;
   user_logins: string[];
   organism_ids: number[];
   admin_logins: string[];
@@ -425,6 +445,8 @@ function normalizeSignalGroupEntry(raw: SignalGroupEntryLike): SignalGroupEntry 
     aiTranscriptAnalysisEnabled:
       raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
     fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
+    isSigintUnitMandatory: raw.isSigintUnitMandatory ?? raw.is_sigint_unit_mandatory ?? false,
+    isDeviceMandatory: raw.isDeviceMandatory ?? raw.is_device_mandatory ?? false,
     groupStats: normalizeSignalGroupStats(raw.groupStats ?? raw.group_stats),
     adminData: normalizeGroupAdminData(raw.adminData ?? raw.admin_data),
     areasOfResponsibility:
@@ -445,6 +467,8 @@ function normalizeOrphanSignalGroupEntry(raw: OrphanSignalGroupEntryLike): Orpha
     aiTranscriptAnalysisEnabled:
       raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
     fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
+    isSigintUnitMandatory: raw.isSigintUnitMandatory ?? raw.is_sigint_unit_mandatory ?? false,
+    isDeviceMandatory: raw.isDeviceMandatory ?? raw.is_device_mandatory ?? false,
     isArchived: raw.isArchived ?? raw.is_archived ?? false,
     datasourceId: raw.datasourceId ?? raw.datasource_id ?? null,
     createdAt: raw.createdAt ?? raw.created_at ?? 0,
@@ -470,6 +494,8 @@ function normalizeZoneDatasourceGroup(raw: ZoneDatasourceGroupLike): ZoneDatasou
     aiTranscriptAnalysisEnabled:
       raw.aiTranscriptAnalysisEnabled ?? raw.ai_transcript_analysis_enabled ?? false,
     fetchNewMessages: raw.fetchNewMessages ?? raw.fetch_new_messages ?? true,
+    isSigintUnitMandatory: raw.isSigintUnitMandatory ?? raw.is_sigint_unit_mandatory ?? false,
+    isDeviceMandatory: raw.isDeviceMandatory ?? raw.is_device_mandatory ?? false,
     allowedUsers,
     allowedUserDetails: (raw.allowedUserDetails ?? raw.allowed_user_details ?? []).map(
       normalizeSignalGroupLogin,
@@ -582,6 +608,8 @@ function toZoneDatasourceGroupUpdateReqBody(
     is_aviation_group: req.isAviationGroup ?? null,
     ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
     fetch_new_messages: req.fetchNewMessages ?? null,
+    is_sigint_unit_mandatory: req.isSigintUnitMandatory ?? null,
+    is_device_mandatory: req.isDeviceMandatory ?? null,
     user_logins: req.userLogins,
     organism_ids: req.organismIds,
     admin_logins: req.adminLogins,
@@ -599,6 +627,8 @@ function toMyAdminSignalGroupUpdateReqBody(
     master_key: req.masterKey,
     is_secret: req.isSecret,
     disable_network_assignment: req.disableNetworkAssignment,
+    is_sigint_unit_mandatory: req.isSigintUnitMandatory,
+    is_device_mandatory: req.isDeviceMandatory,
     user_logins: req.userLogins,
     organism_ids: req.organismIds,
     admin_logins: req.adminLogins,
@@ -682,6 +712,8 @@ function normalizeMyAdminSignalGroup(raw: MyAdminSignalGroupLike): MyAdminSignal
     isGroupSecret: raw.isGroupSecret ?? raw.is_group_secret ?? false,
     disableNetworkAssignment:
       raw.disableNetworkAssignment ?? raw.disable_network_assignment ?? false,
+    isSigintUnitMandatory: raw.isSigintUnitMandatory ?? raw.is_sigint_unit_mandatory ?? false,
+    isDeviceMandatory: raw.isDeviceMandatory ?? raw.is_device_mandatory ?? false,
     allowedUsers: (raw.allowedUsers ?? raw.allowed_users ?? []).map(normalizeSignalGroupLogin),
     allowedOrganismIds: normalizeNumberArray(raw.allowedOrganismIds ?? raw.allowed_organism_ids),
     adminLogins: (raw.adminLogins ?? raw.admin_logins ?? []).map(normalizeSignalGroupLogin),

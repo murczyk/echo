@@ -137,6 +137,8 @@ pub async fn zones_datasources_group_update(
         is_aviation_group: rsp.is_aviation_group,
         ai_transcript_analysis_enabled: rsp.ai_transcript_analysis_enabled,
         fetch_new_messages: rsp.fetch_new_messages,
+        is_sigint_unit_mandatory: rsp.is_sigint_unit_mandatory,
+        is_device_mandatory: rsp.is_device_mandatory,
         areas_of_responsibility: rsp
             .aor
             .map(|aors| aors.into_iter().map(render_aor).collect()),
@@ -298,6 +300,15 @@ pub async fn zones_datasources_group_add(
         )
         .await
         .c(h!())?;
+    let (is_sigint_unit_mandatory, is_device_mandatory) =
+        crate::messenger::group::requirements::set(
+            &txn,
+            &group_master_key,
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
     let fetch_new_messages = bl::update_group_fetch_new_messages_if_present(
         None,
         &group_master_key,
@@ -343,6 +354,8 @@ pub async fn zones_datasources_group_add(
             is_aviation_group,
             ai_transcript_analysis_enabled,
             fetch_new_messages,
+            is_sigint_unit_mandatory,
+            is_device_mandatory,
             areas_of_responsibility,
             group_master_key,
             allowed_user_details: bl::render_group_logins(
@@ -424,19 +437,31 @@ pub async fn my_admin_groups(
             signal_group::Column::DisableNetworkAssignment,
             "disable_network_assignment",
         )
+        .columns([
+            signal_group::Column::IsSigintUnitMandatory,
+            signal_group::Column::IsDeviceMandatory,
+        ])
         .order_by_asc(signal_group::Column::Name)
-        .into_tuple::<(String, Option<String>, Option<i64>, bool, bool)>()
+        .into_tuple::<(
+            String,
+            Option<String>,
+            Option<i64>,
+            bool,
+            bool,
+            Option<bool>,
+            Option<bool>,
+        )>()
         .all(&env.dbx)
         .await
         .c(h!())?;
 
     let master_keys = groups
         .iter()
-        .map(|(master_key, _, _, _, _)| master_key.clone())
+        .map(|(master_key, _, _, _, _, _, _)| master_key.clone())
         .collect::<Vec<_>>();
     let datasource_ids = groups
         .iter()
-        .filter_map(|(_, _, datasource_id, _, _)| *datasource_id)
+        .filter_map(|(_, _, datasource_id, _, _, _, _)| *datasource_id)
         .collect::<Vec<_>>();
 
     let group_aors = collect_group_aors(master_keys.clone(), &env.dbx)
@@ -477,6 +502,8 @@ pub async fn my_admin_groups(
                 datasource_id,
                 is_group_secret,
                 disable_network_assignment,
+                is_sigint_unit_mandatory,
+                is_device_mandatory,
             )| {
                 let datasource =
                     datasource_id.and_then(|id| datasource_map.get(&id));
@@ -518,6 +545,9 @@ pub async fn my_admin_groups(
                     master_key,
                     is_group_secret,
                     disable_network_assignment,
+                    is_sigint_unit_mandatory: is_sigint_unit_mandatory
+                        .unwrap_or(false),
+                    is_device_mandatory: is_device_mandatory.unwrap_or(false),
                 }
             },
         )
@@ -718,6 +748,14 @@ pub async fn my_admin_group_update(
     .await
     .c(h!())?;
 
+    crate::messenger::group::requirements::set(
+        &txn,
+        &req.master_key,
+        req.is_sigint_unit_mandatory,
+        req.is_device_mandatory,
+    )
+    .await
+    .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(()))
 }

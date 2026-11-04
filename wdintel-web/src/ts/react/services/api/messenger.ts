@@ -90,6 +90,8 @@ type GroupUpdateReqBody = {
   is_aviation_group: boolean | null;
   ai_transcript_analysis_enabled: boolean | null;
   fetch_new_messages: boolean | null;
+  is_sigint_unit_mandatory: boolean | null;
+  is_device_mandatory: boolean | null;
 };
 
 type AccountStatsTimelinePointLike = {
@@ -299,6 +301,8 @@ function toGroupUpdateReqBody(req: GroupUpdateReq): GroupUpdateReqBody {
     is_aviation_group: req.isAviationGroup ?? null,
     ai_transcript_analysis_enabled: req.aiTranscriptAnalysisEnabled ?? null,
     fetch_new_messages: req.fetchNewMessages ?? null,
+    is_sigint_unit_mandatory: req.isSigintUnitMandatory ?? null,
+    is_device_mandatory: req.isDeviceMandatory ?? null,
   };
 }
 

@@ -74,6 +74,8 @@ async fn test_bl_group_update_add_second_aor() {
     .unwrap();
 
     let req1 = GroupUpdateReq {
+        is_sigint_unit_mandatory: None,
+        is_device_mandatory: None,
         master_key: group.master_key.clone(),
         color_key: Some(SignalGroupColor::Blue),
         short_note: Some("Test group".to_string()),
@@ -134,6 +136,8 @@ async fn test_bl_group_update_add_second_aor() {
     .unwrap();
 
     let req2 = GroupUpdateReq {
+        is_sigint_unit_mandatory: None,
+        is_device_mandatory: None,
         master_key: group.master_key.clone(),
         color_key: Some(SignalGroupColor::DeepPurple),
         short_note: Some("Test group updated".to_string()),
@@ -279,6 +283,8 @@ async fn test_bl_group_update_disable_network_assignment_invalidates_all_history
     assert!(expected_since_ts < group_created_at);
 
     let req = GroupUpdateReq {
+        is_sigint_unit_mandatory: None,
+        is_device_mandatory: None,
         master_key: group.master_key.clone(),
         color_key: Some(SignalGroupColor::Teal),
         short_note: None,

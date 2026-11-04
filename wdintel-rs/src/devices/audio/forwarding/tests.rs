@@ -64,6 +64,8 @@ async fn fixture(env: &Env) -> (login::Model, Uuid, Vec<String>) {
             NativeGroupCreateReq {
                 request_id: Uuid::new_v4().to_string(),
                 settings: NativeGroupSettings {
+                    is_sigint_unit_mandatory: None,
+                    is_device_mandatory: None,
                     name: format!("Forwarding {}", Uuid::new_v4()),
                     color_key: None,
                     short_note: None,

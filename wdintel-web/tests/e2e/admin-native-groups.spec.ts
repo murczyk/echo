@@ -193,6 +193,8 @@ test('@regression #3646 native group creation, access editing, archive and resto
     .getByRole('button', { name: 'Редагувати', exact: true })
     .click();
   await dialog.getByRole('textbox', { name: 'Назва групи' }).fill('Native renamed');
+  await dialog.getByRole('checkbox', { name: 'Обов’язковий підрозділ' }).check();
+  await dialog.getByRole('checkbox', { name: 'Обов’язкова назва пристрою' }).check();
   await dialog.getByRole('combobox', { name: 'Колір групи' }).click();
   await page.getByRole('option', { name: 'Бірюзовий', exact: true }).click();
   await chooseOption(page, 'Дозволені організми', 'Test organism');
@@ -209,6 +211,8 @@ test('@regression #3646 native group creation, access editing, archive and resto
   await expect(page.getByText('Групу збережено. Ви маєте доступ до її повідомлень.')).toBeVisible();
   expect(state.getGroup()?.masterKey).toBe(masterKey);
   expect(state.getGroup()?.settings).toMatchObject({
+    isSigintUnitMandatory: true,
+    isDeviceMandatory: true,
     colorKey: 'cyan',
     organismIds: [1],
     zoneIds: [1],

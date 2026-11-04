@@ -246,108 +246,6 @@ test('Admin Users creation supports password authentication without Delta @regre
 });
 
 for (const width of [1280, 390]) {
-  test(`Admin Users creation copies Delta input into local login at ${width}px @regression`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await installAdminUsersApiMocks(page);
-    await page.goto('/admin/users-neo');
-    await page.getByRole('button', { name: 'Додати користувача' }).click();
-
-    const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
-    const localLogin = dialog.getByRole('textbox', { name: 'Логін', exact: true });
-    const deltaLogin = dialog.getByRole('textbox', { name: 'Delta логін', exact: true });
-    await deltaLogin.pressSequentially('d');
-    await expect(localLogin).toHaveValue('d');
-    await deltaLogin.pressSequentially('elta-user');
-    await expect(localLogin).toHaveValue('delta-user');
-    await localLogin.fill('local-user');
-    await expect(deltaLogin).toHaveValue('delta-user');
-    await deltaLogin.fill('another-delta-user');
-    await expect(localLogin).toHaveValue('another-delta-user');
-    await deltaLogin.clear();
-    await expect(localLogin).toHaveValue('');
-    await dialog.getByLabel('Вхід за паролем').check();
-    await deltaLogin.fill('dual-method-user');
-    await expect(localLogin).toHaveValue('dual-method-user');
-  });
-}
-
-test('Admin Users creation submits copied logins and clears stale login feedback on Delta changes @regression', async ({
-  page,
-}) => {
-  await installAdminUsersApiMocks(page);
-  const payloads: unknown[] = [];
-  await page.route('**/api/login/create', (route) => {
-    payloads.push(route.request().postDataJSON());
-    return payloads.length === 1
-      ? route.fulfill({ status: 400, json: [['login', 'Логін зайнятий']] })
-      : route.fulfill({ json: { ...login, id: 'created-login', login: 'available-user' } });
-  });
-  await page.goto('/admin/users-neo');
-  const addUser = page.getByRole('button', { name: 'Додати користувача' });
-  await addUser.click();
-  const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
-  const localLogin = dialog.getByRole('textbox', { name: 'Логін', exact: true });
-  const deltaLogin = dialog.getByRole('textbox', { name: 'Delta логін', exact: true });
-  await deltaLogin.fill('taken-user');
-  await expect(localLogin).toHaveValue('taken-user');
-  await dialog.getByRole('combobox', { name: 'Організм', exact: true }).click();
-  await page.getByRole('option', { name: 'Організм', exact: true }).click();
-  await dialog.getByRole('button', { name: 'Додати', exact: true }).click();
-  await expect(dialog.getByText('Логін зайнятий', { exact: true })).toBeVisible();
-  expect(payloads).toEqual([
-    expect.objectContaining({ login: 'taken-user', delta_login: 'taken-user' }),
-  ]);
-
-  await deltaLogin.fill('available-user');
-  await expect(localLogin).toHaveValue('available-user');
-  await expect(localLogin).toHaveAttribute('aria-invalid', 'false');
-  await expect(dialog.getByText('Логін зайнятий', { exact: true })).toHaveCount(0);
-  await dialog.getByRole('button', { name: 'Додати', exact: true }).click();
-  await expect(dialog).toBeHidden();
-  expect(payloads).toHaveLength(2);
-  expect(payloads[1]).toMatchObject({
-    login: 'available-user',
-    delta_login: 'available-user',
-    password_auth_enabled: false,
-    password: null,
-  });
-
-  await addUser.click();
-  await expect(deltaLogin).toHaveValue('');
-  await expect(localLogin).toHaveValue('');
-  await expect(deltaLogin).toBeFocused();
-});
-
-test('Admin Users creation supports password authentication without Delta @regression', async ({
-  page,
-}) => {
-  await installAdminUsersApiMocks(page);
-  await page.route('**/api/login/create', (route) =>
-    route.fulfill({ json: { ...login, login: 'password-user', deltaLogin: null } }),
-  );
-  await page.goto('/admin/users-neo');
-  await page.getByRole('button', { name: 'Додати користувача' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Додати користувача' });
-  await dialog.getByRole('textbox', { name: 'Логін', exact: true }).fill('password-user');
-  await dialog.getByLabel('Вхід за паролем').check();
-  await dialog.getByRole('textbox', { name: 'Пароль', exact: true }).fill('secret-password');
-  await dialog.getByRole('combobox', { name: 'Організм', exact: true }).click();
-  await page.getByRole('option', { name: 'Організм', exact: true }).click();
-  const requestPromise = page.waitForRequest('**/api/login/create');
-  await dialog.getByRole('button', { name: 'Додати', exact: true }).click();
-  const request = await requestPromise;
-  expect(request.postDataJSON()).toMatchObject({
-    login: 'password-user',
-    delta_login: null,
-    password: 'secret-password',
-    password_auth_enabled: true,
-  });
-  await expect(dialog).toBeHidden();
-});
-
-for (const width of [1280, 390]) {
   test(`Admin Users dialogs follow visual keyboard order at ${width}px @regression`, async ({
     page,
   }) => {
@@ -595,67 +493,13 @@ test('Admin Users clear-search button hides the badge when no column filters rem
 });
 
 for (const width of [1280, 390]) {
-  test(`@regression #3935 role cards supported add, edit and delete at ${width}px`, async ({
+  test(`@regression #3935 users administration removed role presets at ${width}px`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 });
     await installAdminUsersApiMocks(page);
-    let settings = [
-      { role: 'Rer', unitRequired: true, deviceRequired: false, allowUnitCreation: false },
-    ];
-    const saves: unknown[] = [];
-    await page.route('**/api/admin/role-message-settings/*', async (route) => {
-      const operation = new URL(route.request().url()).pathname.split('/').pop();
-      if (operation === 'list')
-        return route.fulfill({ json: { settings, roles: ['Admin', 'Rer', 'Cyber'] } });
-      const request = route.request().postDataJSON();
-      if (operation === 'delete') {
-        settings = settings.filter(({ role }) => role !== request.role);
-        return route.fulfill({ json: null });
-      }
-      saves.push(request);
-      settings = [...settings.filter(({ role }) => role !== request.role), request];
-      return route.fulfill({ json: request });
-    });
     await page.goto('/admin/users-neo');
-    const tabs = page.getByRole('tab');
-    await expect(tabs.nth(0)).toHaveText('Всі користувачі');
-    await expect(tabs.nth(1)).toHaveText('Налаштування ролей');
-    await tabs.nth(1).click();
-    await expect(page.getByRole('article', { name: 'Налаштування ролі Rer' })).toBeVisible();
-    await page.getByRole('button', { name: 'Додати налаштування', exact: true }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('button', { name: 'Зберегти' })).toBeDisabled();
-    await dialog.getByRole('combobox', { name: 'Роль' }).click();
-    await expect(page.getByRole('option', { name: 'Rer', exact: true })).toHaveCount(0);
-    await page.getByRole('option', { name: 'Cyber', exact: true }).click();
-    await dialog.getByRole('checkbox', { name: 'Обов’язковий підрозділ' }).check();
-    await dialog.getByRole('checkbox', { name: 'Обов’язкова назва пристрою' }).check();
-    await dialog.getByRole('button', { name: 'Зберегти' }).click();
-    const card = page.getByRole('article', { name: 'Налаштування ролі Cyber' });
-    await expect(card).toBeVisible();
-    expect(saves[0]).toEqual({
-      role: 'Cyber',
-      unitRequired: true,
-      deviceRequired: true,
-      allowUnitCreation: true,
-    });
-    await card.getByRole('button', { name: 'Редагувати' }).click();
-    await expect(dialog.getByRole('combobox', { name: 'Роль' })).toBeDisabled();
-    await dialog.getByRole('checkbox', { name: 'Дозволено створювати підрозділи' }).uncheck();
-    await dialog.getByRole('button', { name: 'Зберегти' }).click();
-    await expect(dialog).toHaveCount(0);
-    expect(saves[1]).toEqual({
-      role: 'Cyber',
-      unitRequired: true,
-      deviceRequired: true,
-      allowUnitCreation: false,
-    });
-    await card.getByRole('button', { name: 'Видалити' }).click();
-    await dialog.getByRole('button', { name: 'Видалити' }).click();
-    await expect(card).toHaveCount(0);
-    await page.getByRole('button', { name: 'Додати налаштування', exact: true }).click();
-    await dialog.getByRole('combobox', { name: 'Роль' }).click();
-    await expect(page.getByRole('option', { name: 'Cyber', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Додати користувача' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Налаштування ролей' })).toHaveCount(0);
   });
 }

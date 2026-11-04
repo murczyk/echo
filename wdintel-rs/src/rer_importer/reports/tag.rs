@@ -956,6 +956,8 @@ mod tests {
             NativeGroupCreateReq {
                 request_id: Uuid::new_v4().to_string(),
                 settings: NativeGroupSettings {
+                    is_sigint_unit_mandatory: None,
+                    is_device_mandatory: None,
                     name: "Native report source".into(),
                     color_key: None,
                     short_note: None,
