@@ -319,12 +319,36 @@ pub(super) async fn filter_options(
         .into_iter()
         .map(|(id, name)| AorSummary { id, name })
         .collect();
-    let tags = read_tag_options(main_db, query).await.c(h!())?;
+    let tags = read_tag_options(main_db, query.clone()).await.c(h!())?;
+    let custom_field_keys =
+        read_custom_field_keys(main_db, query).await.c(h!())?;
     Ok(DeviceFilterOptions {
         aors,
         creators,
         tags,
+        custom_field_keys,
     })
+}
+
+async fn read_custom_field_keys(
+    main_db: &DatabaseConnection,
+    query: Select<device::Entity>,
+) -> Result<Vec<String>, AppError> {
+    // Deduplicate in PostgreSQL so only key names leave the database, not
+    // whole custom_fields documents (`device_custom_fields_object_check`
+    // guarantees a JSON object).
+    Ok(query
+        .select_only()
+        .expr_as(
+            Expr::cust("jsonb_object_keys(device.custom_fields)"),
+            "custom_field_key",
+        )
+        .distinct()
+        .order_by_asc(Expr::cust("custom_field_key"))
+        .into_tuple::<String>()
+        .all(main_db)
+        .await
+        .c(h!())?)
 }
 
 async fn read_tag_options(
@@ -729,10 +753,18 @@ fn apply_list_filters(
                         .ilike(LikeExpr::new(pattern.clone())),
                 )
                 .add(
+                    Expr::col((device::Entity, device::Column::Description))
+                        .ilike(LikeExpr::new(pattern.clone())),
+                )
+                .add(
                     Expr::col((device::Entity, device::Column::Id))
                         .cast_as(Alias::new("text"))
-                        .like(LikeExpr::new(pattern).escape('\\')),
-                ),
+                        .like(LikeExpr::new(pattern.clone()).escape('\\')),
+                )
+                .add(Expr::cust_with_values(
+                    "exists (select 1 from jsonb_each_text(device.custom_fields) field(key, value) where field.value ilike $1)",
+                    [sea_orm::Value::from(pattern)],
+                )),
         );
     }
     query

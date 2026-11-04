@@ -136,12 +136,15 @@ export async function listDevices(
     options,
   );
   const response = transformSnakeToCamel<ListDevicesRsp>(data);
+  const rawList: unknown[] = Array.isArray(data?.list) ? data.list : [];
   return {
     ...response,
-    list: response.list.map((device) => ({
+    list: response.list.map((device, index) => ({
       ...device,
       rating: device.rating ?? 0,
       tags: device.tags ?? [],
+      description: device.description ?? null,
+      customFields: readCustomFields(rawList[index]),
       audioDays: device.audioDays ?? null,
       activitySplitFilesAudio: device.activitySplitFilesAudio ?? false,
     })),
@@ -162,7 +165,8 @@ export async function listDeviceFilterOptions(
   options?: RequestOptions,
 ): Promise<DeviceFilterOptions> {
   const data = await postJson('/api/device/filter-options', undefined, options);
-  return transformSnakeToCamel<DeviceFilterOptions>(data);
+  const filterOptions = transformSnakeToCamel<DeviceFilterOptions>(data);
+  return { ...filterOptions, customFieldKeys: filterOptions.customFieldKeys ?? [] };
 }
 
 export async function listDeviceTags(options?: RequestOptions): Promise<string[]> {

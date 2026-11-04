@@ -154,6 +154,7 @@ pub struct DeviceFilterOptions {
     pub aors: Vec<AorSummary>,
     pub creators: Vec<DeviceCreatorFilterOption>,
     pub tags: Vec<String>,
+    pub custom_field_keys: Vec<String>,
 }
 
 #[derive(
@@ -190,6 +191,8 @@ pub struct DeviceListItem {
     pub rating: i32,
     pub tags: Vec<String>,
     pub name: Option<String>,
+    pub description: Option<String>,
+    pub custom_fields: BTreeMap<String, String>,
     pub aors: Vec<AorSummary>,
     pub unit: Option<UnitSummary>,
     pub created_by: String,

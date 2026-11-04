@@ -25,7 +25,7 @@ const tableState = vi.hoisted(() => ({
 const sidebarResource = vi.hoisted(() => ({
   units: [],
   unitStats: [],
-  filterOptions: { aors: [], creators: [], tags: [] },
+  filterOptions: { aors: [], creators: [], tags: [], customFieldKeys: [] },
   loading: false,
   loaded: true,
   error: null,
@@ -100,6 +100,8 @@ describe('device pagination request boundaries', () => {
       name: `Device ${offset + index}`,
       rating: 0,
       tags: [],
+      description: null,
+      customFields: {},
       aors: [],
       unit: null,
       createdBy: 'author',

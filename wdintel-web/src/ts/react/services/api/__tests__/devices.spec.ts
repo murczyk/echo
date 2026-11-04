@@ -105,6 +105,8 @@ describe('devices API service routes', () => {
             created_at: CREATED_AT,
             updated_at: UPDATED_AT,
             archived_at: null,
+            description: 'Roof antenna',
+            custom_fields: { inventory_id: 'inv-1', serial_no: 'SN-7' },
           },
         ],
         total: 1,
@@ -146,7 +148,10 @@ describe('devices API service routes', () => {
       aors: [{ id: 4, name: 'AOR' }],
       unit: { id: 7, name: 'Unit' },
       updatedAt: UPDATED_AT,
+      description: 'Roof antenna',
     });
+    // Custom field keys are user data and must keep their original casing.
+    expect(rsp.list[0]?.customFields).toEqual({ inventory_id: 'inv-1', serial_no: 'SN-7' });
     expect(rsp.statusCounts).toEqual({ active: 3, archived: 1 });
   });
   it('loads nested unit statistics without a request body', async () => {
