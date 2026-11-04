@@ -233,9 +233,11 @@ another failure.
 The API process collects the system-wide, unfiltered `/admin/kpi` values at
 startup and hourly while `signoz_kpi_metrics_enabled = true`,
 `signoz_metrics_enabled = true`, and `signoz_metrics_endpoint` is configured.
-KPI collection defaults to disabled when its flag is absent. Enable it on an
+KPI collection defaults to disabled when its flag is absent. An enabled KPI flag
+without a usable metrics exporter logs a startup warning. Enable it on an
 approved rollout target after checking query plans/cost for that instance's
-data volume; 7/30/90-day API-quality refreshes can perform 508 six-hour reads
+data volume ([local scale evidence](query-plans/3826-kpi.md)); healthy
+7/30/90-day API-quality refreshes perform 360 six-hour reads
 per hour, bounded by the source budgets below. It uses the existing OTLP exporter
 and resource attributes (`service.name=wdintel-rs`, `host.name=public_host`,
 `service.instance.id=server_id`). Background/report processes do not collect
@@ -244,8 +246,8 @@ these snapshots, and opening the dashboard is not required.
 All `echo.kpi.*` instruments are **gauges**, including names ending in
 `.count`: retained records and rolling-window populations can decrease. Query
 their latest values, not their rates or sums over time. Historical sources use
-`window=7d|30d|90d`; accounts use `current`, retained successful reports use
-`all`, and this API process's activity queue uses `process`.
+`window=7d|30d|90d`; accounts use `current`, the all-time retained successful
+report count uses `all`, and this API process's activity queue uses `process`.
 
 | Metric | Dimensions and meaning |
 | --- | --- |
@@ -253,7 +255,7 @@ their latest values, not their rates or sums over time. Historical sources use
 | `echo.kpi.source.updated_at` | `source`, `window`; snapshot's UTC end/as-of time in Unix seconds. |
 | `echo.kpi.accounts.count` | Current accounts in the admin list scope, including technical accounts. |
 | `echo.kpi.accounts.status.count` | `status=active|admin|inactive|organism|unknown`, matching dashboard precedence. |
-| `echo.kpi.accounts.recency.count` | `scope=active|blocked`, `recency=recent|aging|stale|missing|invalid`; sum both scopes to include active accounts. |
+| `echo.kpi.accounts.recency.count` | `scope=active|blocked`, `recency=recent|aging|stale|missing|invalid`; UTC age uses the dashboard's millisecond precision. Both scopes partition all accounts. |
 | `echo.kpi.accounts.role.count` | `role`; each distinct role counts once per account. |
 | `echo.kpi.accounts.organism.count` | `organism_id`; missing associations use `missing`. |
 | `echo.kpi.accounts.direction.count` | `direction_id`; missing associations use `missing`. |
@@ -274,17 +276,53 @@ Each value also has `source` and `window`. Missing Greptime configuration,
 empty observations, errors, and timeouts produce availability 0 and omit the
 affected values. Valid empty PostgreSQL history produces zero counts; absent
 duration samples omit percentiles. Each refresh replaces its source snapshot,
-so removed groups and percentiles disappear. Snapshots expire after two hours.
+so removed groups and percentiles stop being exported. Snapshots expire two
+hours after their UTC as-of time, including time spent collecting them.
+
+Omission does not delete historical SigNoz points. Reconcile each resource,
+source, and window against its latest successful snapshot: require availability
+1, an as-of time less than two hours old, and points observed in the current
+export. A latest-value query over a longer interval can otherwise retain an old
+role, percentile, or failed source. Do not carry missing percentiles forward or
+replace them with zero. Absent count groups represent zero only in a confirmed
+available current snapshot.
 
 Collection is sequential, cancellable, and never overlaps itself. It reuses
 the dashboard's read-only transactions and query limits; each source/window
 has a five-minute total budget. API-quality reads use adjacent six-hour slices,
-as the dashboard does, and publish only after every slice succeeds. Greptime
+as the dashboard does, and publish only after every slice succeeds. Successful
+and empty request slices are reused across windows within one refresh, keeping
+overlapping window counts consistent; failures are retried in later windows.
+Report metrics skip the dashboard's unused author/day breakdowns, so author
+cardinality does not invalidate exported totals. Greptime
 retention/loss still limits coverage; availability does not establish complete
 history. No user IDs, account names, per-author/per-page breakdowns, or dates
 are metric labels. A source exceeding 500 points for one instrument/window is
 unavailable rather than silently truncated. Production query cost and fresh
 ingestion should be checked on the approved rollout target.
+
+For rollout verification, compare snapshots with unfiltered dashboard values
+using the same UTC half-open period `[since, until)` and account as-of time:
+
+- Account statuses and recency categories must each partition the account total;
+  role totals may exceed it because accounts can have multiple distinct roles.
+- Report `done + failed + other` equals retained requests in the creation window;
+  kinds and included/excluded generation samples each sum to `done`. `all/done`
+  includes all retained successful reports, regardless of creation date.
+- Notification status counts sum to retained jobs; included/excluded transport
+  samples sum to `sent`. These are transport jobs rather than recipient receipts.
+- API status counts and error ratios use only recorded observations, including
+  empty six-hour slices around nonempty slices. Request IDs are deduplicated
+  within each status and slice. Activity counts are distinct stable UUIDs across
+  all pages/days; unmapped groups remain separate. Neither source proves complete
+  retained history.
+
+Repeat after removing a role, after a source fails, and after the two-hour
+freshness limit to check downstream queries do not display previous values.
+This feature changes no replicated schema, exclusions, or migration-impact
+declarations and requires no analytics resnapshot or mirror reconciliation.
+Configuration changes and service restarts still require approval naming the
+rollout operation and server.
 
 ### Other application metrics
 

@@ -42,17 +42,22 @@ impl Account {
     }
 
     fn recency(&self, until: DateTime<Utc>) -> &'static str {
-        let Some(last_active_at) =
-            self.last_active_at.map(|date| date.and_utc())
+        let Some(last_active_at) = self
+            .last_active_at
+            .map(|date| date.and_utc().timestamp_millis())
         else {
             return "missing";
         };
-        let age = until - last_active_at;
-        if age < Duration::zero() || last_active_at.timestamp_millis() < 0 {
+        let age = until.timestamp_millis() - last_active_at;
+        if age < 0 || last_active_at < 0 {
             "invalid"
-        } else if age < Duration::days(KPI_METRICS_RECENT_DAYS) {
+        } else if age
+            < Duration::days(KPI_METRICS_RECENT_DAYS).num_milliseconds()
+        {
             "recent"
-        } else if age <= Duration::days(KPI_METRICS_STALE_DAYS) {
+        } else if age
+            <= Duration::days(KPI_METRICS_STALE_DAYS).num_milliseconds()
+        {
             "aging"
         } else {
             "stale"
@@ -190,7 +195,10 @@ mod tests {
     async fn snapshots_preserve_admin_account_scope_and_replace_role_groups(
     ) -> anyhow::Result<()> {
         let (env, _guard) = cleanup_locked().await.c(h!())?;
-        let until = Utc::now();
+        let until =
+            DateTime::from_timestamp_millis(Utc::now().timestamp_millis())
+                .unwrap()
+                + Duration::microseconds(750);
         let (metrics, recorder) =
             crate::telemetry::Metrics::recording(&env.config);
         metrics.kpi.publish(
@@ -216,6 +224,12 @@ mod tests {
                 )
             })
             .collect();
+        let baseline_aging = recorder
+            .gauge_f64_value(
+                KPI_METRICS_ACCOUNT_RECENCY,
+                &[("scope", "active"), ("recency", "aging")],
+            )
+            .unwrap();
         seed_accounts(&env, until).await.c(h!())?;
         metrics.kpi.publish(
             "accounts",
@@ -226,7 +240,7 @@ mod tests {
         metrics.force_flush_for_test();
         assert_eq!(
             recorder.gauge_f64_value(KPI_METRICS_ACCOUNTS, &[]),
-            Some(baseline + 4.0)
+            Some(baseline + 6.0)
         );
         assert_eq!(
             recorder.gauge_f64_value(
@@ -246,6 +260,13 @@ mod tests {
                 Some(expected)
             );
         }
+        assert_eq!(
+            recorder.gauge_f64_value(
+                KPI_METRICS_ACCOUNT_RECENCY,
+                &[("scope", "active"), ("recency", "aging")]
+            ),
+            Some(baseline_aging + 2.0)
+        );
         env.dbx
             .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
@@ -344,6 +365,22 @@ mod tests {
         )
         .await
         .c(h!())?;
+        for (days, microseconds) in [(30, 100), (90, -250)] {
+            mk_login(
+                &env.dbx,
+                login::ActiveModel {
+                    roles: Set(serde_json::json!([])),
+                    last_active_at: Set(Some(
+                        (until - Duration::days(days)
+                            + Duration::microseconds(microseconds))
+                        .naive_utc(),
+                    )),
+                    ..Default::default()
+                },
+            )
+            .await
+            .c(h!())?;
+        }
         Ok(())
     }
 }

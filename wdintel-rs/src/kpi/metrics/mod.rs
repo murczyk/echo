@@ -2,6 +2,9 @@ mod accounts;
 mod export;
 mod history;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use export::Exporter;
 
 use std::future::Future;
@@ -43,12 +46,14 @@ pub(super) async fn collect(
     until: DateTime<Utc>,
 ) {
     collect_current(env, exporter, until).await;
+    let mut requests = history::RequestCache::new();
     for (days, window) in KPI_METRICS_PERIODS {
         let period = KpiPeriod {
             since: (until - chrono::Duration::days(days)).timestamp_millis(),
             until: until.timestamp_millis(),
         };
-        collect_period(env, exporter, until, window, &period).await;
+        collect_period(env, exporter, until, window, &period, &mut requests)
+            .await;
     }
 }
 
@@ -104,6 +109,7 @@ async fn collect_period(
     until: DateTime<Utc>,
     window: &'static str,
     period: &KpiPeriod,
+    requests: &mut history::RequestCache,
 ) {
     publish(
         exporter,
@@ -134,7 +140,7 @@ async fn collect_period(
         "requests",
         window,
         until,
-        history::requests(env, period),
+        history::requests(env, period, requests),
     )
     .await;
 }

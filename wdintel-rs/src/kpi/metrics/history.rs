@@ -1,3 +1,5 @@
+use std::collections::{btree_map::Entry, BTreeMap};
+
 use opentelemetry::KeyValue;
 use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
@@ -30,7 +32,7 @@ pub(super) async fn reports(
     env: &Env,
     period: &KpiPeriod,
 ) -> anyhow::Result<Option<Snapshot>> {
-    let reports = history::reports(env, period).await.c(h!())?;
+    let reports = history::report_metrics(env, period).await.c(h!())?;
     let mut snapshot = Snapshot::default();
     for (status, count) in [
         ("done", reports.done),
@@ -136,27 +138,36 @@ pub(super) async fn activity(
     Ok(Some(snapshot))
 }
 
+pub(super) type RequestCache = BTreeMap<(i64, i64), KpiRequestsRsp>;
+
 pub(super) async fn requests(
     env: &Env,
     period: &KpiPeriod,
+    requests: &mut RequestCache,
 ) -> anyhow::Result<Option<Snapshot>> {
-    let mut counts = std::collections::BTreeMap::<String, i64>::new();
+    let mut counts = BTreeMap::<String, i64>::new();
     let mut since = period.since;
     let chunk = chrono::Duration::hours(KPI_METRICS_REQUEST_CHUNK_HOURS)
         .num_milliseconds();
     let mut available = false;
     while since < period.until {
         let until = (since + chunk).min(period.until);
-        let responses =
-            observations::requests(env, &KpiPeriod { since, until })
-                .await
-                .c(h!())?;
-        if !responses.available && responses.total.is_none() {
-            return Ok(None);
-        }
+        let responses = match requests.entry((since, until)) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let responses =
+                    observations::requests(env, &KpiPeriod { since, until })
+                        .await
+                        .c(h!())?;
+                if !responses.available && responses.total.is_none() {
+                    return Ok(None);
+                }
+                entry.insert(responses)
+            }
+        };
         available |= responses.available;
-        for status in responses.by_status {
-            *counts.entry(status.id).or_default() += status.count;
+        for status in &responses.by_status {
+            *counts.entry(status.id.clone()).or_default() += status.count;
         }
         since = until;
     }
@@ -166,9 +177,7 @@ pub(super) async fn requests(
     request_snapshot(counts).map(Some).c(h!())
 }
 
-fn request_snapshot(
-    counts: std::collections::BTreeMap<String, i64>,
-) -> anyhow::Result<Snapshot> {
+fn request_snapshot(counts: BTreeMap<String, i64>) -> anyhow::Result<Snapshot> {
     let mut snapshot = Snapshot::default();
     let mut total = 0;
     let mut errors = 0;

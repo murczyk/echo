@@ -1976,6 +1976,10 @@ pub async fn main_server(
                 crate::kpi::metrics::run_nofail(kpi_env, kpi_cancel).await;
             },
         );
+    } else if config.signoz_kpi_metrics_enabled.unwrap_or(false) {
+        log::warn!(
+            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check signoz_metrics_enabled and signoz_metrics_endpoint"
+        );
     }
     let deployment_maintenance = web::Data::new(
         crate::event_stream::DeploymentMaintenanceState::default(),

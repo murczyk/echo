@@ -8,7 +8,7 @@ use crate::h;
 use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::web;
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sea_orm::{ConnectionTrait, DatabaseBackend, Set, Statement};
 
 // https://github.com/echoua/echo/issues/3826
@@ -47,8 +47,9 @@ async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
     )
     .await
     .c(h!())?;
-    let since = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    let until = since + Duration::days(7);
+    let until =
+        DateTime::from_timestamp_millis(Utc::now().timestamp_millis()).unwrap();
+    let since = until - Duration::days(7);
     let period = KpiPeriod {
         since: since.timestamp_millis(),
         until: until.timestamp_millis(),
@@ -179,6 +180,60 @@ async fn assert_history_metrics(
     }
     assert!(recorder.find(KPI_METRICS_ACTIVITY).is_none());
     assert!(recorder.find(KPI_METRICS_API_RESPONSES).is_none());
+    Ok(())
+}
+
+// https://github.com/echoua/echo/issues/3826
+#[tokio::test]
+async fn report_metric_totals_survive_dashboard_author_limit(
+) -> anyhow::Result<()> {
+    use crate::config::*;
+    let (env, _guard) = cleanup_locked().await.c(h!())?;
+    let until =
+        DateTime::from_timestamp_millis(Utc::now().timestamp_millis()).unwrap();
+    let count = (KPI_HISTORY_MAX_GROUPS + 1) as i64;
+    env.dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+                with authors as (
+                    insert into login (id, login, roles)
+                    select gen_random_uuid(), 'kpi-limit-' || n, '[]'::jsonb
+                    from generate_series(1, $1::bigint) n returning id
+                )
+                insert into report_history
+                    (report_kind, requested_by_login_id, request, status, created_at)
+                select 'kpi-limit', id, '{}', 'done', $2::timestamp - interval '1 day'
+                from authors
+            "#,
+            [count.into(), until.naive_utc().into()],
+        ))
+        .await
+        .c(h!())?;
+    let period = KpiPeriod {
+        since: (until - Duration::days(7)).timestamp_millis(),
+        until: until.timestamp_millis(),
+    };
+    assert!(history::reports(&env, &period).await.is_err());
+    let (metrics, recorder) = crate::telemetry::Metrics::recording(&env.config);
+    super::metrics::collect(&env, &metrics.kpi, until).await;
+    metrics.force_flush_for_test();
+    for (_, window) in KPI_METRICS_PERIODS {
+        assert_eq!(
+            recorder.gauge_f64_value(
+                KPI_METRICS_REPORTS,
+                &[("window", window), ("status", "done")]
+            ),
+            Some(count as f64)
+        );
+        assert_eq!(
+            recorder.gauge_f64_value(
+                KPI_METRICS_AVAILABLE,
+                &[("source", "reports"), ("window", window)]
+            ),
+            Some(1.0)
+        );
+    }
     Ok(())
 }
 

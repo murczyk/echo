@@ -54,6 +54,7 @@ impl Snapshot {
 
 struct Source {
     updated: Instant,
+    age_at_publish: Duration,
     timestamp: f64,
     snapshot: Option<Snapshot>,
 }
@@ -113,6 +114,12 @@ impl Exporter {
                 (source, window),
                 Source {
                     updated: Instant::now(),
+                    age_at_publish: Duration::from_millis(
+                        chrono::Utc::now()
+                            .timestamp_millis()
+                            .saturating_sub(timestamp)
+                            .max(0) as u64,
+                    ),
                     timestamp: timestamp as f64 / 1_000.0,
                     snapshot,
                 },
@@ -127,7 +134,7 @@ fn observe(sources: &Sources, name: &str, observer: &dyn AsyncInstrument<f64>) {
             KeyValue::new("window", window),
         ];
         let snapshot = value.snapshot.as_ref().filter(|_| {
-            value.updated.elapsed()
+            value.age_at_publish.saturating_add(value.updated.elapsed())
                 < Duration::from_secs(KPI_METRICS_MAX_AGE_SECS)
         });
         if name == KPI_METRICS_AVAILABLE {
@@ -157,6 +164,7 @@ mod tests {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let (metrics, recorder) = crate::telemetry::Metrics::recording(&config);
+        let timestamp = chrono::Utc::now().timestamp_millis();
         let mut snapshot = Snapshot::default();
         snapshot.record(
             KPI_METRICS_REPORT_DURATION,
@@ -165,7 +173,7 @@ mod tests {
         );
         metrics
             .kpi
-            .publish("reports", "7d", 1_000, Ok(Some(snapshot)));
+            .publish("reports", "7d", timestamp, Ok(Some(snapshot)));
         metrics.force_flush_for_test();
         assert_eq!(
             recorder.gauge_f64_value(KPI_METRICS_REPORT_DURATION, &[]),
@@ -175,7 +183,7 @@ mod tests {
         metrics.kpi.publish(
             "reports",
             "7d",
-            2_000,
+            timestamp,
             Ok(Some(Snapshot::default())),
         );
         metrics.force_flush_for_test();
@@ -188,7 +196,7 @@ mod tests {
         metrics.kpi.publish(
             "reports",
             "7d",
-            3_000,
+            timestamp,
             Err(anyhow::anyhow!("source failed")),
         );
         metrics.force_flush_for_test();
@@ -202,7 +210,7 @@ mod tests {
         snapshot.record(KPI_METRICS_REPORT_DURATION, 13.0, &[]);
         metrics
             .kpi
-            .publish("reports", "7d", 4_000, Ok(Some(snapshot)));
+            .publish("reports", "7d", timestamp, Ok(Some(snapshot)));
         metrics
             .kpi
             .sources
@@ -218,5 +226,48 @@ mod tests {
             Some(0.0)
         );
         assert!(recorder.find(KPI_METRICS_REPORT_DURATION).is_none());
+
+        let mut snapshot = Snapshot::default();
+        snapshot.record(KPI_METRICS_REPORT_DURATION, 14.0, &[]);
+        metrics.kpi.publish(
+            "reports",
+            "7d",
+            timestamp - (KPI_METRICS_MAX_AGE_SECS * 1_000) as i64,
+            Ok(Some(snapshot)),
+        );
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.gauge_f64_value(KPI_METRICS_AVAILABLE, &[]),
+            Some(0.0)
+        );
+        assert!(recorder.find(KPI_METRICS_REPORT_DURATION).is_none());
+    }
+
+    // https://github.com/echoua/echo/issues/3826
+    #[test]
+    fn oversized_snapshots_are_unavailable_without_silent_truncation() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let (metrics, recorder) = crate::telemetry::Metrics::recording(&config);
+        let mut snapshot = Snapshot::default();
+        for group in 0..=KPI_METRICS_MAX_GROUPS {
+            snapshot.record(
+                KPI_METRICS_ACCOUNT_ROLE,
+                1.0,
+                &[KeyValue::new("role", group.to_string())],
+            );
+        }
+        metrics.kpi.publish(
+            "accounts",
+            "current",
+            chrono::Utc::now().timestamp_millis(),
+            Ok(Some(snapshot)),
+        );
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.gauge_f64_value(KPI_METRICS_AVAILABLE, &[]),
+            Some(0.0)
+        );
+        assert!(recorder.find(KPI_METRICS_ACCOUNT_ROLE).is_none());
     }
 }
