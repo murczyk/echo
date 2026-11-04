@@ -22,6 +22,18 @@ export function isUnitParentValue(value: string): boolean {
 }
 
 export function buildUnitHierarchyIndex(units: Unit[]): UnitHierarchyIndex {
+  return indexUnitHierarchyTree(
+    buildUnitHierarchyTree(
+      units.map((unit) => ({ ...unit, unitId: unit.id, unitName: unit.name, count: 0 })),
+    ),
+    units,
+  );
+}
+
+export function indexUnitHierarchyTree(
+  tree: TreeNode[],
+  units: Array<Pick<Unit, 'id' | 'name'>>,
+): UnitHierarchyIndex {
   const index: UnitHierarchyIndex = { children: new Map(), exact: new Map(), parents: [] };
   const visit = (node: TreeNode): string[] => {
     if (node.kind === 'leaf') return [getUnitIdFilterValue(node.unitId)];
@@ -44,9 +56,7 @@ export function buildUnitHierarchyIndex(units: Unit[]): UnitHierarchyIndex {
     }
     return descendants;
   };
-  buildUnitHierarchyTree(
-    units.map((unit) => ({ ...unit, unitId: unit.id, unitName: unit.name, count: 0 })),
-  ).forEach(visit);
+  tree.forEach(visit);
   units.forEach((unit) => {
     const value = getUnitIdFilterValue(unit.id);
     const name = unit.name.trim();

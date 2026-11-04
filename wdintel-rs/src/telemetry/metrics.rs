@@ -140,6 +140,7 @@ impl FileAnalysisDbOperation {
 #[derive(Clone)]
 pub struct Metrics {
     provider: SdkMeterProvider,
+    pub(crate) kpi: crate::kpi::metrics::Exporter,
     upload_finalization_jobs: Gauge<u64>,
     upload_finalization_oldest_age: Gauge<f64>,
     upload_finalization_retained_bytes: Gauge<u64>,
@@ -239,6 +240,7 @@ impl Metrics {
             .with_view(metrics_view)
             .build();
         let meter = provider.meter(SIGNOZ_METRICS_SERVICE_NAME);
+        let kpi = crate::kpi::metrics::Exporter::new(&meter);
         let synchronized_files = meter
             .u64_counter(DEVICE_FILES_SYNCHRONIZED_COUNT)
             .with_description(DEVICE_FILES_SYNCHRONIZED_DESCRIPTION)
@@ -452,6 +454,7 @@ impl Metrics {
             .with_description("Whether this process owns the global finalization gauge exporter").with_unit("1").build();
         Self {
             provider,
+            kpi,
             upload_finalization_jobs,
             upload_finalization_oldest_age,
             upload_finalization_retained_bytes,

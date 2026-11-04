@@ -15,6 +15,65 @@ pub const KPI_MAX_CLOCK_SKEW_SECONDS: i64 = 300;
 pub const KPI_QUERY_TIMEOUT_MS: u64 = 10_000;
 pub const KPI_ACTIVITY_MAX_ROWS: usize = 100_000;
 pub const KPI_HISTORY_MAX_GROUPS: usize = 10_000;
+pub const KPI_METRICS_COLLECTION_INTERVAL_SECS: u64 = 3_600;
+pub const KPI_METRICS_MAX_AGE_SECS: u64 = 7_200;
+pub const KPI_METRICS_SOURCE_TIMEOUT_SECS: u64 = 300;
+pub const KPI_METRICS_REQUEST_CHUNK_HOURS: i64 = 6;
+pub const KPI_METRICS_MAX_GROUPS: usize = 500;
+pub const KPI_METRICS_PERIODS: [(i64, &str); 3] =
+    [(7, "7d"), (30, "30d"), (90, "90d")];
+pub const KPI_METRICS_RECENT_DAYS: i64 = 30;
+pub const KPI_METRICS_STALE_DAYS: i64 = 90;
+pub const KPI_METRICS_AVAILABLE: &str = "echo.kpi.source.available";
+pub const KPI_METRICS_UPDATED_AT: &str = "echo.kpi.source.updated_at";
+pub const KPI_METRICS_ACCOUNTS: &str = "echo.kpi.accounts.count";
+pub const KPI_METRICS_ACCOUNT_STATUS: &str = "echo.kpi.accounts.status.count";
+pub const KPI_METRICS_ACCOUNT_RECENCY: &str = "echo.kpi.accounts.recency.count";
+pub const KPI_METRICS_ACCOUNT_ROLE: &str = "echo.kpi.accounts.role.count";
+pub const KPI_METRICS_ACCOUNT_ORGANISM: &str =
+    "echo.kpi.accounts.organism.count";
+pub const KPI_METRICS_ACCOUNT_DIRECTION: &str =
+    "echo.kpi.accounts.direction.count";
+pub const KPI_METRICS_REPORTS: &str = "echo.kpi.reports.count";
+pub const KPI_METRICS_REPORT_KIND: &str = "echo.kpi.reports.kind.count";
+pub const KPI_METRICS_REPORT_DURATION: &str =
+    "echo.kpi.reports.generation.duration";
+pub const KPI_METRICS_REPORT_SAMPLES: &str =
+    "echo.kpi.reports.generation.samples";
+pub const KPI_METRICS_NOTIFICATIONS: &str = "echo.kpi.notifications.count";
+pub const KPI_METRICS_NOTIFICATION_DURATION: &str =
+    "echo.kpi.notifications.transport.duration";
+pub const KPI_METRICS_NOTIFICATION_SAMPLES: &str =
+    "echo.kpi.notifications.transport.samples";
+pub const KPI_METRICS_ACTIVITY: &str = "echo.kpi.activity.accounts.count";
+pub const KPI_METRICS_ACTIVITY_UNMAPPED: &str =
+    "echo.kpi.activity.unmapped_groups.count";
+pub const KPI_METRICS_ACTIVITY_QUEUE: &str = "echo.kpi.activity.queue.count";
+pub const KPI_METRICS_API_RESPONSES: &str = "echo.kpi.api.responses.count";
+pub const KPI_METRICS_API_ERROR_RATIO: &str = "echo.kpi.api.errors.ratio";
+
+pub const KPI_METRICS_INSTRUMENTS: &[(&str, &str, &str)] = &[
+    (KPI_METRICS_AVAILABLE, "1", "Whether the KPI source snapshot is available and fresh"),
+    (KPI_METRICS_UPDATED_AT, "s", "Unix timestamp of the KPI source snapshot"),
+    (KPI_METRICS_ACCOUNTS, "1", "Current accounts in the unfiltered admin KPI scope"),
+    (KPI_METRICS_ACCOUNT_STATUS, "1", "Current accounts by availability status"),
+    (KPI_METRICS_ACCOUNT_RECENCY, "1", "Current accounts by activity timestamp age and availability"),
+    (KPI_METRICS_ACCOUNT_ROLE, "1", "Current accounts by distinct system role"),
+    (KPI_METRICS_ACCOUNT_ORGANISM, "1", "Current accounts by organism ID"),
+    (KPI_METRICS_ACCOUNT_DIRECTION, "1", "Current accounts by direction ID"),
+    (KPI_METRICS_REPORTS, "1", "Retained report requests by current status in the creation window"),
+    (KPI_METRICS_REPORT_KIND, "1", "Retained successful reports by kind in the creation window"),
+    (KPI_METRICS_REPORT_DURATION, "s", "Successful worker report generation duration percentile"),
+    (KPI_METRICS_REPORT_SAMPLES, "1", "Included and excluded report generation duration samples"),
+    (KPI_METRICS_NOTIFICATIONS, "1", "Retained messenger transport jobs by current status"),
+    (KPI_METRICS_NOTIFICATION_DURATION, "s", "Messenger transport duration percentile"),
+    (KPI_METRICS_NOTIFICATION_SAMPLES, "1", "Included and excluded messenger transport duration samples"),
+    (KPI_METRICS_ACTIVITY, "1", "Distinct observed account IDs including keep-alives and technical accounts"),
+    (KPI_METRICS_ACTIVITY_UNMAPPED, "1", "Observation groups without a stable account UUID"),
+    (KPI_METRICS_ACTIVITY_QUEUE, "1", "Activity queue events in this API process since startup"),
+    (KPI_METRICS_API_RESPONSES, "1", "Recorded API responses deduplicated by request ID within each status"),
+    (KPI_METRICS_API_ERROR_RATIO, "1", "Recorded API responses with HTTP 4xx or 5xx divided by all responses"),
+];
 
 pub const APP_BUILD_VERSION: &str = env!("ECHO_BUILD_VERSION");
 pub const MESSAGE_REPLY_MAX_ANCHORS: usize = 512;
@@ -912,6 +971,10 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_TREE_REDIS_KEY: &str = "sigint:unit-tree:v1";
+pub const SIGINT_UNIT_TREE_DIRTY_REDIS_KEY: &str = "sigint:unit-tree:v1:dirty";
+pub const SIGINT_UNIT_TREE_ADVISORY_LOCK_KEY: i64 = 3527_1104;
+pub const SIGINT_UNIT_TREE_RECONCILE_SECS: u64 = 300;
 pub const SIGINT_UNIT_SEARCH_DEFAULT_LIMIT: u64 = 50;
 pub const SIGINT_UNIT_SEARCH_INACTIVE_LIMIT: u64 = 250;
 pub const SIGINT_DIRECT_SUBMIT_UNIT_LOCK_NAMESPACE: i32 = 3535;
@@ -1966,10 +2029,12 @@ pub struct Config {
     pub signoz_logs_enabled: Option<bool>,
     /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
     pub signoz_logs_endpoint: Option<String>,
-    /// Enable device metrics export to Signoz over OTLP gRPC.
+    /// Enable application metrics export to Signoz over OTLP gRPC.
     pub signoz_metrics_enabled: Option<bool>,
     /// Signoz OTLP gRPC endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:4317.
     pub signoz_metrics_endpoint: Option<String>,
+    /// Collect hourly admin KPI snapshots through the enabled metrics exporter.
+    pub signoz_kpi_metrics_enabled: Option<bool>,
     pub session_activity_queue_capacity: Option<usize>,
     pub session_activity_payload_max_bytes: Option<usize>,
     pub session_activity_greptime_get_timeout_ms: Option<u64>,
