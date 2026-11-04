@@ -20,6 +20,8 @@ import type {
   OrbitUnitLinkCandidatesRsp,
   OrbitUnitSearchReq,
   Unit,
+  UnitHierarchyRsp,
+  UnitHierarchyReq,
   UnitAttachment,
   UnitDuplicate,
   UnitAttachmentUnitIdsRsp,
@@ -122,6 +124,14 @@ export async function getUnitsPage(
 ): Promise<ListUnitsRsp> {
   const raw = await postJson<unknown>('/api/sigint/units', transformCamelToSnake(req), options);
   return transformSnakeToCamel<ListUnitsRsp>(raw);
+}
+
+export async function getUnitHierarchy(
+  knownRevision: string | null,
+): Promise<UnitHierarchyRsp | null> {
+  const req: UnitHierarchyReq = { knownRevision };
+  const raw = await postJson<unknown>('/api/sigint/units/hierarchy', transformCamelToSnake(req));
+  return raw === null ? null : transformSnakeToCamel<UnitHierarchyRsp>(raw);
 }
 
 async function getUnitsCursorPage(options?: GetUnitsPageOptions): Promise<ListUnitsRsp> {

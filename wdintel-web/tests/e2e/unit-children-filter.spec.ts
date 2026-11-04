@@ -29,21 +29,49 @@ for (const analysis of [false, true]) {
     let catalogRequests = 0;
     let catalogReleased = false;
     await page.route('**/api/sigint/units', async (route) => {
-      if (route.request().postDataJSON().include_inactive) {
-        const initialRequest = !catalogReleased;
-        catalogRequests += 1;
-        await catalogGate;
-        if (initialRequest) {
-          await route.fulfill({ status: 503, body: 'Temporary catalog failure #3527' });
-          return;
-        }
-      }
       await route.fulfill({
         json: transformCamelToSnake({
           units,
           showLoadMore: false,
           totalCount: units.length,
           statusCounts: { active: units.length, inactive: 0 },
+        }),
+      });
+    });
+    const armyPath = 'group:0:Регіон|1:Округ|2:6 А';
+    const brigadePath = `${armyPath}|3:__EMPTY__|4:__EMPTY__|5:27 омсбр`;
+    await page.route('**/api/sigint/units/hierarchy', async (route) => {
+      const initialRequest = !catalogReleased;
+      catalogRequests += 1;
+      await catalogGate;
+      if (initialRequest) {
+        await route.fulfill({ status: 503, body: 'Temporary catalog failure #3527' });
+        return;
+      }
+      if (route.request().postDataJSON().known_revision === '3527') {
+        await route.fulfill({ json: null });
+        return;
+      }
+      await route.fulfill({
+        json: transformCamelToSnake({
+          revision: '3527',
+          groups: [
+            { id: 'group:0:Регіон', label: 'Регіон', level: 0, parentIndex: null },
+            { id: 'group:0:Регіон|1:Округ', label: 'Округ', level: 1, parentIndex: 0 },
+            { id: armyPath, label: '6 А', level: 2, parentIndex: 1 },
+            { id: brigadePath, label: '27 омсбр', level: 5, parentIndex: 2 },
+            ...units.map((unit) => ({
+              id: `${brigadePath}|6:__EMPTY__|7:__EMPTY__|8:${unit.company}`,
+              label: unit.company,
+              level: 8,
+              parentIndex: 3,
+            })),
+          ],
+          units: units.map((unit, index) => ({
+            id: unit.id,
+            name: unit.name,
+            groupIndex: index + 4,
+          })),
         }),
       });
     });
@@ -90,6 +118,9 @@ for (const analysis of [false, true]) {
     releaseCatalog();
     await expect(page.getByText(/Не вдалося завантажити ієрархію підрозділів/)).toBeVisible();
     await expect.poll(() => catalogRequests).toBeGreaterThan(initialCatalogRequests);
+    const catalogBeforeFocus = catalogRequests;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => catalogRequests).toBe(catalogBeforeFocus + 1);
     const countBeforeSelection = countRequests;
     const combo = analysis
       ? page.getByRole('combobox', { name: 'Підрозділи', exact: true })
@@ -158,3 +189,101 @@ for (const analysis of [false, true]) {
     }
   });
 }
+
+test('@regression #3527 Callsigns uses the cached tree for counts, group filters and search', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  await installAnalysisNeoApiMocks(page);
+  const template = buildUnitFilterOptions([])[0];
+  const units = [21, 22].map((id, index) => ({
+    ...template,
+    id,
+    name: `${index + 1} мср 27 омсбр`,
+    army: 'Old army',
+    brigade: 'Old brigade',
+    company: `${index + 1} мср`,
+  }));
+  await page.route('**/api/sigint/units', (route) =>
+    route.fulfill({
+      json: transformCamelToSnake({
+        units,
+        showLoadMore: false,
+        totalCount: units.length,
+        statusCounts: { active: units.length, inactive: 0 },
+      }),
+    }),
+  );
+  await page.route('**/api/sigint/sources', (route) => route.fulfill({ json: { sources: [] } }));
+  await page.route('**/api/sigint/callsign/unit-stats', (route) =>
+    route.fulfill({
+      json: {
+        units: [
+          { unit_id: 21, count: 2 },
+          { unit_id: 22, count: 3 },
+        ],
+      },
+    }),
+  );
+  const callsignRequests: Array<{
+    filter_unit_army: string | null;
+    filter_unit_brigade: string | null;
+  }> = [];
+  await page.route('**/api/sigint/callsigns', async (route) => {
+    callsignRequests.push(route.request().postDataJSON());
+    await route.fulfill({ json: { callsigns: [], show_load_more: false } });
+  });
+  const armyPath = 'group:2:6 А';
+  const brigadePath = `${armyPath}|3:__EMPTY__|4:__EMPTY__|5:27 омсбр`;
+  const hierarchyRequests: Array<string | null> = [];
+  await page.route('**/api/sigint/units/hierarchy', async (route) => {
+    const revision = route.request().postDataJSON().known_revision;
+    hierarchyRequests.push(revision);
+    await route.fulfill({
+      json:
+        revision === 'callsigns-3527'
+          ? null
+          : transformCamelToSnake({
+              revision: 'callsigns-3527',
+              groups: [
+                { id: armyPath, label: '6 А', level: 2, parentIndex: null },
+                { id: brigadePath, label: '27 омсбр', level: 5, parentIndex: 0 },
+                ...units.map((unit) => ({
+                  id: `${brigadePath}|6:__EMPTY__|7:__EMPTY__|8:${unit.company}`,
+                  label: unit.company,
+                  level: 8,
+                  parentIndex: 1,
+                })),
+              ],
+              units: units.map((unit, index) => ({
+                id: unit.id,
+                name: unit.name,
+                groupIndex: index + 2,
+              })),
+            }),
+    });
+  });
+  await page.goto('/rer-callsigns-neo?units_sidebar=1');
+  await expect(
+    page.getByRole('button', { name: 'Фільтрувати за гілкою 6 А, позивних 5', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Розгорнути гілку 6 А', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Фільтрувати за гілкою 27 омсбр, позивних 5', exact: true })
+    .click();
+  await expect
+    .poll(() => callsignRequests.at(-1))
+    .toMatchObject({
+      filter_unit_army: '6 А',
+      filter_unit_brigade: '27 омсбр',
+    });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(() => hierarchyRequests.at(-1)).toBe('callsigns-3527');
+  await page.getByRole('textbox', { name: 'Пошук підрозділу у дереві статистики' }).fill('2 мср');
+  await expect(
+    page.getByRole('button', { name: 'Фільтрувати за гілкою 6 А, позивних 3', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Фільтрувати за підрозділом 2 мср, позивних 3', exact: true }),
+  ).toBeVisible();
+});

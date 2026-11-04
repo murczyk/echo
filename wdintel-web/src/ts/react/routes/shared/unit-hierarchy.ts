@@ -1,4 +1,4 @@
-import type { Unit } from '../../../../Bindings';
+import type { Unit, UnitHierarchyRsp } from '../../../../Bindings';
 import type { UnitHierarchyFilter } from '../rer-callsigns-neo/types';
 
 export const HIERARCHY_KEYS = [
@@ -43,6 +43,53 @@ type TreeGroupNode = {
 };
 
 export type TreeNode = TreeGroupNode | TreeLeafNode;
+
+export function readUnitHierarchyTree(tree: UnitHierarchyRsp): TreeNode[] {
+  const root: TreeNode[] = [];
+  const groups: TreeGroupNode[] = [];
+  tree.groups.forEach((group) => {
+    const parent = group.parentIndex == null ? undefined : groups[group.parentIndex];
+    const hierarchy = parent ? { ...parent.hierarchy } : createHierarchyFilter([]);
+    const first =
+      group.parentIndex == null
+        ? Math.min(group.level, 2)
+        : tree.groups[group.parentIndex].level + 1;
+    for (let level = first; level <= group.level; level++) {
+      hierarchy[HIERARCHY_KEYS[level]] = level === group.level ? group.label : '';
+    }
+    const node: TreeGroupNode = {
+      kind: 'group',
+      id: group.id,
+      label: group.label,
+      count: 0,
+      hierarchy,
+      children: [],
+    };
+    groups.push(node);
+  });
+  const attached = new Set<number>();
+  const attachGroup = (index: number) => {
+    if (attached.has(index)) return;
+    const parentIndex = tree.groups[index].parentIndex;
+    if (parentIndex != null) attachGroup(parentIndex);
+    const children = parentIndex == null ? root : groups[parentIndex].children;
+    children.push(groups[index]);
+    attached.add(index);
+  };
+  tree.units.forEach((unit) => {
+    if (unit.groupIndex != null) attachGroup(unit.groupIndex);
+    const children = unit.groupIndex == null ? root : groups[unit.groupIndex].children;
+    children.push({
+      kind: 'leaf',
+      id: `unit:${unit.id}`,
+      unitId: unit.id,
+      label: unit.name,
+      unitName: unit.name,
+      count: 0,
+    });
+  });
+  return root;
+}
 
 export function buildUnitHierarchyTree(stats: UnitHierarchyStat[]): TreeNode[] {
   const root: TreeNode[] = [];

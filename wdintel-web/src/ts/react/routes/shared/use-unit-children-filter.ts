@@ -1,15 +1,52 @@
 import { useEffect, useRef, useState } from 'react';
-import { getAllUnitsList } from '../../services/api/units';
+import { getUnitHierarchy } from '../../services/api/units';
+import { readUnitHierarchyTree, type TreeNode } from './unit-hierarchy';
 import {
   aggregateUnitParentOptions,
-  buildUnitHierarchyIndex,
+  indexUnitHierarchyTree,
   type UnitCountOption,
   type UnitHierarchyIndex,
 } from './unit-children-filter';
 
-export function useUnitHierarchyCatalog(needed: boolean, onError: (message: string) => void) {
-  const [hierarchy, setHierarchy] = useState<UnitHierarchyIndex | null>(null);
+type HierarchyCatalog = {
+  revision: string;
+  hierarchy: UnitHierarchyIndex;
+  tree: TreeNode[];
+};
+
+let pendingCatalog: Promise<HierarchyCatalog> | null = null;
+
+function loadHierarchyCatalog(catalog: HierarchyCatalog | null): Promise<HierarchyCatalog> {
+  if (pendingCatalog) return pendingCatalog;
+  pendingCatalog = getUnitHierarchy(catalog?.revision ?? null)
+    .then((response) => {
+      if (response) {
+        const tree = readUnitHierarchyTree(response);
+        return {
+          revision: response.revision,
+          hierarchy: indexUnitHierarchyTree(tree, response.units),
+          tree,
+        };
+      }
+      if (!catalog) throw new Error('Сервер не повернув ієрархію підрозділів');
+      return catalog;
+    })
+    .finally(() => {
+      pendingCatalog = null;
+    });
+  return pendingCatalog;
+}
+
+export function useUnitHierarchyCatalog(
+  needed: boolean,
+  onError: (message: string) => void,
+  refreshKey?: unknown,
+) {
+  const [catalog, setCatalog] = useState<HierarchyCatalog | null>(null);
+  const catalogRef = useRef(catalog);
+  catalogRef.current = catalog;
   const [failed, setFailed] = useState(false);
+  const [refresh, setRefresh] = useState(0);
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
   useEffect(() => {
@@ -20,8 +57,8 @@ export function useUnitHierarchyCatalog(needed: boolean, onError: (message: stri
   useEffect(() => {
     if (!needed) return;
     const refresh = () => {
-      setHierarchy(null);
       setFailed(false);
+      setRefresh((value) => value + 1);
     };
     window.addEventListener('online', refresh);
     window.addEventListener('focus', refresh);
@@ -35,20 +72,26 @@ export function useUnitHierarchyCatalog(needed: boolean, onError: (message: stri
       setFailed(false);
       return;
     }
-    if (hierarchy || failed) return;
-    const controller = new AbortController();
-    getAllUnitsList({ includeInactive: true, signal: controller.signal })
-      .then((units) => {
-        if (!controller.signal.aborted) setHierarchy(buildUnitHierarchyIndex(units));
+    if (failed) return;
+    let cancelled = false;
+    loadHierarchyCatalog(catalogRef.current)
+      .then((catalog) => {
+        if (!cancelled) setCatalog(catalog);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (cancelled) return;
         setFailed(true);
         onErrorRef.current(`Не вдалося завантажити ієрархію підрозділів: ${String(error)}`);
       });
-    return () => controller.abort();
-  }, [failed, hierarchy, needed]);
-  return { hierarchy, loading: needed && hierarchy === null && !failed };
+    return () => {
+      cancelled = true;
+    };
+  }, [failed, refresh, needed, refreshKey]);
+  return {
+    hierarchy: catalog?.hierarchy ?? null,
+    tree: catalog?.tree ?? null,
+    loading: needed && catalog === null && !failed,
+  };
 }
 
 export function useUnitParentOptions(

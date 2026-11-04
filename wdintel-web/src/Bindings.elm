@@ -10264,6 +10264,68 @@ unitEncoder struct =
         ]
 
 
+type alias UnitHierarchyGroup =
+    { id : String
+    , label : String
+    , level : Int
+    , parentIndex : Maybe (Int)
+    }
+
+
+unitHierarchyGroupEncoder : UnitHierarchyGroup -> Json.Encode.Value
+unitHierarchyGroupEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "level", (Json.Encode.int) struct.level )
+        , ( "parent_index", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.parentIndex )
+        ]
+
+
+type alias UnitHierarchyUnit =
+    { id : Int
+    , name : String
+    , groupIndex : Maybe (Int)
+    }
+
+
+unitHierarchyUnitEncoder : UnitHierarchyUnit -> Json.Encode.Value
+unitHierarchyUnitEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "group_index", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.groupIndex )
+        ]
+
+
+type alias UnitHierarchyRsp =
+    { revision : String
+    , groups : List (UnitHierarchyGroup)
+    , units : List (UnitHierarchyUnit)
+    }
+
+
+unitHierarchyRspEncoder : UnitHierarchyRsp -> Json.Encode.Value
+unitHierarchyRspEncoder struct =
+    Json.Encode.object
+        [ ( "revision", (Json.Encode.string) struct.revision )
+        , ( "groups", (Json.Encode.list (unitHierarchyGroupEncoder)) struct.groups )
+        , ( "units", (Json.Encode.list (unitHierarchyUnitEncoder)) struct.units )
+        ]
+
+
+type alias UnitHierarchyReq =
+    { knownRevision : Maybe (String)
+    }
+
+
+unitHierarchyReqEncoder : UnitHierarchyReq -> Json.Encode.Value
+unitHierarchyReqEncoder struct =
+    Json.Encode.object
+        [ ( "known_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.knownRevision )
+        ]
+
+
 type alias UnitCombatType =
     { id : String
     , name : String
@@ -27447,6 +27509,37 @@ unitDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_orbit" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_ids" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "orbit_unit_generative_names" (Json.Decode.list (Json.Decode.string))))
+
+
+unitHierarchyGroupDecoder : Json.Decode.Decoder UnitHierarchyGroup
+unitHierarchyGroupDecoder =
+    Json.Decode.succeed UnitHierarchyGroup
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "level" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_index" (Json.Decode.nullable (Json.Decode.int))))
+
+
+unitHierarchyUnitDecoder : Json.Decode.Decoder UnitHierarchyUnit
+unitHierarchyUnitDecoder =
+    Json.Decode.succeed UnitHierarchyUnit
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_index" (Json.Decode.nullable (Json.Decode.int))))
+
+
+unitHierarchyRspDecoder : Json.Decode.Decoder UnitHierarchyRsp
+unitHierarchyRspDecoder =
+    Json.Decode.succeed UnitHierarchyRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "groups" (Json.Decode.list (unitHierarchyGroupDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitHierarchyUnitDecoder))))
+
+
+unitHierarchyReqDecoder : Json.Decode.Decoder UnitHierarchyReq
+unitHierarchyReqDecoder =
+    Json.Decode.succeed UnitHierarchyReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "known_revision" (Json.Decode.nullable (Json.Decode.string))))
 
 
 unitCombatTypeDecoder : Json.Decode.Decoder UnitCombatType

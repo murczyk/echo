@@ -271,9 +271,14 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
                 <Box sx={{ display: 'flex', alignItems: 'stretch', gap: 0, flexShrink: 0 }}>
                   <UnitStatsSidebar
                     stats={page.unitStatsView}
+                    cachedTree={page.unitHierarchyTree}
                     open={page.sidebarOpen}
                     isDesktopLayout={isDesktopLayout}
-                    loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+                    loading={
+                      page.unitHierarchyLoading ||
+                      page.refreshing ||
+                      (page.loading && page.unitStatsView.length === 0)
+                    }
                     onPickUnitFilter={page.onPickUnitFilter}
                     selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
                   />
@@ -283,9 +288,14 @@ function RerCallsignsNeoPageBody({ authUserRoles = [] }: { authUserRoles?: strin
           ) : (
             <UnitStatsSidebar
               stats={page.unitStatsView}
+              cachedTree={page.unitHierarchyTree}
               open={page.sidebarOpen}
               isDesktopLayout={isDesktopLayout}
-              loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
+              loading={
+                page.unitHierarchyLoading ||
+                page.refreshing ||
+                (page.loading && page.unitStatsView.length === 0)
+              }
               onPickUnitFilter={page.onPickUnitFilter}
               onToggleOpen={() => page.setSidebarOpen((prev: boolean) => !prev)}
               selectedUnitFilter={page.selectedSidebarUnitFilter ?? undefined}
