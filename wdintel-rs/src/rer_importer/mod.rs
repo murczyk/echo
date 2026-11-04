@@ -2130,7 +2130,6 @@ mod messenger_media_tests {
         local_messenger_media_response, media_cache_preflight_requested,
         media_range_not_satisfiable_response,
         message_attachments_archive_name_from_parts, messenger_media,
-        messenger_media_head_response,
         parse_oneoff_reprocess_unit_names_since_ts, parse_single_byte_range,
         safe_zip_entry_name, validate_attachment_metadata_sizes,
         validate_converted_attachment_metadata_sizes, write_zip_entry,
@@ -2232,36 +2231,6 @@ mod messenger_media_tests {
         );
     }
 
-    #[test]
-    fn head_response_reports_media_size_without_reading_the_file() {
-        use actix_web::body::{BodySize, MessageBody};
-
-        let response = messenger_media_head_response(
-            "application/pdf",
-            Some("map.pdf"),
-            68_997_590,
-        );
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.body().size(), BodySize::Sized(68_997_590));
-        assert_eq!(
-            response.headers().get(header::CONTENT_ENCODING).unwrap(),
-            "identity"
-        );
-        assert_eq!(
-            response.headers().get(header::ACCEPT_RANGES).unwrap(),
-            "bytes"
-        );
-        assert_eq!(
-            response.headers().get(header::CONTENT_TYPE).unwrap(),
-            "application/pdf"
-        );
-        assert_eq!(
-            response.headers().get(header::CACHE_CONTROL).unwrap(),
-            "private, no-store"
-        );
-    }
-
     async fn sign_in(
         request: actix_web::HttpRequest,
         login: actix_web::web::Path<String>,
@@ -2277,7 +2246,7 @@ mod messenger_media_tests {
     // Regression: PDF previews probe media with HEAD, which a GET-only route answered with 404.
     #[serial]
     #[tokio::test]
-    async fn media_head_reports_size_after_auth_without_touching_storage() {
+    async fn media_previews_get_size_through_compression() {
         use actix_web::body::{BodySize, MessageBody};
         use actix_web::test::{call_service, init_service};
         use actix_web::{
@@ -2325,6 +2294,12 @@ mod messenger_media_tests {
         .await
         .unwrap();
 
+        // Local files take a different response path from HEAD.
+        let local_file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(local_file.path(), b"%PDF-1.7").unwrap();
+        let local_path = local_file.path().to_path_buf();
+        let local_media = media.clone();
+
         let sessions = actix_session::storage::RedisSessionStore::new(
             crate::redis_conn_string(&env.config).unwrap(),
         )
@@ -2340,6 +2315,20 @@ mod messenger_media_tests {
                 ))
                 .wrap(Compress::default())
                 .route("/test/login/{login}", web::post().to(sign_in))
+                .route(
+                    "/test/local-media",
+                    web::get().to(move |req: actix_web::HttpRequest| {
+                        let file =
+                            actix_files::NamedFile::open(&local_path).unwrap();
+                        let response = local_messenger_media_response(
+                            &req,
+                            &local_media,
+                            file,
+                            "application/pdf",
+                        );
+                        async move { response }
+                    }),
+                )
                 .service(messenger_media),
         )
         .await;
@@ -2395,43 +2384,21 @@ mod messenger_media_tests {
         )
         .await;
         assert_ne!(missing.status(), StatusCode::OK);
-    }
 
-    #[test]
-    fn local_media_response_keeps_size_behind_compression() {
-        use actix_web::body::{BodySize, MessageBody};
-
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("map.pdf");
-        std::fs::write(&path, b"%PDF-1.7").unwrap();
-        let media = signal_message_media::Model {
-            id: uuid::Uuid::now_v7(),
-            signal_message_id: 1,
-            content_type: "application/pdf".to_string(),
-            file_ext: Some("pdf".to_string()),
-            file_name: Some("map.pdf".to_string()),
-            size_bytes: 8,
-            created_at: chrono::Utc::now().naive_utc(),
-            is_encrypted: false,
-            storage_key: None,
-            signal_message_uuid: None,
-        };
-        let request = TestRequest::default()
-            .insert_header((header::ACCEPT_ENCODING, "br"))
-            .to_http_request();
-
-        let response = local_messenger_media_response(
-            &request,
-            &media,
-            actix_files::NamedFile::open(&path).unwrap(),
-            "application/pdf",
-        );
-
+        let local = call_service(
+            &app,
+            TestRequest::get()
+                .uri("/test/local-media")
+                .insert_header((header::ACCEPT_ENCODING, "br"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(local.status(), StatusCode::OK);
         assert_eq!(
-            response.headers().get(header::CONTENT_ENCODING).unwrap(),
+            local.headers().get(header::CONTENT_ENCODING).unwrap(),
             "identity"
         );
-        assert_eq!(response.body().size(), BodySize::Sized(8));
+        assert_eq!(local.response().body().size(), BodySize::Sized(8));
     }
 
     #[test]
