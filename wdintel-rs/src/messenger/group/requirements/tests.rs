@@ -9,7 +9,7 @@ use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::{
     cookie::Key, http::StatusCode, test, web, App, HttpMessage, HttpRequest,
 };
-use sea_orm::{IntoActiveModel, PaginatorTrait};
+use sea_orm::{IntoActiveModel, PaginatorTrait, TransactionTrait};
 use serde_json::json;
 
 const GROUP: &str = "vukho-test-master-key";
@@ -401,4 +401,24 @@ async fn group_requirements_3935_generic_submit_validated_all_groups_and_stored_
         .unwrap()
         .unwrap();
     assert_eq!(item.device_name_id, Some(device.id));
+    let txn = env.dbx.begin().await.unwrap();
+    let mut cache = TopKCache::<String, String>::new(64);
+    crate::inbox::construct_inbox_item(
+        env.settlements.clone(),
+        &txn,
+        &env.rq,
+        &env.config,
+        submitted.signal_message_id,
+        &mut cache,
+        None,
+    )
+    .await
+    .unwrap();
+    let item = sigint_inbox_item::Entity::find_by_id(submitted.inbox_id)
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(item.device_name_id, Some(device.id));
+    txn.commit().await.unwrap();
 }

@@ -185,14 +185,25 @@ impl Serialize for OrphanSignalGroupEntry {
             &self.areas_of_responsibility,
         )?;
         state.serialize_field("color_key", &self.color_key)?;
-        state.serialize_field(
-            "is_sigint_unit_mandatory",
-            &self.is_sigint_unit_mandatory,
-        )?;
-        state.serialize_field(
-            "is_device_mandatory",
-            &self.is_device_mandatory,
-        )?;
+        state
+            .serialize_field(
+                "is_sigint_unit_mandatory",
+                &self.is_sigint_unit_mandatory,
+            )
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
+        state
+            .serialize_field("is_device_mandatory", &self.is_device_mandatory)
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
         state.end()
     }
 }
@@ -233,14 +244,25 @@ impl Serialize for SignalGroupEntry {
             &self.areas_of_responsibility,
         )?;
         state.serialize_field("color_key", &self.color_key)?;
-        state.serialize_field(
-            "is_sigint_unit_mandatory",
-            &self.is_sigint_unit_mandatory,
-        )?;
-        state.serialize_field(
-            "is_device_mandatory",
-            &self.is_device_mandatory,
-        )?;
+        state
+            .serialize_field(
+                "is_sigint_unit_mandatory",
+                &self.is_sigint_unit_mandatory,
+            )
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
+        state
+            .serialize_field("is_device_mandatory", &self.is_device_mandatory)
+            .map_err(|error| {
+                <S::Error as serde::ser::Error>::custom(format!(
+                    "{}: {error}",
+                    h!()
+                ))
+            })?;
         state.end()
     }
 }

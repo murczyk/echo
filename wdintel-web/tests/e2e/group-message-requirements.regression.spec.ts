@@ -2,8 +2,66 @@ import { expect, test } from '@playwright/test';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 import { openCreateReportDrawer, openEditMessageDrawer } from './image-editor-drawer.fixtures';
 import { systemSettingsCurrentResponse } from './fixture-responses';
+import { beginReply, editor, fillReply, visit, withReplyActors } from './message-replies.fixtures';
 
 test.use({ viewport: { width: 1600, height: 1000 } });
+
+test('@regression #3935 replies waited for group requirements and retried failed metadata', async ({
+  browser,
+  baseURL,
+}) => {
+  await withReplyActors(browser, baseURL, async (fixture, [page]) => {
+    const actor = await fixture.attach(page!, 'duty', 'user-1');
+    const source = fixture.seed('user-2', 'Required reply destination 3935');
+    await page!.route('**/api/user/settings', (route) =>
+      route.fulfill({ json: { messageAutoParseEnabled: false } }),
+    );
+    await visit(actor);
+    await expect(page!.locator(`[data-message-id="${source.id}"]`)).toBeVisible();
+    let release!: () => void;
+    const response = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let attempts = 0;
+    await page!.route('**/api/rer-importer/signal-group-batch', async (route) => {
+      attempts += 1;
+      if (attempts === 1) {
+        await response;
+        return route.fulfill({ status: 503, json: { error: 'Group metadata unavailable' } });
+      }
+      return route.fulfill({
+        json: {
+          data: [{ master_key: 'group-1', name: 'group-1', is_sigint_unit_mandatory: true }],
+        },
+      });
+    });
+    await beginReply(actor, source);
+    await fillReply(actor, 'Reply 3935');
+    const submit = editor(actor).getByRole('button', { name: 'Створити', exact: true });
+    try {
+      await expect.poll(() => attempts).toBe(1);
+      await expect(submit).toBeDisabled();
+    } finally {
+      release();
+    }
+    await expect(editor(actor).getByText('Не вдалося завантажити довідкові дані.')).toBeVisible();
+    await expect(submit).toBeDisabled();
+    await editor(actor)
+      .getByRole('button', { name: 'Повторити завантаження', exact: true })
+      .click();
+    await expect.poll(() => attempts).toBe(2);
+    await expect(editor(actor).getByText('Не вдалося завантажити довідкові дані.')).toHaveCount(0);
+    await expect(submit).toBeDisabled();
+    await page!.route('**/api/sigint/unit/search', (route) =>
+      route.fulfill({ json: { units: [{ id: 3935, name: 'Підрозділ 3935', active: true }] } }),
+    );
+    await editor(actor)
+      .getByRole('combobox', { name: 'Підрозділ', exact: true })
+      .fill('Підрозділ 3935');
+    await page!.getByRole('option', { name: 'Підрозділ 3935', exact: true }).click();
+    await expect(submit).toBeEnabled();
+  });
+});
 
 for (const flow of ['message', 'report'] as const) {
   test(`@regression #3935 ${flow} validated the selected group's required fields`, async ({

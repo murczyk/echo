@@ -14,6 +14,8 @@ updates them when the destination changes. The server validates them again
 before saving. Required device names still require device access; users without
 that access cannot send to a group requiring a device. `POST /api/1.1/submit`
 accepts an optional `device_name_id`, as does the direct submission API.
+The selected device is preserved when inbox messages are reprocessed; clearing
+it remains an explicit message edit.
 
 Creating units through message forms or `create_unit` requires `UnitsEditor`
 access, including administrators under the standard role hierarchy. Selecting

@@ -566,7 +566,7 @@ where
     Ok(ConstructInboxItemResult::changed(message.id))
 }
 
-fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
+fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 20] {
     [
         sigint_inbox_item::Column::Date,
         sigint_inbox_item::Column::Time,
@@ -586,7 +586,6 @@ fn reprocessed_inbox_item_update_columns() -> [sigint_inbox_item::Column; 21] {
         sigint_inbox_item::Column::BodyNoheader,
         sigint_inbox_item::Column::SignalTokens,
         sigint_inbox_item::Column::PostId,
-        sigint_inbox_item::Column::DeviceNameId,
         sigint_inbox_item::Column::UnitV2,
         sigint_inbox_item::Column::ParsedUnitV2,
     ]
@@ -1170,11 +1169,6 @@ mod tests {
             .iter()
             .any(|column| {
                 matches!(column, sigint_inbox_item::Column::Reviewed)
-            }));
-        assert!(reprocessed_inbox_item_update_columns()
-            .iter()
-            .any(|column| {
-                matches!(column, sigint_inbox_item::Column::DeviceNameId)
             }));
         assert!(reprocessed_inbox_item_update_columns()
             .iter()
