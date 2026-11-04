@@ -853,3 +853,31 @@ pub async fn get_identity_sigint_groups_noimport(
     // }
     Ok(master_keys)
 }
+
+/// The groups of the RER inbox and analysis feeds: the login's groups without
+/// messenger account groups, which are browsed through `/api/messengers`.
+/// Anything that authorizes access to messenger data, like
+/// `ensure_media_access`, must keep using `get_identity_sigint_groups`.
+pub async fn get_rer_feed_sigint_groups<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+) -> Result<Vec<String>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let groups = get_identity_sigint_groups(dbx, login).await.c(h!())?;
+    Ok(exclude_messenger_account_groups(groups))
+}
+
+pub async fn get_identity_rer_feed_groups(
+    dbx: &DatabaseConnection,
+    user: &actix_identity::Identity,
+) -> Result<Vec<String>, AppError> {
+    let login = login_id_from_identity(user)?;
+    Ok(get_rer_feed_sigint_groups(dbx, &login).await.c(h!())?)
+}
+
+pub fn exclude_messenger_account_groups(mut groups: Vec<String>) -> Vec<String> {
+    groups.retain(|group| !group.starts_with(crate::config::MESSENGER_INGEST_GROUP_KEY_PREFIX));
+    groups
+}

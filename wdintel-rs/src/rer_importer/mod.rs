@@ -1128,13 +1128,10 @@ async fn list_messages(
 ) -> Result<Json<Vec<MessageRsp>>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
 
-    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
-        &env.dbx,
-        &user,
-        &env.config,
-    )
-    .await
-    .c(h!())?;
+    let groups =
+        crate::messenger::group::get_identity_rer_feed_groups(&env.dbx, &user)
+            .await
+            .c(h!())?;
 
     let result = signal_message::Entity::find()
         .join(
@@ -1299,6 +1296,7 @@ FROM signal_message sm
 INNER JOIN sigint_inbox_item sii ON sm.id=sii.id
 WHERE sm.id > $1
   AND not sii.reviewed
+  AND NOT EXISTS (SELECT 1 FROM sigint_chat_message scm WHERE scm.id = sm.id)
 "#,
         )
         .bind(req.last_id)
@@ -1312,6 +1310,7 @@ WHERE sm.id > $1
 SELECT count(*) as cnt
 FROM signal_message sm
 WHERE sm.id > $1
+  AND NOT EXISTS (SELECT 1 FROM sigint_chat_message scm WHERE scm.id = sm.id)
 "#,
         )
         .bind(req.last_id)
@@ -1400,6 +1399,7 @@ pub async fn signal_groups(
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let keys = crate::messenger::group::exclude_messenger_account_groups(keys);
     let data = crate::messenger::group::collect_groups(
         keys,
         &env,
@@ -1938,7 +1938,7 @@ pub async fn latest_senders(
     let login = login_id_from_identity(&user)?;
     let now = Utc::now();
     let master_keys =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, &login)
             .await
             .c(h!())?;
     let since = crate::stats::round_up_to_5min(

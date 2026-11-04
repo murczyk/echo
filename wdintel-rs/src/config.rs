@@ -778,6 +778,8 @@ pub const ROLE_NO2FA: &str = "No2FA";
 pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
+/// Master keys of messenger account groups are this prefix plus the account id.
+pub const MESSENGER_INGEST_GROUP_KEY_PREFIX: &str = "messenger_ingest.";
 pub const MESSENGER_INGEST_DATASOURCE_LABEL_PREFIX: &str = "EХО Мессенджер ";
 pub const MESSENGER_INGEST_SYNC_MAX_ITEMS: usize = 200;
 /// Every ingest request, including each TUS chunk, resolves the ingest

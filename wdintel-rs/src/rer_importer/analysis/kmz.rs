@@ -18,7 +18,7 @@ pub(crate) async fn rer_analysis_kmz_bytes(
     req: super::AnalysisStatsReq,
 ) -> Result<Vec<u8>, AppError> {
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let report_settings =

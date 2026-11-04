@@ -78,7 +78,7 @@ pub(crate) async fn rer_analysis_geojson_bytes(
         req.include_peleng_locations.unwrap_or(false);
 
     let sigint_groups =
-        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+        crate::messenger::group::get_rer_feed_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
     let report_settings =

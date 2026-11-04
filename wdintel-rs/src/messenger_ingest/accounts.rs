@@ -1,4 +1,6 @@
-use crate::config::MESSENGER_INGEST_SYNC_MAX_ITEMS;
+use crate::config::{
+    MESSENGER_INGEST_GROUP_KEY_PREFIX, MESSENGER_INGEST_SYNC_MAX_ITEMS,
+};
 use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::{datasource_group, messenger_account, signal_group};
 use crate::error::AppError;
@@ -419,7 +421,7 @@ async fn create_account_group(
 ) -> anyhow::Result<datasource_group::Model> {
     // One signal_group and one datasource_group per messenger account;
     // the echo-generated key keeps accounts of different datasources apart.
-    let master_key = format!("messenger_ingest.{account_id}");
+    let master_key = format!("{MESSENGER_INGEST_GROUP_KEY_PREFIX}{account_id}");
     let signal_group = crate::operator::insert_or_sync_signal_group(
         txn,
         scope.datasource_id(),
