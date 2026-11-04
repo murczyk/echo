@@ -8,7 +8,11 @@ import { DeviceRating } from './DeviceRating';
 import { DeviceTagsCell } from './DeviceTagsCell';
 import { TableEmptyState } from '../../../components/TableEmptyState';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
-import { DEVICES_LOADING_PLACEHOLDER_COUNT, type DeviceRowView } from '../helpers';
+import {
+  customFieldColumnId,
+  DEVICES_LOADING_PLACEHOLDER_COUNT,
+  type DeviceRowView,
+} from '../helpers';
 import { useDeviceAutoLoad } from '../use-device-auto-load';
 import { DeviceRecentActivityCell } from './DeviceRecentActivityCell';
 import { DeviceSizeLabel } from './DeviceSizeLabel';
@@ -58,6 +62,8 @@ export function DeviceMobileList({
   });
   const sorting = table.getState().sorting[0];
   const visible = (id: string) => table.getColumn(id)?.getIsVisible() !== false;
+  const customFieldVisible = (key: string) =>
+    table.getColumn(customFieldColumnId(key))?.getIsVisible() === true;
   return (
     <section
       ref={scroll.containerRef}
@@ -180,6 +186,20 @@ export function DeviceMobileList({
                     <dd className="m-0">{row.createdAtLabel}</dd>
                   </div>
                 ) : null}
+                {visible('description') && row.description ? (
+                  <div>
+                    <dt>Опис</dt>
+                    <dd className="m-0 whitespace-pre-line">{row.description}</dd>
+                  </div>
+                ) : null}
+                {Object.entries(row.customFields)
+                  .filter(([key, value]) => value && customFieldVisible(key))
+                  .map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{key}</dt>
+                      <dd className="m-0">{value}</dd>
+                    </div>
+                  ))}
               </dl>
             </details>
           </li>

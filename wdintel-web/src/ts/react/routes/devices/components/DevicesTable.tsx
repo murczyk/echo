@@ -37,6 +37,8 @@ import { DeviceSizeLabel } from './DeviceSizeLabel';
 import { DeviceMobileList } from './DeviceMobileList';
 import { useDeviceMobileLayout } from '../use-device-mobile-layout';
 import {
+  customFieldColumnId,
+  mergeCustomFieldColumnOrder,
   DEVICES_LOADING_PLACEHOLDER_COUNT,
   DEVICES_LOADING_ROW_ID_PREFIX,
   type DeviceRowView,
@@ -68,13 +70,35 @@ type Props = {
   onClearFilters: () => void;
   onTableInitialized: (table: MRT_TableInstance<DeviceRowView>) => void;
   columnOrder: MRT_ColumnOrderState;
+  customFieldKeys: string[];
 };
+
+const EMPTY_CELL_VALUE = '—';
+
+function buildCustomFieldColumns(customFieldKeys: string[]): AppMrtColumnDef<DeviceRowView>[] {
+  return customFieldKeys.map((key) => ({
+    id: customFieldColumnId(key),
+    accessorFn: (row) => row.customFields[key] ?? '',
+    header: key,
+    size: 180,
+    enableSorting: false,
+    meta: { overflowMode: 'text' },
+    Cell: mrtTextCell<DeviceRowView>({
+      fullValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+      displayValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+    }),
+  }));
+}
 
 function useDevicesTableColumns({
   canRate,
   mutatingDeviceId,
   onRate,
-}: Pick<Props, 'canRate' | 'mutatingDeviceId' | 'onRate'>): AppMrtColumnDef<DeviceRowView>[] {
+  customFieldKeys,
+}: Pick<
+  Props,
+  'canRate' | 'mutatingDeviceId' | 'onRate' | 'customFieldKeys'
+>): AppMrtColumnDef<DeviceRowView>[] {
   return useMemo(
     () => [
       {
@@ -105,6 +129,18 @@ function useDevicesTableColumns({
         }),
       },
       {
+        id: 'description',
+        accessorFn: (row) => row.description ?? '',
+        header: 'Опис',
+        size: 260,
+        enableSorting: false,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<DeviceRowView>({
+          fullValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+          displayValue: ({ cell }) => (cell.getValue() as string) || EMPTY_CELL_VALUE,
+        }),
+      },
+      {
         accessorKey: 'rating',
         header: 'Рейтинг',
         size: 160,
@@ -122,7 +158,7 @@ function useDevicesTableColumns({
         id: 'aors',
         accessorKey: 'aorLabel',
         header: 'Смуги',
-        size: 240,
+        size: 160,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell<DeviceRowView>({
           fullValue: ({ cell }) => cell.getValue() as string,
@@ -183,13 +219,14 @@ function useDevicesTableColumns({
       {
         accessorKey: 'tags',
         header: 'Теги',
-        size: 240,
+        size: 160,
         enableSorting: false,
         meta: { overflowMode: 'none' },
         Cell: ({ row }) => <DeviceTagsCell tags={row.original.tags} />,
       },
+      ...buildCustomFieldColumns(customFieldKeys),
     ],
-    [canRate, mutatingDeviceId, onRate],
+    [canRate, mutatingDeviceId, onRate, customFieldKeys],
   );
 }
 
@@ -213,9 +250,27 @@ export function DevicesTable({
   onClearFilters,
   onTableInitialized,
   columnOrder,
+  customFieldKeys,
 }: Props) {
   const mobile = useDeviceMobileLayout();
-  const columns = useDevicesTableColumns({ canRate, mutatingDeviceId, onRate });
+  const columns = useDevicesTableColumns({ canRate, mutatingDeviceId, onRate, customFieldKeys });
+  const baseColumnOrder = tableStateContext.columnOrder ?? columnOrder;
+  const customFieldColumnIds = useMemo(
+    () => customFieldKeys.map(customFieldColumnId),
+    [customFieldKeys],
+  );
+  const effectiveColumnOrder = useMemo(
+    () => mergeCustomFieldColumnOrder(baseColumnOrder, customFieldColumnIds),
+    [baseColumnOrder, customFieldColumnIds],
+  );
+  // Custom field columns are hidden unless the user enabled them (persisted by TableStateProvider).
+  const effectiveColumnVisibility = useMemo(
+    () => ({
+      ...Object.fromEntries(customFieldColumnIds.map((id) => [id, false])),
+      ...(tableStateContext.columnVisibility ?? {}),
+    }),
+    [customFieldColumnIds, tableStateContext.columnVisibility],
+  );
   const tableRows = useMemo(() => {
     const template = rows.at(-1);
     if (!loadingMore || !template) return rows;
@@ -381,9 +436,9 @@ export function DevicesTable({
       showProgressBars: false,
       globalFilter: tableStateContext.globalFilter,
       sorting: tableStateContext.sorting,
-      columnOrder: tableStateContext.columnOrder ?? columnOrder,
+      columnOrder: effectiveColumnOrder,
       columnSizing: tableStateContext.columnSizing ?? {},
-      columnVisibility: tableStateContext.columnVisibility ?? {},
+      columnVisibility: effectiveColumnVisibility,
     },
   });
 

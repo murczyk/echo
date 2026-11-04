@@ -73,6 +73,55 @@ export const DEVICES_AUTO_LOAD_THRESHOLD_PX = 160;
 export const DEVICES_LOADING_PLACEHOLDER_COUNT = 3;
 export const DEVICES_LOADING_ROW_ID_PREFIX = 'device-loading-row-';
 export const DEFAULT_DEVICES_SORTING: MRT_SortingState = [{ id: 'activity', desc: true }];
+const DEVICES_SORTABLE_COLUMN_IDS = new Set([
+  'name',
+  'rating',
+  'aors',
+  'unit',
+  'createdBy',
+  'createdAt',
+  'updatedAt',
+  'activity',
+  'size',
+]);
+const CUSTOM_FIELD_COLUMN_PREFIX = 'customField:';
+
+export function customFieldColumnId(key: string): string {
+  return `${CUSTOM_FIELD_COLUMN_PREFIX}${key}`;
+}
+
+export function isCustomFieldColumnId(columnId: string): boolean {
+  return columnId.startsWith(CUSTOM_FIELD_COLUMN_PREFIX);
+}
+
+/**
+ * Keeps the user's stored positions of custom field columns, drops columns of keys that no
+ * longer exist and inserts new ones after the last custom field column (by default: after name).
+ */
+export function mergeCustomFieldColumnOrder(
+  columnOrder: string[],
+  customFieldColumnIds: string[],
+): string[] {
+  const merged = columnOrder.filter(
+    (columnId) => !isCustomFieldColumnId(columnId) || customFieldColumnIds.includes(columnId),
+  );
+  const missing = customFieldColumnIds.filter((columnId) => !merged.includes(columnId));
+  if (missing.length === 0) return merged;
+
+  const lastCustomIndex = merged.reduce(
+    (last, columnId, index) => (isCustomFieldColumnId(columnId) ? index : last),
+    -1,
+  );
+  const anchorIndex = lastCustomIndex >= 0 ? lastCustomIndex : merged.indexOf('name');
+  if (anchorIndex < 0) return [...merged, ...missing];
+  return [...merged.slice(0, anchorIndex + 1), ...missing, ...merged.slice(anchorIndex + 1)];
+}
+
+export function sanitizeDevicesSorting(sorting: MRT_SortingState): MRT_SortingState {
+  const current = sorting[0];
+  if (!current || !DEVICES_SORTABLE_COLUMN_IDS.has(current.id)) return DEFAULT_DEVICES_SORTING;
+  return [{ id: current.id, desc: current.desc === true }];
+}
 const DEVICE_UNIT_HIERARCHY_KEYS = [
   'armyRegion',
   'militaryDistrict',
@@ -290,6 +339,8 @@ export function deviceDetailsToListItem(
     rating: device.rating,
     tags: device.tags,
     name: device.name,
+    description: device.description,
+    customFields: device.customFields,
     aors: device.aors,
     unit: device.unit,
     createdBy: device.createdBy,

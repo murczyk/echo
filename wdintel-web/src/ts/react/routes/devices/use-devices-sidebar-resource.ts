@@ -16,6 +16,7 @@ export function useDevicesSidebarResource(enabled: boolean, canReadUnitCatalog: 
     aors: [],
     creators: [],
     tags: [],
+    customFieldKeys: [],
   });
   const [unitStats, setUnitStats] = useState<DeviceUnitStat[]>([]);
   const [loading, setLoading] = useState(enabled);

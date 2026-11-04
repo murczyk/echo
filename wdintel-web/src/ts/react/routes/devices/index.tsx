@@ -16,7 +16,12 @@ import {
 import type { ActiveFilterDescriptor } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions/components/active-filters-utils';
 import { DeviceSidebarFilters } from './components/DeviceSidebarFilters';
 import { UnitStatsSidebar } from '../rer-callsigns-neo/components/UnitStatsSidebar';
-import { DEFAULT_DEVICES_SORTING, sanitizeDevicesColumnFilters } from './helpers';
+import {
+  DEFAULT_DEVICES_SORTING,
+  isCustomFieldColumnId,
+  sanitizeDevicesColumnFilters,
+  sanitizeDevicesSorting,
+} from './helpers';
 import { DeviceUpsertDrawer } from './components/DeviceUpsertDrawer';
 import { DevicesTable } from './components/DevicesTable';
 import { DevicesToolbar } from './components/DevicesToolbar';
@@ -26,6 +31,7 @@ import { useDeviceMobileLayout } from './use-device-mobile-layout';
 const columnOrder = buildDefaultColumnOrder({
   dataColumnIds: [
     'name',
+    'description',
     'rating',
     'aors',
     'unit',
@@ -41,6 +47,7 @@ const columnOrder = buildDefaultColumnOrder({
 
 const defaultColumnVisibility = {
   name: true,
+  description: false,
   aors: true,
   unit: true,
   activity: true,
@@ -347,6 +354,7 @@ function DevicesPageBody({ authUserRoles = [] }: { authUserRoles?: string[] }) {
                 onClearFilters={page.clearFilters}
                 onTableInitialized={tableStateContext.onTableInitialized}
                 columnOrder={columnOrder}
+                customFieldKeys={page.filterOptions.customFieldKeys}
               />
             )}
           </Stack>
@@ -362,7 +370,10 @@ export function DevicesPage({ authUserRoles = [] }: { authUserRoles?: string[] }
       tableId="devices"
       defaultColumnVisibility={defaultColumnVisibility}
       defaultColumnOrder={columnOrder}
+      isDynamicColumnId={isCustomFieldColumnId}
       defaultSorting={DEFAULT_DEVICES_SORTING}
+      persistSorting
+      sanitizeSorting={sanitizeDevicesSorting}
       sanitizeColumnFilters={sanitizeDevicesColumnFilters}
     >
       <DevicesPageBody authUserRoles={authUserRoles} />
