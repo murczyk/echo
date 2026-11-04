@@ -30,6 +30,7 @@ pub mod activity;
 pub mod attachment;
 pub mod changelog;
 pub mod combat_type;
+pub mod hierarchy;
 pub mod labels;
 mod merge_task;
 pub(crate) mod message_creation;

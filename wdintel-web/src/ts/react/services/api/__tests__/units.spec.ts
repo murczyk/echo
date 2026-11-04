@@ -9,6 +9,7 @@ import {
   deleteUnitAttachment,
   getCreateUnitDuplicateCandidates,
   getUnitDetails,
+  getUnitHierarchy,
   getUnitsPage,
   getUnitIdsWithVisibleAttachments,
   getUnitsList,
@@ -28,6 +29,37 @@ function jsonResponse(value: unknown): Response {
 describe('units API', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+  it('#3527 releases a stalled hierarchy request so a retry can load the catalog', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url, options: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              options.signal!.addEventListener('abort', () => reject(options.signal!.reason), {
+                once: true,
+              });
+            }),
+        ),
+      );
+      const request = getUnitHierarchy(null);
+      const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await rejected;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(jsonResponse({ revision: 'recovered', groups: [], units: [] })),
+      );
+      await expect(getUnitHierarchy(null)).resolves.toEqual({
+        revision: 'recovered',
+        groups: [],
+        units: [],
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('normalizes unit response fields to camel case', async () => {
     const fetchMock = vi.fn().mockResolvedValue(

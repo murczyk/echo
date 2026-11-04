@@ -34,6 +34,7 @@ import type { SelectedSidebarUnitFilter, UnitHierarchyFilter, UnitStatView } fro
 
 type Props = {
   stats: UnitStatView[];
+  cachedTree?: TreeNode[] | null;
   open: boolean;
   isDesktopLayout: boolean;
   loading: boolean;
@@ -76,8 +77,72 @@ function collapseTerminalSingleUnitGroups(nodes: TreeNode[]): TreeNode[] {
   });
 }
 
-export function buildUnitTree(stats: UnitStatView[]): TreeNode[] {
-  return collapseTerminalSingleUnitGroups(buildUnitHierarchyTree(stats));
+export function buildUnitTree(stats: UnitStatView[], cachedTree?: TreeNode[] | null): TreeNode[] {
+  if (!cachedTree) return collapseTerminalSingleUnitGroups(buildUnitHierarchyTree(stats));
+  const rows = new Map(stats.map((row, rank) => [row.unitId, { row, rank }]));
+  const ranks = new Map<string, number>();
+  const visit = (nodes: TreeNode[]): TreeNode[] =>
+    nodes
+      .flatMap((node): TreeNode[] => {
+        if (node.kind === 'leaf') {
+          const match = rows.get(node.unitId);
+          if (!match) return [];
+          rows.delete(node.unitId);
+          ranks.set(node.id, match.rank);
+          return [
+            {
+              ...node,
+              unitName: match.row.unitName,
+              label: match.row.unitName,
+              count: match.row.count,
+            },
+          ];
+        }
+        const children = visit(node.children);
+        if (children.length === 0) return [];
+        ranks.set(
+          node.id,
+          children.reduce((rank, child) => Math.min(rank, ranks.get(child.id)!), Infinity),
+        );
+        return [
+          { ...node, children, count: children.reduce((total, child) => total + child.count, 0) },
+        ];
+      })
+      .sort((left, right) => ranks.get(left.id)! - ranks.get(right.id)!);
+  const nodes = visit(cachedTree);
+  rows.forEach(({ row, rank }) => {
+    const id = `unit:${row.unitId}`;
+    ranks.set(id, rank);
+    nodes.push({
+      kind: 'leaf',
+      id,
+      unitId: row.unitId,
+      unitName: row.unitName,
+      label: row.unitName,
+      count: row.count,
+    });
+  });
+  nodes.sort((left, right) => ranks.get(left.id)! - ranks.get(right.id)!);
+  return collapseTerminalSingleUnitGroups(nodes);
+}
+
+function reconcileUnitStats(stats: UnitStatView[], cachedTree?: TreeNode[] | null): UnitStatView[] {
+  if (!cachedTree) return stats;
+  const current = new Map<number, Partial<UnitStatView>>();
+  const visit = (nodes: TreeNode[], hierarchy: Partial<UnitStatView>) => {
+    nodes.forEach((node) => {
+      if (node.kind === 'leaf') {
+        current.set(node.unitId, { ...hierarchy, unitName: node.unitName });
+      } else {
+        visit(
+          node.children,
+          Object.fromEntries(HIERARCHY_KEYS.map((key) => [key, node.hierarchy[key] ?? ''])),
+        );
+      }
+    });
+  };
+  visit(cachedTree, Object.fromEntries(HIERARCHY_KEYS.map((key) => [key, ''])));
+  return stats.map((row) => ({ ...row, ...current.get(row.unitId) }));
 }
 
 function collectGroupIds(nodes: TreeNode[]): string[] {
@@ -316,6 +381,7 @@ function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter
 
 export function UnitStatsSidebar({
   stats,
+  cachedTree,
   open,
   isDesktopLayout,
   loading,
@@ -334,11 +400,12 @@ export function UnitStatsSidebar({
     () => normalizeSearchQuery(debouncedSearchInput),
     [debouncedSearchInput],
   );
+  const currentStats = useMemo(() => reconcileUnitStats(stats, cachedTree), [stats, cachedTree]);
   const filteredStats = useMemo(
-    () => stats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
-    [stats, normalizedSearchQuery],
+    () => currentStats.filter((row) => matchesUnitSearch(row, normalizedSearchQuery)),
+    [currentStats, normalizedSearchQuery],
   );
-  const tree = useMemo(() => buildUnitTree(filteredStats), [filteredStats]);
+  const tree = useMemo(() => buildUnitTree(filteredStats, cachedTree), [filteredStats, cachedTree]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const total = filteredStats.reduce((sum, row) => sum + row.count, 0);
   const totalOverall = stats.reduce((sum, row) => sum + row.count, 0);

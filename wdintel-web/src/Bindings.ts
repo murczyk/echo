@@ -3968,6 +3968,29 @@ export type Unit = {
   orbitUnitGenerativeNames: Array<string>;
 };
 
+export type UnitHierarchyGroup = {
+  id: string;
+  label: string;
+  level: number;
+  parentIndex: number | null;
+};
+
+export type UnitHierarchyUnit = {
+  id: number;
+  name: string;
+  groupIndex: number | null;
+};
+
+export type UnitHierarchyRsp = {
+  revision: string;
+  groups: Array<UnitHierarchyGroup>;
+  units: Array<UnitHierarchyUnit>;
+};
+
+export type UnitHierarchyReq = {
+  knownRevision: string | null;
+};
+
 export type UnitCombatType = {
   id: string;
   name: string;

@@ -1984,7 +1984,13 @@ async fn async_main(
             oneoff::oneoff_test_logging_error_macro(mode)
         }
         Cmd::ExportUnit(ps) => rer_importer::unit::export_unit(mode, &ps).await,
-        Cmd::ImportUnit(ps) => rer_importer::unit::import_unit(mode, &ps).await,
+        Cmd::ImportUnit(ps) => {
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                rer_importer::unit::import_unit(mode, &ps),
+            )
+            .await
+        }
         Cmd::OneoffMergeAllNetworks => {
             sigint::network::oneoff::oneoff_merge_all_possible_networks(mode)
                 .await
@@ -2003,11 +2009,14 @@ async fn async_main(
                 .await
         }
         Cmd::OneoffImportEtalonData(ps) => {
-            sigint::import::oneoff_import_etalon_data(
+            sigint::unit::hierarchy::invalidate_after(
                 mode,
-                ps.path,
-                ps.origin,
-                ps.autocommit.unwrap_or(false),
+                sigint::import::oneoff_import_etalon_data(
+                    mode,
+                    ps.path,
+                    ps.origin,
+                    ps.autocommit.unwrap_or(false),
+                ),
             )
             .await
         }
@@ -2197,14 +2206,42 @@ async fn async_main(
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
-        Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
+        Cmd::TuiImportOrbitUnits => {
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                orbit::run_import_tui(mode),
+            )
+            .await
+        }
         Cmd::TuiMergeOrbitUnitDuplicates(ps) => {
-            orbit::tui_merge_unit_duplicates(mode, ps.dry_run).await
+            if ps.dry_run {
+                orbit::tui_merge_unit_duplicates(mode, true).await
+            } else {
+                sigint::unit::hierarchy::invalidate_after(
+                    mode,
+                    orbit::tui_merge_unit_duplicates(mode, false),
+                )
+                .await
+            }
         }
         Cmd::TuiResolveOrbitUnparsedUnits(ps) => {
-            orbit::tui_resolve_unparsed_units(mode, ps.dry_run).await
+            if ps.dry_run {
+                orbit::tui_resolve_unparsed_units(mode, true).await
+            } else {
+                sigint::unit::hierarchy::invalidate_after(
+                    mode,
+                    orbit::tui_resolve_unparsed_units(mode, false),
+                )
+                .await
+            }
         }
-        Cmd::TuiFixOrbitUnitNames => orbit::tui_fix_unit_names(mode).await,
+        Cmd::TuiFixOrbitUnitNames => {
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                orbit::tui_fix_unit_names(mode),
+            )
+            .await
+        }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }
@@ -2212,16 +2249,32 @@ async fn async_main(
             oneoff::oneoff_kill_old_queries(mode, &ps).await
         }
         Cmd::TuiImportUnit(ps) => {
-            sigint::import::tui::run_import_unit_tui(mode, ps).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::run_import_unit_tui(mode, ps),
+            )
+            .await
         }
         Cmd::TuiImportNetwork(ps) => {
-            sigint::import::tui::run_import_network_tui(mode, ps).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::run_import_network_tui(mode, ps),
+            )
+            .await
         }
         Cmd::OneoffImportNetworkDetails(ps) => {
-            sigint::import::tui::oneoff_import_network_details(mode, ps).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::oneoff_import_network_details(mode, ps),
+            )
+            .await
         }
         Cmd::TuiMergeUnit => {
-            sigint::import::tui::run_merge_unit_tui(mode).await
+            sigint::unit::hierarchy::invalidate_after(
+                mode,
+                sigint::import::tui::run_merge_unit_tui(mode),
+            )
+            .await
         }
         Cmd::TuiMergeNetwork => {
             sigint::import::tui::run_merge_network_tui(mode).await
