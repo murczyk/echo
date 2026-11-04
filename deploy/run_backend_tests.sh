@@ -17,8 +17,10 @@ fi
 python3 -m unittest \
     scripts/ci/test_check_analytics_migrations.py \
     scripts/ci/test_ci_scope.py \
+    scripts/ci/test_check_serial_db_tests.py \
     deploy/ci/test_run_rust_shards.py
 python3 scripts/ci/check_analytics_migrations.py
+python3 scripts/ci/check_serial_db_tests.py
 
 # Compare with `skip` so a ci_scope.py failure still runs these tests.
 clickhouse_scope="$(python3 scripts/ci/ci_scope.py clickhouse)" || true

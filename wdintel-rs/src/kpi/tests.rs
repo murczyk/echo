@@ -186,6 +186,7 @@ async fn assert_history_metrics(
 
 // https://github.com/echoua/echo/issues/3826
 #[tokio::test]
+#[serial_test::serial]
 async fn report_metric_totals_survive_dashboard_author_limit(
 ) -> anyhow::Result<()> {
     use crate::config::*;
