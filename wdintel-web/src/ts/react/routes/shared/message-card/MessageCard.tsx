@@ -337,6 +337,7 @@ function MessageCardComponent({
     ) : undefined;
   const showContentMetadata =
     hideNetworks ||
+    isPresent(visibleEtalonDisplayModel.headerUnit) ||
     (radioFeaturesAllowed && isPresent(msg.freq)) ||
     (canUseMessageDevices && Boolean(msg.deviceName?.trim())) ||
     metadataTrigger != null;
