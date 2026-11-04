@@ -2327,6 +2327,10 @@ fn patch_backward_compatible_decoders(
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
         .replace(
+            r#"Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
             r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMediaPreviews" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )

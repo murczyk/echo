@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from 'react';
 
 import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
@@ -45,6 +46,30 @@ export function useManageMessageEditorPresentation(): ManageMessageEditorPresent
   return viewportCanEmbed ? 'embedded' : 'modal';
 }
 
+export function useEditorEscapeClose(
+  surfaceRef: RefObject<HTMLElement | null>,
+  enabled: boolean,
+  onRequestClose: () => void,
+) {
+  useEffect(() => {
+    if (!enabled) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      const surface = surfaceRef.current;
+      if (
+        event.defaultPrevented ||
+        event.key !== 'Escape' ||
+        !surface?.contains(document.activeElement)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onRequestClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [enabled, onRequestClose, surfaceRef]);
+}
+
 export function ManageMessageEditorSurface({
   children,
   dismissDisabled,
@@ -79,23 +104,11 @@ export function ManageMessageEditorSurface({
     embeddedSurfaceRef.current?.toggleAttribute('inert', !open);
   }, [embeddedMounted, open]);
 
-  useEffect(() => {
-    if (presentation !== 'embedded' || !open || dismissDisabled) return;
-    const handleEscape = (event: KeyboardEvent) => {
-      const surface = embeddedSurfaceRef.current;
-      if (
-        event.defaultPrevented ||
-        event.key !== 'Escape' ||
-        !surface?.contains(document.activeElement)
-      ) {
-        return;
-      }
-      event.preventDefault();
-      onRequestClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [dismissDisabled, onRequestClose, open, presentation]);
+  useEditorEscapeClose(
+    embeddedSurfaceRef,
+    presentation === 'embedded' && open && !dismissDisabled,
+    onRequestClose,
+  );
 
   if (presentation === 'modal') {
     return (

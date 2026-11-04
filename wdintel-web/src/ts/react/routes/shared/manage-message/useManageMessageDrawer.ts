@@ -98,6 +98,7 @@ export type UseManageMessageDrawerProps = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
   interactionActive?: boolean;
   keepOpenAfterCreate?: boolean;
+  quickSuggestionsEnabled?: boolean;
   intentKey?: string;
   initialGroupMasterKey?: string | null;
 };
@@ -120,6 +121,7 @@ export function useManageMessageDrawer({
   onSubmitEdit,
   interactionActive = true,
   keepOpenAfterCreate = false,
+  quickSuggestionsEnabled = true,
   intentKey,
   initialGroupMasterKey = null,
 }: UseManageMessageDrawerProps) {
@@ -775,6 +777,17 @@ export function useManageMessageDrawer({
     uppyFiles,
   ]);
 
+  const reportDetailsMissing =
+    isReportCreateMode &&
+    reportCopyLoaded &&
+    ((unitRequired && !formValues.unit?.trim()) ||
+      (deviceRequired && !formValues.deviceName?.trim()) ||
+      !isMessageUnitSelectionValid(
+        formValues.unit,
+        formValues.unitSelection,
+        formValues.unitNetworkSelection,
+      ));
+
   useEffect(() => {
     if (!formReady) {
       setGroupsLoaded(false);
@@ -979,7 +992,13 @@ export function useManageMessageDrawer({
   ]);
 
   useEffect(() => {
-    if (!formReady || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
+    if (
+      !formReady ||
+      !isReportCreateMode ||
+      !reportCopyLoaded ||
+      !reportSource ||
+      !quickSuggestionsEnabled
+    ) {
       setQuickSuggestion({ status: 'idle' });
       return;
     }
@@ -1016,7 +1035,14 @@ export function useManageMessageDrawer({
       active = false;
       controller.abort();
     };
-  }, [isReportCreateMode, formReady, quickSuggestionAttempt, reportCopyLoaded, reportSource?.id]);
+  }, [
+    isReportCreateMode,
+    formReady,
+    quickSuggestionAttempt,
+    quickSuggestionsEnabled,
+    reportCopyLoaded,
+    reportSource?.id,
+  ]);
 
   const applyQuickSuggestion = () => {
     if (quickSuggestion.status !== 'available') return;
@@ -1330,6 +1356,7 @@ export function useManageMessageDrawer({
     setAttachmentErrorMsg,
     methods,
     canSubmit,
+    reportDetailsMissing,
     handleParse,
     acceptParsedField: handleAcceptParsedField,
     autoParseEnabled,
