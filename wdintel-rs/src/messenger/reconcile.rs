@@ -2338,6 +2338,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn copied_comments_distinguish_sigint_post_id() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -2425,6 +2426,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_matches_legacy_unbackfilled_message() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -2620,6 +2622,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_invalidates_fallback_timestamp_before_update() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -2690,6 +2693,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn deleting_linked_message_invalidates_network_frequency_last_seen() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -2733,6 +2737,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn retiring_obsolete_message_invalidates_network_frequency_last_seen()
     {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -2787,6 +2792,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn load_linked_messages_prefers_active_non_trace_source() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -2851,6 +2857,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_id_only_tombstone_matches_legacy_unbackfilled_message() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -2979,6 +2986,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_duplicate_trace_removes_original_group_link() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -3097,6 +3105,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_original_promotes_duplicate_trace() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -3619,6 +3628,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_original_keeps_blank_duplicate_trace_deleted_without_media()
     {
         let (env, _guard) = cleanup_locked().await.unwrap();
@@ -3722,6 +3732,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_original_without_promotion_clears_stale_dedupe_key() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -3821,6 +3832,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_original_promotes_later_nonblank_duplicate_trace() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -3938,6 +3950,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn delete_original_copies_split_promotion_annotations_to_children() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -4245,6 +4258,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_matches_legacy_unbackfilled_message() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -4316,6 +4330,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_normalizes_whatsapp_sender_before_unstage() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -4412,6 +4427,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_preserves_media_when_snapshot_has_no_attachments() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -4528,6 +4544,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_prefers_non_empty_snapshot_attachments() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let attachments_dir = tempfile::tempdir().unwrap();
@@ -4652,6 +4669,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_regenerates_search_for_split_children() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -4982,6 +5000,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn failed_edit_clears_seeded_dedupe_key() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -5100,6 +5119,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn failed_edit_restores_previous_dedupe_key() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let mut redis = env.redis.clone();
@@ -5173,6 +5193,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn duplicate_edit_deletes_trace_media() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -5481,6 +5502,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn duplicate_edit_uses_preserved_hash_for_unavailable_media() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -5625,6 +5647,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn active_edit_empty_attachment_fallback_preserves_existing_media() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -5740,6 +5763,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_lock_timeout_preserves_previous_dedupe_key() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -5853,6 +5877,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_clears_previous_dedupe_key_under_shared_update_lock() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -6050,6 +6075,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn ambiguous_duplicate_group_links_preserve_original_messages() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         for sender in [None, Some("duplicate-sender".to_string())] {
@@ -6077,6 +6103,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn duplicate_group_link_reset_rolls_back_settlement_requeue() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         for sender in [None, Some("duplicate-sender".to_string())] {
@@ -6163,6 +6190,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn edit_from_duplicate_removes_previous_original_group_link() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
@@ -6354,6 +6382,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn reset_machine_derived_inbox_data_removes_auto_data_only() {
         let (env, _guard) = cleanup_locked().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
