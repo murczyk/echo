@@ -1101,6 +1101,14 @@ pub async fn bl_group_update(
     } else {
         group
     };
+    crate::messenger::group::requirements::set(
+        txn,
+        &group.master_key,
+        req.is_sigint_unit_mandatory,
+        req.is_device_mandatory,
+    )
+    .await
+    .c(h!())?;
     crate::sigint::zone::bl::update_group_fetch_new_messages_if_present(
         req.fetch_new_messages,
         &group.master_key,

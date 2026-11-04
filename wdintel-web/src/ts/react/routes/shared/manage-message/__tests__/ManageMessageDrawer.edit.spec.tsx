@@ -8,7 +8,6 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage } from '../../../../../../Bindings';
 import dayjs from 'dayjs';
-import { getMessageCreationSettings } from '../../../../services/api/role-message-settings';
 
 const referenceDataMocks = vi.hoisted(() => ({
   getUserSigintGroups: vi.fn().mockResolvedValue([]),
@@ -97,13 +96,6 @@ vi.mock('../../../../services/api/direct-submit', () => ({
   copyDirectSubmit: directSubmitMocks.copyDirectSubmit,
   formatDirectSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : 'save failed',
-}));
-vi.mock('../../../../services/api/role-message-settings', () => ({
-  getMessageCreationSettings: vi.fn().mockResolvedValue({
-    unitRequired: false,
-    deviceRequired: false,
-    allowUnitCreation: true,
-  }),
 }));
 vi.mock('../../../../services/api/networks', () => ({
   getNetworksByIds: networkMocks.getNetworksByIds,
@@ -2227,20 +2219,15 @@ describe('ManageMessageDrawer edit mode', () => {
   );
 
   it.each([
-    [0, false, '51 пдп'],
-    [1, false, '51 пдп'],
-    [2, false, '51 пдп'],
-    [0, true, ' 51 пдп '],
+    [0, '51 пдп'],
+    [1, '51 пдп'],
+    [2, '51 пдп'],
+    [0, ' 51 пдп '],
   ] as const)(
-    '#3891/#3935 submitted an inherited unit without an ID (matches=%i, required=%s, label=%j)',
-    async (count, unitRequired, unit) => {
+    '#3891/#3935 submitted an inherited unit without an ID (matches=%i, label=%j)',
+    async (count, unit) => {
       vi.useFakeTimers();
       setRecentValues({});
-      vi.mocked(getMessageCreationSettings).mockResolvedValueOnce({
-        unitRequired,
-        deviceRequired: false,
-        allowUnitCreation: false,
-      });
       directSubmitMocks.copyDirectSubmit.mockResolvedValue({
         payloads: [{ unit, timestamp: '2026-10-20T06:46:00Z' }],
       });

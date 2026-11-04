@@ -18,6 +18,8 @@ pub struct BlSzdGroupUpdateRes {
     pub is_aviation_group: bool,
     pub ai_transcript_analysis_enabled: bool,
     pub fetch_new_messages: bool,
+    pub is_sigint_unit_mandatory: bool,
+    pub is_device_mandatory: bool,
     pub aor: Option<Vec<area_of_responsibility::Model>>,
     pub allowed_users: Vec<String>,
     pub allowed_user_details: Vec<SignalGroupLogin>,
@@ -116,6 +118,15 @@ pub async fn bl_szd_group_update(
         )
         .await
         .c(h!())?;
+    let (is_sigint_unit_mandatory, is_device_mandatory) =
+        crate::messenger::group::requirements::set(
+            txn,
+            &szd.group_master_key,
+            req.is_sigint_unit_mandatory,
+            req.is_device_mandatory,
+        )
+        .await
+        .c(h!())?;
     let fetch_new_messages = update_group_fetch_new_messages_if_present(
         req.fetch_new_messages,
         &szd.group_master_key,
@@ -175,6 +186,8 @@ pub async fn bl_szd_group_update(
         is_aviation_group,
         ai_transcript_analysis_enabled,
         fetch_new_messages,
+        is_sigint_unit_mandatory,
+        is_device_mandatory,
         aor: if aor.is_empty() { None } else { Some(aor) },
         allowed_user_details: render_group_logins(
             allowed_users.clone(),
@@ -1047,6 +1060,8 @@ pub async fn bl_szd_groups_list(
         is_aviation_group: Option<bool>,
         ai_transcript_analysis_enabled: Option<bool>,
         fetch_new_messages: Option<bool>,
+        is_sigint_unit_mandatory: Option<bool>,
+        is_device_mandatory: Option<bool>,
         short_note: Option<String>,
         long_note: Option<String>,
         color_key: Option<String>,
@@ -1083,6 +1098,14 @@ pub async fn bl_szd_groups_list(
         )
         .column_as(signal_group::Column::ColorKey, "color_key")
         .column_as(signal_group::Column::FetchNewMessages, "fetch_new_messages")
+        .column_as(
+            signal_group::Column::IsSigintUnitMandatory,
+            "is_sigint_unit_mandatory",
+        )
+        .column_as(
+            signal_group::Column::IsDeviceMandatory,
+            "is_device_mandatory",
+        )
         .column(group_admin_data::Column::ShortNote)
         .column(group_admin_data::Column::LongNote)
         .filter(datasource::Column::Deleted.eq(false))
@@ -1104,6 +1127,8 @@ pub async fn bl_szd_groups_list(
             Option<bool>,
             Option<bool>,
             Option<bool>,
+            Option<bool>,
+            Option<bool>,
             i64,
             Option<String>,
             Option<String>,
@@ -1118,6 +1143,8 @@ pub async fn bl_szd_groups_list(
             row.is_aviation_group,
             row.ai_transcript_analysis_enabled,
             row.fetch_new_messages,
+            row.is_sigint_unit_mandatory,
+            row.is_device_mandatory,
             row.id,
             row.short_note,
             row.long_note,
@@ -1162,6 +1189,8 @@ pub async fn bl_szd_groups_list(
                     is_aviation_group,
                     ai_transcript_analysis_enabled,
                     fetch_new_messages,
+                    is_sigint_unit_mandatory,
+                    is_device_mandatory,
                     szd_id,
                     short_note,
                     long_note,
@@ -1179,6 +1208,9 @@ pub async fn bl_szd_groups_list(
                     ai_transcript_analysis_enabled:
                         ai_transcript_analysis_enabled.unwrap_or(false),
                     fetch_new_messages: fetch_new_messages.unwrap_or(true),
+                    is_sigint_unit_mandatory: is_sigint_unit_mandatory
+                        .unwrap_or(false),
+                    is_device_mandatory: is_device_mandatory.unwrap_or(false),
                     allowed_users: group_users
                         .get(&master_key)
                         .cloned()

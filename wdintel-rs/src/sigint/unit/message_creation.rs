@@ -16,9 +16,6 @@ pub async fn create_unit_for_message(
     ensure_unit_creation(&env.dbx, &login, &req.unit)
         .await
         .c(h!())?;
-    crate::users::role_settings::ensure_unit_creation(&env.dbx, &login)
-        .await
-        .c(h!())?;
     Ok(Json(
         create_unit_for_message_for_login(&login, &env, req.into_inner())
             .await
@@ -729,6 +726,14 @@ mod tests {
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
+        crate::entities::login::ActiveModel {
+            id: Set(login),
+            roles: Set(serde_json::json!(["Rer", "UnitsEditor"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
         let payload = serde_json::from_value(serde_json::json!({
             "text": "#3535 concurrent message creation",
             "unit": "  СПІЛЬНИЙ   ПІДРОЗДІЛ 3535 ",

@@ -28,6 +28,8 @@ pub struct Model {
     pub created_by_login_id: Option<Uuid>,
     pub ai_transcript_analysis_enabled: Option<bool>,
     pub ai_transcript_analysis_enabled_at: Option<DateTime>,
+    pub is_sigint_unit_mandatory: Option<bool>,
+    pub is_device_mandatory: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

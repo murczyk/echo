@@ -3,6 +3,8 @@ use crate::functest::tests::*;
 
 fn settings(admin: &login::Model) -> NativeGroupSettings {
     NativeGroupSettings {
+        is_sigint_unit_mandatory: None,
+        is_device_mandatory: None,
         name: "Група Echo".to_string(),
         color_key: None,
         short_note: Some("Коротка нотатка".to_string()),

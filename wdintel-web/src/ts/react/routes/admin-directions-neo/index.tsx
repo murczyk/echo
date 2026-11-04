@@ -1,3 +1,4 @@
+import { GroupMessageRequirements } from '../shared/group-navigation/GroupMessageRequirements';
 import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -194,6 +195,8 @@ type GroupEditState = {
   isAviationGroup: boolean;
   aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   selectedUsers: string[];
   selectedUserDetails: SignalGroupLogin[];
   selectedOrganismIds: number[];
@@ -215,6 +218,8 @@ type OrphanEditState = {
   isAviationGroup: boolean;
   aiTranscriptAnalysisEnabled: boolean;
   fetchNewMessages: boolean;
+  isSigintUnitMandatory: boolean;
+  isDeviceMandatory: boolean;
   shortNote: string;
   longNote: string;
   selectedAorIds: number[];
@@ -714,6 +719,8 @@ function buildOrphanLoadingRows(): OrphanSignalGroupEntry[] {
     isAviationGroup: false,
     aiTranscriptAnalysisEnabled: false,
     fetchNewMessages: true,
+    isSigintUnitMandatory: false,
+    isDeviceMandatory: false,
     isArchived: false,
     groupStats: {
       activityLastDay: 0,
@@ -740,6 +747,8 @@ function buildZoneLoadingRows(): ZoneGroupRow[] {
       isAviationGroup: false,
       aiTranscriptAnalysisEnabled: false,
       fetchNewMessages: true,
+      isSigintUnitMandatory: false,
+      isDeviceMandatory: false,
       allowedUsers: [],
       allowedUserDetails: [],
       allowedOrganismIds: [],
@@ -2026,6 +2035,8 @@ function AdminDirectionsNeoPageBody() {
             isAviationGroup: group.isAviationGroup,
             aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
             fetchNewMessages: group.fetchNewMessages,
+            isSigintUnitMandatory: group.isSigintUnitMandatory,
+            isDeviceMandatory: group.isDeviceMandatory,
             groupStats: group.groupStats,
             adminData: group.groupAdminData,
             areasOfResponsibility: group.areasOfResponsibility,
@@ -2099,6 +2110,8 @@ function AdminDirectionsNeoPageBody() {
       isAviationGroup: group.isAviationGroup,
       aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
       fetchNewMessages: group.fetchNewMessages,
+      isSigintUnitMandatory: group.isSigintUnitMandatory,
+      isDeviceMandatory: group.isDeviceMandatory,
       selectedUsers: group.allowedUsers,
       selectedUserDetails: group.allowedUserDetails,
       selectedOrganismIds: group.allowedOrganismIds,
@@ -2127,6 +2140,8 @@ function AdminDirectionsNeoPageBody() {
       isAviationGroup: group.isAviationGroup,
       aiTranscriptAnalysisEnabled: group.aiTranscriptAnalysisEnabled,
       fetchNewMessages: group.fetchNewMessages,
+      isSigintUnitMandatory: group.isSigintUnitMandatory,
+      isDeviceMandatory: group.isDeviceMandatory,
       shortNote: group.groupAdminData?.shortNote ?? '',
       longNote: group.groupAdminData?.longNote ?? '',
       selectedAorIds: (group.areasOfResponsibility ?? []).map((aor) => aor.id),
@@ -2259,6 +2274,8 @@ function AdminDirectionsNeoPageBody() {
       isAviationGroup: editDialog.isAviationGroup,
       aiTranscriptAnalysisEnabled: editDialog.aiTranscriptAnalysisEnabled,
       fetchNewMessages: editDialog.fetchNewMessages,
+      isSigintUnitMandatory: editDialog.isSigintUnitMandatory,
+      isDeviceMandatory: editDialog.isDeviceMandatory,
       userLogins: selectedUsers,
       organismIds: selectedOrganismIds,
       adminLogins: editDialog.selectedAdmins,
@@ -2296,6 +2313,8 @@ function AdminDirectionsNeoPageBody() {
           isAviationGroup: updatedGroup.isAviationGroup,
           aiTranscriptAnalysisEnabled: updatedGroup.aiTranscriptAnalysisEnabled,
           fetchNewMessages: updatedGroup.fetchNewMessages,
+          isSigintUnitMandatory: updatedGroup.isSigintUnitMandatory,
+          isDeviceMandatory: updatedGroup.isDeviceMandatory,
           adminData:
             updatedGroup.shortNote || updatedGroup.longNote
               ? { shortNote: updatedGroup.shortNote, longNote: updatedGroup.longNote }
@@ -2332,6 +2351,8 @@ function AdminDirectionsNeoPageBody() {
         isAviationGroup: orphanEditDialog.isAviationGroup,
         aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
         fetchNewMessages: orphanEditDialog.fetchNewMessages,
+        isSigintUnitMandatory: orphanEditDialog.isSigintUnitMandatory,
+        isDeviceMandatory: orphanEditDialog.isDeviceMandatory,
       });
 
       setOrphanGroups((prev) =>
@@ -2353,6 +2374,8 @@ function AdminDirectionsNeoPageBody() {
             aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
             colorKey: updated.colorKey,
             fetchNewMessages: orphanEditDialog.fetchNewMessages,
+            isSigintUnitMandatory: orphanEditDialog.isSigintUnitMandatory,
+            isDeviceMandatory: orphanEditDialog.isDeviceMandatory,
           };
         }),
       );
@@ -2375,6 +2398,8 @@ function AdminDirectionsNeoPageBody() {
             aiTranscriptAnalysisEnabled: orphanEditDialog.aiTranscriptAnalysisEnabled,
             colorKey: updated.colorKey,
             fetchNewMessages: orphanEditDialog.fetchNewMessages,
+            isSigintUnitMandatory: orphanEditDialog.isSigintUnitMandatory,
+            isDeviceMandatory: orphanEditDialog.isDeviceMandatory,
           };
         }),
       );
@@ -2467,6 +2492,8 @@ function AdminDirectionsNeoPageBody() {
               isAviationGroup: assignDialog.group.isAviationGroup,
               aiTranscriptAnalysisEnabled: assignDialog.group.aiTranscriptAnalysisEnabled,
               fetchNewMessages: assignDialog.group.fetchNewMessages,
+              isSigintUnitMandatory: assignDialog.group.isSigintUnitMandatory,
+              isDeviceMandatory: assignDialog.group.isDeviceMandatory,
               groupStats: assignDialog.group.groupStats,
               adminData: assignDialog.group.groupAdminData,
               areasOfResponsibility: assignDialog.group.areasOfResponsibility,
@@ -2744,6 +2771,14 @@ function AdminDirectionsNeoPageBody() {
               />
             }
           />
+          <GroupMessageRequirements
+            isSigintUnitMandatory={editDialog?.isSigintUnitMandatory ?? false}
+            isDeviceMandatory={editDialog?.isDeviceMandatory ?? false}
+            disabled={editDialog?.isSaving}
+            onChange={(requirements) =>
+              editDialog && setEditDialog({ ...editDialog, ...requirements })
+            }
+          />
           <FormControlLabel
             control={
               <Switch
@@ -2951,6 +2986,14 @@ function AdminDirectionsNeoPageBody() {
                     setOrphanEditDialog({ ...orphanEditDialog, aiTranscriptAnalysisEnabled });
                 }}
               />
+            }
+          />
+          <GroupMessageRequirements
+            isSigintUnitMandatory={orphanEditDialog?.isSigintUnitMandatory ?? false}
+            isDeviceMandatory={orphanEditDialog?.isDeviceMandatory ?? false}
+            disabled={orphanEditDialog?.isSaving}
+            onChange={(requirements) =>
+              orphanEditDialog && setOrphanEditDialog({ ...orphanEditDialog, ...requirements })
             }
           />
           <FormControlLabel

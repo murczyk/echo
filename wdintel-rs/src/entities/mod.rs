@@ -209,7 +209,6 @@ pub mod rer_gdoc_callsign;
 pub mod rer_report_access_login;
 pub mod restream;
 pub mod restream_setup;
-pub mod role_message_settings;
 pub mod sea_orm_active_enums;
 pub mod seaql_echo_gpu_migrations;
 pub mod seaql_im_migrations;

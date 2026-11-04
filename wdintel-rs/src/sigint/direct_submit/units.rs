@@ -422,6 +422,14 @@ mod tests {
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
+        crate::entities::login::ActiveModel {
+            id: Set(login),
+            roles: Set(serde_json::json!(["Rer", "UnitsEditor"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
         let mut request = payload("  Новий/підрозділ 3535  ");
         request.create_unit = true;
         let (first, second) = tokio::join!(
@@ -472,6 +480,14 @@ mod tests {
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
+        crate::entities::login::ActiveModel {
+            id: Set(login),
+            roles: Set(serde_json::json!(["Rer", "UnitsEditor"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
         let unit = seed_unit(
             &env.dbx,
             &login,
@@ -829,6 +845,14 @@ mod tests {
         let login = crate::users::login_id_by_name(&env.dbx, "Tester")
             .await
             .unwrap();
+        crate::entities::login::ActiveModel {
+            id: Set(login),
+            roles: Set(serde_json::json!(["Rer", "UnitsEditor"])),
+            ..Default::default()
+        }
+        .update(&env.dbx)
+        .await
+        .unwrap();
         let unit = seed_unit(
             &env.dbx,
             &login,

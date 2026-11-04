@@ -128,6 +128,10 @@ async fn collect_orphan_signal_groups(
                     .ai_transcript_analysis_enabled
                     .unwrap_or(false),
                 fetch_new_messages: g.fetch_new_messages.unwrap_or(true),
+                is_sigint_unit_mandatory: g
+                    .is_sigint_unit_mandatory
+                    .unwrap_or(false),
+                is_device_mandatory: g.is_device_mandatory.unwrap_or(false),
                 is_archived: g.is_archived,
                 datasource_id: Some(dsid),
                 created_at: g.created_at.and_utc().timestamp_millis(),

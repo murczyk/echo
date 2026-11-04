@@ -49,8 +49,10 @@
 - **Status:** normative
 - **Behavior ID:** `react-units-orbit-presence-and-duplicate-selection`
 - **Affected route/component:** RER Unit form drawer.
-- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. For `UnitsEditor`, creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship. Message writers without `UnitsEditor` can create full units but cannot select or submit destructive duplicate merges.
+- **Expected observable result:** a unit can be absent from ORBIT, present but unlinked, or linked to an ORBIT record. For `UnitsEditor`, creating an ORBIT-linked unit waits for the operator to explicitly select an offered duplicate association, so the resulting unit retains that relationship. Creating units through the catalog or message forms requires `UnitsEditor` (including Admin); other message writers can select existing units.
 - **Source implementation:** `src/ts/react/routes/rer-units-neo/components/UnitFormDrawer.tsx`.
+- **Existing test(s):** `wdintel-web/tests/e2e/manage-message-unit.regression.spec.ts`, `wdintel-rs/src/messenger/group/requirements/tests.rs`.
+- **Original Echo issue/PR:** [#3935](https://github.com/echoua/echo/issues/3935).
 
 ## Unlinked-unit reconciliation
 

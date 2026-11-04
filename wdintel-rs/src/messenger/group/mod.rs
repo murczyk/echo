@@ -13,6 +13,7 @@ pub mod creation;
 pub mod handlers;
 pub mod native;
 pub mod oneoff;
+pub mod requirements;
 #[cfg(test)]
 pub mod tests;
 pub mod types;
@@ -140,6 +141,10 @@ pub async fn collect_groups(
                     .ai_transcript_analysis_enabled
                     .unwrap_or(false),
                 fetch_new_messages: g.fetch_new_messages.unwrap_or(true),
+                is_sigint_unit_mandatory: g
+                    .is_sigint_unit_mandatory
+                    .unwrap_or(false),
+                is_device_mandatory: g.is_device_mandatory.unwrap_or(false),
                 group_stats: stats,
                 admin_data: group_admin_data,
                 areas_of_responsibility: aors,
@@ -184,6 +189,8 @@ pub async fn collect_groups(
             is_aviation_group: false,
             ai_transcript_analysis_enabled: false,
             fetch_new_messages: true,
+            is_sigint_unit_mandatory: false,
+            is_device_mandatory: false,
             group_stats: stats,
             admin_data,
             areas_of_responsibility: aors,
@@ -590,6 +597,8 @@ where
 
     let saved = match signal_group {
         None => signal_group::ActiveModel {
+            is_sigint_unit_mandatory: sea_orm::NotSet,
+            is_device_mandatory: sea_orm::NotSet,
             master_key: Set(master_key),
             name: Set(group_name),
             datasource_id: Set(Some(datasource_id)),

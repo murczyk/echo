@@ -1,3 +1,4 @@
+import { GroupMessageRequirements } from '../shared/group-navigation/GroupMessageRequirements';
 import {
   Autocomplete,
   CircularProgress,
@@ -62,6 +63,8 @@ function defaultSettings(creatorId: string): NativeGroupSettings {
     disableNetworkAssignment: false,
     isAviationGroup: false,
     aiTranscriptAnalysisEnabled: false,
+    isSigintUnitMandatory: false,
+    isDeviceMandatory: false,
   };
 }
 
@@ -166,6 +169,12 @@ function NativeGroupFields({
           />
         </>
       ) : null}
+      <GroupMessageRequirements
+        isSigintUnitMandatory={settings.isSigintUnitMandatory ?? false}
+        isDeviceMandatory={settings.isDeviceMandatory ?? false}
+        disabled={disabled}
+        onChange={(requirements) => onChange({ ...settings, ...requirements })}
+      />
       <GroupSelection
         label="Напрямки"
         disabled={disabled}
