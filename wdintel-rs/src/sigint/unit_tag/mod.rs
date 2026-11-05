@@ -9,9 +9,6 @@ use crate::h;
 use crate::types::{error, ShortContext};
 use crate::utils::worker_watch;
 use chrono::{Duration, Utc};
-use itertools::Itertools;
-use lazy_static::lazy_static;
-use regex::Regex;
 use sea_orm::*;
 use std::collections::HashSet;
 
@@ -192,56 +189,18 @@ pub async fn recalculate_inbox_item_unit_tags<C>(
 where
     C: ConnectionTrait,
 {
-    if !inbox_item_is_non_rer(db, sigint_inbox_item_id)
+    if inbox_item_is_non_rer(db, sigint_inbox_item_id)
         .await
         .c(h!())?
     {
-        delete_network_links_for_item(db, sigint_inbox_item_id)
-            .await
-            .c(h!())?;
-        recalculate_regular_networks_for_item(db, sigint_inbox_item_id)
-            .await
-            .c(h!())?;
         return Ok(());
     }
-    let Some((sigint_inbox_item, device_name)) =
-        sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
-            .find_also_related(device_name::Entity)
-            .one(db)
-            .await
-            .c(h!())?
-    else {
-        delete_network_links_for_item(db, sigint_inbox_item_id)
-            .await
-            .c(h!())?;
-        return Ok(());
-    };
-    let active_networks = sigint_network::Entity::find()
-        .filter(sigint_network::Column::Deleted.eq(false))
-        .all(db)
+    delete_network_links_for_item(db, sigint_inbox_item_id)
         .await
         .c(h!())?;
-    let body = signal_message::Entity::find_by_id(sigint_inbox_item_id)
-        .one(db)
+    recalculate_regular_networks_for_item(db, sigint_inbox_item_id)
         .await
-        .c(h!())?
-        .and_then(|message| message.body)
-        .unwrap_or_default();
-    let matched_networks = match_networks_by_device_name_or_message(
-        active_networks,
-        device_name
-            .as_ref()
-            .and_then(|device_name| device_name.name.as_deref()),
-        &body,
-    );
-    sync_network_links(
-        db,
-        sigint_inbox_item_id,
-        sigint_inbox_item.id_uuid,
-        matched_networks,
-    )
-    .await
-    .c(h!())?;
+        .c(h!())?;
     Ok(())
 }
 
@@ -267,119 +226,6 @@ where
     .await
     .c(h!())?;
     Ok(())
-}
-
-async fn sync_network_links<C>(
-    db: &C,
-    sigint_inbox_item_id: i64,
-    sigint_inbox_item_uuid: Option<uuid::Uuid>,
-    matched_networks: Vec<sigint_network::Model>,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    let desired_network_ids = matched_networks
-        .iter()
-        .map(|network| network.id)
-        .collect::<HashSet<_>>();
-    let existing_network_links = sigint_inbox_item_network::Entity::find()
-        .filter(
-            sigint_inbox_item_network::Column::SigintInboxItemId
-                .eq(sigint_inbox_item_id),
-        )
-        .all(db)
-        .await
-        .c(h!())?;
-    let stale_network_link_ids = collect_stale_network_link_ids(
-        &existing_network_links,
-        &desired_network_ids,
-    );
-    let old_freq_ids = if stale_network_link_ids.is_empty() {
-        Vec::new()
-    } else {
-        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
-            db,
-            &[sigint_inbox_item_id],
-        )
-        .await
-        .c(h!())?
-    };
-    if !stale_network_link_ids.is_empty() {
-        crate::rer_importer::inbox::invalidate_message_network_frequency_last_seen(
-            db,
-            sigint_inbox_item_id,
-        )
-        .await
-        .c(h!())?;
-        sigint_inbox_item_network::Entity::delete_many()
-            .filter(
-                sigint_inbox_item_network::Column::Id
-                    .is_in(stale_network_link_ids),
-            )
-            .exec(db)
-            .await
-            .c(h!())?;
-    }
-    let existing_network_ids = existing_network_links
-        .into_iter()
-        .map(|link| link.sigint_network_id)
-        .collect::<HashSet<_>>();
-    let mut added_network_ids = Vec::new();
-    for network_id in desired_network_ids {
-        if !existing_network_ids.contains(&network_id) {
-            sigint_inbox_item_network::Entity::insert(
-                sigint_inbox_item_network::ActiveModel {
-                    id: NotSet,
-                    sigint_inbox_item_id: Set(sigint_inbox_item_id),
-                    sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
-                    sigint_network_id: Set(network_id),
-                    created_at: NotSet,
-                },
-            )
-            .on_conflict_do_nothing_on([
-                sigint_inbox_item_network::Column::SigintNetworkId,
-                sigint_inbox_item_network::Column::SigintInboxItemId,
-            ])
-            .exec(db)
-            .await
-            .c(h!())?;
-            added_network_ids.push(network_id);
-        }
-    }
-    let new_freq_ids = if added_network_ids.is_empty() {
-        Vec::new()
-    } else {
-        crate::sigint::network::recalculation::load_freq_ids_for_message_links(
-            db,
-            &[sigint_inbox_item_id],
-        )
-        .await
-        .c(h!())?
-    };
-    crate::sigint::network::recalculation::enqueue_last_seen_for_freq_ids(
-        db,
-        old_freq_ids.into_iter().chain(new_freq_ids),
-    )
-    .await
-    .c(h!())?;
-    crate::inbox::unit_resolution::sync_network_unit_links(
-        db,
-        &[sigint_inbox_item_id],
-    )
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
-fn collect_stale_network_link_ids(
-    existing_network_links: &[sigint_inbox_item_network::Model],
-    desired_network_ids: &HashSet<i64>,
-) -> Vec<i64> {
-    existing_network_links
-        .iter()
-        .filter(|link| !desired_network_ids.contains(&link.sigint_network_id))
-        .map(|link| link.id)
-        .collect()
 }
 
 async fn delete_network_links_for_item<C>(
@@ -450,236 +296,6 @@ where
     Ok(count > 0)
 }
 
-fn match_networks_by_unit_tag_precedence(
-    networks: Vec<sigint_network::Model>,
-    match_text: &str,
-) -> Vec<sigint_network::Model> {
-    let matches = networks
-        .into_iter()
-        .flat_map(|network| network_unit_tag_matches(network, match_text))
-        .collect::<Vec<_>>();
-    let mut network_ids = HashSet::new();
-    let mut matched_networks = Vec::new();
-    for (idx, tag_match) in matches.iter().enumerate() {
-        if unit_tag_match_is_shadowed(idx, &matches) {
-            continue;
-        }
-        if network_ids.insert(tag_match.network.id) {
-            matched_networks.push(tag_match.network.clone());
-        }
-    }
-    matched_networks
-}
-
-fn parse_unit_tag_header(body: &str) -> ParsedUnitTagHeader {
-    let mut lines = body.lines();
-    let Some(first_line) = lines.next().map(str::trim) else {
-        return ParsedUnitTagHeader::default();
-    };
-    let Some((left, _right)) = first_line.split_once('|') else {
-        return ParsedUnitTagHeader::default();
-    };
-    let left = left.trim();
-    let unit_tag = if let Some((tag, _rest)) = left.split_once('[') {
-        tag.trim().to_string()
-    } else {
-        left.to_string()
-    };
-    ParsedUnitTagHeader {
-        unit_tag: Some(unit_tag).filter(|v| !v.is_empty()),
-    }
-}
-
-#[derive(Default)]
-struct ParsedUnitTagHeader {
-    unit_tag: Option<String>,
-}
-
-fn unit_tag_header_match_text(body: &str) -> String {
-    let mut parts = Vec::new();
-    if let Some(unit_tag) = parse_unit_tag_header(body).unit_tag {
-        parts.push(unit_tag);
-    }
-    if let Some(zp_digital_post_alt) =
-        crate::rer_importer::zp_digital_post_alt_format::parse(body)
-    {
-        parts.push(zp_digital_post_alt.network_line);
-    }
-    parts.extend(body.lines().filter_map(unit_tag_header_line_text));
-    parts.into_iter().unique().join(" ")
-}
-
-fn unit_tag_header_line_text(line: &str) -> Option<String> {
-    if !crate::rer_importer::body_noheader::is_header_line(line) {
-        return None;
-    }
-    let line = normalize_unit_tag_header_line(line);
-    let line = trim_unit_tag_header_prefix(&line);
-    if !is_sigint_network_label(&line) {
-        return None;
-    }
-    Some(line)
-}
-
-fn normalize_unit_tag_header_line(line: &str) -> String {
-    demoji::demoji(line)
-        .chars()
-        .map(|ch| match ch {
-            '[' | ']' | '{' | '}' | '(' | ')' => ' ',
-            '╬' | '│' => ' ',
-            '\u{200d}' | '\u{fe0e}' | '\u{fe0f}' => ' ',
-            _ => ch,
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .join(" ")
-}
-
-fn trim_unit_tag_header_prefix(line: &str) -> String {
-    lazy_static! {
-        static ref PREFIX_RE: Regex =
-            Regex::new(r#"(?i)^\s*(?:мережа|підрозділ)\s*:\s*"#).unwrap();
-    }
-    PREFIX_RE.replace(line, "").trim().to_string()
-}
-
-fn is_sigint_network_label(line: &str) -> bool {
-    lazy_static! {
-        static ref NETWORK_LABEL_RE: Regex = Regex::new(
-            r#"(?i)(?:\bукх\b|(?:^|[^\p{L}\p{N}])р\s*/\s*м(?:$|[^\p{L}\p{N}])|\bdmre?\b|\bрадіомережа\b)"#
-        )
-        .unwrap();
-    }
-    NETWORK_LABEL_RE.is_match(line)
-}
-
-fn match_networks_by_device_name_or_message(
-    networks: Vec<sigint_network::Model>,
-    device_name: Option<&str>,
-    body: &str,
-) -> Vec<sigint_network::Model> {
-    if let Some(device_name) = device_name
-        .map(str::trim)
-        .filter(|device_name| !device_name.is_empty())
-    {
-        let matched_networks = match_networks_by_unit_tag_precedence(
-            networks.clone(),
-            device_name,
-        );
-        if !matched_networks.is_empty() {
-            return matched_networks;
-        }
-    }
-    let header_match_text = unit_tag_header_match_text(body);
-    if !header_match_text.is_empty() {
-        let matched_networks = match_networks_by_unit_tag_precedence(
-            networks.clone(),
-            &header_match_text,
-        );
-        if !matched_networks.is_empty() {
-            return matched_networks;
-        }
-    }
-    match_networks_by_unit_tag_precedence(networks, body)
-}
-
-fn network_unit_tag_matches(
-    network: sigint_network::Model,
-    match_text: &str,
-) -> Vec<UnitTagMatch> {
-    sigint_network_unit_mask(&network)
-        .into_iter()
-        .flat_map(|tag| {
-            let tag_key = tag.trim().to_lowercase();
-            let tag_len = tag_key.chars().count();
-            find_word_matches_case_insensitive(match_text, &tag)
-                .into_iter()
-                .map({
-                    let network = network.clone();
-                    move |span| UnitTagMatch {
-                        network: network.clone(),
-                        tag_key: tag_key.clone(),
-                        tag_len,
-                        span,
-                    }
-                })
-        })
-        .collect()
-}
-
-fn unit_tag_match_is_shadowed(idx: usize, matches: &[UnitTagMatch]) -> bool {
-    let tag_match = &matches[idx];
-    matches.iter().enumerate().any(|(other_idx, other)| {
-        other_idx != idx
-            && other.tag_len > tag_match.tag_len
-            && other.tag_key.contains(&tag_match.tag_key)
-            && other.span.contains(&tag_match.span)
-    })
-}
-
-struct UnitTagMatch {
-    network: sigint_network::Model,
-    tag_key: String,
-    tag_len: usize,
-    span: MatchSpan,
-}
-
-#[derive(Clone, Copy)]
-struct MatchSpan {
-    start: usize,
-    end: usize,
-}
-
-impl MatchSpan {
-    fn contains(&self, other: &Self) -> bool {
-        self.start <= other.start && self.end >= other.end
-    }
-}
-
-#[cfg(test)]
-fn contains_word_case_insensitive(text: &str, needle: &str) -> bool {
-    !find_word_matches_case_insensitive(text, needle).is_empty()
-}
-
-fn find_word_matches_case_insensitive(
-    text: &str,
-    needle: &str,
-) -> Vec<MatchSpan> {
-    let needle = needle.trim();
-    if needle.is_empty() {
-        return Vec::new();
-    }
-    let text = text.to_lowercase();
-    let needle = needle.to_lowercase();
-    let mut matches = Vec::new();
-    let mut cursor = 0;
-    while let Some(offset) = text[cursor..].find(&needle) {
-        let start = cursor + offset;
-        let end = start + needle.len();
-        if is_boundary(&text, start, true) && is_boundary(&text, end, false) {
-            matches.push(MatchSpan { start, end });
-        }
-        cursor = end;
-    }
-    matches
-}
-
-fn is_boundary(text: &str, byte_idx: usize, before: bool) -> bool {
-    if before {
-        text[..byte_idx]
-            .chars()
-            .next_back()
-            .map(|ch| !ch.is_alphanumeric())
-            .unwrap_or(true)
-    } else {
-        text[byte_idx..]
-            .chars()
-            .next()
-            .map(|ch| !ch.is_alphanumeric())
-            .unwrap_or(true)
-    }
-}
-
 pub fn normalize_unit_mask(
     unit_mask: Vec<String>,
 ) -> Result<Vec<String>, AppError> {
@@ -743,327 +359,80 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::network_recalculation_task;
-    use crate::entities::sea_orm_active_enums::NetworkRecalculationTaskKind;
-    use crate::functest::tests::{
-        cleanup_locked, mk_sigint_inbox_item, mk_sigint_inbox_item_network,
-        mk_sigint_network, mk_sigint_network_freq,
-    };
+    use crate::functest::tests::*;
     use serial_test::serial;
 
     #[tokio::test]
     #[serial]
-    async fn new_network_link_queues_frequency_activity_reconciliation() {
-        let (env, _guard) = cleanup_locked().await.unwrap();
-        let inbox_item = mk_sigint_inbox_item(
-            &env.dbx,
-            sigint_inbox_item::ActiveModel {
-                freq: Set(Some("146.5000".to_string())),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let network = mk_sigint_network(&env.dbx, Default::default())
-            .await
-            .unwrap();
-        let network_freq = mk_sigint_network_freq(
-            &env.dbx,
-            sigint_network_freq::ActiveModel {
-                network_id: Set(network.id),
-                freq: Set("146.5000".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-
-        sync_network_links(
-            &env.dbx,
-            inbox_item.id,
-            inbox_item.id_uuid,
-            vec![network],
-        )
-        .await
-        .unwrap();
-
-        assert!(network_recalculation_task::Entity::find()
-            .filter(
-                network_recalculation_task::Column::NetworkFreqId
-                    .eq(network_freq.id)
-            )
-            .filter(
-                network_recalculation_task::Column::TaskKind
-                    .eq(NetworkRecalculationTaskKind::NetworkFreqLastSeen)
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_some());
-    }
-
-    #[test]
-    fn unit_tag_match_requires_word_boundaries() {
-        assert!(contains_word_case_insensitive(
-            "prefix 50 обрБпС suffix",
-            "50 обрБпС"
-        ));
-        assert!(!contains_word_case_insensitive(
-            "prefix x50 обрБпС suffix",
-            "50 обрБпС"
-        ));
-    }
-
-    #[test]
-    fn unit_tag_match_prefers_longer_containing_tag() {
-        let matched_network_ids = match_networks_by_unit_tag_precedence(
-            vec![
-                test_network(1, vec!["alpha/bravo"]),
-                test_network(2, vec!["alpha"]),
-                test_network(3, vec!["bravo"]),
-            ],
-            "hello alpha/bravo goodbye",
-        )
-        .into_iter()
-        .map(|network| network.id)
-        .collect::<Vec<_>>();
-
-        assert_eq!(matched_network_ids, vec![1]);
-    }
-
-    #[test]
-    fn unit_tag_match_keeps_shorter_tag_when_matched_independently() {
-        let matched_network_ids = match_networks_by_unit_tag_precedence(
-            vec![
-                test_network(1, vec!["alpha/bravo"]),
-                test_network(2, vec!["alpha"]),
-            ],
-            "hello alpha and alpha/bravo goodbye",
-        )
-        .into_iter()
-        .map(|network| network.id)
-        .collect::<Vec<_>>();
-
-        assert_eq!(matched_network_ids, vec![1, 2]);
-    }
-
-    #[test]
-    fn parses_unit_tag_header_without_machine_id() {
-        let header = parse_unit_tag_header("50 обрБпС | 2026-06-26\n11-34");
-
-        assert_eq!(header.unit_tag.as_deref(), Some("50 обрБпС"));
-    }
-
-    #[test]
-    fn parses_unit_tag_header_with_machine_id() {
-        let header = parse_unit_tag_header(
-            "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12",
-        );
-
-        assert_eq!(header.unit_tag.as_deref(), Some("50 обрБпС"));
-    }
-
-    #[test]
-    fn unit_tag_header_match_text_includes_network_header_line() {
-        let body = "02.07.2026, 02:57:03\n142.2001\nМережа: УКХ р/м 123 мсб 45 мсп 99А (р-н КУКУЄВО (РФ))\nРУДНИК\n\n— Прийом.";
-
-        assert!(unit_tag_header_match_text(body)
-            .contains("УКХ р/м 123 мсб 45 мсп 99А"));
-    }
-
-    #[test]
-    fn device_name_match_wins_over_body() {
-        let matched_network_ids = match_networks_by_device_name_or_message(
-            vec![
-                test_network(1, vec!["device-label"]),
-                test_network(2, vec!["body-label"]),
-            ],
-            Some("device-label"),
-            "body-label",
-        )
-        .into_iter()
-        .map(|network| network.id)
-        .collect::<Vec<_>>();
-
-        assert_eq!(matched_network_ids, vec![1]);
-    }
-
-    #[test]
-    fn body_match_is_used_when_device_name_has_no_label() {
-        let matched_network_ids = match_networks_by_device_name_or_message(
-            vec![
-                test_network(1, vec!["device-label"]),
-                test_network(2, vec!["body-label"]),
-            ],
-            Some("unmatched device"),
-            "body-label",
-        )
-        .into_iter()
-        .map(|network| network.id)
-        .collect::<Vec<_>>();
-
-        assert_eq!(matched_network_ids, vec![2]);
-    }
-
-    #[test]
-    fn header_match_wins_over_full_body() {
-        let matched_network_ids = match_networks_by_device_name_or_message(
-            vec![
-                test_network(1, vec!["УКХ р/м 123 мсб"]),
-                test_network(2, vec!["body-label"]),
-            ],
-            None,
-            "02.07.2026, 02:57:03\n142.2001\nМережа: УКХ р/м 123 мсб\n\nbody-label",
-        )
-        .into_iter()
-        .map(|network| network.id)
-        .collect::<Vec<_>>();
-
-        assert_eq!(matched_network_ids, vec![1]);
-    }
-
-    #[test]
-    fn full_body_match_sees_stripped_network_header_when_device_name_is_empty()
+    async fn issue_3940_non_rer_assignment_preserves_history_without_new_links()
     {
-        let matched_network_ids = match_networks_by_device_name_or_message(
-            vec![test_network(1, vec!["УКХ р/м ПУ ФСБ рф"])],
-            None,
-            "Отримано з постів \"Пост 10\"\n--------------------------------------\n01.07.2026, 02:55:19\n155.0250\nУКХ р/м ПУ ФСБ рф\n\n— репліка",
-        )
-        .into_iter()
-        .map(|network| network.id)
-        .collect::<Vec<_>>();
-
-        assert_eq!(matched_network_ids, vec![1]);
-    }
-
-    #[test]
-    fn stale_network_links_include_non_unit_tag_networks() {
-        let existing_network_links =
-            vec![test_network_link(10, 1), test_network_link(11, 2)];
-        let desired_network_ids = HashSet::from([2]);
-
-        assert_eq!(
-            collect_stale_network_link_ids(
-                &existing_network_links,
-                &desired_network_ids
-            ),
-            vec![10]
-        );
-    }
-
-    // Regression for ECHO-3207: removing a derived link invalidates its activity cache.
-    #[tokio::test]
-    #[serial]
-    async fn stale_network_link_removal_invalidates_frequency_last_seen() {
         let (env, _guard) = cleanup_locked().await.unwrap();
-        let timestamp = Utc::now().naive_utc();
-        let freq = "146.4500";
-        let inbox_item = mk_sigint_inbox_item(
+        let group = mk_signal_group(
             &env.dbx,
-            sigint_inbox_item::ActiveModel {
-                freq: Set(Some(freq.to_string())),
-                datetime: Set(Some(timestamp)),
+            signal_group::ActiveModel {
+                interseption_kind: Set(InterseptionKind::Other),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-        let network = mk_sigint_network(&env.dbx, Default::default())
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                unit_mask: Set(serde_json::json!(["test"])),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let historical = mk_sigint_inbox_item(&env.dbx, Default::default())
             .await
             .unwrap();
-        let network_freq = mk_sigint_network_freq(
-            &env.dbx,
-            sigint_network_freq::ActiveModel {
-                network_id: Set(network.id),
-                freq: Set(freq.to_string()),
-                active_from: Set(timestamp - Duration::days(1)),
-                last_seen_dt: Set(Some(timestamp)),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        mk_sigint_inbox_item_network(
+        let fresh = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        for item in [&historical, &fresh] {
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(item.id),
+                    group_master_key: Set(Some(group.master_key.clone())),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let old_link = mk_sigint_inbox_item_network(
             &env.dbx,
             sigint_inbox_item_network::ActiveModel {
-                sigint_inbox_item_id: Set(inbox_item.id),
+                sigint_inbox_item_id: Set(historical.id),
                 sigint_network_id: Set(network.id),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-
-        sync_network_links(
-            &env.dbx,
-            inbox_item.id,
-            inbox_item.id_uuid,
-            Vec::new(),
-        )
-        .await
-        .unwrap();
-
-        let network_freq =
-            sigint_network_freq::Entity::find_by_id(network_freq.id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap();
-        let link_count = sigint_inbox_item_network::Entity::find()
-            .filter(
-                sigint_inbox_item_network::Column::SigintInboxItemId
-                    .eq(inbox_item.id),
-            )
-            .count(&env.dbx)
+        recalculate_inbox_item_unit_tags(&env.dbx, historical.id)
             .await
             .unwrap();
-        assert_eq!(network_freq.last_seen_dt, None);
-        assert_eq!(link_count, 0);
-    }
-
-    fn test_network(id: i64, unit_mask: Vec<&str>) -> sigint_network::Model {
-        let dt = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
+        recalculate_inbox_item_unit_tags(&env.dbx, fresh.id)
+            .await
             .unwrap();
-        sigint_network::Model {
-            id,
-            name: format!("network {id}"),
-            location: String::new(),
-            deleted: false,
-            created_at: dt,
-            updated_by_login_id: None,
-            updated_at: dt,
-            radio_station: None,
-            purpose: None,
-            operation_mode: None,
-            operation_type: None,
-            operation_period: None,
-            merged_to: None,
-            active_from: None,
-            active_to: None,
-            last_active_at: None,
-            sigint_origin_id: None,
-            original_id: None,
-            do_not_archive: false,
-            unit_mask: serde_json::json!(unit_mask),
-        }
-    }
-
-    fn test_network_link(
-        id: i64,
-        sigint_network_id: i64,
-    ) -> sigint_inbox_item_network::Model {
-        sigint_inbox_item_network::Model {
-            id,
-            sigint_inbox_item_id: 100,
-            sigint_inbox_item_uuid: Some(uuid::Uuid::now_v7()),
-            sigint_network_id,
-            created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap(),
-        }
+        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(vec![historical, fresh.clone()], &env.dbx).await.unwrap();
+        assert!(sigint_inbox_item_network::Entity::find_by_id(old_link.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(fresh.id)
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

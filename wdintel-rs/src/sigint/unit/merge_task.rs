@@ -734,6 +734,7 @@ mod tests {
             sigint_unit_id: Set(duplicate.id),
             locations: Set(serde_json::json!(["location"])),
             labels: Set(serde_json::json!(["label"])),
+            report_name: Set(Some("label".into())),
             ..Default::default()
         }
         .insert(&env.dbx)

@@ -452,9 +452,7 @@ export function normalizeQueryState(state: AnalysisQueryState): AnalysisQuerySta
   }
 
   if (next.withoutNetwork) {
-    next = { ...next, networksSelected: [], onlyWithNetwork: false };
-  } else if (next.onlyWithNetwork) {
-    next = { ...next, withoutNetwork: false };
+    next = { ...next, networksSelected: [] };
   }
 
   if (next.orWithCoords && next.orWithoutCoords) {
@@ -532,7 +530,8 @@ export function buildAnalysisReq(
       ? null
       : query.networksSelected.map((value) => Number(value)).filter(Number.isFinite),
     withoutNetwork: query.withoutNetwork,
-    onlyWithNetwork: query.onlyWithNetwork,
+    onlyWithNetwork: null,
+    onlyForRerReport: query.onlyWithNetwork,
     metadataCc: query.metadataCc.length ? query.metadataCc : null,
     metadataSender: query.metadataSender.length ? query.metadataSender : null,
     metadataReceiver: query.metadataReceiver.length ? query.metadataReceiver : null,
@@ -618,7 +617,8 @@ export function buildInboxReq(
     selectedAors: req.selectedAors,
     selectedNetworks: req.selectedNetworks,
     withoutNetwork: req.withoutNetwork,
-    onlyWithNetwork: req.onlyWithNetwork,
+    onlyWithNetwork: null,
+    onlyForRerReport: req.onlyForRerReport ?? req.onlyWithNetwork,
     metadataCc: req.metadataCc,
     metadataSender: req.metadataSender,
     metadataReceiver: req.metadataReceiver,
@@ -694,7 +694,7 @@ export function queryStateFromSavedFilter(
     postsSelected: req.selectedPosts ?? [],
     networksSelected: (req.selectedNetworks ?? []).map(String),
     withoutNetwork: req.withoutNetwork ?? false,
-    onlyWithNetwork: req.onlyWithNetwork ?? false,
+    onlyWithNetwork: req.onlyForRerReport ?? req.onlyWithNetwork ?? false,
     orWithExtendedForm: req.orWithExtendedForm ?? false,
     orBookmarked: req.orBookmarked ?? false,
     orImportant: req.orImportant ?? false,

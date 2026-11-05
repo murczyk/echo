@@ -15,12 +15,14 @@ import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { isAbortError } from '../../services/api/client';
 import { DEFAULT_LIST_UNITS_REQ, searchUnitsStrictThenRelaxed } from '../../services/api/units';
 
-type UnitOption = { id: number; name: string };
+import { reportParentContext } from './rer-report-hierarchy';
+
+type UnitOption = { id: number; name: string; reportParentContext?: string };
 export type EditorState = {
   id: number | null;
   unit: UnitOption | null;
   locations: string[];
-  labels: string[];
+  reportName: string;
 };
 
 function errorMessage(error: unknown): string {
@@ -31,16 +33,11 @@ function normalizeValues(values: readonly string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
-function labelsForUnit(state: EditorState, unit: UnitOption | null): string[] {
-  if (state.id !== null) return state.labels;
-  if (state.labels.length === 0 || state.unit === null) {
-    return normalizeValues([...(unit ? [unit.name] : []), ...state.labels]);
-  }
-  return normalizeValues(
-    state.labels.flatMap((label) =>
-      label === state.unit?.name ? (unit ? [unit.name] : []) : [label],
-    ),
-  );
+function nameForUnit(state: EditorState, unit: UnitOption | null): string {
+  if (state.id !== null) return state.reportName;
+  return !state.reportName || state.reportName === state.unit?.name
+    ? (unit?.name ?? '')
+    : state.reportName;
 }
 
 export function MetadataEditor({
@@ -87,9 +84,13 @@ export function MetadataEditor({
         const usedUnitIds = new Set(
           rows.filter((row) => row.id !== state.id).map((row) => row.sigintUnitId),
         );
-        const options = units
+        const options: UnitOption[] = units
           .filter((unit) => !usedUnitIds.has(unit.id))
-          .map((unit) => ({ id: unit.id, name: unit.name }));
+          .map((unit) => ({
+            id: unit.id,
+            name: unit.name,
+            reportParentContext: reportParentContext(unit),
+          }));
         if (state.unit && !options.some((option) => option.id === state.unit?.id)) {
           options.unshift(state.unit);
         }
@@ -116,6 +117,22 @@ export function MetadataEditor({
     if (state) setUnitInput(state.unit?.name ?? '');
   }, [state?.id]);
 
+  const reportName = state?.reportName.trim() ?? '';
+  const hierarchyError =
+    state?.unit?.reportParentContext &&
+    state.unit.reportParentContext !== '[]' &&
+    rows.some(
+      (row) =>
+        !row.sigintUnitDeleted &&
+        row.reportParentContext !== '[]' &&
+        row.id !== state.id &&
+        row.reportName === reportName &&
+        row.reportParentContext !== state.unit?.reportParentContext,
+    )
+      ? `Назва для звіту «${reportName}» вже використовується підрозділом з іншою ієрархією. Оберіть іншу назву.`
+      : null;
+  const shownError = error ?? hierarchyError;
+
   return (
     <Dialog open={state !== null} onClose={saving ? undefined : onClose} fullWidth maxWidth="sm">
       <DialogTitle>
@@ -124,7 +141,7 @@ export function MetadataEditor({
       <DialogContent>
         {state ? (
           <div className="flex flex-col gap-echo-lg pt-echo-sm">
-            {error ? <PowerAlert severity="error">{error}</PowerAlert> : null}
+            {shownError ? <PowerAlert severity="error">{shownError}</PowerAlert> : null}
             <Autocomplete<UnitOption>
               options={unitOptions}
               disabled={saving}
@@ -133,6 +150,14 @@ export function MetadataEditor({
               loading={unitLoading}
               filterOptions={(options) => options}
               getOptionLabel={(option) => option.name}
+              renderOption={({ key, ...props }, option) => (
+                <li key={key} {...props}>
+                  {option.name}
+                  {unitOptions.some((other) => other.id !== option.id && other.name === option.name)
+                    ? ` (#${option.id})`
+                    : ''}
+                </li>
+              )}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               onInputChange={(_, value) => {
                 setUnitInput(value);
@@ -141,7 +166,7 @@ export function MetadataEditor({
                 onChange({
                   ...state,
                   unit,
-                  labels: labelsForUnit(state, unit),
+                  reportName: nameForUnit(state, unit),
                 })
               }
               noOptionsText="Підрозділів не знайдено"
@@ -161,28 +186,18 @@ export function MetadataEditor({
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="locations"
-                  helperText="Введіть значення та натисніть Enter"
+                  label="Райони розташування"
+                  helperText="Введіть район і натисніть Enter"
                 />
               )}
             />
-            <Autocomplete<string, true, false, true>
-              multiple
-              freeSolo
-              autoSelect
+            <TextField
               disabled={saving}
-              options={[]}
-              value={state.labels}
-              onChange={(_, values) =>
-                onChange({ ...state, labels: normalizeValues(values.map(String)) })
-              }
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="labels"
-                  helperText="Введіть значення та натисніть Enter"
-                />
-              )}
+              required
+              label="Назва для звіту"
+              value={state.reportName}
+              onChange={(event) => onChange({ ...state, reportName: event.target.value })}
+              helperText="Однакова назва об’єднує повідомлення підрозділів в один розділ звіту"
             />
           </div>
         ) : null}
@@ -191,7 +206,17 @@ export function MetadataEditor({
         <PowerButton variant="outlined" onClick={onClose} disabled={saving}>
           Скасувати
         </PowerButton>
-        <PowerButton variant="contained" onClick={onSave} disabled={saving || !state?.unit}>
+        <PowerButton
+          variant="contained"
+          onClick={onSave}
+          disabled={
+            saving ||
+            !state?.unit ||
+            !reportName ||
+            /[\r\n]/.test(reportName) ||
+            Boolean(hierarchyError)
+          }
+        >
           {saving ? 'Збереження…' : 'Зберегти'}
         </PowerButton>
       </DialogActions>

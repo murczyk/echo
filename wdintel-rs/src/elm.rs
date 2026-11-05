@@ -2342,6 +2342,10 @@ fn patch_backward_compatible_decoders(
             1,
         )
         .replace(
+            r#"Json.Decode.field "only_for_rer_report" (Json.Decode.nullable (Json.Decode.bool))"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "only_for_rer_report" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]"#,
+        )
+        .replace(
             RER_ANALYSIS_WITHOUT_NETWORK_STRICT_DECODER_RAW,
             RER_ANALYSIS_WITHOUT_NETWORK_COMPAT_DECODER_RAW,
         )

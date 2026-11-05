@@ -805,7 +805,7 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.queryState.onlyWithNetwork).toBe(expected);
       expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
-      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyForRerReport).toBe(
         expected,
       );
     },

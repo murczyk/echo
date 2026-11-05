@@ -342,6 +342,7 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , selectedNetworks = selectedNetworks
         , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
         , onlyWithNetwork = Nothing
+        , onlyForRerReport = Nothing
         , filterTagsOption = Nothing
         , unitsExactMatchOnly =
             if List.isEmpty selectedLegacyUnits then
@@ -389,6 +390,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , selectedNetworks = Nothing
     , withoutNetwork = Nothing
     , onlyWithNetwork = Nothing
+    , onlyForRerReport = Nothing
     , filterTagsOption = Nothing
     , unitsExactMatchOnly = Nothing
     , withoutModelTags = Nothing

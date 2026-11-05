@@ -1,3 +1,5 @@
+pub mod scope;
+
 use crate::entities::{
     login, rer_report_access_login, sigint_unit,
     sigint_unit_rer_report_metadata,
@@ -42,8 +44,11 @@ pub struct RerReportMetadataItem {
     pub id: i64,
     pub sigint_unit_id: i64,
     pub sigint_unit_name: String,
+    pub report_parent_context: String,
+    pub sigint_unit_active: bool,
+    pub sigint_unit_deleted: bool,
     pub locations: Vec<String>,
-    pub labels: Vec<String>,
+    pub report_name: String,
 }
 
 #[derive(
@@ -60,7 +65,7 @@ pub struct RerReportMetadataListRsp {
 pub struct CreateRerReportMetadataReq {
     pub sigint_unit_id: i64,
     pub locations: Vec<String>,
-    pub labels: Vec<String>,
+    pub report_name: String,
 }
 
 #[derive(
@@ -71,7 +76,7 @@ pub struct UpdateRerReportMetadataReq {
     pub id: i64,
     pub sigint_unit_id: i64,
     pub locations: Vec<String>,
-    pub labels: Vec<String>,
+    pub report_name: String,
 }
 
 #[derive(
@@ -184,9 +189,8 @@ async fn create_metadata(
     dbx: &DatabaseConnection,
     req: &CreateRerReportMetadataReq,
 ) -> anyhow::Result<RerReportMetadataItem> {
-    let (locations, labels) =
-        normalize_metadata_lists(req.locations.clone(), req.labels.clone())
-            .c(h!())?;
+    let (locations, report_name) =
+        normalize_metadata(req.locations.clone(), &req.report_name).c(h!())?;
     let transaction = crate::sigint::unit::begin_unit_merge_transaction(
         dbx,
         &[req.sigint_unit_id],
@@ -199,11 +203,20 @@ async fn create_metadata(
     ensure_unit_is_unused(&transaction, req.sigint_unit_id, None)
         .await
         .c(h!())?;
+    scope::validate_parent(
+        &transaction,
+        req.sigint_unit_id,
+        &report_name,
+        None,
+    )
+    .await
+    .c(h!())?;
     let row = sigint_unit_rer_report_metadata::ActiveModel {
         id: NotSet,
         sigint_unit_id: Set(req.sigint_unit_id),
         locations: Set(serde_json::to_value(locations).c(h!())?),
-        labels: Set(serde_json::to_value(labels).c(h!())?),
+        labels: Set(serde_json::json!([report_name])),
+        report_name: Set(Some(report_name)),
         created_at: NotSet,
     }
     .insert(&transaction)
@@ -228,9 +241,8 @@ async fn update_metadata(
     dbx: &DatabaseConnection,
     req: &UpdateRerReportMetadataReq,
 ) -> anyhow::Result<RerReportMetadataItem> {
-    let (locations, labels) =
-        normalize_metadata_lists(req.locations.clone(), req.labels.clone())
-            .c(h!())?;
+    let (locations, report_name) =
+        normalize_metadata(req.locations.clone(), &req.report_name).c(h!())?;
     let (transaction, row) =
         lock_metadata_for_write(dbx, req.id, Some(req.sigint_unit_id))
             .await
@@ -243,10 +255,19 @@ async fn update_metadata(
     ensure_unit_is_unused(&transaction, req.sigint_unit_id, Some(req.id))
         .await
         .c(h!())?;
+    scope::validate_parent(
+        &transaction,
+        req.sigint_unit_id,
+        &report_name,
+        Some(req.id),
+    )
+    .await
+    .c(h!())?;
     let mut row = row.into_active_model();
     row.sigint_unit_id = Set(req.sigint_unit_id);
     row.locations = Set(serde_json::to_value(locations).c(h!())?);
-    row.labels = Set(serde_json::to_value(labels).c(h!())?);
+    row.labels = Set(serde_json::json!([report_name]));
+    row.report_name = Set(Some(report_name));
     row.update(&transaction).await.c(h!())?;
     let item = metadata_item_by_id(&transaction, req.id).await.c(h!())?;
     transaction.commit().await.c(h!())?;
@@ -390,9 +411,13 @@ fn metadata_item(
     Ok(RerReportMetadataItem {
         id: row.id,
         sigint_unit_id: row.sigint_unit_id,
+        report_parent_context: serde_json::to_string(&scope::parent(&unit).0)
+            .c(h!())?,
+        sigint_unit_active: unit.active,
+        sigint_unit_deleted: unit.deleted,
         sigint_unit_name: unit.name,
         locations: json_string_list(row.locations).c(h!())?,
-        labels: json_string_list(row.labels).c(h!())?,
+        report_name: row.report_name.unwrap_or_default(),
     })
 }
 
@@ -400,19 +425,21 @@ fn json_string_list(value: JsonValue) -> anyhow::Result<Vec<String>> {
     serde_json::from_value(value).c(h!())
 }
 
-fn normalize_metadata_lists(
+fn normalize_metadata(
     locations: Vec<String>,
-    labels: Vec<String>,
-) -> anyhow::Result<(Vec<String>, Vec<String>)> {
-    let locations = normalize_string_list(locations).c(h!())?;
-    let labels = normalize_string_list(labels).c(h!())?;
-    if locations.is_empty() && labels.is_empty() {
+    report_name: &str,
+) -> anyhow::Result<(Vec<String>, String)> {
+    let report_name = report_name.trim();
+    if report_name.is_empty() || report_name.contains(['\r', '\n']) {
         return Err(AppError::BL {
-            msg: "Додайте принаймні одну локацію або мітку".to_string(),
+            msg: "Вкажіть непорожню назву для звіту одним рядком".into(),
         }
         .into());
     }
-    Ok((locations, labels))
+    Ok((
+        normalize_string_list(locations).c(h!())?,
+        report_name.to_string(),
+    ))
 }
 
 fn normalize_string_list(values: Vec<String>) -> anyhow::Result<Vec<String>> {
@@ -518,12 +545,8 @@ where
                 source.locations.clone(),
             )
             .c(h!())?;
-            let labels =
-                merge_json_lists(target.labels.clone(), source.labels.clone())
-                    .c(h!())?;
             let mut target = target.into_active_model();
             target.locations = Set(serde_json::to_value(locations).c(h!())?);
-            target.labels = Set(serde_json::to_value(labels).c(h!())?);
             target.update(dbx).await.c(h!())?;
             source.delete(dbx).await.c(h!())?;
         }

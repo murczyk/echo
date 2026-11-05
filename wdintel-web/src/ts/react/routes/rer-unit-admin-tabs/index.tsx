@@ -96,6 +96,7 @@ function unitInterceptionsRequest(
     selectedNetworks: null,
     withoutNetwork: null,
     onlyWithNetwork: null,
+    onlyForRerReport: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

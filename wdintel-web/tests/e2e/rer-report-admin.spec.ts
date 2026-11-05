@@ -49,3 +49,92 @@ for (const width of [375, 1200]) {
     ).toBe(true);
   });
 }
+
+for (const width of [375, 1200]) {
+  test(`@regression #3940 saves one report name and rejects a different parent (${width}px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installAnalysisNeoApiMocks(page, { userRoles: ['Admin', 'Rer'] });
+    await page.route('**/api/system-settings/current', (route) =>
+      route.fulfill({ json: { ...systemSettingsCurrentResponse(), rer_report_enabled: true } }),
+    );
+    await page.route('**/api/logins', (route) => route.fulfill({ json: { users: [] } }));
+    await page.route('**/api/admin/rer-report/access-list', (route) =>
+      route.fulfill({ json: { login_ids: [] } }),
+    );
+    await page.route('**/api/admin/system-settings/list', (route) =>
+      route.fulfill({ json: { items: [] } }),
+    );
+    await page.route('**/api/admin/rer-report/metadata', (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: 1,
+              sigint_unit_id: 1,
+              sigint_unit_name: 'Підрозділ А',
+              report_parent_context: JSON.stringify(['', '', '1 А']),
+              sigint_unit_active: true,
+              sigint_unit_deleted: false,
+              report_name: 'Спільна назва',
+              locations: [],
+            },
+          ],
+        },
+      }),
+    );
+    await page.route('**/api/sigint/units', (route) =>
+      route.fulfill({
+        json: {
+          units: [
+            { id: 2, name: 'Підрозділ Б', army: '2 А' },
+            { id: 3, name: 'Підрозділ без ієрархії' },
+          ],
+        },
+      }),
+    );
+    const created: Record<string, unknown>[] = [];
+    await page.route('**/api/admin/rer-report/metadata/create', (route) => {
+      const request = route.request().postDataJSON() as Record<string, unknown>;
+      created.push(request);
+      return route.fulfill({
+        json: {
+          ...request,
+          id: 2,
+          sigint_unit_name: 'Підрозділ Б',
+          report_parent_context: JSON.stringify(['', '', '2 А']),
+          sigint_unit_active: true,
+          sigint_unit_deleted: false,
+        },
+      });
+    });
+    await page.goto(
+      `/admin/system-settings-neo?sorting=${encodeURIComponent(JSON.stringify([{ id: 'labels', desc: false }]))}#reports`,
+    );
+    await page.getByRole('button', { name: 'Додати новий' }).click();
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Підрозділ Б');
+    await page.getByRole('option', { name: 'Підрозділ Б', exact: true }).click();
+    await expect(dialog.getByRole('textbox', { name: 'Назва для звіту' })).toHaveValue(
+      'Підрозділ Б',
+    );
+    await dialog.getByRole('textbox', { name: 'Назва для звіту' }).fill('Спільна назва');
+    await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
+    await expect(dialog.getByText(/іншою ієрархією/)).toBeVisible();
+    expect(created).toHaveLength(0);
+    await dialog
+      .getByRole('combobox', { name: 'Підрозділ', exact: true })
+      .fill('Підрозділ без ієрархії');
+    await page.getByRole('option', { name: 'Підрозділ без ієрархії', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeEnabled();
+    await dialog.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Підрозділ Б');
+    await page.getByRole('option', { name: 'Підрозділ Б', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
+    await dialog.getByRole('textbox', { name: 'Назва для звіту' }).fill('Нова назва');
+    await dialog.getByRole('button', { name: 'Зберегти', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    expect(created).toEqual([{ sigint_unit_id: 2, locations: [], report_name: 'Нова назва' }]);
+    await expect(page.getByText('Нова назва', { exact: true })).toBeVisible();
+  });
+}

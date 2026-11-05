@@ -473,6 +473,7 @@ getBasicInboxParams model =
     , selectedNetworks = Nothing
     , withoutNetwork = Nothing
     , onlyWithNetwork = Nothing
+    , onlyForRerReport = Nothing
     , withoutModelTags = Nothing
     }
 

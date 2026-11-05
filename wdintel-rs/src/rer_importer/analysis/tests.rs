@@ -495,6 +495,7 @@ fn mk_analysis_stats_req(
         selected_networks: None,
         without_network: None,
         only_with_network: None,
+        only_for_rer_report: None,
         metadata_cc: None,
         metadata_sender: None,
         metadata_receiver: None,
