@@ -430,14 +430,14 @@ offers **Продовжити глибоким аналізом** both right aft
 reload, that clicking it queues a Deep request in the same conversation, and that
 the composer stays on the remembered mode.
 
-## WGS-84 and MGRS map points (release 2026.11.05.2)
+## WGS-84 and MGRS map points (release 2026.11.05.3)
 
 Deploy the matching application, then upgrade the approved installation's
-namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.2`,
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.3`,
 previewing with `--dry-run` first. No migration or provider change is needed.
 Echo requires this exact harness, so the chat reports that the agent is updating
-until the namespace is upgraded. Release `2026.11.05.1` stays in the compatible
-runner lists. Roll back the application and harness as a pair.
+until the namespace is upgraded. Releases `2026.11.05.2` and `2026.11.05.1` stay
+in the compatible runner lists. Roll back the application and harness as a pair.
 
 Verify that pasting `name,latitude,longitude` rows and MGRS references each
 produces a map with every point in place, without format probing. Tool failures
