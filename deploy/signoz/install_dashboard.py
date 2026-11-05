@@ -170,7 +170,18 @@ def install(key, dashboard):
     else:
         created = api_request(key, "POST", "/api/v2/dashboards", dashboard)
         dashboard_id = created["data"]["id"]
-    print(dashboard_id)
+    saved = api_request(key, "GET", f"/api/v2/dashboards/{dashboard_id}")["data"]
+    print(
+        json.dumps(
+            {
+                "id": dashboard_id,
+                "name": saved["name"],
+                "tags": saved["tags"],
+                "panels": len(saved["spec"]["panels"]),
+                "variables": len(saved["spec"]["variables"]),
+            }
+        )
+    )
 
 
 def run_remote(options):
@@ -220,7 +231,7 @@ def main():
         action="append",
         default=[],
         metavar="NAME=VALUE",
-        help="dashboard variable value for --verify",
+        help="comma-separated dashboard variable values for --verify",
     )
     parser.add_argument(
         "--dashboard",
@@ -229,6 +240,7 @@ def main():
     )
     arguments = parser.parse_args()
     values = dict(variable.split("=", 1) for variable in arguments.var)
+    values = {name: value.split(",") for name, value in values.items()}
     return send_to_host(arguments.mode or "install", arguments.dashboard, values)
 
 

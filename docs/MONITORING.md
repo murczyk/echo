@@ -5,6 +5,7 @@ SigNoz is available only from the Eagle Atria Tailscale network.
 ## For humans
 
 - [Errors dashboard](http://signoz-echo.eagle-atria.ts.net:8080/dashboard/019fcb8d-cc4f-7e13-869d-2d6029b687d2?relativeTime=1h)
+- [AI providers dashboard](http://signoz-echo.eagle-atria.ts.net:8080/dashboard/01a1ab5f-22f4-7764-a7c1-5c44d57675c1?relativeTime=6h)
 - [All dashboards](http://signoz-echo.eagle-atria.ts.net:8080/dashboard)
 - [Logs Explorer](http://signoz-echo.eagle-atria.ts.net:8080/logs/logs-explorer?relativeTime=1h)
 
@@ -19,8 +20,8 @@ SigNoz stores password factors, not recoverable plaintext passwords, in
 reset access when necessary.
 
 Dashboard IDs change when a dashboard is recreated. If a direct link stops
-working, open **All dashboards**, find the errors dashboard, and update this
-document with its new link.
+working, open **All dashboards**, find the dashboard, and update this document
+with its new link.
 
 ## For agents over SSH
 
