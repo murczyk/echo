@@ -1,5 +1,5 @@
 import { WORK_APPEND_PATH, WORK_RECORD_MAX_BYTES, WORK_PARAMETERS, WORK_DESCRIPTIONS, WorkJournal, WorkPersistenceError, validateWorkMemory, recalledEvidence, type WorkMemoryContext } from "./work-memory.ts";
-import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_TOOL_NAME, RESEARCH_TUNING, FlashResearch, finalizationMultipliers, usesBoundedResearch } from "./flash-research.ts";
+import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_INCOMPLETE_REASON, RESEARCH_TOOL_NAME, RESEARCH_TUNING, FlashResearch, finalizationMultipliers, usesBoundedResearch } from "./flash-research.ts";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
@@ -3623,10 +3623,10 @@ async function completeLimitedResearch(options: {
   const event = snapshot(text) ?? snapshot(budgetFallback());
   if (!event) throw new Error("limited answer exceeds the snapshot limit");
   emit(event);
-  if (budget.reason) emit({
+  if (coverageLimited) emit({
     type: "completion_metadata",
     coverageLimited: true,
-    reason: budget.reason,
+    reason: budget.reason ?? RESEARCH_INCOMPLETE_REASON,
   });
 }
 
