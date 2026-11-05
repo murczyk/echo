@@ -409,3 +409,21 @@ Verify the rollout this way:
   true; the agent outlines the template, searches Echo for the period without
   the template's own callsigns, saves the filled document and links it.
 - A Deep request's policy shows `maxRuntimeSeconds` 14400.
+
+## Deep continuation of incomplete answers (release 2026.11.05.1)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.1`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded, and the upgrade waits for the namespace to go
+idle. Release `2026.11.03.4` stays in the compatible runner lists. Roll back the
+application and harness as a pair.
+
+The runner now emits `completion_metadata` for every answer that shows the
+incomplete-coverage notice, with reason `incomplete_research` when no budget
+limit was reached. Such answers gain the coverage footer, and admins see
+`Неповне: incomplete_research`. Verify that a Balanced answer showing the notice
+offers **Продовжити глибоким аналізом** both right after it finishes and after
+reload, that clicking it queues a Deep request in the same conversation, and that
+the composer stays on the remembered mode.

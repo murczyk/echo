@@ -24,6 +24,8 @@ export const FLASH_RESEARCH_PAGINATION_REQUIRED =
   "After the initial sample, use focused searches. Before continuing pagination, save the specific coverage requirement in update_research.paginationReason.";
 export const FLASH_SYNTHESIS_TOKENS = 8192;
 export const FLASH_INABILITY = BUDGET_INABILITY;
+// Coverage stayed incomplete although no budget limit stopped the research.
+export const RESEARCH_INCOMPLETE_REASON = "incomplete_research";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",

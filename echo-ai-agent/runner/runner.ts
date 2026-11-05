@@ -1,5 +1,5 @@
 import { WORK_APPEND_PATH, WORK_RECORD_MAX_BYTES, WORK_PARAMETERS, WORK_DESCRIPTIONS, WorkJournal, WorkPersistenceError, validateWorkMemory, recalledEvidence, type WorkMemoryContext } from "./work-memory.ts";
-import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_TOOL_NAME, RESEARCH_TUNING, FlashResearch, finalizationMultipliers, usesBoundedResearch } from "./flash-research.ts";
+import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_SYNTHESIS_TOKENS, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_INCOMPLETE_REASON, RESEARCH_TOOL_NAME, RESEARCH_TUNING, FlashResearch, finalizationMultipliers, usesBoundedResearch } from "./flash-research.ts";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
@@ -110,7 +110,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.03.4";
+const HARNESS_RELEASE = "2026.11.05.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3623,10 +3623,10 @@ async function completeLimitedResearch(options: {
   const event = snapshot(text) ?? snapshot(budgetFallback());
   if (!event) throw new Error("limited answer exceeds the snapshot limit");
   emit(event);
-  if (budget.reason) emit({
+  if (coverageLimited) emit({
     type: "completion_metadata",
     coverageLimited: true,
-    reason: budget.reason,
+    reason: budget.reason ?? RESEARCH_INCOMPLETE_REASON,
   });
 }
 

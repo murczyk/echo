@@ -131,6 +131,15 @@ with its provider and preserves any unsent composer draft. Retry is disabled
 while a submission or another request is active; stream interruptions retain
 their separate reconnect action.
 
+The newest answer offers **Продовжити глибоким аналізом** when its metadata
+reports incomplete coverage, it ran below Deep, and the provider offers Deep. The
+button works for a just-finished answer and after reload (`DeepContinuation.tsx`).
+It sends a fixed follow-up prompt through the same path as retry, so the composer
+draft and the remembered mode are kept. Because that prompt only says "previous",
+submission first confirms on the server that the request is still the newest; if
+another tab moved the conversation on, the view refreshes and nothing is sent. See
+[reasoning presets](../../../../../../docs/ai/reasoning-presets.md).
+
 Regression coverage (#3064):
 
 - `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/map-symbol.spec.ts`
