@@ -602,7 +602,7 @@ async fn worker_uses_structured_automatic_text_and_does_not_run_twice_3646() {
     assert_eq!(text.body, format!("Початковий текст оператора\n\n{description}\n\n{first_quote}\n\n{second_quote}"));
     assert!(text.no_headers_body.contains(description));
     assert!(text.searchable);
-    handle.stop(true).await;
+    handle.stop(false).await;
 }
 
 #[tokio::test]

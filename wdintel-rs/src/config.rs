@@ -146,7 +146,8 @@ pub const INBOX_ITEM_CALLSIGN_LOAD_BATCH_SIZE: usize = 20_000;
 pub const NLP_ADDR: &str = "http://127.0.0.1:5000";
 pub const RQ_TIMEOUT: u64 = 10;
 pub const AI_ENGINE_REQUEST_TIMEOUT_SEC: u64 = 300;
-pub const AI_WORKER_PRIMARY_TIMEOUT_SECS: u64 = 20;
+/// Tests with a stalled primary engine wait out this whole deadline.
+pub const AI_WORKER_PRIMARY_TIMEOUT_SECS: u64 = if cfg!(test) { 5 } else { 20 };
 pub const AI_WORKER_MONITORING_CACHE_TTL_SECS: u64 = 60;
 pub const AI_WORKER_FALLBACK_TIMEOUT_SECS: u64 = 20;
 pub const AI_WORKER_MAX_ERROR_CHARS: usize = 2_000;

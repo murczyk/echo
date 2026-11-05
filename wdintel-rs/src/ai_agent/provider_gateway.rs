@@ -1151,7 +1151,7 @@ mod tests {
         .await
         .unwrap();
         assert!(to_bytes(response.into_body()).await.is_err());
-        handle.stop(true).await;
+        handle.stop(false).await;
         task.await.unwrap().unwrap();
     }
 
