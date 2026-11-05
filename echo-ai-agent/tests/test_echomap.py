@@ -149,7 +149,15 @@ class PositionFormatTest(unittest.TestCase):
         )
 
     def test_malformed_degrees_are_not_cleaned_into_a_point(self):
-        for text in ['47.54821,35.38674abc', '47.54821,35.38674.123', '47.54821x,35.38674']:
+        for text in [
+            '47.54821,35.38674abc',
+            '47.54821,35.38674.123',
+            '47.54821x,35.38674',
+            '47.54821, 35.38674-12',
+            '47.54821, 35.38674/123',
+            '12-47.54821, 35.38674',
+            '12/47.54821, 35.38674',
+        ]:
             self.assertEqual(parse.pair(text), ('', ''), text)
         self.assertEqual(parse.pair('Ціль 47.54821, 35.38674.'), ('47.54821', '35.38674'))
 

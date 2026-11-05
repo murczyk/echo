@@ -17,7 +17,7 @@ _TIME = re.compile(r"(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?")
 _DEGREES = r"[-+]?\d{1,3}[.,]\d{2,}"
 # Two decimal numbers side by side. The region check below rules out dates and
 # times, which cannot read as a latitude.
-_DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\w|[.,]\d)")
+_DEGREE_PAIR = re.compile(rf"(?<![\d.])(?<!\d[/\-])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\w|[.,/\-]\d)")
 # The region's WGS-84 box; other decimal pairs are not coordinates.
 _LATITUDES = (40.0, 60.0)
 _LONGITUDES = (20.0, 50.0)

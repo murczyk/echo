@@ -323,7 +323,12 @@ fn apply_fields(
             .unwrap_or_else(|| record.original_x.clone());
         // A whole position in X replaces the old pair, so the old Y must go.
         let y = fields.y.clone().unwrap_or_else(|| {
-            if fields.x.as_deref().is_some_and(prepare::is_whole_position) {
+            let old_y = &record.original_y;
+            if fields
+                .x
+                .as_deref()
+                .is_some_and(|x| prepare::replaces_y(x, old_y))
+            {
                 String::new()
             } else {
                 record.original_y.clone()
@@ -931,6 +936,44 @@ mod tests {
         let partial =
             apply_patch(&document, &[add_op(input("Нова", "5215227", ""))]);
         assert!(matches!(partial, Err(EditFailure::Clarify(_))));
+    }
+
+    #[test]
+    fn issue_4038_editing_a_split_mgrs_easting_keeps_its_y() {
+        let document = sample(2);
+        let update = |fields| AiAgentMapPatchOp {
+            op: "update".to_string(),
+            selector: Some(AiAgentMapSelector {
+                ids: vec![document.records[0].id.clone()],
+                ..Default::default()
+            }),
+            record: None,
+            fields: Some(fields),
+            components: None,
+            sidc: None,
+            title: None,
+        };
+        let split = apply_patch(
+            &document,
+            &[update(AiAgentMapFieldPatch {
+                x: Some("36T XT 79584".to_string()),
+                y: Some("68848".to_string()),
+                ..Default::default()
+            })],
+        )
+        .unwrap();
+        let moved = apply_patch(
+            &split.document,
+            &[update(AiAgentMapFieldPatch {
+                x: Some("36T XT 79585".to_string()),
+                ..Default::default()
+            })],
+        )
+        .unwrap();
+        let record = &moved.document.records[0];
+        assert_eq!(record.coordinate_system, "mgrs");
+        assert_eq!(record.original_y, "68848");
+        assert!(record.latitude.is_some());
     }
 
     #[test]

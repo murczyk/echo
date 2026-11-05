@@ -359,6 +359,13 @@ pub(super) fn is_whole_position(value: &str) -> bool {
         || decimal_degrees(value, "").is_some()
 }
 
+/// Whether `x` alone replaces the old pair. An MGRS part that still reads with
+/// the old Y needs it, even though on its own it is malformed.
+pub(super) fn replaces_y(x: &str, old_y: &str) -> bool {
+    is_whole_position(x)
+        && !matches!(mgrs_reading(x, old_y), MgrsReading::Valid(..))
+}
+
 fn normalize_component(value: &str) -> String {
     if value.trim().starts_with(['-', '–', '—']) {
         return "INVALID".to_string();
