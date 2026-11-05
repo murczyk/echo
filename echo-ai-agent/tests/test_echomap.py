@@ -98,6 +98,12 @@ class PositionFormatTest(unittest.TestCase):
             ('36T XT 79584 68848', ''), ('5272881', '6679505'), ('47.54821', '35.38674'),
         ])
 
+    def test_a_malformed_mgrs_tail_never_leaves_a_shorter_reference(self):
+        for text in ['36T XT 7958 6884abc', '36T XT 79 68abc']:
+            self.assertEqual(parse.mgrs(text), [], text)
+            self.assertEqual(parse.pair(text), ('', ''), text)
+        self.assertEqual(parse.mgrs('36TXT7958468848 5км'), ['36TXT7958468848'])
+
     def test_a_whole_position_allows_nothing_else(self):
         self.assertEqual(parse.whole(' 36T XT 79584 68848 '), ('36T XT 79584 68848', ''))
         self.assertEqual(parse.whole('50,4501 30,5234'), ('50,4501', '30,5234'))

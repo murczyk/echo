@@ -25,7 +25,10 @@ _LONGITUDES = (20.0, 50.0)
 # «7958 68848» would leave a valid reference to the wrong place, while Echo
 # rejects the whole value as malformed.
 _MGRS_NEXT_RUN = r"[ \t]+\d+(?![:.]\d)"
-_MGRS_DIGITS = rf"\d{{10,}}|\d{{4,9}}(?:{_MGRS_NEXT_RUN})?|\d{{1,3}}{_MGRS_NEXT_RUN}"
+# A next run with letters attached is malformed, so the digits before it must
+# not pass for a shorter reference.
+_MGRS_NO_MALFORMED_RUN = r"(?![ \t]+\d+[^\W\d])"
+_MGRS_DIGITS = rf"\d{{10,}}|\d{{4,9}}(?:{_MGRS_NEXT_RUN})?{_MGRS_NO_MALFORMED_RUN}|\d{{1,3}}{_MGRS_NEXT_RUN}"
 # A two-digit zone, band and square, in Latin or Cyrillic look-alikes. Few digits
 # need a second run, so unit designations such as «25 мср 120» do not match.
 _MGRS = re.compile(
