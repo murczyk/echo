@@ -6301,6 +6301,10 @@ pub async fn edit_freq_unit_name(
         &reqan.only_with_network,
     )
     .context(h!())?;
+    let rows_res = crate::rer_report_admin::scope::filter_query(
+        rows_res,
+        reqan.only_for_rer_report,
+    );
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
     let rows_res = filter_search_with_mode(

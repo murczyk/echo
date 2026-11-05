@@ -527,6 +527,9 @@ where
         .find(|row| row.sigint_unit_id == source_unit_id)
         .cloned();
     let Some(source) = source else {
+        validate_unit_metadata_parent(dbx, target_unit_id)
+            .await
+            .c(h!())?;
         return Ok(0);
     };
     let target = rows
@@ -551,7 +554,38 @@ where
             source.delete(dbx).await.c(h!())?;
         }
     }
+    validate_unit_metadata_parent(dbx, target_unit_id)
+        .await
+        .c(h!())?;
     Ok(1)
+}
+
+pub(crate) async fn validate_unit_metadata_parent<C: ConnectionTrait>(
+    dbx: &C,
+    unit_id: i64,
+) -> anyhow::Result<()> {
+    let row = sigint_unit_rer_report_metadata::Entity::find()
+        .filter(
+            sigint_unit_rer_report_metadata::Column::SigintUnitId.eq(unit_id),
+        )
+        .select_only()
+        .column(sigint_unit_rer_report_metadata::Column::Id)
+        .column(sigint_unit_rer_report_metadata::Column::ReportName)
+        .into_tuple::<(i64, Option<String>)>()
+        .one(dbx)
+        .await
+        .c(h!())?;
+    if let Some((id, report_name)) = row {
+        scope::validate_parent(
+            dbx,
+            unit_id,
+            report_name.as_deref().unwrap_or_default().trim(),
+            Some(id),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
 }
 
 fn merge_json_lists(

@@ -2622,12 +2622,15 @@ where
     )
     .await
     .context(h!())?;
-    Ok(
+    let unit =
         orbit::reconcile_sigint_unit_orbit(dbx, &login, unit_original.id, true)
             .await
             .c(h!())?
-            .unit,
-    )
+            .unit;
+    crate::rer_report_admin::validate_unit_metadata_parent(dbx, unit.id)
+        .await
+        .c(h!())?;
+    Ok(unit)
 }
 
 async fn find_units_for_merge<C>(

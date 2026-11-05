@@ -90,6 +90,128 @@ async fn unit_merge_keeps_survivor_report_name_and_unions_locations() {
 
 #[tokio::test]
 #[serial]
+async fn issue_3940_unit_merges_revalidate_report_name_parents() {
+    for (source_name, target_name) in [
+        (Some("Shared"), None),
+        (Some("Source"), Some("Shared")),
+        (None, Some("Shared")),
+    ] {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let source = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set("West".into()),
+                corps: Set("1 AK".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set(if target_name.is_none() {
+                    "East".into()
+                } else {
+                    String::new()
+                }),
+                corps: Set("1 AK".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let peer = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set(if target_name.is_none() {
+                    "West".into()
+                } else {
+                    String::new()
+                }),
+                corps: Set("1 AK".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (unit_id, report_name) in [
+            (source.id, source_name),
+            (target.id, target_name),
+            (peer.id, Some("Shared")),
+        ] {
+            if let Some(report_name) = report_name {
+                create_metadata(
+                    &env.dbx,
+                    &CreateRerReportMetadataReq {
+                        sigint_unit_id: unit_id,
+                        report_name: report_name.into(),
+                        locations: vec![],
+                    },
+                )
+                .await
+                .unwrap();
+            }
+        }
+        scope::capture(&env.dbx).await.unwrap();
+        let metadata = list_metadata(&env.dbx).await.unwrap();
+        let login = source.created_by_login_id;
+        let transaction = crate::sigint::unit::begin_unit_merge_transaction(
+            &env.dbx,
+            &[source.id, target.id],
+        )
+        .await
+        .unwrap();
+        let error = crate::sigint::unit::merge_units_in_transaction(
+            login,
+            &transaction,
+            source.id,
+            target.id,
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:?}").contains("іншою ієрархією"));
+        transaction.rollback().await.unwrap();
+        assert_eq!(list_metadata(&env.dbx).await.unwrap(), metadata);
+        for unit in [&source, &target] {
+            assert_eq!(
+                sigint_unit::Entity::find_by_id(unit.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                Some(unit)
+            );
+        }
+        scope::capture(&env.dbx).await.unwrap();
+        let peer_metadata = metadata
+            .iter()
+            .find(|row| row.sigint_unit_id == peer.id)
+            .unwrap();
+        delete_metadata(&env.dbx, peer_metadata.id).await.unwrap();
+        let transaction = crate::sigint::unit::begin_unit_merge_transaction(
+            &env.dbx,
+            &[source.id, target.id],
+        )
+        .await
+        .unwrap();
+        crate::sigint::unit::merge_units_in_transaction(
+            login,
+            &transaction,
+            source.id,
+            target.id,
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+        let scope = scope::capture(&env.dbx).await.unwrap();
+        assert_eq!(scope.units[&target.id].target.report_name, "Shared");
+        assert!(!scope.units.contains_key(&source.id));
+    }
+}
+
+#[tokio::test]
+#[serial]
 async fn access_replacement_is_serialized_and_invalid_ids_preserve_access() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let first = mk_login(&env.dbx, Default::default()).await.unwrap();

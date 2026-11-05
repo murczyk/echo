@@ -764,6 +764,75 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn issue_3940_staged_merge_revalidates_final_report_parent() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let source = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set("West".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target =
+            mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let peer = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set("East".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for unit_id in [target.id, peer.id] {
+            sigint_unit_rer_report_metadata::ActiveModel {
+                sigint_unit_id: Set(unit_id),
+                locations: Set(serde_json::json!([])),
+                labels: Set(serde_json::json!(["Shared"])),
+                report_name: Set(Some("Shared".into())),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        let login = source.created_by_login_id;
+        move_step(
+            &env.dbx,
+            login,
+            source.id,
+            target.id,
+            UnitReferenceStep::RerReportMetadata,
+        )
+        .await
+        .unwrap();
+        crate::rer_report_admin::scope::capture(&env.dbx)
+            .await
+            .unwrap();
+        let error = finalize(&env.dbx, login, source.id, target.id)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:?}").contains("іншою ієрархією"));
+        for unit in [&source, &target] {
+            assert_eq!(
+                sigint_unit::Entity::find_by_id(unit.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                Some(unit)
+            );
+        }
+        crate::rer_report_admin::scope::capture(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn staged_merge_waiter_releases_pool_connection() {
         let env = cleanup().await.unwrap();
         let pool = sqlx::postgres::PgPoolOptions::new()

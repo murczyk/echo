@@ -28,6 +28,145 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[actix_web::test]
+#[serial]
+async fn issue_3940_bulk_unit_rename_preserves_rer_scope() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let db = &env.dbx;
+    let login = find_test_login(db).await.unwrap().id;
+    let group = GroupFixture {
+        signal_group: find_test_signal_group(db).await.unwrap(),
+        datasource_group: find_test_datasource_group(db).await.unwrap(),
+    };
+    let configured = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let excluded = mk_sigint_unit(db, Default::default()).await.unwrap();
+    sigint_unit_rer_report_metadata::ActiveModel {
+        sigint_unit_id: Set(configured.id),
+        report_name: Set(Some("Bulk rename".into())),
+        labels: Set(serde_json::json!(["Bulk rename"])),
+        locations: Set(serde_json::json!([])),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let now = Utc::now().naive_utc();
+    let mut items = Vec::new();
+    for (unit_id, label) in [
+        (configured.id, "rename-inside-3940"),
+        (excluded.id, "rename-outside-3940"),
+    ] {
+        let message = mk_analysis_message(
+            db,
+            label,
+            "3940.1",
+            now,
+            &[&group],
+            &[],
+            false,
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id),
+            unit_id: Set(unit_id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+        items.push(message.id);
+    }
+    let session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&env.config).unwrap())
+            .await
+            .unwrap();
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(Data::from(env.clone()))
+            .wrap(IdentityMiddleware::default())
+            .wrap(SessionMiddleware::new(session_store, Key::generate()))
+            .route(
+                "/test/rer-rename-login/{login}",
+                web::post().to(activity_daily_test_login),
+            )
+            .service(edit_freq_unit_name),
+    )
+    .await;
+    let login_response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::post()
+            .uri(&format!("/test/rer-rename-login/{login}"))
+            .to_request(),
+    )
+    .await;
+    let session_cookie = login_response
+        .response()
+        .cookies()
+        .next()
+        .unwrap()
+        .into_owned();
+    for enabled in [Some(true), Some(false), None] {
+        for id in &items {
+            sigint_inbox_item::ActiveModel {
+                id: Set(*id),
+                datetime: Set(Some(now)),
+                unit: Set(Some("Original unit".into())),
+                unit_v2: Set(Some("Original unit".into())),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            }
+            .update(db)
+            .await
+            .unwrap();
+        }
+        let mut req = mk_analysis_stats_req(
+            (now - chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+            (now + chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+        );
+        req.only_for_rer_report = enabled;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/api/rer/analysis/freq-edit-unit-name")
+                .cookie(session_cookie.clone())
+                .set_json(EditFreqUnitNameReq {
+                    analysis_stats_req: req,
+                    freq: "3940.1".into(),
+                    unit: "Original unit".into(),
+                    unit_new: "Renamed unit".into(),
+                    search: None,
+                    filter_tags_option: None,
+                    report_tags_only_this_unit: None,
+                })
+                .to_request(),
+        )
+        .await;
+        assert!(response.status().is_success());
+        for (index, id) in items.iter().enumerate() {
+            let item = sigint_inbox_item::Entity::find_by_id(*id)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap();
+            let changed = index == 0 || enabled != Some(true);
+            let expected = if changed {
+                "Renamed unit"
+            } else {
+                "Original unit"
+            };
+            assert_eq!(item.unit.as_deref(), Some(expected));
+            assert_eq!(item.unit_v2.as_deref(), Some(expected));
+            assert_eq!(item.parsed_unit_v2, changed);
+        }
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn issue_3940_map_exports_preserve_rer_scope() {
