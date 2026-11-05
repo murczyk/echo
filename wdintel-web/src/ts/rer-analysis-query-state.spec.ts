@@ -186,6 +186,29 @@ describe('rer analysis query state', () => {
     expect(hasRerAnalysisQueryStateParams(params)).toBe(true);
   });
 
+  it.each([
+    { unitsSelected: [''] },
+    { unitsSelected: ['', 'unit-id:1'] },
+    { unitsSelected: ['unit-id:1'] },
+  ])(
+    '#4022 preserves unit selections through URL serialization: $unitsSelected',
+    ({ unitsSelected }) => {
+      const params = new URLSearchParams();
+      writeRerAnalysisQueryStateToSearchParams(params, { unitsSelected });
+
+      expect(
+        parseRerAnalysisQueryStateFromSearchParams(new URLSearchParams(params.toString())),
+      ).toEqual({ unitsSelected });
+    },
+  );
+
+  it('#4022 distinguishes an unset unit filter from an explicitly empty unit value', () => {
+    expect(parseRerAnalysisQueryStateFromSearchParams(new URLSearchParams())).toBeNull();
+    expect(
+      parseRerAnalysisQueryStateFromSearchParams(new URLSearchParams('units=&freqs=&tags=')),
+    ).toEqual({ unitsSelected: [''], freqsSelected: [], tags: [] });
+  });
+
   it('does not treat legacy split datetime query params as supported neo query state', () => {
     const params = new URLSearchParams(
       'dateFrom=2026-03-27&timeFrom=21%3A52&dateTo=2026-03-28&timeTo=09%3A52',

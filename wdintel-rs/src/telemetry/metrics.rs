@@ -50,6 +50,20 @@ const AI_INTEL_REPORT_DURATION_DESCRIPTION: &str =
     "Quick intelligence-report suggestion duration";
 const AI_INTEL_REPORT_DURATION_BUCKETS_SECS: &[f64] =
     &[0.25, 0.5, 1.0, 2.5, 5.0, 8.0, 10.0];
+const AI_PROVIDER_REQUESTS_COUNT: &str = "echo.ai_provider.requests.count";
+const AI_PROVIDER_REQUESTS_DESCRIPTION: &str =
+    "Number of AI provider calls by outcome";
+const AI_PROVIDER_RESPONSE_START_DURATION: &str =
+    "echo.ai_provider.response_start.duration";
+const AI_PROVIDER_RESPONSE_START_DESCRIPTION: &str =
+    "Time from sending an AI provider call until its response headers";
+const AI_PROVIDER_STREAM_DURATION: &str = "echo.ai_provider.stream.duration";
+const AI_PROVIDER_STREAM_DESCRIPTION: &str =
+    "Time from AI provider response headers until the stream ended";
+const AI_PROVIDER_DURATION_BUCKETS_SECS: &[f64] = &[
+    0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0, 90.0, 120.0, 180.0,
+    300.0, 600.0, 1800.0,
+];
 const MEDIA_SUMMARY_ATTEMPTS_COUNT: &str = "echo.media_summary.attempts.count";
 const MEDIA_SUMMARY_ATTEMPTS_DESCRIPTION: &str =
     "Number of media-summary attempt outcomes";
@@ -137,6 +151,16 @@ impl FileAnalysisDbOperation {
     }
 }
 
+/// Low-cardinality labels shared by every metric of one AI provider call.
+#[derive(Clone, Debug)]
+pub(crate) struct AiProviderLabels {
+    pub(crate) provider: &'static str,
+    pub(crate) model_name: String,
+    /// All processes share one metric identity, so this keeps their cumulative
+    /// series apart.
+    pub(crate) process: &'static str,
+}
+
 #[derive(Clone)]
 pub struct Metrics {
     provider: SdkMeterProvider,
@@ -178,6 +202,9 @@ pub struct Metrics {
     messenger_nlp_ready: Gauge<u64>,
     ai_intel_report_suggestions: Counter<u64>,
     ai_intel_report_duration: Histogram<f64>,
+    ai_provider_requests: Counter<u64>,
+    ai_provider_response_start: Histogram<f64>,
+    ai_provider_stream: Histogram<f64>,
     media_summary_attempts: Counter<u64>,
     media_summary_duration: Histogram<f64>,
     media_summary_coordinate_drops: Counter<u64>,
@@ -397,6 +424,21 @@ impl Metrics {
             .with_description(AI_INTEL_REPORT_DURATION_DESCRIPTION)
             .with_unit("s")
             .build();
+        let ai_provider_requests = meter
+            .u64_counter(AI_PROVIDER_REQUESTS_COUNT)
+            .with_description(AI_PROVIDER_REQUESTS_DESCRIPTION)
+            .with_unit("1")
+            .build();
+        let ai_provider_response_start = meter
+            .f64_histogram(AI_PROVIDER_RESPONSE_START_DURATION)
+            .with_description(AI_PROVIDER_RESPONSE_START_DESCRIPTION)
+            .with_unit("s")
+            .build();
+        let ai_provider_stream = meter
+            .f64_histogram(AI_PROVIDER_STREAM_DURATION)
+            .with_description(AI_PROVIDER_STREAM_DESCRIPTION)
+            .with_unit("s")
+            .build();
         let media_summary_attempts = meter
             .u64_counter(MEDIA_SUMMARY_ATTEMPTS_COUNT)
             .with_description(MEDIA_SUMMARY_ATTEMPTS_DESCRIPTION)
@@ -492,6 +534,9 @@ impl Metrics {
             messenger_nlp_ready,
             ai_intel_report_suggestions,
             ai_intel_report_duration,
+            ai_provider_requests,
+            ai_provider_response_start,
+            ai_provider_stream,
             media_summary_attempts,
             media_summary_duration,
             media_summary_coordinate_drops,
@@ -894,6 +939,44 @@ impl Metrics {
             .record(duration.as_secs_f64(), &attributes);
     }
 
+    pub(crate) fn record_ai_provider_call(
+        &self,
+        labels: &AiProviderLabels,
+        streaming: bool,
+        outcome: &'static str,
+        response_start: Option<Duration>,
+    ) {
+        let attributes = [
+            KeyValue::new("provider", labels.provider),
+            KeyValue::new("model_name", labels.model_name.clone()),
+            KeyValue::new("process", labels.process),
+            KeyValue::new("streaming", streaming),
+            KeyValue::new("outcome", outcome),
+        ];
+        self.ai_provider_requests.add(1, &attributes);
+        if let Some(response_start) = response_start {
+            self.ai_provider_response_start
+                .record(response_start.as_secs_f64(), &attributes);
+        }
+    }
+
+    pub(crate) fn record_ai_provider_stream(
+        &self,
+        labels: &AiProviderLabels,
+        outcome: &'static str,
+        duration: Duration,
+    ) {
+        self.ai_provider_stream.record(
+            duration.as_secs_f64(),
+            &[
+                KeyValue::new("provider", labels.provider),
+                KeyValue::new("model_name", labels.model_name.clone()),
+                KeyValue::new("process", labels.process),
+                KeyValue::new("outcome", outcome),
+            ],
+        );
+    }
+
     pub fn shutdown(&self) {
         if let Err(error) = self.provider.shutdown() {
             warn!("Failed to shut down Signoz metrics provider: {error}");
@@ -955,6 +1038,18 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             AI_INTEL_REPORT_DURATION => {
                 (&["outcome"], Some(AI_INTEL_REPORT_DURATION_BUCKETS_SECS))
             }
+            AI_PROVIDER_REQUESTS_COUNT => (
+                &["provider", "model_name", "process", "streaming", "outcome"],
+                None,
+            ),
+            AI_PROVIDER_RESPONSE_START_DURATION => (
+                &["provider", "model_name", "process", "streaming", "outcome"],
+                Some(AI_PROVIDER_DURATION_BUCKETS_SECS),
+            ),
+            AI_PROVIDER_STREAM_DURATION => (
+                &["provider", "model_name", "process", "outcome"],
+                Some(AI_PROVIDER_DURATION_BUCKETS_SECS),
+            ),
             MEDIA_SUMMARY_ATTEMPTS_COUNT => (&["outcome"], None),
             MEDIA_SUMMARY_DURATION => {
                 (&["outcome"], Some(MEDIA_SUMMARY_DURATION_BUCKETS_SECS))
@@ -1283,6 +1378,104 @@ mod tests {
 
         config.signoz_metrics_enabled = Some(true);
         assert!(Metrics::from_config(&config).is_none());
+    }
+
+    #[test]
+    fn ai_provider_metrics_match_signoz_contract() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let (metrics, recorder) = Metrics::recording(&config);
+        let labels = AiProviderLabels {
+            provider: "gov_ua",
+            model_name: "glm-5.3".to_string(),
+            process: "echo-web",
+        };
+
+        metrics.record_ai_provider_call(
+            &labels,
+            true,
+            "ok",
+            Some(Duration::from_secs(85)),
+        );
+        metrics.record_ai_provider_call(
+            &labels,
+            true,
+            "cooldown_expired",
+            None,
+        );
+        metrics.record_ai_provider_stream(
+            &labels,
+            "completed",
+            Duration::from_secs(7),
+        );
+        metrics.force_flush_for_test();
+
+        let requests = recorder
+            .find_with_attributes(
+                AI_PROVIDER_REQUESTS_COUNT,
+                &[("outcome", "ok")],
+            )
+            .unwrap();
+        assert_eq!(requests.value, RecordedMetricValue::Counter(1));
+        assert_eq!(requests.unit, "1");
+        assert_eq!(
+            requests
+                .attributes
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["model_name", "outcome", "process", "provider", "streaming"]
+        );
+        assert_eq!(requests.attributes["provider"], "gov_ua");
+        assert_eq!(requests.attributes["model_name"], "glm-5.3");
+        assert_eq!(requests.attributes["process"], "echo-web");
+        assert_eq!(requests.attributes["streaming"], "true");
+        assert_eq!(
+            recorder.counter_value(
+                AI_PROVIDER_REQUESTS_COUNT,
+                &[("outcome", "cooldown_expired")],
+            ),
+            Some(1)
+        );
+
+        let response_start = recorder
+            .find_with_attributes(
+                AI_PROVIDER_RESPONSE_START_DURATION,
+                &[("outcome", "ok")],
+            )
+            .unwrap();
+        assert_eq!(response_start.unit, "s");
+        assert_eq!(
+            response_start.value,
+            RecordedMetricValue::Histogram {
+                count: 1,
+                sum: 85.0,
+                boundaries: AI_PROVIDER_DURATION_BUCKETS_SECS.to_vec(),
+            }
+        );
+        assert!(recorder
+            .find_with_attributes(
+                AI_PROVIDER_RESPONSE_START_DURATION,
+                &[("outcome", "cooldown_expired")],
+            )
+            .is_none());
+
+        let stream = recorder.find(AI_PROVIDER_STREAM_DURATION).unwrap();
+        assert_eq!(
+            stream.value,
+            RecordedMetricValue::Histogram {
+                count: 1,
+                sum: 7.0,
+                boundaries: AI_PROVIDER_DURATION_BUCKETS_SECS.to_vec(),
+            }
+        );
+        assert_eq!(
+            stream
+                .attributes
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["model_name", "outcome", "process", "provider"]
+        );
     }
 
     #[test]

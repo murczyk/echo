@@ -203,7 +203,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   }, [editorOpen, ownsWindowUrl, page.hideNetworks, page.networkVisibilityReady]);
   useEffect(() => {
     if (!filterPanelOpen) return;
-    const sections = ['tags', 'groups', 'senders'] as const;
+    const sections = ['tags', 'groups', 'senders', 'units'] as const;
     void Promise.all(sections.map((section) => page.loadFilterSection(section)));
   }, [filterPanelOpen, page.loadFilterSection]);
   useEffect(() => {

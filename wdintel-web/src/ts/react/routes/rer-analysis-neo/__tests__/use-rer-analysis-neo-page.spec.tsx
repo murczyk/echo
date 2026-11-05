@@ -578,6 +578,30 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
   });
 
+  it.each([
+    { label: 'unknown unit', unitsSelected: [''] },
+    { label: 'unknown and named units', unitsSelected: ['', 'Header Unit'] },
+    { label: 'named unit', unitsSelected: ['Header Unit'] },
+  ])(
+    '#4022 retains $label when an editor overlay pops to the same URL',
+    async ({ unitsSelected }) => {
+      window.history.replaceState({}, '', '/rer-analysis-neo');
+      renderHook();
+      await flushEffects();
+
+      await act(async () => latest?.updateQueryState({ unitsSelected }));
+      await flushEffects();
+      expect(latest?.queryState.unitsSelected).toEqual(unitsSelected);
+      expect(new URL(window.location.href).searchParams.getAll('units')).toEqual(unitsSelected);
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+      await flushEffects();
+
+      expect(latest?.queryState.unitsSelected).toEqual(unitsSelected);
+      expect(new URL(window.location.href).searchParams.getAll('units')).toEqual(unitsSelected);
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3992
   it('leaves the next route URL untouched when SPA navigation leaves analysis', async () => {
     window.history.replaceState(

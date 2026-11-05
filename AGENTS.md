@@ -21,10 +21,18 @@
   service restarts, migrations, database writes, analytics reconciliation,
   resnapshots, and rollbacks. A check that writes heartbeat or health metadata
   is a mutation too. A documented procedure or skill is not user approval.
+- A user message asking to prepare or make a release is explicit approval for
+  exactly the operations and targets [RELEASE.md](./RELEASE.md) lists for that
+  phase; nothing else in that file is approved by it.
 - Keep remote investigation read-only until mutations are approved. If an
   operation fails or partially completes, report its state and obtain approval
   for recovery actions outside the approved scope; do not expand the scope
   automatically.
+
+## Releases
+
+- "Prepare release", "make release", and "prepare and make release" mean the
+  process in [RELEASE.md](./RELEASE.md). Follow it.
 
 ## Documentation scope
 

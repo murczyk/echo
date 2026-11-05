@@ -1,8 +1,10 @@
 pub mod client;
 mod cooldown;
 pub mod gov;
+mod metrics;
 pub mod types;
 pub use client::AiEngineClient;
+pub(crate) use metrics::StreamBodyTimer;
 
 use crate::config::{
     AI_CHAT_PROMPT_MAX_CHARS, AI_CHAT_ROLE_ASSISTANT, AI_CHAT_ROLE_USER,

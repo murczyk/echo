@@ -66,7 +66,10 @@ validate against the available citations. Without a validated draft, it returns 
 short inability notice. Answers grounded solely in user-provided text need no
 invented citation, and registered map links remain supported. It never
 substitutes raw source excerpts. Unread cursors,
-incomplete tasks or remaining gaps produce a brief coverage qualification.
+incomplete tasks or remaining gaps produce a brief coverage qualification. Every
+such answer also emits `completion_metadata`: the budget limit's reason when one
+was reached, otherwise `incomplete_research` (also used for a fallback answer),
+which the chat uses to offer a Deep continuation.
 Authorization failures, content filters, cancellation and persistence failures
 retain their fail-closed behavior.
 
