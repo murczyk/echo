@@ -1,14 +1,14 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, Suspense, useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mui/material', () => ({
-  Autocomplete: (props: { renderInput: (params: object) => ReactNode }) =>
-    props.renderInput({ InputProps: {}, inputProps: {} }),
+  Autocomplete: (props: { inputValue?: string; renderInput: (params: object) => ReactNode }) =>
+    props.renderInput({ InputProps: {}, inputProps: { value: props.inputValue } }),
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Button: (props: { children: ReactNode; onClick?: () => void }) => (
     <button type="button" onClick={props.onClick}>
@@ -46,7 +46,7 @@ vi.mock('@mui/material', () => ({
     value?: string;
     onClick?: () => void;
     onChange?: (event: { target: { value: string } }) => void;
-    inputProps?: { 'aria-label'?: string };
+    inputProps?: { 'aria-label'?: string; value?: string };
     InputProps?: { startAdornment?: ReactNode; endAdornment?: ReactNode };
     slotProps?: {
       input?: {
@@ -61,7 +61,7 @@ vi.mock('@mui/material', () => ({
       <input
         aria-label={props.inputProps?.['aria-label']}
         type={props.type ?? 'text'}
-        value={props.value ?? ''}
+        value={props.value ?? props.inputProps?.value ?? ''}
         onChange={(event) => props.onChange?.({ target: { value: event.currentTarget.value } })}
       />
       {props.InputProps?.endAdornment ?? props.slotProps?.input?.endAdornment}
@@ -170,6 +170,56 @@ describe('AnalysisHeaderControls', () => {
 
     expect(updateQueryState).toHaveBeenCalledWith({ search: '' });
     expect(view.container.querySelector('input[aria-label="Пошук"]')).toBeNull();
+  });
+
+  it('#4019 closes compact search while cleared results are still pending', async () => {
+    let resumeResults: () => void;
+    let resultsPending = true;
+    const pendingResults = new Promise<void>((resolve) => {
+      resumeResults = () => {
+        resultsPending = false;
+        resolve();
+      };
+    });
+    function Results({ search }: { search: string }) {
+      if (!search && resultsPending) throw pendingResults;
+      return <output>{search || 'All messages'}</output>;
+    }
+    function Page() {
+      const [queryState, setQueryState] = useState(buildProps().queryState);
+      return (
+        <Suspense fallback={<p>Loading results</p>}>
+          <AnalysisHeaderControls
+            isCompactLayout
+            queryState={queryState}
+            updateQueryState={(patch) => setQueryState((current) => ({ ...current, ...patch }))}
+          />
+          <Results search={queryState.search ?? ''} />
+        </Suspense>
+      );
+    }
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    rendered.push({ container, root });
+    await act(async () => root.render(<Page />));
+    await click(
+      container.querySelector('button[aria-label="Очистити й закрити пошук"]') as HTMLButtonElement,
+    );
+
+    expect(container.querySelector('input[aria-label="Пошук"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Відкрити пошук"]')).not.toBeNull();
+    expect(container.querySelector('output')?.textContent).toBe('uid-1');
+    expect(container.textContent).not.toContain('Loading results');
+    await click(
+      container.querySelector('button[aria-label="Відкрити пошук"]') as HTMLButtonElement,
+    );
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Пошук"]')?.value).toBe('');
+
+    await act(async () => resumeResults());
+
+    expect(container.querySelector('output')?.textContent).toBe('All messages');
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Пошук"]')?.value).toBe('');
   });
 
   it('opens the datetime popover with split from/to inputs', async () => {

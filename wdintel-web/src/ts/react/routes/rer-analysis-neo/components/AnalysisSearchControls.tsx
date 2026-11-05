@@ -105,7 +105,7 @@ export function AnalysisSearchControls({
                           setSuggestionsOpen(false);
                           if (isCompactLayout) {
                             setSearch('');
-                            startSearchTransition(onClose);
+                            onClose();
                           } else updateSearch('');
                         }}
                       >
