@@ -63,6 +63,10 @@ if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
     echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 
     bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
+
+    # File-registry migrations take no shared lock, so parallel tests must not run them first.
+    echo "Migrating test databases..."
+    cargo run -p wdintel-rs -- --mode=test migrate
 fi
 
 # Create storage directory and dummy files for CI
