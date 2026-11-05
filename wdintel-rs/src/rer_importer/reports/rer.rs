@@ -389,8 +389,12 @@ async fn load_report(
         .await
         .c(h!())?;
     let callsigns_by_item_id =
-        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids).await?;
-    let blacklist = crate::sigint::comments::load_blacklist(dbx).await?;
+        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids)
+            .await
+            .context(h!())?;
+    let blacklist = crate::sigint::comments::load_blacklist(dbx)
+        .await
+        .context(h!())?;
     let mut report = RerReport::default();
     for ids in item_ids.chunks(crate::config::RER_REPORT_HYDRATION_BATCH_SIZE) {
         for (item, message, comments) in

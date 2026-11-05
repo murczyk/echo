@@ -150,6 +150,7 @@ export function MetadataEditor({
               loading={unitLoading}
               filterOptions={(options) => options}
               getOptionLabel={(option) => option.name}
+              getOptionKey={(option) => option.id}
               renderOption={({ key, ...props }, option) => (
                 <li key={key} {...props}>
                   {option.name}

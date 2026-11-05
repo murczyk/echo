@@ -5,7 +5,7 @@ use crate::types::ShortContext;
 use sea_orm::{
     sea_query::{Expr, SimpleExpr},
     AccessMode, ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    IsolationLevel, QueryFilter, QueryOrder, TransactionTrait,
+    IsolationLevel, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -52,14 +52,17 @@ pub fn hierarchy(unit: &sigint_unit::Model) -> Vec<String> {
 }
 
 pub fn parent(unit: &sigint_unit::Model) -> (Vec<String>, String) {
-    let path = hierarchy(unit);
+    parent_for_path(&hierarchy(unit), &unit.name)
+}
+
+fn parent_for_path(path: &[String], name: &str) -> (Vec<String>, String) {
     let level = crate::config::RER_REPORT_PARENT_LEVELS
         .into_iter()
         .find(|&i| !path[i].is_empty())
         .or_else(|| path.iter().position(|value| !value.is_empty()));
     match level {
         Some(level) => (path[..=level].to_vec(), path[level].clone()),
-        None => (Vec::new(), unit.name.trim().to_string()),
+        None => (Vec::new(), name.trim().to_string()),
     }
 }
 
@@ -127,11 +130,42 @@ pub async fn load<C: ConnectionTrait>(
     let units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .order_by_asc(sigint_unit::Column::Id)
+        .select_only()
+        .column(sigint_unit::Column::Id)
+        .column(sigint_unit::Column::Name)
+        .column_as(
+            Expr::cust(format!(
+                "ARRAY[{}]",
+                RER_REPORT_HIERARCHY_COLUMNS
+                    .iter()
+                    .map(|column| format!("sigint_unit.{column}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )),
+            "hierarchy",
+        )
+        .into_tuple::<(i64, String, Vec<String>)>()
         .all(db)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .map(|(id, name, path)| CatalogUnit {
+            id,
+            name,
+            path: path
+                .into_iter()
+                .map(|value| value.trim().to_string())
+                .collect(),
+        })
+        .collect::<Vec<_>>();
     let configured = load_configuration(db, &units).await.c(h!())?;
     expand_units(&units, &configured).c(h!())
+}
+
+struct CatalogUnit {
+    id: i64,
+    name: String,
+    path: Vec<String>,
 }
 
 struct ConfiguredUnit {
@@ -143,7 +177,7 @@ struct ConfiguredUnit {
 
 async fn load_configuration<C: ConnectionTrait>(
     db: &C,
-    units: &[sigint_unit::Model],
+    units: &[CatalogUnit],
 ) -> anyhow::Result<Vec<ConfiguredUnit>> {
     let rows = sigint_unit_rer_report_metadata::Entity::find()
         .order_by_asc(sigint_unit_rer_report_metadata::Column::Id)
@@ -162,7 +196,8 @@ async fn load_configuration<C: ConnectionTrait>(
         if name.is_empty() || name.contains(['\r', '\n']) {
             return Err(crate::error::AppError::BL { msg: format!("Вкажіть коректну назву для звіту для підрозділу «{}» у налаштуваннях звітів", unit.name) }.into());
         }
-        let (parent_path, parent_name) = parent(unit);
+        let (parent_path, parent_name) =
+            parent_for_path(&unit.path, &unit.name);
         if !parent_path.is_empty()
             && parents
                 .insert(
@@ -173,7 +208,7 @@ async fn load_configuration<C: ConnectionTrait>(
         {
             return Err(crate::error::AppError::BL { msg: format!("Назва для звіту «{name}» використовується підрозділами з різною ієрархією") }.into());
         }
-        let path = hierarchy(unit);
+        let path = unit.path.clone();
         let depth = path.iter().rposition(|value| !value.is_empty());
         configured.push(ConfiguredUnit {
             unit_id: unit.id,
@@ -206,14 +241,14 @@ async fn load_configuration<C: ConnectionTrait>(
 }
 
 fn expand_units(
-    units: &[sigint_unit::Model],
+    units: &[CatalogUnit],
     configured: &[ConfiguredUnit],
 ) -> anyhow::Result<RerReportScope> {
     let mut scope = RerReportScope {
         units: BTreeMap::new(),
     };
     for unit in units {
-        let path = hierarchy(unit);
+        let path = &unit.path;
         let unit_depth = path.iter().rposition(|value| !value.is_empty());
         let mut matching = configured
             .iter()
@@ -281,16 +316,33 @@ pub fn configured_membership_expr() -> SimpleExpr {
             .enumerate()
             .rev()
             .map(|(i, column)| format!(
-                "when btrim(rer_ancestor.{column}) <> '' then {i}"
+                "when {} <> '' then {i}",
+                hierarchy_value_sql("rer_ancestor", column)
             ))
             .collect::<Vec<_>>()
             .join(" ")
     );
     let unit_depth = depth.replace("rer_ancestor.", "rer_unit.");
-    let matches = RER_REPORT_HIERARCHY_COLUMNS.iter().enumerate().map(|(i, column)| {
-        format!("(({depth}) < {i} or btrim(rer_ancestor.{column}) = btrim(rer_unit.{column}))")
-    }).collect::<Vec<_>>().join(" and ");
+    let matches = RER_REPORT_HIERARCHY_COLUMNS
+        .iter()
+        .enumerate()
+        .map(|(i, column)| {
+            format!(
+                "(({depth}) < {i} or {} = {})",
+                hierarchy_value_sql("rer_ancestor", column),
+                hierarchy_value_sql("rer_unit", column)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" and ");
     Expr::cust(format!("exists (select 1 from sigint_inbox_item_unit rer_link join sigint_unit rer_unit on rer_unit.id = rer_link.unit_id and not rer_unit.deleted where rer_link.item_id = signal_message.id and {} and exists (select 1 from sigint_unit_rer_report_metadata rer_metadata join sigint_unit rer_ancestor on rer_ancestor.id = rer_metadata.sigint_unit_id and not rer_ancestor.deleted where rer_ancestor.id = rer_unit.id or (({depth}) >= 0 and ({unit_depth}) > ({depth}) and {matches})))", eligible_link_sql()))
+}
+
+fn hierarchy_value_sql(alias: &str, column: &str) -> String {
+    format!(
+        "btrim({alias}.{column}, '{}')",
+        crate::config::RER_REPORT_HIERARCHY_WHITESPACE
+    )
 }
 
 pub fn filter_query<Q: QueryFilter>(query: Q, enabled: Option<bool>) -> Q {

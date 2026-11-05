@@ -27,6 +27,7 @@ deleted rows stay editable and are visibly marked.
 Configuration includes every descendant across all 14 echelon fields, with
 regional context and hierarchy gaps preserved. Different unit IDs at an identical
 complete path are peers, not descendants, and need separate configuration.
+Both live membership queries and queued snapshots trim hierarchy whitespace.
 A closer explicit row overrides
 an ancestor. Inactive units remain eligible; deleted units do not. Units with
 no hierarchy match themselves only. Identical, case-sensitive report names
@@ -44,10 +45,12 @@ and one candidate at the highest echelon is chosen randomly. The message
 appears once. Nonempty configuration and eligible messages are required.
 
 The server captures configuration and expanded hierarchy when enqueueing a
-report. That snapshot is retained through retries and participates in duplicate
+RER report. That snapshot is retained through retries and participates in duplicate
 request detection. Execution still rechecks access and excludes deleted units.
 The `only_for_rer_report` API flag filters both Analysis messages and statistics;
 these queries use PostgreSQL because metadata is excluded from analytics.
+KMZ and GeoJSON exports apply the same scope, including GeoJSON callsign context.
+Saved-filter comparisons preserve the flag and accept its legacy field fallback.
 Analysis Neo retains the legacy `onlyWithNetwork` UI/URL property and maps it
 to the new flag. The generic `only_with_network` API filter is unchanged.
 
@@ -62,6 +65,9 @@ through message copies and recalculation when the support switch is disabled.
 Historical mappings and their unit associations are retained unchanged; there
 is no cleanup or historical unit backfill. New unresolved unit associations
 are left to the existing resolution workflow.
+Group changes back to RER still reconcile network links and frequency activity
+with the support switch disabled. Unit-mask edits no longer scan or enqueue
+non-RER history, and membership lookups use bounded batches.
 
 Each successful admin-page load is retained when another section fails. Failed
 sections remain disabled and show an error with retry; unloaded defaults cannot
@@ -101,6 +107,7 @@ so export their contents before a rollback if they must be preserved.
 ## Regression coverage
 
 - `wdintel-rs/src/rer_report_admin/scope_tests.rs`: full hierarchy expansion, overrides, configuration changes, region conflicts, and message membership.
+- `wdintel-rs/src/rer_importer/analysis/tests.rs`: #3940 scoped KMZ/GeoJSON contents and callsigns.
 - `wdintel-rs/src/rer_importer/reports/rer.rs`: #3940 configuration-based report grouping and filter preservation.
 - `wdintel-rs/src/sigint/unit_tag/mod.rs`: #3940 future-only non-RER network assignment.
 - `wdintel-rs/src/sigint/direct_submit/query.rs`: #3940 non-RER copies preserve direct unit associations without copying network mappings.
@@ -118,6 +125,8 @@ so export their contents before a rollback if they must be preserved.
   selected-unit text and scalar-name seeding/customization.
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`:
   eligibility and hidden-filter cleanup.
+- `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-saved-filters.spec.tsx`:
+  #3940 saved-filter dirty state when changing RER scope, including legacy filters.
 - `wdintel-web/tests/e2e/analysis-neo.spec.ts`: Analysis browser flows.
 - `wdintel-web/tests/e2e/rer-report-admin.spec.ts`: Reports settings partial-failure
   recovery and metadata dialog on phone and desktop widths.

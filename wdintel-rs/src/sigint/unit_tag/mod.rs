@@ -37,49 +37,6 @@ where
     Ok(())
 }
 
-pub async fn enqueue_recent_non_rer_unit_tag_recalculation<C>(
-    db: &C,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    let since =
-        Utc::now().naive_utc() - Duration::days(UNIT_TAG_RECALC_HISTORY_DAYS);
-    let item_ids = sigint_inbox_item::Entity::find()
-        .distinct()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-        )
-        .filter(sigint_inbox_item::Column::Datetime.gte(since))
-        .filter(
-            signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
-        )
-        .select_only()
-        .columns([
-            sigint_inbox_item::Column::Id,
-            sigint_inbox_item::Column::IdUuid,
-        ])
-        .into_tuple::<(i64, Option<uuid::Uuid>)>()
-        .all(db)
-        .await
-        .c(h!())?;
-    for (item_id, item_uuid) in item_ids {
-        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id, item_uuid)
-            .await
-            .c(h!())?;
-    }
-    Ok(())
-}
-
 pub async fn enqueue_recent_unit_tag_recalculation_for_group<C>(
     db: &C,
     master_key: &str,
@@ -144,12 +101,6 @@ pub async fn run_unit_tag_queue_worker_nofail(dbx: DatabaseConnection) {
 async fn run_unit_tag_queue_worker_once(
     dbx: &DatabaseConnection,
 ) -> Result<bool, AppError> {
-    if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
-        .await
-        .c(h!())?
-    {
-        return Ok(false);
-    }
     let queue_items = sigint_inbox_item_unit_tag_queue::Entity::find()
         .order_by_asc(sigint_inbox_item_unit_tag_queue::Column::CreatedAt)
         .order_by_asc(sigint_inbox_item_unit_tag_queue::Column::Id)
@@ -329,30 +280,33 @@ pub async fn non_rer_item_ids_from_items<C>(
 where
     C: ConnectionTrait,
 {
-    if sigint_inbox_item_ids.is_empty() {
-        return Ok(HashSet::new());
+    let mut ids = HashSet::new();
+    for item_ids in sigint_inbox_item_ids
+        .chunks(crate::config::UNIT_TAG_QUERY_PARAM_CHUNK_SIZE)
+    {
+        ids.extend(
+            signal_message_group::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message_group::Relation::SignalGroup.def(),
+                )
+                .filter(
+                    signal_message_group::Column::SignalMessageId
+                        .is_in(item_ids.to_vec()),
+                )
+                .filter(
+                    signal_group::Column::InterseptionKind
+                        .eq(InterseptionKind::Other),
+                )
+                .select_only()
+                .column(signal_message_group::Column::SignalMessageId)
+                .distinct()
+                .into_tuple::<i64>()
+                .all(db)
+                .await
+                .c(h!())?,
+        );
     }
-    let ids = signal_message_group::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message_group::Relation::SignalGroup.def(),
-        )
-        .filter(
-            signal_message_group::Column::SignalMessageId
-                .is_in(sigint_inbox_item_ids),
-        )
-        .filter(
-            signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
-        )
-        .select_only()
-        .column(signal_message_group::Column::SignalMessageId)
-        .distinct()
-        .into_tuple::<i64>()
-        .all(db)
-        .await
-        .c(h!())?
-        .into_iter()
-        .collect::<HashSet<_>>();
     Ok(ids)
 }
 
@@ -367,6 +321,14 @@ mod tests {
     async fn issue_3940_non_rer_assignment_preserves_history_without_new_links()
     {
         let (env, _guard) = cleanup_locked().await.unwrap();
+        system_settings::Entity::update_many()
+            .col_expr(
+                system_settings::Column::SupportNonRerInterceptions,
+                sea_query::Expr::value(false),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
         let group = mk_signal_group(
             &env.dbx,
             signal_group::ActiveModel {
@@ -385,9 +347,29 @@ mod tests {
         )
         .await
         .unwrap();
-        let historical = mk_sigint_inbox_item(&env.dbx, Default::default())
-            .await
-            .unwrap();
+        let now = Utc::now().naive_utc();
+        let historical = mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                freq: Set(Some("146.4500".into())),
+                datetime: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let frequency = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.4500".into()),
+                active_from: Set(now - Duration::days(1)),
+                last_seen_dt: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let fresh = mk_sigint_inbox_item(&env.dbx, Default::default())
             .await
             .unwrap();
@@ -413,13 +395,19 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(
+            non_rer_item_ids_from_items(&env.dbx, vec![fresh.id; 65_536])
+                .await
+                .unwrap(),
+            HashSet::from([fresh.id])
+        );
         recalculate_inbox_item_unit_tags(&env.dbx, historical.id)
             .await
             .unwrap();
         recalculate_inbox_item_unit_tags(&env.dbx, fresh.id)
             .await
             .unwrap();
-        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(vec![historical, fresh.clone()], &env.dbx).await.unwrap();
+        crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(vec![historical.clone(), fresh.clone()], &env.dbx).await.unwrap();
         assert!(sigint_inbox_item_network::Entity::find_by_id(old_link.id)
             .one(&env.dbx)
             .await
@@ -434,5 +422,62 @@ mod tests {
             .await
             .unwrap()
             .is_empty());
+        assert_eq!(
+            sigint_network_freq::Entity::find_by_id(frequency.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .last_seen_dt,
+            frequency.last_seen_dt
+        );
+        assert_rer_transition_reconciles_history(
+            &env.dbx,
+            group,
+            network,
+            historical,
+            old_link.id,
+            frequency.id,
+        )
+        .await;
+    }
+
+    async fn assert_rer_transition_reconciles_history(
+        db: &DatabaseConnection,
+        group: signal_group::Model,
+        network: sigint_network::Model,
+        historical: sigint_inbox_item::Model,
+        old_link_id: i64,
+        frequency_id: i64,
+    ) {
+        let mut network = network.into_active_model();
+        network.deleted = Set(true);
+        network.update(db).await.unwrap();
+        let mut group = group.into_active_model();
+        group.interseption_kind = Set(InterseptionKind::Rer);
+        group.update(db).await.unwrap();
+        enqueue_unit_tag_recalculation_for_inbox_item(
+            db,
+            historical.id,
+            historical.id_uuid,
+        )
+        .await
+        .unwrap();
+        assert!(run_unit_tag_queue_worker_once(db).await.unwrap());
+        assert!(!run_unit_tag_queue_worker_once(db).await.unwrap());
+        assert!(sigint_inbox_item_network::Entity::find_by_id(old_link_id)
+            .one(db)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            sigint_network_freq::Entity::find_by_id(frequency_id)
+                .one(db)
+                .await
+                .unwrap()
+                .unwrap()
+                .last_seen_dt,
+            None
+        );
     }
 }

@@ -787,7 +787,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     postsSelected: normalized.selectedPosts ?? [],
     networksSelected: (normalized.selectedNetworks ?? []).map(String),
     withoutNetwork: normalized.withoutNetwork,
-    onlyWithNetwork: normalized.onlyWithNetwork,
+    onlyWithNetwork: normalized.onlyForRerReport ?? normalized.onlyWithNetwork,
     orWithExtendedForm: normalized.orWithExtendedForm,
     orBookmarked: normalized.orBookmarked,
     orImportant: normalized.orImportant,

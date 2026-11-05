@@ -28,6 +28,127 @@ struct GroupFixture {
     datasource_group: datasource_group::Model,
 }
 
+#[tokio::test]
+#[serial]
+async fn issue_3940_map_exports_preserve_rer_scope() {
+    use std::io::Read;
+
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let db = &env.dbx;
+    let login = find_test_login(db).await.unwrap().id;
+    let group = GroupFixture {
+        signal_group: find_test_signal_group(db).await.unwrap(),
+        datasource_group: find_test_datasource_group(db).await.unwrap(),
+    };
+    let configured = mk_sigint_unit(db, Default::default()).await.unwrap();
+    let excluded = mk_sigint_unit(db, Default::default()).await.unwrap();
+    sigint_unit_rer_report_metadata::ActiveModel {
+        sigint_unit_id: Set(configured.id),
+        report_name: Set(Some("Map export".into())),
+        labels: Set(serde_json::json!(["Map export"])),
+        locations: Set(serde_json::json!([])),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    let now = Utc::now().naive_utc();
+    for (unit_id, label, latitude) in [
+        (configured.id, "INSIDE3940", 48.0),
+        (excluded.id, "OUTSIDE3940", 49.0),
+    ] {
+        seed_rer_map_export_message(
+            db, &group, unit_id, &login, label, latitude, now,
+        )
+        .await;
+    }
+    let mut req = mk_analysis_stats_req(
+        (now - chrono::Duration::hours(1))
+            .and_utc()
+            .timestamp_millis(),
+        (now + chrono::Duration::hours(1))
+            .and_utc()
+            .timestamp_millis(),
+    );
+    req.without_network = Some(true);
+    for (scope, expected_count) in [(Some(true), 1), (None, 2)] {
+        req.only_for_rer_report = scope;
+        let geojson =
+            geojson::rer_analysis_geojson_bytes(&login, &env, req.clone())
+                .await
+                .unwrap();
+        let geojson = String::from_utf8(geojson).unwrap();
+        let features: serde_json::Value =
+            serde_json::from_str(&geojson).unwrap();
+        assert_eq!(
+            features["features"].as_array().unwrap().len(),
+            expected_count
+        );
+        let kmz = kmz::rer_analysis_kmz_bytes(&login, &env, req.clone())
+            .await
+            .unwrap();
+        let mut archive =
+            ::zip::ZipArchive::new(std::io::Cursor::new(kmz)).unwrap();
+        let mut kml = String::new();
+        archive
+            .by_name("doc.kml")
+            .unwrap()
+            .read_to_string(&mut kml)
+            .unwrap();
+        for output in [&geojson, &kml] {
+            assert!(output.contains("INSIDE3940"));
+            assert_eq!(output.contains("OUTSIDE3940"), scope.is_none());
+        }
+    }
+}
+
+async fn seed_rer_map_export_message(
+    db: &DatabaseConnection,
+    group: &GroupFixture,
+    unit_id: i64,
+    login: &uuid::Uuid,
+    label: &str,
+    latitude: f64,
+    datetime: NaiveDateTime,
+) {
+    let message =
+        mk_analysis_message(db, label, "111.1", datetime, &[group], &[], false)
+            .await
+            .unwrap();
+    let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+        .one(db)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.datetime = Set(Some(datetime));
+    inbox_item.lat = Set(Some(latitude));
+    inbox_item.lng = Set(Some(37.0));
+    let inbox_item = inbox_item.update(db).await.unwrap();
+    sigint_inbox_item_unit::ActiveModel {
+        item_id: Set(message.id),
+        item_uuid: Set(inbox_item.id_uuid),
+        unit_id: Set(unit_id),
+        kind: Set(SigintInboxItemUnitKind::Parsed),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    crate::inbox::callsigns::sync(
+        db,
+        message.id,
+        inbox_item.id_uuid,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: vec![label.into()],
+            alg2: vec![],
+        },
+        *login,
+    )
+    .await
+    .unwrap();
+}
+
 #[serial]
 #[tokio::test]
 async fn issue_3780_message_group_lookup_preserves_access_and_scope() {

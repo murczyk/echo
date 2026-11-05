@@ -38,10 +38,11 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
     let leaf = mk_sigint_unit(
         &env.dbx,
         sigint_unit::ActiveModel {
-            army_region: Set(root.army_region.clone()),
+            army_region: Set(format!("\t{}\u{a0}", root.army_region)),
             army: Set(root.army.clone()),
             corps: Set(root.corps.clone()),
             brigade: Set("1 бр".into()),
+            company: Set("\t\r\n\u{a0}".into()),
             platoon: Set("1 взвод".into()),
             section: Set("1 секція".into()),
             active: Set(false),

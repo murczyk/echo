@@ -18,10 +18,11 @@ impl MigrationTrait for Migration {
                 r#"
 alter table sigint_unit_rer_report_metadata add column report_name text;
 update sigint_unit_rer_report_metadata metadata
-set report_name = coalesce(nullif(btrim(metadata.labels ->> 0), ''), nullif(btrim(unit.name), '')),
-    labels = case when jsonb_array_length(metadata.labels) > 0
-        then jsonb_build_array(metadata.labels ->> 0) else '[]'::jsonb end
+set report_name = coalesce(nullif(btrim(metadata.labels ->> 0), ''), nullif(btrim(unit.name), ''))
 from sigint_unit unit where unit.id = metadata.sigint_unit_id;
+update sigint_unit_rer_report_metadata
+set labels = case when report_name is not null
+    then jsonb_build_array(report_name) else '[]'::jsonb end;
                 "#,
             )
             .await

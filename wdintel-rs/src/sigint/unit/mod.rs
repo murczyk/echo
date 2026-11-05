@@ -1761,13 +1761,6 @@ where
     )
     .await
     .c(h!())?;
-    if !crate::sigint::unit_tag::sigint_network_unit_mask(network).is_empty() {
-        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-            db,
-        )
-        .await
-        .c(h!())?;
-    }
     Ok(())
 }
 

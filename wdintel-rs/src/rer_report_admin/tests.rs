@@ -331,9 +331,13 @@ async fn issue_3940_migration_keeps_first_label_and_seeds_empty_names() {
     let empty = mk_sigint_unit(&transaction, Default::default())
         .await
         .unwrap();
+    let blank = mk_sigint_unit(&transaction, Default::default())
+        .await
+        .unwrap();
     for (unit_id, labels) in [
         (first.id, serde_json::json!([" Перший ", "Другий"])),
         (empty.id, serde_json::json!([])),
+        (blank.id, serde_json::json!(["   ", "Другий"])),
     ] {
         sigint_unit_rer_report_metadata::ActiveModel {
             sigint_unit_id: Set(unit_id),
@@ -373,7 +377,18 @@ async fn issue_3940_migration_keeps_first_label_and_seeds_empty_names() {
         .unwrap()
         .unwrap();
     assert_eq!(first.report_name.as_deref(), Some("Перший"));
-    assert_eq!(first.labels.as_array().unwrap().len(), 1);
+    assert_eq!(first.labels, serde_json::json!(["Перший"]));
     assert_eq!(empty_name.report_name.as_deref(), Some(empty.name.trim()));
+    assert_eq!(empty_name.labels, serde_json::json!([empty.name.trim()]));
+    let blank_name = sigint_unit_rer_report_metadata::Entity::find()
+        .filter(
+            sigint_unit_rer_report_metadata::Column::SigintUnitId.eq(blank.id),
+        )
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(blank_name.report_name.as_deref(), Some(blank.name.trim()));
+    assert_eq!(blank_name.labels, serde_json::json!([blank.name.trim()]));
     transaction.rollback().await.unwrap();
 }

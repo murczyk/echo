@@ -89,6 +89,7 @@ for (const width of [375, 1200]) {
         json: {
           units: [
             { id: 2, name: 'Підрозділ Б', army: '2 А' },
+            { id: 4, name: 'Підрозділ Б', army: '3 А' },
             { id: 3, name: 'Підрозділ без ієрархії' },
           ],
         },
@@ -115,7 +116,8 @@ for (const width of [375, 1200]) {
     await page.getByRole('button', { name: 'Додати новий' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Підрозділ Б');
-    await page.getByRole('option', { name: 'Підрозділ Б', exact: true }).click();
+    await expect(page.getByRole('option', { name: 'Підрозділ Б (#4)', exact: true })).toBeVisible();
+    await page.getByRole('option', { name: 'Підрозділ Б (#2)', exact: true }).click();
     await expect(dialog.getByRole('textbox', { name: 'Назва для звіту' })).toHaveValue(
       'Підрозділ Б',
     );
@@ -129,7 +131,7 @@ for (const width of [375, 1200]) {
     await page.getByRole('option', { name: 'Підрозділ без ієрархії', exact: true }).click();
     await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeEnabled();
     await dialog.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Підрозділ Б');
-    await page.getByRole('option', { name: 'Підрозділ Б', exact: true }).click();
+    await page.getByRole('option', { name: 'Підрозділ Б (#2)', exact: true }).click();
     await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
     await dialog.getByRole('textbox', { name: 'Назва для звіту' }).fill('Нова назва');
     await dialog.getByRole('button', { name: 'Зберегти', exact: true }).click();
