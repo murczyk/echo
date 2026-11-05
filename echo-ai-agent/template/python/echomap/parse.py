@@ -16,25 +16,21 @@ _DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{2,4})|(\d{4})-(\d{2})-(\d{2})
 _TIME = re.compile(r"(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?")
 _DEGREES = r"[-+]?\d{1,3}[.,]\d{3,}"
 # Two decimal numbers side by side. Dates and times have shorter fractions.
-_DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\d)")
+_DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\w|[.,]\d)")
 # The region's WGS-84 box; other decimal pairs are not coordinates.
 _LATITUDES = (40.0, 60.0)
 _LONGITUDES = (20.0, 50.0)
-# Ten digits complete a reference, and a time or date after it is another
-# field. Any other following number stays with it: dropping «68848» from
-# «7958 68848» would leave a valid reference to the wrong place, while Echo
-# rejects the whole value as malformed.
-_MGRS_NEXT_RUN = r"[ \t]+\d+(?![:.]\d)"
-# A next run with letters attached is malformed, so the digits before it must
-# not pass for a shorter reference.
-_MGRS_NO_MALFORMED_RUN = r"(?![ \t]+\d+[^\W\d])"
-_MGRS_DIGITS = rf"\d{{10,}}|\d{{4,9}}(?:{_MGRS_NEXT_RUN})?{_MGRS_NO_MALFORMED_RUN}|\d{{1,3}}{_MGRS_NEXT_RUN}"
-# A two-digit zone, band and square, in Latin or Cyrillic look-alikes. Few digits
-# need a second run, so unit designations such as «25 мср 120» do not match.
-_MGRS = re.compile(
+# A two-digit zone, band and square, in Latin or Cyrillic look-alikes.
+_MGRS_HEAD = re.compile(
     r"(?<![\w.])\d{2}[ \t]*[C-HJ-NP-Xc-hj-np-xСЕНКМРТХсенкмртх][ \t]*"
-    rf"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗавсенкмртхуз]{{2}}[ \t]*(?:{_MGRS_DIGITS})(?![\w.])"
+    r"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗавсенкмртхуз]{2}[ \t]*(?=\d)"
 )
+_MGRS_RUN = re.compile(r"\d+")
+_MGRS_NEXT_RUN = re.compile(r"[ \t]+(\d+)")
+_MGRS_FULL_DIGITS = 10
+_MGRS_MIN_LONE_DIGITS = 4
+_ATTACHED = re.compile(r"[\w.]")
+_TIME_OR_DATE_TAIL = re.compile(r"[:.]\d")
 
 
 class Fields(dict):
@@ -110,9 +106,36 @@ def _in_region(latitude, longitude):
     )
 
 
+def _mgrs_end(text, start):
+    """Where the digits at `start` end, or None when they are not a usable
+    reference. Written as a scan rather than a pattern: backtracking could
+    drop a digit run and leave a valid reference to the wrong place, while
+    anything doubtful reaches Echo whole, or not at all, and is never shortened."""
+    first = _MGRS_RUN.match(text, start)
+    if _ATTACHED.match(text, first.end()):
+        return None
+    if len(first.group()) >= _MGRS_FULL_DIGITS:
+        return first.end()
+    following = _MGRS_NEXT_RUN.match(text, first.end())
+    if following and not _TIME_OR_DATE_TAIL.match(text, following.end()):
+        return None if _ATTACHED.match(text, following.end()) else following.end()
+    # A few digits alone are more likely a unit number, as in «25 мср 120».
+    return first.end() if len(first.group()) >= _MGRS_MIN_LONE_DIGITS else None
+
+
+def _mgrs_spans(text):
+    position = 0
+    while head := _MGRS_HEAD.search(text, position):
+        end = _mgrs_end(text, head.end())
+        if end is not None:
+            yield head.start(), end
+        position = end or head.end()
+
+
 def mgrs(text):
     """Every MGRS reference in text, as written."""
-    return [match.group(0) for match in _MGRS.finditer(text or "")]
+    text = text or ""
+    return [text[start:end] for start, end in _mgrs_spans(text)]
 
 
 def whole(text):
@@ -123,7 +146,7 @@ def whole(text):
     degrees = _DEGREE_PAIR.fullmatch(text)
     if degrees and _in_region(degrees.group(1), degrees.group(2)):
         return degrees.group(1), degrees.group(2)
-    return (text, "") if _MGRS.fullmatch(text) else None
+    return (text, "") if [(0, len(text))] == list(_mgrs_spans(text)) else None
 
 
 def pairs(text):
@@ -142,7 +165,11 @@ def pairs(text):
             return match.group(0)
         return take(match, (match.group(1), match.group(2)))
 
-    rest = _MGRS.sub(lambda match: take(match, (match.group(0), "")), text or "")
+    text = text or ""
+    rest = text
+    for start, end in _mgrs_spans(text):
+        found.append((start, (text[start:end], "")))
+        rest = rest[:start] + " " * (end - start) + rest[end:]
     rest = _DEGREE_PAIR.sub(take_degrees, rest)
     components = [
         (match.start(), component)

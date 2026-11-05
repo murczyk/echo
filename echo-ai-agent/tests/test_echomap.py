@@ -104,6 +104,15 @@ class PositionFormatTest(unittest.TestCase):
             self.assertEqual(parse.pair(text), ('', ''), text)
         self.assertEqual(parse.mgrs('36TXT7958468848 5км'), ['36TXT7958468848'])
 
+    def test_a_following_field_never_shortens_a_reference(self):
+        self.assertEqual(parse.pair('36T XT 7958 6884 5км'), ('36T XT 7958 6884', ''))
+        self.assertEqual(parse.pair('36T XT 79584 68848 5км'), ('36T XT 79584 68848', ''))
+
+    def test_malformed_degrees_are_not_cleaned_into_a_point(self):
+        for text in ['47.54821,35.38674abc', '47.54821,35.38674.123', '47.54821x,35.38674']:
+            self.assertEqual(parse.pair(text), ('', ''), text)
+        self.assertEqual(parse.pair('Ціль 47.54821, 35.38674.'), ('47.54821', '35.38674'))
+
     def test_a_whole_position_allows_nothing_else(self):
         self.assertEqual(parse.whole(' 36T XT 79584 68848 '), ('36T XT 79584 68848', ''))
         self.assertEqual(parse.whole('50,4501 30,5234'), ('50,4501', '30,5234'))
