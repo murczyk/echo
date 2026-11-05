@@ -323,11 +323,10 @@ fn apply_fields(
             .unwrap_or_else(|| record.original_x.clone());
         // A whole position in X replaces the old pair, so the old Y must go.
         let y = fields.y.clone().unwrap_or_else(|| {
-            let old_y = &record.original_y;
             if fields
                 .x
                 .as_deref()
-                .is_some_and(|x| prepare::replaces_y(x, old_y))
+                .is_some_and(|x| prepare::replaces_y(x, record))
             {
                 String::new()
             } else {
@@ -974,6 +973,41 @@ mod tests {
         assert_eq!(record.coordinate_system, "mgrs");
         assert_eq!(record.original_y, "68848");
         assert!(record.latitude.is_some());
+    }
+
+    #[test]
+    fn issue_4038_a_grid_y_never_joins_a_new_mgrs_reference() {
+        let document = sample(2);
+        let update = |fields| AiAgentMapPatchOp {
+            op: "update".to_string(),
+            selector: Some(AiAgentMapSelector {
+                ids: vec![document.records[0].id.clone()],
+                ..Default::default()
+            }),
+            record: None,
+            fields: Some(fields),
+            components: None,
+            sidc: None,
+            title: None,
+        };
+        let invalid = apply_patch(
+            &document,
+            &[update(AiAgentMapFieldPatch {
+                x: Some("5215227".to_string()),
+                y: Some("6884".to_string()),
+                ..Default::default()
+            })],
+        )
+        .unwrap();
+        let moved = apply_patch(
+            &invalid.document,
+            &[update(AiAgentMapFieldPatch {
+                x: Some("36TXT7968".to_string()),
+                ..Default::default()
+            })],
+        )
+        .unwrap();
+        assert_eq!(moved.document.records[0].original_y, "");
     }
 
     #[test]

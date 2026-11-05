@@ -359,11 +359,15 @@ pub(super) fn is_whole_position(value: &str) -> bool {
         || decimal_degrees(value, "").is_some()
 }
 
-/// Whether `x` alone replaces the old pair. An MGRS part that still reads with
-/// the old Y needs it, even though on its own it is malformed.
-pub(super) fn replaces_y(x: &str, old_y: &str) -> bool {
-    is_whole_position(x)
-        && !matches!(mgrs_reading(x, old_y), MgrsReading::Valid(..))
+/// Whether `x` alone replaces the record's pair. A record stored as split MGRS
+/// keeps its Y while the new X still reads with it.
+pub(super) fn replaces_y(x: &str, record: &AiAgentMapRecord) -> bool {
+    let stays_split = record.coordinate_system == AI_AGENT_MAP_SYSTEM_MGRS
+        && matches!(
+            mgrs_reading(x, &record.original_y),
+            MgrsReading::Valid(..)
+        );
+    is_whole_position(x) && !stays_split
 }
 
 fn normalize_component(value: &str) -> String {
