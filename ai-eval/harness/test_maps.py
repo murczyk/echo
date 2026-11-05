@@ -96,7 +96,7 @@ class MapDatasetAvailability(unittest.TestCase):
                 'artifacts': {'cases.json': hashlib.sha256(source).hexdigest(), 'raw/private.json': '0' * 64},
             }))
             with patch.object(cli, 'ROOT', root):
-                self.assertEqual(len(cli.load_suite('maps', development_only=True)[2]), 4)
+                self.assertEqual(len(cli.load_suite('maps', development_only=True)[2]), 6)
                 with self.assertRaises(ValueError):
                     cli.load_suite('maps')
                 (directory / 'cases.json').write_text('[]')

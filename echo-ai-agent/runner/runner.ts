@@ -57,7 +57,7 @@ import {
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
+import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, undeliveredMaps, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
 import { INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -110,7 +110,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.05.1";
+const HARNESS_RELEASE = "2026.11.05.3";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3119,9 +3119,26 @@ const MAP_TOOL_ERRORS: Array<[RegExp, string]> = [
   [/must|expected|Validation|argument/i, "Некоректні параметри зміни мапи"],
 ];
 
+const SCRIPT_TOOLS = new Set(["echo_map_script", "echo_map_from_reports", "echo_document_script"]);
+// Echo caps the logged text after scrubbing it, so send more than it keeps.
+const SCRIPT_FAILURE_DETAIL_CHARS = 1_000;
+const MAP_NOT_PUBLISHED_DIAGNOSTIC = { type: "tool_diagnostic", tool: "echo_map_publish", reason: "map_not_published", handledPrivately: false };
+const MAP_UNDELIVERED_NOTICE = "⚠️ Мапу не створено або на ній немає жодної точки з координатами. Перевірте координати й повторіть запит.";
+
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ text?: unknown }> } | null)?.content;
   return Array.isArray(content) ? content.map((item) => String(item?.text ?? "")).join("\n") : "";
+}
+
+/** The final traceback line of a failed script and its exception class. Only
+ * script tools report this; other tool errors stay a fixed category. */
+export function scriptFailure(toolName: unknown, result: unknown): JsonObject {
+  if (typeof toolName !== "string" || !SCRIPT_TOOLS.has(toolName)) return {};
+  const lines = toolResultText(result).split("\n").map((line) => line.trim()).filter(Boolean);
+  const detail = lines.at(-1)?.slice(0, SCRIPT_FAILURE_DETAIL_CHARS);
+  if (!detail) return {};
+  const exception = /(?:^|\s)([A-Za-z_][\w.]*):(?:\s|$)/.exec(detail)?.[1];
+  return { detail, ...(exception ? { exception } : {}) };
 }
 
 export function toolErrorReason(result: unknown): string {
@@ -3153,7 +3170,7 @@ export function toolErrorSummary(toolName: unknown, result: unknown): string {
 
 /** Facts the answer must not contradict: map edits that all failed, and
  * published maps whose record count differs from the detected reports. */
-export function mapOutcomeNotices(registry: MapRegistry, editing: boolean): { failedEdit: string | null; notices: string[] } {
+export function mapOutcomeNotices(registry: MapRegistry, editing: boolean, undelivered = false): { failedEdit: string | null; notices: string[] } {
   const { editFailures, editSuccesses, lastEditError, unpublished } = registry.outcome;
   const failedEdit = editing && editFailures > 0 && editSuccesses === 0 ? lastEditError.slice(0, 300) : null;
   const notices = [
@@ -3161,6 +3178,7 @@ export function mapOutcomeNotices(registry: MapRegistry, editing: boolean): { fa
       `⚠️ На мапі «${item.title}» ${item.actual} записів, а в джерелі ${item.expected} звітів формату «${item.label}».`),
     ...unpublished.map((title) =>
       `⚠️ Мапу «${title}» не опубліковано: кількість записів не збігається зі звітами в джерелі.`),
+    ...(undelivered ? [MAP_UNDELIVERED_NOTICE] : []),
   ];
   if (failedEdit !== null) notices.unshift("⚠️ Зміни до мапи не збережено.");
   return { failedEdit, notices };
@@ -3296,6 +3314,8 @@ function createToolEventPublisher(
             : "unknown",
         reason: toolErrorReason(event.result),
         handledPrivately,
+        category: toolErrorSummary(event.toolName, event.result),
+        ...scriptFailure(event.toolName, event.result),
         ...(status ? { httpStatus: Number(status[1]) } : {}),
       });
     }
@@ -3570,7 +3590,7 @@ async function completeLimitedResearch(options: {
         .slice(-4)
         .map(({ role, content }) => ({ role, content })),
       request: payload.prompt,
-      ...(options.research ? { maps: mapRegistry.list().map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
+      ...(options.research ? { maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
     checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
@@ -3601,7 +3621,7 @@ async function completeLimitedResearch(options: {
   const maps = mapRegistry.list();
   const finalize = (text: string) => {
     const answer = stripUnknownFileCitations(
-      stripUnpublishedMapLinks(preserveMapReferences("", text, maps), maps),
+      stripUnpublishedMapLinks(preserveMapReferences("", text, maps), maps, payload.mapEdit?.mapId),
       deliveredFiles.values(),
     );
     return options.documentRegistry ? stripUnknownDocumentLinks(answer, options.documentRegistry) : answer;
@@ -3614,14 +3634,17 @@ async function completeLimitedResearch(options: {
     : budget.policy.preset === "deep"
       ? "Досягнуто межі дослідження. Охоплення джерел неповне; уточніть запит, щоб продовжити."
       : "Досягнуто межі дослідження. Охоплення джерел неповне; оберіть глибокий аналіз, щоб продовжити.";
+  const undelivered = undeliveredMaps(text, maps, mapRegistry.outcome, payload.mapEdit?.mapId);
   const notices = mapOutcomeNotices(
     mapRegistry,
     Boolean(payload.mapEdit),
+    undelivered,
   ).notices;
   const snapshot = (answer: string) =>
     assistantSnapshotEvent("", [finalize(answer), notice, ...notices].join("\n\n"));
   const event = snapshot(text) ?? snapshot(budgetFallback());
   if (!event) throw new Error("limited answer exceeds the snapshot limit");
+  if (undelivered) emit(MAP_NOT_PUBLISHED_DIAGNOSTIC);
   emit(event);
   if (coverageLimited) emit({
     type: "completion_metadata",
@@ -4039,11 +4062,13 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
               mapRegistry.list(),
             ),
             mapRegistry.list(),
+            payload.mapEdit?.mapId,
           ),
           deliveredFiles.values(),
         ), documentRegistry);
       const finalText = finalize(draft, repair);
-      const outcome = mapOutcomeNotices(mapRegistry, Boolean(payload.mapEdit));
+      const undelivered = undeliveredMaps(draft, mapRegistry.list(), mapRegistry.outcome, payload.mapEdit?.mapId);
+      const outcome = mapOutcomeNotices(mapRegistry, Boolean(payload.mapEdit), undelivered);
       const repairedOutcome =
         outcome.failedEdit !== null
           ? await repairMapOutcome(
@@ -4087,6 +4112,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       );
       if (recoveredOutput && !snapshot)
         throw new Error("recovered answer exceeds the snapshot limit");
+      if (undelivered) emit(MAP_NOT_PUBLISHED_DIAGNOSTIC);
       if (snapshot) emit(snapshot);
     } catch (error) {
       if (cancelled) return;

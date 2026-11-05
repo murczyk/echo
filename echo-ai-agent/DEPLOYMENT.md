@@ -305,7 +305,9 @@ it must wait for a private checkpoint, then either resume with a justified
 coverage need or switch to focused searches. Verify that a real HTTP failure
 still produces a public error with `errorReason` and an allowlisted
 `AI agent tool` diagnostic in the worker journal. Private diagnostic frames must
-never appear in chat events or disclose source content or arguments.
+never appear in chat events or disclose source content or arguments. The one
+exception is a failed script tool: its diagnostic carries the exception class and
+the last traceback line, capped and scrubbed, and only the worker journal sees it.
 Retain the prior containers and rollout journal for the control panel's recovery
 procedure; recovery beyond the approved operation requires separate approval.
 
@@ -427,3 +429,19 @@ limit was reached. Such answers gain the coverage footer, and admins see
 offers **Продовжити глибоким аналізом** both right after it finishes and after
 reload, that clicking it queues a Deep request in the same conversation, and that
 the composer stays on the remembered mode.
+
+## WGS-84 and MGRS map points (release 2026.11.05.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Releases `2026.11.05.2` and `2026.11.05.1` stay
+in the compatible runner lists. Roll back the application and harness as a pair.
+
+Verify that pasting `name,latitude,longitude` rows and MGRS references each
+produces a map with every point in place, without format probing. Tool failures
+log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
+`network_error`, HTTP 5xx and `map_not_published`, `warn!` for
+`invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
+`wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.

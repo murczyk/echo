@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "ai-maps",
-  "revision": "2026-10-01.1",
+  "revision": "2026-11-05.1",
   "category": "map-documents",
   "skills": [
     "current_user",
@@ -13,7 +13,7 @@
     "raw/cases-v4.json"
   ],
   "artifacts": {
-    "cases.json": "b4c27d7445dc04a69261460c61570dc517eaa703d2a20ec31d11e80fe7e21815",
+    "cases.json": "127dc9cd8662307ce9106b6d05fa968a78c9f098776378582119f87984548705",
     "raw/map-data-v1.txt": "1f5c47e90db3e342a3b35d2d361ecddba5f05a11f14858182210392e3b2175a9",
     "raw/cases-v4.json": "484727252423b55a9950b8c24bed7773c1092891c037ea4b808311fd47ccb570",
     "raw/audit-v4.json": "836f4f2a3a9bba0a20d0a73694734423055844ab774a703fc9695fd04b6f8242"
