@@ -4,10 +4,12 @@ use crate::h;
 use crate::messenger::group::get_identity_sigint_groups;
 use crate::types::ShortContext;
 use crate::users::{ensure_base_role_by_id, has_role, login_id_from_identity};
+use uuid::Uuid;
 
-/// Everything a viewer endpoint needs to scope its reads: the groups of the
-/// calling login. There is no unscoped variant of any viewer query.
+/// Everything a viewer endpoint needs to scope its reads: the calling login
+/// and its groups. There is no unscoped variant of any viewer query.
 pub struct MessengersScope {
+    pub login_id: Uuid,
     pub group_master_keys: Vec<String>,
 }
 
@@ -24,5 +26,8 @@ pub async fn ensure_messengers_access(
     ensure_base_role_by_id(dbx, &login_id).await.c(h!())?;
     let group_master_keys =
         get_identity_sigint_groups(dbx, &login_id).await.c(h!())?;
-    Ok(MessengersScope { group_master_keys })
+    Ok(MessengersScope {
+        login_id,
+        group_master_keys,
+    })
 }

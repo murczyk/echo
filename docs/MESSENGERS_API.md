@@ -18,8 +18,8 @@ are removed from the RER inbox and analysis feeds; see
 |---|---|---|---|
 | `POST /accounts/list` | Implemented | `{}` | `MessengersAccountsListRsp` |
 | `POST /chats/list` | Implemented | `MessengersChatsListReq` | `MessengersChatsListRsp` |
-| `POST /chats/members/list` | Planned | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
-| `POST /messages/list` | Planned | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
+| `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
+| `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 
 Every route is a read. Requests use `POST` with a JSON body, like
 `/api/rer-importer/get-inbox`, so later filters can be added as optional body
@@ -56,7 +56,7 @@ fields without changing the route.
 | Optional fields | `T \| null` |
 | Collections | Always present, may be empty; never `null` |
 | Pagination | `messages/list` only. The other lists return every item |
-| Deleted rows | Soft-deleted accounts, chats, members and messages are left out of lists, and a deleted account or chat is a `404`. A deleted member still appears as the `sender` of its old messages, with `deleted: true` |
+| Deleted rows | Soft-deleted accounts, chats and messages are left out of lists, and a deleted account or chat is a `404`. Deleted chat members stay in `chats/members/list` with `deleted: true` |
 
 A disabled ingest datasource only stops ingest; data already stored stays
 readable.
@@ -70,10 +70,10 @@ account.
 
 | Status | Meaning | Body |
 |---|---|---|
-| `400` | Invalid uuid, or invalid `cursor`, `limit` or `direction` on `messages/list` | Plain-text message |
+| `400` | Invalid uuid, or an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list` | Plain-text message |
 | `401` | Not authenticated | `Unauthenticated` |
 | `403` | Missing `CyberMessengers`, or missing `Rer` / `CyberViewerRestricted` | `Forbidden` |
-| `404` | Account or chat is unknown, deleted, outside the caller's groups, or the chat is not under that account | `Not found` |
+| `404` | Account or chat is unknown, deleted, outside the caller's groups, or the chat is not under that account. Also an `around_message_id` that is not a visible message of the chat | `Not found` |
 
 The `404` cases are indistinguishable, so the API never confirms that an id
 exists outside the caller's scope.
@@ -192,8 +192,10 @@ type MessengersChatItem = {
 
 ### `POST /chats/members/list`
 
-Every member of one chat, ordered by `external_id`. A very large group is
-returned in one response; this is a known limit of the unpaginated list.
+Every member of one chat, ordered by `external_id`, including deleted members
+with `deleted: true`, because old messages still reference them. A very large
+group is returned in one response; this is a known limit of the unpaginated
+list.
 
 ```ts
 type MessengersChatMembersListReq = {
@@ -216,6 +218,7 @@ type MessengersChatMemberItem = {
   is_bot: boolean | null
   role: string | null                   // creator, admin, member, ...
   joined_date: number | null            // epoch ms
+  deleted: boolean
   telegram: { user_id: string } | null
 }
 ```
@@ -224,8 +227,8 @@ type MessengersChatMemberItem = {
 
 ### `POST /messages/list`
 
-One page of a chat's messages, for infinite scroll. Messages are ordered by
-send time, then id, and each page is newest first.
+One page of a chat's messages, for infinite scroll in both directions. Each page
+is newest first.
 
 ```ts
 type MessengersMessagesListReq = {
@@ -233,13 +236,14 @@ type MessengersMessagesListReq = {
   chat_id: string
   cursor: string | null                 // from a previous response
   limit: number | null                  // default 50, at most 100
-  direction: "older" | "newer" | null   // default "older"
+  direction: "Older" | "Newer" | null   // default "Older"
+  around_message_id: string | null      // Echo message uuid
 }
 
 type MessengersMessagesListRsp = {
   items: MessengersMessageItem[]
-  older_cursor: string | null           // null at the start of the chat
-  newer_cursor: string | null           // set on every non-empty page
+  older_cursor: string | null           // null when no older messages remain
+  newer_cursor: string | null           // null only in an empty chat
 }
 
 type MessengersMessageItem = {
@@ -249,29 +253,27 @@ type MessengersMessageItem = {
   text: string
   is_outgoing: boolean | null
   has_media: boolean | null
-  sender: MessengersMessageSender | null  // null for channel posts / unknown
+  sender_chat_member_id: string | null  // null for channel posts / unknown
   attachments: MessengersAttachment[]
   telegram: { message_id: string } | null
 }
 
-type MessengersMessageSender = {
-  id: string                            // Echo chat member uuid
-  external_id: string
-  username: string | null
-  first_name: string | null
-  last_name: string | null
-  is_bot: boolean | null
-  deleted: boolean
-  telegram: { user_id: string } | null
-}
-
-// MessageMediaInfo, the attachment type of the inbox, plus messenger metadata
-type MessengersAttachment = MessageMediaInfo & {
+type MessengersAttachment = {
+  media: MessageMediaInfo               // the attachment type of the inbox
   external_id: string
   created_at: number | null             // when the collector recorded the media
   telegram: { file_id: string, media_type: string | null } | null
 }
 ```
+
+Modes:
+
+| Request | Returns |
+|---|---|
+| No `cursor`, no `around_message_id` | The newest page |
+| `cursor` from `older_cursor`, `direction` `"Older"` or omitted | Messages sent before that point |
+| `cursor` from `newer_cursor`, `direction: "Newer"` | The messages closest after that point |
+| `around_message_id` | That message with messages on both sides: `limit / 2` newer, the rest older including the message itself |
 
 Example response:
 
@@ -285,29 +287,22 @@ Example response:
       "text": "Колона техніки рухається в напрямку села",
       "is_outgoing": false,
       "has_media": true,
-      "sender": {
-        "id": "0199e3a7-3b4c-7d5e-8f60-718293a4b5c6",
-        "external_id": "6011122233",
-        "username": "observer_ua",
-        "first_name": "Andrii",
-        "last_name": null,
-        "is_bot": false,
-        "deleted": false,
-        "telegram": { "user_id": "6011122233" }
-      },
+      "sender_chat_member_id": "0199e3a7-3b4c-7d5e-8f60-718293a4b5c6",
       "attachments": [
         {
-          "id": "0199e3a8-4d5e-7f60-8172-839405162738",
-          "content_type": "image/jpeg",
-          "file_name": "photo_2026-10-14.jpg",
-          "size_bytes": 482113,
-          "href": "/api/messenger/media/0199e3a8-4d5e-7f60-8172-839405162738",
-          "transcription": null,
-          "ocr": null,
-          "summary": null,
-          "coordinate_status": null,
-          "kmz_conversion_status": null,
-          "positions": [],
+          "media": {
+            "id": "0199e3a8-4d5e-7f60-8172-839405162738",
+            "content_type": "image/jpeg",
+            "file_name": "photo_2026-10-14.jpg",
+            "size_bytes": 482113,
+            "href": "/api/messenger/media/0199e3a8-4d5e-7f60-8172-839405162738",
+            "transcription": null,
+            "ocr": null,
+            "summary": null,
+            "coordinate_status": null,
+            "kmz_conversion_status": null,
+            "positions": []
+          },
           "external_id": "5550001:0",
           "created_at": 1760431200000,
           "telegram": { "file_id": "5413920012345678901", "media_type": "photo" }
@@ -316,23 +311,32 @@ Example response:
       "telegram": { "message_id": "48211" }
     }
   ],
-  "older_cursor": "…",
-  "newer_cursor": "…"
+  "older_cursor": "1760431100000000_3008815",
+  "newer_cursor": "1760431100000000_3008815"
 }
 ```
 
 Semantics:
 
-- Without a `cursor`, the response is the newest page, whatever the
-  `direction`.
-- `direction: "older"` with `older_cursor` loads the next page up the history.
-- `direction: "newer"` with `newer_cursor` returns messages sent after that
-  point. An empty page means nothing new, and the same cursor can be sent again.
-- A `newer` page holds at most `limit` messages, those closest to the cursor.
-- `cursor` is opaque. It keeps full timestamp precision, so messages sharing a
-  millisecond are neither skipped nor repeated.
+- The timeline is `sigint_chat_message.messenger_sent_at`, then `id`. Message
+  ids alone do not give send order, because backfilled history is stored out of
+  order, and several messages can share a timestamp.
+  `sigint_inbox_item.datetime` is not used: it can hold a time parsed from the
+  message text.
+- A cursor is a position in the timeline, not a reference to a message, so it
+  stays valid if the message is deleted. Treat it as opaque.
+- Without a `cursor`, `direction` has no effect.
+- `around_message_id` cannot be combined with `cursor` or `direction`.
+- An empty `Newer` page means nothing new. Both cursors in the response repeat
+  the request's cursor, so it can be sent again to check for new messages.
+- `older_cursor` is only known to be final on `Older`, newest and around pages.
+  On a `Newer` page it is the oldest item, and the next `Older` request can
+  return an empty page.
 - `text` is the stored message body; a message without text has `""`.
-- Messages deleted in Echo (`signal_message.deleted`) are left out.
+- `sender_chat_member_id` is the `id` of an item from `chats/members/list`,
+  which also holds deleted members.
+- Messages deleted in Echo (`signal_message.deleted`) are left out and do not
+  count towards `limit`.
 - Messages are visible before their attachments arrive, so `has_media: true`
   with an empty `attachments` is valid.
 
@@ -391,7 +395,3 @@ timeline directly and the message cursor stays the same.
 ### Contacts
 
 `POST /contacts/list` for the contacts of one account.
-
-### Jump to message
-
-An `around_message` request that opens a chat at a message, for search results.

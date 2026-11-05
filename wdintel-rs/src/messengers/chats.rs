@@ -1,6 +1,7 @@
-use crate::entities::messenger_chat;
+use crate::entities::{messenger_account, messenger_chat};
 use crate::error::AppError;
 use crate::h;
+use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::accounts::resolve_account;
 use crate::messengers::types::{
@@ -32,6 +33,24 @@ pub(crate) async fn list_chats(
     Ok(MessengersChatsListRsp {
         items: chats.iter().map(chat_item).collect(),
     })
+}
+
+/// The chat a request refers to, under an already resolved account. An
+/// invalid id is a `400`; a chat that is unknown, deleted or under another
+/// account is a `404`.
+pub(crate) async fn resolve_chat(
+    dbx: &DatabaseConnection,
+    account: &messenger_account::Model,
+    chat_id: &str,
+) -> Result<messenger_chat::Model, AppError> {
+    let chat_id = parse_echo_uuid(chat_id).c(h!())?;
+    messenger_chat::Entity::find_by_id(chat_id)
+        .filter(messenger_chat::Column::MessengerAccountId.eq(account.id))
+        .filter(messenger_chat::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
 }
 
 fn chat_item(chat: &messenger_chat::Model) -> MessengersChatItem {

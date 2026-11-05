@@ -1037,6 +1037,78 @@ export type MessengersChatsListRsp = {
   items: Array<MessengersChatItem>;
 };
 
+export type MessengersChatMembersListReq = {
+  accountId: string;
+  chatId: string;
+};
+
+export type MessengersChatMemberItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  isBot: boolean | null;
+  role: string | null;
+  joinedDate: number | null;
+  deleted: boolean;
+  telegram: MessengersTelegramAccountId | null;
+};
+
+export type MessengersChatMembersListRsp = {
+  items: Array<MessengersChatMemberItem>;
+};
+
+export type MessengersMessagesDirection =
+  | 'Older'
+  | 'Newer'
+;
+
+export type MessengersMessagesListReq = {
+  accountId: string;
+  chatId: string;
+  cursor: string | null;
+  limit: number | null;
+  direction: MessengersMessagesDirection | null;
+  aroundMessageId: string | null;
+};
+
+export type MessengersTelegramMessageId = {
+  messageId: string;
+};
+
+export type MessengersTelegramMedia = {
+  fileId: string;
+  mediaType: string | null;
+};
+
+export type MessengersAttachment = {
+  media: MessageMediaInfo;
+  externalId: string;
+  createdAt: number | null;
+  telegram: MessengersTelegramMedia | null;
+};
+
+export type MessengersMessageItem = {
+  id: string;
+  externalId: string;
+  sentAt: number;
+  text: string;
+  isOutgoing: boolean | null;
+  hasMedia: boolean | null;
+  senderChatMemberId: string | null;
+  attachments: Array<MessengersAttachment>;
+  telegram: MessengersTelegramMessageId | null;
+};
+
+export type MessengersMessagesListRsp = {
+  items: Array<MessengersMessageItem>;
+  olderCursor: string | null;
+  newerCursor: string | null;
+};
+
 export type BatchMessageCommentsReq = {
   messages: Array<MessageCommentsReq>;
 };

@@ -1,3 +1,4 @@
+use crate::rer_importer::types::MessageMediaInfo;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
 
@@ -89,4 +90,114 @@ pub struct MessengersChatItem {
     pub account_member_status: Option<String>,
     pub last_message_date: Option<i64>,
     pub telegram: Option<MessengersTelegramChatId>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+)]
+pub enum MessengersMessagesDirection {
+    Older,
+    Newer,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersMessagesListReq {
+    pub account_id: String,
+    pub chat_id: String,
+    pub cursor: Option<String>,
+    pub limit: Option<i64>,
+    pub direction: Option<MessengersMessagesDirection>,
+    pub around_message_id: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersMessagesListRsp {
+    pub items: Vec<MessengersMessageItem>,
+    pub older_cursor: Option<String>,
+    pub newer_cursor: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersTelegramMessageId {
+    pub message_id: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersMessageItem {
+    pub id: String,
+    pub external_id: String,
+    pub sent_at: i64,
+    pub text: String,
+    pub is_outgoing: Option<bool>,
+    pub has_media: Option<bool>,
+    pub sender_chat_member_id: Option<String>,
+    pub attachments: Vec<MessengersAttachment>,
+    pub telegram: Option<MessengersTelegramMessageId>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersTelegramMedia {
+    pub file_id: String,
+    pub media_type: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersAttachment {
+    pub media: MessageMediaInfo,
+    pub external_id: String,
+    pub created_at: Option<i64>,
+    pub telegram: Option<MessengersTelegramMedia>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatMembersListReq {
+    pub account_id: String,
+    pub chat_id: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatMembersListRsp {
+    pub items: Vec<MessengersChatMemberItem>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersChatMemberItem {
+    pub id: String,
+    pub messenger_type: String,
+    pub external_id: String,
+    pub username: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub phone: Option<String>,
+    pub is_bot: Option<bool>,
+    pub role: Option<String>,
+    pub joined_date: Option<i64>,
+    pub deleted: bool,
+    pub telegram: Option<MessengersTelegramAccountId>,
 }
