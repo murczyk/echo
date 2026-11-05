@@ -653,3 +653,26 @@ async fn issue_4029_local_failure_has_no_provider_time() {
     );
     assert_eq!(response_start_samples(&recorder, "local_error"), None);
 }
+
+// A token that can't be sent as a header fails while building the request.
+#[tokio::test]
+async fn issue_4029_request_builder_failure_has_no_provider_time() {
+    let (client, metrics, recorder) = recording_client();
+    let engine = ai_engine::Model {
+        token: Some("bad\ntoken".to_string()),
+        ..metrics_test_engine("http://127.0.0.1:1/v1")
+    };
+
+    client
+        .send(&engine, json!({}), Duration::from_secs(5))
+        .await
+        .unwrap_err();
+
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder
+            .counter_value(AI_PROVIDER_REQUESTS, &[("outcome", "local_error")]),
+        Some(1)
+    );
+    assert_eq!(response_start_samples(&recorder, "local_error"), None);
+}

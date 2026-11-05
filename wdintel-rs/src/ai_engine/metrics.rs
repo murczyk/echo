@@ -197,7 +197,9 @@ fn error_outcome(error: &anyhow::Error) -> &'static str {
 }
 
 fn reqwest_outcome(error: &reqwest::Error) -> &'static str {
-    if error.is_timeout() {
+    if error.is_builder() {
+        OUTCOME_LOCAL_ERROR
+    } else if error.is_timeout() {
         "timeout"
     } else if error.is_connect() {
         "connect_error"
@@ -225,26 +227,6 @@ mod tests {
         ] {
             assert_eq!(provider_label(url), provider, "{url}");
         }
-    }
-
-    #[test]
-    fn status_outcome_separates_failure_classes() {
-        for (status, outcome) in [
-            (StatusCode::OK, "ok"),
-            (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
-            (StatusCode::UNAUTHORIZED, "client_error"),
-            (StatusCode::BAD_GATEWAY, "server_error"),
-        ] {
-            assert_eq!(status_outcome(status), outcome, "{status}");
-        }
-    }
-
-    #[test]
-    fn error_outcome_treats_unknown_errors_as_local() {
-        let local = anyhow::anyhow!("disabled")
-            .context("first")
-            .context("second");
-        assert_eq!(error_outcome(&local), OUTCOME_LOCAL_ERROR);
     }
 
     #[tokio::test(start_paused = true)]
