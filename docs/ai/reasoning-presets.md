@@ -13,6 +13,12 @@ composer to the remembered preset (Balanced if none). Retry preserves the
 failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
 
+When the newest answer finished in Fast or Balanced with incomplete coverage and
+the provider offers Deep, the chat shows **Продовжити глибоким аналізом** under
+it, with Deep's limit. The button submits a fixed follow-up prompt as a new Deep
+request in the same conversation; it is a fresh run informed by the previous
+answer, not a resume. Deep answers get no button because there is no higher mode.
+
 The limit starts when a worker claims the request, excluding queue time.
 Fast reserves its last 30 seconds, Balanced 60 seconds, a document request
 120 seconds, and Deep 300 seconds for a final answer; non-OpenAI engines (GLM, Gemma) reserve twice that, because
@@ -64,7 +70,9 @@ Queue labels and elapsed execution times are shown independently of this flag.
 Policies are snapshotted into nullable `ai_agent_request.execution_policy`
 when queued, including actual effort, transport, runtime, and finalization
 reserve. They survive later host configuration changes. Completion metadata
-records limited coverage and its `time_limit` or `tool_limit` cause. Conversation
+records limited coverage and its cause: `time_limit`, `tool_limit`,
+`context_limit`, `provider_error`, or `incomplete_research` when research ended
+with remaining gaps or a fallback answer without reaching a limit. Conversation
 reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,
@@ -150,7 +158,9 @@ draft when the engine keeps one (non-OpenAI engines) and otherwise a short
 notice; raw source excerpts are never published.
 Completion metadata records `coverageLimited: true`, `reason: "context_limit"`.
 The notice describes incomplete coverage without suggesting that Deep mode
-would fix it. Cancellation, authorization failures, and content filtering do
+would fix it, because Deep does not enlarge the context window. The Deep
+continuation button is still offered, because its follow-up starts with fresh
+context. Cancellation, authorization failures, and content filtering do
 not become successful partial answers, including synthesis after time/tool
 limits. Legacy requests without a reasoning policy still fail on exhausted
 compaction instead of producing partial answers; the bounded checkpoint retry
