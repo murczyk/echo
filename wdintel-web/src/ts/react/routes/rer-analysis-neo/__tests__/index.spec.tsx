@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { createRoot } from 'react-dom/client';
-import { act, forwardRef, useImperativeHandle, useState } from 'react';
+import { act, forwardRef, memo, useImperativeHandle, useState } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,6 +69,7 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
 );
 
 vi.mock('@mui/material', () => ({
+  GlobalStyles: () => null,
   Badge: ({
     children,
     variant,
@@ -231,6 +232,7 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
+  ThemeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useTheme: () => ({
     breakpoints: { down: (key: string) => key },
     palette: {
@@ -324,36 +326,38 @@ vi.mock('.././components/AnalysisMapPane', () => ({
 }));
 
 vi.mock('.././components/AnalysisMessagesPane', () => ({
-  AnalysisMessagesPane: (props: {
-    onOpenEditor?: (messageId: number, focusTarget?: HTMLElement) => void;
-    onCreateReport?: (
-      messageId: number,
-      etalonDisplayModel: unknown,
-      focusTarget: HTMLElement,
-    ) => void;
-    onEditReport?: (reportId: number, sourceMessageId: number) => void;
-  }) => {
-    messagesPanePropsHistory.push(props);
-    return (
-      <div data-testid="messages-pane">
-        <button
-          type="button"
-          aria-label="analysis-edit-message"
-          onClick={(event) => props.onOpenEditor?.(42, event.currentTarget)}
-        />
-        <button
-          type="button"
-          aria-label="analysis-create-report"
-          onClick={(event) => props.onCreateReport?.(42, {}, event.currentTarget)}
-        />
-        <button
-          type="button"
-          aria-label="analysis-edit-report"
-          onClick={() => props.onEditReport?.(91, 42)}
-        />
-      </div>
-    );
-  },
+  AnalysisMessagesPane: memo(
+    (props: {
+      onOpenEditor?: (messageId: number, focusTarget?: HTMLElement) => void;
+      onCreateReport?: (
+        messageId: number,
+        etalonDisplayModel: unknown,
+        focusTarget: HTMLElement,
+      ) => void;
+      onEditReport?: (reportId: number, sourceMessageId: number) => void;
+    }) => {
+      messagesPanePropsHistory.push(props);
+      return (
+        <div data-testid="messages-pane">
+          <button
+            type="button"
+            aria-label="analysis-edit-message"
+            onClick={(event) => props.onOpenEditor?.(42, event.currentTarget)}
+          />
+          <button
+            type="button"
+            aria-label="analysis-create-report"
+            onClick={(event) => props.onCreateReport?.(42, {}, event.currentTarget)}
+          />
+          <button
+            type="button"
+            aria-label="analysis-edit-report"
+            onClick={() => props.onEditReport?.(91, 42)}
+          />
+        </div>
+      );
+    },
+  ),
 }));
 
 vi.mock('.././components/AnalysisReportDialog', () => ({
@@ -659,6 +663,34 @@ describe('RerAnalysisNeoPage', () => {
     debugRuntime.reset();
     vi.useFakeTimers();
   });
+
+  it.each([
+    ['filters', '[data-analysis-filter-toggle]'],
+    ['create editor', '[aria-label="create-message-fab"]'],
+  ])(
+    '#4019 opens %s without rendering the unchanged feed or rerunning data hooks',
+    async (_name, selector) => {
+      window.history.replaceState({}, '', '?filterPanelOpen=false');
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      rendered.push(container);
+      const root = createRoot(container);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      const feedRenders = messagesPanePropsHistory.length;
+      const dataRenders = useRerAnalysisNeoPageMock.mock.calls.length;
+      const trigger = container.querySelector<HTMLButtonElement>(selector);
+      expect(trigger).not.toBeNull();
+      await act(async () => trigger?.click());
+      if (_name === 'create editor') {
+        expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
+      } else {
+        expect(new URL(window.location.href).searchParams.get('filterPanelOpen')).toBe('true');
+      }
+      expect(messagesPanePropsHistory).toHaveLength(feedRenders);
+      expect(useRerAnalysisNeoPageMock).toHaveBeenCalledTimes(dataRenders);
+      await act(async () => root.unmount());
+    },
+  );
 
   it('records the current Analysis page state during a debug session', async () => {
     const page = buildPage();
