@@ -76,6 +76,13 @@ class PositionFormatTest(unittest.TestCase):
             self.assertEqual(parse.pair(f'Ціль: {text}, 18:03'), (text, ''))
         self.assertEqual(parse.mgrs('36T XT 79584 68848 і 36T YT 08049 72644'), ['36T XT 79584 68848', '36T YT 08049 72644'])
 
+    def test_mgrs_stops_before_a_following_field(self):
+        for text in ['36TXT7958468848', '36T XT 79584 68848', '36T XT 7958 6884']:
+            self.assertEqual(parse.pair(f'{text} 18:03'), (text, ''))
+            self.assertEqual(parse.mgrs(f'{text} 24.09.2026'), [text])
+        # A malformed reference stays visible so Echo can warn about it.
+        self.assertEqual(parse.mgrs('36T XT 79584 18:03'), ['36T XT 79584'])
+
     def test_unit_designations_are_not_mgrs(self):
         for text in ['1 мср 120 мсп', '2 дшб 328 дшп', '36 ОМБр 12', '104 дшд', '1 МСР 120']:
             self.assertEqual(parse.mgrs(text), [], text)

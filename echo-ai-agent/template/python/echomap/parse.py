@@ -20,11 +20,14 @@ _DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\d
 # The region's WGS-84 box; other decimal pairs are not coordinates.
 _LATITUDES = (40.0, 60.0)
 _LONGITUDES = (20.0, 50.0)
+# Easting and northing, split in equal halves or written together; a shorter
+# number after them is another field, such as the hour in «… 18:03».
+_MGRS_DIGITS = "|".join(rf"\d{{{size}}}\s\d{{{size}}}" for size in range(5, 0, -1)) + r"|\d{2,}"
 # A two-digit zone, band and square. Cyrillic look-alikes must be uppercase and
 # I/O never occur, so unit designations such as «1 мср 120» do not match.
 _MGRS = re.compile(
     r"(?<![\w.])\d{2}\s?[C-HJ-NP-Xc-hj-np-xСЕНКМРТХ]\s?"
-    r"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗ]{2}\s?\d{2,}(?:\s\d+)?(?![\w.])"
+    rf"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗ]{{2}}\s?(?:{_MGRS_DIGITS})(?![\w.])"
 )
 
 

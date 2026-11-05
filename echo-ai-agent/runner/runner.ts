@@ -3120,7 +3120,8 @@ const MAP_TOOL_ERRORS: Array<[RegExp, string]> = [
 ];
 
 const SCRIPT_TOOLS = new Set(["echo_map_script", "echo_map_from_reports", "echo_document_script"]);
-const SCRIPT_FAILURE_DETAIL_CHARS = 300;
+// Echo caps the logged text after scrubbing it, so send more than it keeps.
+const SCRIPT_FAILURE_DETAIL_CHARS = 1_000;
 const MAP_NOT_PUBLISHED_DIAGNOSTIC = { type: "tool_diagnostic", tool: "echo_map_publish", reason: "map_not_published", handledPrivately: false };
 const MAP_UNDELIVERED_NOTICE = "⚠️ Мапу не створено або на ній немає жодної точки з координатами. Перевірте координати й повторіть запит.";
 

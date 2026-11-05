@@ -1,7 +1,8 @@
 use super::types::AiAgentMessageCitation;
 use crate::config::{
-    AI_AGENT_EVENT_PAYLOAD_MAX_BYTES, AI_AGENT_PROGRESS_MAX_CHARS,
-    AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
+    AI_AGENT_DIAGNOSTIC_TOKEN_CHARS, AI_AGENT_EVENT_PAYLOAD_MAX_BYTES,
+    AI_AGENT_PROGRESS_MAX_CHARS, AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
+    AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_INPUT_MAX_CHARS,
     AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS,
 };
 use crate::entities::{ai_agent_request, ai_agent_request_event};
@@ -489,15 +490,20 @@ fn redact_diagnostic(value: &str) -> String {
         )
         .unwrap()
     });
-    static TOKEN: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(
-            r"(^|[^A-Za-z0-9_-])[A-Za-z0-9_-]{43}($|[^A-Za-z0-9_-])",
-        )
-        .unwrap()
-    });
+    static WORD: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"[A-Za-z0-9_-]+").unwrap());
     let value = BEARER.replace_all(value, "Bearer [REDACTED]");
     let value = SECRET.replace_all(&value, "${1}${2}[REDACTED]");
-    TOKEN.replace_all(&value, "${1}[REDACTED]${2}").into_owned()
+    // A whole run of exactly this length: `regex` has no lookaround, and
+    // matching the neighbours would consume a separator between two tokens.
+    WORD.replace_all(&value, |word: &regex::Captures| {
+        if word[0].len() == AI_AGENT_DIAGNOSTIC_TOKEN_CHARS {
+            "[REDACTED]".to_string()
+        } else {
+            word[0].to_string()
+        }
+    })
+    .into_owned()
 }
 
 pub fn tool_diagnostic(event: &Value) -> Option<Value> {
@@ -559,14 +565,20 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
 /// Script tools alone may report text: the exception class and the final
 /// traceback line, which can occasionally echo a value from the source data.
 fn add_script_failure(event: &Value, diagnostic: &mut Value) {
-    let limit = AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS;
-    if let Some(exception) = diagnostic_line(event, "exception", limit)
+    let input_limit = AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_INPUT_MAX_CHARS;
+    if let Some(exception) = diagnostic_line(event, "exception", input_limit)
         .filter(|name| is_exception_name(name))
     {
         diagnostic["exception"] = Value::String(exception);
     }
-    if let Some(detail) = diagnostic_line(event, "detail", limit) {
-        diagnostic["detail"] = Value::String(redact_diagnostic(&detail));
+    // Redact before the final cap: a cut token would no longer be recognized.
+    if let Some(detail) = diagnostic_line(event, "detail", input_limit) {
+        diagnostic["detail"] = Value::String(
+            redact_diagnostic(&detail)
+                .chars()
+                .take(AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS)
+                .collect(),
+        );
     }
 }
 
@@ -910,8 +922,13 @@ mod tests {
             }))
             .unwrap()
         };
-        let long = detail("x".repeat(900));
+        let long = detail("x ".repeat(450));
         assert_eq!(long["detail"].as_str().unwrap().chars().count(), 300);
+        let crossing = format!("{} {token} end", "x ".repeat(135));
+        assert!(!detail(crossing)["detail"]
+            .as_str()
+            .unwrap()
+            .contains("aaaa"));
         assert!(long.get("exception").is_none());
         for (input, output) in [
             (
@@ -924,6 +941,7 @@ mod tests {
             ),
             ("password=hunter2".to_string(), "password=[REDACTED]"),
             (format!("id {token} end"), "id [REDACTED] end"),
+            (format!("{token} {token}"), "[REDACTED] [REDACTED]"),
             ("first\nsecond".to_string(), "first"),
         ] {
             assert_eq!(detail(input)["detail"], output);

@@ -1731,7 +1731,7 @@ test("#4038 script failures report their exception and only script tools report 
   assert.deepEqual(scriptFailure("echo_document_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
   assert.deepEqual(scriptFailure("echo_map_from_reports", result("Не вдалося застосувати рецепт. ValueError: bad")), { detail: "Не вдалося застосувати рецепт. ValueError: bad", exception: "ValueError" });
   assert.deepEqual(scriptFailure("echo_map_script", result("Script failed (exit null). Fix it and retry.\n")), { detail: "Script failed (exit null). Fix it and retry." });
-  assert.equal((scriptFailure("echo_map_script", result(`ValueError: ${"x".repeat(900)}`)).detail as string).length, 300);
+  assert.equal((scriptFailure("echo_map_script", result(`ValueError: ${"x".repeat(2_000)}`)).detail as string).length, 1_000);
   assert.deepEqual(scriptFailure("echo_map_append", result("ValueError: secret payload")), {});
   assert.deepEqual(scriptFailure("echo_inbox_messages", result("secret")), {});
   assert.deepEqual(scriptFailure("echo_map_script", result("")), {});
