@@ -8,6 +8,7 @@ import {
   mapOutcomeNotices,
   mapOutcomeRepairPrompt,
   observeMapOutcome,
+  scriptFailure,
   toolErrorSummary,
   analysisPeriodRequestBody,
   callsignFrequencyMatchesRequestBody,
@@ -1099,7 +1100,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.05.1",
+    harnessRelease: "2026.11.05.2",
   });
 });
 
@@ -1721,6 +1722,27 @@ test("#3064 map tool errors get specific labels while route errors stay generic"
   assert.equal(toolErrorSummary("echo_map_script", result("Script failed (exit 1). Traceback ...")), "Скрипт обробки завершився помилкою");
   assert.equal(toolErrorSummary("echo_map_set_symbol", result("SIDC має містити рівно 20 цифр")), "Некоректна позначка");
   assert.equal(toolErrorSummary("echo_map_edit", result("secret payload")), "Не вдалося змінити мапу");
+});
+
+test("#4038 script failures report their exception and only script tools report text", () => {
+  const result = (text: string) => ({ content: [{ type: "text", text }] });
+  const traceback = "Script failed (exit 1). Fix it and retry.\nTraceback (most recent call last):\n  File \"script.py\", line 14, in <module>\nKeyError: 'latitude'\n";
+  assert.deepEqual(scriptFailure("echo_map_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
+  assert.deepEqual(scriptFailure("echo_document_script", result(traceback)), { detail: "KeyError: 'latitude'", exception: "KeyError" });
+  assert.deepEqual(scriptFailure("echo_map_from_reports", result("Не вдалося застосувати рецепт. ValueError: bad")), { detail: "Не вдалося застосувати рецепт. ValueError: bad", exception: "ValueError" });
+  assert.deepEqual(scriptFailure("echo_map_script", result("Script failed (exit null). Fix it and retry.\n")), { detail: "Script failed (exit null). Fix it and retry." });
+  assert.equal((scriptFailure("echo_map_script", result(`ValueError: ${"x".repeat(900)}`)).detail as string).length, 300);
+  assert.deepEqual(scriptFailure("echo_map_append", result("ValueError: secret payload")), {});
+  assert.deepEqual(scriptFailure("echo_inbox_messages", result("secret")), {});
+  assert.deepEqual(scriptFailure("echo_map_script", result("")), {});
+});
+
+test("#4038 an undelivered map adds one notice", () => {
+  const registry = new MapRegistry();
+  assert.deepEqual(mapOutcomeNotices(registry, false).notices, []);
+  const { notices } = mapOutcomeNotices(registry, false, true);
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /Мапу не створено/);
 });
 
 test("#3064 failed map edits and count mismatches are stated in the answer", () => {

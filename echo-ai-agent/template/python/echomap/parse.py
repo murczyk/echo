@@ -14,6 +14,18 @@ _COMPONENT_DIGITS = 7
 _MIN_COMPONENT_DIGITS = 5
 _DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{2,4})|(\d{4})-(\d{2})-(\d{2})")
 _TIME = re.compile(r"(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?")
+_DEGREES = r"[-+]?\d{1,3}[.,]\d{3,}"
+# Two decimal numbers side by side. Dates and times have shorter fractions.
+_DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\d)")
+# The region's WGS-84 box; other decimal pairs are not coordinates.
+_LATITUDES = (40.0, 60.0)
+_LONGITUDES = (20.0, 50.0)
+# A two-digit zone, band and square. Cyrillic look-alikes must be uppercase and
+# I/O never occur, so unit designations such as «1 мср 120» do not match.
+_MGRS = re.compile(
+    r"(?<![\w.])\d{2}\s?[C-HJ-NP-Xc-hj-np-xСЕНКМРТХ]\s?"
+    r"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗ]{2}\s?\d{2,}(?:\s\d+)?(?![\w.])"
+)
 
 
 class Fields(dict):
@@ -82,20 +94,60 @@ def _components(run):
     return components
 
 
+def _in_region(latitude, longitude):
+    return (
+        _LATITUDES[0] <= float(latitude.replace(",", ".")) <= _LATITUDES[1]
+        and _LONGITUDES[0] <= float(longitude.replace(",", ".")) <= _LONGITUDES[1]
+    )
+
+
+def mgrs(text):
+    """Every MGRS reference in text, as written."""
+    return [match.group(0) for match in _MGRS.finditer(text or "")]
+
+
+def degrees(text):
+    """Every WGS-84 (latitude, longitude) decimal pair in text, as written."""
+    return [
+        (match.group(1), match.group(2))
+        for match in _DEGREE_PAIR.finditer(text or "")
+        if _in_region(match.group(1), match.group(2))
+    ]
+
+
 def pairs(text):
-    """Every coordinate-like pair of numeric components, as written (signs,
-    dashes and spaces inside a component are kept; nothing is repaired)."""
+    """Every position in text, as written and in order: (x, y) for a grid pair
+    (signs, dashes and spaces inside a component are kept; nothing is
+    repaired), (latitude, longitude) for WGS-84 decimal degrees and
+    (reference, "") for MGRS."""
+    found = []
+
+    def take(match, position):
+        found.append((match.start(), position))
+        return " " * len(match.group(0))
+
+    def take_degrees(match):
+        if not _in_region(match.group(1), match.group(2)):
+            return match.group(0)
+        return take(match, (match.group(1), match.group(2)))
+
+    rest = _MGRS.sub(lambda match: take(match, (match.group(0), "")), text or "")
+    rest = _DEGREE_PAIR.sub(take_degrees, rest)
     components = [
-        component
-        for match in _RUN.finditer(text or "")
+        (match.start(), component)
+        for match in _RUN.finditer(rest)
         for component in _components(match.group(0))
         if sum(ch.isdigit() for ch in component) >= _MIN_COMPONENT_DIGITS
     ]
-    return [(components[i], components[i + 1]) for i in range(0, len(components) - 1, 2)]
+    found += [
+        (components[i][0], (components[i][1], components[i + 1][1]))
+        for i in range(0, len(components) - 1, 2)
+    ]
+    return [position for _, position in sorted(found, key=lambda item: item[0])]
 
 
 def pair(text):
-    """The first coordinate pair in text, or ("", "")."""
+    """The first position in text, or ("", "")."""
     found = pairs(text)
     return found[0] if found else ("", "")
 

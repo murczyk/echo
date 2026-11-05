@@ -151,6 +151,13 @@ def _target_coordinates(value):
     only undelimited pairs fall back to numeric extraction."""
     # Brackets around the whole pair are not part of either component.
     value = (value or "").strip().strip("()[]{}").strip()
+    references = parse.mgrs(value)
+    if references:
+        return references[0], ""
+    # Before splitting: «50,4501 30,5234» has decimal commas, not a delimiter.
+    degrees = parse.degrees(value)
+    if degrees:
+        return degrees[0]
     parts = [part.strip() for part in re.split(r"[,;/]", value, maxsplit=1)]
     if len(parts) == 2 and all(parts):
         return parts[0], parts[1]
@@ -202,7 +209,7 @@ def _flight_record(block, source, default_sidc="", posting_date=""):
         comments=[block],
         source=source,
     )
-    problem = None if x and y else "немає координат цілі"
+    problem = None if x and (y or parse.mgrs(x)) else "немає координат цілі"
     if supplied and sidc != supplied:
         problem = "некоректний SIDC у звіті"
     return record, problem

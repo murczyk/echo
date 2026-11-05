@@ -21,7 +21,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
-use crate::types::{error, info, Context, Env, ShortContext};
+use crate::types::{error, info, warn, Context, Env, ShortContext};
 use chrono::{Duration, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
@@ -557,6 +557,26 @@ async fn append_presented_event(
     Ok(appended)
 }
 
+fn log_tool_diagnostic(
+    request: &ai_agent_request::Model,
+    correlation_id: Uuid,
+    diagnostic: &Value,
+) {
+    let ids = format!(
+        "request_id={} conversation_id={} correlation_id={correlation_id}",
+        request.id, request.conversation_id
+    );
+    match events::tool_diagnostic_level(diagnostic) {
+        log::Level::Error => {
+            error!("AI agent tool failed {ids} diagnostic={diagnostic}")
+        }
+        log::Level::Warn => {
+            warn!("AI agent tool failed {ids} diagnostic={diagnostic}")
+        }
+        _ => info!("AI agent tool {ids} diagnostic={diagnostic}"),
+    }
+}
+
 async fn run_request_inner(
     env: &Env,
     request: &ai_agent_request::Model,
@@ -835,7 +855,7 @@ async fn run_request_inner(
                         continue;
                     }
                     if let Some(diagnostic) = events::tool_diagnostic(&event) {
-                        info!("AI agent tool request_id={} diagnostic={diagnostic}", request.id);
+                        log_tool_diagnostic(request, correlation_id, &diagnostic);
                         continue;
                     }
                     if let Some((event_type, payload)) = events::normalize_runner_event(event) {

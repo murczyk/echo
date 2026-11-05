@@ -35,6 +35,26 @@ Only then does a chat request carry the map, its revision and the selected point
 ids, so the agent can edit it; clicking the chip switches to asking questions
 without edits. With a selection, prompt starters prefill the draft.
 
+## Coordinate formats
+
+Echo recognizes the format from the values in `prepare.rs`, so `coordinateSystem`
+is optional and only breaks a tie:
+
+| Format | Example | Fields |
+| --- | --- | --- |
+| MSK-2000/СК-42 | `5215227 6548669` | `x` is X, `y` is Y |
+| WGS-84 decimal degrees | `47.54821, 35.38674` | `x` is latitude, `y` is longitude; a whole pair in `x` also works |
+| MGRS | `36T XT 75734 68963` | The whole reference in `x`; `y` is empty |
+
+An MGRS shape wins first: spaces, lower case and Cyrillic look-alikes are
+accepted, and a reference needs an even 2–10 digits. A decimal pair is WGS-84
+unless its digits also read as a grid position inside Ukraine, as
+`52.15227/65.48669` does; a `wgs84` label settles that tie. Anything else takes
+the existing grid path. `originalX`, `originalY` and `coordinateSystem` keep what
+was recognized, while `x`, `y` hold the SK-42 grid derived by inverse projection,
+so exports keep one meaning. A WGS-84 point outside the SK-42 zones keeps its
+geometry with `INVALID` grid values and a warning.
+
 ## Runner and persistence
 
 `echo_map_create` prepares a draft with a title and `isMain` flag.
@@ -204,7 +224,8 @@ remain in comments. Comment normalization removes double/typographic quotes and
 collapses whitespace.
 
 CSV begins with `sidc,name,observation_datetime,platform_type,x,y`, followed by
-`comment 1` through the maximum comment count, padded with empty cells.
+`comment 1` through the maximum comment count, padded with empty cells. `x` and
+`y` are always SK-42 grid values, whatever format the source used.
 `platform_type` is `CAPDOC`. Every cell is quoted, and every row is retained.
 KMZ includes only valid records, with longitude/latitude geometry, escaped
 metadata, observation time, platform, original coordinates, and comments.
@@ -216,8 +237,12 @@ icon KMZ embeds the packaged PNG when one exists and otherwise an
 identity-colored PNG. A record with no SIDC is stored as `10061000001211020000`
 with a warning; a non-empty value that is not 20 digits is rejected. Citations
 that were not retrieved are omitted. Unpublished tool results do not include the
-markdown link. A successful answer that links a nonempty draft publishes that
-draft; links to empty or unknown drafts are removed.
+markdown link. A successful answer that links a draft with at least one valid
+point publishes that draft, whatever the link text. Other links are removed,
+keeping a custom label as plain text. When the answer promises a map the user
+does not get (a dead link, a published map with no valid point, or a draft left
+unpublished with nothing delivered), it gains a notice and Echo logs
+`map_not_published`.
 
 Symbol names come from the generated
 [APP-6(D) catalog](../scripts/symbology/README.md), with Delta's Ukrainian

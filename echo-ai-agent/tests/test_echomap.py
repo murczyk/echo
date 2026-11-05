@@ -59,6 +59,40 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(parse.pair('Координаты цели: 5272881, 6679505'), ('5272881', '6679505'))
 
 
+class PositionFormatTest(unittest.TestCase):
+    def test_decimal_degrees_are_read_as_written(self):
+        self.assertEqual(parse.pair('Тестова точка 01,47.54821,35.38674')[0], '47.54821')
+        self.assertEqual(parse.pair('47.54821, 35.38674'), ('47.54821', '35.38674'))
+        self.assertEqual(parse.pair('47,54821 35,38674'), ('47,54821', '35,38674'))
+        self.assertEqual(parse.pair('55.75123; 37.61712'), ('55.75123', '37.61712'))
+
+    def test_dates_times_and_stray_decimals_are_not_degrees(self):
+        self.assertEqual(parse.pairs('Дата: 24.09.2026 Час: 18.03'), [])
+        self.assertEqual(parse.degrees('12.345 67.890'), [])
+        self.assertEqual(parse.pair('24.09.2026 5272881, 6679505'), ('5272881', '6679505'))
+
+    def test_mgrs_is_read_in_every_written_form(self):
+        for text in ['36T XT 79584 68848', '36TXT7958468848', '36txt7958468848', '36Т ХТ 79584 68848']:
+            self.assertEqual(parse.pair(f'Ціль: {text}, 18:03'), (text, ''))
+        self.assertEqual(parse.mgrs('36T XT 79584 68848 і 36T YT 08049 72644'), ['36T XT 79584 68848', '36T YT 08049 72644'])
+
+    def test_unit_designations_are_not_mgrs(self):
+        for text in ['1 мср 120 мсп', '2 дшб 328 дшп', '36 ОМБр 12', '104 дшд', '1 МСР 120']:
+            self.assertEqual(parse.mgrs(text), [], text)
+
+    def test_positions_keep_their_order_across_formats(self):
+        text = '36T XT 79584 68848; 5272881 6679505; 47.54821, 35.38674'
+        self.assertEqual(parse.pairs(text), [
+            ('36T XT 79584 68848', ''), ('5272881', '6679505'), ('47.54821', '35.38674'),
+        ])
+
+    def test_a_record_leaves_the_format_to_echo(self):
+        for x, y in [('47.54821', '35.38674'), ('36TXT7958468848', ''), ('5272881', '6679505')]:
+            item = Record('Точка', x, y).to_input()
+            self.assertEqual((item['coordinateSystem'], item['x'], item['y']), ('', x, y))
+        self.assertEqual(Record('Точка', '36TXT7958468848').to_input()['y'], '')
+
+
 class SidcTest(unittest.TestCase):
     def test_aliases_choose_symbol_and_spoken_identity(self):
         self.assertEqual(sidc.find('ворожий танк'), '10061500001202000000')
@@ -252,6 +286,21 @@ class RecipeTest(unittest.TestCase):
         self.assertEqual((parsed[2].x, parsed[2].y), ('5272881', '6679505'))
         emit_records([record for record in parsed if '3 дшб' in record.name])
         self.assertEqual(len(state.result()['records']), 1)
+
+    def test_reports_accept_every_coordinate_format(self):
+        report = 'Детали полета\nПодразделение: 328 дшп\nДата: 24.09.2026\nКоординаты цели: {}\n'
+        for written, expected in [
+            ('36T XT 79584 68848', ('36T XT 79584 68848', '')),
+            ('47.54821, 35.38674', ('47.54821', '35.38674')),
+            ('50,4501 30,5234', ('50,4501', '30,5234')),
+            ('5272881, 6679505', ('5272881', '6679505')),
+        ]:
+            directory = with_inputs({'prompt': report.format(written), 'messages': []})
+            self.addCleanup(directory.cleanup)
+            recipes.run()
+            result = state.result()
+            self.assertEqual((result['records'][0]['x'], result['records'][0]['y']), expected, written)
+            self.assertEqual(result['stats']['skipped'], [], written)
 
     def test_header_units_name_reports_without_a_unit_field(self):
         named = '[25.09.2026 1:00] 2 дшб 328 дшп: Детали полета\nДата: 24.09.2026\nКоординаты цели: 5272881, 6679505\n'

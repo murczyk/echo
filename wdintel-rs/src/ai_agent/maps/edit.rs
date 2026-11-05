@@ -140,9 +140,11 @@ fn add_record(
     let input = operation.record.clone().ok_or_else(|| {
         EditFailure::Reject("Нова точка потребує запису".to_string())
     })?;
-    if input.x.trim().is_empty() || input.y.trim().is_empty() {
+    let missing_y =
+        input.y.trim().is_empty() && !prepare::is_whole_position(&input.x);
+    if input.x.trim().is_empty() || missing_y {
         return Err(EditFailure::Clarify(
-            "Потрібні координати нової точки. Вкажіть X і Y або одне доступне джерело з координатами.".to_string(),
+            "Потрібні координати нової точки. Вкажіть їх або одне доступне джерело з координатами.".to_string(),
         ));
     }
     if document.records.len() >= AI_AGENT_MAP_MAX_RECORDS {
@@ -319,10 +321,14 @@ fn apply_fields(
             .x
             .clone()
             .unwrap_or_else(|| record.original_x.clone());
-        let y = fields
-            .y
-            .clone()
-            .unwrap_or_else(|| record.original_y.clone());
+        // A whole position in X replaces the old pair, so the old Y must go.
+        let y = fields.y.clone().unwrap_or_else(|| {
+            if fields.x.as_deref().is_some_and(prepare::is_whole_position) {
+                String::new()
+            } else {
+                record.original_y.clone()
+            }
+        });
         refresh_coordinates(record, &system, &x, &y)
             .map_err(|error| EditFailure::Reject(error.to_string()))?;
     }
@@ -898,6 +904,61 @@ mod tests {
         );
         assert!(matches!(added, Err(EditFailure::Clarify(_))));
         assert_eq!(document.records.len(), 4);
+    }
+
+    fn add_op(record: AiAgentMapRecordInput) -> AiAgentMapPatchOp {
+        AiAgentMapPatchOp {
+            op: "add".to_string(),
+            selector: None,
+            record: Some(record),
+            fields: None,
+            components: None,
+            sidc: None,
+            title: None,
+        }
+    }
+
+    #[test]
+    fn issue_4038_a_new_point_can_be_one_whole_position() {
+        let document = sample(2);
+        for x in ["36T XT 79584 68848", "47.54821, 35.38674"] {
+            let outcome =
+                apply_patch(&document, &[add_op(input("Нова", x, ""))])
+                    .unwrap();
+            let added = outcome.document.records.last().unwrap();
+            assert!(added.latitude.is_some(), "{x}");
+        }
+        let partial =
+            apply_patch(&document, &[add_op(input("Нова", "5215227", ""))]);
+        assert!(matches!(partial, Err(EditFailure::Clarify(_))));
+    }
+
+    #[test]
+    fn issue_4038_moving_a_point_to_mgrs_drops_the_old_y() {
+        let document = sample(2);
+        let outcome = apply_patch(
+            &document,
+            &[AiAgentMapPatchOp {
+                op: "update".to_string(),
+                selector: Some(AiAgentMapSelector {
+                    ids: vec![document.records[0].id.clone()],
+                    ..Default::default()
+                }),
+                record: None,
+                fields: Some(AiAgentMapFieldPatch {
+                    x: Some("36TXT7958468848".to_string()),
+                    ..Default::default()
+                }),
+                components: None,
+                sidc: None,
+                title: None,
+            }],
+        )
+        .unwrap();
+        let moved = &outcome.document.records[0];
+        assert_eq!(moved.coordinate_system, "mgrs");
+        assert_eq!(moved.original_y, "");
+        assert!(moved.latitude.is_some());
     }
 
     #[test]
