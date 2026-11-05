@@ -382,6 +382,16 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let mut result: HashMap<i64, Vec<i64>> = HashMap::new();
+    let non_rer_ids = crate::sigint::unit_tag::non_rer_item_ids_from_items(
+        dbx,
+        sigint_inbox_items.iter().map(|item| item.id).collect(),
+    )
+    .await
+    .c(h!())?;
+    let sigint_inbox_items = sigint_inbox_items
+        .into_iter()
+        .filter(|item| !non_rer_ids.contains(&item.id))
+        .collect::<Vec<_>>();
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
     if sigint_inbox_item_ids.is_empty() {
@@ -451,12 +461,6 @@ pub(crate) async fn directly_recalculated_network_unit_item_ids<C>(
 where
     C: ConnectionTrait,
 {
-    if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
-        .await
-        .c(h!())?
-    {
-        return Ok(sigint_inbox_item_ids.to_vec());
-    }
     let deferred_item_ids =
         crate::sigint::unit_tag::non_rer_item_ids_from_items(
             dbx,
@@ -580,43 +584,13 @@ where
 {
     let sigint_inbox_item_ids =
         sigint_inbox_items.iter().map(|i| i.id).collect::<Vec<_>>();
-    let mut excluded_item_ids =
-        network_assignment_disabled_item_ids_from_items(
-            dbx,
-            &sigint_inbox_item_ids,
-        )
-        .await
-        .c(h!())?;
+    let excluded_item_ids = network_assignment_disabled_item_ids_from_items(
+        dbx,
+        &sigint_inbox_item_ids,
+    )
+    .await
+    .c(h!())?;
 
-    if !crate::system_settings::support_non_rer_interceptions_enabled(dbx)
-        .await
-        .c(h!())?
-    {
-        return Ok(sigint_inbox_items
-            .into_iter()
-            .filter(|item| !excluded_item_ids.contains(&item.id))
-            .collect());
-    }
-    let non_rer_item_ids =
-        crate::sigint::unit_tag::non_rer_item_ids_from_items(
-            dbx,
-            sigint_inbox_item_ids.clone(),
-        )
-        .await
-        .c(h!())?;
-    for item in sigint_inbox_items
-        .iter()
-        .filter(|item| non_rer_item_ids.contains(&item.id))
-    {
-        crate::sigint::unit_tag::enqueue_unit_tag_recalculation_for_inbox_item(
-            dbx,
-            item.id,
-            item.id_uuid,
-        )
-        .await
-        .c(h!())?;
-    }
-    excluded_item_ids.extend(non_rer_item_ids);
     Ok(sigint_inbox_items
         .into_iter()
         .filter(|item| !excluded_item_ids.contains(&item.id))

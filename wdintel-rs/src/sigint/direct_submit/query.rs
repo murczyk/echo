@@ -1529,11 +1529,24 @@ async fn copy_inbox_units<C>(
 where
     C: ConnectionTrait,
 {
+    let non_rer = crate::sigint::unit_tag::inbox_item_is_non_rer(
+        dbx,
+        target_inbox_item_id,
+    )
+    .await
+    .c(h!())?;
+    let kind_filter = if non_rer {
+        Expr::col(crate::entities::sigint_inbox_item_unit::Column::Kind)
+            .eq(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed)
+    } else {
+        Expr::cust("TRUE")
+    };
     let source = crate::entities::sigint_inbox_item_unit::Entity::find()
         .filter(
             crate::entities::sigint_inbox_item_unit::Column::ItemId
                 .is_in(source_inbox_item_ids.to_vec()),
         )
+        .filter(kind_filter.clone())
         .all(dbx)
         .await
         .c(h!())?;
@@ -1542,6 +1555,7 @@ where
             crate::entities::sigint_inbox_item_unit::Column::ItemId
                 .eq(target_inbox_item_id),
         )
+        .filter(kind_filter)
         .exec(dbx)
         .await
         .c(h!())?;
@@ -1669,6 +1683,12 @@ async fn copy_inbox_networks<C>(
 where
     C: ConnectionTrait,
 {
+    if crate::sigint::unit_tag::inbox_item_is_non_rer(dbx, target_inbox_item_id)
+        .await
+        .c(h!())?
+    {
+        return Ok(());
+    }
     let old_freq_ids =
         crate::sigint::network::recalculation::load_freq_ids_for_message_links(
             dbx,
@@ -2120,5 +2140,98 @@ mod tests {
                 Some(login.login.as_str())
             );
         }
+    }
+    #[tokio::test]
+    #[serial]
+    async fn issue_3940_non_rer_copy_keeps_direct_units_without_copying_networks(
+    ) {
+        use crate::entities::sea_orm_active_enums::{
+            InterseptionKind, SigintInboxItemUnitKind,
+        };
+        use crate::entities::{
+            sigint_inbox_item_network, sigint_inbox_item_unit,
+        };
+        use crate::functest::tests::*;
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let source = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let target = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let group = mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                interseption_kind: Set(InterseptionKind::Other),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            &env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(target.id),
+                group_master_key: Set(Some(group.master_key)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let unit = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
+        let history = mk_sigint_inbox_item_network(
+            &env.dbx,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(source.id),
+                sigint_network_id: Set(network.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for kind in [
+            SigintInboxItemUnitKind::Parsed,
+            SigintInboxItemUnitKind::Network,
+        ] {
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(source.id),
+                unit_id: Set(unit.id),
+                kind: Set(kind),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        }
+        copy_inbox_units(&env.dbx, &[source.id], target.id, target.id_uuid)
+            .await
+            .unwrap();
+        copy_inbox_networks(&env.dbx, &[source.id], target.id, target.id_uuid)
+            .await
+            .unwrap();
+        let units = sigint_inbox_item_unit::Entity::find()
+            .filter(sigint_inbox_item_unit::Column::ItemId.eq(target.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].kind, SigintInboxItemUnitKind::Parsed);
+        assert!(sigint_inbox_item_network::Entity::find()
+            .filter(
+                sigint_inbox_item_network::Column::SigintInboxItemId
+                    .eq(target.id)
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(sigint_inbox_item_network::Entity::find_by_id(history.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
     }
 }

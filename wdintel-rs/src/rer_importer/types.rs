@@ -541,6 +541,8 @@ pub struct InboxMessagesReq {
     pub without_network: Option<bool>,
     #[serde(default)]
     pub only_with_network: Option<bool>,
+    #[serde(default)]
+    pub only_for_rer_report: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
     pub metadata_sender: Option<Vec<String>>,
     pub metadata_receiver: Option<Vec<String>>,
@@ -1004,6 +1006,8 @@ pub struct AnalysisStatsReq {
     pub without_network: Option<bool>,
     #[serde(default)]
     pub only_with_network: Option<bool>,
+    #[serde(default)]
+    pub only_for_rer_report: Option<bool>,
     pub metadata_cc: Option<Vec<String>>,
     pub metadata_sender: Option<Vec<String>>,
     pub metadata_receiver: Option<Vec<String>>,

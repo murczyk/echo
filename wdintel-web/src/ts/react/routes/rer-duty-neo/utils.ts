@@ -463,6 +463,7 @@ export function buildInboxReq(opts: {
     selectedNetworks: null,
     withoutNetwork: null,
     onlyWithNetwork: null,
+    onlyForRerReport: null,
     metadataCc: null,
     metadataSender: null,
     metadataReceiver: null,

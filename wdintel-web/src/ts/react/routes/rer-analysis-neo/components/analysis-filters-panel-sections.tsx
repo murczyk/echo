@@ -715,7 +715,6 @@ export function AnalysisFiltersPanelSections({
                   onChange={(_event, value) =>
                     updateQueryState({
                       onlyWithNetwork: value,
-                      withoutNetwork: value ? false : queryState.withoutNetwork,
                     })
                   }
                 />

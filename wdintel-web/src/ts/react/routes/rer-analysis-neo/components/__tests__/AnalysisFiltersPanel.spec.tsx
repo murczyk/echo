@@ -1163,7 +1163,6 @@ describe('AnalysisFiltersPanel', () => {
 
       expect(updateQueryState).toHaveBeenCalledWith({
         onlyWithNetwork: true,
-        withoutNetwork: false,
       });
     }
   });

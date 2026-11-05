@@ -1,5 +1,6 @@
 {
   "migrations": {
+    "echo:m20261104_165252_rer_report_unit_selection": { "changes": [{ "table": "public.sigint_unit_rer_report_metadata", "strategy": "excluded" }] },
     "echo:m20261104_083000_group_message_requirements": {
       "changes": [
         { "table": "public.signal_group", "strategy": "replicated_snapshot", "targeted_resnapshot": true },

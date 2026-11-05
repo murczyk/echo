@@ -103,6 +103,8 @@ impl Drop for ReportWorkerPermit {
 pub enum ReportHistoryRequest {
     AnalysisReport {
         payload: Box<ReportPreviewReq>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rer_scope: Option<crate::rer_report_admin::scope::RerReportScope>,
     },
     AnalysisExport {
         payload: Box<AnalysisStatsReq>,
@@ -976,7 +978,7 @@ fn report_history_period(request: &serde_json::Value) -> Option<String> {
     let request =
         serde_json::from_value::<ReportHistoryRequest>(request.clone()).ok()?;
     match request {
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, .. } => {
             report_history_period_from_ms(
                 payload.req.since_date_inclusive_ms?,
                 payload.req.till_date_inclusive_ms?,
@@ -1079,7 +1081,7 @@ fn report_history_detail_refs(
 
     let mut refs = ReportHistoryDetailRefs::default();
     match request {
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, .. } => {
             extend_unique_i64(
                 &mut refs.aor_ids,
                 payload.req.selected_aors.iter().flatten().copied(),
@@ -1614,10 +1616,24 @@ pub async fn enqueue_report(
     dbx: &DatabaseConnection,
     requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
-    request: ReportHistoryRequest,
+    mut request: ReportHistoryRequest,
     file_name: Option<String>,
     content_type: Option<String>,
 ) -> Result<report_history::Model, AppError> {
+    if let ReportHistoryRequest::AnalysisReport { payload, rer_scope } =
+        &mut request
+    {
+        if payload.kind == KIND_RER_REPORT && rer_scope.is_none() {
+            let scope =
+                crate::rer_report_admin::scope::capture(dbx).await.c(h!())?;
+            if scope.units.is_empty() {
+                return Err(AppError::BL {
+                    msg: "Не налаштовано підрозділи для звіту РЕР".to_string(),
+                });
+            }
+            *rer_scope = Some(scope);
+        }
+    }
     let request = serde_json::to_value(request).c(h!())?;
     let txn = dbx.begin().await.c(h!())?;
     lock_report_request(&txn, requested_by_login_id, report_kind, &request)
@@ -2728,7 +2744,7 @@ async fn require_report_download_device_access(
             .await
             .c(h!())?;
         }
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, .. } => {
             crate::rer_importer::inbox::require_device_filters(
                 dbx,
                 user_login,
@@ -3517,7 +3533,7 @@ async fn generate_report(
     let request: ReportHistoryRequest =
         serde_json::from_value(report_history.request.clone()).c(h!())?;
     match request {
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, rer_scope } => {
             let generated =
                 crate::rer_importer::reports::report_docx_generate_file(
                     report_history.requested_by_login_id,
@@ -3525,6 +3541,7 @@ async fn generate_report(
                     *payload,
                     false,
                     Some(bgtask_id),
+                    rer_scope.as_ref(),
                 )
                 .await
                 .c(h!())?;
@@ -4123,6 +4140,7 @@ mod tests {
             selected_networks: None,
             without_network: None,
             only_with_network: None,
+            only_for_rer_report: None,
             metadata_cc: None,
             metadata_sender: None,
             metadata_receiver: None,
@@ -4390,6 +4408,7 @@ mod tests {
         denied_device_names: Option<Vec<String>>,
     ) -> ReportHistoryRequest {
         ReportHistoryRequest::AnalysisReport {
+            rer_scope: None,
             payload: Box::new(ReportPreviewReq {
                 kind: "tags".to_string(),
                 req: crate::rer_importer::types::InboxMessagesReq {
@@ -6506,5 +6525,83 @@ mod tests {
                 "already finished or cancelled before bgtask attachment"
             ));
         Ok(())
+    }
+    #[tokio::test]
+    #[serial]
+    async fn issue_3940_queued_report_keeps_configuration_and_deduplicates_by_snapshot(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let metadata =
+            crate::entities::sigint_unit_rer_report_metadata::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                report_name: Set(Some("Перший".into())),
+                locations: Set(json!([])),
+                labels: Set(json!(["Перший"])),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        let mut request = analysis_report_request(None, None);
+        if let ReportHistoryRequest::AnalysisReport { payload, .. } =
+            &mut request
+        {
+            payload.kind = KIND_RER_REPORT.into();
+        }
+        let first = enqueue_report(
+            &env.dbx,
+            &login,
+            KIND_RER_REPORT,
+            request.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let duplicate = enqueue_report(
+            &env.dbx,
+            &login,
+            KIND_RER_REPORT,
+            request.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.id, duplicate.id);
+        let mut metadata = metadata.into_active_model();
+        metadata.report_name = Set(Some("Другий".into()));
+        metadata.update(&env.dbx).await.unwrap();
+        let second = enqueue_report(
+            &env.dbx,
+            &login,
+            KIND_RER_REPORT,
+            request,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_ne!(first.id, second.id);
+        assert_eq!(
+            first.request["rer_scope"]["units"][unit.id.to_string()]["target"]
+                ["report_name"],
+            "Перший"
+        );
+        assert_eq!(
+            second.request["rer_scope"]["units"][unit.id.to_string()]["target"]
+                ["report_name"],
+            "Другий"
+        );
     }
 }

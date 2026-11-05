@@ -741,6 +741,7 @@ export type InboxMessagesReq = {
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
   onlyWithNetwork: boolean | null;
+  onlyForRerReport: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -1043,6 +1044,7 @@ export type AnalysisStatsReq = {
   selectedNetworks: Array<number> | null;
   withoutNetwork: boolean | null;
   onlyWithNetwork: boolean | null;
+  onlyForRerReport: boolean | null;
   metadataCc: Array<string> | null;
   metadataSender: Array<string> | null;
   metadataReceiver: Array<string> | null;
@@ -5919,8 +5921,11 @@ export type RerReportMetadataItem = {
   id: number;
   sigintUnitId: number;
   sigintUnitName: string;
+  reportParentContext: string;
+  sigintUnitActive: boolean;
+  sigintUnitDeleted: boolean;
   locations: Array<string>;
-  labels: Array<string>;
+  reportName: string;
 };
 
 export type RerReportMetadataListRsp = {
@@ -5930,14 +5935,14 @@ export type RerReportMetadataListRsp = {
 export type CreateRerReportMetadataReq = {
   sigintUnitId: number;
   locations: Array<string>;
-  labels: Array<string>;
+  reportName: string;
 };
 
 export type UpdateRerReportMetadataReq = {
   id: number;
   sigintUnitId: number;
   locations: Array<string>;
-  labels: Array<string>;
+  reportName: string;
 };
 
 export type DeleteRerReportMetadataReq = {

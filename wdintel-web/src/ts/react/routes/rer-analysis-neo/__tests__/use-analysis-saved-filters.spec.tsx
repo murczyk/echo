@@ -247,6 +247,35 @@ describe('useAnalysisSavedFilters', () => {
     expect(latest?.savedFilterName).toBe('Matched filter');
   });
 
+  it.each([true, false, null])(
+    '#3940 marks a saved filter dirty when its RER scope changes: %s',
+    async (onlyForRerReport) => {
+      const savedFilter = buildSavedFilter();
+      savedFilter.req.onlyForRerReport = onlyForRerReport;
+      savedFilter.req.onlyWithNetwork = onlyForRerReport === null ? true : null;
+      analysisApiMock.listAnalysisSavedFilters.mockResolvedValue([savedFilter]);
+      await renderHook(['100.0000', '100.0030'], {
+        ...emptyQueryState(),
+        fromDateTimeStr: '2026-05-02T10:00',
+        toDateTimeStr: '2026-05-02T11:00',
+      });
+      await flushEffects();
+      await act(async () => latest?.applySavedFilter(savedFilter));
+
+      const enabled = onlyForRerReport ?? true;
+      expect(currentQueryState?.onlyWithNetwork).toBe(enabled);
+      expect(latest?.isDirty).toBe(false);
+      await act(async () =>
+        setCurrentQueryState?.({ ...currentQueryState!, onlyWithNetwork: !enabled }),
+      );
+      expect(latest?.isDirty).toBe(true);
+      await act(async () =>
+        setCurrentQueryState?.({ ...currentQueryState!, onlyWithNetwork: enabled }),
+      );
+      expect(latest?.isDirty).toBe(false);
+    },
+  );
+
   it('clears the selected saved filter when applying null', async () => {
     const savedFilter = buildSavedFilter();
     await renderHook(['100.0000', '100.0030']);
