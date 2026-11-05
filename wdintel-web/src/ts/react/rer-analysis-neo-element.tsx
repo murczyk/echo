@@ -1,11 +1,47 @@
 import { isNullOrUndefined } from './utils/misc';
 
 import { createRoot, Root } from 'react-dom/client';
+import { useEffect } from 'react';
+import AlertTitle from '@mui/material/AlertTitle';
 
 import { NeoMuiThemeProvider } from './mui-theme';
-import { PowerSnackbarProvider } from './components/PowerSnackbar';
+import { PowerSnackbarProvider, usePowerSnackbar } from './components/PowerSnackbar';
 import { POWER_ANALYSIS_SNACKBAR_CLEARANCE } from './routes/shared/manage-message/floating-control-geometry';
 import { RerAnalysisNeoPage } from './routes/rer-analysis-neo';
+
+type AnalysisSharedError = { title: string; content: string };
+const pendingSharedErrors: AnalysisSharedError[] = [];
+let sharedErrorHandler: ((error: AnalysisSharedError) => void) | null = null;
+
+export function showAnalysisSharedError(error: AnalysisSharedError) {
+  if (window.location.pathname.replace(/\/+$/, '') !== '/rer-analysis-neo') return;
+  if (sharedErrorHandler) sharedErrorHandler(error);
+  else pendingSharedErrors.push(error);
+}
+
+function AnalysisSharedErrors() {
+  const { notify } = usePowerSnackbar();
+  useEffect(() => {
+    const onError = ({ title, content }: AnalysisSharedError) => {
+      notify({
+        severity: 'error',
+        message: (
+          <>
+            <AlertTitle>{title}</AlertTitle>
+            {content}
+          </>
+        ),
+      });
+    };
+    sharedErrorHandler = onError;
+    pendingSharedErrors.splice(0).forEach(onError);
+    return () => {
+      sharedErrorHandler = null;
+      pendingSharedErrors.length = 0;
+    };
+  }, [notify]);
+  return null;
+}
 
 function getAuthUserNameFromShell(el: Element): string | null {
   const shell = el.closest('.app-shell');
@@ -35,6 +71,7 @@ function RerAnalysisNeoRoot({
   return (
     <NeoMuiThemeProvider>
       <PowerSnackbarProvider bottomInset={POWER_ANALYSIS_SNACKBAR_CLEARANCE}>
+        <AnalysisSharedErrors />
         <RerAnalysisNeoPage
           key={`${authUserName ?? ''}:${authUserRoles.join(',')}`}
           authUserName={authUserName}

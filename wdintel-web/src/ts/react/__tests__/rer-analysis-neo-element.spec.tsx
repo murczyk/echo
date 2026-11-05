@@ -24,7 +24,7 @@ vi.mock('../routes/rer-analysis-neo', () => ({
   },
 }));
 
-import '../rer-analysis-neo-element';
+import { showAnalysisSharedError } from '../rer-analysis-neo-element';
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -48,4 +48,23 @@ describe('rer-analysis-neo custom element authorization', () => {
     expect(page.unmounted).toHaveBeenCalled();
     expect(document.querySelector('[data-roles="Cyber"]')).not.toBeNull();
   });
+});
+
+it('#4019 delivers a shared error received before Analysis finishes mounting', async () => {
+  const previousUrl = window.location.href;
+  window.history.replaceState({}, '', '/rer-analysis-neo');
+  const element = document.createElement('rer-analysis-neo');
+  try {
+    showAnalysisSharedError({
+      title: 'Помилка оновлення підрозділів',
+      content: 'Помилка сервера (408). Код статусу: 408',
+    });
+    await act(async () => document.body.append(element));
+    const error = document.querySelector('[role="alert"]');
+    expect(error?.textContent).toContain('Помилка оновлення підрозділів');
+    expect(error?.textContent).toContain('Код статусу: 408');
+  } finally {
+    await act(async () => element.remove());
+    window.history.replaceState({}, '', previousUrl);
+  }
 });

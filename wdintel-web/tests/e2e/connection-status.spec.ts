@@ -1,6 +1,49 @@
 import { expect, test } from '@playwright/test';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
+for (const width of [1440, 390]) {
+  test(`@regression #4019 Analysis shared lookup errors use the bottom snackbar at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installAnalysisNeoApiMocks(page);
+    await page.route('**/api/sigint/units/hierarchy', (route) =>
+      route.fulfill({ json: { revision: 'shared-error', groups: [], units: [] } }),
+    );
+    await page.route('**/api/sigint/units', (route) =>
+      route.request().resourceType() === 'xhr'
+        ? route.fulfill({ status: 408, body: '' })
+        : route.fallback(),
+    );
+    await page.goto('/rer-analysis-neo?filterPanelOpen=false');
+
+    const snackbar = page.locator('.MuiSnackbar-root');
+    const error = snackbar.getByRole('alert');
+    await expect(error).toContainText('Помилка оновлення підрозділів');
+    await expect(error).toContainText('408');
+    await expect(error).toHaveCSS('opacity', '1');
+    await expect(page.locator('.toasts .toast')).toHaveCount(0);
+    const position = await snackbar.boundingBox();
+    expect(position!.y).toBeGreaterThan(450);
+    expect(position!.x).toBeGreaterThanOrEqual(0);
+    expect(position!.x + position!.width).toBeLessThanOrEqual(width);
+    await error.getByRole('button', { name: 'Закрити сповіщення' }).click();
+    await expect(snackbar).toHaveCount(0);
+  });
+}
+
+test('@regression #4019 shared lookup errors keep the existing toast outside Analysis Neo', async ({
+  page,
+}) => {
+  await installAnalysisNeoApiMocks(page);
+  await page.route('**/api/sigint/units', (route) => route.fulfill({ status: 408, body: '' }));
+  await page.goto('/rer-analysis');
+  const error = page.locator('.toasts .toast').filter({ hasText: 'Помилка оновлення підрозділів' });
+  await expect(error).toBeVisible();
+  await expect(error).toContainText('408');
+  await expect(page.locator('.MuiSnackbar-root')).toHaveCount(0);
+});
+
 for (const { width, theme } of [
   { width: 1440, theme: 'light' },
   { width: 390, theme: 'dark' },

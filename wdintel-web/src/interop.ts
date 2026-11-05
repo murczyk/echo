@@ -74,7 +74,7 @@ import './ts/react/goi-integrations-neo-element';
 import './ts/react/api-integrations-element';
 import './ts/react/goi-settings-element';
 import './ts/react/rer-duty-neo-element';
-import './ts/react/rer-analysis-neo-element';
+import { showAnalysisSharedError } from './ts/react/rer-analysis-neo-element';
 import './ts/react/rer-network-details-neo-element';
 import './ts/react/devices-page-element';
 import './ts/react/device-details-page-element';
@@ -471,6 +471,7 @@ export const onReady = ({ app, env }) => {
     },
   );
   initializeAuthorNotifications();
+  app.ports?.shared_showAnalysisError?.subscribe(showAnalysisSharedError);
   // Apply initial theme based on localStorage or system preference
   applyCurrentTheme();
   const syncNavbarHeight = createNavbarHeightSync();
