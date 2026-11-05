@@ -351,6 +351,33 @@ afterEach(() => {
   container = null;
 });
 describe('useAnalysisData inbox refreshes', () => {
+  it('#4022 removes an assigned message while retaining other messages without units', async () => {
+    const message = inboxMessage({ unit: null });
+    const assignedMessage = inboxMessage({ unit: 'Assigned Unit' });
+    hoisted.messages = [
+      [1, message],
+      [2, message],
+    ];
+    hoisted.fetchMessagesByIds.mockResolvedValue([[1, assignedMessage]]);
+    renderHook({
+      fromDateTimeStr: '2026-11-04T00:00',
+      toDateTimeStr: '2026-11-05T00:00',
+      unitsSelected: [''],
+      unitHierarchy: buildUnitHierarchyIndex([]),
+    });
+
+    await act(async () => {
+      await hoisted.onInboxChangedMessageIds([1]);
+    });
+
+    expect(hoisted.fetchMessageIdsMatchingFilters).toHaveBeenCalledWith(
+      [1],
+      expect.objectContaining({ selectedUnits: [''] }),
+      expect.anything(),
+    );
+    expect(latest!.messages).toEqual([[2, message]]);
+  });
+
   it('#3527 never broadens reconciliation while restored descendant filters await the catalog', async () => {
     hoisted.messages = [[1, inboxMessage({ text: 'displayed' })]];
     renderHook({
