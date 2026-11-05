@@ -208,6 +208,11 @@
         { "table": "public.messenger_chat_member", "strategy": "excluded" }
       ]
     },
+    "echo:m20261105_142754_messenger_account_internal_notes": {
+      "changes": [
+        { "table": "public.messenger_account", "strategy": "excluded" }
+      ]
+    },
     "echo:m20261008_113430_sigint_unit_orbit_combat_type": {
       "changes": [
         { "table": "public.sigint_unit_orbit_combat_type", "strategy": "replicated_snapshot" },

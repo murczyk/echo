@@ -1004,12 +1004,18 @@ export type MessengersAccountItem = {
   createdAt: number | null;
   lastSync: number | null;
   notes: string | null;
+  internalNotes: string | null;
   telegram: MessengersTelegramAccountId | null;
   datasourceGroup: MessengersDatasourceGroup;
 };
 
 export type MessengersAccountsListRsp = {
   items: Array<MessengersAccountItem>;
+};
+
+export type MessengersAccountUpdateReq = {
+  accountId: string;
+  internalNotes: string | null;
 };
 
 export type MessengersTelegramChatId = {

@@ -2581,6 +2581,7 @@ type alias MessengersAccountItem =
     , createdAt : Maybe (Int)
     , lastSync : Maybe (Int)
     , notes : Maybe (String)
+    , internalNotes : Maybe (String)
     , telegram : Maybe (MessengersTelegramAccountId)
     , datasourceGroup : MessengersDatasourceGroup
     }
@@ -2605,6 +2606,7 @@ messengersAccountItemEncoder struct =
         , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
         , ( "last_sync", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.lastSync )
         , ( "notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.notes )
+        , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         , ( "datasource_group", (messengersDatasourceGroupEncoder) struct.datasourceGroup )
         ]
@@ -2619,6 +2621,20 @@ messengersAccountsListRspEncoder : MessengersAccountsListRsp -> Json.Encode.Valu
 messengersAccountsListRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (messengersAccountItemEncoder)) struct.items )
+        ]
+
+
+type alias MessengersAccountUpdateReq =
+    { accountId : String
+    , internalNotes : Maybe (String)
+    }
+
+
+messengersAccountUpdateReqEncoder : MessengersAccountUpdateReq -> Json.Encode.Value
+messengersAccountUpdateReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "internal_notes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.internalNotes )
         ]
 
 
@@ -22832,6 +22848,7 @@ messengersAccountItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_sync" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "notes" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "datasource_group" (messengersDatasourceGroupDecoder)))
 
@@ -22840,6 +22857,13 @@ messengersAccountsListRspDecoder : Json.Decode.Decoder MessengersAccountsListRsp
 messengersAccountsListRspDecoder =
     Json.Decode.succeed MessengersAccountsListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersAccountItemDecoder))))
+
+
+messengersAccountUpdateReqDecoder : Json.Decode.Decoder MessengersAccountUpdateReq
+messengersAccountUpdateReqDecoder =
+    Json.Decode.succeed MessengersAccountUpdateReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "internal_notes" (Json.Decode.nullable (Json.Decode.string))))
 
 
 messengersTelegramChatIdDecoder : Json.Decode.Decoder MessengersTelegramChatId

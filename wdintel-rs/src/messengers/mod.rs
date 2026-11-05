@@ -9,16 +9,17 @@ use crate::error::AppError;
 use crate::h;
 use crate::messengers::access::ensure_messengers_access;
 use crate::messengers::types::{
-    MessengersAccountsListReq, MessengersAccountsListRsp,
-    MessengersChatMembersListReq, MessengersChatMembersListRsp,
-    MessengersChatsListReq, MessengersChatsListRsp, MessengersMessagesListReq,
+    MessengersAccountUpdateReq, MessengersAccountsListReq,
+    MessengersAccountsListRsp, MessengersChatMembersListReq,
+    MessengersChatMembersListRsp, MessengersChatsListReq,
+    MessengersChatsListRsp, MessengersMessagesListReq,
     MessengersMessagesListRsp,
 };
 use crate::types::{Env, ShortContext};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 
-// Routes of the read-only messengers viewer API, `/api/messengers`. Handlers
+// Routes of the messengers viewer API, `/api/messengers`. Handlers
 // only gate access and delegate to the per-entity modules.
 
 #[post("/api/messengers/accounts/list")]
@@ -30,6 +31,19 @@ pub async fn accounts_list(
     let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
     let rsp = accounts::list_accounts(&env.dbx, &scope).await.c(h!())?;
     Ok(Json(rsp))
+}
+
+#[post("/api/messengers/accounts/update")]
+pub async fn account_update(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengersAccountUpdateReq>,
+) -> Result<Json<()>, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    accounts::update_account(&env.dbx, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(()))
 }
 
 #[post("/api/messengers/chats/list")]

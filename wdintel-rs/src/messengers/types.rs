@@ -39,6 +39,7 @@ pub struct MessengersAccountItem {
     pub created_at: Option<i64>,
     pub last_sync: Option<i64>,
     pub notes: Option<String>,
+    pub internal_notes: Option<String>,
     pub telegram: Option<MessengersTelegramAccountId>,
     pub datasource_group: MessengersDatasourceGroup,
 }
@@ -200,4 +201,12 @@ pub struct MessengersChatMemberItem {
     pub joined_date: Option<i64>,
     pub deleted: bool,
     pub telegram: Option<MessengersTelegramAccountId>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersAccountUpdateReq {
+    pub account_id: String,
+    pub internal_notes: Option<String>,
 }

@@ -535,6 +535,7 @@ mod m20261010_094039_settlement_alias_lookup_indexes;
 mod m20261010_110158_ai_settlement_worker_groups;
 
 mod m20261104_083000_group_message_requirements;
+mod m20261105_142754_messenger_account_internal_notes;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1228,6 +1229,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261103_073829_important_notify_all_flag::Migration),
             Box::new(m20261103_120000_ai_agent_documents::Migration),
             Box::new(m20261104_083000_group_message_requirements::Migration),
+            Box::new(m20261105_142754_messenger_account_internal_notes::Migration),
         ]
     }
 }

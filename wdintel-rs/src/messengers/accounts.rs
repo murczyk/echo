@@ -4,10 +4,12 @@ use crate::h;
 use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::types::{
-    MessengersAccountItem, MessengersAccountsListRsp,
-    MessengersDatasourceGroup, MessengersTelegramAccountId,
+    MessengersAccountItem, MessengersAccountUpdateReq,
+    MessengersAccountsListRsp, MessengersDatasourceGroup,
+    MessengersTelegramAccountId,
 };
 use crate::types::ShortContext;
+use chrono::Utc;
 use sea_orm::*;
 
 pub(crate) async fn list_accounts(
@@ -29,6 +31,20 @@ pub(crate) async fn list_accounts(
         .collect::<Result<Vec<_>, AppError>>()
         .c(h!())?;
     Ok(MessengersAccountsListRsp { items })
+}
+
+/// Full-state write of the fields Echo users own: `null` clears a field.
+pub(crate) async fn update_account(
+    dbx: &DatabaseConnection,
+    scope: &MessengersScope,
+    req: MessengersAccountUpdateReq,
+) -> Result<(), AppError> {
+    let account = resolve_account(dbx, scope, &req.account_id).await.c(h!())?;
+    let mut account = account.into_active_model();
+    account.internal_notes = Set(req.internal_notes);
+    account.updated_at = Set(Utc::now().naive_utc());
+    account.update(dbx).await.c(h!())?;
+    Ok(())
 }
 
 /// The account a request refers to. An invalid id is a `400`; an account that
@@ -89,6 +105,7 @@ fn account_item(
             .external_last_sync_at
             .map(|dt| dt.and_utc().timestamp_millis()),
         notes: account.notes.clone(),
+        internal_notes: account.internal_notes.clone(),
         telegram: account.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),

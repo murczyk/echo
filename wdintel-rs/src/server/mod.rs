@@ -1888,6 +1888,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger_ingest::uploads_base)
             .service(crate::messenger_ingest::uploads_file)
             .service(crate::messengers::accounts_list)
+            .service(crate::messengers::account_update)
             .service(crate::messengers::chats_list)
             .service(crate::messengers::chat_members_list)
             .service(crate::messengers::messages_list)

@@ -1,7 +1,7 @@
 # Messengers viewer API
 
-Draft specification of the read-only API that the Echo web UI uses to browse
-ingested messenger data: accounts, their chats, chat members and messages. The
+Draft specification of the API that the Echo web UI uses to browse ingested
+messenger data: accounts, their chats, chat members and messages. The
 data is pushed by collectors through the
 [messenger ingest API](MESSENGER_INGEST.md). Sections marked **Planned** are
 proposals, not contracts.
@@ -17,11 +17,13 @@ are removed from the RER inbox and analysis feeds; see
 | Route | Status | Request | Response |
 |---|---|---|---|
 | `POST /accounts/list` | Implemented | `{}` | `MessengersAccountsListRsp` |
+| `POST /accounts/update` | Implemented | `MessengersAccountUpdateReq` | `null` |
 | `POST /chats/list` | Implemented | `MessengersChatsListReq` | `MessengersChatsListRsp` |
 | `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 
-Every route is a read. Requests use `POST` with a JSON body, like
+Every route is a read except `accounts/update`, the only write, which changes
+only fields owned by Echo users; collected data stays read-only. Requests use `POST` with a JSON body, like
 `/api/rer-importer/get-inbox`, so later filters can be added as optional body
 fields without changing the route.
 
@@ -108,7 +110,8 @@ type MessengersAccountItem = {
   is_paused: boolean | null
   created_at: number | null             // when the collector added the account
   last_sync: number | null              // collector's last successful sync
-  notes: string | null
+  notes: string | null                  // from the collector
+  internal_notes: string | null         // written by Echo users
   telegram: { user_id: string } | null
   datasource_group: MessengersDatasourceGroup
 }
@@ -146,6 +149,7 @@ Example response:
       "created_at": 1759000000000,
       "last_sync": 1760430000000,
       "notes": null,
+      "internal_notes": "Перевірити зв'язок з чатом 9001",
       "telegram": { "user_id": "7012345678" },
       "datasource_group": {
         "id": 4182,
@@ -159,6 +163,25 @@ Example response:
   ]
 }
 ```
+
+### `POST /accounts/update`
+
+Updates the fields of an account that Echo users own. Fields sent by collectors
+cannot be changed here.
+
+```ts
+type MessengersAccountUpdateReq = {
+  account_id: string
+  internal_notes: string | null
+}
+```
+
+The request is full state, like ingest: every editable field is replaced, and an
+omitted or `null` field is cleared. The response body is `null`. The same access
+rules apply as for reading: any login that can see the account can update it.
+
+`internal_notes` is separate from `notes`: ingest replaces `notes` on every
+sync, and never reads or changes `internal_notes`.
 
 ## Chats
 
