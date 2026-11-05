@@ -65,6 +65,7 @@ class PositionFormatTest(unittest.TestCase):
         self.assertEqual(parse.pair('47.54821, 35.38674'), ('47.54821', '35.38674'))
         self.assertEqual(parse.pair('47,54821 35,38674'), ('47,54821', '35,38674'))
         self.assertEqual(parse.pair('55.75123; 37.61712'), ('55.75123', '37.61712'))
+        self.assertEqual(parse.pair('47.55, 35.38'), ('47.55', '35.38'))
 
     def test_dates_times_and_stray_decimals_are_not_degrees(self):
         self.assertEqual(parse.pairs('Дата: 24.09.2026 Час: 18.03'), [])
@@ -103,6 +104,11 @@ class PositionFormatTest(unittest.TestCase):
             self.assertEqual(parse.mgrs(text), [], text)
             self.assertEqual(parse.pair(text), ('', ''), text)
         self.assertEqual(parse.mgrs('36TXT7958468848 5км'), ['36TXT7958468848'])
+
+    def test_mgrs_survives_sentence_punctuation_and_low_precision(self):
+        self.assertEqual(parse.pair('Ціль: 36T XT 79584 68848.'), ('36T XT 79584 68848', ''))
+        self.assertEqual(parse.pair('36TXT76'), ('36TXT76', ''))
+        self.assertEqual(parse.mgrs('36TXT7958468848.5'), [])
 
     def test_a_following_field_never_shortens_a_reference(self):
         self.assertEqual(parse.pair('36T XT 7958 6884 5км'), ('36T XT 7958 6884', ''))

@@ -14,8 +14,9 @@ _COMPONENT_DIGITS = 7
 _MIN_COMPONENT_DIGITS = 5
 _DATE = re.compile(r"(\d{1,2})[./](\d{1,2})[./](\d{2,4})|(\d{4})-(\d{2})-(\d{2})")
 _TIME = re.compile(r"(\d{1,2})[:.](\d{2})(?:[:.](\d{2}))?")
-_DEGREES = r"[-+]?\d{1,3}[.,]\d{3,}"
-# Two decimal numbers side by side. Dates and times have shorter fractions.
+_DEGREES = r"[-+]?\d{1,3}[.,]\d{2,}"
+# Two decimal numbers side by side. The region check below rules out dates and
+# times, which cannot read as a latitude.
 _DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\w|[.,]\d)")
 # The region's WGS-84 box; other decimal pairs are not coordinates.
 _LATITUDES = (40.0, 60.0)
@@ -29,7 +30,7 @@ _MGRS_RUN = re.compile(r"\d+")
 _MGRS_NEXT_RUN = re.compile(r"[ \t]+(\d+)")
 _MGRS_FULL_DIGITS = 10
 _MGRS_MIN_LONE_DIGITS = 4
-_ATTACHED = re.compile(r"[\w.]")
+_ATTACHED = re.compile(r"\w|\.\d")
 _TIME_OR_DATE_TAIL = re.compile(r"[:.]\d")
 
 
@@ -119,8 +120,10 @@ def _mgrs_end(text, start):
     following = _MGRS_NEXT_RUN.match(text, first.end())
     if following and not _TIME_OR_DATE_TAIL.match(text, following.end()):
         return None if _ATTACHED.match(text, following.end()) else following.end()
-    # A few digits alone are more likely a unit number, as in «25 мср 120».
-    return first.end() if len(first.group()) >= _MGRS_MIN_LONE_DIGITS else None
+    # After a space, a few digits alone are more likely a unit number, as in
+    # «25 мср 120».
+    spaced = text[start - 1].isspace()
+    return None if spaced and len(first.group()) < _MGRS_MIN_LONE_DIGITS else first.end()
 
 
 def _mgrs_spans(text):
