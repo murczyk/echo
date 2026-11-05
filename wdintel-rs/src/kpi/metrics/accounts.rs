@@ -214,6 +214,7 @@ mod tests {
 
     // https://github.com/echoua/echo/issues/3826
     #[tokio::test]
+    #[serial_test::serial]
     async fn snapshots_preserve_admin_account_scope_and_replace_role_groups(
     ) -> anyhow::Result<()> {
         let (env, _guard) = cleanup_locked().await.c(h!())?;

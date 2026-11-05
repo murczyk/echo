@@ -694,6 +694,31 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_sigint_network, mk_sigint_unit};
     use serial_test::serial;
 
+    /// A rejected registration drops its transaction, and the rollback that
+    /// frees the merge locks finishes in the background.
+    async fn register_after_rejection(
+        dbx: &DatabaseConnection,
+        unit_to_delete_id: i64,
+        original_id: i64,
+    ) {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                match register_merge_task(dbx, unit_to_delete_id, original_id)
+                    .await
+                {
+                    Err(AppError::BL { msg })
+                        if msg.ends_with("retry after it finishes") =>
+                    {
+                        tokio::task::yield_now().await
+                    }
+                    result => break result.unwrap(),
+                }
+            }
+        })
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     #[serial]
     async fn staged_merge_moves_rer_report_metadata_to_survivor() {
@@ -1455,9 +1480,7 @@ mod tests {
         assert!(register_merge_task(&env.dbx, duplicate.id, middle.id)
             .await
             .is_err());
-        register_merge_task(&env.dbx, duplicate.id, survivor.id)
-            .await
-            .unwrap();
+        register_after_rejection(&env.dbx, duplicate.id, survivor.id).await;
     }
 
     #[tokio::test]
@@ -1556,8 +1579,6 @@ mod tests {
         assert!(register_merge_task(&env.dbx, duplicate.id, unrelated.id)
             .await
             .is_err());
-        register_merge_task(&env.dbx, duplicate.id, survivor.id)
-            .await
-            .unwrap();
+        register_after_rejection(&env.dbx, duplicate.id, survivor.id).await;
     }
 }

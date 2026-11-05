@@ -764,8 +764,19 @@ mod tests {
         assert!(work_may_be_available(&env.dbx).await.unwrap());
 
         drop(lease);
-        let _next_lease =
-            acquire_worker_lease(&env.dbx).await.unwrap().unwrap();
+        // close_on_drop closes asynchronously, so the lock frees shortly after.
+        let _next_lease = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if let Some(next_lease) =
+                    acquire_worker_lease(&env.dbx).await.unwrap()
+                {
+                    break next_lease;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let next =
             take_next_job(&txn, SIGINT_MEDIA_CONVERSION_STALE_PROCESSING_SEC)

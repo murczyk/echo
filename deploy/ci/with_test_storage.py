@@ -16,6 +16,12 @@ from moto.server import ThreadedMotoServer
 import toml
 
 
+def storage_prefix():
+    # Audio tests require this /tmp prefix. The run name lets CI cleanup find only its own storage.
+    run_name = os.environ.get("ECHO_CI_RUN")
+    return f"echo-device-audio.{run_name}-" if run_name else "echo-device-audio."
+
+
 def write_config(root, endpoint):
     repository = Path(__file__).resolve().parents[2]
     source = Path(os.environ.get("ECHO_CONFIG_PATH", repository / "deploy/config-test.toml"))
@@ -75,7 +81,7 @@ def main():
         raise SystemExit("usage: with_test_storage.sh <command> [args...]")
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
     server = ThreadedMotoServer(ip_address="127.0.0.1", port=0, verbose=False)
-    with tempfile.TemporaryDirectory(prefix="echo-device-audio.", dir="/tmp") as directory:
+    with tempfile.TemporaryDirectory(prefix=storage_prefix(), dir="/tmp") as directory:
         root = Path(directory)
         server.start()
         try:
