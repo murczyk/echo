@@ -1014,6 +1014,7 @@
     }
   },
   "dependencies": {
+    "echo-im:b45d9d6a78a4f2de3e745897c30bfd7b4a3c7f88": { "changes": [] },
     "echo-im:06ac23803f4dbc7bc5e9db471609e89703870125": { "changes": [] },
     "echo-im:80589feab5a9afbe6e474f76b39cc563506c9262": { "changes": [] },
     "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {

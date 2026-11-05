@@ -649,6 +649,14 @@ fn spawn_background_workers(
     should_spawn_goi_workers: bool,
     bg_set: &mut JoinSet<()>,
 ) {
+    if env.metrics.is_some() {
+        let metrics_env = env.clone();
+        let metrics_cancel = cancel_token.clone();
+        spawn_named_worker("operational_metrics_worker", bg_set, async move {
+            crate::telemetry::operational::run(metrics_env, metrics_cancel)
+                .await;
+        });
+    }
     let config = env.config.clone();
     let config1 = config.clone();
     let dbx4 = env.dbx.clone();

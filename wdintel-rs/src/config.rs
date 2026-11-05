@@ -1442,6 +1442,104 @@ pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS: u64 = 100;
 pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
 pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
 pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
+pub const OPERATIONAL_METRICS_INTERVAL_SECS: u64 = 60;
+pub const OPERATIONAL_METRICS_TIMEOUT_SECS: u64 = 10;
+pub const OPERATIONAL_METRICS_MAX_AGE_SECS: u64 = 180;
+pub const OPERATIONAL_METRICS_ACTIVITY_AGE: &str =
+    "echo.datasource.activity.age";
+pub const OPERATIONAL_METRICS_DATASOURCE_ACTIVE: &str =
+    "echo.datasource.active";
+pub const OPERATIONAL_METRICS_ROOT_BYTES: &str =
+    "echo.system.filesystem.available_bytes";
+pub const OPERATIONAL_METRICS_ACCOUNT_LINKED: &str =
+    "echo.messenger.account.linked";
+pub const OPERATIONAL_METRICS_ACCOUNT_ACTIVE: &str =
+    "echo.messenger.account.active";
+pub const OPERATIONAL_METRICS_ERRORS: &str =
+    "echo.messenger.restapi.errors.count";
+pub const OPERATIONAL_METRICS_REPORT_TIMEOUTS: &str =
+    "echo.report.timeouts.count";
+pub const OPERATIONAL_METRICS_AVAILABLE: &str =
+    "echo.operational.source.available";
+pub const OPERATIONAL_METRICS_UPDATED_AT: &str =
+    "echo.operational.source.updated_at";
+pub const OPERATIONAL_METRICS_QUEUE_ITEMS: &str = "echo.messenger.queue.items";
+pub const OPERATIONAL_METRICS_QUEUE_AGE: &str =
+    "echo.messenger.queue.oldest.age";
+pub const OPERATIONAL_METRICS_NLP_READY: &str = "echo.messenger.nlp.ready";
+pub const OPERATIONAL_METRICS_UNKNOWN_REPORT_KIND: &str = "unknown";
+pub const OPERATIONAL_METRICS_REPORT_KINDS: &[&str] = &[
+    crate::report_history::KIND_SUMMARY_TABLE,
+    crate::report_history::KIND_KMZ,
+    crate::report_history::KIND_GEOJSON,
+    crate::report_history::KIND_ETALONKA,
+    crate::report_history::KIND_GOI,
+    crate::report_history::KIND_GOI_ASSOCIATIONS,
+    crate::report_history::KIND_RER_REPORT,
+    crate::report_history::KIND_SPOSOB,
+];
+pub const OPERATIONAL_METRICS_GAUGES: &[(&str, &str, &str, bool)] = &[
+    (
+        OPERATIONAL_METRICS_ACTIVITY_AGE,
+        "s",
+        "Datasource activity age at the observation time",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+        "1",
+        "Whether a datasource is active",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ROOT_BYTES,
+        "By",
+        "Available bytes on the root filesystem",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ACCOUNT_LINKED,
+        "1",
+        "Whether a messenger account is linked",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+        "1",
+        "Whether a messenger account has an active datasource",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_AVAILABLE,
+        "1",
+        "Whether an operational source has a fresh successful observation",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_UPDATED_AT,
+        "s",
+        "Unix time of the last successful operational observation",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_QUEUE_ITEMS,
+        "1",
+        "Number of messenger queue items",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_QUEUE_AGE,
+        "s",
+        "Age of the oldest messenger queue item",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_NLP_READY,
+        "1",
+        "Whether the local NLP dependency is ready",
+        true,
+    ),
+];
 // for xlsx import
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024

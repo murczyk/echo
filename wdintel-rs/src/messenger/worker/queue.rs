@@ -226,14 +226,25 @@ async fn queue_metrics_nofail(env: Arc<Env>, cancel_token: CancellationToken) {
         return;
     };
     loop {
-        match load_queue_metrics(&env.dbx).await {
+        let result = tokio::time::timeout(
+            Duration::from_secs(OPERATIONAL_METRICS_TIMEOUT_SECS),
+            load_queue_metrics(&env.dbx),
+        )
+        .await
+        .c(h!())
+        .and_then(|result| result);
+        match result {
             Ok(snapshot) => metrics.record_messenger_queue_state(
                 snapshot.depth,
                 snapshot.due_depth,
                 snapshot.oldest_age_seconds,
             ),
             Err(error) => {
-                error!("failed to load messenger queue metrics: {error:#}")
+                metrics.operational.publish(
+                    "queue",
+                    chrono::Utc::now().timestamp_millis(),
+                    Err(error),
+                );
             }
         }
         if !sleep_unless_cancelled(
@@ -257,7 +268,10 @@ struct QueueMetricsSnapshot {
 async fn load_queue_metrics(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<QueueMetricsSnapshot> {
-    let row = dbx
+    let txn = crate::telemetry::operational::read_transaction(dbx)
+        .await
+        .c(h!())?;
+    let row = txn
         .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
@@ -276,6 +290,7 @@ from signal_message_queue
         .await
         .c(h!())?
         .c(h!())?;
+    txn.commit().await.c(h!())?;
     let depth: i64 = row.try_get("", "depth").c(h!())?;
     let due_depth: i64 = row.try_get("", "due_depth").c(h!())?;
     Ok(QueueMetricsSnapshot {

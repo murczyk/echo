@@ -111,11 +111,10 @@ async fn load_monitoring(
     let data = echo_im::collect_monitoring_data(&env.dbx).await.c(h!())?;
     let mut datasources = vec![];
     for d in data {
+        let latest_signal_message_created_at_ms = d.activity_at_ms();
         datasources.push(MonitoringDatasource {
             display_name: d.display_name,
-            latest_signal_message_created_at_ms: d
-                .last_inbox_at_ms
-                .unwrap_or(d.last_sync_at_ms),
+            latest_signal_message_created_at_ms,
         });
     }
     Ok(Monitoring {
@@ -130,7 +129,7 @@ async fn load_monitoring(
 fn root_free_space_mb() -> i64 {
     const BYTES_IN_MB: u64 = 1_048_576;
     let root_path = Path::new("/");
-    match available_space(root_path) {
+    match root_available_bytes() {
         Ok(bytes) => {
             let mb = bytes / BYTES_IN_MB;
             (mb.min(i64::MAX as u64)) as i64
@@ -143,4 +142,8 @@ fn root_free_space_mb() -> i64 {
             0
         }
     }
+}
+
+pub(crate) fn root_available_bytes() -> anyhow::Result<u64> {
+    available_space(Path::new("/")).c(h!())
 }
