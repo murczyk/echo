@@ -1,5 +1,7 @@
 import InfoIcon from '@mui/icons-material/Info';
 import { Tooltip } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { designTokens } from '../../../../../design-system/design-tokens';
 import { PowerChip } from '../../../components/PowerChip';
 import { PowerIconButton } from '../../../components/PowerIconButton';
 
@@ -18,6 +20,8 @@ export function getUnitStatsItemsLabel(countLabel: string): string {
 }
 
 export function UnitStatsCounter({ count, own = false, selected, onClick, title }: CounterProps) {
+  const theme = useTheme();
+  const colors = designTokens.color[theme.palette.mode];
   return (
     <PowerChip
       size="small"
@@ -28,9 +32,9 @@ export function UnitStatsCounter({ count, own = false, selected, onClick, title 
       ariaLabel={onClick ? title : undefined}
       title={title}
       unselectedOpacity={1}
-      backgroundColor={own ? '#66bb6a' : 'action.selected'}
-      selectedTextColor={own ? '#000000' : 'text.primary'}
-      unselectedTextColor={own ? '#000000' : 'text.primary'}
+      backgroundColor={own ? colors.ownRecords : 'action.selected'}
+      selectedTextColor={own ? colors.onOwnRecords : 'text.primary'}
+      unselectedTextColor={own ? colors.onOwnRecords : 'text.primary'}
       selectedBorderColor="text.primary"
       unselectedBorderColor="transparent"
     />
@@ -42,6 +46,7 @@ export function UnitStatsCounterLegend({ countLabel }: { countLabel: string }) {
   return (
     <Tooltip
       arrow
+      describeChild
       title={
         <span className="grid grid-cols-[auto_1fr] items-center gap-echo-sm">
           <UnitStatsCounter count={1} own />

@@ -873,6 +873,35 @@ describe('useRerNetworksNeoPage', () => {
     );
     expect(latest?.status?.text).toContain('activity unavailable');
   });
+  it('#4028 selects own records by ID and clears a renamed unit after reconciliation', async () => {
+    await renderHook();
+    await flushEffects();
+    const legacyFilter = { kind: 'leaf' as const, label: '6 А', unitName: '6 А' };
+    await act(async () => latest?.onPickUnitFilter(legacyFilter));
+    const ownFilter = { ...legacyFilter, unitId: 21 };
+    await act(async () => latest?.onPickUnitFilter(ownFilter));
+    expect(latest?.selectedSidebarUnitFilter).toEqual(ownFilter);
+    await vi.waitFor(() =>
+      expect(apiMock.listNetworks.mock.calls.at(-1)?.[0]).toMatchObject({
+        filterUnitId: 21,
+        filterUnit: null,
+      }),
+    );
+
+    await act(async () => latest?.onPickUnitFilter({ ...ownFilter, unitId: 22 }));
+    expect(latest?.selectedSidebarUnitFilter).toEqual({ ...ownFilter, unitId: 22 });
+    await act(async () =>
+      latest?.onPickUnitFilter({ ...ownFilter, unitId: 22, label: '7 А', unitName: '7 А' }),
+    );
+    expect(latest?.selectedSidebarUnitFilter).toBeNull();
+    await vi.waitFor(() =>
+      expect(apiMock.listNetworks.mock.calls.at(-1)?.[0]).toMatchObject({
+        filterUnitId: null,
+        filterUnit: null,
+      }),
+    );
+  });
+
   it('enables edit and delete permissions for UnitsEditor roles', async () => {
     authUserRoles = ['Rer', 'UnitsEditor'];
 

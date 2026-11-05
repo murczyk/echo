@@ -29,6 +29,8 @@ const requiredColors = [
   'onPrimary',
   'secondary',
   'success',
+  'ownRecords',
+  'onOwnRecords',
   'warning',
   'error',
   'info',

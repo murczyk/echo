@@ -19,6 +19,8 @@ for (const screen of ['callsigns', 'callsigns-fallback', 'networks', 'devices'])
       { ...template, id: 23, name: 'Zero unit', army: '6 А', company: '2 мср' },
     ];
     const counts = [2, 3, 0];
+    let hierarchyRevision = '4028';
+    let armyLabel = '6 А';
     const unitList = transformCamelToSnake({
       units,
       totalCount: units.length,
@@ -48,15 +50,15 @@ for (const screen of ['callsigns', 'callsigns-fallback', 'networks', 'devices'])
           screen === 'callsigns-fallback'
             ? null
             : transformCamelToSnake({
-                revision: '4028',
+                revision: hierarchyRevision,
                 groups: [
-                  { id: 'army', label: '6 А', level: 2, parentIndex: null },
+                  { id: 'army', label: armyLabel, level: 2, parentIndex: null },
                   { id: 'company-1', label: '1 мср', level: 8, parentIndex: 0 },
                   { id: 'company-2', label: '2 мср', level: 8, parentIndex: 0 },
                 ],
                 units: units.map((unit, index) => ({
                   id: unit.id,
-                  name: unit.name,
+                  name: unit.id === 21 ? armyLabel : unit.name,
                   groupIndex: index,
                 })),
               }),
@@ -95,7 +97,11 @@ for (const screen of ['callsigns', 'callsigns-fallback', 'networks', 'devices'])
       });
     });
     await page.goto(
-      devices ? '/devices' : callsigns ? '/rer-callsigns-neo?units_sidebar=1' : '/rer-networks-neo',
+      devices
+        ? '/devices'
+        : callsigns
+          ? '/rer-callsigns-neo?units_sidebar=1&unit=6+%D0%90'
+          : '/rer-networks-neo',
     );
     if (!callsigns)
       await page.getByRole('button', { name: 'Розгорнути ліву панель', exact: true }).click();
@@ -122,9 +128,15 @@ for (const screen of ['callsigns', 'callsigns-fallback', 'networks', 'devices'])
     await expect
       .poll(() => requests.at(-1))
       .toMatchObject(devices ? { unit_ids: [21] } : { filter_unit_id: 21, filter_unit: null });
-    if (callsigns) {
+    if (callsigns || devices) {
+      const requestsBeforeReload = requests.length;
       await page.reload();
-      await expect.poll(() => requests.at(-1)?.filter_unit_id).toBe(21);
+      await expect.poll(() => requests.length).toBeGreaterThan(requestsBeforeReload);
+      await expect
+        .poll(() => requests.at(-1))
+        .toMatchObject(devices ? { unit_ids: [21] } : { filter_unit_id: 21, filter_unit: null });
+      if (devices)
+        await page.getByRole('button', { name: 'Розгорнути ліву панель', exact: true }).click();
       await expect(own).toBeVisible();
     }
     await grey.click();
@@ -178,6 +190,7 @@ for (const screen of ['callsigns', 'callsigns-fallback', 'networks', 'devices'])
     ).toHaveCount(0);
     const legend = page.getByRole('button', { name: 'Пояснення лічильників підрозділів' });
     await legend.hover();
+    await expect(legend).toHaveAccessibleName('Пояснення лічильників підрозділів');
     await expect(page.getByRole('tooltip')).toContainText(
       `Власні ${items} підрозділу; натисніть для перегляду`,
     );
@@ -212,5 +225,34 @@ for (const screen of ['callsigns', 'callsigns-fallback', 'networks', 'devices'])
       tree.getByRole('button', { name: `Фільтрувати за гілкою 6 А, ${countLabel} 3`, exact: true }),
     ).toBeVisible();
     await expect(own).toHaveCount(0);
+    if (screen === 'callsigns') {
+      await page.setViewportSize({ width: 1500, height: 1000 });
+      await search.clear();
+      await own.click();
+      await expect.poll(() => requests.at(-1)?.filter_unit_id).toBe(21);
+      hierarchyRevision = '4028-renamed';
+      armyLabel = '7 А';
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      const renamedOwn = tree.getByRole('button', {
+        name: `Власні ${items} підрозділу 7 А: 2; натисніть для перегляду`,
+        exact: true,
+      });
+      await expect(renamedOwn).toBeVisible();
+      await expect(
+        tree.getByRole('button', {
+          name: `Фільтрувати за гілкою 7 А, ${countLabel} 5`,
+          exact: true,
+        }),
+      ).toBeVisible();
+      await search.fill('7 А');
+      await expect(renamedOwn).toBeVisible();
+      await search.fill('6 А');
+      await expect(renamedOwn).toHaveCount(0);
+      await search.clear();
+      await renamedOwn.click();
+      await expect
+        .poll(() => requests.at(-1))
+        .toMatchObject({ filter_unit_id: null, filter_unit: null });
+    }
   });
 }

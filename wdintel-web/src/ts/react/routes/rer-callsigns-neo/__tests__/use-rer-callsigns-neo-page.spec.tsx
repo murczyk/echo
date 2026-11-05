@@ -100,6 +100,7 @@ afterEach(() => {
   latestPage = null;
   loadMockState.loaded = false;
   document.body.innerHTML = '';
+  window.history.replaceState({}, '', '/');
   vi.clearAllMocks();
 });
 describe('useRerCallsignsNeoPage duplicate hints', () => {
@@ -177,6 +178,33 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
 });
 
 describe('useRerCallsignsNeoPage unit filters', () => {
+  it('#4028 upgrades legacy name filters to exact IDs and restores either mode from history', () => {
+    window.history.replaceState({}, '', '/rer-callsigns-neo?unit=11+%D0%90%D0%9A');
+    const page = renderHookHarness();
+    const ownFilter = { kind: 'leaf' as const, label: '11 АК', unitName: '11 АК', unitId: 1 };
+
+    act(() => page.onPickUnitFilter(ownFilter));
+    expect(latestPage?.selectedSidebarUnitFilter).toEqual(ownFilter);
+    expect(new URLSearchParams(window.location.search).get('unit_id')).toBe('1');
+
+    act(() => {
+      window.history.pushState({}, '', '/rer-callsigns-neo?unit=11+%D0%90%D0%9A');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(latestPage?.selectedSidebarUnitFilter).toMatchObject({ unitName: '11 АК' });
+    expect(latestPage?.selectedSidebarUnitFilter).not.toHaveProperty('unitId', 1);
+
+    act(() => {
+      window.history.pushState({}, '', '/rer-callsigns-neo?unit=11+%D0%90%D0%9A&unit_id=1');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(latestPage?.selectedSidebarUnitFilter).toEqual(ownFilter);
+
+    act(() => latestPage?.onPickUnitFilter(ownFilter));
+    expect(latestPage?.selectedSidebarUnitFilter).toBeNull();
+    expect(latestPage?.filters.filterUnit).toBe('');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3387
   it('keeps the selected hierarchy while filtering the unit column for echo-3387', () => {
     const page = renderHookHarness();

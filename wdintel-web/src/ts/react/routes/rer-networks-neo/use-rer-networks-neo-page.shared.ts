@@ -34,12 +34,12 @@ export function isSameSidebarUnitFilter(
   left: SelectedSidebarUnitFilter | null,
   right: SelectedSidebarUnitFilter,
 ): boolean {
-  if (left === null || left.kind !== right.kind || left.label !== right.label) {
+  if (left === null || left.kind !== right.kind) {
     return false;
   }
 
   if (left.kind === 'leaf' && right.kind === 'leaf') {
-    if (left.unitId !== undefined && right.unitId !== undefined)
+    if (left.unitId !== undefined || right.unitId !== undefined)
       return left.unitId === right.unitId;
     return left.unitName === right.unitName;
   }

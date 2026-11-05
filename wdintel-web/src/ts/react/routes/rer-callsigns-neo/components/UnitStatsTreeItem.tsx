@@ -50,7 +50,7 @@ export const UnitTreeItem = memo(function UnitTreeItemComponent({
   const ownTitle = `Власні ${countedItems} підрозділу ${node.label}: ${ownCount}; натисніть для перегляду`;
 
   return (
-    <>
+    <li>
       <div className="flex items-center pr-echo-md">
         {node.kind === 'group' ? (
           <PowerIconButton
@@ -115,6 +115,6 @@ export const UnitTreeItem = memo(function UnitTreeItemComponent({
           </List>
         </Collapse>
       ) : null}
-    </>
+    </li>
   );
 });

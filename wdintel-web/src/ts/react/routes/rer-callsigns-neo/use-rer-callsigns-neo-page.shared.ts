@@ -181,7 +181,7 @@ export function areSidebarFiltersEqual(
   if (left.kind !== right.kind) return false;
 
   if (left.kind === 'leaf' && right.kind === 'leaf') {
-    if (left.unitId !== undefined && right.unitId !== undefined)
+    if (left.unitId !== undefined || right.unitId !== undefined)
       return left.unitId === right.unitId;
     return left.unitName === right.unitName;
   }
