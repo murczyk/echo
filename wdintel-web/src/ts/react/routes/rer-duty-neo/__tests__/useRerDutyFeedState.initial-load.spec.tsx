@@ -25,8 +25,7 @@ import {
 } from '../utils';
 import { persistDutyFilterState, readPersistedDutyFilterState } from '../duty-filter-persistence';
 import { useRerDutyFeedState } from '../useRerDutyFeedState';
-import { getAllUnitsList } from '../../../services/api/units';
-import { buildUnitFilterOptions } from '../../../utils/unit-search';
+import { getUnitHierarchy } from '../../../services/api/units';
 
 const fixture = createDutyFeedStateFixture();
 const hoisted = getDutyApiMocks();
@@ -41,8 +40,8 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
   afterEach(fixture.cleanup);
   it('#3527 defers explicit reloads until legacy include and exclude parents can expand', async () => {
-    const catalog = deferred<Awaited<ReturnType<typeof getAllUnitsList>>>();
-    vi.mocked(getAllUnitsList).mockReturnValueOnce(catalog.promise);
+    const catalog = deferred<Awaited<ReturnType<typeof getUnitHierarchy>>>();
+    vi.mocked(getUnitHierarchy).mockReturnValueOnce(catalog.promise);
     persistDutyFilterState({
       messageFeeds: [
         [
@@ -67,14 +66,23 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       await apiRef.current!.loadFeedInitialMessages('mf-0', { highlightSignalsEnabled: true });
     });
     expect(hoisted.fetchInboxMessages).not.toHaveBeenCalled();
-    const unit = buildUnitFilterOptions([])[0];
     await act(async () => {
-      catalog.resolve([
-        { ...unit, id: 20, name: '27 омсбр', army: '6 А', brigade: '27 омсбр' },
-        { ...unit, id: 21, name: '1 мср', army: '6 А', brigade: '27 омсбр', company: '1 мср' },
-        { ...unit, id: 30, name: '28 омсбр', army: '6 А', brigade: '28 омсбр' },
-        { ...unit, id: 31, name: '2 мср', army: '6 А', brigade: '28 омсбр', company: '2 мср' },
-      ]);
+      catalog.resolve({
+        revision: '3527',
+        groups: [
+          { id: 'group:2:6 А', label: '6 А', level: 2, parentIndex: null },
+          { id: 'group:2:6 А|5:27 омсбр', label: '27 омсбр', level: 5, parentIndex: 0 },
+          { id: 'group:2:6 А|5:27 омсбр|8:1 мср', label: '1 мср', level: 8, parentIndex: 1 },
+          { id: 'group:2:6 А|5:28 омсбр', label: '28 омсбр', level: 5, parentIndex: 0 },
+          { id: 'group:2:6 А|5:28 омсбр|8:2 мср', label: '2 мср', level: 8, parentIndex: 3 },
+        ],
+        units: [
+          { id: 20, name: '27 омсбр', groupIndex: 1 },
+          { id: 21, name: '1 мср', groupIndex: 2 },
+          { id: 30, name: '28 омсбр', groupIndex: 3 },
+          { id: 31, name: '2 мср', groupIndex: 4 },
+        ],
+      });
       await flushMicrotasks();
     });
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(1);

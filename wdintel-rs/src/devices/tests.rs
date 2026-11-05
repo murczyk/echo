@@ -374,7 +374,11 @@ async fn target_api_smoke_covers_all_routes() {
 
     let response = post_json!(
         "/api/device/update",
-        json!({"device_id": device_id, "name": "API renamed"})
+        json!({
+            "device_id": device_id,
+            "name": "API renamed",
+            "description": "Roof antenna"
+        })
     );
     assert_eq!(response.status(), StatusCode::OK);
     let updated: Value = test::read_body_json(response).await;
@@ -382,6 +386,15 @@ async fn target_api_smoke_covers_all_routes() {
 
     let response = post_json!("/api/device/list", json!({}));
     assert_eq!(response.status(), StatusCode::OK);
+    let list: Value = test::read_body_json(response).await;
+    let listed = list["list"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|device| device["id"] == device_id)
+        .unwrap();
+    assert_eq!(listed["description"], "Roof antenna");
+    assert_eq!(listed["custom_fields"], json!({"inventory_id": "api-1"}));
 
     let response = test::call_service(
         &app,
@@ -868,6 +881,10 @@ async fn target_api_smoke_covers_all_routes() {
         .unwrap()
         .iter()
         .any(|creator| creator["login"] == login.login));
+    assert!(options["custom_field_keys"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("inventory_id")));
     assert!(!options["creators"]
         .as_array()
         .unwrap()

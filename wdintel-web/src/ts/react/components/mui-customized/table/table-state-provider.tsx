@@ -39,25 +39,26 @@ function haveSameMembers(left: string[], right: string[]) {
   );
 }
 
+/**
+ * Validates a stored column order against the default one. Dynamic columns (e.g. per-key
+ * custom fields, unknown at mount time) are ignored when comparing column sets and keep
+ * their stored positions.
+ */
 export function normalizeColumnOrder(
   columnOrder: MRT_ColumnOrderState,
   defaultColumnOrder: MRT_ColumnOrderState,
+  isDynamicColumnId?: (columnId: string) => boolean,
 ): MRT_ColumnOrderState {
-  if (columnOrder.length !== defaultColumnOrder.length) {
-    return defaultColumnOrder;
-  }
+  const isDynamic = (columnId: string) =>
+    isDynamicColumnId?.(columnId) === true && !defaultColumnOrder.includes(columnId);
+  const staticColumnOrder = columnOrder.filter((columnId) => !isDynamic(columnId));
 
-  if (!haveSameMembers(columnOrder, defaultColumnOrder)) {
+  if (!haveSameMembers(staticColumnOrder, defaultColumnOrder)) {
     return defaultColumnOrder;
   }
 
   const defaultInternalColumnOrder = defaultColumnOrder.filter(isInternalColumnId);
   const columnDataOrder = columnOrder.filter((columnId) => !isInternalColumnId(columnId));
-  const defaultDataOrder = defaultColumnOrder.filter((columnId) => !isInternalColumnId(columnId));
-
-  if (!haveSameMembers(columnDataOrder, defaultDataOrder)) {
-    return defaultColumnOrder;
-  }
 
   return [...defaultInternalColumnOrder, ...columnDataOrder];
 }
@@ -243,6 +244,11 @@ type TableStateProviderProps = {
   defaultSorting?: MRT_SortingState;
   defaultDate?: Dayjs;
   disableSavingOfColumnsVisibility?: boolean;
+  /** Columns that are not part of `defaultColumnOrder` but whose stored order must be kept. */
+  isDynamicColumnId?: (columnId: string) => boolean;
+  /** Remember the last chosen sorting in localStorage; used when the URL has no sorting. */
+  persistSorting?: boolean;
+  sanitizeSorting?: (value: MRT_SortingState) => MRT_SortingState;
   sanitizeColumnFilters?: (value: MRT_ColumnFiltersState) => MRT_ColumnFiltersState;
   tableId: string;
 };
@@ -289,7 +295,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
     return sanitizeColumnFilters?.(parsedColumnFilters) ?? parsedColumnFilters;
   });
   const [sorting, setSorting] = useState<MRT_SortingState>(() =>
-    parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []),
+    parseSortingFromSearchParams(searchParams, getFallbackSorting()),
   );
   const [density, setDensity] = useState<MRT_DensityState>('compact');
   const [globalFilter, setGlobalFilter] = useState(() =>
@@ -351,6 +357,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
         const normalizedColumnOrder = normalizeColumnOrder(
           currentColumnOrder,
           props.defaultColumnOrder,
+          props.isDynamicColumnId,
         );
         if (!strArraysEqual(currentColumnOrder, normalizedColumnOrder)) {
           localStorage.setItem(
@@ -363,6 +370,30 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       } catch (error) {}
     }
     return props.defaultColumnOrder;
+  }
+
+  function getFallbackSorting(): MRT_SortingState {
+    const defaultSorting = props.defaultSorting ?? [];
+    if (!props.persistSorting) return defaultSorting;
+
+    const sortingFromStorage = localStorage.getItem(`sorting-${props.tableId}`);
+    if (sortingFromStorage) {
+      try {
+        const parsed: MRT_SortingState = JSON.parse(sortingFromStorage);
+        return props.sanitizeSorting?.(parsed) ?? parsed;
+      } catch (error) {}
+    }
+    return defaultSorting;
+  }
+
+  function persistSorting(newSorting: MRT_SortingState) {
+    if (!props.persistSorting) return;
+
+    if (newSorting.length > 0 && !areSortingStatesEqual(newSorting, props.defaultSorting ?? [])) {
+      localStorage.setItem(`sorting-${props.tableId}`, JSON.stringify(newSorting));
+    } else {
+      localStorage.removeItem(`sorting-${props.tableId}`);
+    }
   }
 
   function getInitialColumnSizing() {
@@ -596,6 +627,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
 
     setSearchParams(newSearchParams);
     setSorting(newSorting);
+    persistSorting(newSorting);
 
     return newSearchParams;
   }
@@ -689,7 +721,7 @@ export function TableStateProvider(props: PropsWithChildren<TableStateProviderPr
       setColumnFilters(nextColumnFilters);
     }
 
-    const nextSorting = parseSortingFromSearchParams(searchParams, props.defaultSorting ?? []);
+    const nextSorting = parseSortingFromSearchParams(searchParams, getFallbackSorting());
     if (!areSortingStatesEqual(sorting, nextSorting)) {
       setSorting(nextSorting);
     }

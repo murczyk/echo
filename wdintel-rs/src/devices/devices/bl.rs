@@ -676,6 +676,8 @@ mod mapping {
             rating: device.rating,
             tags: device.tags,
             name: device.name,
+            description: device.description,
+            custom_fields: device.custom_fields,
             aors: device.aors.into_iter().map(map_aor).collect(),
             unit: device.unit.map(map_unit),
             created_by: device.created_by,

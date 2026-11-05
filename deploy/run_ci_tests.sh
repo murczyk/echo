@@ -6,8 +6,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 bash "$SCRIPT_DIR/ci/test_release_guard.sh"
 
-echo "Running backend test suite..."
-bash "$SCRIPT_DIR/run_backend_tests.sh"
+# Compare with `skip` so a ci_scope.py failure still runs the backend suite.
+backend_scope="$(python3 "$REPO_ROOT/scripts/ci/ci_scope.py" backend)" || true
+if [[ "$backend_scope" == "skip" ]]; then
+    echo "Skipping backend test suite: this pull request only changes frontend or docs paths."
+else
+    echo "Running backend test suite..."
+    bash "$SCRIPT_DIR/run_backend_tests.sh"
+fi
 
 echo "Running frontend tests..."
 cd "$REPO_ROOT/wdintel-web"

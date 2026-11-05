@@ -6,6 +6,24 @@
 - **Expected observable result:** `sync_id` scopes file browsing and session controls only on `/devices/:id/files`. Overview, Journal, and Audio ignore it, including malformed or unavailable session IDs, and navigation to those pages drops it. Browser Back and Forward restore tag filters from the URL, keeping controls and API requests consistent on the same page.
 - **Existing tests:** `wdintel-web/tests/e2e/device-details.spec.ts`.
 
+## Device list optional columns and sorting
+
+- **Status:** issue-backed regression
+- **Behavior ID:** `devices-list-optional-columns`
+- **Affected route/component:** `/devices` list (`DevicesTable`, `DeviceMobileList`)
+- **User role or permission:** users permitted to read devices
+- **Preconditions:** visible devices have descriptions or custom fields
+- **User action or external event:** the user toggles columns, reorders them, changes sorting, or reloads the page
+- **Expected observable result:** «Опис» and one column per custom field key (from `/api/device/filter-options` `custom_field_keys`) are hidden by default; new custom field columns appear after «Назва», a user's dragged positions survive reloads, and columns of vanished keys are dropped. Enabled columns also appear under «Деталі» on mobile. Text search matches name, ID, description, and custom field values (not keys).
+- **Loading/empty/error/success behavior:** empty values render as `—`; custom field columns appear once filter options load.
+- **URL, localStorage, or user-settings persistence:** visibility and order use the `devices` table local-storage keys; the last non-default sorting (e.g. «Створено ↓») is remembered, default remains «Активність ↓».
+- **API endpoint and compatibility requirements:** `/api/device/list` items carry `description` and `custom_fields`; custom field keys keep their original casing on the client.
+- **Responsive and keyboard requirements:** columns are toggled through the shared MRT column menu.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `src/ts/react/routes/devices/`, `src/ts/react/services/api/devices.ts`, `wdintel-rs/src/devices/devices/query.rs`
+- **Existing test(s):** `wdintel-web/src/ts/react/components/mui-customized/table/__tests__/table-state-provider-persistence.spec.tsx`, `wdintel-web/src/ts/react/services/api/__tests__/devices.spec.ts`, `wdintel-rs/src/devices/devices/tests.rs`, `wdintel-rs/src/devices/tests.rs`
+- **Original Echo issue/PR, if known:** #3999.
+
 ## Device-detail response ordering
 
 - **Status:** inferred characterization

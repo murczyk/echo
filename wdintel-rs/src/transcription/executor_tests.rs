@@ -194,6 +194,6 @@ async fn active_instance(db: &sea_orm::DatabaseConnection) {
 
 async fn leader_pid(db: &sea_orm::DatabaseConnection) -> i32 {
     db.query_one_raw(Statement::from_sql_and_values(DbBackend::Postgres,
-        "select pid from pg_locks where locktype='advisory' and classid=0 and objid::bigint=$1 and objsubid=1 and mode='ExclusiveLock' and granted",
+        "select pid from pg_locks where locktype='advisory' and database=(select oid from pg_database where datname=current_database()) and classid=0 and objid::bigint=$1 and objsubid=1 and mode='ExclusiveLock' and granted",
         [super::executor::ECHO_AUDIO_TRANSCRIPTION_EXECUTOR_LOCK.into()])).await.unwrap().unwrap().try_get("","pid").unwrap()
 }
