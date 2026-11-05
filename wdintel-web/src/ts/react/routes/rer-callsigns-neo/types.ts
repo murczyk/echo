@@ -154,6 +154,7 @@ export type BuildReqInput = {
   sort: CallsignsSortState;
   query: ListQueryParams;
   sidebarUnitHierarchyFilter?: UnitHierarchyFilter | null;
+  sidebarUnitId?: number | null;
 };
 
 export type DownloadKind = 'csv' | 'xlsx';

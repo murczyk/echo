@@ -5,7 +5,8 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildUnitTree, UnitStatsSidebar } from '../UnitStatsSidebar';
+import { UnitStatsSidebar } from '../UnitStatsSidebar';
+import { buildUnitTree } from '../UnitStatsSidebar.tree';
 import type { UnitStatView } from '../../types';
 import { readUnitHierarchyTree } from '../../../shared/unit-hierarchy';
 

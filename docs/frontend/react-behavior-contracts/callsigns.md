@@ -2,12 +2,13 @@
 
 ## Unit statistics hierarchy
 
-- **Status:** inferred characterization
+- **Status:** normative
 - **Behavior ID:** `callsigns-unit-stats-hierarchy`
 - **Affected route/component:** Callsigns unit-stat sidebar
-- **Expected observable result:** unavailable unit IDs are excluded before hierarchy rendering. Empty hierarchy levels are skipped; the supported echelon order is army region, military district, army, corps, division, brigade, regiment, battalion, company, platoon, squad, section, team/crew, and other; terminal singleton paths collapse into the unit leaf. Identical labels remain separated by their full hierarchy path.
-- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/helpers-rows.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/UnitStatsSidebar.tsx`
-- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/__tests__/helpers.spec.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/__tests__/UnitStatsSidebar.spec.ts`
+- **Expected observable result:** unavailable unit IDs are excluded before hierarchy rendering. Empty hierarchy levels are skipped; the supported echelon order is army region, military district, army, corps, division, brigade, regiment, battalion, company, platoon, squad, section, team/crew, and other; terminal singleton paths collapse into the unit leaf. Identical labels remain separated by their full hierarchy path. The shared Callsigns, Networks, and Devices sidebar merges a unit's own child row into its parent: a grey subtree count precedes a green (`#66bb6a`, black text) own count at the right edge. Hide the own count at zero and hide the subtree count when both match and own is positive. The unit name and grey count select the subtree; the green count selects the exact unit ID. A legend beside «Підрозділи» explains both counts. Search and cached hierarchy updates preserve these rules. On Callsigns and Devices, reloading preserves own-unit selection.
+- **API endpoint and compatibility requirements:** Callsigns list and export requests accept an optional `filter_unit_id` for exact own-unit filtering; existing text and hierarchy filters remain available. Callsigns URLs preserve this selection in `unit_id`.
+- **Source implementation:** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/helpers-rows.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/UnitStatsSidebar.tsx`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/UnitStatsSidebar.tree.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/UnitStatsTreeItem.tsx`
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-callsigns-neo/__tests__/helpers.spec.ts`, `wdintel-web/src/ts/react/routes/rer-callsigns-neo/components/__tests__/UnitStatsSidebar.spec.ts`, `wdintel-web/tests/e2e/unit-stats-own-counters.spec.ts`
 
 ## Quick-paste TSV parsing
 

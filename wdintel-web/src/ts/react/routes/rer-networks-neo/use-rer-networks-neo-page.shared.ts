@@ -39,6 +39,8 @@ export function isSameSidebarUnitFilter(
   }
 
   if (left.kind === 'leaf' && right.kind === 'leaf') {
+    if (left.unitId !== undefined && right.unitId !== undefined)
+      return left.unitId === right.unitId;
     return left.unitName === right.unitName;
   }
 

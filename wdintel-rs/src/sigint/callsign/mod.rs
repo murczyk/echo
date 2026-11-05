@@ -350,6 +350,10 @@ async fn list_callsigns_impl(
             ));
         }
     }
+    if let Some(filter_unit_id) = req.filter_unit_id {
+        callsigns = callsigns
+            .filter(sigint_callsign::Column::UnitId.eq(filter_unit_id));
+    }
     if let Some(filter_unit) = &req.filter_unit {
         if !filter_unit.is_empty() {
             callsigns = callsigns.filter(Expr::cust_with_values(
@@ -1550,6 +1554,7 @@ mod tests {
             filter_position: None,
             filter_full_name: None,
             filter_comment: None,
+            filter_unit_id: None,
             filter_unit: None,
             filter_unit_army_region: None,
             filter_unit_military_district: None,
@@ -2062,6 +2067,29 @@ mod tests {
 
         assert_eq!(callsigns.len(), 1);
         assert_eq!(callsigns[0].callsign, "alpha");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_own_unit_id_echo_4028() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let parent = insert_test_unit(&env.dbx, &login.id, "Parent").await;
+        let child = insert_test_unit(&env.dbx, &login.id, "Parent child").await;
+        let same_name = insert_test_unit(&env.dbx, &login.id, "Parent").await;
+        let own =
+            insert_test_callsign(&env.dbx, parent.id, "own", now, "").await;
+        insert_test_callsign(&env.dbx, child.id, "child", now, "").await;
+        insert_test_callsign(&env.dbx, same_name.id, "other", now, "").await;
+
+        let mut req =
+            list_req(None, Some(100), ListCallsignsSortBy::CallsignAsc);
+        req.filter_unit_id = Some(parent.id);
+        let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(callsigns.len(), 1);
+        assert_eq!(callsigns[0].id, own.id);
     }
 
     #[serial]
