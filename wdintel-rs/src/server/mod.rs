@@ -109,6 +109,13 @@ async fn new_env_with_initialization(
         .c(h!())?)
 }
 
+fn ai_provider_metrics_process() -> &'static str {
+    crate::pg_runtime_pool_role().map_or(
+        crate::config::AI_PROVIDER_METRICS_PROCESS_ONEOFF,
+        crate::PgRuntimePoolRole::application_name,
+    )
+}
+
 async fn new_env_from_config(
     mode: Mode,
     initialize: bool,
@@ -256,7 +263,8 @@ async fn new_env_from_config(
             dbx.clone(),
             config.totp_strongbox_key.clone(),
         )
-        .c(h!())?,
+        .c(h!())?
+        .with_metrics(metrics.clone(), ai_provider_metrics_process()),
     );
     let env = Env {
         ai_engine_client,

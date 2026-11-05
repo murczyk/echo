@@ -113,6 +113,10 @@ servers-active:
 servers-ai:
     @echo "{{ ai_servers }}"
 
+# Create or update the AI providers dashboard. `--check` sends GET requests only.
+signoz-install-dashboard *args:
+    python3 deploy/signoz/install_dashboard.py {{ args }}
+
 # Inspect AI harnesses using the dev binary; dev-tmux owns rebuilds/restarts.
 ai-control-panel *args:
     @test -x target/debug/wdintel-rs || (cd wdintel-rs && cargo build --bin wdintel-rs)
