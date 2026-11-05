@@ -113,6 +113,22 @@ class PositionFormatTest(unittest.TestCase):
     def test_a_following_field_never_shortens_a_reference(self):
         self.assertEqual(parse.pair('36T XT 7958 6884 5км'), ('36T XT 7958 6884', ''))
         self.assertEqual(parse.pair('36T XT 79584 68848 5км'), ('36T XT 79584 68848', ''))
+        for field in ['18:03', '05.11.2026', '05/11/2026', '2026-11-05', '36T XT 81648 65977']:
+            self.assertEqual(
+                parse.pair(f'36T XT 79584 68848 {field}'), ('36T XT 79584 68848', ''), field,
+            )
+
+    def test_a_third_digit_group_stays_with_the_reference(self):
+        for text in [
+            '36T XT 79584 68848 12345',
+            '36T XT 7958 4688 4812',
+            '36T XT 79584 68848 12345 67890',
+        ]:
+            self.assertEqual(parse.pair(text), (text, ''), text)
+            self.assertEqual(parse.whole(text), (text, ''), text)
+        self.assertEqual(
+            parse.pair('Ціль: 36T XT 79584 68848 12345.'), ('36T XT 79584 68848 12345', ''),
+        )
 
     def test_malformed_degrees_are_not_cleaned_into_a_point(self):
         for text in ['47.54821,35.38674abc', '47.54821,35.38674.123', '47.54821x,35.38674']:

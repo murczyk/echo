@@ -28,6 +28,8 @@ _MGRS_HEAD = re.compile(
 )
 _MGRS_RUN = re.compile(r"\d+")
 _MGRS_NEXT_RUN = re.compile(r"[ \t]+(\d+)")
+# A number with nothing attached. A unit, time or date makes it a separate field.
+_MGRS_BARE_RUN = re.compile(r"[ \t]+\d+(?![\w:]|[./\-]\d)")
 _MGRS_FULL_DIGITS = 10
 _MGRS_MIN_LONE_DIGITS = 4
 _ATTACHED = re.compile(r"\w|\.\d")
@@ -119,7 +121,14 @@ def _mgrs_end(text, start):
         return first.end()
     following = _MGRS_NEXT_RUN.match(text, first.end())
     if following and not _TIME_OR_DATE_TAIL.match(text, following.end()):
-        return None if _ATTACHED.match(text, following.end()) else following.end()
+        if _ATTACHED.match(text, following.end()):
+            return None
+        # A reference has two digit groups, so a further bare number stays with
+        # it and Echo rejects the value.
+        end = following.end()
+        while extra := _MGRS_BARE_RUN.match(text, end):
+            end = extra.end()
+        return end
     # After a space, a few digits alone are more likely a unit number, as in
     # «25 мср 120».
     spaced = text[start - 1].isspace()
