@@ -80,8 +80,12 @@ class PositionFormatTest(unittest.TestCase):
         for text in ['36TXT7958468848', '36T XT 79584 68848', '36T XT 7958 6884']:
             self.assertEqual(parse.pair(f'{text} 18:03'), (text, ''))
             self.assertEqual(parse.mgrs(f'{text} 24.09.2026'), [text])
-        # A malformed reference stays visible so Echo can warn about it.
         self.assertEqual(parse.mgrs('36T XT 79584 18:03'), ['36T XT 79584'])
+
+    def test_a_malformed_mgrs_keeps_every_digit_so_echo_can_reject_it(self):
+        for text in ['36T XT 7958 68848', '36T XT 795846 88481', '36TXT795846 88481']:
+            self.assertEqual(parse.mgrs(f'Ціль: {text}'), [text])
+            self.assertEqual(parse.pair(text), (text, ''))
 
     def test_unit_designations_are_not_mgrs(self):
         for text in ['1 мср 120 мсп', '2 дшб 328 дшп', '36 ОМБр 12', '104 дшд', '1 МСР 120']:

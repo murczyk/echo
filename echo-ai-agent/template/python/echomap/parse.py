@@ -20,9 +20,11 @@ _DEGREE_PAIR = re.compile(rf"(?<![\d.])({_DEGREES})\s*[,;/]?\s*({_DEGREES})(?!\d
 # The region's WGS-84 box; other decimal pairs are not coordinates.
 _LATITUDES = (40.0, 60.0)
 _LONGITUDES = (20.0, 50.0)
-# Easting and northing, split in equal halves or written together; a shorter
-# number after them is another field, such as the hour in «… 18:03».
-_MGRS_DIGITS = "|".join(rf"\d{{{size}}}\s\d{{{size}}}" for size in range(5, 0, -1)) + r"|\d{2,}"
+# Ten digits complete a reference, and a time or date after it is another
+# field. Any other following number stays with it: dropping «68848» from
+# «7958 68848» would leave a valid reference to the wrong place, while Echo
+# rejects the whole value as malformed.
+_MGRS_DIGITS = r"\d{10,}|\d{2,9}(?:\s\d+(?![:.]\d))?"
 # A two-digit zone, band and square. Cyrillic look-alikes must be uppercase and
 # I/O never occur, so unit designations such as «1 мср 120» do not match.
 _MGRS = re.compile(
