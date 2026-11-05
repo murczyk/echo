@@ -131,7 +131,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const { notify } = usePowerSnackbar();
   useEffect(() => {
     if (!page.error) return;
-    notify({ severity: 'error', message: page.error });
+    notify({ severity: 'error', message: page.error, durationMs: null });
   }, [notify, page.error]);
   useEffect(() => {
     if (!page.directMessageError) return;

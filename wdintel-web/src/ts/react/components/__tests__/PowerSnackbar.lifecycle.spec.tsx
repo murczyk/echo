@@ -36,6 +36,13 @@ function NotificationHarness() {
       >
         override
       </button>
+      <button
+        type="button"
+        aria-label="persistent-error"
+        onClick={() => notify({ message: 'page failed', severity: 'error', durationMs: null })}
+      >
+        persistent error
+      </button>
     </>
   );
 }
@@ -150,6 +157,41 @@ describe('PowerSnackbarProvider', () => {
     await act(async () => vi.advanceTimersByTimeAsync(8000 + 300));
     expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('error');
     await act(async () => root.unmount());
+  });
+
+  it('#4019 keeps a persistent page error visible until dismissed and then advances the queue', async () => {
+    vi.useFakeTimers();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <PowerSnackbarProvider>
+            <NotificationHarness />
+          </PowerSnackbarProvider>,
+        ),
+      );
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>('[aria-label="persistent-error"]')?.click();
+        container.querySelector<HTMLButtonElement>('button:nth-of-type(2)')?.click();
+      });
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('page failed');
+      await act(async () => vi.advanceTimersByTimeAsync(60000));
+      await act(async () => vi.advanceTimersByTimeAsync(300));
+      expect(document.querySelector('[role="alert"]')).not.toBeNull();
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain('page failed');
+      expect(document.querySelector('[role="status"]')).toBeNull();
+
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[aria-label="Закрити сповіщення"]')?.click(),
+      );
+      await act(async () => vi.advanceTimersByTimeAsync(300));
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(document.querySelector('[role="status"]')?.textContent).toContain('info');
+    } finally {
+      await act(async () => root.unmount());
+    }
   });
 
   it('dismisses the current notification with the close button', async () => {

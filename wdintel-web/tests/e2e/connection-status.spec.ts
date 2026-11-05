@@ -1,6 +1,32 @@
 import { expect, test } from '@playwright/test';
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
 
+test('@regression #4019 Analysis page-load errors remain visible until manually dismissed', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await installAnalysisNeoApiMocks(page);
+  await page.route('**/api/user', (route) =>
+    route.request().resourceType() === 'fetch'
+      ? route.fulfill({ status: 500, body: '' })
+      : route.fallback(),
+  );
+  await page.route('**/api/sigint/units/hierarchy', (route) =>
+    route.fulfill({ json: { revision: 'persistent-error', groups: [], units: [] } }),
+  );
+  await page.goto('/rer-analysis-neo?filterPanelOpen=false');
+  const snackbar = page.locator('.MuiSnackbar-root');
+  const error = snackbar.getByRole('alert');
+  await expect(error).toContainText('Не вдалося завантажити поточного користувача');
+  await page.clock.fastForward(60000);
+  await expect(error).toBeVisible();
+  await expect(page.locator('.toasts .toast')).toHaveCount(0);
+  const notification = await error.elementHandle();
+  await error.getByRole('button', { name: 'Закрити сповіщення' }).click();
+  await page.clock.runFor(400);
+  await expect.poll(() => notification!.evaluate((element) => element.isConnected)).toBe(false);
+});
+
 for (const width of [1440, 390]) {
   test(`@regression #4019 Analysis shared lookup errors use the bottom snackbar at ${width}px`, async ({
     page,

@@ -23,7 +23,7 @@ export type PowerSnackbarSeverity = 'success' | 'info' | 'warning' | 'error';
 export type PowerSnackbarNotification = {
   message: ReactNode;
   severity: PowerSnackbarSeverity;
-  durationMs?: number;
+  durationMs?: number | null;
 };
 
 type QueuedNotification = PowerSnackbarNotification & { id: number };
@@ -129,7 +129,11 @@ export function PowerSnackbarProvider({
             key={current.id}
             open={open}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            autoHideDuration={current.durationMs ?? DEFAULT_DURATION_MS[current.severity]}
+            autoHideDuration={
+              current.durationMs === undefined
+                ? DEFAULT_DURATION_MS[current.severity]
+                : current.durationMs
+            }
             onClose={handleClose}
             slotProps={{ transition: { onExited: () => handleExited(current.id) } }}
             sx={{

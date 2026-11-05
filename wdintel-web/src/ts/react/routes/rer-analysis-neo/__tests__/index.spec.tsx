@@ -702,14 +702,22 @@ describe('RerAnalysisNeoPage', () => {
     const root = createRoot(container);
     await act(async () => root.render(<RerAnalysisNeoPage />));
 
-    expect(notifyMock).toHaveBeenCalledWith({ severity: 'error', message: page.error });
+    expect(notifyMock).toHaveBeenCalledWith({
+      severity: 'error',
+      message: page.error,
+      durationMs: null,
+    });
     expect(container.textContent).not.toContain(page.error);
     await act(async () => root.render(<RerAnalysisNeoPage />));
     expect(notifyMock).toHaveBeenCalledTimes(1);
 
     page.error = 'Не вдалося завантажити повідомлення';
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(notifyMock).toHaveBeenLastCalledWith({ severity: 'error', message: page.error });
+    expect(notifyMock).toHaveBeenLastCalledWith({
+      severity: 'error',
+      message: page.error,
+      durationMs: null,
+    });
     expect(notifyMock).toHaveBeenCalledTimes(2);
     await act(async () => root.unmount());
   });
