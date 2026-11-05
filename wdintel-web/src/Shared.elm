@@ -568,12 +568,12 @@ update req msg model =
 
         ShowToast error ->
             ( model
-            , E.sendCmd <| Shared.Components.Toast.addError ToastMsg error
+            , E.sendCmd <| showErrorNotification req.path Nothing error
             )
 
         ShowToastWithDetails title content ->
             ( model
-            , E.sendCmd <| Shared.Components.Toast.addErrorV2 ToastMsg title content
+            , E.sendCmd <| showErrorNotification req.path (Just title) content
             )
 
         ShowLoggedResponseDecodeError error ->
@@ -585,7 +585,7 @@ update req msg model =
             ( model
             , E.sendCmd <|
                 Cmd.batch
-                    [ Shared.Components.Toast.addErrorV2 ToastMsg error.title ("Помилка обробки відповіді, код " ++ errorId)
+                    [ showErrorNotification req.path (Just error.title) ("Помилка обробки відповіді, код " ++ errorId)
                     , Api.logError ("Response decode error id=" ++ errorId ++ " title=" ++ error.title ++ " details=" ++ error.message) LoggedResponseDecodeError
                     ]
             )
@@ -774,6 +774,22 @@ update req msg model =
             ( { model | eventSubscriptions = Core.EventTypes.unsubscribeFromEvents pageId model.eventSubscriptions }
             , E.none
             )
+
+
+showErrorNotification : Route.Path.Path -> Maybe String -> String -> Cmd Msg
+showErrorNotification path title content =
+    case path of
+        Route.Path.RerAnalysisNeo ->
+            Ports.shared_showAnalysisError
+                { title = Maybe.withDefault "Помилка" title, content = content }
+
+        _ ->
+            case title of
+                Just errorTitle ->
+                    Shared.Components.Toast.addErrorV2 ToastMsg errorTitle content
+
+                Nothing ->
+                    Shared.Components.Toast.addError ToastMsg content
 
 
 extractInboxChangedEvents : List B.EventMsg -> List { messageId : Int, origin : Maybe String, intelligenceReport : Bool }

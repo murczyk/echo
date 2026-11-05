@@ -827,7 +827,7 @@ type ReloadParams = {
   rightSidebarVisible?: boolean;
   rightSidebarTab?: import('./types').AnalysisSidebarTab | null;
   newestFirst: boolean;
-  onError: (message: string) => void;
+  onError: (message: string, critical?: boolean) => void;
   onUnauthorized: (error: unknown) => boolean;
   optionsFreqsRef: React.MutableRefObject<string[]>;
   queryState: AnalysisQueryState;
@@ -1340,7 +1340,7 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       return;
     }
     abortActiveCountsLoad();
-    if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError));
+    if (!params.onUnauthorized(loadError)) params.onError(toErrorMessage(loadError), true);
     return;
   } finally {
     if (!isStaleReload() && !params.signal?.aborted) {

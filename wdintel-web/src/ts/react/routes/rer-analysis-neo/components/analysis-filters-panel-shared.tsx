@@ -138,6 +138,7 @@ export function FilterSection({
     <Accordion
       data-section-id={sectionId ?? title}
       expanded={expanded}
+      slotProps={{ transition: { mountOnEnter: true } }}
       onChange={(_event, nextExpanded) => {
         onToggle();
         if (nextExpanded) {

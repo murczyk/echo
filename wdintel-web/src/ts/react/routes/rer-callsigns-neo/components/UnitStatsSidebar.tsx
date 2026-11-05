@@ -18,7 +18,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { isPresent } from '../../../utils/misc';
 
 import {
@@ -254,7 +254,7 @@ type TreeItemProps = {
   countLabel: string;
 };
 
-function UnitTreeItem({
+const UnitTreeItem = memo(function UnitTreeItemComponent({
   node,
   depth,
   expandedIds,
@@ -363,7 +363,7 @@ function UnitTreeItem({
       </Collapse>
     </>
   );
-}
+});
 
 function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter): string {
   if (selectedUnitFilter.kind === 'leaf') {
@@ -407,6 +407,17 @@ export function UnitStatsSidebar({
   );
   const tree = useMemo(() => buildUnitTree(filteredStats, cachedTree), [filteredStats, cachedTree]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const onToggle = useCallback((nodeId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
   const total = filteredStats.reduce((sum, row) => sum + row.count, 0);
   const totalOverall = stats.reduce((sum, row) => sum + row.count, 0);
 
@@ -453,18 +464,6 @@ export function UnitStatsSidebar({
         ) : null}
       </Paper>
     );
-  }
-
-  function onToggle(nodeId: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-      } else {
-        next.add(nodeId);
-      }
-      return next;
-    });
   }
 
   return (

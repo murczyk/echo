@@ -193,6 +193,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('useAnalysisReloadOrchestrator', () => {
+  it('#4019 persists critical message-load errors only until the first successful inbox load', async () => {
+    const params = buildParams();
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(async (reloadParams) => {
+      reloadParams.onError('Initial inbox failed', true);
+    });
+    await renderHook(params);
+    expect(params.onError).toHaveBeenLastCalledWith('Initial inbox failed', true);
+
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(async (reloadParams) => {
+      reloadParams.setMessages([]);
+      reloadParams.onError('Frequencies failed', true);
+    });
+    await act(async () => latestResult?.reload());
+    expect(params.onError).toHaveBeenLastCalledWith('Frequencies failed', false);
+
+    reloadAnalysisDataMock.reloadAnalysisData.mockImplementationOnce(async (reloadParams) => {
+      reloadParams.onError('Later inbox failed', true);
+    });
+    await act(async () => latestResult?.reload());
+    expect(params.onError).toHaveBeenLastCalledWith('Later inbox failed', false);
+  });
+
   it('runs the initial reload immediately', async () => {
     vi.useFakeTimers();
     const params = buildParams();

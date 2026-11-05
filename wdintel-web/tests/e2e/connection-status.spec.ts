@@ -1,5 +1,130 @@
 import { expect, test } from '@playwright/test';
-import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+import { createLoadedInboxResponse, installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+
+test('@regression #4019 Analysis page-load errors remain visible until manually dismissed', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await installAnalysisNeoApiMocks(page);
+  await page.route('**/api/user', (route) =>
+    route.request().resourceType() === 'fetch'
+      ? route.fulfill({ status: 500, body: '' })
+      : route.fallback(),
+  );
+  await page.route('**/api/sigint/units/hierarchy', (route) =>
+    route.fulfill({ json: { revision: 'persistent-error', groups: [], units: [] } }),
+  );
+  await page.goto('/rer-analysis-neo?filterPanelOpen=false');
+  const snackbar = page.locator('.MuiSnackbar-root');
+  const error = snackbar.getByRole('alert');
+  await expect(error).toContainText('Не вдалося завантажити поточного користувача');
+  await page.clock.fastForward(60000);
+  await expect(error).toBeVisible();
+  await expect(page.locator('.toasts .toast')).toHaveCount(0);
+  const notification = await error.elementHandle();
+  await error.getByRole('button', { name: 'Закрити сповіщення' }).click();
+  await page.clock.runFor(400);
+  await expect.poll(() => notification!.evaluate((element) => element.isConnected)).toBe(false);
+});
+
+for (const source of ['messages', 'counters'] as const) {
+  test(`@regression #4019 Analysis ${source} errors stop blocking notifications after recovery`, async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await installAnalysisNeoApiMocks(page, { inboxResponse: createLoadedInboxResponse() });
+    await page.route('**/api/sigint/units/hierarchy', (route) =>
+      route.fulfill({ json: { revision: 'error-recovery', groups: [], units: [] } }),
+    );
+    let failing = source === 'messages';
+    const url =
+      source === 'messages'
+        ? '**/api/rer-importer/get-inbox'
+        : '**/api/rer/analysis/stats/freqs/count';
+    await page.route(url, (route) =>
+      failing ? route.fulfill({ status: 500, body: `${source} unavailable` }) : route.fallback(),
+    );
+    await page.goto('/rer-analysis-neo?filterPanelOpen=false');
+    if (source === 'counters') {
+      await expect(page.locator('.app-shell')).toHaveAttribute(
+        'data-auth-user-name',
+        'analysis-tester',
+      );
+      await expect(
+        page.getByText('Analysis summary fixture message', { exact: true }),
+      ).toBeVisible();
+      failing = true;
+      await page.getByRole('button', { name: 'Оновити', exact: true }).click();
+    }
+    const error = page.locator('.MuiSnackbar-root').getByRole('alert');
+    await expect(error).toContainText(`${source} unavailable`);
+    await expect(error).toHaveCSS('opacity', '1');
+    await page.clock.fastForward(11000);
+    await page.clock.runFor(400);
+    if (source === 'messages') {
+      await expect(error).toBeVisible();
+      failing = false;
+      await page.getByRole('button', { name: 'Оновити', exact: true }).click();
+      await expect(
+        page.getByText('Analysis summary fixture message', { exact: true }),
+      ).toBeVisible();
+      await expect(error).toHaveCount(0);
+      failing = true;
+    } else {
+      await expect(error).toHaveCount(0);
+    }
+    await page.getByRole('button', { name: 'Оновити', exact: true }).click();
+    await expect(error).toContainText(`${source} unavailable`);
+    await expect(error).toHaveCSS('opacity', '1');
+    await page.clock.fastForward(11000);
+    await page.clock.runFor(400);
+    await expect(error).toHaveCount(0);
+    await expect(page.locator('.toasts .toast')).toHaveCount(0);
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`@regression #4019 Analysis shared lookup errors use the bottom snackbar at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installAnalysisNeoApiMocks(page);
+    await page.route('**/api/sigint/units/hierarchy', (route) =>
+      route.fulfill({ json: { revision: 'shared-error', groups: [], units: [] } }),
+    );
+    await page.route('**/api/sigint/units', (route) =>
+      route.request().resourceType() === 'xhr'
+        ? route.fulfill({ status: 408, body: '' })
+        : route.fallback(),
+    );
+    await page.goto('/rer-analysis-neo?filterPanelOpen=false');
+
+    const snackbar = page.locator('.MuiSnackbar-root');
+    const error = snackbar.getByRole('alert');
+    await expect(error).toContainText('Помилка оновлення підрозділів');
+    await expect(error).toContainText('408');
+    await expect(error).toHaveCSS('opacity', '1');
+    await expect(page.locator('.toasts .toast')).toHaveCount(0);
+    const position = await snackbar.boundingBox();
+    expect(position!.y).toBeGreaterThan(450);
+    expect(position!.x).toBeGreaterThanOrEqual(0);
+    expect(position!.x + position!.width).toBeLessThanOrEqual(width);
+    await error.getByRole('button', { name: 'Закрити сповіщення' }).click();
+    await expect(snackbar).toHaveCount(0);
+  });
+}
+
+test('@regression #4019 shared lookup errors keep the existing toast outside Analysis Neo', async ({
+  page,
+}) => {
+  await installAnalysisNeoApiMocks(page);
+  await page.route('**/api/sigint/units', (route) => route.fulfill({ status: 408, body: '' }));
+  await page.goto('/rer-analysis');
+  const error = page.locator('.toasts .toast').filter({ hasText: 'Помилка оновлення підрозділів' });
+  await expect(error).toBeVisible();
+  await expect(error).toContainText('408');
+  await expect(page.locator('.MuiSnackbar-root')).toHaveCount(0);
+});
 
 for (const { width, theme } of [
   { width: 1440, theme: 'light' },
