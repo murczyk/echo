@@ -342,7 +342,7 @@ export function filterSectionsForInitialLoad(
   additionalSections: AnalysisFilterSectionId[] = [],
 ): AnalysisFilterSectionId[] {
   const sections = new Set<AnalysisFilterSectionId>(
-    includeDefaultSections ? ['tags', 'groups', 'senders'] : [],
+    includeDefaultSections ? ['tags', 'groups', 'senders', 'units'] : [],
   );
   filterSectionsForQueryState(queryState).forEach((section) => {
     sections.add(section);
