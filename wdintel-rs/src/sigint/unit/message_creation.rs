@@ -472,7 +472,7 @@ mod tests {
                 .count(&env.dbx)
                 .await
                 .unwrap(),
-            1
+            0
         );
     }
 
@@ -491,8 +491,8 @@ mod tests {
         req.unit_mask = vec![req.unit.name.clone().unwrap()];
         env.dbx
             .execute_unprepared(
-                "ALTER TABLE sigint_inbox_item_unit_tag_queue ADD CONSTRAINT \
-                 message_unit_3535_rejected_queue CHECK (false) NOT VALID",
+                r#"ALTER TABLE network_invalidation_task ADD CONSTRAINT
+                   message_unit_3535_rejected_queue CHECK (false) NOT VALID"#,
             )
             .await
             .unwrap();
@@ -500,8 +500,8 @@ mod tests {
             create_unit_for_message_for_login(&login, &env, req.clone()).await;
         env.dbx
             .execute_unprepared(
-                "ALTER TABLE sigint_inbox_item_unit_tag_queue DROP CONSTRAINT \
-                 message_unit_3535_rejected_queue",
+                r#"ALTER TABLE network_invalidation_task DROP CONSTRAINT
+                   message_unit_3535_rejected_queue"#,
             )
             .await
             .unwrap();
@@ -543,7 +543,7 @@ mod tests {
                 .count(&env.dbx)
                 .await
                 .unwrap(),
-            1
+            0
         );
     }
 

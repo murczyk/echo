@@ -1516,6 +1516,26 @@ pub const RER_DUTY_SHORT_STATE_REDIS_HASH_KEY_PREFIX: &str =
     "rer-duty:filters:hash:";
 pub const RER_IMPORTER_BOOKMARK_LIST_LIMIT: u64 = 100;
 pub const RER_IMPORTER_IMPORTANT_LIST_LIMIT: u64 = 100;
+pub const RER_REPORT_HIERARCHY_COLUMNS: [&str; 14] = [
+    "army_region",
+    "military_district",
+    "army",
+    "corps",
+    "division",
+    "brigade",
+    "regiment",
+    "battalion",
+    "company",
+    "platoon",
+    "squad",
+    "section",
+    "team_or_crew",
+    "other",
+];
+
+pub const RER_REPORT_PARENT_LEVELS: [usize; 5] = [2, 4, 6, 7, 8];
+pub const RER_REPORT_HIERARCHY_WHITESPACE: &str = " \t\n\r\u{000b}\u{000c}\u{0085}\u{00a0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}";
+pub const RER_REPORT_HYDRATION_BATCH_SIZE: usize = 500;
 pub const RER_REPORT_OTHER_TAG_LABEL: &str = "інше";
 pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.7;
 pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
@@ -1770,6 +1790,7 @@ pub const SIGINT_NETWORK_ACTIVITY_EARLIEST_YEAR: i32 = 2000;
 pub const UNIT_TAG_RECALC_HISTORY_DAYS: i64 = 40;
 pub const UNIT_TAG_QUEUE_WORKER_SLEEP_SECS: u64 = 5;
 pub const UNIT_TAG_QUEUE_WORKER_BATCH_SIZE: u64 = 100;
+pub const UNIT_TAG_QUERY_PARAM_CHUNK_SIZE: usize = 20_000;
 pub const FAILED_INBOX_UNIT_WORKER_SLEEP_SECS: u64 = 10;
 pub const FAILED_INBOX_UNIT_WORKER_ERROR_SLEEP_SECS: u64 = 2;
 pub const FAILED_INBOX_UNIT_WORKER_BATCH_SIZE: u64 = 100;

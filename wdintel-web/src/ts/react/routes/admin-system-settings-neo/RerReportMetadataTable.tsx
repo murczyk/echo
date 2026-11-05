@@ -79,14 +79,16 @@ function MetadataTable({
   const columns = useMemo<AppMrtColumnDef<RerReportMetadataItem>[]>(
     () => [
       {
-        accessorKey: 'sigintUnitName',
-        header: 'sigint_unit_name',
+        id: 'sigintUnitName',
+        accessorFn: (row) =>
+          `${row.sigintUnitName}${row.sigintUnitDeleted ? ' (видалено)' : !row.sigintUnitActive ? ' (неактивний)' : ''}`,
+        header: 'Підрозділ',
         size: 280,
       },
       {
         id: 'locations',
         accessorFn: (row) => row.locations.join(', '),
-        header: 'locations',
+        header: 'Райони розташування',
         size: 320,
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<RerReportMetadataItem, string>({
@@ -99,17 +101,9 @@ function MetadataTable({
       },
       {
         id: 'labels',
-        accessorFn: (row) => row.labels.join(', '),
-        header: 'labels',
+        accessorFn: (row) => row.reportName,
+        header: 'Назва для звіту',
         size: 320,
-        meta: { overflowMode: 'items' },
-        Cell: mrtItemsCell<RerReportMetadataItem, string>({
-          items: ({ row }) => row.original.labels,
-          renderItem: (label) => <EchoChip label={label} tone="neutral" />,
-          measurementScope: 'admin-rer-report:labels',
-          getItemKey: (label) => label,
-          getItemText: (label) => label,
-        }),
       },
     ],
     [],
@@ -219,25 +213,46 @@ function RerReportMetadataTableBody({
 
   function openCreate() {
     setError(null);
-    setEditor({ id: null, unit: null, locations: [], labels: [] });
+    setEditor({ id: null, unit: null, locations: [], reportName: '' });
   }
 
   function openEdit(row: RerReportMetadataItem) {
     setError(null);
     setEditor({
       id: row.id,
-      unit: { id: row.sigintUnitId, name: row.sigintUnitName },
+      unit: {
+        id: row.sigintUnitId,
+        name: row.sigintUnitName,
+        reportParentContext: row.sigintUnitDeleted ? undefined : row.reportParentContext,
+      },
       locations: row.locations,
-      labels: row.labels,
+      reportName: row.reportName,
     });
   }
 
   async function save() {
     if (!editor?.unit) return;
     const locations = normalizeValues(editor.locations);
-    const labels = normalizeValues(editor.labels);
-    if (locations.length === 0 && labels.length === 0) {
-      setError('Додайте принаймні одну локацію або мітку.');
+    const reportName = editor.reportName.trim();
+    if (!reportName || /[\r\n]/.test(reportName)) {
+      setError('Вкажіть непорожню назву для звіту одним рядком.');
+      return;
+    }
+    if (
+      editor.unit.reportParentContext &&
+      editor.unit.reportParentContext !== '[]' &&
+      rows.some(
+        (row) =>
+          !row.sigintUnitDeleted &&
+          row.reportParentContext !== '[]' &&
+          row.id !== editor.id &&
+          row.reportName === reportName &&
+          row.reportParentContext !== editor.unit?.reportParentContext,
+      )
+    ) {
+      setError(
+        `Назва для звіту «${reportName}» вже використовується підрозділом з іншою ієрархією. Оберіть іншу назву.`,
+      );
       return;
     }
     setSaving(true);
@@ -248,13 +263,13 @@ function RerReportMetadataTableBody({
           ? await createRerReportMetadata({
               sigintUnitId: editor.unit.id,
               locations,
-              labels,
+              reportName,
             })
           : await updateRerReportMetadata({
               id: editor.id,
               sigintUnitId: editor.unit.id,
               locations,
-              labels,
+              reportName,
             });
       setRows(sortRows([...rows.filter((row) => row.id !== saved.id), saved]));
       setEditor(null);
@@ -286,7 +301,7 @@ function RerReportMetadataTableBody({
   return (
     <div className="flex h-full min-h-0 flex-col gap-echo-lg">
       <TablePageToolbar
-        title="Метадані підрозділів Для звіту РЕР"
+        title="Метадані підрозділів для звіту РЕР"
         withGlobalTextFilter
         internalActionsDisabled={loading || disabled}
         actions={
@@ -310,6 +325,11 @@ function RerReportMetadataTableBody({
           </>
         }
       />
+      <p className="text-echo-sm">
+        Підрозділ і всі його підпорядковані підрозділи потрапляють до звіту. Однакова назва для
+        звіту об’єднує їхні повідомлення в один розділ. Окремі налаштування дочірнього підрозділу
+        мають пріоритет.
+      </p>
       <div className="flex min-h-[320px] min-w-0 flex-1">
         <MetadataTable
           rows={rows}

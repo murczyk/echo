@@ -443,6 +443,7 @@ getInboxReq model =
                 |> emptyToNothing
     , withoutNetwork = Just (not model.hideNetworks && model.withoutNetwork)
     , onlyWithNetwork = Nothing
+    , onlyForRerReport = Nothing
     , withoutModelTags = Just model.withoutModelTags
     }
 

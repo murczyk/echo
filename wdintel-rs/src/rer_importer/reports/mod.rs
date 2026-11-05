@@ -32,6 +32,8 @@ mod report_1217;
 mod report_125;
 mod report_xlsx_kind_pelengs;
 mod rer;
+mod rer_hydration;
+mod rer_selection;
 mod senders;
 pub mod tag;
 pub mod types;
@@ -194,6 +196,7 @@ pub(crate) async fn report_docx_generate_file(
     mut req: types::ReportPreviewReq,
     save_legacy_log: bool,
     bgtask_id: Option<i64>,
+    rer_scope: Option<&crate::rer_report_admin::scope::RerReportScope>,
 ) -> Result<ReportTaskGenerated, AppError> {
     crate::rer_importer::inbox::require_device_filters(
         &env.dbx,
@@ -302,6 +305,7 @@ pub(crate) async fn report_docx_generate_file(
             &req,
             &outpath,
             bgtask_id,
+            rer_scope,
         )
         .await
         .c(h!())?;
@@ -414,6 +418,7 @@ pub async fn report_docx_task_launch(
         &report_kind,
         crate::report_history::ReportHistoryRequest::AnalysisReport {
             payload: Box::new(req_inner),
+            rer_scope: None,
         },
         None,
         None,
@@ -972,6 +977,7 @@ mod tests {
             report_request(Some(vec!["ECHO-3461".to_string()]), None),
             false,
             None,
+            None
         )
         .await
         .is_err());

@@ -1110,7 +1110,6 @@ pub async fn create_network(
     let unit_mask =
         crate::sigint::unit_tag::normalize_unit_mask(req.unit_mask.clone())
             .c(h!())?;
-    let has_unit_mask = !unit_mask.is_empty();
 
     let network = sigint_network::ActiveModel {
         id: NotSet,
@@ -1266,13 +1265,6 @@ pub async fn create_network(
         sigint::unit::fanout_unit_changed_data(&env)
             .await
             .context(h!())?;
-    }
-    if has_unit_mask {
-        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-            &env.dbx,
-        )
-        .await
-        .c(h!())?;
     }
 
     let res = render_networks(vec![network], &env.dbx, &user_id)
@@ -1486,13 +1478,6 @@ pub async fn update_network(
     .await
     .c(h!())?;
     txn.commit().await.context(h!())?;
-    if unit_mask.is_some() {
-        crate::sigint::unit_tag::enqueue_recent_non_rer_unit_tag_recalculation(
-            &env.dbx,
-        )
-        .await
-        .c(h!())?;
-    }
     let res = render_networks(vec![network], &env.dbx, &user_id)
         .await
         .context(h!())?

@@ -839,6 +839,10 @@ where
         ));
     }
 
+    q = crate::rer_report_admin::scope::filter_query(
+        q,
+        req.only_for_rer_report,
+    );
     q = get_pagination_filters_with_conn(
         dbx,
         purpose == InboxQueryPurpose::Analytics,

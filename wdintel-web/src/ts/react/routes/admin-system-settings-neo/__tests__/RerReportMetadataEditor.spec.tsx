@@ -18,12 +18,12 @@ import { MetadataEditor, type EditorState } from '../RerReportMetadataEditor';
 let root: Root | null = null;
 const rows: [] = [];
 
-function Editor({ initialLabels = [] }: { initialLabels?: string[] }) {
+function Editor({ initialName = '' }: { initialName?: string }) {
   const [state, setState] = useState<EditorState>({
     id: null,
     unit: null,
     locations: [],
-    labels: initialLabels,
+    reportName: initialName,
   });
   return (
     <MetadataEditor
@@ -79,33 +79,35 @@ describe('RER metadata editor', () => {
     expect(document.querySelector<HTMLInputElement>('input[role="combobox"]')?.value).toBe(
       'Unit A',
     );
-    expect(document.querySelector('[data-testid="CancelIcon"]')?.parentElement?.textContent).toBe(
-      'Unit A',
-    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[required]:not([role="combobox"])')?.value,
+    ).toBe('Unit A');
     await selectUnit('Unit B');
     expect(document.querySelector<HTMLInputElement>('input[role="combobox"]')?.value).toBe(
       'Unit B',
     );
-    expect(document.querySelector('[data-testid="CancelIcon"]')?.parentElement?.textContent).toBe(
-      'Unit B',
-    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[required]:not([role="combobox"])')?.value,
+    ).toBe('Unit B');
     await act(async () =>
       document
         .querySelector<HTMLButtonElement>('button[title="Clear"]')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true })),
     );
-    expect(document.querySelector('[data-testid="CancelIcon"]')).toBeNull();
+    expect(
+      document.querySelector<HTMLInputElement>('input[required]:not([role="combobox"])')?.value,
+    ).toBe('');
     await selectUnit('Unit A');
     expect(document.querySelector<HTMLInputElement>('input[role="combobox"]')?.value).toBe(
       'Unit A',
     );
-    expect(document.querySelector('[data-testid="CancelIcon"]')?.parentElement?.textContent).toBe(
-      'Unit A',
-    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[required]:not([role="combobox"])')?.value,
+    ).toBe('Unit A');
   });
 
   // Regression: https://github.com/echoua/echo/issues/3598
-  it('replaces and clears the seeded label while preserving custom labels', async () => {
+  it('preserves a custom report name while changing or clearing the selected unit', async () => {
     searchUnits.mockResolvedValue([
       { id: 1, name: 'Unit A' },
       { id: 2, name: 'Unit B' },
@@ -113,22 +115,20 @@ describe('RER metadata editor', () => {
     const container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
-    await act(async () => root?.render(<Editor initialLabels={['custom', 'Unit B']} />));
-    const labels = () =>
-      Array.from(document.querySelectorAll('[data-testid="CancelIcon"]')).map(
-        (icon) => icon.parentElement?.textContent,
-      );
+    await act(async () => root?.render(<Editor initialName="custom" />));
+    const reportName = () =>
+      document.querySelector<HTMLInputElement>('input[required]:not([role="combobox"])')?.value;
     await selectUnit('Unit A');
-    expect(labels()).toEqual(['Unit A', 'custom', 'Unit B']);
+    expect(reportName()).toBe('custom');
     await selectUnit('Unit B');
-    expect(labels()).toEqual(['Unit B', 'custom']);
+    expect(reportName()).toBe('custom');
     await act(async () =>
       document
         .querySelector<HTMLButtonElement>('button[title="Clear"]')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true })),
     );
-    expect(labels()).toEqual(['custom']);
+    expect(reportName()).toBe('custom');
     await selectUnit('Unit A');
-    expect(labels()).toEqual(['Unit A', 'custom']);
+    expect(reportName()).toBe('custom');
   });
 });
