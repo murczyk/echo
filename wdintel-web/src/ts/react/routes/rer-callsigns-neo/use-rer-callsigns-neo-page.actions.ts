@@ -438,6 +438,8 @@ export function useRerCallsignsNeoPageActions({
           filters,
           sort,
           query: { afterId: null, limit: null },
+          sidebarUnitId:
+            selectedSidebarUnitFilter?.kind === 'leaf' ? selectedSidebarUnitFilter.unitId : null,
           sidebarUnitHierarchyFilter:
             selectedSidebarUnitFilter?.kind === 'group'
               ? selectedSidebarUnitFilter.hierarchy

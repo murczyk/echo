@@ -4630,6 +4630,7 @@ export type ListCallsignsReq = {
   filterPosition: string | null;
   filterFullName: string | null;
   filterComment: string | null;
+  filterUnitId: number | null;
   filterUnit: string | null;
   filterUnitArmyRegion: string | null;
   filterUnitMilitaryDistrict: string | null;

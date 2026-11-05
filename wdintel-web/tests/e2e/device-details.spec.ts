@@ -577,6 +577,7 @@ function systemSettings() {
     duty_exclude_menu_enabled: true,
     analysis_aor_filter_enabled: false,
     ai_position_highlights_enabled: false,
+    important_notify_all_enabled: true,
     two_factor_auth_enabled: true,
     api_rate_limit_replenish_interval_ms: 500,
     api_rate_limit_burst_size: 5,

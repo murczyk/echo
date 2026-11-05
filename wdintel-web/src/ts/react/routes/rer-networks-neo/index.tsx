@@ -213,6 +213,7 @@ function RerNetworksNeoPageBody({
               >
                 <UnitStatsSidebar
                   stats={page.unitStatsView}
+                  countLabel="Мереж"
                   open={page.sidebarOpen}
                   isDesktopLayout={isDesktopLayout}
                   loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}
@@ -227,6 +228,7 @@ function RerNetworksNeoPageBody({
           ) : (
             <UnitStatsSidebar
               stats={page.unitStatsView}
+              countLabel="Мереж"
               open={page.sidebarOpen}
               isDesktopLayout={isDesktopLayout}
               loading={page.refreshing || (page.loading && page.unitStatsView.length === 0)}

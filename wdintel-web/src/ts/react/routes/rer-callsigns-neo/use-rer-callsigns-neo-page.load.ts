@@ -106,6 +106,10 @@ export function useRerCallsignsNeoPageLoad({
               filters,
               sort,
               query: { afterId, limit },
+              sidebarUnitId:
+                selectedSidebarUnitFilter?.kind === 'leaf'
+                  ? selectedSidebarUnitFilter.unitId
+                  : null,
               sidebarUnitHierarchyFilter:
                 selectedSidebarUnitFilter?.kind === 'group'
                   ? selectedSidebarUnitFilter.hierarchy
@@ -146,6 +150,8 @@ export function useRerCallsignsNeoPageLoad({
             filters,
             sort,
             query: { afterId, limit: getDefaultPageSize() },
+            sidebarUnitId:
+              selectedSidebarUnitFilter?.kind === 'leaf' ? selectedSidebarUnitFilter.unitId : null,
             sidebarUnitHierarchyFilter:
               selectedSidebarUnitFilter?.kind === 'group'
                 ? selectedSidebarUnitFilter.hierarchy
@@ -221,6 +227,8 @@ export function useRerCallsignsNeoPageLoad({
             filters,
             sort,
             query: { afterId: null, limit: getDefaultPageSize() },
+            sidebarUnitId:
+              selectedSidebarUnitFilter?.kind === 'leaf' ? selectedSidebarUnitFilter.unitId : null,
             sidebarUnitHierarchyFilter:
               selectedSidebarUnitFilter?.kind === 'group'
                 ? selectedSidebarUnitFilter.hierarchy

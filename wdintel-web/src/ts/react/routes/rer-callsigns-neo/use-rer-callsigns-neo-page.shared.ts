@@ -164,7 +164,13 @@ export function readInitialSidebarFilterFromUrl(): SelectedSidebarUnitFilter | n
     kind: 'leaf',
     label: unitName,
     unitName,
+    unitId: readInitialSidebarUnitIdFromUrl(),
   };
+}
+
+function readInitialSidebarUnitIdFromUrl(): number | undefined {
+  const unitId = Number(new URLSearchParams(window.location.search).get('unit_id'));
+  return Number.isSafeInteger(unitId) && unitId > 0 ? unitId : undefined;
 }
 
 export function areSidebarFiltersEqual(
@@ -175,6 +181,8 @@ export function areSidebarFiltersEqual(
   if (left.kind !== right.kind) return false;
 
   if (left.kind === 'leaf' && right.kind === 'leaf') {
+    if (left.unitId !== undefined || right.unitId !== undefined)
+      return left.unitId === right.unitId;
     return left.unitName === right.unitName;
   }
 
@@ -247,6 +255,12 @@ export function syncCallsignsStateToUrl(
     setOrDelete('full_name', filters.filterFullName.trim() || null);
     setOrDelete('comment', filters.filterComment.trim() || null);
     setOrDelete('unit', filters.filterUnit.trim() || null);
+    setOrDelete(
+      'unit_id',
+      selectedSidebarUnitFilter?.kind === 'leaf' && selectedSidebarUnitFilter.unitId !== undefined
+        ? String(selectedSidebarUnitFilter.unitId)
+        : null,
+    );
     setHierarchyParam(
       params,
       'unit_army_region',

@@ -130,6 +130,7 @@ pub struct ListCallsignsReq {
     pub filter_position: Option<String>,
     pub filter_full_name: Option<String>,
     pub filter_comment: Option<String>,
+    pub filter_unit_id: Option<i64>,
     pub filter_unit: Option<String>,
     pub filter_unit_army_region: Option<String>,
     pub filter_unit_military_district: Option<String>,
