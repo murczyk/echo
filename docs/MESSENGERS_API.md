@@ -17,8 +17,7 @@ are removed from the RER inbox and analysis feeds; see
 | Route | Status | Request | Response |
 |---|---|---|---|
 | `POST /accounts/list` | Implemented | `{}` | `MessengersAccountsListRsp` |
-| `POST /accounts/get` | Planned | `MessengersAccountGetReq` | `MessengersAccountDetails` |
-| `POST /chats/list` | Planned | `MessengersChatsListReq` | `MessengersChatsListRsp` |
+| `POST /chats/list` | Implemented | `MessengersChatsListReq` | `MessengersChatsListRsp` |
 | `POST /chats/members/list` | Planned | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
 | `POST /messages/list` | Planned | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 
@@ -85,6 +84,8 @@ exists outside the caller's scope.
 
 Every visible account, ordered by `display_name`, then `id`. The web UI groups
 accounts by `messenger_type`, so there is no separate messenger types endpoint.
+`created_at` and `last_sync` are the values the collector sent
+(`external_created_at`, `external_last_sync_at`), as in ingest.
 
 ```ts
 type MessengersAccountsListRsp = {
@@ -97,11 +98,17 @@ type MessengersAccountItem = {
   external_id: string
   display_name: string
   username: string | null
+  first_name: string | null
+  last_name: string | null
   phone: string | null
   status: string | null                 // collector session status
+  status_error: string | null
+  status_changed_at: number | null      // epoch ms
   is_active: boolean | null
   is_paused: boolean | null
+  created_at: number | null             // when the collector added the account
   last_sync: number | null              // collector's last successful sync
+  notes: string | null
   telegram: { user_id: string } | null
   datasource_group: MessengersDatasourceGroup
 }
@@ -128,11 +135,17 @@ Example response:
       "external_id": "17",
       "display_name": "Оператор 17",
       "username": "op17",
+      "first_name": "Ivan",
+      "last_name": null,
       "phone": "+380501112233",
       "status": "active",
+      "status_error": null,
+      "status_changed_at": 1760428800000,
       "is_active": true,
       "is_paused": false,
+      "created_at": 1759000000000,
       "last_sync": 1760430000000,
+      "notes": null,
       "telegram": { "user_id": "7012345678" },
       "datasource_group": {
         "id": 4182,
@@ -146,27 +159,6 @@ Example response:
   ]
 }
 ```
-
-### `POST /accounts/get`
-
-```ts
-type MessengersAccountGetReq = {
-  account_id: string                    // Echo account uuid
-}
-
-type MessengersAccountDetails = MessengersAccountItem & {
-  first_name: string | null
-  last_name: string | null
-  status_error: string | null
-  status_changed_at: number | null      // epoch ms
-  notes: string | null
-  created_at: number | null             // when the collector added the account
-  chats_count: number                   // chats that are not deleted
-}
-```
-
-`created_at` and `last_sync` are the values the collector sent
-(`external_created_at`, `external_last_sync_at`), as in ingest.
 
 ## Chats
 

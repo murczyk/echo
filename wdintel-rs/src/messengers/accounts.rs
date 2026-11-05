@@ -1,6 +1,7 @@
 use crate::entities::{datasource_group, messenger_account};
 use crate::error::AppError;
 use crate::h;
+use crate::messenger_ingest::refs::parse_echo_uuid;
 use crate::messengers::access::MessengersScope;
 use crate::messengers::types::{
     MessengersAccountItem, MessengersAccountsListRsp,
@@ -30,6 +31,23 @@ pub(crate) async fn list_accounts(
     Ok(MessengersAccountsListRsp { items })
 }
 
+/// The account a request refers to. An invalid id is a `400`; an account that
+/// is unknown, deleted or outside the caller's groups is a `404`.
+pub(crate) async fn resolve_account(
+    dbx: &DatabaseConnection,
+    scope: &MessengersScope,
+    account_id: &str,
+) -> Result<messenger_account::Model, AppError> {
+    let account_id = parse_echo_uuid(account_id).c(h!())?;
+    let account = visible_accounts(scope)
+        .filter(messenger_account::Column::Id.eq(account_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
+    Ok(account.0)
+}
+
 /// Live accounts whose group the caller can access. Deleting an account
 /// also deletes its group, so `deleted` here only guards a partial state.
 fn visible_accounts(
@@ -54,13 +72,23 @@ fn account_item(
         external_id: account.external_id.clone(),
         display_name: account.display_name.clone(),
         username: account.username.clone(),
+        first_name: account.first_name.clone(),
+        last_name: account.last_name.clone(),
         phone: account.phone.clone(),
         status: account.status.clone(),
+        status_error: account.status_error.clone(),
+        status_changed_at: account
+            .status_changed_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
         is_active: account.is_active,
         is_paused: account.is_paused,
+        created_at: account
+            .external_created_at
+            .map(|dt| dt.and_utc().timestamp_millis()),
         last_sync: account
             .external_last_sync_at
             .map(|dt| dt.and_utc().timestamp_millis()),
+        notes: account.notes.clone(),
         telegram: account.telegram_user_id.map(|id| {
             MessengersTelegramAccountId {
                 user_id: id.to_string(),

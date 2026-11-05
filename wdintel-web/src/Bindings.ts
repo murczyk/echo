@@ -993,17 +993,48 @@ export type MessengersAccountItem = {
   externalId: string;
   displayName: string;
   username: string | null;
+  firstName: string | null;
+  lastName: string | null;
   phone: string | null;
   status: string | null;
+  statusError: string | null;
+  statusChangedAt: number | null;
   isActive: boolean | null;
   isPaused: boolean | null;
+  createdAt: number | null;
   lastSync: number | null;
+  notes: string | null;
   telegram: MessengersTelegramAccountId | null;
   datasourceGroup: MessengersDatasourceGroup;
 };
 
 export type MessengersAccountsListRsp = {
   items: Array<MessengersAccountItem>;
+};
+
+export type MessengersTelegramChatId = {
+  chatId: string;
+};
+
+export type MessengersChatsListReq = {
+  accountId: string;
+};
+
+export type MessengersChatItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  chatType: string | null;
+  title: string | null;
+  username: string | null;
+  membersCount: number | null;
+  accountMemberStatus: string | null;
+  lastMessageDate: number | null;
+  telegram: MessengersTelegramChatId | null;
+};
+
+export type MessengersChatsListRsp = {
+  items: Array<MessengersChatItem>;
 };
 
 export type BatchMessageCommentsReq = {
