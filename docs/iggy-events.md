@@ -105,6 +105,11 @@ secret-group membership reconcile every affected snapshot. Newly visible items
 are replayed as creation upserts, while items that are no longer visible emit
 deletion events.
 
+These reconciliations run through the
+[group visibility refresh queue](#group-visibility-refresh-queue). A group that
+is hard-deleted expands in the deleting transaction instead, because its
+`signal_message_group` rows cascade away with it.
+
 An item's effective `aor_ids` are sorted and unique. When the item has at least
 one network link, they are the union of the AORs assigned to every linked
 network; a linked network set with no AOR assignments produces an empty list.
@@ -193,6 +198,48 @@ first; the migration refuses to discard pending jobs. Deployment, retry changes,
 and rollback on a real environment require explicit approval.
 Existing outbox events are preserved, so publication can still be delayed by
 an existing Iggy backlog after unit saves become fast.
+
+## Group visibility refresh queue
+
+Group visibility triggers call
+`queue_api_integration_iggy_group_visibility_change`, which adds
+`api_integration_iggy_group_refresh` rows in the same transaction as the group
+change. Assigning a group to a direction, archiving it, and editing its secret
+access no longer expand message history inside the request, where a group with
+millions of messages exceeded `statement_timeout`.
+
+The background process owns `iggy_group_refresh_worker`, which expands each job
+into the event outbox in pages of 500 messages. A job holds one integration and
+one group; `group_master_key` is null when a login or organisation change
+affects every group. Integrations are selected when the job is queued, using
+the same login, zone, and organisation filters as before. Pages seek through
+existing indexes by `signal_message_id`; see
+[query plan evidence](query-plans/3991-group-refresh.md).
+
+Retries, locking, destination retention, and rollback match the unit refresh
+queue above. The publisher evaluates visibility when it publishes, so an event
+expanded after the change still reflects that change. Repeated jobs for a group
+produce repeated snapshots, which consumers already handle as upserts. An
+`aors_changed` event from the same change can precede the snapshot; the snapshot
+is rendered at publication and carries the complete `aor_ids`. Items reach Iggy
+only after the job expands and any existing outbox backlog ahead of it has been
+published.
+
+Inspect progress without modifying it:
+
+```sql
+select id, api_integration_id, destination_id, group_master_key, created_at,
+    after_message_id, next_attempt_at, attempts, last_error
+from api_integration_iggy_group_refresh
+order by next_attempt_at, id
+limit 50;
+```
+
+Deleting a job discards required refreshes. Old application binaries can run
+against the new migration, because jobs simply wait for the new background
+worker. Include the excluded queue table in the packaged analytics exclusions
+before migrating. No history backfill is needed. Deployment, retry changes, and
+rollback on a real environment require explicit approval.
 
 ## REST reference dictionaries
 

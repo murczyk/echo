@@ -2088,11 +2088,12 @@ mod tests {
         )
         .await
         .unwrap();
+        drain_group_refreshes(&env).await;
         assert_eq!(
             queued_event_types(&env, &integration, fixture.item_id).await,
             [
-                "sigint_inbox_item_visibility_changed",
-                "sigint_inbox_item_aors_changed"
+                "sigint_inbox_item_aors_changed",
+                "sigint_inbox_item_visibility_changed"
             ]
         );
         let mut expected_group_aor_ids = fixture.group_aor_ids[..2].to_vec();
@@ -2528,6 +2529,39 @@ mod tests {
             }
         }
         panic!("unit refresh queue did not drain");
+    }
+
+    async fn drain_group_refreshes(env: &Env) {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        for _ in 0..1000 {
+            if !crate::iggy::group_refresh::process_next_batch(&env.dbx, 100)
+                .await
+                .unwrap()
+            {
+                assert_eq!(
+                    refresh_jobs::Entity::find().count(&env.dbx).await.unwrap(),
+                    0
+                );
+                return;
+            }
+        }
+        panic!("group refresh queue did not drain");
+    }
+
+    async fn visibility_event_item_ids(
+        env: &Env,
+        integration_id: i64,
+    ) -> Vec<i64> {
+        load_pending_events(&env.dbx, integration_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|event| {
+                event.payload["event_type"]
+                    == "sigint_inbox_item_visibility_changed"
+            })
+            .filter_map(|event| event.sigint_inbox_item_id)
+            .collect()
     }
 
     #[actix_web::test]
@@ -3761,6 +3795,7 @@ for each row execute function pg_temp.reject_settlement_event();
     }
 
     async fn clear_iggy_events(env: &Env, integration_id: i64) {
+        drain_group_refreshes(env).await;
         api_integration_iggy_event::Entity::delete_many()
             .filter(
                 api_integration_iggy_event::Column::ApiIntegrationId
@@ -3792,6 +3827,7 @@ for each row execute function pg_temp.reject_settlement_event();
         item_id: i64,
         expected_visible: bool,
     ) {
+        drain_group_refreshes(env).await;
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
         let matching_events = events
@@ -4016,6 +4052,7 @@ for each row execute function pg_temp.reject_settlement_event();
         .update(&env.dbx)
         .await
         .unwrap();
+        drain_group_refreshes(&env).await;
         let events =
             load_pending_events(&env.dbx, integration.id).await.unwrap();
         assert_eq!(events.len(), 1);
@@ -4165,6 +4202,317 @@ for each row execute function pg_temp.reject_settlement_event();
             integration,
             item_id,
         }
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_archive_queues_refresh_and_pages_messages_3991() {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        let fixture = group_visibility_fixture().await;
+        let (second_item_id, _) =
+            insert_grouped_inbox_item(&fixture.env, &fixture.group).await;
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        let transaction = fixture.env.dbx.begin().await.unwrap();
+        crate::messenger::group::set_signal_group_archived(
+            &transaction,
+            &fixture.group.group_master_key,
+            true,
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+
+        assert!(visibility_event_item_ids(
+            &fixture.env,
+            fixture.integration.id
+        )
+        .await
+        .is_empty());
+        let jobs = refresh_jobs::Entity::find()
+            .all(&fixture.env.dbx)
+            .await
+            .unwrap();
+        assert!(!jobs.is_empty());
+        assert!(jobs.iter().all(|job| {
+            job.group_master_key.as_deref()
+                == Some(fixture.group.group_master_key.as_str())
+        }));
+
+        assert!(crate::iggy::group_refresh::process_next_batch(
+            &fixture.env.dbx,
+            1
+        )
+        .await
+        .unwrap());
+        let first_page =
+            visibility_event_item_ids(&fixture.env, fixture.integration.id)
+                .await;
+        assert_eq!(first_page.len(), 1);
+        let advanced = refresh_jobs::Entity::find()
+            .filter(refresh_jobs::Column::AfterMessageId.gt(0))
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(advanced.after_message_id, first_page[0]);
+
+        drain_group_refreshes(&fixture.env).await;
+        let item_ids =
+            visibility_event_item_ids(&fixture.env, fixture.integration.id)
+                .await;
+        assert_eq!(item_ids.len(), 2 * jobs.len());
+        assert_eq!(
+            item_ids.into_iter().collect::<BTreeSet<_>>(),
+            BTreeSet::from([fixture.item_id, second_item_id])
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_refresh_job_rolls_back_with_group_change_3991() {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        let fixture = group_visibility_fixture().await;
+
+        let transaction = fixture.env.dbx.begin().await.unwrap();
+        crate::messenger::group::set_signal_group_archived(
+            &transaction,
+            &fixture.group.group_master_key,
+            true,
+        )
+        .await
+        .unwrap();
+        assert!(
+            refresh_jobs::Entity::find()
+                .count(&transaction)
+                .await
+                .unwrap()
+                > 0
+        );
+        transaction.rollback().await.unwrap();
+
+        assert_eq!(
+            refresh_jobs::Entity::find()
+                .count(&fixture.env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn login_change_queues_all_groups_refresh_3991() {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        let fixture = group_visibility_fixture().await;
+
+        login::ActiveModel {
+            id: Set(fixture.login.id),
+            sigint_zone_id: Set(None),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+
+        let jobs = refresh_jobs::Entity::find()
+            .all(&fixture.env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].group_master_key, None);
+        drain_group_refreshes(&fixture.env).await;
+        assert!(visibility_event_item_ids(
+            &fixture.env,
+            fixture.integration.id
+        )
+        .await
+        .contains(&fixture.item_id));
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_refresh_retries_failed_batches_3991() {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        let fixture = group_visibility_fixture().await;
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_secret: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        let job = refresh_jobs::Entity::find()
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        fixture.env.dbx.execute_unprepared(r#"
+create function pg_temp.reject_group_refresh_event() returns trigger language plpgsql as $$
+begin raise exception 'group refresh test failure'; end;
+$$;
+create trigger reject_group_refresh_event before insert on api_integration_iggy_event
+for each row execute function pg_temp.reject_group_refresh_event();
+        "#).await.unwrap();
+        assert!(crate::iggy::group_refresh::process_next_batch(
+            &fixture.env.dbx,
+            1
+        )
+        .await
+        .unwrap());
+        fixture.env.dbx.execute_unprepared("drop trigger reject_group_refresh_event on api_integration_iggy_event")
+            .await.unwrap();
+
+        let failed = refresh_jobs::Entity::find_by_id(job.id)
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(failed.after_message_id, 0);
+        assert_eq!(failed.attempts, 1);
+        assert!(failed
+            .last_error
+            .unwrap()
+            .contains("group refresh test failure"));
+        assert!(!crate::iggy::group_refresh::process_next_batch(
+            &fixture.env.dbx,
+            1
+        )
+        .await
+        .unwrap());
+
+        refresh_jobs::ActiveModel {
+            id: Set(job.id),
+            next_attempt_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        drain_group_refreshes(&fixture.env).await;
+        assert_eq!(
+            visibility_event_item_ids(&fixture.env, fixture.integration.id)
+                .await,
+            vec![fixture.item_id]
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_refresh_retains_destination_credentials_3991() {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        let fixture = group_visibility_fixture().await;
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_secret: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        let job = refresh_jobs::Entity::find()
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        api_integration::ActiveModel {
+            id: Set(fixture.integration.id),
+            iggy_url: Set(Some("tcp://localhost:8091".to_string())),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        api_integration::ActiveModel {
+            id: Set(fixture.integration.id),
+            last_sync_at: Set(Some(Utc::now().naive_utc())),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+        scrub_old_destination_credentials(
+            &fixture.env.dbx,
+            fixture.integration.id,
+        )
+        .await
+        .unwrap();
+        let old = api_integration_iggy_destination::Entity::find_by_id(
+            job.destination_id,
+        )
+        .one(&fixture.env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(old.iggy_password.is_some());
+
+        drain_group_refreshes(&fixture.env).await;
+        let events =
+            load_pending_events(&fixture.env.dbx, fixture.integration.id)
+                .await
+                .unwrap();
+        assert!(!events.is_empty());
+        assert!(events
+            .iter()
+            .all(|event| event.destination_id == job.destination_id));
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+        scrub_old_destination_credentials(
+            &fixture.env.dbx,
+            fixture.integration.id,
+        )
+        .await
+        .unwrap();
+        let old = api_integration_iggy_destination::Entity::find_by_id(
+            job.destination_id,
+        )
+        .one(&fixture.env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(old.iggy_password.is_none());
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_hard_delete_queues_revocations_before_cascade_3991() {
+        let fixture = group_visibility_fixture().await;
+        let deleted_group =
+            mk_signal_group(&fixture.env.dbx, Default::default())
+                .await
+                .unwrap();
+        mk_signal_message_group(
+            &fixture.env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(fixture.item_id),
+                group_master_key: Set(Some(deleted_group.master_key.clone())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        datasource_group::Entity::delete_many()
+            .filter(
+                datasource_group::Column::GroupMasterKey
+                    .eq(&deleted_group.master_key),
+            )
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+
+        signal_group::Entity::delete_by_id(deleted_group.master_key)
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+
+        assert!(visibility_event_item_ids(
+            &fixture.env,
+            fixture.integration.id
+        )
+        .await
+        .contains(&fixture.item_id));
     }
 
     #[actix_web::test]
