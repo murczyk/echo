@@ -32,8 +32,7 @@ _MGRS_NEXT_RUN = re.compile(r"[ \t]+(\d+)")
 _MGRS_BARE_RUN = re.compile(r"[ \t]+\d+(?![\w:]|[./\-]\d)")
 _MGRS_FULL_DIGITS = 10
 _MGRS_MIN_LONE_DIGITS = 4
-_ATTACHED = re.compile(r"\w|\.\d")
-_TIME_OR_DATE_TAIL = re.compile(r"[:.]\d")
+_ATTACHED = re.compile(r"\w|[./\-]\d")
 
 
 class Fields(dict):
@@ -109,6 +108,14 @@ def _in_region(latitude, longitude):
     )
 
 
+def _with_bare_runs(text, end):
+    """A reference has two digit groups at most, so a further bare number stays
+    with it and Echo rejects the value."""
+    while extra := _MGRS_BARE_RUN.match(text, end):
+        end = extra.end()
+    return end
+
+
 def _mgrs_end(text, start):
     """Where the digits at `start` end, or None when they are not a usable
     reference. Written as a scan rather than a pattern: backtracking could
@@ -118,17 +125,15 @@ def _mgrs_end(text, start):
     if _ATTACHED.match(text, first.end()):
         return None
     if len(first.group()) >= _MGRS_FULL_DIGITS:
-        return first.end()
+        return _with_bare_runs(text, first.end())
     following = _MGRS_NEXT_RUN.match(text, first.end())
-    if following and not _TIME_OR_DATE_TAIL.match(text, following.end()):
+    next_field = following and any(
+        pattern.match(text, following.start(1)) for pattern in (_DATE, _TIME, _MGRS_HEAD)
+    )
+    if following and not next_field:
         if _ATTACHED.match(text, following.end()):
             return None
-        # A reference has two digit groups, so a further bare number stays with
-        # it and Echo rejects the value.
-        end = following.end()
-        while extra := _MGRS_BARE_RUN.match(text, end):
-            end = extra.end()
-        return end
+        return _with_bare_runs(text, following.end())
     # After a space, a few digits alone are more likely a unit number, as in
     # «25 мср 120».
     spaced = text[start - 1].isspace()

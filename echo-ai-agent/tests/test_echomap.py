@@ -117,17 +117,35 @@ class PositionFormatTest(unittest.TestCase):
             self.assertEqual(
                 parse.pair(f'36T XT 79584 68848 {field}'), ('36T XT 79584 68848', ''), field,
             )
+        for field in ['18:03', '05.11.2026', '05/11/2026', '2026-11-05']:
+            self.assertEqual(parse.pair(f'36TXT7968 {field}'), ('36TXT7968', ''), field)
 
     def test_a_third_digit_group_stays_with_the_reference(self):
         for text in [
             '36T XT 79584 68848 12345',
             '36T XT 7958 4688 4812',
             '36T XT 79584 68848 12345 67890',
+            '36TXT7958468848 12345',
         ]:
             self.assertEqual(parse.pair(text), (text, ''), text)
             self.assertEqual(parse.whole(text), (text, ''), text)
         self.assertEqual(
             parse.pair('Ціль: 36T XT 79584 68848 12345.'), ('36T XT 79584 68848 12345', ''),
+        )
+
+    def test_digits_joined_by_punctuation_never_leave_a_shorter_reference(self):
+        for text in [
+            '36T XT 7958 6884.5',
+            '36T XT 7958-6884',
+            '36TXT7958/6884',
+            '36T XT 7958 6884-12',
+        ]:
+            self.assertEqual(parse.pair(text), ('', ''), text)
+
+    def test_a_low_precision_reference_ends_at_the_next_reference(self):
+        self.assertEqual(
+            parse.pairs('36TXT7968 36T XT 81648 65977'),
+            [('36TXT7968', ''), ('36T XT 81648 65977', '')],
         )
 
     def test_malformed_degrees_are_not_cleaned_into_a_point(self):
