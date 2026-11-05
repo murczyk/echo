@@ -36,13 +36,6 @@ require_commands() {
   done
 }
 
-restore_local_caches() {
-  ./scripts/cache/restore-npm.sh || true
-  ./scripts/cache/restore-pip.sh || true
-  ./scripts/cache/restore-python.sh || true
-  ./scripts/cache/restore-spacy.sh || true
-}
-
 save_local_caches() {
   ./scripts/cache/save-npm.sh || true
   ./scripts/cache/save-pip.sh || true
@@ -52,10 +45,9 @@ save_local_caches() {
 
 run_tests() {
   require_commands cargo curl git just node npm psql rsync tq
-  restore_local_caches
   export GITHUB_ACTIONS="${GITHUB_ACTIONS:-true}"
+  # node_modules and .venv persist on this host, guarded by their own install checks.
   bash deploy/run_ci_tests.sh
-  save_local_caches
 }
 
 build_debs() {
