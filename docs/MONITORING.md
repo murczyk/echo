@@ -324,6 +324,64 @@ declarations and requires no analytics resnapshot or mirror reconciliation.
 Configuration changes and service restarts still require approval naming the
 rollout operation and server.
 
+### AI provider metrics
+
+`wdintel-rs` records model calls made through the application's shared
+`AiEngineClient`. Read these on the **AI providers** dashboard, which is defined
+in `deploy/signoz/dashboards/ai-providers.json`.
+
+| Metric | Attributes | Meaning |
+|---|---|---|
+| `echo.ai_provider.requests.count` | `provider`, `model_name`, `process`, `streaming`, `outcome` | One per call, including calls that never reached the provider. |
+| `echo.ai_provider.response_start.duration` | same | Seconds from sending the call until response headers. |
+| `echo.ai_provider.stream.duration` | `provider`, `model_name`, `process`, `outcome` | Seconds from response headers until the stream ended, for AI agent gateway streams. |
+
+Attribute values:
+
+- `provider`: `gov_ua`, `openai`, `internal` (plain `http` engine URLs) or
+  `other`. `gov_ua` is one gateway hosting several vendors, so compare models
+  by `model_name`.
+- `process`: `echo-web`, `echo-bgworker`, `echo-report-worker` or `echo-oneoff`.
+  All processes share one metric identity, so always keep this attribute: their
+  cumulative counters would otherwise collide.
+- `streaming`: for a non-streamed call, headers usually arrive when generation
+  finishes, so `response_start` is close to the full response time. For a
+  streamed call it is only the wait before output begins.
+- `outcome`: `ok`, `rate_limited`, `client_error`, `server_error`, `timeout`,
+  `connect_error`, `transport_error`, `cancelled`, `cooldown_expired` or
+  `local_error`. The last two never reached the provider, so they are counted
+  but add no duration sample.
+- Stream `outcome`: `completed`, `failed` or `cancelled`.
+
+When reading the numbers:
+
+- `ok` means headers arrived. A stream can still fail afterwards, so check the
+  stream outcomes too.
+- A hung provider mostly appears as `cancelled`, not `timeout`, because the
+  outer timeout fires first. `cancelled` also covers runner aborts and the
+  worker time limit, so it is not always the provider's fault.
+- `response_start` excludes Echo's local 429 cooldown wait, but includes the
+  settings load, the Azure token fetch and any 401 retry. Caller latency can
+  therefore be much longer than the provider time shown.
+- Stream duration includes backpressure from the reader.
+- Bgworker and report-worker can lose up to the last 60 seconds of data on
+  restart, because only the web process shuts metrics down explicitly.
+
+Not covered: agent `DirectHttp` engines, the document extractor's direct vLLM
+calls, Echo GPU transcription, and command-line tools that build their own
+client, such as callsign reprocessing and `ai-position-eval`. vLLM has its own
+metrics. Only hosts with `signoz_metrics_enabled = true` export any of these
+metrics.
+
+Change the dashboard by editing the JSON, then run
+`just signoz-install-dashboard --verify` to run every panel's queries without
+saving, and `just signoz-install-dashboard` to save it.
+
+Percentile panels must use ClickHouse SQL. The ClickHouse on `signoz-echo` has
+no `histogramQuantile` function, so a percentile on a histogram in the SigNoz
+query builder fails with an HTTP 500. The dashboard uses ClickHouse's built-in
+`quantilePrometheusHistogram` instead.
+
 ### Other application metrics
 
 - `echo.device_files.synchronized.count`: кількість файлів, які API синхронізації пристроїв успішно створило або оновило, з атрибутом `operation`.
