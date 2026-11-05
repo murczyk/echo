@@ -63,6 +63,10 @@ if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
     echo "Using test databases: $TEST_DB_NAME and $TEST_WDFILE_DB_NAME"
 
     bash "$REPO_ROOT/scripts/ci/check_analytics_migration_catalog.sh"
+
+    # File-registry migrations take no shared lock, so parallel tests must not run them first.
+    echo "Migrating test databases..."
+    cargo run -p wdintel-rs -- --mode=test migrate
 fi
 
 # Create storage directory and dummy files for CI
@@ -119,7 +123,8 @@ run_rust_tests_in_shards() {
     fi
     # This first wrapper call installs the venv, which parallel shards must not race to create.
     bash "$SCRIPT_DIR/ci/with_test_storage.sh" true
-    CARGO_INCREMENTAL=1 RUSTC_WRAPPER="" \
+    # ThinLTO costs minutes on every build, even for a one-line change, and tests don't need it.
+    CARGO_INCREMENTAL=1 RUSTC_WRAPPER="" CARGO_PROFILE_RELEASE_LTO=off \
         "$REPO_ROOT/target/ci-test-storage-venv/bin/python" "$SCRIPT_DIR/ci/run_rust_shards.py"
 }
 
