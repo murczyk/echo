@@ -24,12 +24,13 @@ _LONGITUDES = (20.0, 50.0)
 # field. Any other following number stays with it: dropping «68848» from
 # «7958 68848» would leave a valid reference to the wrong place, while Echo
 # rejects the whole value as malformed.
-_MGRS_DIGITS = r"\d{10,}|\d{2,9}(?:\s\d+(?![:.]\d))?"
-# A two-digit zone, band and square. Cyrillic look-alikes must be uppercase and
-# I/O never occur, so unit designations such as «1 мср 120» do not match.
+_MGRS_NEXT_RUN = r"[ \t]+\d+(?![:.]\d)"
+_MGRS_DIGITS = rf"\d{{10,}}|\d{{4,9}}(?:{_MGRS_NEXT_RUN})?|\d{{1,3}}{_MGRS_NEXT_RUN}"
+# A two-digit zone, band and square, in Latin or Cyrillic look-alikes. Few digits
+# need a second run, so unit designations such as «25 мср 120» do not match.
 _MGRS = re.compile(
-    r"(?<![\w.])\d{2}\s?[C-HJ-NP-Xc-hj-np-xСЕНКМРТХ]\s?"
-    rf"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗ]{{2}}\s?(?:{_MGRS_DIGITS})(?![\w.])"
+    r"(?<![\w.])\d{2}[ \t]*[C-HJ-NP-Xc-hj-np-xСЕНКМРТХсенкмртх][ \t]*"
+    rf"[A-HJ-NP-Za-hj-np-zАВСЕНКМРТХУЗавсенкмртхуз]{{2}}[ \t]*(?:{_MGRS_DIGITS})(?![\w.])"
 )
 
 
@@ -111,13 +112,15 @@ def mgrs(text):
     return [match.group(0) for match in _MGRS.finditer(text or "")]
 
 
-def degrees(text):
-    """Every WGS-84 (latitude, longitude) decimal pair in text, as written."""
-    return [
-        (match.group(1), match.group(2))
-        for match in _DEGREE_PAIR.finditer(text or "")
-        if _in_region(match.group(1), match.group(2))
-    ]
+def whole(text):
+    """The position when text holds nothing else, as written: (latitude,
+    longitude) or (reference, ""). Otherwise None, so a value with stray
+    characters is not cleaned into a valid point."""
+    text = (text or "").strip()
+    degrees = _DEGREE_PAIR.fullmatch(text)
+    if degrees and _in_region(degrees.group(1), degrees.group(2)):
+        return degrees.group(1), degrees.group(2)
+    return (text, "") if _MGRS.fullmatch(text) else None
 
 
 def pairs(text):
