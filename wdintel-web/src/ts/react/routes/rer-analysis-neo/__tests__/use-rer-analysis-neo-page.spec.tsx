@@ -1331,8 +1331,12 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
     const error = latest?.error;
+    const occurrence = latest?.errorOccurrence;
     expect(error).toContain('Не вдалося завантажити поточного користувача');
     const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError('Recoverable action failed'));
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorOccurrence).toBe(occurrence);
     await act(async () => onError(''));
     expect(latest?.error).toBe(error);
     expect(latest?.errorPersistent).toBe(true);
@@ -1354,6 +1358,13 @@ describe('useRerAnalysisNeoPage', () => {
     });
     expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
     expect(latest?.errorPersistent).toBe(false);
+    const occurrence = latest?.errorOccurrence;
+    await act(async () => {
+      await latest?.findCallsignFrequencyMatches(['test'], 1);
+    });
+    expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
+    expect(latest?.errorPersistent).toBe(false);
+    expect(latest?.errorOccurrence).not.toBe(occurrence);
     await act(async () => onError('Inbox unavailable', true));
     await act(async () => latest?.resetFilters());
     expect(latest?.error).toBeNull();

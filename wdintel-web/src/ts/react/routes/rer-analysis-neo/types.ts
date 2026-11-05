@@ -218,6 +218,7 @@ export type AnalysisPageState = {
   directMessageError: string | null;
   error: string | null;
   errorPersistent: boolean;
+  errorOccurrence: number;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
   editTargetLoadState: ReportEditLoadState;

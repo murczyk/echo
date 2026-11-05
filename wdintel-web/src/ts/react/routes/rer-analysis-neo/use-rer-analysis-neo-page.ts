@@ -207,9 +207,12 @@ export function useRerAnalysisNeoPage(
       : initialQueryState,
   );
   const [selectedCenterTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
-  const [pageError, setPageErrorState] = useState<{ message: string; persistent: boolean } | null>(
-    null,
-  );
+  const pageErrorOccurrenceRef = useRef(0);
+  const [pageError, setPageErrorState] = useState<{
+    message: string;
+    persistent: boolean;
+    occurrence: number;
+  } | null>(null);
   const [initializationError, setInitializationError] = useState<string | null>(null);
   const error = initializationError ?? pageError?.message ?? null;
   const [directMessageError, setDirectMessageError] = useState<string | null>(null);
@@ -294,7 +297,9 @@ export function useRerAnalysisNeoPage(
   );
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string, persistent = false) => {
-    setPageErrorState(message ? { message, persistent } : null);
+    setPageErrorState(
+      message ? { message, persistent, occurrence: ++pageErrorOccurrenceRef.current } : null,
+    );
   }, []);
   const dutySettings = useDutySettings();
   const deviceAccess: DeviceAccess =
@@ -1710,6 +1715,7 @@ export function useRerAnalysisNeoPage(
     editorSaveInFlight: editor.editorSaveInFlight,
     error,
     errorPersistent: initializationError !== null || (pageError?.persistent ?? false),
+    errorOccurrence: initializationError === null ? (pageError?.occurrence ?? 0) : 0,
     filtersLoading: data.filtersLoading,
     filterSectionLoadStates: data.filterSectionLoadStates,
     isFilterSectionLoading: data.isFilterSectionLoading,

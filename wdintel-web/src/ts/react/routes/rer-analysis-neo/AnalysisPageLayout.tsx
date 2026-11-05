@@ -137,7 +137,7 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
       durationMs: page.errorPersistent ? null : undefined,
     });
     return () => dismiss(id);
-  }, [notify, dismiss, page.error, page.errorPersistent]);
+  }, [notify, dismiss, page.error, page.errorPersistent, page.errorOccurrence]);
   useEffect(() => {
     if (!page.directMessageError) return;
     notify({ severity: 'error', message: page.directMessageError });

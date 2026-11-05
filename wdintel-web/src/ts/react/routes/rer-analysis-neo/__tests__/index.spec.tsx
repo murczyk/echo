@@ -482,6 +482,7 @@ function buildPage() {
     directMessageError: null,
     error: null,
     errorPersistent: false,
+    errorOccurrence: 0,
     editorMessage: null,
     editorEditAsReport: false,
     reportSource: null,
@@ -718,6 +719,17 @@ describe('RerAnalysisNeoPage', () => {
       expect(notifyMock).toHaveBeenCalledTimes(1);
 
       expect(dismissMock).not.toHaveBeenCalled();
+      page.errorOccurrence += 1;
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenCalledTimes(2);
+      expect(notifyMock).toHaveBeenLastCalledWith({
+        severity: 'error',
+        message: page.error,
+        durationMs: persistent ? null : undefined,
+      });
+      expect(dismissMock).toHaveBeenCalledExactlyOnceWith(42);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenCalledTimes(2);
       page.error = 'Не вдалося завантажити повідомлення';
       await act(async () => root.render(<RerAnalysisNeoPage />));
       expect(notifyMock).toHaveBeenLastCalledWith({
@@ -725,12 +737,12 @@ describe('RerAnalysisNeoPage', () => {
         message: page.error,
         durationMs: persistent ? null : undefined,
       });
-      expect(notifyMock).toHaveBeenCalledTimes(2);
-      expect(dismissMock).toHaveBeenCalledExactlyOnceWith(42);
+      expect(notifyMock).toHaveBeenCalledTimes(3);
+      expect(dismissMock).toHaveBeenCalledTimes(2);
       page.error = null;
       await act(async () => root.render(<RerAnalysisNeoPage />));
-      expect(dismissMock).toHaveBeenCalledTimes(2);
-      expect(notifyMock).toHaveBeenCalledTimes(2);
+      expect(dismissMock).toHaveBeenCalledTimes(3);
+      expect(notifyMock).toHaveBeenCalledTimes(3);
       await act(async () => root.unmount());
     },
   );
