@@ -415,6 +415,9 @@ fn issue_4038_mgrs_is_recognized_in_every_written_form() {
         ("36txt7958468848", ""),
         ("36Т ХТ 79584 68848", ""),
         ("36T XT", "79584 68848"),
+        ("36T XT 79584", "68848"),
+        ("36TXT79584", "68848"),
+        ("36T XT 7958468848", ""),
     ] {
         let record = labelled("", x, y);
         assert_eq!(record.coordinate_system, "mgrs", "{x} {y}");
@@ -432,6 +435,10 @@ fn issue_4038_malformed_mgrs_keeps_the_row_without_geometry() {
         "36TXT795",
         "36TXT795846884812",
         "36TXT79584688481234567890",
+        "36T XT 7958 6884 12",
+        "36T XT 79584 688",
+        "36T XT 795 84 68",
+        "36T XT 79584 68848 12345",
         "99TXT7958468848",
         "0TXT7958468848",
     ] {

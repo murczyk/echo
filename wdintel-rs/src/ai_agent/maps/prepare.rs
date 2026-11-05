@@ -184,7 +184,11 @@ fn mgrs_reading(x: &str, y: &str) -> MgrsReading {
     let digits = shape[1].len();
     // geoconvert walks the digits before checking their count, so a longer
     // reference must not reach it.
-    if digits == 0 || digits % 2 != 0 || digits > AI_AGENT_MAP_MGRS_MAX_DIGITS {
+    if digits == 0
+        || digits % 2 != 0
+        || digits > AI_AGENT_MAP_MGRS_MAX_DIGITS
+        || !is_mgrs_digit_pair(x, y)
+    {
         return MgrsReading::Malformed;
     }
     match Mgrs::parse_str(&value) {
@@ -193,6 +197,24 @@ fn mgrs_reading(x: &str, y: &str) -> MgrsReading {
             MgrsReading::Valid(point.latitude(), point.longitude())
         }
         Err(_) => MgrsReading::Malformed,
+    }
+}
+
+/// Digits written as one run or two runs of equal length. Checked on the value
+/// as written: without its spaces «7958 6884 12» has a valid count, but it
+/// reads as a different place.
+fn is_mgrs_digit_pair(x: &str, y: &str) -> bool {
+    let written = format!("{x} {y}");
+    let runs = written
+        .split(|ch: char| !ch.is_ascii_digit())
+        .filter(|run| !run.is_empty())
+        .skip(1) // the zone
+        .map(str::len)
+        .collect::<Vec<_>>();
+    match runs[..] {
+        [_] => true,
+        [easting, northing] => easting == northing,
+        _ => false,
     }
 }
 

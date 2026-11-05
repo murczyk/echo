@@ -47,7 +47,7 @@ is optional and only breaks a tie:
 | MGRS | `36T XT 75734 68963` | The whole reference in `x`; `y` is empty |
 
 An MGRS shape wins first: spaces, lower case and Cyrillic look-alikes are
-accepted, and a reference needs an even 2–10 digits. A decimal pair is WGS-84
+accepted, and a reference needs an even 2–10 digits, written as one run or two equal groups. A decimal pair is WGS-84
 unless its digits also read as a grid position inside Ukraine, as
 `52.15227/65.48669` does; a `wgs84` label settles that tie. Anything else takes
 the existing grid path. `originalX`, `originalY` and `coordinateSystem` keep what
