@@ -207,7 +207,11 @@ export function useRerAnalysisNeoPage(
       : initialQueryState,
   );
   const [selectedCenterTab, setCenterTabState] = useState<AnalysisCenterTab>('messages');
-  const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageErrorState] = useState<{ message: string; persistent: boolean } | null>(
+    null,
+  );
+  const [initializationError, setInitializationError] = useState<string | null>(null);
+  const error = initializationError ?? pageError?.message ?? null;
   const [directMessageError, setDirectMessageError] = useState<string | null>(null);
   const [leftPanelOpenOverride, setLeftPanelOpen] = useState(
     () => initialPanelQueryState.leftPanelOpen,
@@ -289,7 +293,9 @@ export function useRerAnalysisNeoPage(
     null,
   );
   const [centerTabPending, startCenterTabTransition] = useTransition();
-  const setPageError = useCallback((message: string) => setError(message || null), []);
+  const setPageError = useCallback((message: string, persistent = false) => {
+    setPageErrorState(message ? { message, persistent } : null);
+  }, []);
   const dutySettings = useDutySettings();
   const deviceAccess: DeviceAccess =
     currentUserStatus === 'error' || systemSettingsStatus === 'error'
@@ -1238,7 +1244,7 @@ export function useRerAnalysisNeoPage(
       .catch(() => {
         if (abortController.signal.aborted) return;
         setSystemSettingsStatus('error');
-        setPageError('Не вдалося завантажити системні налаштування.');
+        setInitializationError('Не вдалося завантажити системні налаштування.');
       });
 
     return () => {
@@ -1259,7 +1265,9 @@ export function useRerAnalysisNeoPage(
         if (abortController.signal.aborted) return;
         setCurrentUser(null);
         setCurrentUserStatus('error');
-        setPageError(`Не вдалося завантажити поточного користувача: ${toErrorMessage(error)}`);
+        setInitializationError(
+          `Не вдалося завантажити поточного користувача: ${toErrorMessage(error)}`,
+        );
       });
 
     return () => {
@@ -1392,7 +1400,7 @@ export function useRerAnalysisNeoPage(
     data.invalidateFilterSectionLoads();
     setQueryState(nextState);
     setLastResetState(nextState);
-    setError(null);
+    setPageErrorState(null);
     pushQueryStateToUrl(nextState, newestFirst);
   }, [data, dutySettings.messageSortBy, newestFirst, radioFeaturesAllowed, savedFilters]);
 
@@ -1701,6 +1709,7 @@ export function useRerAnalysisNeoPage(
     reportSource: editor.reportSource,
     editorSaveInFlight: editor.editorSaveInFlight,
     error,
+    errorPersistent: initializationError !== null || (pageError?.persistent ?? false),
     filtersLoading: data.filtersLoading,
     filterSectionLoadStates: data.filterSectionLoadStates,
     isFilterSectionLoading: data.isFilterSectionLoading,

@@ -909,6 +909,7 @@ describe('useRerAnalysisNeoPage', () => {
       deferInitialLoad: true,
     });
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
     expect(window.location.search).toContain('device-1');
   });
 
@@ -925,6 +926,7 @@ describe('useRerAnalysisNeoPage', () => {
       deferInitialLoad: true,
     });
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
     expect(window.location.search).toContain('device-1');
   });
 
@@ -935,6 +937,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.networkVisibilityReady).toBe(false);
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -1323,6 +1326,40 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.hideBotTags).toBe(true);
   });
+  it('#4019 preserves a failed setup explanation when inbox loading or filters clear their own errors', async () => {
+    currentUserMock.fetchCurrentUser.mockRejectedValueOnce(new Error('user failed'));
+    renderHook();
+    await flushEffects();
+    const error = latest?.error;
+    expect(error).toContain('Не вдалося завантажити поточного користувача');
+    const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError(''));
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorPersistent).toBe(true);
+    await act(async () => latest?.resetFilters());
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorPersistent).toBe(true);
+  });
+
+  it('#4019 keeps recoverable page errors transient, including before messages load', async () => {
+    currentAnalysisData!.hasLoadedInitialMessages = false;
+    renderHook();
+    await flushEffects();
+    const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError('Inbox unavailable', true));
+    expect(latest?.errorPersistent).toBe(true);
+    await act(async () => latest?.updateQueryState({ fromDateTimeStr: 'invalid' }));
+    await act(async () => {
+      await latest?.findCallsignFrequencyMatches(['test'], 1);
+    });
+    expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
+    expect(latest?.errorPersistent).toBe(false);
+    await act(async () => onError('Inbox unavailable', true));
+    await act(async () => latest?.resetFilters());
+    expect(latest?.error).toBeNull();
+    expect(latest?.errorPersistent).toBe(false);
+  });
+
   it('keeps the direct-link error when the regular message list clears its error', async () => {
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({ message: null });
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);

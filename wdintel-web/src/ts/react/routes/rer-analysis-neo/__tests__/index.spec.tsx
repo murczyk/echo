@@ -11,6 +11,7 @@ import { emptyQueryState } from '.././helpers';
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
 const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 const notifyMock = vi.hoisted(() => vi.fn());
+const dismissMock = vi.hoisted(() => vi.fn());
 const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
 const editorGuardMocks = vi.hoisted(() => ({ dirty: false }));
 const messagesPanePropsHistory = vi.hoisted(() => [] as Array<Record<string, unknown>>);
@@ -383,7 +384,7 @@ vi.mock('../../shared/manage-message/CreateMessageFab', () => ({
   },
 }));
 vi.mock('../../../components/PowerSnackbar', () => ({
-  usePowerSnackbar: () => ({ notify: notifyMock }),
+  usePowerSnackbar: () => ({ notify: notifyMock, dismiss: dismissMock }),
 }));
 
 vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
@@ -480,6 +481,7 @@ function buildPage() {
     countsLoading: true,
     directMessageError: null,
     error: null,
+    errorPersistent: false,
     editorMessage: null,
     editorEditAsReport: false,
     reportSource: null,
@@ -654,7 +656,8 @@ describe('RerAnalysisNeoPage', () => {
     useRerAnalysisNeoPageMock.mockReset();
     useMediaQueryMock.mockReset();
     useMediaQueryMock.mockReturnValue(false);
-    notifyMock.mockReset();
+    notifyMock.mockReset().mockReturnValue(42);
+    dismissMock.mockReset();
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
     createMessageFabPropsHistory.splice(0);
     manageMessageDrawerPropsHistory.splice(0);
@@ -692,35 +695,45 @@ describe('RerAnalysisNeoPage', () => {
     },
   );
 
-  it('#4019 sends page errors to the snackbar without an inline banner or repeated notifications', async () => {
-    const page = buildPage();
-    page.error = 'Internal server error';
-    useRerAnalysisNeoPageMock.mockReturnValue(page);
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    rendered.push(container);
-    const root = createRoot(container);
-    await act(async () => root.render(<RerAnalysisNeoPage />));
+  it.each([false, true])(
+    '#4019 keeps only the current page error in the snackbar (persistent: %s)',
+    async (persistent) => {
+      const page = buildPage();
+      page.error = 'Internal server error';
+      page.errorPersistent = persistent;
+      useRerAnalysisNeoPageMock.mockReturnValue(page);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      rendered.push(container);
+      const root = createRoot(container);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
 
-    expect(notifyMock).toHaveBeenCalledWith({
-      severity: 'error',
-      message: page.error,
-      durationMs: null,
-    });
-    expect(container.textContent).not.toContain(page.error);
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(notifyMock).toHaveBeenCalledTimes(1);
+      expect(notifyMock).toHaveBeenCalledWith({
+        severity: 'error',
+        message: page.error,
+        durationMs: persistent ? null : undefined,
+      });
+      expect(container.textContent).not.toContain(page.error);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenCalledTimes(1);
 
-    page.error = 'Не вдалося завантажити повідомлення';
-    await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(notifyMock).toHaveBeenLastCalledWith({
-      severity: 'error',
-      message: page.error,
-      durationMs: null,
-    });
-    expect(notifyMock).toHaveBeenCalledTimes(2);
-    await act(async () => root.unmount());
-  });
+      expect(dismissMock).not.toHaveBeenCalled();
+      page.error = 'Не вдалося завантажити повідомлення';
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenLastCalledWith({
+        severity: 'error',
+        message: page.error,
+        durationMs: persistent ? null : undefined,
+      });
+      expect(notifyMock).toHaveBeenCalledTimes(2);
+      expect(dismissMock).toHaveBeenCalledExactlyOnceWith(42);
+      page.error = null;
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(dismissMock).toHaveBeenCalledTimes(2);
+      expect(notifyMock).toHaveBeenCalledTimes(2);
+      await act(async () => root.unmount());
+    },
+  );
 
   it('records the current Analysis page state during a debug session', async () => {
     const page = buildPage();

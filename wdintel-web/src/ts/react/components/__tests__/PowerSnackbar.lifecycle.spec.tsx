@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,7 +18,8 @@ import {
 } from '../power-snackbar-exit-ownership.ts';
 
 function NotificationHarness() {
-  const { notify } = usePowerSnackbar();
+  const { notify, dismiss } = usePowerSnackbar();
+  const errorId = useRef<number | null>(null);
   return (
     <>
       {(['success', 'info', 'warning', 'error'] as const).map((severity) => (
@@ -39,12 +40,39 @@ function NotificationHarness() {
       <button
         type="button"
         aria-label="persistent-error"
-        onClick={() => notify({ message: 'page failed', severity: 'error', durationMs: null })}
+        onClick={() => {
+          errorId.current = notify({ message: 'page failed', severity: 'error', durationMs: null });
+        }}
       >
         persistent error
       </button>
+      <button
+        type="button"
+        aria-label="resolve-error"
+        onClick={() => {
+          if (errorId.current !== null) dismiss(errorId.current);
+        }}
+      >
+        resolve error
+      </button>
     </>
   );
+}
+
+function PageErrorHarness({ error }: { error: string | null }) {
+  const { notify, dismiss } = usePowerSnackbar();
+  useEffect(() => {
+    if (!error) return;
+    const id = notify({ message: error, severity: 'error', durationMs: null });
+    return () => dismiss(id);
+  }, [error, notify, dismiss]);
+  return null;
+}
+
+function ResolvedErrorHarness() {
+  const [error, setError] = useState<string | null>('resolved error');
+  useEffect(() => setError(null), []);
+  return <PageErrorHarness error={error} />;
 }
 
 function OutsideProviderProbe() {
@@ -193,6 +221,66 @@ describe('PowerSnackbarProvider', () => {
       await act(async () => root.unmount());
     }
   });
+
+  it.each([false, true])(
+    '#4019 does not resurrect an error resolved before queue promotion (strict: %s)',
+    async (strict) => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      const content = (
+        <PowerSnackbarProvider>
+          <ResolvedErrorHarness />
+          <NotificationHarness />
+        </PowerSnackbarProvider>
+      );
+      try {
+        await act(async () => root.render(strict ? <StrictMode>{content}</StrictMode> : content));
+        expect(document.querySelector('.MuiSnackbar-root')).toBeNull();
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('button:nth-of-type(2)')!.click(),
+        );
+        expect(document.querySelector('[role="status"]')?.textContent).toContain('info');
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
+
+  it.each([false, true])(
+    '#4019 removes resolved errors from the active notification or queue (queued: %s)',
+    async (queued) => {
+      vi.useFakeTimers();
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      try {
+        await act(async () =>
+          root.render(
+            <PowerSnackbarProvider>
+              <NotificationHarness />
+            </PowerSnackbarProvider>,
+          ),
+        );
+        const info = container.querySelector<HTMLButtonElement>('button:nth-of-type(2)')!;
+        const error = container.querySelector<HTMLButtonElement>(
+          '[aria-label="persistent-error"]',
+        )!;
+        await act(async () => (queued ? info : error).click());
+        await act(async () => (queued ? error : info).click());
+        await act(async () =>
+          container.querySelector<HTMLButtonElement>('[aria-label="resolve-error"]')!.click(),
+        );
+        expect(document.querySelector('[role="alert"]')).toBeNull();
+        expect(document.querySelector('[role="status"]')?.textContent).toContain('info');
+        await act(async () => vi.advanceTimersByTimeAsync(5000));
+        await act(async () => vi.advanceTimersByTimeAsync(300));
+        expect(document.querySelector('.MuiSnackbar-root')).toBeNull();
+      } finally {
+        await act(async () => root.unmount());
+      }
+    },
+  );
 
   it('dismisses the current notification with the close button', async () => {
     vi.useFakeTimers();

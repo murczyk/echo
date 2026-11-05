@@ -35,7 +35,7 @@ type Params = {
   focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   newestFirst: boolean;
-  onError: (message: string) => void;
+  onError: (message: string, persistent?: boolean) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
   rightSidebarTab: AnalysisSidebarTab | null;
@@ -186,6 +186,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     shouldLoadNewCallsigns,
   } = params;
   const reloadRequestRef = useRef(0);
+  const hasLoadedMessagesRef = useRef(false);
   const lastReloadTriggerKeyRef = useRef<string | null>(null);
   const lastReloadFocusedWindowRef = useRef<InboxWindowRsp | null>(null);
   const invalidatedReloadTriggerKeyRef = useRef<string | null>(null);
@@ -216,6 +217,7 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           : (messages: Array<[number, InboxMessage]>) => setMessages(messages);
       const setReloadedMessages = (messages: Array<[number, InboxMessage]>) => {
         applyReloadedMessages(messages);
+        hasLoadedMessagesRef.current = true;
         setLoadedMessagesTriggerKey(reloadTriggerKey);
       };
 
@@ -241,7 +243,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
             messagePageIndex !== undefined &&
             messagePageIndex !== currentMessagePageIndex,
           newestFirst,
-          onError,
+          onError: (message, critical = false) =>
+            onError(message, critical && !hasLoadedMessagesRef.current),
           onUnauthorized,
           optionsFreqsRef: optionsFreqValuesRef,
           queryState,

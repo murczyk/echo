@@ -128,11 +128,16 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const reportFocusTargetRef = useRef<HTMLElement | null>(null);
   const reportFallbackFocusRef = useRef<HTMLDivElement | null>(null);
   const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
-  const { notify } = usePowerSnackbar();
+  const { notify, dismiss } = usePowerSnackbar();
   useEffect(() => {
     if (!page.error) return;
-    notify({ severity: 'error', message: page.error, durationMs: null });
-  }, [notify, page.error]);
+    const id = notify({
+      severity: 'error',
+      message: page.error,
+      durationMs: page.errorPersistent ? null : undefined,
+    });
+    return () => dismiss(id);
+  }, [notify, dismiss, page.error, page.errorPersistent]);
   useEffect(() => {
     if (!page.directMessageError) return;
     notify({ severity: 'error', message: page.directMessageError });

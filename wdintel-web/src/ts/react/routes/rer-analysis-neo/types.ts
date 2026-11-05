@@ -217,6 +217,7 @@ export type AnalysisPageState = {
   copiedFeedbackId: string | null;
   directMessageError: string | null;
   error: string | null;
+  errorPersistent: boolean;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
   editTargetLoadState: ReportEditLoadState;
