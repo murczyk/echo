@@ -503,6 +503,7 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
                     | "tool_limit"
                     | "context_limit"
                     | "provider_error"
+                    | "incomplete_research"
             )
         {
             return None;
@@ -826,6 +827,13 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(payload["reason"], "provider_error", "#3572");
+        let (_, payload) = normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "incomplete_research"
+        }))
+        .unwrap();
+        assert_eq!(payload["reason"], "incomplete_research", "#4031");
         assert!(normalize_runner_event(serde_json::json!({
             "type": "completion_metadata",
             "coverageLimited": true,

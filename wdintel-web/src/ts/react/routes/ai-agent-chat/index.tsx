@@ -30,6 +30,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { ReactNode } from 'react';
 import type {
   AiAgentActivityPresentation,
   AiAgentDocumentArtifact,
@@ -84,6 +85,11 @@ import {
   isConversationId,
   writeConversationUrl,
 } from './conversation-url';
+import {
+  continuableRequestId,
+  DEEP_CONTINUATION_PROMPT,
+  DeepContinuationButton,
+} from './DeepContinuation';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
@@ -162,6 +168,13 @@ export function runtimeLimitLabel(seconds: number): string {
   return seconds >= 3600
     ? `до ${Math.round(seconds / 3600)} год`
     : `до ${Math.round(seconds / 60)} хв`;
+}
+
+/** A mode's limit; long modes also warn that they hold the user's running slot. */
+function presetLimitHint(seconds: number): string {
+  return seconds >= 3600
+    ? `${runtimeLimitLabel(seconds)}; нові повідомлення чекатимуть у черзі`
+    : runtimeLimitLabel(seconds);
 }
 
 const TERMINAL_STATES = new Set<AiAgentRequestState>(['completed', 'failed', 'cancelled']);
@@ -601,10 +614,12 @@ function ConversationMessage({
   message,
   onRetry,
   retryDisabled = false,
+  continuation,
 }: {
   message: AiAgentMessage;
   onRetry?: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
   retryDisabled?: boolean;
+  continuation?: ReactNode;
 }) {
   if (message.role === 'assistant') {
     return (
@@ -626,6 +641,7 @@ function ConversationMessage({
           maps={message.maps}
           documents={message.documents}
         />
+        {continuation}
       </Stack>
     );
   }
@@ -685,7 +701,13 @@ function ConversationMessage({
   );
 }
 
-function LiveResponse({ request }: { request: LiveRequest }) {
+function LiveResponse({
+  request,
+  continuation,
+}: {
+  request: LiveRequest;
+  continuation?: ReactNode;
+}) {
   return (
     <Stack spacing={1.5} alignItems="flex-start">
       {request.assistantText || request.maps?.length || request.documents?.length ? (
@@ -697,6 +719,7 @@ function LiveResponse({ request }: { request: LiveRequest }) {
           documents={request.documents}
         />
       ) : null}
+      {continuation}
 
       {request.state === 'failed' ? (
         <PowerAlert severity="error">{GENERIC_REQUEST_FAILURE}</PowerAlert>
@@ -782,6 +805,7 @@ function LiveRequestView({
   onReconnect,
   onRetry,
   retryDisabled,
+  continuation,
 }: {
   request: LiveRequest;
   cancelling: boolean;
@@ -789,6 +813,7 @@ function LiveRequestView({
   onReconnect: (request: LiveRequest) => void;
   onRetry: (prompt: string, preset?: AiAgentReasoningPreset | null) => void;
   retryDisabled: boolean;
+  continuation?: ReactNode;
 }) {
   const prompt: AiAgentMessage = {
     reasoningPreset: request.reasoningPreset,
@@ -842,7 +867,7 @@ function LiveRequestView({
           ) : undefined
         }
       />
-      <LiveResponse request={request} />
+      <LiveResponse request={request} continuation={continuation} />
     </Stack>
   );
 }
@@ -1095,6 +1120,10 @@ export function AiAgentChat({
 
   function activateConversation(conversation: AiAgentConversationDetail) {
     setReasoningPreset(rememberedReasoningPreset());
+    showConversation(conversation);
+  }
+
+  function showConversation(conversation: AiAgentConversationDetail) {
     clearLiveRequests();
     activeConversationIdRef.current = conversation.id;
     setActiveConversationId(conversation.id);
@@ -1304,13 +1333,38 @@ export function AiAgentChat({
     void submitPrompt(prompt, { preserveDraft: true, preset: preset ?? 'balanced' });
   }
 
+  function continueWithDeep(requestId: string) {
+    void submitPrompt(DEEP_CONTINUATION_PROMPT, {
+      preserveDraft: true,
+      preset: 'deep',
+      continuedRequestId: requestId,
+    });
+  }
+
+  /** The prompt only says "previous", and another tab may have moved the conversation on. */
+  async function assertNewestRequest(requestId: string, viewSequence: number) {
+    const conversation = await getAiAgentConversation(activeConversationIdRef.current!);
+    if (!mountedRef.current || viewSequence !== viewSequenceRef.current) {
+      throw new Error('розмову змінено');
+    }
+    if (conversation.messages.at(-1)?.requestId === requestId) return;
+    showConversation(conversation);
+    throw new Error('у розмові вже є новіший запит');
+  }
+
   async function submitPrompt(
     prompt: string,
     {
       preserveDraft = false,
       preset = reasoningPreset,
       withAttachments = false,
-    }: { preserveDraft?: boolean; preset?: AiAgentReasoningPreset; withAttachments?: boolean } = {},
+      continuedRequestId,
+    }: {
+      preserveDraft?: boolean;
+      preset?: AiAgentReasoningPreset;
+      withAttachments?: boolean;
+      continuedRequestId?: string;
+    } = {},
   ) {
     if (
       !prompt ||
@@ -1340,6 +1394,7 @@ export function AiAgentChat({
     setError(null);
 
     try {
+      if (continuedRequestId) await assertNewestRequest(continuedRequestId, viewSequence);
       const mapTarget = mapTargetRef.current;
       const mapEdit =
         selectedMap &&
@@ -1522,6 +1577,19 @@ export function AiAgentChat({
   const interactionLocked = submitting || activeRequestExists;
   const retryDisabled =
     interactionLocked || loadingConversation || conversationLoadFailed || !selectedProvider;
+  const deepOption = configuration?.reasoningPresetsEnabled
+    ? selectedProvider?.reasoningPresets?.find((option) => option.preset === 'deep')
+    : undefined;
+  const continuableId =
+    deepOption && !pendingSubmission ? continuableRequestId(messages, liveRequests) : null;
+  const deepContinuation =
+    deepOption && continuableId ? (
+      <DeepContinuationButton
+        hint={presetLimitHint(deepOption.maxRuntimeSeconds)}
+        disabled={retryDisabled}
+        onClick={() => continueWithDeep(continuableId)}
+      />
+    ) : null;
   const composerDisabled =
     submitting || loadingConversation || conversationLoadFailed || !selectedProvider;
 
@@ -1677,6 +1745,7 @@ export function AiAgentChat({
                     message={message}
                     onRetry={retryRequest}
                     retryDisabled={retryDisabled}
+                    continuation={message.requestId === continuableId ? deepContinuation : null}
                   />
                 ))
               )}
@@ -1688,6 +1757,7 @@ export function AiAgentChat({
                   onCancel={(id) => void cancelRequest(id)}
                   onRetry={retryRequest}
                   retryDisabled={retryDisabled}
+                  continuation={request.id === continuableId ? deepContinuation : null}
                   onReconnect={(current) =>
                     void connectToRequest(current.id, current.conversationId)
                   }
@@ -1875,11 +1945,7 @@ export function AiAgentChat({
                         <MenuItem key={option.preset} value={option.preset}>
                           <ListItemText
                             primary={REASONING_LABELS[option.preset]}
-                            secondary={
-                              option.maxRuntimeSeconds >= 3600
-                                ? `${runtimeLimitLabel(option.maxRuntimeSeconds)}; нові повідомлення чекатимуть у черзі`
-                                : runtimeLimitLabel(option.maxRuntimeSeconds)
-                            }
+                            secondary={presetLimitHint(option.maxRuntimeSeconds)}
                           />
                         </MenuItem>
                       ))}

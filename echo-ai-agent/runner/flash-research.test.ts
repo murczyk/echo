@@ -680,6 +680,11 @@ for (const [scenario, modelName] of [
       return;
     }
     assert.ok(answer);
+    // #4031: the chat offers a Deep continuation from this metadata alone.
+    const coverage = events.find(
+      (event) => event.type === "completion_metadata",
+    );
+    assert.equal(Boolean(coverage), answer.includes("Охоплення джерел неповне"));
     const diagnostics = events.filter(
       (event) => event.type === "completion_diagnostic",
     );
@@ -805,23 +810,23 @@ for (const [scenario, modelName] of [
     if (scenario === "slow-provider" || scenario === "deadline")
       assert.equal(queries.length, 1);
     if (scenario === "checkpoint-failure") assert.ok(checkpoints > 0);
-    if (
-      [
-        "incomplete",
-        "pagination",
-        "tool-limit",
-        "slow-provider",
-        "deadline",
-        "checkpoint-failure",
-      ].includes(scenario)
-    ) {
-      if (!["incomplete", "pagination"].includes(scenario))
-        assert.ok(
-          events.some(
-            (event) =>
-              event.type === "completion_metadata" && event.coverageLimited,
-          ),
-        );
+    const coverageReason = (
+      {
+        incomplete: "incomplete_research",
+        pagination: "incomplete_research",
+        "invalid-synthesis": "incomplete_research",
+        "tool-limit": "tool_limit",
+        "slow-provider": "time_limit",
+        deadline: "time_limit",
+        "checkpoint-failure": "context_limit",
+      } as Record<string, string>
+    )[scenario];
+    if (coverageReason) {
+      assert.deepEqual(coverage, {
+        type: "completion_metadata",
+        coverageLimited: true,
+        reason: coverageReason,
+      });
       assert.ok(answer.includes("Охоплення джерел неповне"));
     }
     const checkpointsSaved = saved.filter(
