@@ -130,6 +130,10 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
   const createMessageFabRef = useRef<HTMLButtonElement | null>(null);
   const { notify } = usePowerSnackbar();
   useEffect(() => {
+    if (!page.error) return;
+    notify({ severity: 'error', message: page.error });
+  }, [notify, page.error]);
+  useEffect(() => {
     if (!page.directMessageError) return;
     notify({ severity: 'error', message: page.directMessageError });
   }, [notify, page.directMessageError]);
@@ -501,11 +505,6 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
           />
         </Box>
 
-        {page.error ? (
-          <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
-            {page.error}
-          </PowerAlert>
-        ) : null}
         {page.validationError ? (
           <PowerAlert severity="warning" role="status" sx={{ mx: { xs: 1, lg: 2 } }}>
             {page.validationError}

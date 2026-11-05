@@ -692,6 +692,28 @@ describe('RerAnalysisNeoPage', () => {
     },
   );
 
+  it('#4019 sends page errors to the snackbar without an inline banner or repeated notifications', async () => {
+    const page = buildPage();
+    page.error = 'Internal server error';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(notifyMock).toHaveBeenCalledWith({ severity: 'error', message: page.error });
+    expect(container.textContent).not.toContain(page.error);
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    expect(notifyMock).toHaveBeenCalledTimes(1);
+
+    page.error = 'Не вдалося завантажити повідомлення';
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    expect(notifyMock).toHaveBeenLastCalledWith({ severity: 'error', message: page.error });
+    expect(notifyMock).toHaveBeenCalledTimes(2);
+    await act(async () => root.unmount());
+  });
+
   it('records the current Analysis page state during a debug session', async () => {
     const page = buildPage();
     page.messages = [
