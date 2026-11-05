@@ -130,12 +130,14 @@ async fn inventory(db: &DatabaseConnection) -> anyhow::Result<Vec<Account>> {
         left join echo_client c on c.id = l.client_id
         where not d.deleted and (d.kind in ('signal', 'whatsapp') or l.id is not null)
           and (c.id is null or not c.deleted)
+          and (l.id is null or not l.remove_requested)
         union all
         select null::bigint, a.id, c.id, a.source::text, a.is_linked, false
         from echo_account a
         left join echo_client_lock l on l.account_id = a.id
         left join echo_client c on c.id = l.client_id
         where (c.id is null or not c.deleted)
+          and (l.id is null or not l.remove_requested)
           and not exists (
               select 1 from datasource d
               where d.echo_client_lock_id = l.id and not d.deleted

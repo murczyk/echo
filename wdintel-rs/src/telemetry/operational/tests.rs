@@ -273,6 +273,65 @@ async fn datasource_freshness_matches_monitoring_and_tracks_account_lifecycle(
     Ok(())
 }
 
+// https://github.com/echoua/echo/issues/4034
+#[tokio::test]
+#[serial_test::serial]
+async fn removal_requested_accounts_do_not_export_operational_metrics(
+) -> anyhow::Result<()> {
+    let (env, _guard) =
+        crate::functest::tests::cleanup_locked().await.c(h!())?;
+    let now = Utc::now();
+    let (account_id, datasource_id) =
+        seed_account(&env.dbx, now).await.c(h!())?;
+    update_account(
+        &env.dbx,
+        account_id,
+        r#"update echo_client_lock set remove_requested = true where account_id = $1"#,
+    )
+    .await
+    .c(h!())?;
+    let account_id = account_id.to_string();
+    let datasource_id_label = datasource_id.to_string();
+    let labels = [("account_id", account_id.as_str())];
+    for deleted in [false, true] {
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "update datasource set deleted = $2 where id = $1",
+                [datasource_id.into(), deleted.into()],
+            ))
+            .await
+            .c(h!())?;
+        let (metrics, recorder) =
+            crate::telemetry::Metrics::recording(&env.config);
+        collect::collect(&env, &metrics.operational, now).await;
+        metrics.force_flush_for_test();
+        for name in [
+            OPERATIONAL_METRICS_ACCOUNT_LINKED,
+            OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+            OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+            OPERATIONAL_METRICS_ACTIVITY_AGE,
+            OPERATIONAL_METRICS_ERRORS,
+        ] {
+            assert!(recorder.find_with_attributes(name, &labels).is_none());
+        }
+        assert!(recorder
+            .find_with_attributes(
+                OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+                &[("datasource_id", datasource_id_label.as_str())],
+            )
+            .is_none());
+        assert_eq!(
+            recorder.gauge_value(
+                OPERATIONAL_METRICS_AVAILABLE,
+                &[("source", "accounts")]
+            ),
+            Some(1)
+        );
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct Collector(tokio::sync::mpsc::UnboundedSender<opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest>);
 
