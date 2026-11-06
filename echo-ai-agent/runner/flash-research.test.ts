@@ -1158,6 +1158,22 @@ test("#4031 research state accepts whatever shape a model sends", () => {
     }).gaps,
     ["kept"],
   );
+  // Blocked tasks must not push pending work out of the cap.
+  assert.deepEqual(
+    normalizedResearchUpdate({
+      checklist: [
+        ...["a", "b", "c", "d"].map((task) => ({ task, status: "blocked" })),
+        { task: "still to do", status: "pending" },
+      ],
+    }).checklist?.[0],
+    { task: "still to do", status: "pending" },
+  );
+  // An early heading must not become the whole draft, and a link must stay whole.
+  const clipped = normalizedResearchUpdate({
+    draft: `# Heading\n${`Fact [джерело](${citation}) `.repeat(800)}`,
+  }).draft!;
+  assert.ok(clipped.length > 7900 && clipped.length <= 8000);
+  assert.equal(validatedFlashAnswer(clipped, sources), clipped);
   // Omitted fields stay undefined so that a partial update keeps saved state.
   assert.deepEqual(normalizedResearchUpdate(null), {
     checklist: undefined,

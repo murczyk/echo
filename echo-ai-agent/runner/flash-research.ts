@@ -187,6 +187,12 @@ function researchStatus(value: unknown): ChecklistItem["status"] {
   return "pending";
 }
 
+const STATUS_ORDER: Record<ChecklistItem["status"], number> = {
+  pending: 0,
+  blocked: 1,
+  done: 2,
+};
+
 function checklistItem(value: unknown): ChecklistItem | undefined {
   const item = (typeof value === "string" ? { task: value } : value) as {
     task?: unknown;
@@ -199,17 +205,19 @@ function checklistItem(value: unknown): ChecklistItem | undefined {
 function checklistOf(value: unknown): ChecklistItem[] | undefined {
   const items = listOf(value)?.flatMap((item) => checklistItem(item) ?? []);
   if (!items?.length) return undefined;
-  // Unfinished work is what the completion check needs, so it survives the cap.
-  return [
-    ...items.filter((item) => item.status !== "done"),
-    ...items.filter((item) => item.status === "done"),
-  ].slice(0, CHECKLIST_ITEMS);
+  // Pending work is what the completion check needs, so it survives the cap.
+  return items
+    .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status])
+    .slice(0, CHECKLIST_ITEMS);
 }
 
 function clippedDraft(text: string): string {
   if (text.length <= DRAFT_CHARACTERS) return text;
-  const cut = text.lastIndexOf("\n", DRAFT_CHARACTERS);
-  return text.slice(0, cut > 0 ? cut : DRAFT_CHARACTERS).trimEnd();
+  const head = text.slice(0, DRAFT_CHARACTERS);
+  // An early newline would drop most of the draft; a space still keeps links whole.
+  const line = head.lastIndexOf("\n");
+  const cut = line >= DRAFT_CHARACTERS / 2 ? line : head.lastIndexOf(" ");
+  return (cut > 0 ? head.slice(0, cut) : head).trimEnd();
 }
 
 /** Accepts whatever shape a model sends rather than failing the turn over it. */
