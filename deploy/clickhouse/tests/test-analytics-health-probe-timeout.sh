@@ -20,6 +20,9 @@ load_analytics_config() {
 validate_runtime_identifiers() { :; }
 validate_identifier() { :; }
 require_expected_control_release() { :; }
+gateway_missing_listen_addresses() {
+  printf '%s' "${ECHO_TEST_MISSING_LISTEN_ADDRESSES:-}"
+}
 log() { :; }
 die() {
   printf '%s\n' "$1" >&2
@@ -152,5 +155,16 @@ PATH="$case_dir/path:$PATH" \
 [[ "$status" == 0 ]]
 grep -q '^INSERT INTO public.echo_analytics_health' "$health_sql"
 grep -q '^healthy=true$' "$health_sql.args"
+
+status=0
+PATH="$case_dir/path:$PATH" \
+  ECHO_TEST_HEALTH_SQL="$health_sql" \
+  ECHO_TEST_MISSING_LISTEN_ADDRESSES=10.0.0.5 \
+  ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS=5 \
+  bash "$case_dir/bin/check-analytics-health.sh" 2>"$error_log" \
+  || status=$?
+[[ "$status" == 1 ]]
+grep -q '^healthy=false$' "$health_sql.args"
+grep -q 'PostgreSQL has no socket on configured address: 10.0.0.5' "$error_log"
 
 printf 'Analytics health probe timeout tests passed\n'

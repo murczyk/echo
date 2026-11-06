@@ -141,6 +141,11 @@ SIGNOZ_QUERY
 This SSH query deliberately returns a broad set of error-like messages. The UI
 saved `ERROR` view owns the current noise exclusions and may show fewer rows.
 
+`severity_text` is empty for Echo application logs, so match on `body`. The
+Errors dashboard counts any line containing `error` in any case, including INFO
+lines and the continuation lines of multi-line errors. A bar therefore counts
+lines rather than failures. To explain one, run the panel's own filter.
+
 To restrict the SSH query to one service, add a parameter to
 `clickhouse-client`:
 

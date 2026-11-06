@@ -462,10 +462,17 @@ Changing the exclusion file remains the explicit day-two operation below;
 rerunning only `source-configure.sh` does not update an existing PeerDB mirror
 mapping.
 
-When a Tailscale address is used in `listen_addresses`, order the PostgreSQL
-unit after `tailscaled.service` on that host and verify the listener after a
-reboot. PostgreSQL skips an address that is absent when it starts. A stable
-private Proxmox address avoids that startup dependency in production.
+PostgreSQL skips a `listen_addresses` entry whose address does not exist yet and
+never retries it, so boot order matters on both hosts.
+`install-control-release.sh` therefore installs a `postgresql@.service` drop-in
+on the source and analytics hosts. Before PostgreSQL starts,
+`wait-postgres-listen-addresses.sh` reads the effective setting and waits up to
+30 seconds for each address, then starts PostgreSQL regardless so local services
+are not held back. The drop-in orders after `tailscaled.service` where that unit
+exists and does not require it, so private and Tailscale addresses behave the
+same way. Fresh instances get this from the steps below, and existing ones from
+`just deploy`; neither needs a manual step. Prefer a stable private Proxmox
+address in production.
 
 Before continuing, verify from the analytics host that the source TCP port is
 reachable and the replication credentials can run `SELECT 1`.
@@ -955,6 +962,33 @@ backup. An outage stalls replication and consequently increases retained
 source WAL.
 
 ## Day-two operations
+
+### After a host reboot
+
+PostgreSQL logs `listen addresses ready after Ns` from the drop-in on each start.
+Check that every configured address has a socket, on both hosts:
+
+```bash
+journalctl -b -u postgresql@18-main.service | grep 'listen addresses'
+sudo -u postgres psql -Atc 'SHOW listen_addresses'
+ss -ltn 'sport = :5432'
+```
+
+On the analytics host, `bin/status.sh` reports this as `gateway listen addresses`.
+`check-analytics-health.sh` also fails on a missing socket, so
+`echo-analytics-health.service` shows as failed and `just deploy` stops at its
+health wait.
+
+A missing address needs a restart, because PostgreSQL only binds at startup:
+
+```bash
+sudo systemctl restart postgresql@18-main.service
+```
+
+On the analytics host this takes a few seconds, and Temporal and PeerDB reconnect
+by themselves. On the source host it interrupts Echo, so plan it as downtime.
+
+### Routine commands
 
 ```bash
 bin/start.sh
@@ -1565,6 +1599,11 @@ Remove or disable `[analytics]` in Echo and restart it. PostgreSQL operation is
 unchanged. Stop the analytics target afterward if desired. Keep the source
 slot only while planning to resume; otherwise deliberately drop the mirror
 and verify the slot is gone so WAL is no longer retained.
+
+To remove the listen-address wait, delete
+`/etc/systemd/system/postgresql@.service.d/echo-wait-listen-addresses.conf` and
+run `sudo systemctl daemon-reload`. No restart is needed. The drop-in is safe to
+leave behind on an older control release: its `-` prefix ignores a missing script.
 
 To roll back the diagnostic-log policy, use the root-only backup printed by
 `manage-system-logs.sh`. For each surviving managed table, restore its prior

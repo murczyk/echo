@@ -45,6 +45,14 @@ else
   printf 'unavailable\n'
   failures=$((failures + 1))
 fi
+printf '  %-42s ' 'gateway listen addresses'
+missing_addresses=$(gateway_missing_listen_addresses)
+if [[ -z "$missing_addresses" ]]; then
+  printf 'ok\n'
+else
+  printf 'missing: %s\n' "$missing_addresses"
+  failures=$((failures + 1))
+fi
 printf '  %-42s ' 'ClickHouse'
 if clickhouse_admin --query 'SELECT 1' >/dev/null 2>&1; then
   printf 'ok\n'
