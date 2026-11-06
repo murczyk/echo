@@ -70,6 +70,9 @@ Deep that ran no tool at all also gets one re-prompt to search first, because a
 word with an everyday meaning may be a callsign. Reformatting or translating
 earlier text, and tasks answerable from what the user supplied, may still finish
 without tools.
+A provider failure before the first tool call also gets one re-prompt, in every
+preset, because nothing is lost by trying again. Authorization and content-filter
+failures are not retried, and a repeated failure ends research as before.
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
 answer, so an empty final turn is not a provider failure. A last draft refresh
 runs only after four or more retrievals, because it is a fallback that costs

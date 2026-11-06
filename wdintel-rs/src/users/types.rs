@@ -193,6 +193,12 @@ pub struct SigintGroupsReq {
     pub since_date_inclusive_ms: Option<i64>,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct SigintGroupsDetailedReq {
+    pub since_date_inclusive_ms: Option<i64>,
+    pub skip_group_stats: Option<bool>,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]

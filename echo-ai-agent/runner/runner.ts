@@ -14,6 +14,7 @@ import {
   type ExecutionPolicy,
   type BudgetEvidence,
   type ResearchLimitReason,
+  providerFailureKind,
 } from "./execution-policy.ts";
 import {
   DEVICE_ROUTES,
@@ -59,7 +60,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, undeliveredMaps, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
-import { INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
+import { compactGroupCatalog, createGroupScope, GROUP_LOOKUP_BODY, GROUP_LOOKUP_SKILL } from "./group-scope.ts";
+import { GROUP_LOOKUP_DESCRIPTION, INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, SELECTED_GROUPS_DESCRIPTION, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -111,7 +113,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.06.3";
+const HARNESS_RELEASE = "2026.11.06.4";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -1385,6 +1387,7 @@ function analysisPeriodParameters(maxDays: number) {
       selectedGroups: Type.Optional(
         Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
           maxItems: 128,
+          description: SELECTED_GROUPS_DESCRIPTION,
         }),
       ),
       selectedCallsigns: Type.Optional(
@@ -1463,6 +1466,7 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
     selectedGroups: Type.Optional(
       Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
         maxItems: 128,
+        description: SELECTED_GROUPS_DESCRIPTION,
       }),
     ),
     selectedCallsigns: Type.Optional(
@@ -1661,6 +1665,7 @@ const CALLSIGN_FREQUENCY_MATCHES_PARAMETERS = Type.Object(
     selectedGroups: Type.Optional(
       Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
         maxItems: 128,
+        description: SELECTED_GROUPS_DESCRIPTION,
       }),
     ),
     callsigns: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
@@ -2203,6 +2208,7 @@ export function compactToolResponse(
   ) {
     return compactMessageBearingResponse(route.skill, value, maxCharacters);
   }
+  if (route.skill === GROUP_LOOKUP_SKILL) return compactGroupCatalog(value, maxCharacters);
   if (route.requestKind === "unitLookup") return compactUnitLookup(value, maxCharacters);
   if (route.requestKind === "deviceSearch" || route.requestKind === "positionLookup") return compactDeviceEvidence(value, maxCharacters);
   if (route.requestKind.startsWith("attachment") || route.requestKind.startsWith("deviceFile") || route.requestKind === "uploadRead") {
@@ -2348,6 +2354,7 @@ export function interceptionContextRequestBody(params: unknown): JsonObject {
 }
 
 function routeDescription(route: SkillDefinition): string {
+  if (route.skill === GROUP_LOOKUP_SKILL) return GROUP_LOOKUP_DESCRIPTION;
   if (route.requestKind === "workList" || route.requestKind === "workRead") return WORK_DESCRIPTIONS[route.requestKind];
   if (route.requestKind in DEVICE_DESCRIPTIONS) return DEVICE_DESCRIPTIONS[route.requestKind];
   if (ATTACHMENT_DESCRIPTION[route.requestKind]) return ATTACHMENT_DESCRIPTION[route.requestKind];
@@ -2376,6 +2383,7 @@ function routeDescription(route: SkillDefinition): string {
 }
 
 function routeParameters(route: SkillDefinition) {
+  if (route.skill === GROUP_LOOKUP_SKILL) return Type.Object({});
   if (route.requestKind === "workList" || route.requestKind === "workRead") return WORK_PARAMETERS[route.requestKind];
   if (route.requestKind in DEVICE_PARAMETERS) return DEVICE_PARAMETERS[route.requestKind as keyof typeof DEVICE_PARAMETERS];
   if (route.requestKind in ATTACHMENT_PARAMETERS) return ATTACHMENT_PARAMETERS[route.requestKind as keyof typeof ATTACHMENT_PARAMETERS];
@@ -2415,6 +2423,7 @@ function routeRequestBody(
   params: JsonObject,
   timeContext: TimeContext,
 ): unknown {
+  if (route.skill === GROUP_LOOKUP_SKILL) return GROUP_LOOKUP_BODY;
   if (route.requestKind === "workList" || route.requestKind === "workRead") return params;
   if (route.requestKind.startsWith("device")) return deviceRequest(route.requestKind, params);
   if (route.requestKind.startsWith("attachment")) return attachmentRequest(route.requestKind, params);
@@ -2575,6 +2584,9 @@ export function createRouteActivityTracker() {
   const messageIds = new Set<number>();
   const nextPages = new Map<string, Map<number, number>>();
   return {
+    rememberGroups(groups: unknown): void {
+      rememberActivityGroups(GROUP_LOOKUP_SKILL, groups, groupNames);
+    },
     start(route: SkillDefinition, requestBody: unknown): RouteActivity {
       const body =
         requestBody &&
@@ -2771,6 +2783,14 @@ function createRouteTools(
   recordRetrieval: (skill: string) => void = () => {},
 ) {
   const activity = createRouteActivityTracker();
+  const groupRoute = payload.skills.find((route) => route.skill === GROUP_LOOKUP_SKILL);
+  const groupScope = createGroupScope(
+    groupRoute
+      ? async (signal) => (await echoRequest(payload, authentication, groupRoute.method, groupRoute.path, GROUP_LOOKUP_BODY, signal)).body
+      : null,
+    activity.rememberGroups,
+    (outcome) => research?.noteGroups(outcome),
+  );
   return payload.skills.filter((route) => !["mapRecords", "mapDocument", "mapEdit"].includes(route.requestKind) && !DOCUMENT_KINDS.has(route.requestKind)).map((route) =>
     defineTool({
       name: `echo_${route.skill}`,
@@ -2783,7 +2803,7 @@ function createRouteTools(
         countInvocation();
         const requestBody = routeToolRequestBody(
           route,
-          params,
+          await groupScope.resolve(params, "selectedGroups" in ((routeParameters(route) as { properties?: object }).properties ?? {}), signal),
           payload.timeContext!,
         );
         research?.beforeRetrieval(route.skill, requestBody);
@@ -3431,7 +3451,7 @@ const NO_RETRIEVAL_RETRY_NOTICE = " The time budget ended before any search; add
 const NO_LIMIT_NOTICE = " No time, tool or budget limit stopped this work: never claim that one did, even if an earlier answer in the conversation says so.";
 const COVERAGE_GUIDANCE = "State remaining coverage limitations honestly without delaying the supported findings.";
 const FINAL_FINDINGS_GUIDANCE = "Report anything searched for and not found as a finding. Do not add a section about incomplete coverage.";
-const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference.";
+const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference. groupsRead lists the groups really read, even when they returned nothing. groupProblems states group names that could not be read: report each as stated rather than as a failed search, unless groupsRead shows the same group under a corrected spelling. Never describe other groups as that group.";
 
 type SynthesisOutcome = {
   retrieved?: boolean;
@@ -3480,24 +3500,6 @@ export async function recoverFinalOutputLimit(
     session.agent.streamFunction = previousStream;
   }
   return true;
-}
-
-function providerFailureKind(value: string): string {
-  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
-    return "rate_limit";
-  if (
-    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
-      value,
-    )
-  )
-    return "authorization";
-  if (
-    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
-      value,
-    )
-  )
-    return "interrupted_stream";
-  return "provider_error";
 }
 
 function providerFailureDetail(value: unknown): string {
@@ -3661,7 +3663,7 @@ async function completeLimitedResearch(options: {
         .slice(-4)
         .map(({ role, content }) => ({ role, content })),
       request: payload.prompt,
-      ...(options.research ? { completedActions: options.research.completedActions(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
+      ...(options.research ? { completedActions: options.research.completedActions(), ...options.research.groupScope(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
     checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
@@ -4087,7 +4089,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (research && budget) {
         // Synthesis writes the answer, so research may simply end without any text.
         const researchEnd = { allowEmpty: true };
-        validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
+        if (!research.noteFailedStart(lastAssistantMessage(currentTurnAssistantMessages)))
+          validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
         await continueOpenResearch(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (toolLimitError) throw toolLimitError;

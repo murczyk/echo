@@ -8,12 +8,14 @@ import {
   synthesizeBudgetEvidence,
   SynthesisAuthorizationError,
   SynthesisContentFilterError,
+  completionFailure,
   providerCompletion,
   type CompletionDiagnostic,
   type CompletionStatus,
   type ExecutionPolicy,
   type ResearchBudget,
 } from "./execution-policy.ts";
+import type { GroupOutcome } from "./group-scope.ts";
 import type { WorkJournal } from "./work-memory.ts";
 
 export const FLASH_ENGINE = "glm-5.3-flash-uncensored";
@@ -33,6 +35,8 @@ export const RESEARCH_CONTINUATIONS = 1;
 export const DEEP_RESEARCH_CONTINUATIONS = 3;
 const DEEP_SEARCH_PROMPT =
   "Deep mode was requested, but no tool has run. Search Echo before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text, or a task answerable entirely from text, files or images the user supplied, needs no tool; in that case finish with a brief completion message.";
+const FAILED_START_PROMPT =
+  "The previous attempt failed before any work was done. Answer the user's request above now, starting with the tools it needs.";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",
@@ -343,6 +347,9 @@ export class FlashResearch {
   private retrievals = 0;
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
+  private startFailed = false;
+  private readonly groupProblems = new Set<string>();
+  private readonly groupsRead = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
   private retrievalBatchAllowed = true;
   private paginationUpdateRequired = false;
@@ -435,7 +442,11 @@ export class FlashResearch {
   ): boolean {
     if (tool !== "inbox_messages" || query?.before_id_noninclusive == null)
       return false;
-    if (!query.search && !query.selected_freqs) return true;
+    const focused =
+      query.search ||
+      query.selected_freqs ||
+      (Array.isArray(query.selected_groups) && query.selected_groups.length > 0);
+    if (!focused) return true;
     const limit = this.tuning.searchedPageLimit;
     if (limit === undefined) return false;
     const scope = retrievalKey(`echo_${tool}`, query);
@@ -505,6 +516,17 @@ export class FlashResearch {
     this.publicToolRuns += 1;
   }
 
+  noteGroups({ problems = [], read = [] }: GroupOutcome): void {
+    for (const problem of problems) this.groupProblems.add(problem);
+    for (const name of read) this.groupsRead.add(name);
+  }
+
+  // Tool-free synthesis would otherwise see only a failed call, not that the
+  // group the user named does not exist, or which group an empty read covered.
+  groupScope(): { groupProblems: string[]; groupsRead: string[] } {
+    return { groupProblems: [...this.groupProblems], groupsRead: [...this.groupsRead] };
+  }
+
   private action(tool: string): CompletedAction {
     const action = this.actions.get(tool) ?? { tool, calls: 0, failed: 0 };
     this.actions.set(tool, action);
@@ -555,17 +577,33 @@ export class FlashResearch {
   }
 
   // Deep was asked for more effort, so it must not simply end on an answer from memory.
+  // A provider failure before the first tool call loses no work, so one more
+  // attempt beats telling the user to repeat the request.
+  noteFailedStart(message?: { stopReason?: unknown; errorMessage?: unknown }): boolean {
+    const failure = completionFailure(message?.errorMessage);
+    this.startFailed =
+      message?.stopReason === "error" &&
+      this.publicToolRuns === 0 &&
+      (failure === "provider_error" || failure === "transient_error");
+    return this.startFailed;
+  }
+
+  private get failedStart(): boolean {
+    return this.startFailed && this.publicToolRuns === 0;
+  }
+
   shouldContinue(budget: ResearchBudget): boolean {
     const skippedTools =
       budget.policy.preset === "deep" && this.publicToolRuns === 0;
     return (
-      (this.unfinished || skippedTools) &&
+      (this.unfinished || skippedTools || this.failedStart) &&
       budget.remainingResearchMs() >
         Math.max(0, ...this.observedMs.values()) + TURN_MARGIN_MS
     );
   }
 
   continuationPrompt(): string {
+    if (this.failedStart) return FAILED_START_PROMPT;
     const pending = this.pendingTasks;
     if (!pending.length && !this.unfinished) return DEEP_SEARCH_PROMPT;
     const reason = pending.length

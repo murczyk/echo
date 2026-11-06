@@ -1,5 +1,6 @@
 import { Type } from 'typebox';
 import { Check } from 'typebox/value';
+import { SELECTED_GROUPS_DESCRIPTION } from './search-guidance.ts';
 
 const id = Type.String({ minLength: 36, maxLength: 36, pattern: '^[0-9a-f-]{36}$' });
 const text = Type.String({ maxLength: 1000 });
@@ -12,7 +13,7 @@ export const ATTACHMENT_ROUTES: Record<string, { kind: string; path: string }> =
 };
 export const ATTACHMENT_PARAMETERS = {
   attachmentSearch: Type.Object({
-    query: Type.Optional(text), selectedGroups: Type.Optional(Type.Array(text, { maxItems: 128 })),
+    query: Type.Optional(text), selectedGroups: Type.Optional(Type.Array(text, { maxItems: 128, description: SELECTED_GROUPS_DESCRIPTION })),
     messageIds: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { maxItems: 100 })),
     from: Type.Optional(Type.Number({ description: 'Inclusive UTC epoch milliseconds; omit for all history.' })),
     to: Type.Optional(Type.Number({ description: 'Inclusive UTC epoch milliseconds.' })),

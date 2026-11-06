@@ -446,6 +446,26 @@ log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
 `invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
 `wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.
 
+## Group scope and failed first calls (release 2026.11.06.4)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.4`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Release `2026.11.06.3` stays in the compatible runner
+lists. Roll back the application and harness as a pair.
+
+The application change also reaches people: a selection with no accessible group
+now returns nothing instead of every accessible group. A saved filter or duty
+column whose groups were all revoked or archived goes empty, and clearing the
+filter restores it. Before deploying, count saved filters that name archived or
+deleted groups; personal browser selections cannot be counted that way.
+
+Verify on GLM-5.3 that a request naming a group shows `джерела «<group>»` in its
+activity and cites only that group, and that an unknown group is reported as not
+found. Research failures now log `failureKind` and `httpStatus` in the
+`AI agent completion` diagnostic, and a retry shows as `outcome: continued`.
+
 ## Deep continuation that finishes the work (release 2026.11.06.3)
 
 Deploy the matching application, then upgrade the approved installation's

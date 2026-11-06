@@ -271,6 +271,37 @@ export interface CompletionDiagnostic {
   remainingMs?: number;
   maxTokens?: number;
   attempt?: number;
+  failureKind?: string;
+  httpStatus?: number;
+}
+
+export function providerFailureKind(value: string): string {
+  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
+    return "rate_limit";
+  if (
+    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
+      value,
+    )
+  )
+    return "authorization";
+  if (
+    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
+      value,
+    )
+  )
+    return "interrupted_stream";
+  return "provider_error";
+}
+
+function providerFailureFacts(
+  error: unknown,
+): Pick<CompletionDiagnostic, "failureKind" | "httpStatus"> {
+  const message = typeof error === "string" ? error : "";
+  const status = message.match(/\b[45]\d{2}\b/)?.[0];
+  return {
+    failureKind: message.trim() ? providerFailureKind(message) : "empty",
+    ...(status ? { httpStatus: Number(status) } : {}),
+  };
 }
 
 export function completionFailure(error: unknown): CompletionStatus {
@@ -335,6 +366,9 @@ export function providerCompletion(
     toolCalls:
       response?.content?.filter((item: any) => item.type === "toolCall")
         .length ?? 0,
+    ...(response?.stopReason === "error"
+      ? providerFailureFacts(response?.errorMessage)
+      : {}),
   };
 }
 
