@@ -1185,6 +1185,7 @@ test("incident 01a1b176: only Deep is sent back to search when no tool ran", () 
   assert.equal(research.shouldContinue(deep), true);
   assert.equal(research.shouldContinue(fast), false);
   assert.match(research.continuationPrompt(), /Deep mode was requested/);
+  assert.match(research.continuationPrompt(), /files or images the user supplied/);
   // Not searching is not unfinished work: reformatting needs no tool.
   assert.equal(research.hasUnfinishedWork, false);
   research.noteToolRun();

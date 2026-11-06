@@ -32,7 +32,7 @@ export const RESEARCH_INCOMPLETE_REASON = "incomplete_research";
 export const RESEARCH_CONTINUATIONS = 1;
 export const DEEP_RESEARCH_CONTINUATIONS = 3;
 const DEEP_SEARCH_PROMPT =
-  "Deep mode was requested, but no tool has run. Search Echo before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text needs no tool; in that case finish with a brief completion message.";
+  "Deep mode was requested, but no tool has run. Search Echo before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text, or a task answerable entirely from text, files or images the user supplied, needs no tool; in that case finish with a brief completion message.";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",
