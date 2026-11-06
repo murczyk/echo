@@ -14,6 +14,7 @@ export function MessageCardAttachmentPreviewLayout({
   navigation,
   swipeEnabled = true,
   onSwipeDismiss,
+  immersive = false,
 }: {
   stage: ReactNode;
   header?: ReactNode;
@@ -22,6 +23,7 @@ export function MessageCardAttachmentPreviewLayout({
   navigation?: MessageCardPreviewNavigation;
   swipeEnabled?: boolean;
   onSwipeDismiss?: () => void;
+  immersive?: boolean;
 }) {
   const [stageContainerEl, setStageContainerEl] = useState<HTMLDivElement | null>(null);
 
@@ -44,7 +46,7 @@ export function MessageCardAttachmentPreviewLayout({
           height: 0,
           flex: '1 1 0',
           overflow: 'hidden',
-          backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
+          backgroundColor: getAttachmentPreviewStageBg,
         }}
       >
         {header ?? null}
@@ -59,7 +61,7 @@ export function MessageCardAttachmentPreviewLayout({
             position: 'relative',
             borderRadius: 0,
             overflow: 'hidden',
-            backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
+            backgroundColor: getAttachmentPreviewStageBg,
           }}
         >
           <Box
@@ -100,7 +102,7 @@ export function MessageCardAttachmentPreviewLayout({
         </Box>
 
         {/* Mobile Bottom Bar (Under the divider line, containing ONLY carousel controls) */}
-        {navigation && navigation.count > 1 ? (
+        {!immersive && navigation && navigation.count > 1 ? (
           <Box
             sx={{
               display: { xs: 'flex', sm: 'none' },

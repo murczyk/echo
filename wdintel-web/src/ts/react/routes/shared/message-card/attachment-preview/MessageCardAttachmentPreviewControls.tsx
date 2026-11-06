@@ -14,8 +14,10 @@ import {
 
 export function AttachmentPreviewMobileCarouselNav({
   navigation,
+  themed = false,
 }: {
   navigation: MessageCardPreviewNavigation;
+  themed?: boolean;
 }) {
   if (navigation.count <= 1) return null;
 
@@ -26,7 +28,7 @@ export function AttachmentPreviewMobileCarouselNav({
       alignItems="center"
       justifyContent="center"
       sx={{
-        color: '#fff',
+        color: themed ? 'text.primary' : '#fff',
         py: 0.25,
       }}
     >
@@ -35,8 +37,8 @@ export function AttachmentPreviewMobileCarouselNav({
         size="small"
         onClick={navigation.onPrevious}
         sx={{
-          color: 'rgba(255, 255, 255, 0.9)',
-          '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.15)' },
+          color: themed ? 'inherit' : 'rgba(255, 255, 255, 0.9)',
+          '&:hover': { backgroundColor: themed ? 'action.hover' : 'rgba(255, 255, 255, 0.15)' },
         }}
         data-attachment-preview-nav="prev"
       >
@@ -50,8 +52,8 @@ export function AttachmentPreviewMobileCarouselNav({
           px: 1.5,
           py: 0.5,
           borderRadius: 1,
-          backgroundColor: 'rgba(255, 255, 255, 0.15)',
-          color: '#fff',
+          backgroundColor: themed ? 'action.selected' : 'rgba(255, 255, 255, 0.15)',
+          color: themed ? 'inherit' : '#fff',
           fontWeight: 700,
           fontSize: '0.85rem',
           whiteSpace: 'nowrap',
@@ -64,8 +66,8 @@ export function AttachmentPreviewMobileCarouselNav({
         size="small"
         onClick={navigation.onNext}
         sx={{
-          color: 'rgba(255, 255, 255, 0.9)',
-          '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.15)' },
+          color: themed ? 'inherit' : 'rgba(255, 255, 255, 0.9)',
+          '&:hover': { backgroundColor: themed ? 'action.hover' : 'rgba(255, 255, 255, 0.15)' },
         }}
         data-attachment-preview-nav="next"
       >

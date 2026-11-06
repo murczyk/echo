@@ -116,6 +116,10 @@ export function MessageCardAttachmentPreviewDialog({
   const [hoveredStageNavigationSide, setHoveredStageNavigationSide] =
     useState<AttachmentPreviewStageNavigationSide>(null);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
+  const fullscreenExitRef = useRef<(() => void) | null>(null);
+  const registerFullscreenExit = useCallback((exit: (() => void) | null) => {
+    fullscreenExitRef.current = exit;
+  }, []);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
   const registerEditorEscapeHandler = useCallback<RegisterImageEditorEscapeHandler>((handler) => {
@@ -156,6 +160,10 @@ export function MessageCardAttachmentPreviewDialog({
       setDismissChildOverlay((value) => value + 1);
       return false;
     }
+    if (fullscreenExitRef.current) {
+      fullscreenExitRef.current();
+      return false;
+    }
     if (isEditing) {
       editorEscapeHandlerRef.current?.(
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
@@ -181,6 +189,12 @@ export function MessageCardAttachmentPreviewDialog({
           setDismissChildOverlay((value) => value + 1);
           return;
         }
+        if (fullscreenExitRef.current) {
+          consumeEvent(event);
+          fullscreenExitRef.current();
+          return;
+        }
+        if (document.fullscreenElement) return;
         const editorEscapeHandler = editorEscapeHandlerRef.current;
         if (editorEscapeHandler) {
           if (editorEscapeHandler(event)) consumeEvent(event);
@@ -250,6 +264,9 @@ export function MessageCardAttachmentPreviewDialog({
           ...getAttachmentPreviewDialogPaperSx(),
           backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
           ...paperSx,
+          ...(item.type === 'video'
+            ? { '@supports (height: 100dvh)': { height: '100dvh', maxHeight: '100dvh' } }
+            : {}),
         },
       }}
       BackdropProps={{
@@ -280,6 +297,7 @@ export function MessageCardAttachmentPreviewDialog({
           />
         ) : item.type === 'video' ? (
           <VideoAttachmentPreviewRenderer
+            registerFullscreenExit={registerFullscreenExit}
             video={item.value}
             onChildOverlayChange={onChildOverlayChange}
             dismissChildOverlay={dismissChildOverlay}

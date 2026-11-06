@@ -807,6 +807,12 @@ async function installMessageCardMediaPreviewHostFixture(
     });
   }
 
+  await page.route('**/api/sigint/units/hierarchy', (route) =>
+    route.fulfill({
+      json: { revision: 'message-card-media-preview', groups: [], units: [] },
+    }),
+  );
+
   if (messageReferenceResponse !== undefined) {
     await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
       if (messageReferenceDelayMs > 0) {

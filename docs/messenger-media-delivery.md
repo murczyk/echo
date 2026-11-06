@@ -161,8 +161,61 @@ that a slow mobile connection can sustain the original video's bitrate.
 Preview regression coverage lives in
 `wdintel-rs/src/messenger/media_preview/tests.rs` and
 `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` (#3769).
+
 Staging acceptance must measure first frame and sustained playback on a large
 cold object, reopen it with warm segments, seek to an uncached position, and
 check that closing stops further requests. A cold source still depends on B2
 latency and how quickly FFmpeg can decode the source GOP; the original bitrate
 and keyframe spacing can affect preparation time.
+
+### Mobile message-card video viewer
+
+Analysis and Duty share a video viewer that fits mobile footage to the whole
+available browser viewport without cropping or forcing orientation. Its background
+uses the same theme surface as other attachments. The translucent mobile playback
+panel and carousel island use that surface too, with controls coloured by the theme.
+The header,
+playback controls, and attachment navigation overlay the video without reserving
+layout height. Rotating a phone to landscape automatically fits the video to the
+new viewport, keeping the same video element, playback position, mute, and speed.
+
+A tap or click on the video toggles the header and controls together, while playing
+or paused; it does not play, pause, zoom, close, or request fullscreen. Playback has
+a separate button. Controls initially hide after two seconds of playback, except
+during loading, errors, menu interaction, keyboard focus, and report editing.
+Manual taps cancel that timer. Enter/Space on the focusable video toggles the same
+panels without changing playback. The shared attachment header preserves filename,
+information, file actions, close, and carousel spacing. Playback speed is in its
+overflow menu. Horizontal swipes and shared carousel controls retain the message's
+mixed attachments. The mobile playback panel uses one row from 480px wide, or a
+timeline above the buttons on narrower screens, without a duplicate centre button.
+On narrow screens, carousel navigation sits in a translucent island above the
+playback panel. The panel stays anchored to the bottom for one or many attachments.
+While the mobile video viewer is open, it temporarily sets `viewport-fit=cover`
+so supporting browsers can extend its background underneath gesture navigation.
+The playback buttons remain above the bottom safe-area inset. Closing the viewer,
+switching to another attachment type, or returning to desktop controls restores
+the previous viewport settings. Browsers may still draw their own system bar;
+fullscreen exit banners remain controlled by the browser.
+
+The mobile playback panel includes a fullscreen button when the platform supports
+it; it becomes available after video metadata loads. On Android with the standard
+Fullscreen API, it expands the document containing the player and its portalled
+menus, preserving our controls. The same button exits fullscreen. Escape or the
+browser's fullscreen exit returns to the open viewer. In portrait fullscreen,
+the header adds minimum top and side spacing to the system safe-area insets.
+Entry failures show a toast.
+Leaving the video viewer releases its fullscreen, including late requests after
+closing; returning retains the same video element, position, mute, and speed.
+
+On iPhone without element fullscreen support, the button invokes WebKit's native
+video fullscreen, enabling system controls before entry. Apple controls replace
+our UI there. Exiting restores our inline controls without reloading the video.
+The inline viewport layout can retain browser bars; rotating alone never requests
+fullscreen. Device-file playback and other attachment viewers keep their existing
+behavior.
+
+Browser regressions: `wdintel-web/tests/e2e/message-card-video-mobile.spec.ts`
+(#3340). Chromium emulation does not replace physical Android Chrome and iPhone
+Safari acceptance, including fullscreen entry/exit, native controls, browser bars, safe areas,
+rotation, and the onscreen keyboard.
