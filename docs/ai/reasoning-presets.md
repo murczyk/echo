@@ -20,10 +20,10 @@ as a new Deep request in the same conversation; it is a fresh run informed by th
 previous answer, not a resume. Deep answers get no button because there is no
 higher mode.
 
-A Deep answer on a non-OpenAI engine is final. Gaps the model reports are written
-as findings, without a coverage notice, footer or `incomplete_research` metadata.
-Only a real stop (time, tool or context limit, or a provider failure) qualifies
-it, with one line naming that stop.
+A Deep answer on a non-OpenAI engine is final. Gaps reported on finished work are
+written as findings, without a coverage notice, footer or `incomplete_research`
+metadata. A real stop (time, tool or context limit, or a provider failure), tasks
+left pending or a failed synthesis qualify it, with one line naming that.
 
 The limit starts when a worker claims the request, excluding queue time.
 Fast reserves its last 30 seconds, Balanced 60 seconds, a document request

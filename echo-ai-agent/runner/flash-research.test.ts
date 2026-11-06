@@ -146,6 +146,7 @@ const scenarios = [
   "deep-stalled",
   "deep-gaps",
   "deep-hard-stop",
+  "deep-synthesis-fallback",
   "empty-final-turn",
   "deep-empty-final-turn",
   "refresh-required",
@@ -260,6 +261,9 @@ for (const [scenario, modelName] of [
     } else if (scenario === "deep-hard-stop") {
       read();
       read({ period, search: "botanical survey" });
+    } else if (scenario === "deep-synthesis-fallback") {
+      read();
+      refresh();
     } else if (scenario.endsWith("empty-final-turn")) {
       read();
       refresh();
@@ -510,6 +514,7 @@ for (const [scenario, modelName] of [
               "empty-refresh",
               "no-draft",
               "large-draft",
+              "deep-synthesis-fallback",
             ].includes(scenario)
           )
             return stream("UNFINISHED_ANSWER", undefined, "length");
@@ -811,7 +816,16 @@ for (const [scenario, modelName] of [
       assert.ok(!answer.includes("Охоплення джерел неповне"));
       assert.equal(
         coverage?.reason,
-        { "deep-hard-stop": "time_limit", "deep-stalled": "incomplete_research" }[scenario],
+        {
+          "deep-hard-stop": "time_limit",
+          "deep-stalled": "incomplete_research",
+          "deep-synthesis-fallback": "incomplete_research",
+        }[scenario],
+      );
+      // A saved draft must not pass for a finished answer.
+      assert.equal(
+        answer.includes("Наведено останню збережену чернетку"),
+        scenario === "deep-synthesis-fallback",
       );
       assert.equal(answer.includes("Вичерпано час глибокого режиму"), scenario === "deep-hard-stop");
       assert.equal(answer.includes("не виконавши всі заплановані кроки"), scenario === "deep-stalled");

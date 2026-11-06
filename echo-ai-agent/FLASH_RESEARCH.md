@@ -90,9 +90,9 @@ substitutes raw source excerpts. Unread cursors,
 incomplete tasks or remaining gaps produce a brief coverage qualification. Every
 such answer also emits `completion_metadata`: the budget limit's reason when one
 was reached, otherwise `incomplete_research` (also used for a fallback answer),
-which the chat uses to offer a Deep continuation. Deep is the exception: only a
-real stop qualifies its answer, with one line naming it, and the synthesis prompt
-reports what was not found as findings. When no limit stopped the work, that prompt
+which the chat uses to offer a Deep continuation. Deep is the exception: gaps
+reported on finished work are findings. Only a real stop, tasks left pending or a
+failed synthesis qualify its answer, with one line naming that. When no limit stopped the work, that prompt
 also forbids claiming one did, even if an earlier answer in the conversation said so.
 Authorization failures, content filters, cancellation and persistence failures
 retain their fail-closed behavior.

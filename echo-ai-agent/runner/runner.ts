@@ -1,5 +1,5 @@
 import { WORK_APPEND_PATH, WORK_RECORD_MAX_BYTES, WORK_PARAMETERS, WORK_DESCRIPTIONS, WorkJournal, WorkPersistenceError, validateWorkMemory, recalledEvidence, type WorkMemoryContext } from "./work-memory.ts";
-import { FLASH_ENGINE, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_INCOMPLETE_REASON, RESEARCH_TOOL_NAME, RESEARCH_TUNING, FlashResearch, continuationLimit, synthesisTokenLimit, finalizationMultipliers, usesBoundedResearch } from "./flash-research.ts";
+import { FLASH_ENGINE, FLASH_INABILITY, FLASH_LEGACY_POLICY, FLASH_GUIDANCE, FLASH_RESEARCH_UPDATE_REQUIRED, FLASH_RESEARCH_PAGINATION_REQUIRED, RESEARCH_INCOMPLETE_REASON, RESEARCH_TOOL_NAME, RESEARCH_TUNING, FlashResearch, continuationLimit, synthesisTokenLimit, finalizationMultipliers, usesBoundedResearch } from "./flash-research.ts";
 import {
   ResearchBudget,
   SynthesisAuthorizationError,
@@ -3599,15 +3599,22 @@ const DEEP_STOP_NOTICES: Record<ResearchLimitReason, string> = {
   provider_error: "Роботу перервав збій постачальника ШІ. Наведено результат на цей момент.",
 };
 const DEEP_UNFINISHED_NOTICE = "Агент завершив роботу, не виконавши всі заплановані кроки.";
+const DEEP_DRAFT_NOTICE = "Не вдалося завершити підсумок. Наведено останню збережену чернетку.";
 
-function boundedResearchNotice(
-  reason: ResearchLimitReason | undefined,
-  deep: boolean,
-  coverageLimited: boolean,
-): string {
+function boundedResearchNotice({ reason, deep, coverageLimited, unfinished, fallbackText }: {
+  reason: ResearchLimitReason | undefined;
+  deep: boolean;
+  coverageLimited: boolean;
+  unfinished: boolean;
+  /** The fallback answer, when synthesis failed. */
+  fallbackText?: string;
+}): string {
   if (!coverageLimited) return "";
   if (!deep) return "Охоплення джерел неповне; відповідь містить лише підтверджені зібрані дані.";
-  return reason ? DEEP_STOP_NOTICES[reason] : DEEP_UNFINISHED_NOTICE;
+  if (reason) return DEEP_STOP_NOTICES[reason];
+  if (unfinished) return DEEP_UNFINISHED_NOTICE;
+  // The inability message already says that no answer was prepared.
+  return fallbackText && fallbackText !== FLASH_INABILITY ? DEEP_DRAFT_NOTICE : "";
 }
 
 async function completeLimitedResearch(options: {
@@ -3689,11 +3696,13 @@ async function completeLimitedResearch(options: {
     );
     return options.documentRegistry ? stripUnknownDocumentLinks(answer, options.documentRegistry) : answer;
   };
-  const researchGaps = Boolean(options.research?.hasGaps()) || Boolean(options.research?.usedFallback);
-  // Deep is final: reported gaps are findings. Only a real stop or abandoned work qualifies it.
-  const coverageLimited = Boolean(budget.reason) || (deep ? unfinished : researchGaps);
+  const usedFallback = Boolean(options.research?.usedFallback);
+  const researchGaps = Boolean(options.research?.hasGaps()) || usedFallback;
+  // Deep is final: reported gaps are findings. Only a real stop, abandoned work or a failed
+  // synthesis qualifies it.
+  const coverageLimited = Boolean(budget.reason) || (deep ? unfinished || usedFallback : researchGaps);
   const notice = options.research
-    ? boundedResearchNotice(budget.reason, deep, coverageLimited)
+    ? boundedResearchNotice({ reason: budget.reason, deep, coverageLimited, unfinished, fallbackText: usedFallback ? text : undefined })
     : budget.reason === "context_limit"
     ? "Не вдалося продовжити аналіз усіх джерел. Наведено часткову відповідь за вже зібраними матеріалами; охоплення джерел неповне. Уточніть запит, щоб продовжити."
     : budget.policy.preset === "deep"
