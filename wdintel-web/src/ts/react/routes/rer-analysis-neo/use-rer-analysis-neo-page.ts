@@ -12,7 +12,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { fetchCurrentUser } from '../../services/api/user';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { effectiveRadioQuery } from './radio-features';
-import { canUseRadioFeatures, canUseMessageDevices } from '../../utils/roles';
+import { canUseRadioFeatures, canUseMessageDevices, hasRole } from '../../utils/roles';
 import {
   normalizeUnknownUnitFilterValue,
   normalizeUnknownUnitSelections,
@@ -31,6 +31,8 @@ import {
   pushQueryStateToUrl,
   normalizeQueryState,
   parseAnalysisPanelQueryStateFromWindow,
+  parseMessengerQueryStateFromWindow,
+  replaceMessengerQueryStateInUrl,
   queryStateUiComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
@@ -62,7 +64,12 @@ import { useAnalysisSavedFilters } from './use-analysis-saved-filters';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import { useSigintGroupCatalog } from '../../hooks/use-sigint-group-catalog';
 import { uniquePointEtalonsForMapSearch } from '../rer-duty-neo/utils';
-import { getAnalysisSidebarTabs, type AnalysisCenterTab, type AnalysisSidebarTab } from './types';
+import {
+  getAnalysisSidebarTabs,
+  LeftPanelTab,
+  type AnalysisCenterTab,
+  type AnalysisSidebarTab,
+} from './types';
 import { fetchAnalysisCallsignFrequencyMatches } from '../../services/api/analysis';
 import { toErrorMessage } from './use-analysis-data.shared';
 import { mergeMessageWindow } from '../shared/message-feed/windowing';
@@ -72,6 +79,7 @@ import {
   type GroupScope,
 } from '../shared/group-navigation';
 import { useRouteUrlOwnership } from './use-route-url-ownership';
+import { useMessengerAccounts } from './use-messenger-accounts';
 
 function groupScopesEqual(left: GroupScope, right: GroupScope): boolean {
   return (
@@ -155,6 +163,11 @@ export function useRerAnalysisNeoPage(
 ): AnalysisPageViewModel {
   const ownsWindowUrl = useRouteUrlOwnership();
   const [threadMessageId, setThreadMessageId] = useState(readThreadMessageId);
+  const [initialMessengerState] = useState(parseMessengerQueryStateFromWindow);
+  const [leftPanelTab, setLeftPanelTab] = useState(initialMessengerState.leftPanelTab);
+  const [selectedMessengerAccountId, selectMessengerAccount] = useState(
+    initialMessengerState.messengerAccountId,
+  );
   const exitThread = useCallback(() => {
     const url = new URL(window.location.href);
     url.searchParams.delete(THREAD_MESSAGE_PARAM);
@@ -184,8 +197,28 @@ export function useRerAnalysisNeoPage(
   const groupCatalog = useSigintGroupCatalog();
   const groupScopeTransitionRequestedRef = useRef(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const messengerEnabled = hasRole(currentUser?.roles, 'CyberMessengers');
   const [currentUserStatus, setCurrentUserStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
+  );
+  // Wait for the user: before the role is known the tab reads as echo groups, and writing that
+  // would strip a shared messenger link from the URL.
+  useEffect(() => {
+    if (currentUserStatus !== 'success' || !ownsWindowUrl()) return;
+    replaceMessengerQueryStateInUrl(
+      messengerEnabled
+        ? { leftPanelTab, messengerAccountId: selectedMessengerAccountId }
+        : { leftPanelTab: LeftPanelTab.EchoGroups, messengerAccountId: null },
+    );
+  }, [
+    currentUserStatus,
+    leftPanelTab,
+    messengerEnabled,
+    ownsWindowUrl,
+    selectedMessengerAccountId,
+  ]);
+  const messengerAccountsState = useMessengerAccounts(
+    messengerEnabled && leftPanelTab === LeftPanelTab.Messenger,
   );
   const [systemSettingsStatus, setSystemSettingsStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
@@ -712,6 +745,9 @@ export function useRerAnalysisNeoPage(
   useEffect(() => {
     const onPopState = () => {
       if (!ownsWindowUrl()) return;
+      const nextMessengerState = parseMessengerQueryStateFromWindow();
+      setLeftPanelTab(nextMessengerState.leftPanelTab);
+      selectMessengerAccount(nextMessengerState.messengerAccountId);
       const nextThreadMessageId = readThreadMessageId();
       const linkedReference = nextThreadMessageId == null ? parseMessageUidFromWindow() : null;
       const nextGroupScope = readAnalysisGroupScopeFromUrl();
@@ -1708,6 +1744,12 @@ export function useRerAnalysisNeoPage(
     isFilterSectionStale: data.isFilterSectionStale,
     groupInfos,
     groupNavigation,
+    leftPanelTab: messengerEnabled ? leftPanelTab : LeftPanelTab.EchoGroups,
+    messengerEnabled,
+    messengerAccounts: messengerAccountsState.accounts,
+    messengerAccountsLoading: messengerAccountsState.loading,
+    messengerAccountsError: messengerAccountsState.error,
+    selectedMessengerAccountId,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
@@ -1853,6 +1895,9 @@ export function useRerAnalysisNeoPage(
     setSavedFilterName: savedFilters.setSavedFilterName,
     showFreqOnMap,
     toggleLeftPanel,
+    setLeftPanelTab,
+    selectMessengerAccount,
+    saveMessengerInternalNotes: messengerAccountsState.saveInternalNotes,
     openLeftPanel,
     selectGroupScope,
     toggleRightPanel,

@@ -17,6 +17,7 @@ import {
   formatDateTimeInputValueInTimeZone,
   isNullOrUndefined,
 } from '../../utils/misc';
+import { LeftPanelTab } from './types';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
 import {
@@ -53,6 +54,8 @@ const RIGHT_PANEL_OPEN_PARAM = 'rightPanelOpen';
 const FILTER_PANEL_OPEN_PARAM = 'filterPanelOpen';
 const MESSAGES_PAGE_PARAM = 'messagesPage';
 const GROUP_SCOPE_PARAM = 'group';
+const LEFT_PANEL_TAB_PARAM = 'leftPanelTab';
+const MESSENGER_ACCOUNT_PARAM = 'messengerAccount';
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
@@ -245,6 +248,44 @@ export function replaceAnalysisPanelQueryStateInUrl(state: Partial<AnalysisPanel
   const url = new URL(window.location.href);
   writeAnalysisPanelQueryState(url.searchParams, state);
   window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
+}
+
+export type MessengerQueryState = {
+  leftPanelTab: LeftPanelTab;
+  messengerAccountId: string | null;
+};
+
+// The account only means something inside the messenger tab, so it is ignored elsewhere.
+export function parseMessengerQueryStateFromWindow(): MessengerQueryState {
+  if (typeof window === 'undefined') {
+    return { leftPanelTab: LeftPanelTab.EchoGroups, messengerAccountId: null };
+  }
+  const searchParams = new URL(window.location.href).searchParams;
+  if (searchParams.get(LEFT_PANEL_TAB_PARAM) !== LeftPanelTab.Messenger) {
+    return { leftPanelTab: LeftPanelTab.EchoGroups, messengerAccountId: null };
+  }
+  return {
+    leftPanelTab: LeftPanelTab.Messenger,
+    messengerAccountId: searchParams.get(MESSENGER_ACCOUNT_PARAM)?.trim() || null,
+  };
+}
+
+export function replaceMessengerQueryStateInUrl(state: MessengerQueryState): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (state.leftPanelTab === LeftPanelTab.Messenger) {
+    url.searchParams.set(LEFT_PANEL_TAB_PARAM, state.leftPanelTab);
+    if (state.messengerAccountId == null) url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
+    else url.searchParams.set(MESSENGER_ACCOUNT_PARAM, state.messengerAccountId);
+  } else {
+    url.searchParams.delete(LEFT_PANEL_TAB_PARAM);
+    url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
+  }
+  const query = url.searchParams.toString();
+  const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
+  if (href === `${window.location.pathname}${window.location.search}${url.hash}`) return;
+  // Keep the current history state: an open overlay owns this entry's layer.
+  window.history.replaceState(window.history.state, '', href);
 }
 
 export function readAnalysisGroupScopeFromUrl(): GroupScope {

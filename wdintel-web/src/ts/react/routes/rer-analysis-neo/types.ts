@@ -22,6 +22,7 @@ import type {
   Unit,
   ReportHistoryRow,
 } from '../../../../Bindings';
+import type { MessengerAccountItem } from './components/MessengerAccountList';
 import type { UnitHierarchyIndex } from '../shared/unit-children-filter';
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
@@ -33,6 +34,11 @@ import type {
   GroupFilterNavigationModel,
   GroupScope,
 } from '../shared/group-navigation/group-navigation.types';
+
+export enum LeftPanelTab {
+  EchoGroups = 'echo-groups',
+  Messenger = 'messenger',
+}
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -235,6 +241,12 @@ export type AnalysisPageState = {
   isFilterSectionStale: (section: AnalysisFilterSectionId) => boolean;
   groupInfos: Record<string, SignalGroupEntry>;
   groupNavigation: GroupFilterNavigationModel;
+  leftPanelTab: LeftPanelTab;
+  messengerEnabled: boolean;
+  messengerAccounts: readonly MessengerAccountItem[];
+  messengerAccountsLoading: boolean;
+  messengerAccountsError: string | null;
+  selectedMessengerAccountId: string | null;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
   inboxReq: InboxMessagesReq | null;
@@ -404,6 +416,9 @@ export type AnalysisPageActions = {
   setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
+  setLeftPanelTab: (tab: LeftPanelTab) => void;
+  selectMessengerAccount: (id: string) => void;
+  saveMessengerInternalNotes: (accountId: string, internalNotes: string) => Promise<void>;
   openLeftPanel: () => void;
   selectGroupScope: (scope: GroupScope) => void;
   toggleRightPanel: () => void;

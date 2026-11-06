@@ -69,6 +69,10 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
 );
 
 vi.mock('@mui/material', () => ({
+  ToggleButtonGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ToggleButton: ({ children }: { children: ReactNode }) => (
+    <button type="button">{children}</button>
+  ),
   Badge: ({
     children,
     variant,
@@ -460,6 +464,7 @@ vi.mock('@mui/icons-material/PersonAddOutlined', () => ({ default: () => <span /
 vi.mock('@mui/icons-material/TableRowsOutlined', () => ({ default: () => <span /> }));
 
 import { RerAnalysisNeoPage } from '.././index';
+import { LeftPanelTab } from '../types';
 
 function buildPage() {
   return {
@@ -483,6 +488,13 @@ function buildPage() {
     editTargetLoadState: { status: 'idle' },
     filtersLoading: false,
     groupInfos: {},
+    leftPanelTab: 'echo-groups',
+    messengerEnabled: false,
+    messengerAccounts: [],
+    messengerAccountsLoading: false,
+    messengerAccountsError: null,
+    saveMessengerInternalNotes: vi.fn(),
+    selectedMessengerAccountId: null,
     groupNavigation: {
       groups: [
         {
@@ -728,6 +740,24 @@ describe('RerAnalysisNeoPage', () => {
     expect(container.textContent).toContain('skeleton');
     expect(container.querySelector('[data-testid="circular-progress"]')).toBeNull();
     expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+  });
+
+  it('hides the Echo load error banner while the messenger workspace is open', async () => {
+    const page = buildPage();
+    page.error = 'echo load failed';
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    expect(container.textContent).toContain('echo load failed');
+
+    page.leftPanelTab = LeftPanelTab.Messenger;
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    expect(container.textContent).not.toContain('echo load failed');
+    root.unmount();
   });
 
   it('replaces stale group messages with skeletons while the selected group loads', async () => {

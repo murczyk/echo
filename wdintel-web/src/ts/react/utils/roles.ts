@@ -69,7 +69,7 @@ export function hasRole(roles: readonly string[] | null | undefined, role: UserR
     case 'MessengerIngest':
       return has('MessengerIngest');
     case 'CyberMessengers':
-      return has('Admin') || has('CyberMessengers');
+      return has('CyberMessengers'); // TODO: ADD ADMIN ONCE ANALYSIS MESSENGERS FEATURE IS FULLY COVERED
   }
 }
 

@@ -19,7 +19,7 @@ import { SidePanelToggleButton } from '../../components/SidePanelToggleButton';
 import { AnalysisHeaderControls } from './components/AnalysisHeaderControls';
 import { AnalysisPaginationControl } from './components/AnalysisPaginationControl';
 import { ANALYSIS_MESSAGES_PAGE_SIZE } from './helpers';
-import type { AnalysisCenterTab, AnalysisPageViewModel } from './types';
+import { LeftPanelTab, type AnalysisCenterTab, type AnalysisPageViewModel } from './types';
 
 type Props = {
   page: AnalysisPageViewModel;
@@ -155,7 +155,8 @@ export function AnalysisPageHeader({
     messageTransitionLoading ||
     page.messagesTotalLoading ||
     page.summaryLoading;
-  const showPagination = !isNarrowLayout;
+  const showPagination = !isNarrowLayout && page.leftPanelTab !== LeftPanelTab.Messenger;
+  const showDateRange = page.leftPanelTab !== LeftPanelTab.Messenger;
   return (
     <PageHeader
       title="Аналіз"
@@ -164,6 +165,7 @@ export function AnalysisPageHeader({
           <AnalysisHeaderControls
             queryState={page.queryState}
             updateQueryState={page.updateQueryState}
+            showDateRange={showDateRange}
           />
         )
       }
@@ -181,6 +183,7 @@ export function AnalysisPageHeader({
           <AnalysisHeaderControls
             queryState={page.queryState}
             updateQueryState={page.updateQueryState}
+            showDateRange={showDateRange}
             isCompactLayout
           />
         ) : undefined

@@ -22,6 +22,7 @@ import { AnalysisPageHeader } from './AnalysisPageHeader';
 import { AnalysisLeftPanel } from './AnalysisLeftPanel';
 import { AnalysisLoadingSkeletons } from './AnalysisLoadingSkeletons';
 import { AnalysisCenterPanel } from './AnalysisCenterPanel';
+import { MessengerWorkspace } from './components/MessengerWorkspace';
 import { AnalysisFullscreenPanelDrawer } from './AnalysisFullscreenPanelDrawer';
 import { AnalysisRightPanel } from './AnalysisRightPanel';
 import { AnalysisReportDialog } from './components/AnalysisReportDialog';
@@ -33,7 +34,7 @@ import {
   MANAGE_MESSAGE_EDITOR_TRANSITION_MS,
   useManageMessageEditorPresentation,
 } from '../shared/manage-message/ManageMessageEditorSurface';
-import { getAnalysisCenterTabs } from './types';
+import { getAnalysisCenterTabs, LeftPanelTab } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import {
   parseAnalysisPanelQueryStateFromWindow,
@@ -456,7 +457,8 @@ export function RerAnalysisNeoPage({
           />
         </Box>
 
-        {page.error ? (
+        {/* Echo loads keep running behind the messenger workspace, so their errors stay hidden there. */}
+        {page.error && page.leftPanelTab !== LeftPanelTab.Messenger ? (
           <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
             {page.error}
           </PowerAlert>
@@ -512,7 +514,17 @@ export function RerAnalysisNeoPage({
             <Box sx={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
               <PointBlacklistPaletteNamesCacheProvider>
                 <MessageDeviceAccessProvider allowed={page.cyberEchoEnabled}>
-                  {showLoadingSkeletons ? (
+                  {page.leftPanelTab === LeftPanelTab.Messenger ? (
+                    <MessengerWorkspace
+                      loading={page.messengerAccountsLoading}
+                      onSaveInternalNotes={page.saveMessengerInternalNotes}
+                      account={
+                        page.messengerAccounts.find(
+                          (account) => account.id === page.selectedMessengerAccountId,
+                        ) ?? null
+                      }
+                    />
+                  ) : showLoadingSkeletons ? (
                     <AnalysisLoadingSkeletons
                       rightPanelVisible={inlineRightDockVisible && rightPanelVisible}
                     />
@@ -672,7 +684,7 @@ export function RerAnalysisNeoPage({
           onUpdate={page.updateReport}
         />
 
-        {!analysisMapVisible && !editorOpen ? (
+        {!analysisMapVisible && !editorOpen && page.leftPanelTab !== LeftPanelTab.Messenger ? (
           <CreateMessageFab ref={createMessageFabRef} onClick={openCreateMessageComposer} />
         ) : null}
       </Box>

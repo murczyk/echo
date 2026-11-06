@@ -12,7 +12,7 @@ import {
 } from '../../../components/DateTimeRangeControl';
 
 type Props = Pick<AnalysisPageState, 'queryState'> & Pick<AnalysisPageActions, 'updateQueryState'>;
-type AnalysisHeaderControlsProps = Props & { isCompactLayout?: boolean };
+type AnalysisHeaderControlsProps = Props & { isCompactLayout?: boolean; showDateRange?: boolean };
 
 export function getAnalysisDateTimeRangeWidth(
   value: DateTimeRangeValue,
@@ -25,6 +25,7 @@ export function AnalysisHeaderControls({
   queryState,
   updateQueryState,
   isCompactLayout = false,
+  showDateRange = true,
 }: AnalysisHeaderControlsProps) {
   const [compactSearchOpen, setCompactSearchOpen] = useState(Boolean(queryState.search));
   const dateTimeRangeValue = {
@@ -75,23 +76,25 @@ export function AnalysisHeaderControls({
           </PowerIconButton>
         </Tooltip>
       )}
-      <Box
-        sx={{
-          width: isCompactLayout
-            ? 40
-            : { xs: '100%', sm: getAnalysisDateTimeRangeWidth(dateTimeRangeValue) },
-          minWidth: 0,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-        }}
-      >
-        <DateTimeRangeControl
-          value={dateTimeRangeValue}
-          onChange={(value) => updateQueryState(value)}
-          displayMode={isCompactLayout ? 'icon' : 'date-time'}
-        />
-      </Box>
+      {showDateRange ? (
+        <Box
+          sx={{
+            width: isCompactLayout
+              ? 40
+              : { xs: '100%', sm: getAnalysisDateTimeRangeWidth(dateTimeRangeValue) },
+            minWidth: 0,
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <DateTimeRangeControl
+            value={dateTimeRangeValue}
+            onChange={(value) => updateQueryState(value)}
+            displayMode={isCompactLayout ? 'icon' : 'date-time'}
+          />
+        </Box>
+      ) : null}
     </Stack>
   );
 }
