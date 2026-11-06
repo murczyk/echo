@@ -163,6 +163,12 @@ type Retrieval = {
   query: unknown;
   continuation: Record<string, unknown>;
 };
+type CompletedAction = {
+  tool: string;
+  calls: number;
+  failed: number;
+  results?: number;
+};
 
 const clipped = (value: unknown, limit: number) =>
   typeof value === "string" ? value.trim().slice(0, limit) : "";
@@ -309,6 +315,14 @@ function continuation(value: unknown): Record<string, unknown> {
   );
 }
 
+function resultCount(response: unknown): number | undefined {
+  if (!response || typeof response !== "object") return undefined;
+  const lists = Object.values(response).filter(Array.isArray);
+  return lists.length
+    ? Math.max(...lists.map((list) => list.length))
+    : undefined;
+}
+
 function retrievalKey(tool: string, query: unknown): string {
   const scope =
     query && typeof query === "object"
@@ -327,6 +341,7 @@ export class FlashResearch {
   private retrievals = 0;
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
+  private readonly actions = new Map<string, CompletedAction>();
   private retrievalBatchAllowed = true;
   private paginationUpdateRequired = false;
   private readonly ledger: Retrieval[] = [];
@@ -431,6 +446,11 @@ export class FlashResearch {
   record(tool: string, query: unknown, response: unknown): void {
     const next = continuation(response);
     this.ledger.push({ tool, query, continuation: next });
+    const results = resultCount(response);
+    if (results !== undefined) {
+      const action = this.action(tool);
+      action.results = (action.results ?? 0) + results;
+    }
     this.unread.set(
       retrievalKey(tool, query),
       Object.entries(next).some(
@@ -481,6 +501,24 @@ export class FlashResearch {
 
   noteToolRun(): void {
     this.publicToolRuns += 1;
+  }
+
+  private action(tool: string): CompletedAction {
+    const action = this.actions.get(tool) ?? { tool, calls: 0, failed: 0 };
+    this.actions.set(tool, action);
+    return action;
+  }
+
+  noteToolResult(tool: string, failed: boolean): void {
+    const action = this.action(tool);
+    action.calls += 1;
+    if (failed) action.failed += 1;
+  }
+
+  // Tool-free synthesis sees only delivered evidence, so without this record it cannot
+  // tell a search that found nothing, or a published map, from work that never ran.
+  completedActions(): CompletedAction[] {
+    return [...this.actions.values()];
   }
 
   get toolRunCount(): number {

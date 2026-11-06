@@ -446,19 +446,20 @@ log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
 `invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
 `wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.
 
-## Deep continuation that finishes the work (release 2026.11.06.1)
+## Deep continuation that finishes the work (release 2026.11.06.2)
 
 Deploy the matching application, then upgrade the approved installation's
-namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.1`,
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.2`,
 previewing with `--dry-run` first. No migration or provider change is needed.
 Echo requires this exact harness, so the chat reports that the agent is updating
-until the namespace is upgraded. Release `2026.11.05.3` stays in the compatible
-runner lists. Roll back the application and harness as a pair.
+until the namespace is upgraded. Releases `2026.11.06.1` and `2026.11.05.3` stay in the compatible
+runner lists. Use `2026.11.06.2` everywhere: `2026.11.06.1` reached only echo-staging, and its
+final answers can say that tools did not run. Roll back the application and harness as a pair.
 
 Balanced on non-OpenAI engines now runs up to 10 minutes and holds the user's
 running slot that long; the composer shows the new limit. Verify on GLM-5.3 that a
-short question about a callsign runs a real search, that a map request still
-works, and that Deep shows no coverage notice or footer. Synthesis stays bounded
+short question about a callsign with no matches says that nothing was found, that a
+map request reports its map, and that Deep shows no coverage notice or footer. Synthesis stays bounded
 by each engine's `max_output_tokens` profile, so a host with 8,192 gains nothing
 from the higher limit. `AI agent tool` log lines now name `update_research` and
 `report_progress`, and validation failures add `fields`; use them to confirm which

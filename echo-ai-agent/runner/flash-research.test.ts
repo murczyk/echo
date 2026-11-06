@@ -68,6 +68,7 @@ const updated = {
   gaps: [],
 };
 const period = { kind: "relative_days", days: 1 };
+const synthesisRequest = (body: any) => JSON.parse(body.messages[1].content);
 
 function stream(
   content: string,
@@ -477,8 +478,19 @@ for (const [scenario, modelName] of [
           purpose === "synthesis" ||
           (scenario === "legacy" && !body.tools?.length)
         ) {
-          if (scenario === "user-map")
+          if (scenario === "user-map") {
             assert.ok(JSON.stringify(body).includes(`echo-map:${mapId}`));
+            assert.ok(synthesisRequest(body).completedActions.some(
+              (action: any) => action.tool === "echo_map_append" && action.failed === 0,
+            ));
+          }
+          // Incident 01a1b122: three searches found nothing and the answer said none ran.
+          if (scenario === "history-aggregate") {
+            assert.deepEqual(synthesisRequest(body).completedActions, [
+              { tool: "echo_inbox_messages", calls: 1, failed: 0, results: 0 },
+            ]);
+            assert.ok(JSON.stringify(body).includes("A search with zero results found nothing"));
+          }
           synthesisCalls++;
           synthesisBodies.push(JSON.stringify(body));
           assert.ok(synthesisCalls <= 2);
@@ -1120,6 +1132,21 @@ test("#4031 a turn ending with declared work left is continued only while it is 
   budget.dispose();
   assert.equal(continuationLimit(deepPolicy), DEEP_RESEARCH_CONTINUATIONS);
   assert.equal(continuationLimit(policy), RESEARCH_CONTINUATIONS);
+});
+
+test("incident 01a1b122: synthesis learns what really ran", () => {
+  const research = new FlashResearch(() => sources);
+  assert.deepEqual(research.completedActions(), []);
+  research.record("echo_inbox_messages", { period }, { messages: [] });
+  research.noteToolResult("echo_inbox_messages", false);
+  research.record("echo_inbox_messages", { period }, { messages: [1, 2] });
+  research.noteToolResult("echo_inbox_messages", false);
+  research.noteToolResult("echo_inbox_messages", true);
+  research.noteToolResult("echo_map_publish", false);
+  assert.deepEqual(research.completedActions(), [
+    { tool: "echo_inbox_messages", calls: 3, failed: 1, results: 2 },
+    { tool: "echo_map_publish", calls: 1, failed: 0 },
+  ]);
 });
 
 test("#4031 a closing note after real work is not unfinished work", () => {
