@@ -3,6 +3,13 @@ import { Collapse } from '@mui/material';
 import { useState } from 'react';
 
 import { PowerAlert } from '../../../components/PowerAlert';
+import { formatDate } from '../../../utils/misc';
+import {
+  chatSectionOf,
+  type MessengerChat,
+  useMessengerChats,
+  type MessengerChatSection,
+} from '../use-messenger-chats';
 import { MessengerAccountAvatar, type MessengerAccountItem } from './MessengerAccountList';
 import { MessengerInfoCard } from './MessengerInfoCard';
 import { MessengerNoteCard } from './MessengerNoteCard';
@@ -19,11 +26,22 @@ type Props = {
 // A generic cap until the backend defines its own limit.
 const INTERNAL_NOTES_MAX_LENGTH = 512;
 
-// shortcut: static layout only; navigation, chat lists and the main area get wired when the backend lands.
+// shortcut: navigation and the main area stay static until messages and contacts are wired.
 const NAV_ITEMS = ['Галерея', 'Контакти'] as const;
-const CHAT_SECTIONS = ['Приватні', 'Групи', 'Канали', 'Боти'] as const;
+const CHAT_SECTIONS: ReadonlyArray<{ key: MessengerChatSection; title: string }> = [
+  { key: 'private', title: 'Приватні' },
+  { key: 'group', title: 'Групи' },
+  { key: 'channel', title: 'Канали' },
+  { key: 'bot', title: 'Боти' },
+];
 
-function ChatSection({ title }: { title: string }) {
+// Short numeric date, e.g. 12.09.26.
+const formatChatDate = (ms: number) =>
+  formatDate(ms, { day: '2-digit', month: '2-digit', year: '2-digit' });
+
+const chatLabel = (chat: MessengerChat) => chat.title || chat.username || chat.externalId;
+
+function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }) {
   const [open, setOpen] = useState(true);
   return (
     <section>
@@ -33,11 +51,37 @@ function ChatSection({ title }: { title: string }) {
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span>{title} (0)</span>
+        <span>
+          {title} ({chats.length})
+        </span>
         <ExpandMoreIcon fontSize="small" className={open ? '' : '-rotate-90'} />
       </button>
       <Collapse in={open}>
-        <p className="px-3 py-1 text-xs opacity-60">Немає чатів</p>
+        {chats.length === 0 ? (
+          <p className="px-3 py-1 text-xs opacity-60">Немає чатів</p>
+        ) : (
+          <ul className="m-0 list-none p-0">
+            {chats.map((chat) => (
+              <li key={chat.id}>
+                <div className="group-navigation-list-item" data-messenger-chat>
+                  <MessengerAccountAvatar
+                    account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
+                  />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="group-navigation-name" title={chatLabel(chat)}>
+                      {chatLabel(chat)}
+                    </span>
+                    {chat.lastMessageDate != null ? (
+                      <span className="group-navigation-name text-xs opacity-60">
+                        {formatChatDate(chat.lastMessageDate)}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Collapse>
     </section>
   );
@@ -51,6 +95,15 @@ function MessengerSidebar({
   onExternalIdClick?: (account: MessengerAccountItem) => void;
 }) {
   const [query, setQuery] = useState('');
+  const { chats, loading, error, retry } = useMessengerChats(account.id);
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? chats.filter((chat) =>
+        [chat.title, chat.username, chat.externalId].some((field) =>
+          (field ?? '').toLowerCase().includes(needle),
+        ),
+      )
+    : chats;
   return (
     <aside
       aria-label="Навігація акаунту"
@@ -96,9 +149,28 @@ function MessengerSidebar({
       <div className="px-3">
         <MessengerSearchField value={query} onChange={setQuery} ariaLabel="Пошук чату" />
       </div>
-      {CHAT_SECTIONS.map((title) => (
-        <ChatSection key={title} title={title} />
-      ))}
+      {error != null ? (
+        <div className="flex flex-col items-start gap-1 px-3 py-2">
+          <p className="m-0" role="alert">
+            {error}
+          </p>
+          <button type="button" className="text-xs underline" onClick={retry}>
+            Повторити завантаження
+          </button>
+        </div>
+      ) : loading ? (
+        <p className="px-3 text-xs opacity-60" role="status">
+          Завантажуємо чати…
+        </p>
+      ) : (
+        CHAT_SECTIONS.map(({ key, title }) => (
+          <ChatSection
+            key={key}
+            title={title}
+            chats={visible.filter((chat) => chatSectionOf(chat) === key)}
+          />
+        ))
+      )}
     </aside>
   );
 }
@@ -127,7 +199,7 @@ export function MessengerWorkspace({
   }
   return (
     <div className="flex h-full min-h-0" data-messenger-workspace>
-      <MessengerSidebar account={account} onExternalIdClick={onExternalIdClick} />
+      <MessengerSidebar key={account.id} account={account} onExternalIdClick={onExternalIdClick} />
       <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         <MessengerNoteCard
           key={`internal-${account.id}`}

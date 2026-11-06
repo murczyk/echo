@@ -5,13 +5,19 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { listMessengersChats } from '../../../../services/api/analysis-messengers';
 import { MessengerWorkspace } from '../MessengerWorkspace';
+
+vi.mock('../../../../services/api/analysis-messengers', () => ({
+  listMessengersChats: vi.fn(),
+}));
 
 describe('MessengerWorkspace', () => {
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
+    vi.mocked(listMessengersChats).mockResolvedValue({ items: [] });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -82,5 +88,107 @@ describe('MessengerWorkspace', () => {
 
     render('2');
     expect(container.querySelector('textarea')).toBeNull();
+  });
+
+  it('puts the account chats into their sections', async () => {
+    const chat = (id: string, chatType: string | null, title: string, isBot?: boolean) => ({
+      isBot,
+      id,
+      chatType,
+      title,
+      messengerType: 'Telegram',
+      externalId: id,
+      username: null,
+      membersCount: null,
+      accountMemberStatus: null,
+      lastMessageDate: Date.UTC(2026, 8, 12, 12),
+      telegram: null,
+    });
+    vi.mocked(listMessengersChats).mockResolvedValue({
+      items: [
+        chat('1', 'PRIVATE', 'Ivan'),
+        chat('2', 'CHANNEL', 'News'),
+        chat('3', 'GROUP', 'Team'),
+        chat('4', null, 'Untyped'),
+        chat('5', 'PRIVATE', 'Helper', true),
+      ],
+    });
+    await act(async () =>
+      root.render(<MessengerWorkspace account={{ id: 'a', name: 'name', phone: '' }} />),
+    );
+
+    expect(listMessengersChats).toHaveBeenCalledWith({ accountId: 'a' }, expect.anything());
+    const sections = [...container.querySelectorAll('section')].map((s) => s.textContent);
+    expect(sections[0]).toContain('Приватні (1)');
+    expect(sections[0]).toContain('Ivan');
+    expect(sections[0]).toContain('12.09.26');
+    expect(sections[1]).toContain('Групи (2)');
+    expect(sections[1]).toContain('Team');
+    expect(sections[1]).toContain('Untyped');
+    expect(sections[2]).toContain('Канали (1)');
+    expect(sections[3]).toContain('Боти (1)');
+    expect(sections[3]).toContain('Helper');
+  });
+
+  it('does not show the previous account chats while the next account loads', async () => {
+    const item = {
+      id: '1',
+      chatType: 'PRIVATE',
+      title: 'Ivan',
+      messengerType: 'Telegram',
+      externalId: '1',
+    };
+    vi.mocked(listMessengersChats).mockResolvedValueOnce({ items: [item as never] });
+    const render = (id: string) =>
+      root.render(<MessengerWorkspace account={{ id, name: id, phone: '' }} />);
+    await act(async () => render('a'));
+    expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(1);
+
+    vi.mocked(listMessengersChats).mockReturnValueOnce(new Promise(() => {}));
+    await act(async () => render('b'));
+    expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(0);
+  });
+
+  it('retries a failed chat request and finds chats by username', async () => {
+    vi.mocked(listMessengersChats)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: '1',
+            chatType: 'PRIVATE',
+            title: 'Ivan',
+            username: 'ivan_k',
+            messengerType: 'Telegram',
+            externalId: '1',
+            membersCount: null,
+            accountMemberStatus: null,
+            lastMessageDate: null,
+            telegram: null,
+          },
+        ],
+      });
+    await act(async () =>
+      root.render(<MessengerWorkspace account={{ id: 'a', name: 'name', phone: '' }} />),
+    );
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+
+    const retry = [...container.querySelectorAll('button')].find(
+      (b) => b.textContent === 'Повторити завантаження',
+    );
+    await act(async () => retry?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(1);
+
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Пошук чату"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    const search = (value: string) =>
+      act(() => {
+        setValue.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    search('ivan_k');
+    expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(1);
+    search('nobody');
+    expect(container.querySelectorAll('[data-messenger-chat]')).toHaveLength(0);
   });
 });

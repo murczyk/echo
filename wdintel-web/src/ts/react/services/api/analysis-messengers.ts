@@ -1,4 +1,9 @@
-import type { MessengersAccountUpdateReq, MessengersAccountsListRsp } from '../../../../Bindings';
+import type {
+  MessengersAccountUpdateReq,
+  MessengersAccountsListRsp,
+  MessengersChatsListReq,
+  MessengersChatsListRsp,
+} from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
@@ -19,4 +24,13 @@ export async function updateMessengersAccount(
   options?: RequestOptions,
 ): Promise<void> {
   await postVoid('/api/messengers/accounts/update', transformCamelToSnake(req), options);
+}
+
+export async function listMessengersChats(
+  req: MessengersChatsListReq,
+  options?: RequestOptions,
+): Promise<MessengersChatsListRsp> {
+  return transformSnakeToCamel<MessengersChatsListRsp>(
+    await postJson<unknown>('/api/messengers/chats/list', transformCamelToSnake(req), options),
+  );
 }
