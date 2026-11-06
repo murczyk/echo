@@ -104,6 +104,7 @@
 - Also suggest creating a new issue. If the user chooses this option, create the issue, add it to the project, and set its status to `In Progress`.
 - Whenever creating a new issue, self-assign it to the authenticated GitHub user (`gh issue create --assignee @me`).
 - Ensure the selected or newly created issue belongs to the project. Suggest labels (tags) based on similar recent issues in `Done`, `Testing`, and `Ready` from the current user and other users.
+- In PR descriptions, link issues with `Refs #123`. Do not use closing keywords such as `Closes`, `Fixes`, or `Resolves` unless explicitly asked: merging would close the issue, and an issue is done only when it is deployed and its manual steps are finished.
 
 ## Changelog
 
