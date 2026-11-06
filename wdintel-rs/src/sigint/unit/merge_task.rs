@@ -771,6 +771,7 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 army_region: Set("West".into()),
+                division: Set("1 мсд".into()),
                 ..Default::default()
             },
         )
@@ -782,6 +783,7 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 army_region: Set("East".into()),
+                division: Set("1 мсд".into()),
                 ..Default::default()
             },
         )

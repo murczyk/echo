@@ -102,6 +102,7 @@ async fn issue_3940_unit_merges_revalidate_report_name_parents() {
             sigint_unit::ActiveModel {
                 army_region: Set("West".into()),
                 corps: Set("1 AK".into()),
+                division: Set("1 мсд".into()),
                 ..Default::default()
             },
         )
@@ -116,6 +117,7 @@ async fn issue_3940_unit_merges_revalidate_report_name_parents() {
                     String::new()
                 }),
                 corps: Set("1 AK".into()),
+                division: Set("1 мсд".into()),
                 ..Default::default()
             },
         )
@@ -130,6 +132,7 @@ async fn issue_3940_unit_merges_revalidate_report_name_parents() {
                     String::new()
                 }),
                 corps: Set("1 AK".into()),
+                division: Set("1 мсд".into()),
                 ..Default::default()
             },
         )
