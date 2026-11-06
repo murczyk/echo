@@ -14,6 +14,12 @@
       "runner": "harness"
     },
     {
+      "id": "group-scope",
+      "category": "group-scope",
+      "path": "ai-eval/2026-11-06-group-scope",
+      "runner": "harness"
+    },
+    {
       "id": "ai-maps",
       "category": "map-documents",
       "path": "ai-eval/2026-09-29-ai-maps",

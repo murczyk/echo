@@ -89,6 +89,44 @@ string) and `unitIds`; cases may list `units` for the unit lookup route. The
 `raw/cases-v1.json` is captured by `capture.py` (read-only over ssh). To score a
 runner that predates `unit_lookup`, pass `--exclude-skill unit_lookup`.
 
+## Group scope suite
+
+`2026-11-06-group-scope` covers requests naming a source group: a chat, channel or
+group must be read alone, and a group name used as a subject must not become a
+scope. Everything in it is synthetic, written by `build_cases.py`, because the
+check is about what was asked of Echo, not about message content. Regenerate the
+cases and checksum with that script rather than editing `cases.json`.
+
+Cases give each key a display name in `groupNames`, since real keys reveal nothing.
+`expect.groupScope` accepts `{keys}`, `{keys, all: true}` when every key must be
+read, `{keys, optional: true}` when clarifying without reading is acceptable, and
+`{forbid: true}`. It judges the request as well as the results, so a guessed value
+fails even when the fixture returns nothing:
+
+- `group_scope_not_applied`: no scoped read, or a read outside `keys`.
+- `group_scope_incomplete`: `all` was set and a key was never selected.
+- `out_of_scope_retrieval`, `out_of_scope_citation`: a message from another group
+  was read or cited.
+- `group_scope_applied_to_subject`: a `forbid` case was scoped.
+
+Add `executionPolicy` to the private engine file to run the bounded-research loop
+that GLM-5.3 and Gemma use in production; `provider-failure-then-retry` needs it.
+Use the production policy with `--timeout` above its `maxRuntimeSeconds`. The fixture
+matches current production, where an unmatched selection finds nothing. To reproduce
+the widening from before #4053, score the older runner with
+`--runner-ref <commit> --legacy-group-fallback`:
+
+```sh
+just ai-eval run --suite group-scope --engine /private/glm.json \
+  --run baseline --runner-ref <commit> --legacy-group-fallback --repeat 3 --timeout 700
+just ai-eval run --suite group-scope --engine /private/glm.json \
+  --run candidate --repeat 3 --timeout 700
+```
+
+`compare` prints a changed fallback or execution policy, so the comparison above is
+explicit about which behaviour each side ran. Local mode needs captured real cases,
+so this suite is fixture-only.
+
 ## Local integration
 
 Local mode accepts only captured real cases and a loopback HTTP backend. Add

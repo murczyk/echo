@@ -12,6 +12,7 @@ const fixtureHost = "echo-eval.invalid";
 let runtimeDirectory: string | undefined;
 const observations: Promise<void>[] = [];
 const mapDocuments = new Map<string, { requestId: string; document: any }>();
+let providerFailures: number = input.case.providerFailures ?? 0;
 
 // The worker is an isolated process. Inject transport at the fetch boundary so
 // historical runners and the current runner execute their unchanged agent loop.
@@ -19,6 +20,13 @@ globalThis.fetch = async (resource, init) => {
   const url = new URL(typeof resource === "string" ? resource : resource instanceof URL ? resource.href : resource.url);
   if (url.hostname !== fixtureHost) throw new Error("Unexpected evaluation network destination");
   if (url.pathname.startsWith("/api/ai-agent/provider/v1/")) {
+    if (providerFailures > 0) {
+      providerFailures -= 1;
+      emit({ type: "eval_provider_error", status: 400, injected: true });
+      return new Response(JSON.stringify({ error: { message: "Injected provider failure" } }), {
+        status: 400, headers: { "content-type": "application/json" },
+      });
+    }
     const endpoint = input.engine.url.replace(/\/chat\/completions\/?$/, "").replace(/\/$/, "");
     const headers = new Headers(init?.headers);
     headers.delete("cookie");
@@ -97,9 +105,12 @@ try {
   }
   const { runAgent, validatePayload, systemPrompt, runnerHello } = await import(pathToFileURL(resolve(runner)).href);
   const history = input.payload.history ?? [];
-  emit({ ...runnerHello(), type: "eval_harness", prompt: systemPrompt(validatePayload(input.payload, false)) });
+  // Production gives every request its own deadline from the execution policy.
+  const deadline = () => input.payload.executionPolicy
+    ? { deadlineAt: Date.now() + input.payload.executionPolicy.maxRuntimeSeconds * 1000 } : {};
+  emit({ ...runnerHello(), type: "eval_harness", prompt: systemPrompt(validatePayload({ ...input.payload, ...deadline() }, false)) });
   for (const prompt of input.case.turns) {
-    const payload = validatePayload({ ...input.payload, prompt, history }, false);
+    const payload = validatePayload({ ...input.payload, prompt, history, ...deadline() }, false);
     let answer = "";
     const citations: unknown[] = [];
     const requestId = randomUUID();
