@@ -471,7 +471,7 @@ export class FlashResearch {
       (this.state
         ? this.state.gaps.length > 0 ||
           this.state.checklist.some((item) => item.status !== "done")
-        : false) || [...this.unread.values()].some(Boolean)
+        : this.hasUnfinishedWork) || [...this.unread.values()].some(Boolean)
     );
   }
 
@@ -495,6 +495,15 @@ export class FlashResearch {
 
   get hasPendingTasks(): boolean {
     return this.pendingTasks.length > 0;
+  }
+
+  // Work the answer must not pass off as done. A note after real work earns a re-prompt
+  // but not this label: models also announce the final summary that way.
+  get hasUnfinishedWork(): boolean {
+    return (
+      this.hasPendingTasks ||
+      (!this.state && this.publicToolRuns === 0 && this.toolRunsAtProgress === 0)
+    );
   }
 
   // With saved state the checklist decides. Without it, the one sign of unfinished work

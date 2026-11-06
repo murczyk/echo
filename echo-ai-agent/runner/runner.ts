@@ -3437,7 +3437,7 @@ type SynthesisOutcome = {
   /** What stopped research; null when nothing did, undefined when unknown. */
   limit?: ResearchLimitReason | null;
   deep?: boolean;
-  /** The model left tasks it declared pending. */
+  /** The model left work it declared undone. */
   unfinished?: boolean;
 };
 
@@ -3648,7 +3648,7 @@ async function completeLimitedResearch(options: {
     budget.finalization.signal,
   ]);
   const deep = budget.policy.preset === "deep";
-  const unfinished = Boolean(options.research?.hasPendingTasks);
+  const unfinished = Boolean(options.research?.hasUnfinishedWork);
   const maxTokens = options.research ? synthesisTokenLimit(budget.policy, payload.maxTokens) : payload.maxTokens;
   const synthesis: Parameters<typeof synthesizeBudgetEvidence>[0] = {
     engine: options.selectedEngine,

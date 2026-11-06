@@ -51,6 +51,8 @@ const deepPolicy: ExecutionPolicy = {
 const STOP = { name: "", args: {} };
 // A model turn that ends with neither text nor a tool call, as GLM-5.3 does.
 const EMPTY = { name: "", args: {} };
+// Models that end the request without any evidence to cite.
+const NO_EVIDENCE = ["deep-stalled", "deep-promise-only"];
 const initial = {
   checklist: [
     { task: "PRIVATE_CHECKLIST: summarize archive records", status: "pending" },
@@ -144,6 +146,7 @@ const scenarios = [
   "continues-once",
   "deep-continues",
   "deep-stalled",
+  "deep-promise-only",
   "deep-gaps",
   "deep-hard-stop",
   "deep-synthesis-fallback",
@@ -251,6 +254,9 @@ for (const [scenario, modelName] of [
       read({ period, search: "botanical survey" });
       refresh();
     } else if (scenario === "deep-stalled") {
+      calls.push(STOP, STOP, STOP);
+    } else if (scenario === "deep-promise-only") {
+      calls.shift();
       calls.push(STOP, STOP, STOP);
     } else if (scenario === "deep-gaps") {
       read();
@@ -524,7 +530,7 @@ for (const [scenario, modelName] of [
             );
           return stream(
             scenario.startsWith("user-text") ||
-              ["history-aggregate", "deep-stalled"].includes(scenario)
+              ["history-aggregate", ...NO_EVIDENCE].includes(scenario)
               ? "The botanical survey is ready."
               : scenario === "user-map"
                 ? `[мапа](echo-map:${mapId})`
@@ -819,6 +825,7 @@ for (const [scenario, modelName] of [
         {
           "deep-hard-stop": "time_limit",
           "deep-stalled": "incomplete_research",
+          "deep-promise-only": "incomplete_research",
           "deep-synthesis-fallback": "incomplete_research",
         }[scenario],
       );
@@ -828,7 +835,10 @@ for (const [scenario, modelName] of [
         scenario === "deep-synthesis-fallback",
       );
       assert.equal(answer.includes("Вичерпано час глибокого режиму"), scenario === "deep-hard-stop");
-      assert.equal(answer.includes("не виконавши всі заплановані кроки"), scenario === "deep-stalled");
+      assert.equal(
+        answer.includes("не виконавши всі заплановані кроки"),
+        NO_EVIDENCE.includes(scenario),
+      );
     } else assert.equal(Boolean(coverage), answer.includes("Охоплення джерел неповне"));
     const diagnostics = events.filter(
       (event) => event.type === "completion_diagnostic",
@@ -865,7 +875,7 @@ for (const [scenario, modelName] of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
-    else if (scenario === "deep-stalled")
+    else if (NO_EVIDENCE.includes(scenario))
       assert.ok(answer.startsWith("The botanical survey is ready."));
     else if (
       scenario.startsWith("user-text") ||
@@ -935,10 +945,10 @@ for (const [scenario, modelName] of [
       assert.equal(continuations, 2);
       assert.equal(queries.length, 2);
     }
-    if (scenario === "deep-stalled") {
+    if (NO_EVIDENCE.includes(scenario)) {
       // The shape of incident 01a1b03b: plan, progress, stop. One unanswered prompt ends it.
       assert.equal(continuations, 1);
-      assert.equal(researchCalls, 4);
+      assert.equal(researchCalls, scenario === "deep-stalled" ? 4 : 3);
       assert.equal(queries.length, 0);
     }
     if (scenario.startsWith("deep-") && scenario !== "deep-hard-stop") {
@@ -949,10 +959,10 @@ for (const [scenario, modelName] of [
       // Abandoned tasks may be stated; only finished work reports gaps as plain findings.
       assert.equal(
         prompt.includes("Do not add a section about incomplete coverage"),
-        scenario !== "deep-stalled",
+        !NO_EVIDENCE.includes(scenario),
       );
     }
-    if (scenario === "deep-stalled")
+    if (NO_EVIDENCE.includes(scenario))
       assert.ok(synthesisBodies.at(-1)!.includes("No Echo data was searched"));
     const failures = events.filter(
       (event) => event.type === "tool_end" && event.is_error,
@@ -1032,7 +1042,9 @@ for (const [scenario, modelName] of [
     );
     if (["user-text", "user-text-history", "user-map"].includes(scenario))
       assert.equal(queries.length, 0);
-    else if (scenario === "pagination-recovery-no-memory")
+    else if (
+      ["pagination-recovery-no-memory", "deep-promise-only"].includes(scenario)
+    )
       assert.equal(checkpointsSaved.length, 0);
     else assert.ok(checkpointsSaved.length);
     if (scenario === "selective") {
@@ -1108,6 +1120,22 @@ test("#4031 a turn ending with declared work left is continued only while it is 
   budget.dispose();
   assert.equal(continuationLimit(deepPolicy), DEEP_RESEARCH_CONTINUATIONS);
   assert.equal(continuationLimit(policy), RESEARCH_CONTINUATIONS);
+});
+
+test("#4031 a closing note after real work is not unfinished work", () => {
+  const budget = new ResearchBudget(deepPolicy, Date.now() + 14_400_000, () => {});
+  const research = new FlashResearch(() => sources);
+  research.noteToolRun();
+  research.noteProgress();
+  // It is worth one prompt, but the finished work must not be labelled incomplete.
+  assert.equal(research.shouldContinue(budget), true);
+  assert.equal(research.hasUnfinishedWork, false);
+  assert.equal(research.hasGaps(), false);
+  const idle = new FlashResearch(() => sources);
+  idle.noteProgress();
+  assert.equal(idle.hasUnfinishedWork, true);
+  assert.equal(idle.hasGaps(), true);
+  budget.dispose();
 });
 
 test("#4031 a blocked task is finished work, not a reason to continue", async () => {
