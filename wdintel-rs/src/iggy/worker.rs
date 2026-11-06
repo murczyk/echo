@@ -4371,6 +4371,36 @@ for each row execute function pg_temp.reject_settlement_event();
 
     #[actix_web::test]
     #[serial]
+    async fn group_refresh_queues_one_job_per_named_group_3991() {
+        use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
+        let fixture = group_visibility_fixture().await;
+        let group_master_key = fixture.group.group_master_key.clone();
+
+        fixture
+            .env
+            .dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "select queue_api_integration_iggy_group_visibility_change(array[$1, $1, null]::text[], null, null, null)",
+                [group_master_key.clone().into()],
+            ))
+            .await
+            .unwrap();
+
+        let jobs = refresh_jobs::Entity::find()
+            .all(&fixture.env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(
+            jobs.into_iter()
+                .map(|job| job.group_master_key)
+                .collect::<Vec<_>>(),
+            vec![Some(group_master_key)]
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
     async fn group_refresh_job_rolls_back_with_group_change_3991() {
         use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
         let fixture = group_visibility_fixture().await;

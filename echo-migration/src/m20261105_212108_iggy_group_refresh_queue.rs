@@ -61,9 +61,14 @@ begin
         last_message_id, last_membership_id
     from api_integration integration
     join login api_user on api_user.id = integration.api_user_login_id
-    cross join unnest(
-        coalesce(target_group_master_keys, array[null::text])
-    ) as target_group(master_key)
+    cross join (
+        select distinct requested.master_key
+        from unnest(
+            coalesce(target_group_master_keys, array[null::text])
+        ) as requested(master_key)
+        where target_group_master_keys is null
+            or requested.master_key is not null
+    ) target_group
     left join lateral (
         select id from api_integration_iggy_destination
         where api_integration_id = integration.id
