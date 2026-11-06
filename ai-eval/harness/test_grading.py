@@ -104,7 +104,24 @@ class GroupScope(unittest.TestCase):
 
     def test_ambiguous_name_may_clarify_without_reading(self):
         sample = group_case('ambiguous-names')
-        self.assertEqual(grade(sample, [{'type': 'eval_answer', 'text': 'Уточніть групу.'}])['failures'], [])
+        self.assertEqual(grade(sample, [{'type': 'eval_answer', 'text': 'Яка саме альфа?'}])['failures'], [])
+        self.assertEqual(grade(sample, [{'type': 'eval_answer', 'text': 'Готово.'}])['failures'],
+                         ['required_answer_missing'])
+
+    def test_an_empty_read_must_be_reported_not_filled_in(self):
+        sample = group_case('empty-in-period')
+        key = sample['expect']['groupScope']['keys'][0]
+        read = retrieval({'selected_groups': [key]}, [])
+        self.assertEqual(grade(sample, [read, {'type': 'eval_answer', 'text': 'За сьогодні повідомлень не було.'}])['failures'], [])
+        self.assertIn('required_answer_missing',
+                      grade(sample, [read, {'type': 'eval_answer', 'text': 'Сьогодні сто зіткнень.'}])['failures'])
+
+    def test_an_earlier_answer_cannot_hide_an_out_of_scope_citation(self):
+        sample = group_case('follow-up-inherits')
+        key = sample['expect']['groupScope']['keys'][0]
+        read = retrieval({'selected_groups': [key]}, [group_message(sample, 101), group_message(sample, 102)])
+        events = [read, *cited(sample, 230), read, *cited(sample, 101, 102)]
+        self.assertIn('citation_or_access_violation', grade(sample, events)['failures'])
 
 
 class UnitSearch(unittest.TestCase):

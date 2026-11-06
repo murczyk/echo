@@ -6931,6 +6931,9 @@
     ]
    },
    "requireCitations": false,
+   "requiredPatterns": [
+    "не знайд|немає|нема |не було|відсутн|жодн"
+   ],
    "forbiddenPatterns": [
     "точц\\w* Ясен"
    ]
@@ -7981,7 +7984,10 @@
     ],
     "optional": true
    },
-   "requireCitations": false
+   "requireCitations": false,
+   "requiredPatterns": [
+    "альф"
+   ]
   }
  },
  {

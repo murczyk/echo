@@ -63,6 +63,7 @@ def case(identifier, split, turns, expect, messages=None, groups=None, names=Non
 
 
 REPORTS_NOTHING = 'не знайд|немає|нема |відсутн|недоступ|не вдалося|немає такого'
+REPORTS_EMPTY = 'не знайд|немає|нема |не було|відсутн|жодн'
 EVIDENCE = {'evidenceIds': [101, 102]}
 
 
@@ -92,12 +93,14 @@ def cases():
         case('inaccessible-group', 'validation', ['Що писали сьогодні в групі Граніт?'],
              scoped([], requireCitations=False, requiredPatterns=[REPORTS_NOTHING]), messages=hidden),
         case('empty-in-period', 'validation', [report],
-             scoped([DEVOPS], requireCitations=False, forbiddenPatterns=['точц\\w* Ясен']),
+             scoped([DEVOPS], requireCitations=False, requiredPatterns=[REPORTS_EMPTY],
+                    forbiddenPatterns=['точц\\w* Ясен']),
              messages=corpus(devops_messages(hours_ago=240))),
         case('two-groups-one-unknown', 'validation', ['Що сьогодні писали в чатах DEVOPS і Горобець?'],
              scoped([DEVOPS], requiredPatterns=['Горобець'], **EVIDENCE)),
         case('ambiguous-names', 'validation', ['Що писали сьогодні в чаті альфа?'],
-             scoped([CASE_ONE, CASE_TWO], requireCitations=False, scope={'optional': True}),
+             scoped([CASE_ONE, CASE_TWO], requireCitations=False, requiredPatterns=['альф'],
+                    scope={'optional': True}),
              messages=letter_messages, groups=same_letters, names=same_letters),
         case('same-name-two-keys', 'validation', ['Що писали сьогодні в чаті Двійник?'],
              scoped([TWIN_ONE, TWIN_TWO], evidenceIds=[501, 502], scope={'all': True}),

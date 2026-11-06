@@ -104,7 +104,8 @@ def grade(case, events, failed=False):
             if isinstance(identifier, str) and isinstance(message_id, int):
                 delivered[identifier] = message_id
     invalid_citations = []
-    for target in re.findall(r"\]\(([^\s)]+)\)", answer):
+    # Every turn is graded: an out-of-scope citation is no better in an earlier answer.
+    for target in re.findall(r"\]\(([^\s)]+)\)", " ".join(answers)):
         message_id = accepted_citation(target, delivered)
         if message_id is None or message_id not in retrieved:
             invalid_citations.append(target)
