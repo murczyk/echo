@@ -1,0 +1,34 @@
+<html><head></head><body><p><strong>Goal</strong></p>
+<p>Provide the application metrics needed to recreate existing Discord operational alerts in SigNoz. Reuse Echo’s existing OTLP exporter, already used on CBR.</p>
+<p><strong>Required changes</strong></p>
+<p>Add these metrics:</p>
+
+Metric | Required detail
+-- | --
+Datasource activity age | Per datasource; preserve the timestamp selection and fallback logic currently used by /api/monitoring
+Root filesystem available space | Available bytes on /
+Messenger account linkage | Explicit linked/unlinked state per account
+Signal/REST API errors | Counters distinguishing timeouts from other errors, grouped by client/account
+Report timeouts | Counter grouped by report kind
+
+
+<p>Reuse the existing queue depth, queue age, processing outcome/latency, and NLP readiness metrics.</p>
+<p><strong>Requirements</strong></p>
+<ul>
+<li>Export through the existing <code>signoz_metrics_enabled</code> and <code>signoz_metrics_endpoint</code> configuration.</li>
+<li>Include consistent installation and datasource/account identifiers.</li>
+<li>Publish state metrics periodically, including healthy states.</li>
+<li>Distinguish collection failures from healthy or zero values.</li>
+<li>Define behavior for paused/deleted accounts and datasources.</li>
+<li>Keep message contents, credentials, and phone numbers out of metric labels.</li>
+<li>Document metric names, units, labels, update intervals, and which existing Discord conditions they support.</li>
+</ul>
+<p><strong>Acceptance criteria</strong></p>
+<ul>
+<li>Metrics are queryable in SigNoz when the exporter is enabled.</li>
+<li>Datasource freshness values match <code>/api/monitoring</code> for the same datasource and observation time.</li>
+<li>Tests cover healthy, failed, recovered, and unavailable states.</li>
+<li>Every application-generated operational Discord alert is mapped to an exported signal; any remaining gaps are explicitly listed.</li>
+<li>Existing Discord notifications remain enabled during this development task.</li>
+</ul>
+</body></html>
