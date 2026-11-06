@@ -4,6 +4,8 @@
 export const GROUP_LOOKUP_SKILL = "accessible_group_details";
 export const GROUP_LOOKUP_BODY = { skip_group_stats: true };
 const GROUP_CANDIDATE_LIMIT = 12;
+const GROUP_SCOPE_DROPPED =
+  "Invalid Echo tool arguments: this request already selected a group, so this read needs selectedGroups too. Keep the group the user named. To include other groups, name them in selectedGroups. If the group was not found, tell the user instead of reading other groups.";
 
 export interface EchoGroup {
   master_key: string;
@@ -64,8 +66,12 @@ function groupCandidates(values: string[], groups: EchoGroup[]): string[] {
   return [...new Set([...close, ...names])].slice(0, GROUP_CANDIDATE_LIMIT);
 }
 
+function unresolvedGroups(values: string[], groups: EchoGroup[]): string[] {
+  return values.filter((value) => !matchGroup(value, groups));
+}
+
 export function resolveGroups(values: string[], groups: EchoGroup[]): string[] {
-  const unresolved = values.filter((value) => !matchGroup(value, groups));
+  const unresolved = unresolvedGroups(values, groups);
   if (unresolved.length > 0) {
     const problems = unresolved.map((value) => groupProblem(value, groups));
     throw new Error(
@@ -94,13 +100,18 @@ export function compactGroupCatalog(
 /**
  * Resolves selectedGroups once per request from one cached group list. A lookup
  * failure rejects the tool call: passing the raw value on would read as "no
- * messages" in a group that exists.
+ * messages" in a group that exists. Once a request selects a group, even one
+ * that was rejected, a read that omits the selection is refused, because that
+ * is how a scope gets silently dropped. Naming another group stays allowed, so
+ * groups can be compared, and messageIds already pin a read to known messages.
  */
 export function createGroupScope(
   loadGroups: ((signal?: AbortSignal) => Promise<unknown>) | null,
   rememberGroups: (groups: EchoGroup[]) => void,
+  noteUnresolved: (values: string[]) => void = () => {},
 ) {
   let catalog: Promise<EchoGroup[]> | null = null;
+  let scoped = false;
   const load = (read: NonNullable<typeof loadGroups>, signal?: AbortSignal) => {
     catalog ??= read(signal)
       .then(groupCatalog)
@@ -113,18 +124,21 @@ export function createGroupScope(
   return {
     async resolve<T extends Record<string, unknown>>(
       params: T,
+      acceptsGroups: boolean,
       signal?: AbortSignal,
     ): Promise<T> {
+      if (!loadGroups || !acceptsGroups) return params;
       const values = params.selectedGroups;
-      if (
-        !loadGroups ||
-        !Array.isArray(values) ||
-        values.length === 0 ||
-        !values.every((value) => typeof value === "string")
-      )
+      if (!Array.isArray(values) || values.length === 0) {
+        const pinned = Array.isArray(params.messageIds) && params.messageIds.length > 0;
+        if (scoped && !pinned) throw new Error(GROUP_SCOPE_DROPPED);
         return params;
+      }
+      if (!values.every((value) => typeof value === "string")) return params;
+      scoped = true;
       const groups = await load(loadGroups, signal);
       rememberGroups(groups);
+      noteUnresolved(unresolvedGroups(values, groups));
       return { ...params, selectedGroups: resolveGroups(values, groups) };
     },
   };

@@ -57,6 +57,14 @@ group list rejects the call, because passing the raw value on would read as "no
 messages" in a group that exists. Echo also returns nothing for a selection with
 no accessible group, so a scope cannot silently widen.
 
+Once a request selects a group, even one that was rejected, a read that omits the
+selection is refused. Naming another group stays allowed, and `messageIds` pin a
+read to known messages. If a model wrongly scopes a plain subject, it therefore
+cannot fall back to an unscoped search in that request; the user sees "not found",
+which is safer than a silently wrong scope. Each request starts fresh, so a
+follow-up relies on the prompt, and the evaluations measure it. Bounded research
+passes unresolved names to synthesis, which writes the final answer.
+
 ## Unit lookup
 
 A message's unit is header metadata (`unit_v2`) and links from reference

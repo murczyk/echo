@@ -347,6 +347,7 @@ export class FlashResearch {
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
   private startFailed = false;
+  private readonly unresolved = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
   private retrievalBatchAllowed = true;
   private paginationUpdateRequired = false;
@@ -511,6 +512,16 @@ export class FlashResearch {
 
   noteToolRun(): void {
     this.publicToolRuns += 1;
+  }
+
+  noteUnresolvedGroups(values: string[]): void {
+    for (const value of values) this.unresolved.add(value);
+  }
+
+  // Tool-free synthesis would otherwise see only a failed call, not that the
+  // group the user named does not exist.
+  unresolvedGroups(): string[] {
+    return [...this.unresolved];
   }
 
   private action(tool: string): CompletedAction {

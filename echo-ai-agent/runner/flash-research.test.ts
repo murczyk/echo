@@ -1614,6 +1614,7 @@ async function researchWithProviderScript(
 ) {
   const events: any[] = [];
   const reads: unknown[] = [];
+  const synthesisBodies: string[] = [];
   let researchCalls = 0;
   const oldSignals = {
     SIGINT: process.listeners("SIGINT"),
@@ -1638,8 +1639,13 @@ async function researchWithProviderScript(
       reads.push(JSON.parse(init.body));
       return Response.json({ inbox_items: [], page_limit: 20 });
     }
+    if (path === "/api/user/sigint-groups-detailed")
+      return Response.json([{ master_key: "group.devops", name: "DEVOPS" }]);
     const purpose = new Headers(init.headers).get("x-echo-ai-purpose");
-    if (purpose === "synthesis") return stream("Підсумок.");
+    if (purpose === "synthesis") {
+      synthesisBodies.push(init.body);
+      return stream("Підсумок.");
+    }
     return script[researchCalls++]?.() ?? stream("");
   });
   try {
@@ -1667,6 +1673,13 @@ async function researchWithProviderScript(
           skills: [
             {
               method: "POST",
+              path: "/api/user/sigint-groups-detailed",
+              skill: "accessible_group_details",
+              label: "List groups",
+              requestKind: "json",
+            },
+            {
+              method: "POST",
               path: "/api/signal/inbox/messages",
               skill: "inbox_messages",
               label: "Read archive",
@@ -1685,7 +1698,7 @@ async function researchWithProviderScript(
   }
   const metadata = events.find((event) => event.type === "completion_metadata");
   const reason = metadata?.reason;
-  return { events, metadata, reads, reason, researchCalls };
+  return { events, metadata, reads, reason, researchCalls, synthesisBodies };
 }
 
 const readArchive = () =>
@@ -1748,6 +1761,21 @@ test("incident 01a1b210: a rejected credential is not retried", async (t) => {
     ).length,
     1,
   );
+});
+
+test("#4053 synthesis learns that a named group was not found", async (t) => {
+  const { reads, synthesisBodies } = await researchWithProviderScript(t, [
+    () =>
+      stream("", {
+        name: "echo_inbox_messages",
+        args: { period, selectedGroups: ["Горобець"] },
+      }),
+    () => stream(""),
+  ]);
+  assert.equal(reads.length, 0);
+  assert.equal(synthesisBodies.length, 1);
+  const request = JSON.parse(JSON.parse(synthesisBodies[0]).messages[1].content);
+  assert.deepEqual(request.unresolvedGroups, ["Горобець"]);
 });
 
 test("#4053 a failed-start message never logs the provider's text", () => {

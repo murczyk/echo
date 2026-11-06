@@ -130,13 +130,13 @@ test("#4053 one lookup serves the whole request and no selection needs none", as
     },
     () => remembered++,
   );
-  assert.deepEqual(await scope.resolve({ search: "x" }), { search: "x" });
-  assert.deepEqual(await scope.resolve({ selectedGroups: [] }), {
+  assert.deepEqual(await scope.resolve({ search: "x" }, true), { search: "x" });
+  assert.deepEqual(await scope.resolve({ selectedGroups: [] }, true), {
     selectedGroups: [],
   });
   assert.equal(lookups, 0);
   for (let call = 0; call < 3; call++)
-    assert.deepEqual(await scope.resolve({ selectedGroups: ["DEVOPS"], cursor: 1 }), {
+    assert.deepEqual(await scope.resolve({ selectedGroups: ["DEVOPS"], cursor: 1 }, true), {
       selectedGroups: ["group.devops"],
       cursor: 1,
     });
@@ -151,24 +151,49 @@ test("#4053 a failed lookup rejects the call, keeps nothing and can recover", as
     return GROUPS;
   }, () => {});
   await assert.rejects(
-    scope.resolve({ selectedGroups: ["DEVOPS"] }),
+    scope.resolve({ selectedGroups: ["DEVOPS"] }, true),
     /Echo request failed/,
   );
-  assert.deepEqual(await scope.resolve({ selectedGroups: ["DEVOPS"] }), {
+  assert.deepEqual(await scope.resolve({ selectedGroups: ["DEVOPS"] }, true), {
     selectedGroups: ["group.devops"],
   });
 });
 
 test("#4053 without the lookup route, older evaluation suites pass values through", async () => {
   const scope = createGroupScope(null, () => {});
-  assert.deepEqual(await scope.resolve({ selectedGroups: ["visible"] }), {
+  assert.deepEqual(await scope.resolve({ selectedGroups: ["visible"] }, true), {
     selectedGroups: ["visible"],
   });
 });
 
+test("#4053 a selected scope cannot be dropped by omitting it", async () => {
+  const scope = createGroupScope(async () => GROUPS, () => {});
+  const dropped = /already selected a group/;
+  assert.deepEqual(await scope.resolve({ search: "x" }, true), { search: "x" });
+  await scope.resolve({ selectedGroups: ["DEVOPS"] }, true);
+  await assert.rejects(scope.resolve({ search: "x" }, true), dropped);
+  await assert.rejects(scope.resolve({ selectedGroups: [] }, true), dropped);
+  assert.deepEqual(await scope.resolve({ selectedGroups: ["Кобальт"] }, true), {
+    selectedGroups: ["group.cobalt"],
+  });
+  assert.deepEqual(await scope.resolve({ messageIds: [7] }, true), { messageIds: [7] });
+  assert.deepEqual(await scope.resolve({ message_uid: "x" }, false), { message_uid: "x" });
+});
+
+test("#4053 a rejected group also keeps the request scoped and is reported", async () => {
+  const unresolved: string[][] = [];
+  const scope = createGroupScope(async () => GROUPS, () => {}, (values) => unresolved.push(values));
+  await assert.rejects(scope.resolve({ selectedGroups: ["DEVOPS", "Горобець"] }, true), /Горобець/);
+  await assert.rejects(scope.resolve({ search: "x" }, true), /already selected a group/);
+  assert.deepEqual(await scope.resolve({ selectedGroups: ["DEVOPS"] }, true), {
+    selectedGroups: ["group.devops"],
+  });
+  assert.deepEqual(unresolved, [["Горобець"], []]);
+});
+
 test("#4053 malformed values are left for request validation", async () => {
   const scope = createGroupScope(async () => GROUPS, () => {});
-  assert.deepEqual(await scope.resolve({ selectedGroups: [1] }), {
+  assert.deepEqual(await scope.resolve({ selectedGroups: [1] }, true), {
     selectedGroups: [1],
   });
 });

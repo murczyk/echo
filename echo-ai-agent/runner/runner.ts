@@ -2789,6 +2789,7 @@ function createRouteTools(
       ? async (signal) => (await echoRequest(payload, authentication, groupRoute.method, groupRoute.path, GROUP_LOOKUP_BODY, signal)).body
       : null,
     activity.rememberGroups,
+    (values) => research?.noteUnresolvedGroups(values),
   );
   return payload.skills.filter((route) => !["mapRecords", "mapDocument", "mapEdit"].includes(route.requestKind) && !DOCUMENT_KINDS.has(route.requestKind)).map((route) =>
     defineTool({
@@ -2802,7 +2803,7 @@ function createRouteTools(
         countInvocation();
         const requestBody = routeToolRequestBody(
           route,
-          await groupScope.resolve(params, signal),
+          await groupScope.resolve(params, "selectedGroups" in ((routeParameters(route) as { properties?: object }).properties ?? {}), signal),
           payload.timeContext!,
         );
         research?.beforeRetrieval(route.skill, requestBody);
@@ -3450,7 +3451,7 @@ const NO_RETRIEVAL_RETRY_NOTICE = " The time budget ended before any search; add
 const NO_LIMIT_NOTICE = " No time, tool or budget limit stopped this work: never claim that one did, even if an earlier answer in the conversation says so.";
 const COVERAGE_GUIDANCE = "State remaining coverage limitations honestly without delaying the supported findings.";
 const FINAL_FINDINGS_GUIDANCE = "Report anything searched for and not found as a finding. Do not add a section about incomplete coverage.";
-const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference.";
+const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference. unresolvedGroups lists group names that matched no group the user can read: say each one was not found rather than that a search failed, and never describe other groups as that group. The exception is a name the evidence shows was read under a corrected spelling.";
 
 type SynthesisOutcome = {
   retrieved?: boolean;
@@ -3662,7 +3663,7 @@ async function completeLimitedResearch(options: {
         .slice(-4)
         .map(({ role, content }) => ({ role, content })),
       request: payload.prompt,
-      ...(options.research ? { completedActions: options.research.completedActions(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
+      ...(options.research ? { completedActions: options.research.completedActions(), unresolvedGroups: options.research.unresolvedGroups(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
     checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
