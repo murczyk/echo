@@ -23,6 +23,7 @@ create table api_integration_iggy_group_refresh (
         deferrable initially deferred,
     group_master_key text,
     after_message_id bigint not null default 0,
+    through_message_id bigint not null,
     next_attempt_at timestamp without time zone not null
         default (clock_timestamp() at time zone 'utc'),
     attempts integer not null default 0,
@@ -42,13 +43,16 @@ create or replace function queue_api_integration_iggy_group_visibility_change(
     target_group_master_keys text[], target_login_ids uuid[],
     target_zone_ids bigint[], target_organism_ids bigint[]
 ) returns void language plpgsql as $$
+declare
+    last_message_id bigint;
 begin
     perform 1 from api_integration integration
     order by integration.id for share;
+    select coalesce(max(id), 0) into last_message_id from signal_message;
     insert into api_integration_iggy_group_refresh (
-        api_integration_id, destination_id, group_master_key
+        api_integration_id, destination_id, group_master_key, through_message_id
     )
-    select integration.id, destination.id, target_group.master_key
+    select integration.id, destination.id, target_group.master_key, last_message_id
     from api_integration integration
     join login api_user on api_user.id = integration.api_user_login_id
     cross join unnest(
@@ -99,6 +103,36 @@ begin
     where integration.sync_enabled and integration.has_iggy_connection;
 end;
 $$;
+
+create function capture_api_integration_iggy_group_refresh_removal()
+returns trigger language plpgsql as $$
+begin
+    if tg_op = 'UPDATE'
+        and old.signal_message_id = new.signal_message_id
+        and old.group_master_key is not distinct from new.group_master_key then
+        return new;
+    end if;
+    insert into api_integration_iggy_event (
+        api_integration_id, destination_id, sigint_inbox_item_id, payload
+    )
+    select distinct job.api_integration_id, job.destination_id, item.id,
+        jsonb_build_object(
+            'event_type', 'sigint_inbox_item_visibility_changed'
+        )
+    from api_integration_iggy_group_refresh job
+    join sigint_inbox_item item on item.id = old.signal_message_id
+    where (job.group_master_key = old.group_master_key
+            or (job.group_master_key is null
+                and old.group_master_key is not null))
+        and job.after_message_id < old.signal_message_id
+        and old.signal_message_id <= job.through_message_id;
+    return coalesce(new, old);
+end;
+$$;
+
+create trigger signal_message_group_capture_iggy_group_refresh
+after update of signal_message_id, group_master_key or delete on signal_message_group
+for each row execute function capture_api_integration_iggy_group_refresh_removal();
 
 create or replace function capture_api_integration_iggy_signal_group_visibility()
 returns trigger language plpgsql as $$
@@ -171,6 +205,9 @@ begin
     end if;
 end;
 $$;
+
+drop trigger signal_message_group_capture_iggy_group_refresh on signal_message_group;
+drop function capture_api_integration_iggy_group_refresh_removal();
 
 create or replace function scrub_api_integration_iggy_destination_credentials(integration_id bigint)
 returns void language sql as $$

@@ -36,6 +36,10 @@ its distinct messages: pages read 2 to 3 index entries per message. The page
 keeps `sigint_inbox_item` out of the seek so that a long run of messages without
 inbox items cannot make one page scan the rest of the group.
 
+Jobs later gained `signal_message_id <= $through_message_id`. These plans were
+measured before that, and it only narrows the same index range. The bound is
+read with `max(id)` on the `signal_message` primary key when a job is queued.
+
 These timings cover historical selection, rather than outbox insertion or
 publication latency. Expansion commits at most 500 events per transaction. Queue
 selection is supported by

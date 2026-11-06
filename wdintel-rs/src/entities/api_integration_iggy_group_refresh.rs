@@ -15,6 +15,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub group_master_key: Option<String>,
     pub after_message_id: i64,
+    pub through_message_id: i64,
     pub next_attempt_at: DateTime,
     pub attempts: i32,
     #[sea_orm(column_type = "Text", nullable)]

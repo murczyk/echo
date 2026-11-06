@@ -4270,6 +4270,65 @@ for each row execute function pg_temp.reject_settlement_event();
 
     #[actix_web::test]
     #[serial]
+    async fn group_refresh_keeps_revocation_for_unlinked_message_3991() {
+        let fixture = group_visibility_fixture().await;
+        let message_group = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(fixture.item_id),
+            )
+            .one(&fixture.env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_archived: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+
+        signal_message_group::Entity::delete_by_id(message_group.id)
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+
+        assert_visibility_reconciliation(
+            &fixture.env,
+            &fixture.integration,
+            fixture.item_id,
+            false,
+        )
+        .await;
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn group_refresh_stops_at_messages_present_when_queued_3991() {
+        let fixture = group_visibility_fixture().await;
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_secret: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+
+        insert_grouped_inbox_item(&fixture.env, &fixture.group).await;
+        drain_group_refreshes(&fixture.env).await;
+
+        assert_eq!(
+            visibility_event_item_ids(&fixture.env, fixture.integration.id)
+                .await,
+            vec![fixture.item_id]
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
     async fn group_refresh_job_rolls_back_with_group_change_3991() {
         use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
         let fixture = group_visibility_fixture().await;

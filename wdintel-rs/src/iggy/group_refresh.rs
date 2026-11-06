@@ -17,6 +17,7 @@ struct RefreshJob {
     destination_id: i64,
     group_master_key: Option<String>,
     after_message_id: i64,
+    through_message_id: i64,
 }
 
 #[derive(FromQueryResult)]
@@ -60,7 +61,7 @@ pub(super) async fn process_next_batch(
         DbBackend::Postgres,
         r#"
 select id, api_integration_id, destination_id, group_master_key,
-    after_message_id
+    after_message_id, through_message_id
 from api_integration_iggy_group_refresh
 where next_attempt_at <= now() at time zone 'utc'
 order by next_attempt_at, id
@@ -108,12 +109,14 @@ fn message_ids_statement(job: &RefreshJob, batch_size: u64) -> Statement {
             DbBackend::Postgres,
             r#"
 select distinct signal_message_id from signal_message_group
-where group_master_key = $1 and signal_message_id > $2
-order by signal_message_id limit $3
+where group_master_key = $1
+    and signal_message_id > $2 and signal_message_id <= $3
+order by signal_message_id limit $4
             "#,
             [
                 group_master_key.as_str().into(),
                 job.after_message_id.into(),
+                job.through_message_id.into(),
                 batch_size.into(),
             ],
         ),
@@ -121,10 +124,15 @@ order by signal_message_id limit $3
             DbBackend::Postgres,
             r#"
 select distinct signal_message_id from signal_message_group
-where group_master_key is not null and signal_message_id > $1
-order by signal_message_id limit $2
+where group_master_key is not null
+    and signal_message_id > $1 and signal_message_id <= $2
+order by signal_message_id limit $3
             "#,
-            [job.after_message_id.into(), batch_size.into()],
+            [
+                job.after_message_id.into(),
+                job.through_message_id.into(),
+                batch_size.into(),
+            ],
         ),
     }
 }

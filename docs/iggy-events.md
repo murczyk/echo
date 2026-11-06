@@ -216,6 +216,14 @@ the same login, zone, and organisation filters as before. Pages seek through
 existing indexes by `signal_message_id`; see
 [query plan evidence](query-plans/3991-group-refresh.md).
 
+Each job records the newest message at queue time in `through_message_id` and
+stops there. Later messages publish through their own creation events, so a job
+always finishes and never sends them to a destination it retained. A message
+that leaves a group while a job still has it ahead of the cursor queues its
+visibility event in that same transaction. Otherwise the job would no longer
+find it, and the membership event alone cannot revoke an item from a group the
+integration has already lost.
+
 Retries, locking, destination retention, and rollback match the unit refresh
 queue above. The publisher evaluates visibility when it publishes, so an event
 expanded after the change still reflects that change. Repeated jobs for a group
@@ -225,11 +233,16 @@ is rendered at publication and carries the complete `aor_ids`. Items reach Iggy
 only after the job expands and any existing outbox backlog ahead of it has been
 published.
 
+A job writes one outbox row for each inbox item it covers, at up to about 5,000
+rows per second. A large group therefore adds its whole history to the outbox,
+and an all-groups job adds every grouped inbox item. Check the outbox backlog
+before assigning many large groups at once.
+
 Inspect progress without modifying it:
 
 ```sql
 select id, api_integration_id, destination_id, group_master_key, created_at,
-    after_message_id, next_attempt_at, attempts, last_error
+    after_message_id, through_message_id, next_attempt_at, attempts, last_error
 from api_integration_iggy_group_refresh
 order by next_attempt_at, id
 limit 50;
