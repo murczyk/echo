@@ -19,6 +19,7 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
             army_region: Set("Захід".into()),
             army: Set("1 А".into()),
             corps: Set("1 АК".into()),
+            division: Set("1 мсд".into()),
             ..Default::default()
         },
     )
@@ -30,6 +31,7 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
             army_region: Set(root.army_region.clone()),
             army: Set(root.army.clone()),
             corps: Set(root.corps.clone()),
+            division: Set(root.division.clone()),
             ..Default::default()
         },
     )
@@ -41,6 +43,7 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
             army_region: Set(format!("\t{}\u{a0}", root.army_region)),
             army: Set(root.army.clone()),
             corps: Set(root.corps.clone()),
+            division: Set(root.division.clone()),
             brigade: Set("1 бр".into()),
             company: Set("\t\r\n\u{a0}".into()),
             platoon: Set("1 взвод".into()),
@@ -57,6 +60,7 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
             army_region: Set("Схід".into()),
             army: Set(root.army.clone()),
             corps: Set(root.corps.clone()),
+            division: Set(root.division.clone()),
             ..Default::default()
         },
     )
@@ -87,10 +91,9 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
     assert_eq!(snapshot.units[&leaf.id].target.report_name, "Спільний");
     assert!(!snapshot.units.contains_key(&outsider.id));
     assert!(!snapshot.units.contains_key(&peer.id));
-    assert_eq!(
-        snapshot.units[&orphan.id].target.parent_path,
-        snapshot.units[&root.id].target.parent_path
-    );
+    assert_eq!(snapshot.units[&root.id].target.parent_name, "1 мсд");
+    assert!(snapshot.units[&orphan.id].target.parent_path.is_empty());
+    assert!(snapshot.units[&orphan.id].target.parent_name.is_empty());
     let now = chrono::Utc::now().naive_utc();
     let item = mk_sigint_inbox_item(
         &env.dbx,
@@ -198,5 +201,5 @@ async fn issue_3940_scope_inherits_full_hierarchy_and_keeps_snapshot() {
         .unwrap();
     let current = load(&env.dbx).await.unwrap();
     assert!(!current.units.contains_key(&root.id));
-    assert_eq!(current.units[&orphan.id].target.parent_name, "Спільний");
+    assert!(current.units[&orphan.id].target.parent_name.is_empty());
 }

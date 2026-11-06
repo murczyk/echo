@@ -13,12 +13,21 @@ const childMockState = vi.hoisted(() => ({
   networkPeriod: null as string | null,
   catalogPeriod: null as string | null,
   interceptedPeriod: null as string | null,
+  networkRows: [] as Array<{ id: number; messageCount: number; lastDatetime: number | null }>,
+  networkStats: null as NetworkCallsignsTableStats | null,
 }));
 
 vi.mock('../NetworkCallsignsNetworkTable', () => ({
-  NetworkCallsignsNetworkTable: (props: { loadingError: string | null; period: string }) => {
+  NetworkCallsignsNetworkTable: (props: {
+    loadingError: string | null;
+    period: string;
+    rows: typeof childMockState.networkRows;
+    stats: NetworkCallsignsTableStats;
+  }) => {
     childMockState.networkCallsignsError = props.loadingError;
     childMockState.networkPeriod = props.period;
+    childMockState.networkRows = props.rows;
+    childMockState.networkStats = props.stats;
     return <div data-testid="network-table">network</div>;
   },
 }));
@@ -45,6 +54,9 @@ vi.mock('../NetworkCallsignsInterceptedPanel', () => ({
 }));
 
 import { NetworkDetailsCallsignsPanel } from '../NetworkCallsignsTables';
+import type { NetworkCallsignsTableStats } from '../NetworkCallsignsNetworkTable';
+import { createNetworkCallsignStatsMap } from '../../network-callsigns.stats';
+import { ROW_REMOVAL_ANIMATION_MS } from '../../use-animated-row-removal';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -123,6 +135,62 @@ function createInterceptedRow(
   };
 }
 
+const NETWORK_STATS_PROPS = {
+  networkCallsignStats: createNetworkCallsignStatsMap([]),
+  networkCallsignStatsLoading: false,
+  networkCallsignStatsError: null,
+  networkCallsignStatsPeriod: 'Last21Days',
+  networkCallsignsAddedSinceStats: new Set<number>(),
+  onRetryNetworkCallsignStats: vi.fn(),
+  onLoadAllTimeNetworkCallsignStats: vi.fn(),
+} satisfies Partial<CallsignPanelProps>;
+
+function createPanelProps(overrides: Partial<CallsignPanelProps> = {}): CallsignPanelProps {
+  return {
+    sources: [],
+    networkCallsigns: [
+      createNetworkCallsign({ id: 1, messageCount: 0, lastDatetime: null }),
+      createNetworkCallsign({ id: 2, callsign: 'барс-2', messageCount: 0, lastDatetime: null }),
+    ],
+    ...NETWORK_STATS_PROPS,
+    catalogCallsignGroups: [],
+    unknownInterceptedCallsigns: [],
+    networkCallsignsLoading: false,
+    networkCallsignsError: null,
+    catalogCallsignsLoading: false,
+    catalogCallsignsError: null,
+    interceptedCallsignsLoading: false,
+    interceptedCallsignsError: null,
+    loadingError: null,
+    canManage: false,
+    sectionMode: 'network',
+    onSectionModeChange: vi.fn(),
+    statusFilter: 'All',
+    onStatusFilterChange: vi.fn(),
+    networkPeriod: 'Unlimited',
+    onNetworkPeriodChange: vi.fn(),
+    catalogPeriod: 'Last21Days',
+    onCatalogPeriodChange: vi.fn(),
+    interceptedPeriod: 'Last21Days',
+    onInterceptedPeriodChange: vi.fn(),
+    interceptedExpanded: false,
+    onToggleInterceptedExpanded: vi.fn(),
+    onOpenCreateDrawer: vi.fn(),
+    onOpenEditDrawer: vi.fn(),
+    onOpenDeleteDialog: vi.fn(),
+    onSetMarkerMode: vi.fn(),
+    onAddKnownCallsign: vi.fn(),
+    onAddInterceptedToDeveloping: vi.fn(),
+    onAddInterceptedToNetwork: vi.fn(),
+    onReload: vi.fn(),
+    inFlightCreateCallsigns: [],
+    inFlightAddIds: [],
+    inFlightUpdateIds: [],
+    inFlightDeleteIds: [],
+    ...overrides,
+  };
+}
+
 function renderComponent(props: ComponentProps<typeof NetworkDetailsCallsignsPanel>): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -157,6 +225,7 @@ describe('NetworkDetailsCallsignsPanel', () => {
     const view = renderComponent({
       sources: [],
       networkCallsigns: [createNetworkCallsign()],
+      ...NETWORK_STATS_PROPS,
       catalogCallsignGroups: [createCatalogGroup()],
       unknownInterceptedCallsigns: [createInterceptedRow()],
       networkCallsignsLoading: false,
@@ -218,10 +287,109 @@ describe('NetworkDetailsCallsignsPanel', () => {
     expect(onReload).toHaveBeenCalledTimes(1);
   });
 
+  describe('network callsign stats', () => {
+    const ACTIVE_STATS = createNetworkCallsignStatsMap([
+      createNetworkCallsign({ id: 1, messageCount: 5, lastDatetime: 1000 }),
+    ]);
+    const rowIds = () => childMockState.networkRows.map((row) => row.id);
+
+    function rerender(view: Rendered, props: CallsignPanelProps) {
+      act(() => {
+        view.root.render(createElement(NetworkDetailsCallsignsPanel, props));
+      });
+    }
+
+    it('keeps every row in the all-time list and merges available stats', () => {
+      rendered.push(renderComponent(createPanelProps({ networkCallsignStats: ACTIVE_STATS })));
+
+      expect(rowIds()).toEqual([1, 2]);
+      expect(childMockState.networkRows.map((row) => row.messageCount)).toEqual([5, 0]);
+      expect(childMockState.networkStats?.available).toBe(true);
+    });
+
+    it('does not show old numbers or filter rows while stats load', () => {
+      rendered.push(
+        renderComponent(
+          createPanelProps({
+            networkPeriod: 'Last7Days',
+            networkCallsignStats: ACTIVE_STATS,
+            networkCallsignStatsLoading: true,
+            networkCallsignStatsPeriod: 'Last7Days',
+          }),
+        ),
+      );
+
+      expect(rowIds()).toEqual([1, 2]);
+      expect(childMockState.networkRows.map((row) => row.messageCount)).toEqual([0, 0]);
+      expect(childMockState.networkStats?.loading).toBe(true);
+      expect(childMockState.networkStats?.available).toBe(false);
+    });
+
+    it('keeps rows and reports stats as unavailable after a failure', () => {
+      rendered.push(
+        renderComponent(
+          createPanelProps({
+            networkPeriod: 'Last21Days',
+            networkCallsignStats: ACTIVE_STATS,
+            networkCallsignStatsError: 'stats failed',
+          }),
+        ),
+      );
+
+      expect(rowIds()).toEqual([1, 2]);
+      expect(childMockState.networkStats?.available).toBe(false);
+      expect(childMockState.networkStats?.error).toBe('stats failed');
+    });
+
+    it('keeps a row added after the stats request under a period filter', () => {
+      rendered.push(
+        renderComponent(
+          createPanelProps({
+            networkPeriod: 'Last21Days',
+            networkCallsignStats: ACTIVE_STATS,
+            networkCallsignsAddedSinceStats: new Set([2]),
+          }),
+        ),
+      );
+
+      expect(rowIds()).toEqual([1, 2]);
+      expect(childMockState.networkStats?.exitingRowIds.size).toBe(0);
+      expect([...(childMockState.networkStats?.unknownRowIds ?? [])]).toEqual([2]);
+    });
+
+    it('fades out rows without activity, then removes them', () => {
+      vi.useFakeTimers();
+      try {
+        const props = createPanelProps({ networkCallsignStats: ACTIVE_STATS });
+        const view = renderComponent(props);
+        rendered.push(view);
+
+        rerender(view, { ...props, networkPeriod: 'Last21Days' });
+
+        expect(rowIds()).toEqual([1, 2]);
+        expect([...(childMockState.networkStats?.exitingRowIds ?? [])]).toEqual([2]);
+
+        act(() => {
+          vi.advanceTimersByTime(ROW_REMOVAL_ANIMATION_MS);
+        });
+
+        expect(rowIds()).toEqual([1]);
+        expect(childMockState.networkStats?.exitingRowIds.size).toBe(0);
+
+        rerender(view, props);
+
+        expect(rowIds()).toEqual([1, 2]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('keeps the empty-state error behavior with the retry action', () => {
     const view = renderComponent({
       sources: [],
       networkCallsigns: [],
+      ...NETWORK_STATS_PROPS,
       catalogCallsignGroups: [],
       unknownInterceptedCallsigns: [],
       networkCallsignsLoading: false,

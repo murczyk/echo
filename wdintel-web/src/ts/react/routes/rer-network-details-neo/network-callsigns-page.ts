@@ -6,6 +6,13 @@ export function buildCallsignPanelProps(page: Page) {
   return {
     sources: page.sources,
     networkCallsigns: page.networkCallsigns,
+    networkCallsignStats: page.networkCallsignStats,
+    networkCallsignStatsLoading: page.networkCallsignStatsLoading,
+    networkCallsignStatsError: page.networkCallsignStatsError,
+    networkCallsignStatsPeriod: page.networkCallsignStatsPeriod,
+    networkCallsignsAddedSinceStats: page.networkCallsignsAddedSinceStats,
+    onRetryNetworkCallsignStats: page.retryNetworkCallsignStats,
+    onLoadAllTimeNetworkCallsignStats: page.loadAllTimeNetworkCallsignStats,
     catalogCallsignGroups: page.catalogCallsignGroups,
     unknownInterceptedCallsigns: page.unknownInterceptedCallsigns,
     networkCallsignsLoading: page.networkCallsignsLoading,

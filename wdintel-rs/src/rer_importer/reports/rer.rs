@@ -190,13 +190,15 @@ fn write_report_docx(
         ));
 
     for parent in report.parents.values() {
-        docx = docx.add_paragraph(text_paragraph(
-            &parent.name,
-            true,
-            false,
-            AlignmentType::Center,
-            true,
-        ));
+        if !parent.name.is_empty() {
+            docx = docx.add_paragraph(text_paragraph(
+                &parent.name,
+                true,
+                false,
+                AlignmentType::Center,
+                true,
+            ));
+        }
 
         for section in parent.units.values() {
             docx = docx
@@ -1505,79 +1507,14 @@ mod tests {
             .await
             .unwrap();
         let now = Utc::now().naive_utc();
-        for (division, location) in [
-            ("1 мсд", "Північ"),
-            ("2 мсд", "Південь"),
-            ("", "Невідомий район"),
+        for fixture in [
+            ("7 дшд", "1 бр", "Зведений підрозділ", "Північ"),
+            ("7 дшд", "2 бр", "Зведений підрозділ", "Південь"),
+            ("", "", "Зведений підрозділ", "Невідомий район"),
+            ("", "3 бр", "Підрозділ бригади", "Захід"),
+            ("", "", "Неповний підрозділ", "Схід"),
         ] {
-            let unit = mk_sigint_unit(
-                &env.dbx,
-                sigint_unit::ActiveModel {
-                    army: Set(if division.is_empty() {
-                        String::new()
-                    } else {
-                        "1 А".into()
-                    }),
-                    division: Set(division.into()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            sigint_unit_rer_report_metadata::ActiveModel {
-                sigint_unit_id: Set(unit.id),
-                report_name: Set(Some("Зведений підрозділ".into())),
-                labels: Set(serde_json::json!(["Зведений підрозділ"])),
-                locations: Set(serde_json::json!([location])),
-                ..Default::default()
-            }
-            .insert(&env.dbx)
-            .await
-            .unwrap();
-            let message = mk_signal_message(
-                &env.dbx,
-                signal_message::ActiveModel {
-                    body: Set(Some(format!("Перехоплення {division}"))),
-                    timestamp: Set(Some(now)),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            mk_signal_message_group(
-                &env.dbx,
-                signal_message_group::ActiveModel {
-                    signal_message_id: Set(message.id),
-                    group_master_key: Set(Some("vukho-test-master-key".into())),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            mk_sigint_inbox_item(
-                &env.dbx,
-                sigint_inbox_item::ActiveModel {
-                    id: Set(message.id),
-                    datetime: Set(Some(now)),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
-            sigint_inbox_item_unit::ActiveModel {
-                item_id: Set(message.id), unit_id: Set(unit.id),
-                kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed), ..Default::default()
-            }.insert(&env.dbx).await.unwrap();
-            mk_sigint_comment(
-                &env.dbx,
-                sigint_comment::ActiveModel {
-                    signal_message_id: Set(message.id),
-                    comment: Set("Бойова активність".into()),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap();
+            seed_configured_report_item(&env.dbx, now, fixture).await;
         }
         let mut req = report_preview_req_with_till(
             (now + chrono::Duration::hours(1))
@@ -1595,26 +1532,121 @@ mod tests {
         let report = load_report(&login, &env, &req, None, Some(&snapshot))
             .await
             .unwrap();
-        assert_eq!(report.parents.len(), 1);
-        let parent = report.parents.values().next().unwrap();
-        assert_eq!(parent.units.len(), 1);
-        let section = parent.units.values().next().unwrap();
+        let parents = report
+            .parents
+            .values()
+            .map(|parent| (parent.name.as_str(), parent))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            parents.keys().copied().collect::<Vec<_>>(),
+            ["", "3 бр", "7 дшд"]
+        );
+        assert_eq!(parents["7 дшд"].units.len(), 1);
+        let section = parents["7 дшд"].units.values().next().unwrap();
         assert_eq!(section.identity.unit_name, "Зведений підрозділ");
-        assert_eq!(section.messages.len(), 3);
+        assert_eq!(section.messages.len(), 2);
         assert_eq!(
             section.locations,
-            BTreeSet::from([
-                "Північ".into(),
-                "Південь".into(),
-                "Невідомий район".into()
-            ])
+            BTreeSet::from(["Північ".into(), "Південь".into()])
         );
+        assert_eq!(parents["3 бр"].units.len(), 1);
+        assert_eq!(parents[""].units.len(), 2);
+        assert_eq!(
+            parents
+                .values()
+                .flat_map(|parent| parent.units.values())
+                .map(|section| section.messages.len())
+                .sum::<usize>(),
+            5
+        );
+        let file = NamedTempFile::new().unwrap();
+        write_report_docx(&report, "15.00 06.11.2026", file.path()).unwrap();
+        let xml = document_xml(file.path());
+        assert_eq!(xml.matches(r#"w:val="center""#).count(), 5);
+        assert!(!xml.contains("58 ЗВА"));
+        assert!(!xml.contains("1 полк"));
         req.req.search = Some("нічого-не-знайдено-3940".into());
         assert!(load_report(&login, &env, &req, None, Some(&snapshot))
             .await
             .unwrap()
             .parents
             .is_empty());
+    }
+
+    async fn seed_configured_report_item(
+        dbx: &DatabaseConnection,
+        now: NaiveDateTime,
+        (division, brigade, report_name, location): (&str, &str, &str, &str),
+    ) {
+        let unit = mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                army: Set("58 ЗВА".into()),
+                corps: Set("1 АК".into()),
+                division: Set(division.into()),
+                brigade: Set(brigade.into()),
+                regiment: Set("1 полк".into()),
+                battalion: Set("1 батальйон".into()),
+                company: Set("1 рота".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_unit_rer_report_metadata::ActiveModel {
+            sigint_unit_id: Set(unit.id),
+            report_name: Set(Some(report_name.into())),
+            labels: Set(serde_json::json!([report_name])),
+            locations: Set(serde_json::json!([location])),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(format!("Перехоплення {location}"))),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some("vukho-test-master-key".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id), unit_id: Set(unit.id),
+            kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed), ..Default::default()
+        }.insert(dbx).await.unwrap();
+        mk_sigint_comment(
+            dbx,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(message.id),
+                comment: Set("Бойова активність".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
     }
 
     async fn load_non_empty_comments(

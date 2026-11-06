@@ -33,6 +33,7 @@ let root: Root | null = null;
 let latestActions: HookResult | null = null;
 let latestState: NetworkDetailsNeoPageState | null = null;
 const loadCallsigns = vi.fn();
+const loadNetworkCallsignStats = vi.fn();
 
 function Harness({
   unitIds,
@@ -53,6 +54,7 @@ function Harness({
     state,
     setState,
     loadCallsigns,
+    loadNetworkCallsignStats,
   });
 
   return null;
@@ -79,10 +81,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
-  it('defaults to 21 days and reloads only the network section when its period changes', async () => {
+  it('defaults the network list to all time and reloads only its stats when the period changes', async () => {
     renderHarness([101]);
 
-    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(latestState?.networkCallsignsPeriod).toBe('Unlimited');
     expect(latestState?.catalogCallsignsPeriod).toBe('Last21Days');
     expect(latestState?.interceptedCallsignsPeriod).toBe('Last21Days');
 
@@ -94,7 +96,53 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
     expect(latestState?.networkCallsignsPeriod).toBe('Last7Days');
     expect(latestState?.catalogCallsignsPeriod).toBe('Last21Days');
     expect(latestState?.interceptedCallsignsPeriod).toBe('Last21Days');
-    expect(loadCallsigns).toHaveBeenCalledWith(17, { network: 'Last7Days' });
+    expect(loadNetworkCallsignStats).toHaveBeenCalledWith(17, 'Last7Days');
+    expect(loadCallsigns).not.toHaveBeenCalled();
+  });
+
+  it('filters by 21 days without a request when those stats are already loaded', async () => {
+    renderHarness([101], { networkCallsignStatsPeriod: 'Last21Days' });
+
+    await act(async () => {
+      latestActions?.setNetworkCallsignsPeriod('Last21Days');
+      await Promise.resolve();
+    });
+
+    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(loadNetworkCallsignStats).not.toHaveBeenCalled();
+  });
+
+  it('requests stats again when the same window previously failed', async () => {
+    renderHarness([101], {
+      networkCallsignStatsPeriod: 'Last21Days',
+      networkCallsignStatsError: 'stats failed',
+    });
+
+    await act(async () => {
+      latestActions?.setNetworkCallsignsPeriod('Last21Days');
+      await Promise.resolve();
+    });
+
+    expect(loadNetworkCallsignStats).toHaveBeenCalledWith(17, 'Last21Days');
+  });
+
+  it('runs all-time stats only when asked and retries the requested window', async () => {
+    renderHarness([101], {
+      networkCallsignStatsPeriod: 'Last21Days',
+      networkCallsignStatsError: 'stats failed',
+    });
+
+    await act(async () => {
+      latestActions?.retryNetworkCallsignStats();
+      await Promise.resolve();
+    });
+    expect(loadNetworkCallsignStats).toHaveBeenLastCalledWith(17, 'Last21Days');
+
+    await act(async () => {
+      latestActions?.loadAllTimeNetworkCallsignStats();
+      await Promise.resolve();
+    });
+    expect(loadNetworkCallsignStats).toHaveBeenLastCalledWith(17, 'Unlimited');
   });
 
   it('reloads only the catalog section when its period changes', async () => {
@@ -106,7 +154,7 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
     });
 
     expect(latestState?.catalogCallsignsPeriod).toBe('Unlimited');
-    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(latestState?.networkCallsignsPeriod).toBe('Unlimited');
     expect(loadCallsigns).toHaveBeenCalledWith(17, { catalog: 'Unlimited' });
   });
 
@@ -119,7 +167,7 @@ describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
     });
 
     expect(latestState?.interceptedCallsignsPeriod).toBe('Last7Days');
-    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+    expect(latestState?.networkCallsignsPeriod).toBe('Unlimited');
     expect(loadCallsigns).toHaveBeenCalledWith(17, { intercepted: 'Last7Days' });
   });
 

@@ -26,7 +26,19 @@ pub struct ScopedUnit {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RerReportScope {
+    #[serde(deserialize_with = "deserialize_scope_units")]
     pub units: BTreeMap<i64, ScopedUnit>,
+}
+
+fn deserialize_scope_units<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<i64, ScopedUnit>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    serde_json::Value::deserialize(deserializer).and_then(|units| {
+        serde_json::from_value(units).map_err(serde::de::Error::custom)
+    })
 }
 
 pub fn hierarchy(unit: &sigint_unit::Model) -> Vec<String> {
@@ -52,17 +64,16 @@ pub fn hierarchy(unit: &sigint_unit::Model) -> Vec<String> {
 }
 
 pub fn parent(unit: &sigint_unit::Model) -> (Vec<String>, String) {
-    parent_for_path(&hierarchy(unit), &unit.name)
+    parent_for_path(&hierarchy(unit))
 }
 
-fn parent_for_path(path: &[String], name: &str) -> (Vec<String>, String) {
+fn parent_for_path(path: &[String]) -> (Vec<String>, String) {
     let level = crate::config::RER_REPORT_PARENT_LEVELS
         .into_iter()
-        .find(|&i| !path[i].is_empty())
-        .or_else(|| path.iter().position(|value| !value.is_empty()));
+        .find(|&i| !path[i].is_empty());
     match level {
         Some(level) => (path[..=level].to_vec(), path[level].clone()),
-        None => (Vec::new(), name.trim().to_string()),
+        None => (Vec::new(), String::new()),
     }
 }
 
@@ -196,15 +207,11 @@ async fn load_configuration<C: ConnectionTrait>(
         if name.is_empty() || name.contains(['\r', '\n']) {
             return Err(crate::error::AppError::BL { msg: format!("Вкажіть коректну назву для звіту для підрозділу «{}» у налаштуваннях звітів", unit.name) }.into());
         }
-        let (parent_path, parent_name) =
-            parent_for_path(&unit.path, &unit.name);
+        let (parent_path, parent_name) = parent_for_path(&unit.path);
         if !parent_path.is_empty()
             && parents
-                .insert(
-                    name.to_string(),
-                    (parent_path.clone(), parent_name.clone()),
-                )
-                .is_some_and(|previous| previous.0 != parent_path)
+                .insert(name.to_string(), parent_path.clone())
+                .is_some_and(|previous| previous != parent_path)
         {
             return Err(crate::error::AppError::BL { msg: format!("Назва для звіту «{name}» використовується підрозділами з різною ієрархією") }.into());
         }
@@ -221,21 +228,6 @@ async fn load_configuration<C: ConnectionTrait>(
                 locations: serde_json::from_value(row.locations).c(h!())?,
             },
         });
-    }
-    for unit in &mut configured {
-        if unit.target.parent_path.is_empty() {
-            let (path, name) = parents
-                .get(&unit.target.report_name)
-                .cloned()
-                .unwrap_or_else(|| {
-                    (
-                        vec![format!("report:{}", unit.target.report_name)],
-                        unit.target.report_name.clone(),
-                    )
-                });
-            unit.target.parent_path = path;
-            unit.target.parent_name = name;
-        }
     }
     Ok(configured)
 }

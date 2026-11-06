@@ -41,15 +41,23 @@ pub async fn list_network_callsigns(
 
     trace!("network_callsigns; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
+    let network =
+        crate::sigint::network::bl::find_network(&env.dbx, req.network_id)
+            .await
+            .context(h!())?;
+    if req.include_activity_info == Some(false) {
+        let network_callsigns = bl_get_network_callsigns_list_without_activity(
+            &req, &user_id, &env.dbx,
+        )
+        .await
+        .context(h!())?;
+        return Ok(Json(ListNetworkCallsignsRes { network_callsigns }));
+    }
     let groups =
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, &user_id)
             .await
             .context(h!())?;
     let source_db = env.dbx.clone();
-    let network =
-        crate::sigint::network::bl::find_network(&env.dbx, req.network_id)
-            .await
-            .context(h!())?;
     let period = crate::sigint::network::resolve_network_callsign_period(
         req.period.clone(),
     );
@@ -418,4 +426,101 @@ pub async fn network_callsigns_activity(
     Ok(Json(NetworkCallsignsActivityRsp {
         callsigns_activity: res,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::sigint_network_callsign;
+    use crate::functest::tests::{cleanup, find_test_login, mk_sigint_network};
+    use crate::sigint::network::types::NetworkFreqCallsignsPeriod;
+    use actix_identity::{Identity, IdentityMiddleware};
+    use actix_session::{storage::RedisSessionStore, SessionMiddleware};
+    use actix_web::cookie::Key;
+    use actix_web::web::{self, Data};
+    use actix_web::{test, App, HttpMessage, HttpRequest, HttpResponse};
+    use serial_test::serial;
+
+    async fn sign_in(
+        request: HttpRequest,
+        login: web::Path<String>,
+    ) -> HttpResponse {
+        Identity::login(&request.extensions(), login.into_inner()).unwrap();
+        HttpResponse::NoContent().finish()
+    }
+
+    #[actix_web::test]
+    #[serial]
+    async fn list_without_activity_ignores_period_4047() {
+        let env = cleanup().await.unwrap();
+        let test_login = find_test_login(&env.dbx).await.unwrap();
+        let test_login_id = test_login.id;
+        let mut test_login = test_login.into_active_model();
+        test_login.roles = Set(serde_json::json!(["Rer"]));
+        test_login.update(&env.dbx).await.unwrap();
+        let network = mk_sigint_network(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let network_callsign = sigint_network_callsign::ActiveModel {
+            sigint_network_id: Set(network.id),
+            sigint_callsign: Set("сокіл-1".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sessions = RedisSessionStore::new(
+            crate::redis_conn_string(&env.config).unwrap(),
+        )
+        .await
+        .unwrap();
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::from(env.clone()))
+                .wrap(IdentityMiddleware::default())
+                .wrap(SessionMiddleware::new(sessions, Key::generate()))
+                .route("/test/login/{login}", web::post().to(sign_in))
+                .service(list_network_callsigns),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(&format!("/test/login/{test_login_id}"))
+                .to_request(),
+        )
+        .await;
+        let cookie = response.response().cookies().next().unwrap().into_owned();
+
+        let mut listed = Vec::new();
+        for include_activity_info in [Some(false), None] {
+            let list: ListNetworkCallsignsRes = test::call_and_read_body_json(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/sigint/network-callsigns/list")
+                    .cookie(cookie.clone())
+                    .set_json(ListNetworkCallsignsReq {
+                        network_id: network.id,
+                        sort_by: None,
+                        period: Some(NetworkFreqCallsignsPeriod::Last21Days),
+                        include_activity_info,
+                    })
+                    .to_request(),
+            )
+            .await;
+            listed.push(
+                list.network_callsigns
+                    .iter()
+                    .map(|callsign| (callsign.id, callsign.message_count))
+                    .collect::<Vec<_>>(),
+            );
+        }
+
+        assert_eq!(listed[0], vec![(network_callsign.id, 0)]);
+        assert_eq!(
+            listed[1],
+            vec![],
+            "the same period drops a row without activity on the stats path"
+        );
+    }
 }
