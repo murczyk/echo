@@ -339,7 +339,7 @@ async fn removal_requested_accounts_do_not_export_operational_metrics(
 // https://github.com/echoua/echo/issues/4034
 #[tokio::test]
 #[serial_test::serial]
-async fn operational_reassignment_and_empty_inventory_replace_entity_series(
+async fn operational_reassignment_and_deleted_clients_replace_entity_series(
 ) -> anyhow::Result<()> {
     let (env, _guard) =
         crate::functest::tests::cleanup_locked().await.c(h!())?;
@@ -420,7 +420,11 @@ async fn operational_reassignment_and_empty_inventory_replace_entity_series(
         OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
         OPERATIONAL_METRICS_ACTIVITY_AGE,
     ] {
-        assert!(recorder.find(name).is_none());
+        for account_id in [&old_account_id_label, &new_account_id_label] {
+            assert!(recorder
+                .find_with_attributes(name, &[("account_id", account_id)])
+                .is_none());
+        }
     }
     for source in ["accounts", "datasources"] {
         assert_eq!(

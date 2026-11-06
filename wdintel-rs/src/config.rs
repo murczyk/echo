@@ -1659,7 +1659,7 @@ pub const RER_REPORT_HIERARCHY_COLUMNS: [&str; 14] = [
     "other",
 ];
 
-pub const RER_REPORT_PARENT_LEVELS: [usize; 5] = [2, 4, 6, 7, 8];
+pub const RER_REPORT_PARENT_LEVELS: [usize; 2] = [4, 5];
 pub const RER_REPORT_HIERARCHY_WHITESPACE: &str = " \t\n\r\u{000b}\u{000c}\u{0085}\u{00a0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}";
 pub const RER_REPORT_HYDRATION_BATCH_SIZE: usize = 500;
 pub const RER_REPORT_OTHER_TAG_LABEL: &str = "інше";

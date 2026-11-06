@@ -74,7 +74,7 @@ for (const width of [375, 1200]) {
               id: 1,
               sigint_unit_id: 1,
               sigint_unit_name: 'Підрозділ А',
-              report_parent_context: JSON.stringify(['', '', '1 А']),
+              report_parent_context: JSON.stringify(['', '', '1 А', '', '1 мсд']),
               sigint_unit_active: true,
               sigint_unit_deleted: false,
               report_name: 'Спільна назва',
@@ -88,9 +88,11 @@ for (const width of [375, 1200]) {
       route.fulfill({
         json: {
           units: [
-            { id: 2, name: 'Підрозділ Б', army: '2 А' },
-            { id: 4, name: 'Підрозділ Б', army: '3 А' },
-            { id: 3, name: 'Підрозділ без ієрархії' },
+            { id: 2, name: 'Підрозділ Б', army: '1 А', division: '2 мсд' },
+            { id: 4, name: 'Підрозділ Б', army: '1 А', division: '3 мсд' },
+            { id: 3, name: 'Підрозділ без ієрархії', army: '1 А', regiment: '1 полк' },
+            { id: 5, name: 'Та сама дивізія', army: '1 А', division: '1 мсд', brigade: '2 бр' },
+            { id: 6, name: 'Лише бригада', army: '1 А', brigade: '1 бр' },
           ],
         },
       }),
@@ -104,7 +106,7 @@ for (const width of [375, 1200]) {
           ...request,
           id: 2,
           sigint_unit_name: 'Підрозділ Б',
-          report_parent_context: JSON.stringify(['', '', '2 А']),
+          report_parent_context: JSON.stringify(['', '', '1 А', '', '2 мсд']),
           sigint_unit_active: true,
           sigint_unit_deleted: false,
         },
@@ -125,6 +127,12 @@ for (const width of [375, 1200]) {
     await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
     await expect(dialog.getByText(/іншою ієрархією/)).toBeVisible();
     expect(created).toHaveLength(0);
+    await dialog.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Та сама дивізія');
+    await page.getByRole('option', { name: 'Та сама дивізія', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeEnabled();
+    await dialog.getByRole('combobox', { name: 'Підрозділ', exact: true }).fill('Лише бригада');
+    await page.getByRole('option', { name: 'Лише бригада', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Зберегти', exact: true })).toBeDisabled();
     await dialog
       .getByRole('combobox', { name: 'Підрозділ', exact: true })
       .fill('Підрозділ без ієрархії');

@@ -6598,16 +6598,17 @@ mod tests {
         .await
         .unwrap();
         assert_ne!(first.id, second.id);
-        assert_eq!(
-            first.request["rer_scope"]["units"][unit.id.to_string()]["target"]
-                ["report_name"],
-            "Перший"
-        );
-        assert_eq!(
-            second.request["rer_scope"]["units"][unit.id.to_string()]["target"]
-                ["report_name"],
-            "Другий"
-        );
+        for (report, expected_name) in [(first, "Перший"), (second, "Другий")]
+        {
+            let ReportHistoryRequest::AnalysisReport {
+                rer_scope: Some(scope),
+                ..
+            } = serde_json::from_value(report.request).unwrap()
+            else {
+                panic!("queued RER report must retain its scope");
+            };
+            assert_eq!(scope.units[&unit.id].target.report_name, expected_name);
+        }
     }
 
     // https://github.com/echoua/echo/issues/4034
