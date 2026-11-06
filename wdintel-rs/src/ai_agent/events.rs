@@ -419,6 +419,18 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             diagnostic["draftIssue"] = Value::String(issue.to_string());
         }
     }
+    if let Some(kind) = event.get("failureKind").and_then(Value::as_str) {
+        if matches!(
+            kind,
+            "rate_limit"
+                | "authorization"
+                | "interrupted_stream"
+                | "provider_error"
+                | "empty"
+        ) {
+            diagnostic["failureKind"] = Value::String(kind.to_string());
+        }
+    }
     for key in [
         "inputTokens",
         "outputTokens",
@@ -428,6 +440,7 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
         "remainingMs",
         "maxTokens",
         "attempt",
+        "httpStatus",
     ] {
         if let Some(value) = event.get(key).and_then(Value::as_u64) {
             diagnostic[key] = Value::from(value);
@@ -862,6 +875,28 @@ mod tests {
         assert!(completion_diagnostic(&serde_json::json!({
             "type": "completion_diagnostic", "stage": "secret", "outcome": "complete"
         })).is_none());
+    }
+
+    #[test]
+    fn issue_4053_kept_failure_kind_and_status_but_never_other_text() {
+        let diagnostic = |kind: &str| {
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": "provider_error", "failureKind": kind,
+                "httpStatus": 400
+            }))
+            .unwrap()
+        };
+        assert_eq!(
+            diagnostic("empty"),
+            serde_json::json!({
+                "stage": "research", "outcome": "provider_error",
+                "failureKind": "empty", "httpStatus": 400
+            })
+        );
+        assert!(diagnostic("private provider text")
+            .get("failureKind")
+            .is_none());
     }
 
     #[test]

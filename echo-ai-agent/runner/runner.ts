@@ -14,6 +14,7 @@ import {
   type ExecutionPolicy,
   type BudgetEvidence,
   type ResearchLimitReason,
+  providerFailureKind,
 } from "./execution-policy.ts";
 import {
   DEVICE_ROUTES,
@@ -3500,24 +3501,6 @@ export async function recoverFinalOutputLimit(
   return true;
 }
 
-function providerFailureKind(value: string): string {
-  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
-    return "rate_limit";
-  if (
-    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
-      value,
-    )
-  )
-    return "authorization";
-  if (
-    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
-      value,
-    )
-  )
-    return "interrupted_stream";
-  return "provider_error";
-}
-
 function providerFailureDetail(value: unknown): string {
   if (typeof value !== "string" || !value.trim())
     return "unknown provider error";
@@ -4105,7 +4088,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
       if (research && budget) {
         // Synthesis writes the answer, so research may simply end without any text.
         const researchEnd = { allowEmpty: true };
-        validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
+        if (!research.noteFailedStart(lastAssistantMessage(currentTurnAssistantMessages)))
+          validateFinalAssistantMessage(currentTurnAssistantMessages, researchEnd);
         await continueOpenResearch(session, research, budget);
         if (journal?.failure) throw journal.failure;
         if (toolLimitError) throw toolLimitError;

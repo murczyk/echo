@@ -19,6 +19,7 @@ import {
   validatedFlashAnswer,
 } from "./flash-research.ts";
 import {
+  providerCompletion,
   ResearchBudget,
   validateExecutionPolicy,
   type ExecutionPolicy,
@@ -1598,4 +1599,172 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
       ),
     );
   }
+});
+
+const providerRejection = (status: number, message: string) =>
+  new Response(JSON.stringify({ error: { message } }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+async function researchWithProviderScript(
+  t: any,
+  script: (() => Response)[],
+  policyForRun: ExecutionPolicy = policy,
+) {
+  const events: any[] = [];
+  const reads: unknown[] = [];
+  let researchCalls = 0;
+  const oldSignals = {
+    SIGINT: process.listeners("SIGINT"),
+    SIGTERM: process.listeners("SIGTERM"),
+  };
+  const write = process.stdout.write.bind(process.stdout);
+  t.mock.method(process.stdout, "write", (chunk: string, ...args: any[]) => {
+    if (typeof chunk === "string" && chunk.startsWith('{"type":')) {
+      events.push(JSON.parse(chunk));
+      return true;
+    }
+    return write(chunk, ...args);
+  });
+  t.mock.method(globalThis, "fetch", async (url: unknown, init: any) => {
+    const path = new URL(String(url)).pathname;
+    if (path === "/api/ai-agent/bootstrap/exchange")
+      return Response.json(
+        { correlationId },
+        { headers: { "set-cookie": "session=fixture; HttpOnly" } },
+      );
+    if (path === "/api/signal/inbox/messages") {
+      reads.push(JSON.parse(init.body));
+      return Response.json({ inbox_items: [], page_limit: 20 });
+    }
+    const purpose = new Headers(init.headers).get("x-echo-ai-purpose");
+    if (purpose === "synthesis") return stream("Підсумок.");
+    return script[researchCalls++]?.() ?? stream("");
+  });
+  try {
+    await runAgent(
+      validatePayload(
+        {
+          prompt: "Що відбулось за сьогодні в чаті DEVOPS",
+          modelName: "glm-5.3",
+          providerTransport: "echo_gateway",
+          providerApiKey: "fixture-capability",
+          echoPublicHost: "echo.example.test",
+          bootstrapToken: "A".repeat(43),
+          correlationId,
+          contextWindow: 65_536,
+          maxTokens: 8192,
+          checkpointMaxTokens: 8192,
+          compactionReserveTokens: 16_384,
+          compactionKeepRecentTokens: 1024,
+          executionPolicy: policyForRun,
+          deadlineAt: Date.now() + policyForRun.maxRuntimeSeconds * 1000,
+          timeContext: {
+            timeZone: "Europe/Kyiv",
+            requestStartedAtUtc: new Date().toISOString(),
+          },
+          skills: [
+            {
+              method: "POST",
+              path: "/api/signal/inbox/messages",
+              skill: "inbox_messages",
+              label: "Read archive",
+              requestKind: "inboxMessages",
+            },
+          ],
+        },
+        false,
+      ),
+    );
+  } finally {
+    for (const signal of ["SIGINT", "SIGTERM"] as const)
+      for (const listener of process.listeners(signal))
+        if (!oldSignals[signal].includes(listener))
+          process.removeListener(signal, listener);
+  }
+  const metadata = events.find((event) => event.type === "completion_metadata");
+  const reason = metadata?.reason;
+  return { events, metadata, reads, reason, researchCalls };
+}
+
+const readArchive = () =>
+  stream("", { name: "echo_inbox_messages", args: { period } });
+
+test("incident 01a1b210: a model failure before any tool gets one more attempt", async (t) => {
+  const { events, reads, reason, researchCalls } =
+    await researchWithProviderScript(t, [
+      () => providerRejection(400, "unexpected model state"),
+      readArchive,
+      () => stream("Готово."),
+    ]);
+  assert.equal(reads.length, 1);
+  assert.equal(researchCalls, 3);
+  assert.notEqual(reason, "provider_error");
+  const failed = events.find(
+    (event) => event.type === "completion_diagnostic" && event.stopReason === "error",
+  );
+  assert.equal(failed.failureKind, "provider_error");
+  assert.equal(failed.httpStatus, 400);
+  assert.ok(
+    events.some(
+      (event) => event.type === "completion_diagnostic" && event.outcome === "continued",
+    ),
+  );
+});
+
+test("incident 01a1b210: a repeated failure stops after one extra attempt", async (t) => {
+  const { reads, reason, researchCalls } = await researchWithProviderScript(t, [
+    () => providerRejection(400, "unexpected model state"),
+    () => providerRejection(400, "unexpected model state"),
+    readArchive,
+  ]);
+  assert.equal(researchCalls, 2);
+  assert.equal(reads.length, 0);
+  assert.equal(reason, "provider_error");
+});
+
+test("incident 01a1b210: a failure after work started keeps the evidence and does not retry", async (t) => {
+  const { reads, reason, researchCalls } = await researchWithProviderScript(t, [
+    readArchive,
+    () => providerRejection(400, "unexpected model state"),
+    readArchive,
+  ]);
+  assert.equal(researchCalls, 2);
+  assert.equal(reads.length, 1);
+  assert.equal(reason, "provider_error");
+});
+
+test("incident 01a1b210: a rejected credential is not retried", async (t) => {
+  await assert.rejects(
+    researchWithProviderScript(t, [
+      () => providerRejection(401, "unauthorized"),
+      readArchive,
+    ]),
+  );
+  assert.equal(
+    (globalThis.fetch as any).mock.calls.filter((call: any) =>
+      String(call.arguments[0]).endsWith("/chat/completions"),
+    ).length,
+    1,
+  );
+});
+
+test("#4053 a failed-start message never logs the provider's text", () => {
+  const research = providerCompletion({
+    stopReason: "error",
+    errorMessage: "400 private prompt text: secret-value",
+    content: [],
+  });
+  assert.equal(research.failureKind, "provider_error");
+  assert.equal(research.httpStatus, 400);
+  assert.ok(!JSON.stringify(research).includes("secret-value"));
+  assert.equal(
+    providerCompletion({ stopReason: "error", content: [] }).failureKind,
+    "empty",
+  );
+  assert.equal(
+    providerCompletion({ stopReason: "stop", content: [] }).failureKind,
+    undefined,
+  );
 });
