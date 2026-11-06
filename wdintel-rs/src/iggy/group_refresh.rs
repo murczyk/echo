@@ -18,6 +18,7 @@ struct RefreshJob {
     group_master_key: Option<String>,
     after_message_id: i64,
     through_message_id: i64,
+    through_membership_id: i64,
 }
 
 #[derive(FromQueryResult)]
@@ -61,7 +62,7 @@ pub(super) async fn process_next_batch(
         DbBackend::Postgres,
         r#"
 select id, api_integration_id, destination_id, group_master_key,
-    after_message_id, through_message_id
+    after_message_id, through_message_id, through_membership_id
 from api_integration_iggy_group_refresh
 where next_attempt_at <= now() at time zone 'utc'
 order by next_attempt_at, id
@@ -169,11 +170,21 @@ select $1, $2, item.id,
     jsonb_build_object('event_type', 'sigint_inbox_item_visibility_changed')
 from sigint_inbox_item item
 where item.id = any($3::bigint[])
+    and exists (
+        select 1 from signal_message_group membership
+        where membership.signal_message_id = item.id
+            and membership.id <= $4
+            and (membership.group_master_key = $5::text
+                or ($5::text is null
+                    and membership.group_master_key is not null))
+    )
         "#,
         [
             job.api_integration_id.into(),
             job.destination_id.into(),
             message_ids.into(),
+            job.through_membership_id.into(),
+            job.group_master_key.clone().into(),
         ],
     ))
     .await

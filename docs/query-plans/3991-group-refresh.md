@@ -40,6 +40,22 @@ Jobs later gained `signal_message_id <= $through_message_id`. These plans were
 measured before that, and it only narrows the same index range. The bound is
 read with `max(id)` on the `signal_message` primary key when a job is queued.
 
+Jobs then gained `id <= $through_membership_id`, read with `max(id)` on the
+`signal_message_group` primary key. It applies when a page is resolved to inbox
+items, so the seek above stays an index-only scan. Measured on 2026-11-06 in the
+same read-only session settings, with a 15-second statement timeout:
+
+| Read | Index and condition | Rows returned | Buffers | Execution time |
+| --- | --- | --- | --- | --- |
+| Resolve a one-group page | `sigint_inbox_item_pkey`, then `signal_message_group_signal_message_id_group_master_key_idx`; `signal_message_id = item.id AND group_master_key = $key`, filter `id <= $fence` | 500 | 2,378 hit, 290 read | 10.827 ms |
+| Resolve an all-groups page | same; `signal_message_id = item.id AND group_master_key IS NOT NULL`, filter `id <= $fence` | 500 | 2,666 hit, 2 read | 1.733 ms |
+
+Filtering inside the seek was rejected. It lost the index-only scan, took 4.8 to
+22 ms per one-group page, and moved the largest group's mid-history page onto the
+message-first index. That page was still fast, as was the final page of a stale
+group with about 940,000 rows, but the seek would then depend on the planner
+keeping a group-first plan for a large group that has gone quiet.
+
 These timings cover historical selection, rather than outbox insertion or
 publication latency. Expansion commits at most 500 events per transaction. Queue
 selection is supported by

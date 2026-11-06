@@ -24,6 +24,7 @@ create table api_integration_iggy_group_refresh (
     group_master_key text,
     after_message_id bigint not null default 0,
     through_message_id bigint not null,
+    through_membership_id bigint not null,
     next_attempt_at timestamp without time zone not null
         default (clock_timestamp() at time zone 'utc'),
     attempts integer not null default 0,
@@ -45,14 +46,19 @@ create or replace function queue_api_integration_iggy_group_visibility_change(
 ) returns void language plpgsql as $$
 declare
     last_message_id bigint;
+    last_membership_id bigint;
 begin
     perform 1 from api_integration integration
     order by integration.id for share;
     select coalesce(max(id), 0) into last_message_id from signal_message;
+    select coalesce(max(id), 0) into last_membership_id
+    from signal_message_group;
     insert into api_integration_iggy_group_refresh (
-        api_integration_id, destination_id, group_master_key, through_message_id
+        api_integration_id, destination_id, group_master_key,
+        through_message_id, through_membership_id
     )
-    select integration.id, destination.id, target_group.master_key, last_message_id
+    select integration.id, destination.id, target_group.master_key,
+        last_message_id, last_membership_id
     from api_integration integration
     join login api_user on api_user.id = integration.api_user_login_id
     cross join unnest(
@@ -125,7 +131,7 @@ begin
             or (job.group_master_key is null
                 and old.group_master_key is not null))
         and job.after_message_id < old.signal_message_id
-        and old.signal_message_id <= job.through_message_id;
+        and old.id <= job.through_membership_id;
     return coalesce(new, old);
 end;
 $$;

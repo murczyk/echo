@@ -216,13 +216,23 @@ the same login, zone, and organisation filters as before. Pages seek through
 existing indexes by `signal_message_id`; see
 [query plan evidence](query-plans/3991-group-refresh.md).
 
-Each job records the newest message at queue time in `through_message_id` and
-stops there. Later messages publish through their own creation events, so a job
-always finishes and never sends them to a destination it retained. A message
-that leaves a group while a job still has it ahead of the cursor queues its
-visibility event in that same transaction. Otherwise the job would no longer
-find it, and the membership event alone cannot revoke an item from a group the
-integration has already lost.
+Each job records the newest message and the newest `signal_message_group` row at
+queue time, in `through_message_id` and `through_membership_id`. The message
+bound ends the job. The membership bound skips existing messages linked into the
+group later. Both kinds of later change publish through their own events, so a
+job never sends them to a destination it retained. A membership that leaves a
+group while a job still has it ahead of the cursor queues its visibility event in
+that same transaction. Otherwise the job would no longer find it, and the
+membership event alone cannot revoke an item from a group the integration has
+already lost.
+
+One gap remains. The publisher revokes a removed message only while its previous
+group is still visible. If a message is unlinked and the group is then archived
+before that `updated` event is published, nothing revokes the message. The
+synchronous fan-out had the same gap, and its size is the outbox backlog. An
+unlink that overlaps the transaction queuing a job hits the same gap, because it
+cannot see the uncommitted job. Closing it means recording at removal time
+whether the integration could see the group.
 
 Retries, locking, destination retention, and rollback match the unit refresh
 queue above. The publisher evaluates visibility when it publishes, so an event
@@ -242,7 +252,8 @@ Inspect progress without modifying it:
 
 ```sql
 select id, api_integration_id, destination_id, group_master_key, created_at,
-    after_message_id, through_message_id, next_attempt_at, attempts, last_error
+    after_message_id, through_message_id, through_membership_id,
+    next_attempt_at, attempts, last_error
 from api_integration_iggy_group_refresh
 order by next_attempt_at, id
 limit 50;

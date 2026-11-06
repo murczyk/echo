@@ -4329,6 +4329,48 @@ for each row execute function pg_temp.reject_settlement_event();
 
     #[actix_web::test]
     #[serial]
+    async fn group_refresh_skips_membership_linked_after_queue_3991() {
+        let fixture = group_visibility_fixture().await;
+        let (late_item_id, late_membership) =
+            insert_grouped_inbox_item(&fixture.env, &fixture.group).await;
+        signal_message_group::Entity::delete_by_id(late_membership.id)
+            .exec(&fixture.env.dbx)
+            .await
+            .unwrap();
+        clear_iggy_events(&fixture.env, fixture.integration.id).await;
+        signal_group::ActiveModel {
+            master_key: Set(fixture.group.group_master_key.clone()),
+            is_secret: Set(true),
+            ..Default::default()
+        }
+        .update(&fixture.env.dbx)
+        .await
+        .unwrap();
+
+        mk_signal_message_group(
+            &fixture.env.dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(late_item_id),
+                group_master_key: Set(Some(
+                    fixture.group.group_master_key.clone(),
+                )),
+                datasource_group_id: Set(Some(fixture.group.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        drain_group_refreshes(&fixture.env).await;
+
+        assert_eq!(
+            visibility_event_item_ids(&fixture.env, fixture.integration.id)
+                .await,
+            vec![fixture.item_id]
+        );
+    }
+
+    #[actix_web::test]
+    #[serial]
     async fn group_refresh_job_rolls_back_with_group_change_3991() {
         use crate::entities::api_integration_iggy_group_refresh as refresh_jobs;
         let fixture = group_visibility_fixture().await;
