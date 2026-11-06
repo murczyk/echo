@@ -148,6 +148,7 @@ const scenarios = [
   "deep-continues",
   "deep-stalled",
   "deep-promise-only",
+  "deep-no-tools",
   "deep-gaps",
   "deep-hard-stop",
   "deep-synthesis-fallback",
@@ -259,6 +260,11 @@ for (const [scenario, modelName] of [
     } else if (scenario === "deep-promise-only") {
       calls.shift();
       calls.push(STOP, STOP, STOP);
+    } else if (scenario === "deep-no-tools") {
+      calls.length = 0;
+      calls.push(STOP);
+      read();
+      refresh();
     } else if (scenario === "deep-gaps") {
       read();
       calls.push({
@@ -343,6 +349,7 @@ for (const [scenario, modelName] of [
     let clockOffset = 0;
     let continuations = 0;
     let rejectionNotices = 0;
+    let deepSearchPrompts = 0;
     const synthesisBodies: string[] = [];
     const now = Date.now.bind(Date);
     t.mock.method(Date, "now", () => now() + clockOffset);
@@ -555,6 +562,7 @@ for (const [scenario, modelName] of [
         const lastInput = JSON.stringify(body.messages.at(-1)?.content);
         if (lastInput?.includes("The work is not finished")) continuations++;
         if (lastInput?.includes("but not the draft")) rejectionNotices++;
+        if (lastInput?.includes("Deep mode was requested")) deepSearchPrompts++;
         // One turn eats over half of the 60 s research window before anything was found.
         if (scenario === "slow-first-turn" && researchCalls === 1)
           clockOffset += 31_000;
@@ -953,6 +961,11 @@ for (const [scenario, modelName] of [
     }
     if (scenario === "continues-once")
       assert.equal(continuations, RESEARCH_CONTINUATIONS);
+    // The shape of incident 01a1b176: Deep answered from memory in one turn.
+    if (scenario === "deep-no-tools") {
+      assert.equal(deepSearchPrompts, 1);
+      assert.equal(queries.length, 1);
+    }
     if (scenario === "deep-continues") {
       assert.equal(continuations, 2);
       assert.equal(queries.length, 2);
@@ -1165,9 +1178,26 @@ test("#4031 a closing note after real work is not unfinished work", () => {
   budget.dispose();
 });
 
-test("#4031 a blocked task is finished work, not a reason to continue", async () => {
-  const budget = new ResearchBudget(deepPolicy, Date.now() + 14_400_000, () => {});
+test("incident 01a1b176: only Deep is sent back to search when no tool ran", () => {
+  const deep = new ResearchBudget(deepPolicy, Date.now() + 14_400_000, () => {});
+  const fast = new ResearchBudget(policy, Date.now() + 120_000, () => {});
   const research = new FlashResearch(() => sources);
+  assert.equal(research.shouldContinue(deep), true);
+  assert.equal(research.shouldContinue(fast), false);
+  assert.match(research.continuationPrompt(), /Deep mode was requested/);
+  // Not searching is not unfinished work: reformatting needs no tool.
+  assert.equal(research.hasUnfinishedWork, false);
+  research.noteToolRun();
+  assert.equal(research.shouldContinue(deep), false);
+  deep.dispose();
+  fast.dispose();
+});
+
+test("#4031 a blocked task is finished work, not a reason to continue", async (t) => {
+  const budget = new ResearchBudget(deepPolicy, Date.now() + 14_400_000, () => {});
+  t.after(() => budget.dispose());
+  const research = new FlashResearch(() => sources);
+  research.noteToolRun();
   await (research.tool(() => {}) as any).execute("save", {
     ...updated,
     checklist: [{ task: "Second archive", status: "blocked" }],

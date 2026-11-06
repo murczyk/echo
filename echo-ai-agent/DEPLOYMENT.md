@@ -446,15 +446,16 @@ log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
 `invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
 `wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.
 
-## Deep continuation that finishes the work (release 2026.11.06.2)
+## Deep continuation that finishes the work (release 2026.11.06.3)
 
 Deploy the matching application, then upgrade the approved installation's
-namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.2`,
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.3`,
 previewing with `--dry-run` first. No migration or provider change is needed.
 Echo requires this exact harness, so the chat reports that the agent is updating
-until the namespace is upgraded. Releases `2026.11.06.1` and `2026.11.05.3` stay in the compatible
-runner lists. Use `2026.11.06.2` everywhere: `2026.11.06.1` reached only echo-staging, and its
-final answers can say that tools did not run. Roll back the application and harness as a pair.
+until the namespace is upgraded. Releases `2026.11.06.2`, `2026.11.06.1` and `2026.11.05.3` stay in the
+compatible runner lists. Use `2026.11.06.3` everywhere: the two before it reached only
+echo-staging. `2026.11.06.1` could say that tools did not run, and `2026.11.06.2` could
+finish Deep without searching. Roll back the application and harness as a pair.
 
 Balanced on non-OpenAI engines now runs up to 10 minutes and holds the user's
 running slot that long; the composer shows the new limit. Verify on GLM-5.3 that a

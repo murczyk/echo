@@ -31,6 +31,8 @@ export const RESEARCH_INCOMPLETE_REASON = "incomplete_research";
 // to insist; the others usually have time for one.
 export const RESEARCH_CONTINUATIONS = 1;
 export const DEEP_RESEARCH_CONTINUATIONS = 3;
+const DEEP_SEARCH_PROMPT =
+  "Deep mode was requested, but no tool has run. Search Echo before answering from general knowledge: a word with an everyday meaning may be a callsign, a unit or a term from the reports. Only reformatting or translating earlier text needs no tool; in that case finish with a brief completion message.";
 export const FLASH_LEGACY_POLICY: ExecutionPolicy = {
   preset: "balanced",
   api: "openai-completions",
@@ -104,7 +106,7 @@ export const RESEARCH_TUNING: ResearchTuning = {
   checkpointPriorMs: 60_000,
 };
 
-export const FLASH_GUIDANCE = `Start working in your first turn: when the request needs Echo data, run the first retrieval right away, without announcing it first. Never end a turn with a plan, a promise or a progress note while work remains; call the tool in that same turn. update_research is not needed before retrieval. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Send report_progress together with another tool call in the same turn, never as a turn of its own. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. When the user asks for a document, saving it with echo_document_script is part of research: save it before the final update_research, because the tool-free synthesis cannot create files; when the budget warning arrives before it is saved, save it now from the evidence collected so far. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
+export const FLASH_GUIDANCE = `Start working in your first turn: when the request needs Echo data, run the first retrieval right away, without announcing it first. Never end a turn with a plan, a promise or a progress note while work remains; call the tool in that same turn. update_research is not needed before retrieval. A name or unfamiliar word may be a callsign, a unit or a term from the reports even when it has an everyday meaning: search Echo for it before answering from general knowledge. Save task status and factual findings only, never hidden reasoning or deliberation. For a broad summary, read one initial sample, then use focused searches for substantive reports and the subjects actually found. Reassess coverage after the searches. Do not continue unfiltered pagination, or read more than three pages of one search, without recording a concrete coverage need in paginationReason or refining the search; explicit exhaustive requests may continue pagination. A cited partial answer with a stated coverage gap is better than none. A sample of the newest messages does not represent the whole reporting period. Choose searches from the user's scope and observed evidence, reassess their usefulness after results arrive, and adjust them when they add little evidence. Preserve all scope, permission, citation and search-semantics rules, including separate required search paths. Explicit exhaustive requests still require pagination; report incomplete coverage honestly when unfinished. Refresh update_research with a concise cited answer draft and remaining coverage gaps between tool batches after four retrieval calls, and before finishing research. An admitted batch may finish before this refresh; when it is due, the next turn requires update_research before retrieval resumes. Actual queries and continuation cursors are tracked automatically. For formatting, translation, or regrouping of the previous answer, reuse that answer and its citations without retrieval or rereading the work journal. Reuse relevant compact saved findings in other follow-ups and fetch only detailed records needed for a new factual question. Private budget status is supplied before each provider turn: when warned, save the supported draft and finish. Keep tool arguments, the checklist, research narration and budget details out of the answer. Send report_progress together with another tool call in the same turn, never as a turn of its own. Keep the answer readable: headings for requested groups, short cited bullets, and one brief coverage qualification when needed. Concise does not mean a single paragraph. When the user asks for a document, saving it with echo_document_script is part of research: save it before the final update_research, because the tool-free synthesis cannot create files; when the budget warning arrives before it is saved, save it now from the evidence collected so far. After the final update_research, finish research with a brief completion message; the next tool-free synthesis turn writes the full answer.`;
 
 // Limits live in normalizedResearchUpdate, not here: a schema violation costs a whole
 // provider turn, and it was the most common failure of this tool in production.
@@ -552,9 +554,12 @@ export class FlashResearch {
       : this.toolRunsAtProgress === this.publicToolRuns;
   }
 
+  // Deep was asked for more effort, so it must not simply end on an answer from memory.
   shouldContinue(budget: ResearchBudget): boolean {
+    const skippedTools =
+      budget.policy.preset === "deep" && this.publicToolRuns === 0;
     return (
-      this.unfinished &&
+      (this.unfinished || skippedTools) &&
       budget.remainingResearchMs() >
         Math.max(0, ...this.observedMs.values()) + TURN_MARGIN_MS
     );
@@ -562,6 +567,7 @@ export class FlashResearch {
 
   continuationPrompt(): string {
     const pending = this.pendingTasks;
+    if (!pending.length && !this.unfinished) return DEEP_SEARCH_PROMPT;
     const reason = pending.length
       ? `these tasks are still pending: ${JSON.stringify(pending)}`
       : "you announced work but ran no tool";

@@ -66,6 +66,9 @@ public progress report that no tool call followed, does not end research: the
 runner re-prompts the model to do the work or mark it done or blocked. Deep allows
 three re-prompts and the other presets one, while time for a turn remains. A
 re-prompt that runs no tool ends the loop. There is no forced tool choice here.
+Deep that ran no tool at all also gets one re-prompt to search first, because a
+word with an everyday meaning may be a callsign. Reformatting or translating
+earlier text may still finish without tools.
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
 answer, so an empty final turn is not a provider failure. A last draft refresh
 runs only after four or more retrievals, because it is a fallback that costs
