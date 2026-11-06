@@ -978,7 +978,7 @@ async fn resolve_or_borrow_analysis_unit_filters<'a>(
     .map(Cow::Owned))
 }
 
-fn effective_groups_with_access(
+pub(in crate::rer_importer) fn effective_groups_with_access(
     selected_groups: &Option<Vec<String>>,
     allowed_groups: &[String],
 ) -> Vec<String> {

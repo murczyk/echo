@@ -19,13 +19,59 @@ use actix_web::{
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
     DbBackend, EntityTrait, FromQueryResult, IntoActiveModel, QueryFilter,
-    Statement,
+    QueryTrait, Statement,
 };
 use serial_test::serial;
 
 struct GroupFixture {
     signal_group: signal_group::Model,
     datasource_group: datasource_group::Model,
+}
+
+fn selected_groups_sql(
+    selected_groups: Option<Vec<String>>,
+    selected_senders: Option<Vec<String>>,
+) -> String {
+    filter_selected_groups_and_senders_with_access(
+        signal_message::Entity::find(),
+        &selected_groups,
+        &selected_senders,
+        &["allowed".to_string()],
+    )
+    .unwrap()
+    .build(DbBackend::Postgres)
+    .to_string()
+}
+
+#[test]
+fn selection_without_accessible_group_matches_nothing_4053() {
+    for selected_senders in [None, Some(vec!["sender".to_string()])] {
+        let sql = selected_groups_sql(
+            Some(vec!["unavailable".to_string()]),
+            selected_senders,
+        );
+        assert!(sql.contains("FALSE"), "{sql}");
+    }
+}
+
+#[test]
+fn absent_or_empty_selection_applies_no_group_filter_4053() {
+    for selected_groups in [None, Some(Vec::new())] {
+        let sql = selected_groups_sql(selected_groups, None);
+        assert!(!sql.contains("FALSE"), "{sql}");
+        assert!(!sql.contains("signal_message_group"), "{sql}");
+    }
+}
+
+#[test]
+fn partly_accessible_selection_keeps_only_accessible_groups_4053() {
+    let sql = selected_groups_sql(
+        Some(vec!["allowed".to_string(), "unavailable".to_string()]),
+        None,
+    );
+    assert!(sql.contains("'allowed'"), "{sql}");
+    assert!(!sql.contains("unavailable"), "{sql}");
+    assert!(!sql.contains("FALSE"), "{sql}");
 }
 
 #[actix_web::test]

@@ -258,14 +258,18 @@ where
 {
     let allowed: HashSet<&String> =
         allowed_groups.iter().collect::<HashSet<_>>();
-    let selected_groups = selected_groups.as_ref().map(|groups| {
-        groups
-            .iter()
-            .filter(|key| allowed.contains(key))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
-    let selected_groups = selected_groups.filter(|groups| !groups.is_empty());
+    // An empty selection means "no filter". A selection that matches no
+    // accessible group stays Some(vec![]) and must return nothing, not widen.
+    let selected_groups = selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|key| allowed.contains(key))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
     let selected_senders = selected_senders
         .as_ref()
         .filter(|senders| !senders.is_empty())
