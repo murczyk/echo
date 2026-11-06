@@ -17,6 +17,7 @@ import {
 import { getEncryptions } from '../../services/api/encryptions';
 import {
   listNetworkCallsigns,
+  listNetworkCallsignStats,
   getNetworkCallsigns,
   listSources,
 } from '../../services/api/callsigns';
@@ -42,6 +43,10 @@ import {
   createNetworkCallsignActivityMap,
 } from './network-callsigns.tab';
 import {
+  createNetworkCallsignStatsMap,
+  NETWORK_CALLSIGN_DEFAULT_STATS_PERIOD,
+} from './network-callsigns.stats';
+import {
   buildNetworkCallsignRelationFreqState,
   resolveNetworkCallsignRelationFreqs,
 } from './network-relations';
@@ -51,6 +56,7 @@ type ReloadGenerationRef = MutableRefObject<number>;
 type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 
 export type CallsignsLoadPeriods = {
+  /** Stats window: the network list itself always loads in full. */
   network?: NetworkFreqCallsignsPeriod;
   catalog?: NetworkFreqCallsignsPeriod;
   intercepted?: NetworkFreqCallsignsPeriod;
@@ -173,6 +179,10 @@ export function useRerNetworkDetailsNeoPageLoad(
 ): {
   reload: () => () => void;
   loadCallsigns: (networkId: number, periods?: CallsignsLoadPeriods) => Promise<void>;
+  loadNetworkCallsignStats: (
+    networkId: number,
+    period: NetworkFreqCallsignsPeriod,
+  ) => Promise<void>;
   loadRelations: (
     networkId: number,
     sinceDateInclusiveMs: number,
@@ -186,6 +196,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   ) => Promise<void>;
 } {
   const networkCallsignsLoadRequestIdRef = useRef(0);
+  const networkCallsignStatsLoadRequestIdRef = useRef(0);
   const catalogCallsignsLoadRequestIdRef = useRef(0);
   const interceptedCallsignsLoadRequestIdRef = useRef(0);
   const relationsLoadRequestIdRef = useRef(0);
@@ -193,7 +204,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   const pelengPointsLoadRequestIdRef = useRef(0);
 
   const loadNetworkCallsigns = useCallback(
-    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
+    async (targetNetworkId: number) => {
       const generation = reloadGeneration.current;
       const requestId = ++networkCallsignsLoadRequestIdRef.current;
       const isCurrent = () =>
@@ -233,7 +244,8 @@ export function useRerNetworkDetailsNeoPageLoad(
           listNetworkCallsigns({
             networkId: targetNetworkId,
             sortBy: ['NetworkCallsignAsc'],
-            period,
+            period: null,
+            includeActivityInfo: false,
           }),
           listSources(),
         ]);
@@ -266,6 +278,49 @@ export function useRerNetworkDetailsNeoPageLoad(
             networkCallsignsLoading: false,
             networkCallsignsError: formatErrorMessage(error),
           }),
+        }));
+      }
+    },
+    [reloadGeneration, setState],
+  );
+
+  const loadNetworkCallsignStats = useCallback(
+    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
+      if (!Number.isFinite(targetNetworkId) || targetNetworkId <= 0) return;
+
+      const generation = reloadGeneration.current;
+      const requestId = ++networkCallsignStatsLoadRequestIdRef.current;
+      const isCurrent = () =>
+        reloadGeneration.current === generation &&
+        networkCallsignStatsLoadRequestIdRef.current === requestId;
+
+      setState((current) => ({
+        ...current,
+        networkCallsignStatsLoading: true,
+        networkCallsignStatsError: null,
+        networkCallsignStatsPeriod: period,
+        networkCallsignsAddedSinceStats: new Set(),
+      }));
+
+      try {
+        const { networkCallsigns } = await listNetworkCallsignStats({
+          networkId: targetNetworkId,
+          sortBy: ['NetworkCallsignAsc'],
+          period,
+          includeActivityInfo: true,
+        });
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          networkCallsignStats: createNetworkCallsignStatsMap(networkCallsigns),
+          networkCallsignStatsLoading: false,
+        }));
+      } catch (error) {
+        if (!isCurrent()) return;
+        setState((current) => ({
+          ...current,
+          networkCallsignStatsLoading: false,
+          networkCallsignStatsError: formatErrorMessage(error),
         }));
       }
     },
@@ -585,14 +640,17 @@ export function useRerNetworkDetailsNeoPageLoad(
     async (
       targetNetworkId: number,
       periods: CallsignsLoadPeriods = {
-        network: 'Last21Days',
+        network: NETWORK_CALLSIGN_DEFAULT_STATS_PERIOD,
         catalog: 'Last21Days',
         intercepted: 'Last21Days',
       },
     ) => {
       const tasks: Array<Promise<void>> = [];
       if (periods.network !== undefined) {
-        tasks.push(loadNetworkCallsigns(targetNetworkId, periods.network));
+        tasks.push(
+          loadNetworkCallsigns(targetNetworkId),
+          loadNetworkCallsignStats(targetNetworkId, periods.network),
+        );
       }
 
       const catalogPeriod = periods.catalog;
@@ -619,6 +677,7 @@ export function useRerNetworkDetailsNeoPageLoad(
       loadCandidateCallsignsCombined,
       loadCatalogCallsigns,
       loadInterceptedCallsigns,
+      loadNetworkCallsignStats,
       loadNetworkCallsigns,
     ],
   );
@@ -996,5 +1055,12 @@ export function useRerNetworkDetailsNeoPageLoad(
     return reload();
   }, [reload]);
 
-  return { reload, loadCallsigns, loadRelations, loadNetworkActivity, loadPelengPoints };
+  return {
+    reload,
+    loadCallsigns,
+    loadNetworkCallsignStats,
+    loadRelations,
+    loadNetworkActivity,
+    loadPelengPoints,
+  };
 }

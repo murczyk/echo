@@ -121,6 +121,7 @@ vi.mock('../use-rer-network-details-neo-page.load', () => ({
     return {
       reload: vi.fn(),
       loadCallsigns: loadMockState.loadCallsigns,
+      loadNetworkCallsignStats: vi.fn(),
       loadRelations: loadMockState.loadRelations,
       loadNetworkActivity: loadMockState.loadNetworkActivity,
       loadPelengPoints: loadMockState.loadPelengPoints,

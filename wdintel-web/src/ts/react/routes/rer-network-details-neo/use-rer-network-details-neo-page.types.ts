@@ -25,6 +25,7 @@ import {
 } from './use-rer-network-details-neo-page.etalonka-report';
 import { NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY } from './use-rer-network-details-neo-page.constants';
 import type { NetworkFreqActivityByFreq } from './frequency-utils';
+import type { NetworkCallsignStatsMap } from './network-callsigns.stats';
 import type {
   NetworkCallsignCatalogGroupView,
   NetworkCallsignActivityMap,
@@ -139,6 +140,13 @@ export type NetworkDetailsNeoPageState = {
   catalogCallsignsPeriod: NetworkFreqCallsignsPeriod;
   interceptedCallsignsPeriod: NetworkFreqCallsignsPeriod;
   networkCallsigns: NetworkCallsign[];
+  networkCallsignStats: NetworkCallsignStatsMap;
+  networkCallsignStatsLoading: boolean;
+  networkCallsignStatsError: string | null;
+  /** Window of the latest stats request; null until the first one starts. */
+  networkCallsignStatsPeriod: NetworkFreqCallsignsPeriod | null;
+  /** Rows the latest stats request cannot know about. */
+  networkCallsignsAddedSinceStats: ReadonlySet<number>;
   networkCallsignGroups: NetworkCallsignRes[];
   callsignActivityMap: NetworkCallsignActivityMap;
   catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
@@ -300,10 +308,15 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   interceptedCallsignsLoading: false,
   interceptedCallsignsError: null,
   callsignCount: null,
-  networkCallsignsPeriod: 'Last21Days',
+  networkCallsignsPeriod: 'Unlimited',
   catalogCallsignsPeriod: 'Last21Days',
   interceptedCallsignsPeriod: 'Last21Days',
   networkCallsigns: [],
+  networkCallsignStats: new Map(),
+  networkCallsignStatsLoading: false,
+  networkCallsignStatsError: null,
+  networkCallsignStatsPeriod: null,
+  networkCallsignsAddedSinceStats: new Set(),
   networkCallsignGroups: [],
   callsignActivityMap: new Map(),
   catalogCallsignGroups: [],

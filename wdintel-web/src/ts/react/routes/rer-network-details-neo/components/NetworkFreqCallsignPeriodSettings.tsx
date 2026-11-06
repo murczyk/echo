@@ -1,6 +1,7 @@
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import {
   Box,
+  Button,
   FormControl,
   IconButton,
   InputLabel,
@@ -17,9 +18,15 @@ type Props = {
   period: NetworkFreqCallsignsPeriod;
   disabled: boolean;
   onChange: (period: NetworkFreqCallsignsPeriod) => void;
+  onLoadAllTimeStats?: () => void;
 };
 
-export function NetworkFreqCallsignPeriodSettings({ period, disabled, onChange }: Props) {
+export function NetworkFreqCallsignPeriodSettings({
+  period,
+  disabled,
+  onChange,
+  onLoadAllTimeStats,
+}: Props) {
   const popoverId = useId().replace(/:/g, '-');
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 
@@ -57,6 +64,19 @@ export function NetworkFreqCallsignPeriodSettings({ period, disabled, onChange }
               <MenuItem value="Unlimited">Без обмежень</MenuItem>
             </Select>
           </FormControl>
+          {onLoadAllTimeStats ? (
+            <Button
+              size="small"
+              fullWidth
+              sx={{ mt: 1 }}
+              onClick={() => {
+                setAnchorEl(null);
+                onLoadAllTimeStats();
+              }}
+            >
+              Статистика за весь час
+            </Button>
+          ) : null}
         </Box>
       </Popover>
     </>

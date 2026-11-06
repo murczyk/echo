@@ -27,6 +27,7 @@ import { excludeNetworkOwnedInterceptedCallsigns } from '../network-callsigns.ta
 
 const callsignsApiMock = vi.hoisted(() => ({
   listNetworkCallsigns: vi.fn(),
+  listNetworkCallsignStats: vi.fn(),
   getNetworkCallsigns: vi.fn(),
   getNetworkCallsignsActivity: vi.fn(),
   listSources: vi.fn(),
@@ -90,6 +91,8 @@ function createDeferred<T>(): Deferred<T> {
 
 const rendered: Root[] = [];
 let latestState: NetworkDetailsNeoPageState | null = null;
+let latestLoadNetworkCallsignStats:
+  ReturnType<typeof useRerNetworkDetailsNeoPageLoad>['loadNetworkCallsignStats'] | null = null;
 let latestLoadCallsigns:
   ((networkId: number, periods?: CallsignsLoadPeriods) => Promise<void>) | null = null;
 let latestLoadPelengPoints:
@@ -136,6 +139,7 @@ function HookHarness({ stateSeed = EMPTY_STATE }: { stateSeed?: NetworkDetailsNe
 
   latestState = state;
   latestLoadCallsigns = pageLoad.loadCallsigns;
+  latestLoadNetworkCallsignStats = pageLoad.loadNetworkCallsignStats;
   latestLoadPelengPoints = pageLoad.loadPelengPoints;
   latestSetState = setState;
 
@@ -161,9 +165,11 @@ afterEach(() => {
   }
   latestState = null;
   latestLoadCallsigns = null;
+  latestLoadNetworkCallsignStats = null;
   latestLoadPelengPoints = null;
   latestSetState = null;
   callsignsApiMock.listNetworkCallsigns.mockReset();
+  callsignsApiMock.listNetworkCallsignStats.mockReset();
   callsignsApiMock.getNetworkCallsigns.mockReset();
   callsignsApiMock.getNetworkCallsignsActivity.mockReset();
   callsignsApiMock.listSources.mockReset();
@@ -238,6 +244,7 @@ function installDefaultApiMocks() {
   otherApiMocks.getNetworkGroupsActivityOne.mockResolvedValue({});
   otherApiMocks.listNetworkPoints.mockResolvedValue({ points: [] });
   callsignsApiMock.listNetworkCallsigns.mockResolvedValue({ networkCallsigns: [] });
+  callsignsApiMock.listNetworkCallsignStats.mockResolvedValue({ networkCallsigns: [] });
   callsignsApiMock.getNetworkCallsigns.mockResolvedValue({ callsigns: [] });
   callsignsApiMock.getNetworkCallsignsActivity.mockResolvedValue({ callsignsActivity: [] });
   callsignsApiMock.listSources.mockResolvedValue([]);
@@ -426,6 +433,117 @@ describe('use-rer-network-details-neo-page.load', () => {
     expect(latestState?.networkCallsignsLoading).toBe(false);
     expect(latestState?.networkCallsigns.map((item) => item.callsign)).toEqual(['СОКІЛ-1']);
     expect(latestState?.callsignsLoaded).toBe(false);
+  });
+
+  describe('network list and stats stages', () => {
+    const ROW = { id: 1, callsign: 'СОКІЛ-1', messageCount: 0 } as NetworkCallsign;
+
+    function mockListAndStats(statsResponse: Promise<{ networkCallsigns: NetworkCallsign[] }>) {
+      callsignsApiMock.listSources.mockResolvedValue([]);
+      callsignsApiMock.listNetworkCallsigns.mockResolvedValue({ networkCallsigns: [ROW] });
+      callsignsApiMock.listNetworkCallsignStats.mockReturnValue(statsResponse);
+    }
+
+    async function flush() {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    }
+
+    it('shows the full list before its stats arrive', async () => {
+      installDefaultApiMocks();
+      renderHookHarness();
+      const stats = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
+      mockListAndStats(stats.promise);
+
+      await act(async () => {
+        void latestLoadCallsigns?.(42, { network: 'Last21Days' });
+      });
+      await flush();
+
+      expect(callsignsApiMock.listNetworkCallsigns).toHaveBeenCalledWith({
+        networkId: 42,
+        sortBy: ['NetworkCallsignAsc'],
+        period: null,
+        includeActivityInfo: false,
+      });
+      expect(callsignsApiMock.listNetworkCallsignStats).toHaveBeenCalledWith({
+        networkId: 42,
+        sortBy: ['NetworkCallsignAsc'],
+        period: 'Last21Days',
+        includeActivityInfo: true,
+      });
+      expect(latestState?.networkCallsigns).toEqual([ROW]);
+      expect(latestState?.networkCallsignsLoaded).toBe(true);
+      expect(latestState?.networkCallsignsLoading).toBe(false);
+      expect(latestState?.networkCallsignStatsLoading).toBe(true);
+      expect(latestState?.networkCallsignStatsPeriod).toBe('Last21Days');
+
+      await act(async () => {
+        stats.resolve({ networkCallsigns: [{ ...ROW, messageCount: 5 }] });
+      });
+      await flush();
+
+      expect(latestState?.networkCallsignStatsLoading).toBe(false);
+      expect(latestState?.networkCallsignStats.get(1)?.messageCount).toBe(5);
+    });
+
+    it('forgets locally added rows once a new stats request can see them', async () => {
+      installDefaultApiMocks();
+      renderHookHarness({ ...EMPTY_STATE, networkCallsignsAddedSinceStats: new Set([7]) });
+      mockListAndStats(Promise.resolve({ networkCallsigns: [] }));
+
+      await act(async () => {
+        void latestLoadNetworkCallsignStats?.(42, 'Last21Days');
+      });
+      await flush();
+
+      expect(latestState?.networkCallsignsAddedSinceStats.size).toBe(0);
+    });
+
+    it('keeps the list and reports a stats failure separately', async () => {
+      installDefaultApiMocks();
+      renderHookHarness();
+      mockListAndStats(Promise.reject(new Error('stats failed')));
+
+      await act(async () => {
+        void latestLoadCallsigns?.(42, { network: 'Last21Days' });
+      });
+      await flush();
+
+      expect(latestState?.networkCallsigns).toEqual([ROW]);
+      expect(latestState?.networkCallsignsError).toBeNull();
+      expect(latestState?.networkCallsignStatsLoading).toBe(false);
+      expect(latestState?.networkCallsignStatsError).toContain('stats failed');
+    });
+
+    it('ignores a stats response superseded by a newer window', async () => {
+      installDefaultApiMocks();
+      renderHookHarness();
+      const slow = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
+      const fast = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
+      callsignsApiMock.listNetworkCallsignStats.mockImplementation(
+        (req: { period: string | null }) =>
+          req.period === 'Unlimited' ? slow.promise : fast.promise,
+      );
+
+      await act(async () => {
+        void latestLoadNetworkCallsignStats?.(42, 'Unlimited');
+        void latestLoadNetworkCallsignStats?.(42, 'Last7Days');
+      });
+      await act(async () => {
+        fast.resolve({ networkCallsigns: [{ ...ROW, messageCount: 7 }] });
+      });
+      await flush();
+      await act(async () => {
+        slow.resolve({ networkCallsigns: [{ ...ROW, messageCount: 900 }] });
+      });
+      await flush();
+
+      expect(latestState?.networkCallsignStatsPeriod).toBe('Last7Days');
+      expect(latestState?.networkCallsignStats.get(1)?.messageCount).toBe(7);
+    });
   });
 
   it('hides network-owned intercepted rows at display time without discarding payload', () => {

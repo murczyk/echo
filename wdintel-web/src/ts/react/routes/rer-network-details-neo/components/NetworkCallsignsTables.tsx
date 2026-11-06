@@ -27,6 +27,12 @@ import {
   filterNetworkCallsignRows,
 } from '../network-callsigns.search';
 import { buildNetworkCallsignRowViews } from '../network-callsigns.rows';
+import {
+  applyNetworkCallsignStats,
+  findNetworkCallsignIdsOutsidePeriod,
+  type NetworkCallsignStatsMap,
+} from '../network-callsigns.stats';
+import { useAnimatedRowRemoval } from '../use-animated-row-removal';
 import { flattenCatalogCallsignRows } from '../network-callsigns.tab';
 import { normalizeCallsignDisplay } from '../network-callsigns.utils';
 import { NetworkCallsignsCatalogTable } from './NetworkCallsignsCatalogTable';
@@ -35,6 +41,9 @@ import { NetworkCallsignsNetworkTable } from './NetworkCallsignsNetworkTable';
 import { NetworkFreqCallsignPeriodSettings } from './NetworkFreqCallsignPeriodSettings';
 import { formatCountLabel } from './NetworkCallsignsTableShared';
 import { NO_DATA_LABEL } from '../../../utils/misc';
+
+const NO_NETWORK_CALLSIGN_STATS: NetworkCallsignStatsMap = new Map();
+const NO_REMOVED_ROW_IDS: ReadonlySet<number> = new Set();
 
 const SECTION_IDS = {
   network: 'network-callsigns-network',
@@ -117,6 +126,13 @@ function useMeasuredFirstTableHeight(sectionMode: NetworkCallsignSectionMode) {
 export type Props = {
   sources: Source[];
   networkCallsigns: NetworkCallsign[];
+  networkCallsignStats: NetworkCallsignStatsMap;
+  networkCallsignStatsLoading: boolean;
+  networkCallsignStatsError: string | null;
+  networkCallsignStatsPeriod: NetworkFreqCallsignsPeriod | null;
+  networkCallsignsAddedSinceStats: ReadonlySet<number>;
+  onRetryNetworkCallsignStats: () => void;
+  onLoadAllTimeNetworkCallsignStats: () => void;
   catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
   unknownInterceptedCallsigns: NetworkCallsignInterceptedView[];
   networkCallsignsLoading: boolean;
@@ -156,6 +172,13 @@ export type Props = {
 export function NetworkDetailsCallsignsPanel({
   sources,
   networkCallsigns,
+  networkCallsignStats,
+  networkCallsignStatsLoading,
+  networkCallsignStatsError,
+  networkCallsignStatsPeriod,
+  networkCallsignsAddedSinceStats,
+  onRetryNetworkCallsignStats,
+  onLoadAllTimeNetworkCallsignStats,
   catalogCallsignGroups,
   unknownInterceptedCallsigns,
   networkCallsignsLoading,
@@ -193,13 +216,44 @@ export function NetworkDetailsCallsignsPanel({
 }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const { firstTableRef, firstTableHeight } = useMeasuredFirstTableHeight(sectionMode);
-  const networkRows = useMemo(
+  const networkStatsAvailable =
+    !networkCallsignStatsLoading &&
+    networkCallsignStatsError === null &&
+    networkCallsignStatsPeriod !== null;
+  const allNetworkRows = useMemo(
     () =>
       buildNetworkCallsignRowViews(
-        networkCallsigns,
+        applyNetworkCallsignStats(
+          networkCallsigns,
+          networkStatsAvailable ? networkCallsignStats : NO_NETWORK_CALLSIGN_STATS,
+        ),
         new Map(sources.map((source) => [source.id, source] as const)),
       ),
-    [networkCallsigns, sources],
+    [networkCallsignStats, networkCallsigns, networkStatsAvailable, sources],
+  );
+  const removedNetworkRowIds = useMemo(
+    () =>
+      networkStatsAvailable &&
+      networkPeriod !== 'Unlimited' &&
+      networkCallsignStatsPeriod === networkPeriod
+        ? findNetworkCallsignIdsOutsidePeriod(
+            networkCallsigns,
+            networkCallsignStats,
+            networkCallsignsAddedSinceStats,
+          )
+        : NO_REMOVED_ROW_IDS,
+    [
+      networkCallsignStats,
+      networkCallsignStatsPeriod,
+      networkCallsigns,
+      networkCallsignsAddedSinceStats,
+      networkPeriod,
+      networkStatsAvailable,
+    ],
+  );
+  const { remainingRows: networkRows, exitingIds: exitingNetworkRowIds } = useAnimatedRowRemoval(
+    allNetworkRows,
+    removedNetworkRowIds,
   );
   const catalogRows = useMemo(
     () => flattenCatalogCallsignRows(catalogCallsignGroups),
@@ -388,6 +442,16 @@ export function NetworkDetailsCallsignsPanel({
               period={networkPeriod}
               periodSettingsDisabled={networkCallsignsLoading}
               onPeriodChange={onNetworkPeriodChange}
+              stats={{
+                loading: networkCallsignStatsLoading,
+                available: networkStatsAvailable,
+                period: networkCallsignStatsPeriod,
+                error: networkCallsignStatsError,
+                exitingRowIds: exitingNetworkRowIds,
+                unknownRowIds: networkCallsignsAddedSinceStats,
+                onRetry: onRetryNetworkCallsignStats,
+                onLoadAllTime: onLoadAllTimeNetworkCallsignStats,
+              }}
               onOpenEditDrawer={onOpenEditDrawer}
               onOpenDeleteDialog={onOpenDeleteDialog}
               onSetMarkerMode={onSetMarkerMode}
