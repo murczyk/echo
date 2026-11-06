@@ -4669,6 +4669,7 @@ export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
   period: NetworkFreqCallsignsPeriod | null;
+  includeActivityInfo: boolean | null;
 };
 
 export type ListNetworkCallsignsRes = {

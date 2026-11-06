@@ -2,7 +2,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import StarIcon from '@mui/icons-material/Star';
-import { Box, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
@@ -53,6 +53,8 @@ import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows } from '../network-callsigns.rows';
 import { formatNetworkCallsignDatetime } from '../network-callsigns.search';
+import { formatNetworkCallsignStatsPeriodSuffix } from '../network-callsigns.stats';
+import { ROW_REMOVAL_ANIMATION_MS } from '../use-animated-row-removal';
 import { NetworkFreqCallsignPeriodSettings } from './NetworkFreqCallsignPeriodSettings';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
@@ -63,6 +65,22 @@ const NETWORK_MRT_LOCALIZATION = {
 const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
 const resolvedPaperProps =
   typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
+const EXITING_ROW_SX = {
+  opacity: 0,
+  transition: `opacity ${ROW_REMOVAL_ANIMATION_MS}ms ease-out`,
+  '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+};
+
+export type NetworkCallsignsTableStats = {
+  loading: boolean;
+  /** False while loading or after a failure, when a zero would be misleading. */
+  available: boolean;
+  period: NetworkFreqCallsignsPeriod | null;
+  error: string | null;
+  exitingRowIds: ReadonlySet<number>;
+  onRetry: () => void;
+  onLoadAllTime: () => void;
+};
 
 function getMainMarkerActionLabel(networkCallsign: NetworkCallsignRowView): string {
   return networkCallsign.mainRadioStation ? 'Зняти головну' : 'Зробити головною';
@@ -70,6 +88,17 @@ function getMainMarkerActionLabel(networkCallsign: NetworkCallsignRowView): stri
 
 function getCommandMarkerActionLabel(networkCallsign: NetworkCallsignRowView): string {
   return networkCallsign.commandControl ? 'Зняти ланку управління' : 'Зробити ланкою управління';
+}
+
+function buildStatsColumnCell(
+  loading: boolean,
+  textCell: ReturnType<typeof mrtTextCell<NetworkCallsignRowView>>,
+) {
+  if (!loading) return { meta: { overflowMode: 'text' as const }, Cell: textCell };
+  return {
+    meta: { overflowMode: 'custom' as const, overflowOwner: 'structured-layout' as const },
+    Cell: mrtCustomCell<NetworkCallsignRowView>(() => <Skeleton variant="text" width="70%" />),
+  };
 }
 
 function getNetworkStatusFilterCount(
@@ -94,6 +123,7 @@ type Props = {
   period: NetworkFreqCallsignsPeriod;
   periodSettingsDisabled: boolean;
   onPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
+  stats: NetworkCallsignsTableStats;
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
   onSetMarkerMode: (row: NetworkCallsignRowView, markerMode: NetworkCallsignMarkerMode) => void;
@@ -156,6 +186,7 @@ export function NetworkCallsignsNetworkTable({
   period,
   periodSettingsDisabled,
   onPeriodChange,
+  stats,
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onSetMarkerMode,
@@ -192,6 +223,7 @@ export function NetworkCallsignsNetworkTable({
         period={period}
         periodSettingsDisabled={periodSettingsDisabled}
         onPeriodChange={onPeriodChange}
+        stats={stats}
         onOpenEditDrawer={onOpenEditDrawer}
         onOpenDeleteDialog={onOpenDeleteDialog}
         onSetMarkerMode={onSetMarkerMode}
@@ -215,6 +247,7 @@ function NetworkCallsignsNetworkTableContent({
   period,
   periodSettingsDisabled,
   onPeriodChange,
+  stats,
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onSetMarkerMode,
@@ -272,6 +305,7 @@ function NetworkCallsignsNetworkTableContent({
   const isBusy = loading || inFlightUpdateIds.length > 0 || inFlightDeleteIds.length > 0;
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const titleCountLabel = countLabel ?? (isInitialLoading ? NO_DATA_LABEL : null);
+  const statsHeaderSuffix = formatNetworkCallsignStatsPeriodSuffix(stats.period);
   const columns = useMemo<AppMrtColumnDef<NetworkCallsignRowView>[]>(
     () => [
       createNetworkCallsignColumn(),
@@ -312,28 +346,34 @@ function NetworkCallsignsNetworkTableContent({
         }),
       },
       {
-        header: 'Остання акт.',
+        header: `Остання акт.${statsHeaderSuffix}`,
         accessorFn: (row) => row.lastDatetime,
         id: 'lastDatetime',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.lastDatetime,
         enableSorting: true,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
-          fullValue: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
-        }),
+        ...buildStatsColumnCell(
+          stats.loading,
+          mrtTextCell({
+            displayValue: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
+            fullValue: ({ row }) => formatNetworkCallsignDatetime(row.original.lastDatetime),
+          }),
+        ),
       },
       {
-        header: 'К-сть',
+        header: `К-сть${statsHeaderSuffix}`,
         accessorKey: 'messageCount',
         id: 'messageCount',
         size: NETWORK_CALLSIGN_COLUMN_SIZES.messageCount,
         enableSorting: true,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => String(row.original.messageCount),
-          fullValue: ({ row }) => String(row.original.messageCount),
-        }),
+        ...buildStatsColumnCell(
+          stats.loading,
+          mrtTextCell({
+            displayValue: ({ row }) =>
+              stats.available ? String(row.original.messageCount) : NO_DATA_LABEL,
+            fullValue: ({ row }) =>
+              stats.available ? String(row.original.messageCount) : NO_DATA_LABEL,
+          }),
+        ),
       },
       {
         header: 'Коментар',
@@ -361,7 +401,7 @@ function NetworkCallsignsNetworkTableContent({
         )),
       },
     ],
-    [],
+    [statsHeaderSuffix, stats.available, stats.loading],
   );
 
   const table = useAppMaterialReactTable({
@@ -513,6 +553,9 @@ function NetworkCallsignsNetworkTableContent({
       }),
       columnVisibility: NETWORK_COLUMNS_VISIBILITY,
     },
+    muiTableBodyRowProps: ({ row }) => ({
+      sx: stats.exitingRowIds.has(row.original.id) ? EXITING_ROW_SX : undefined,
+    }),
     getRowId: (row) => String(row.id),
   });
 
@@ -593,6 +636,11 @@ function NetworkCallsignsNetworkTableContent({
                   period={period}
                   disabled={periodSettingsDisabled}
                   onChange={onPeriodChange}
+                  onLoadAllTimeStats={
+                    period === 'Unlimited' && stats.period !== 'Unlimited'
+                      ? stats.onLoadAllTime
+                      : undefined
+                  }
                 />
               }
             />
@@ -601,6 +649,17 @@ function NetworkCallsignsNetworkTableContent({
 
         {loadingError && rows.length > 0 ? (
           <PowerAlert severity="error">{loadingError}</PowerAlert>
+        ) : null}
+
+        {stats.error ? (
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+            <PowerAlert severity="warning">
+              {`Не вдалося завантажити статистику позивних: ${stats.error}`}
+            </PowerAlert>
+            <Button size="small" onClick={stats.onRetry}>
+              Спробувати ще раз
+            </Button>
+          </Stack>
         ) : null}
 
         <Box

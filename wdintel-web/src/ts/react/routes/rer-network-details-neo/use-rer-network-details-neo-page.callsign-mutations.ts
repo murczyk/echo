@@ -15,6 +15,7 @@ import {
   createDefaultNetworkCallsignDrawerForm,
   getNetworkCallsignMarkerState,
 } from './network-callsigns.forms';
+import { includeAddedNetworkCallsigns } from './network-callsigns.stats';
 import type { NetworkCallsignMarkerMode, NetworkCallsignRowView } from './network-callsigns.types';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
@@ -68,6 +69,10 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }
           return {
             ...current,
             networkCallsigns: nextNetworkCallsigns,
+            networkCallsignStats: includeAddedNetworkCallsigns(
+              current.networkCallsignStats,
+              addedNetworkCallsigns,
+            ),
             networkCallsignGroups: nextNetworkCallsignGroups,
             catalogCallsignGroups: nextCatalogCallsignGroups,
             callsignCount: nextNetworkCallsigns.length,

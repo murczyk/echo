@@ -1,5 +1,7 @@
 use crate::entities::{datasource_group, sigint_network, sigint_network_freq};
 use crate::error::AppError;
+use crate::rer_importer::analysis::stats::resolve_analytics_message_id_scope_for_range;
+use crate::rer_importer::analysis::AnalyticsMessageIdScope;
 use crate::sigint::etalonka::query::CallsignActivityInfo;
 use crate::sigint::etalonka::types::NetworkPointQueryRes;
 use crate::sigint::network::types::{
@@ -7,7 +9,7 @@ use crate::sigint::network::types::{
     NetworkFreqCallsignsPeriod, NetworkGroupsActivitySummaryRsp,
 };
 use crate::types::*;
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{Duration, DurationRound, NaiveDateTime, Utc};
 use sea_orm::*;
 use sqlx::FromRow;
 use std::collections::{HashMap, HashSet};
@@ -870,57 +872,76 @@ async fn load_networks_message_id_bounds(
     Ok(bounds.min_id.zip(bounds.max_id))
 }
 
+/// Narrows `network_bounds` to the message IDs a period can touch. The result
+/// is a superset for ID pruning, not exact bounds: callers still apply the
+/// exact date filter.
+///
+/// The scope is found by bare `datetime`, while activity uses
+/// `COALESCE(datetime, timestamp, created_at)`. The margin keeps rows with a
+/// NULL `datetime` inside the range, because dated messages inserted around
+/// them bracket their IDs. It can only miss such a row if its timestamp is more
+/// than the margin ahead of its insertion, or if the whole instance has no
+/// dated messages for the margin next to the period.
 async fn load_message_id_bounds_for_period(
     db: &DatabaseConnection,
     since: NaiveDateTime,
     till: NaiveDateTime,
     network_bounds: (i64, i64),
 ) -> Result<Option<(i64, i64)>, AppError> {
-    let mut min_id: Option<i64> = None;
-    let mut max_id: Option<i64> = None;
-    let mut start = network_bounds.0;
-    while start <= network_bounds.1 {
-        let end = std::cmp::min(
-            start.saturating_add(
-                crate::config::ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE
-                    - 1,
-            ),
-            network_bounds.1,
-        );
-        let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
-            r#"
-            SELECT min(inbox_item.id) AS min_id, max(inbox_item.id) AS max_id
-            FROM sigint_inbox_item inbox_item
-            JOIN signal_message ON signal_message.id = inbox_item.id
-            WHERE inbox_item.id BETWEEN $3 AND $4
-              AND signal_message.id BETWEEN $3 AND $4
-              AND COALESCE(inbox_item.datetime, signal_message.timestamp,
-                           signal_message.created_at) >= $1
-              AND COALESCE(inbox_item.datetime, signal_message.timestamp,
-                           signal_message.created_at) < $2
-            "#,
-        )
-        .bind(since)
-        .bind(till)
-        .bind(start)
-        .bind(end)
-        .fetch_one(db.get_postgres_connection_pool())
-        .await
+    let (search_since, search_till) =
+        message_id_scope_search_window(since, till).context(h!())?;
+    let scope = resolve_analytics_message_id_scope_for_range(
+        search_since,
+        search_till,
+        db,
+        crate::config::ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT,
+    )
+    .await
+    .context(h!())?;
+    Ok(clamp_message_id_scope(scope, network_bounds))
+}
+
+/// Widens the period by the margin and rounds it out to whole hours, so that
+/// concurrent requests with different "now" values share one scope lookup.
+fn message_id_scope_search_window(
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> anyhow::Result<(NaiveDateTime, NaiveDateTime)> {
+    let margin = Duration::days(
+        crate::config::ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS,
+    );
+    let hour = Duration::hours(1);
+    let since = since
+        .checked_sub_signed(margin)
+        .context(h!())?
+        .duration_trunc(hour)
         .c(h!())?;
-        if let Some(id) = bounds.min_id {
-            min_id =
-                Some(min_id.map_or(id, |previous| std::cmp::min(previous, id)));
+    let till = till
+        .checked_add_signed(margin)
+        .context(h!())?
+        .duration_trunc(hour)
+        .c(h!())?
+        .checked_add_signed(hour)
+        .context(h!())?;
+    Ok((since, till))
+}
+
+fn clamp_message_id_scope(
+    scope: AnalyticsMessageIdScope,
+    network_bounds: (i64, i64),
+) -> Option<(i64, i64)> {
+    let (scope_min_id, scope_max_id) = match scope {
+        // No dated message is near this period, but messages with a NULL
+        // `datetime` may be, so nothing can be pruned.
+        AnalyticsMessageIdScope::Empty => return Some(network_bounds),
+        AnalyticsMessageIdScope::From(min_id) => (min_id, network_bounds.1),
+        AnalyticsMessageIdScope::Inclusive { min_id, max_id } => {
+            (min_id, max_id)
         }
-        if let Some(id) = bounds.max_id {
-            max_id =
-                Some(max_id.map_or(id, |previous| std::cmp::max(previous, id)));
-        }
-        if end == network_bounds.1 {
-            break;
-        }
-        start = end + 1;
-    }
-    Ok(min_id.zip(max_id))
+    };
+    let min_id = std::cmp::max(network_bounds.0, scope_min_id);
+    let max_id = std::cmp::min(network_bounds.1, scope_max_id);
+    (min_id <= max_id).then_some((min_id, max_id))
 }
 
 async fn load_network_callsign_activity_rows(
@@ -1450,8 +1471,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn network_period_bounds_3780_preserve_fallbacks_and_chunk_boundaries(
-    ) {
+    async fn network_period_bounds_contain_null_datetime_rows_4047() {
         use crate::entities::{sigint_inbox_item, signal_message};
         use crate::functest::tests::{
             cleanup, mk_sigint_inbox_item, mk_signal_message,
@@ -1467,17 +1487,19 @@ mod tests {
             .flatten()
             .unwrap_or(0)
             + 1;
-        let width =
-            crate::config::ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE;
         let since = dt(3, 2);
-        let till = dt(3, 3);
-        let old = dt(3, 1);
+        let till = dt(3, 4);
+        let long_before = dt(1, 1);
+        let day_before = dt(3, 1);
+        let day_after = dt(3, 5);
+        let long_after = dt(5, 1);
         for (offset, datetime, timestamp, created_at) in [
-            (0, None, Some(old), since),
-            (1, Some(since), Some(old), old),
-            (width, None, Some(since), old),
-            (width + 1, None, None, till),
-            (width * 2, Some(old), Some(since), since),
+            (0, Some(long_before), None, long_before),
+            (1, Some(day_before), None, day_before),
+            (2, None, Some(since), long_before),
+            (3, None, None, dt(3, 3)),
+            (4, Some(day_after), None, day_after),
+            (5, Some(long_after), None, long_after),
         ] {
             let message = mk_signal_message(
                 &env.dbx,
@@ -1504,29 +1526,13 @@ mod tests {
             .await
             .unwrap();
         }
-        let bounds = (base, base + width * 2);
+        let bounds = (base, base + 5);
         assert_eq!(
             load_message_id_bounds_for_period(&env.dbx, since, till, bounds)
                 .await
                 .unwrap(),
-            Some((base + 1, base + width))
-        );
-        assert_eq!(
-            load_message_id_bounds_for_period(&env.dbx, till, dt(3, 4), bounds)
-                .await
-                .unwrap(),
-            Some((base + width + 1, base + width + 1))
-        );
-        assert_eq!(
-            load_message_id_bounds_for_period(
-                &env.dbx,
-                dt(4, 1),
-                dt(4, 2),
-                bounds
-            )
-            .await
-            .unwrap(),
-            None
+            Some((base + 1, base + 4)),
+            "both NULL-datetime rows stay in range and distant rows are pruned"
         );
         assert_eq!(
             load_message_id_bounds_for_period(
@@ -1537,6 +1543,73 @@ mod tests {
             )
             .await
             .unwrap(),
+            None,
+            "a network ending before the period has no overlap"
+        );
+        assert_eq!(
+            load_message_id_bounds_for_period(
+                &env.dbx,
+                dt(4, 1),
+                dt(4, 2),
+                bounds
+            )
+            .await
+            .unwrap(),
+            Some(bounds),
+            "with no dated rows nearby, NULL-datetime rows forbid pruning"
+        );
+    }
+
+    #[test]
+    fn message_id_scope_search_window_adds_margin_and_rounds_out_4047() {
+        let at = |day, hour, minute| {
+            chrono::NaiveDate::from_ymd_opt(2026, 3, day)
+                .unwrap()
+                .and_hms_opt(hour, minute, 0)
+                .unwrap()
+        };
+        assert_eq!(
+            message_id_scope_search_window(at(10, 12, 34), at(20, 12, 34))
+                .unwrap(),
+            (at(9, 12, 0), at(21, 13, 0))
+        );
+        assert_eq!(
+            message_id_scope_search_window(at(10, 12, 59), at(20, 12, 1))
+                .unwrap(),
+            (at(9, 12, 0), at(21, 13, 0)),
+            "requests within the same hour share one scope key"
+        );
+    }
+
+    #[test]
+    fn message_id_scope_clamps_to_network_bounds_4047() {
+        use AnalyticsMessageIdScope::{Empty, From, Inclusive};
+        let network = (100, 200);
+        assert_eq!(clamp_message_id_scope(Empty, network), Some(network));
+        assert_eq!(
+            clamp_message_id_scope(From(150), network),
+            Some((150, 200))
+        );
+        assert_eq!(clamp_message_id_scope(From(50), network), Some(network));
+        assert_eq!(clamp_message_id_scope(From(201), network), None);
+        assert_eq!(
+            clamp_message_id_scope(
+                Inclusive {
+                    min_id: 120,
+                    max_id: 180
+                },
+                network
+            ),
+            Some((120, 180))
+        );
+        assert_eq!(
+            clamp_message_id_scope(
+                Inclusive {
+                    min_id: 300,
+                    max_id: 400
+                },
+                network
+            ),
             None
         );
     }

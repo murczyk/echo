@@ -29,6 +29,7 @@ import type {
   NetworkCallsignSectionMode,
   NetworkCallsignStatusFilter,
 } from './network-callsigns.types';
+import { resolveNetworkCallsignStatsPeriod } from './network-callsigns.stats';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
 import { buildNetworkCallsignWritePayload } from './use-rer-network-details-neo-page.callsign-write';
 
@@ -38,28 +39,37 @@ type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
   loadCallsigns: (networkId: number, periods?: CallsignsLoadPeriods) => Promise<void>;
+  loadNetworkCallsignStats: (
+    networkId: number,
+    period: NetworkFreqCallsignsPeriod,
+  ) => Promise<void>;
 };
 
 export function useRerNetworkDetailsNeoPageCallsignActions({
   state,
   setState,
   loadCallsigns,
+  loadNetworkCallsignStats,
 }: Args) {
   const canManageCallsignActions = canManageNetworkCallsignActions(state.currentUser);
+
+  const currentStatsPeriod =
+    state.networkCallsignStatsPeriod ??
+    resolveNetworkCallsignStatsPeriod(state.networkCallsignsPeriod);
 
   const reloadCallsignsData = useCallback(async () => {
     if (!state.network) return;
     await loadCallsigns(state.network.id, {
-      network: state.networkCallsignsPeriod,
+      network: currentStatsPeriod,
       catalog: state.catalogCallsignsPeriod,
       intercepted: state.interceptedCallsignsPeriod,
     });
   }, [
+    currentStatsPeriod,
     loadCallsigns,
     state.catalogCallsignsPeriod,
     state.interceptedCallsignsPeriod,
     state.network,
-    state.networkCallsignsPeriod,
   ]);
 
   const setNetworkCallsignsPeriod = useCallback(
@@ -69,12 +79,31 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
         ...current,
         networkCallsignsPeriod,
       }));
-      if (state.network) {
-        void loadCallsigns(state.network.id, { network: networkCallsignsPeriod });
+      const statsPeriod = resolveNetworkCallsignStatsPeriod(networkCallsignsPeriod);
+      const statsRequested =
+        state.networkCallsignStatsPeriod === statsPeriod &&
+        state.networkCallsignStatsError === null;
+      if (state.network && !statsRequested) {
+        void loadNetworkCallsignStats(state.network.id, statsPeriod);
       }
     },
-    [loadCallsigns, setState, state.network, state.networkCallsignsPeriod],
+    [
+      loadNetworkCallsignStats,
+      setState,
+      state.network,
+      state.networkCallsignStatsError,
+      state.networkCallsignStatsPeriod,
+      state.networkCallsignsPeriod,
+    ],
   );
+
+  const retryNetworkCallsignStats = useCallback(() => {
+    if (state.network) void loadNetworkCallsignStats(state.network.id, currentStatsPeriod);
+  }, [currentStatsPeriod, loadNetworkCallsignStats, state.network]);
+
+  const loadAllTimeNetworkCallsignStats = useCallback(() => {
+    if (state.network) void loadNetworkCallsignStats(state.network.id, 'Unlimited');
+  }, [loadNetworkCallsignStats, state.network]);
 
   const setCatalogCallsignsPeriod = useCallback(
     (catalogCallsignsPeriod: NetworkFreqCallsignsPeriod) => {
@@ -386,6 +415,8 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     loadCallsigns: reloadCallsignsData,
     reloadCallsignsData,
     setNetworkCallsignsPeriod,
+    retryNetworkCallsignStats,
+    loadAllTimeNetworkCallsignStats,
     setCatalogCallsignsPeriod,
     setInterceptedCallsignsPeriod,
     setCallsignSectionMode,
