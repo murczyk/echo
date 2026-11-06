@@ -375,6 +375,10 @@ describe('NetworkDetailsCallsignsPanel', () => {
 
         expect(rowIds()).toEqual([1]);
         expect(childMockState.networkStats?.exitingRowIds.size).toBe(0);
+
+        rerender(view, props);
+
+        expect(rowIds()).toEqual([1, 2]);
       } finally {
         vi.useRealTimers();
       }

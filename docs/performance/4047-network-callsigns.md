@@ -32,22 +32,30 @@ share one zone.
 
 ## Message-ID bounds for a period
 
-`load_message_id_bounds_for_period` used to walk the network's whole ID range in
+`load_message_id_bounds_for_period` walks the network's whole ID range in
 1 million ID chunks, joining inbox items to messages in each. A long-lived
-network needed dozens of sequential queries per request. It now makes one
+network needs dozens of sequential queries per request, so a period that is
+still running now takes a shorter path: one
 `resolve_analytics_message_id_scope_for_range` lookup, which also deduplicates
 concurrent requests.
 
-The result is a superset for ID pruning, not exact bounds. The lookup filters on
-bare `datetime`, while activity uses `COALESCE(datetime, timestamp, created_at)`
-and about 7% of production inbox rows have a NULL `datetime`. Rows inside the
-returned range are safe because the activity queries still apply the exact date
-filter. To keep NULL-`datetime` rows inside the range, the window is widened by
-`ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS` and rounded out to whole hours;
-dated messages inserted around such a row bracket its ID. A row can only be
-missed if its timestamp is more than the margin ahead of its insertion, or if
-the whole instance has no dated messages for the margin next to the period. An
-`Empty` scope prunes nothing, because NULL-`datetime` rows may still match.
+That lookup filters on bare `datetime`, while activity uses
+`COALESCE(datetime, timestamp, created_at)`, and about 7% of production inbox
+rows have a NULL `datetime`. So only its lower bound is used, and the result is
+a superset for ID pruning rather than exact bounds. The activity queries still
+apply the exact date filter.
+
+- The upper bound stays open. A late import with a NULL `datetime` has a far
+  higher ID than its timestamp suggests, so a bound taken from dated rows would
+  drop it.
+- The lower bound is widened by `ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS`
+  and rounded out to whole hours. It can only leave out a NULL-`datetime` row
+  whose timestamp is more than the margin ahead of its insertion.
+
+A closed period, such as an ended network or a retired frequency, keeps the
+exact scan because an open upper bound would widen its queries. Those periods
+are no faster than before. So does a running period with no dated messages
+nearby, where nothing can be pruned safely.
 
 Before the change, on the same day and host:
 
