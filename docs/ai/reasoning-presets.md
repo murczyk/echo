@@ -1,8 +1,8 @@
 # Agent reasoning and research budgets
 
 The composer shows only **Швидкий**, **Збалансований**, and **Глибокий**.
-Their limits are 2 minutes, 5 minutes and 4 hours; the composer shows them in
-the mode menu. A Fast or Balanced request that builds a document (an open
+Their limits are 2 minutes, 5 minutes (10 on non-OpenAI engines) and 4 hours;
+the composer shows them in the mode menu. A Fast or Balanced request that builds a document (an open
 document, a .docx attached to the message, or a report request in a conversation
 with a .docx upload or a generated document) gets 30 minutes instead and keeps
 its reasoning effort; its policy carries `documentTask: true`. Balanced is the default. The browser
@@ -14,10 +14,16 @@ failed request's preset. Each follow-up makes
 its own selection; an active request's policy cannot change.
 
 When the newest answer finished in Fast or Balanced with incomplete coverage and
-the provider offers Deep, the chat shows **Продовжити глибоким аналізом** under
-it, with Deep's limit. The button submits a fixed follow-up prompt as a new Deep
-request in the same conversation; it is a fresh run informed by the previous
-answer, not a resume. Deep answers get no button because there is no higher mode.
+the provider offers Deep, the chat shows **Продовжити в глибокому режимі** under
+it, with Deep's limit. The button submits a fixed, task-neutral follow-up prompt
+as a new Deep request in the same conversation; it is a fresh run informed by the
+previous answer, not a resume. Deep answers get no button because there is no
+higher mode.
+
+A Deep answer on a non-OpenAI engine is final. Gaps the model reports are written
+as findings, without a coverage notice, footer or `incomplete_research` metadata.
+Only a real stop (time, tool or context limit, or a provider failure) qualifies
+it, with one line naming that stop.
 
 The limit starts when a worker claims the request, excluding queue time.
 Fast reserves its last 30 seconds, Balanced 60 seconds, a document request
@@ -71,8 +77,8 @@ Policies are snapshotted into nullable `ai_agent_request.execution_policy`
 when queued, including actual effort, transport, runtime, and finalization
 reserve. They survive later host configuration changes. Completion metadata
 records limited coverage and its cause: `time_limit`, `tool_limit`,
-`context_limit`, `provider_error`, or `incomplete_research` when research ended
-with remaining gaps or a fallback answer without reaching a limit. Conversation
+`context_limit`, `provider_error`, or `incomplete_research` when Fast or Balanced
+research ended with remaining gaps or a fallback answer without reaching a limit. Conversation
 reload restores the selected preset, worker start time, and completion metadata.
 
 The new modes use the selected provider for checkpoints. Luna's vision role,

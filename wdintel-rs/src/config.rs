@@ -613,6 +613,8 @@ pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
 pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;
 pub const AI_AGENT_BALANCED_RUNTIME_SEC: u64 = 300;
+/// Balanced on non-OpenAI engines: 300 s stopped real research with work left.
+pub const AI_AGENT_BOUNDED_BALANCED_RUNTIME_SEC: u64 = 600;
 pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 4 * 60 * 60;
 /// Fast and Balanced requests that build a document (template report).
 pub const AI_AGENT_DOCUMENT_RUNTIME_SEC: u64 = 1800;
@@ -634,7 +636,7 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.05.3";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.06.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;

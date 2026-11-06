@@ -1049,7 +1049,7 @@ describe('AiAgentChat request queue', () => {
   });
 });
 describe('#4031 Deep continuation of incomplete answers', () => {
-  const CONTINUE = 'Продовжити глибоким аналізом';
+  const CONTINUE = 'Продовжити в глибокому режимі';
   const INCOMPLETE = { coverageLimited: true, reason: 'incomplete_research' };
 
   function continueButtons() {
@@ -1228,6 +1228,23 @@ describe('#4031 Deep continuation of incomplete answers', () => {
       REASONING_PRESETS.filter((option) => option.preset !== 'deep'),
     );
     expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('leaves the coverage footer off a Deep answer, which states its own stop', async () => {
+    const STOPPED = { coverageLimited: true, reason: 'time_limit' };
+    await openConversation([
+      answer('request-deep', 'Глибока', { reasoningPreset: 'deep', completionMetadata: STOPPED }),
+    ]);
+    expect(container.textContent).not.toContain('Охоплення джерел неповне');
+
+    await openConversation([answer('request-limited', 'Часткова')]);
+    expect(container.textContent).toContain('Охоплення джерел неповне');
+  });
+
+  it('asks to finish the task without assuming it was an analysis', () => {
+    expect(DEEP_CONTINUATION_PROMPT).toContain('доведи його до кінця');
+    expect(DEEP_CONTINUATION_PROMPT).toContain('мапами');
+    expect(DEEP_CONTINUATION_PROMPT).not.toMatch(/аналіз|джерела новим пошуком/);
   });
 });
 

@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runAgent, validatePayload } from "./runner.ts";
+import { validateToolArguments } from "@earendil-works/pi-ai/compat";
+import { Type } from "typebox";
+import { outputRetrySystemPrompt, runAgent, validatePayload, validationFields } from "./runner.ts";
 import {
+  DEEP_RESEARCH_CONTINUATIONS,
   FlashResearch,
   FLASH_ENGINE,
   FLASH_INABILITY,
   FLASH_RESEARCH_PAGINATION_REQUIRED,
+  RESEARCH_CONTINUATIONS,
   RESEARCH_TUNING,
+  continuationLimit,
   finalizationMultipliers,
+  normalizedResearchUpdate,
+  synthesisTokenLimit,
   usesBoundedResearch,
   validatedFlashAnswer,
 } from "./flash-research.ts";
@@ -33,6 +40,17 @@ const policy: ExecutionPolicy = {
   maxRuntimeSeconds: 120,
   finalizationSeconds: 60,
 };
+// Prod runs the 4-hour budget with hours left; only a real stop may qualify its answer.
+const deepPolicy: ExecutionPolicy = {
+  ...policy,
+  preset: "deep",
+  maxRuntimeSeconds: 14_400,
+  finalizationSeconds: 600,
+};
+// A model turn that ends with text and no tool call.
+const STOP = { name: "", args: {} };
+// A model turn that ends with neither text nor a tool call, as GLM-5.3 does.
+const EMPTY = { name: "", args: {} };
 const initial = {
   checklist: [
     { task: "PRIVATE_CHECKLIST: summarize archive records", status: "pending" },
@@ -119,7 +137,17 @@ const scenarios = [
   "denied",
   "filtered",
   "persistence-failure",
-  "plan-required",
+  "no-initial-plan",
+  "slow-first-turn",
+  "lenient-tools",
+  "invalid-progress",
+  "continues-once",
+  "deep-continues",
+  "deep-stalled",
+  "deep-gaps",
+  "deep-hard-stop",
+  "empty-final-turn",
+  "deep-empty-final-turn",
   "refresh-required",
   "batch-refresh",
   "batch-refresh-rejected",
@@ -174,7 +202,6 @@ for (const [scenario, modelName] of [
                   : {}),
               },
       });
-    if (scenario === "plan-required") read();
     plan();
     calls.push({
       name: "report_progress",
@@ -182,6 +209,61 @@ for (const [scenario, modelName] of [
     });
     if (["user-text", "user-text-history", "user-map"].includes(scenario)) {
       calls.length = 0;
+    } else if (scenario === "no-initial-plan") {
+      calls.length = 0;
+      read();
+      refresh();
+    } else if (scenario === "slow-first-turn") {
+      read();
+    } else if (scenario === "lenient-tools") {
+      calls.length = 0;
+      calls.push({
+        name: "update_research",
+        args: {
+          checklist: [
+            { task: "x".repeat(300), status: "in_progress" },
+            ...["b", "c", "d", "e"].map((task) => ({ task, status: "done" })),
+          ],
+          gaps: JSON.stringify(["Unread records"]),
+          unexpected: true,
+        },
+      });
+      calls.push({
+        name: "report_progress",
+        args: { summary: `Reviewing\narchive ${"records ".repeat(60)}` },
+      });
+      read();
+      refresh();
+    } else if (scenario === "invalid-progress") {
+      calls.push({ name: "report_progress", args: {} });
+      read();
+      refresh();
+    } else if (scenario === "continues-once") {
+      calls.push(STOP);
+      read();
+      calls.push(STOP);
+      refresh();
+    } else if (scenario === "deep-continues") {
+      calls.push(STOP);
+      read();
+      calls.push(STOP);
+      read({ period, search: "botanical survey" });
+      refresh();
+    } else if (scenario === "deep-stalled") {
+      calls.push(STOP, STOP, STOP);
+    } else if (scenario === "deep-gaps") {
+      read();
+      calls.push({
+        name: "update_research",
+        args: { ...updated, gaps: ["Nothing found on the second archive"] },
+      });
+    } else if (scenario === "deep-hard-stop") {
+      read();
+      read({ period, search: "botanical survey" });
+    } else if (scenario.endsWith("empty-final-turn")) {
+      read();
+      refresh();
+      calls.push(EMPTY);
     } else if (scenario === "follow-up") {
       refresh();
     } else if (scenario.startsWith("batch-refresh")) {
@@ -246,6 +328,9 @@ for (const [scenario, modelName] of [
     let checkpoints = 0;
     let forcedUpdates = 0;
     let clockOffset = 0;
+    let continuations = 0;
+    let rejectionNotices = 0;
+    const synthesisBodies: string[] = [];
     const now = Date.now.bind(Date);
     t.mock.method(Date, "now", () => now() + clockOffset);
     const oldSignals = {
@@ -293,16 +378,12 @@ for (const [scenario, modelName] of [
             queries.length === 2
           )
             return Response.json({ error: "unavailable" }, { status: 503 });
-          assert.ok(
-            scenario === "pagination-recovery-no-memory" ||
-              saved.some((record) => record.kind === "checkpoint"),
-            "initial plan must be saved before retrieval",
-          );
           if (scenario === "cancel") {
             process.emit("SIGTERM");
             throw new DOMException("Aborted", "AbortError");
           }
           if (scenario === "deadline") clockOffset += 61_000;
+          if (scenario === "deep-hard-stop") clockOffset += 13_900_000;
           return Response.json({
             inbox_items: Array.from(
               {
@@ -387,6 +468,7 @@ for (const [scenario, modelName] of [
           if (scenario === "user-map")
             assert.ok(JSON.stringify(body).includes(`echo-map:${mapId}`));
           synthesisCalls++;
+          synthesisBodies.push(JSON.stringify(body));
           assert.ok(synthesisCalls <= 2);
           assert.ok((body.max_tokens ?? body.max_completion_tokens) <= 8192);
           assert.ok(!body.tools?.length);
@@ -434,7 +516,8 @@ for (const [scenario, modelName] of [
               `${draft} Invented [джерело](/rer-analysis-neo?m=missing)`,
             );
           return stream(
-            scenario.startsWith("user-text") || scenario === "history-aggregate"
+            scenario.startsWith("user-text") ||
+              ["history-aggregate", "deep-stalled"].includes(scenario)
               ? "The botanical survey is ready."
               : scenario === "user-map"
                 ? `[мапа](echo-map:${mapId})`
@@ -444,6 +527,12 @@ for (const [scenario, modelName] of [
         assert.equal(purpose, "research");
         researchCalls++;
         assert.ok(researchCalls < 140);
+        const lastInput = JSON.stringify(body.messages.at(-1)?.content);
+        if (lastInput?.includes("The work is not finished")) continuations++;
+        if (lastInput?.includes("but not the draft")) rejectionNotices++;
+        // One turn eats over half of the 60 s research window before anything was found.
+        if (scenario === "slow-first-turn" && researchCalls === 1)
+          clockOffset += 31_000;
         if (body.tool_choice?.function?.name === "update_research") {
           forcedUpdates++;
           assert.deepEqual(
@@ -521,7 +610,11 @@ for (const [scenario, modelName] of [
           });
         }
         const call = calls.shift();
-        return stream("PRIVATE_RESEARCH_NARRATION", call);
+        if (call === EMPTY) return stream("");
+        return stream(
+          "PRIVATE_RESEARCH_NARRATION",
+          call === STOP ? undefined : call,
+        );
       } catch (error) {
         if (error instanceof assert.AssertionError) errors.push(error);
         throw error;
@@ -564,7 +657,16 @@ for (const [scenario, modelName] of [
           compactionKeepRecentTokens: 1024,
           ...(scenario === "legacy"
             ? {}
-            : { executionPolicy: policy, deadlineAt: Date.now() + (scenario === "checkpoint-failure" ? 300_000 : 120_000) }),
+            : {
+                executionPolicy: scenario.startsWith("deep-") ? deepPolicy : policy,
+                deadlineAt:
+                  Date.now() +
+                  (scenario.startsWith("deep-")
+                    ? deepPolicy.maxRuntimeSeconds * 1000
+                    : scenario === "checkpoint-failure"
+                      ? 300_000
+                      : 120_000),
+              }),
           timeContext: {
             timeZone: "Europe/Kyiv",
             requestStartedAtUtc: new Date(Date.now()).toISOString(),
@@ -639,9 +741,28 @@ for (const [scenario, modelName] of [
             process.removeListener(signal, listener);
     }
     assert.deepEqual(errors, []);
+    // Failures of the private tools are named for the logs instead of "unknown".
+    if (scenario === "persistence-failure")
+      assert.ok(
+        events.some(
+          (event) =>
+            event.type === "tool_diagnostic" && event.tool === "update_research",
+        ),
+      );
+    if (scenario === "invalid-progress") {
+      const diagnostic = events.find((event) => event.type === "tool_diagnostic");
+      assert.equal(diagnostic.tool, "report_progress");
+      assert.equal(diagnostic.reason, "invalid_arguments");
+      assert.equal(diagnostic.fields, "summary:required");
+    }
     assert.ok(!events.some((event) => event.type === "assistant_delta"));
     assert.ok(!JSON.stringify(events).includes("PRIVATE_"));
-    assert.ok(!JSON.stringify(events).includes("update_research"));
+    // Private diagnostics name it for the logs and never reach the chat.
+    assert.ok(
+      !JSON.stringify(
+        events.filter((event) => event.type !== "tool_diagnostic"),
+      ).includes("update_research"),
+    );
     assert.ok(
       !events.some((event) => event.type === "tool_start" && event.arguments),
     );
@@ -684,7 +805,11 @@ for (const [scenario, modelName] of [
     const coverage = events.find(
       (event) => event.type === "completion_metadata",
     );
-    assert.equal(Boolean(coverage), answer.includes("Охоплення джерел неповне"));
+    if (scenario.startsWith("deep-")) {
+      assert.ok(!answer.includes("Охоплення джерел неповне"));
+      assert.equal(Boolean(coverage), scenario === "deep-hard-stop");
+      assert.equal(answer.includes("Вичерпано час глибокого режиму"), scenario === "deep-hard-stop");
+    } else assert.equal(Boolean(coverage), answer.includes("Охоплення джерел неповне"));
     const diagnostics = events.filter(
       (event) => event.type === "completion_diagnostic",
     );
@@ -707,10 +832,7 @@ for (const [scenario, modelName] of [
     if (scenario === "pagination-guard") assert.equal(queries.length, 1);
     if (recoveringPagination) {
       assert.equal(queries.length, 2);
-      assert.equal(
-        forcedUpdates,
-        scenario === "pagination-recovery-rejected" ? 2 : 1,
-      );
+      assert.equal(forcedUpdates, 1);
       if (scenario === "pagination-recovery-focused")
         assert.equal(queries[1].search, "botanical survey");
       else assert.equal(queries[1].before_id_noninclusive, 20);
@@ -725,7 +847,7 @@ for (const [scenario, modelName] of [
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
     else if (
       scenario.startsWith("user-text") ||
-      scenario === "history-aggregate"
+      ["history-aggregate", "deep-stalled"].includes(scenario)
     )
       assert.equal(answer.trim(), "The botanical survey is ready.");
     else if (scenario === "user-map") {
@@ -742,7 +864,8 @@ for (const [scenario, modelName] of [
     }
     if (scenario === "follow-up") assert.equal(queries.length, 0);
     if (scenario === "pagination") assert.equal(queries.length, 10);
-    if (scenario === "plan-required") assert.equal(queries.length, 1);
+    if (["no-initial-plan", "slow-first-turn", "continues-once"].includes(scenario))
+      assert.equal(queries.length, 1);
     if (scenario === "refresh-required") {
       assert.equal(queries.length, 10);
       assert.ok(forcedUpdates > 0);
@@ -750,11 +873,61 @@ for (const [scenario, modelName] of [
     if (scenario.startsWith("batch-refresh")) {
       assert.equal(queries.length, 5);
       assert.equal(documents.length, 1);
-      assert.equal(
-        forcedUpdates,
-        scenario === "batch-refresh-rejected" ? 2 : 1,
+      assert.equal(forcedUpdates, 1);
+    }
+    if (scenario.endsWith("-rejected")) {
+      // The rejected draft is reported, and it no longer holds retrieval back.
+      assert.equal(rejectionNotices, 1);
+      assert.ok(
+        diagnostics.some(
+          (event) =>
+            event.outcome === "citation_rejected" &&
+            event.draftIssue === "no_citation",
+        ),
       );
     }
+    if (scenario === "lenient-tools") {
+      assert.ok(!events.some((event) => event.type === "tool_diagnostic"));
+      const progress = events.findLast((event) => event.summary?.startsWith("Reviewing"));
+      assert.equal(progress.summary.length, 240);
+      assert.ok(!progress.summary.includes("\n"));
+      const first = JSON.parse(saved.find((record) => record.kind === "checkpoint").content);
+      assert.equal(first.research.checklist.length, 4);
+      assert.deepEqual(first.research.checklist[0], {
+        task: "x".repeat(100),
+        status: "pending",
+      });
+      assert.deepEqual(first.research.gaps, ["Unread records"]);
+      assert.equal(queries.length, 1);
+    }
+    if (scenario.endsWith("empty-final-turn")) {
+      // Finishing without text is not a provider failure.
+      assert.equal(coverage, undefined);
+      assert.equal(synthesisCalls, 1);
+      assert.ok(!answer.includes("збій"));
+      assert.ok(answer.includes(citation));
+    }
+    if (scenario === "continues-once")
+      assert.equal(continuations, RESEARCH_CONTINUATIONS);
+    if (scenario === "deep-continues") {
+      assert.equal(continuations, 2);
+      assert.equal(queries.length, 2);
+    }
+    if (scenario === "deep-stalled") {
+      // The shape of incident 01a1b03b: plan, progress, stop. One unanswered prompt ends it.
+      assert.equal(continuations, 1);
+      assert.equal(researchCalls, 4);
+      assert.equal(queries.length, 0);
+    }
+    if (scenario.startsWith("deep-") && scenario !== "deep-hard-stop") {
+      const prompt = synthesisBodies.at(-1)!;
+      assert.ok(!prompt.includes("time budget ended"));
+      assert.ok(!prompt.includes("deep mode"));
+      assert.ok(prompt.includes("No time, tool or budget limit stopped this work"));
+      assert.ok(prompt.includes("Do not add a section about incomplete coverage"));
+    }
+    if (scenario === "deep-stalled")
+      assert.ok(synthesisBodies.at(-1)!.includes("No Echo data was searched"));
     const failures = events.filter(
       (event) => event.type === "tool_end" && event.is_error,
     );
@@ -787,11 +960,7 @@ for (const [scenario, modelName] of [
       )
     )
       assert.deepEqual(failures, []);
-    if (scenario === "plan-required")
-      assert.equal(
-        failures[0].errorSummary,
-        "Потрібно зберегти проміжні результати аналізу перед наступним пошуком.",
-      );
+    if (scenario === "no-initial-plan") assert.deepEqual(failures, []);
     if (["api-failure", "pagination-recovery-api-failure"].includes(scenario)) {
       assert.equal(queries.length, 2);
       assert.equal(failures.length, 1);
@@ -817,6 +986,7 @@ for (const [scenario, modelName] of [
         "invalid-synthesis": "incomplete_research",
         "tool-limit": "tool_limit",
         "slow-provider": "time_limit",
+        "slow-first-turn": "time_limit",
         deadline: "time_limit",
         "checkpoint-failure": "context_limit",
       } as Record<string, string>
@@ -829,6 +999,8 @@ for (const [scenario, modelName] of [
       });
       assert.ok(answer.includes("Охоплення джерел неповне"));
     }
+    if (scenario === "deep-hard-stop")
+      assert.equal(coverage.reason, "time_limit");
     const checkpointsSaved = saved.filter(
       (record) => record.kind === "checkpoint",
     );
@@ -859,6 +1031,252 @@ test("#3572 duration guard stops checkpoints before consuming the research reser
   assert.equal(budget.reason, "time_limit");
   assert.equal(budget.finalization.signal.aborted, false);
   budget.dispose();
+});
+
+test("incident 01a1b038: one slow turn does not end research before anything was retrieved", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
+  const context = { systemPrompt: "Fixture", messages: [] };
+  const research = new FlashResearch(() => sources);
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  research.completed("research", 35_000);
+  t.mock.timers.tick(30_000);
+  assert.doesNotThrow(() =>
+    research.beforeProvider("research", context, budget, 50, 65536, 8192),
+  );
+  assert.equal(budget.reason, undefined);
+  // Once there is something to summarize, the estimate may stop research as before.
+  research.record("echo_inbox_messages", { period }, {});
+  assert.throws(() =>
+    research.beforeProvider("research", context, budget, 50, 65536, 8192),
+  );
+  assert.equal(budget.reason, "time_limit");
+  budget.dispose();
+});
+
+test("#4031 a turn ending with declared work left is continued only while it is worth it", async (t) => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1000 });
+  const budget = new ResearchBudget(policy, Date.now() + 120_000, () => {});
+  const research = new FlashResearch(() => sources);
+  const save = (update: unknown) => (research.tool(() => {}) as any).execute("save", update);
+  // No state and no promise: a direct answer, for example a translation.
+  assert.equal(research.shouldContinue(budget), false);
+  research.noteProgress();
+  assert.equal(research.shouldContinue(budget), true);
+  assert.match(research.continuationPrompt(), /announced work/);
+  research.noteToolRun();
+  assert.equal(research.shouldContinue(budget), false);
+  await save(initial);
+  assert.equal(research.shouldContinue(budget), true);
+  assert.match(research.continuationPrompt(), /PRIVATE_CHECKLIST/);
+  // Without the time for another turn the answer matters more.
+  research.completed("research", 90_000);
+  assert.equal(research.shouldContinue(budget), false);
+  research.completed("research", 0);
+  await save({ ...updated, checklist: [{ task: "Second archive", status: "blocked" }] });
+  assert.equal(new FlashResearch(() => sources).shouldContinue(budget), false);
+  budget.dispose();
+  assert.equal(continuationLimit(deepPolicy), DEEP_RESEARCH_CONTINUATIONS);
+  assert.equal(continuationLimit(policy), RESEARCH_CONTINUATIONS);
+});
+
+test("#4031 a blocked task is finished work, not a reason to continue", async () => {
+  const budget = new ResearchBudget(deepPolicy, Date.now() + 14_400_000, () => {});
+  const research = new FlashResearch(() => sources);
+  await (research.tool(() => {}) as any).execute("save", {
+    ...updated,
+    checklist: [{ task: "Second archive", status: "blocked" }],
+  });
+  assert.equal(research.shouldContinue(budget), false);
+  budget.dispose();
+});
+
+test("#4031 retrieval needs no saved state and the budget status no longer demands one", () => {
+  const research = new FlashResearch(() => sources);
+  assert.doesNotThrow(() => research.beforeRetrieval("inbox_messages", { period }));
+  const prompted = research.beforeProvider(
+    "research",
+    { systemPrompt: "Fixture", messages: [] },
+    undefined,
+    50,
+    65536,
+    8192,
+  );
+  assert.match(prompted.systemPrompt, /"updateRequired":false/);
+  // Saving nothing is not a gap: only declared gaps and unread pages are.
+  assert.equal(research.hasGaps(), false);
+  research.record("echo_inbox_messages", { period }, { nextCursor: 1 });
+  assert.equal(research.hasGaps(), true);
+});
+
+test("#4031 research state accepts whatever shape a model sends", () => {
+  assert.deepEqual(
+    normalizedResearchUpdate({
+      checklist: [
+        "plain task",
+        { task: "started", status: "in_progress" },
+        { task: "finished", status: "COMPLETED" },
+        { task: "skipped", status: "failed" },
+        { task: "t".repeat(150), status: "done" },
+        { status: "done" },
+      ],
+      gaps: "single gap",
+      paginationReason: " ",
+      draft: 7,
+    }),
+    {
+      checklist: [
+        { task: "plain task", status: "pending" },
+        { task: "started", status: "pending" },
+        { task: "skipped", status: "blocked" },
+        { task: "finished", status: "done" },
+      ],
+      draft: undefined,
+      gaps: ["single gap"],
+    },
+  );
+  assert.deepEqual(
+    normalizedResearchUpdate({
+      checklist: [{ task: { nested: true }, status: "done" }],
+      gaps: [{ gap: "object" }, "kept"],
+    }).gaps,
+    ["kept"],
+  );
+  // Omitted fields stay undefined so that a partial update keeps saved state.
+  assert.deepEqual(normalizedResearchUpdate(null), {
+    checklist: undefined,
+    draft: undefined,
+    gaps: undefined,
+  });
+  const long = normalizedResearchUpdate({
+    checklist: JSON.stringify([{ task: "from json", status: "done" }]),
+    draft: `${"Line of the draft.\n".repeat(600)}`,
+    gaps: Array.from({ length: 9 }, (_, index) => `${index}`.repeat(200)),
+    paginationReason: "r".repeat(300),
+  });
+  assert.deepEqual(long.checklist, [{ task: "from json", status: "done" }]);
+  assert.ok(long.draft!.length <= 8000);
+  assert.ok(long.draft!.endsWith("Line of the draft."));
+  assert.equal(long.gaps!.length, 4);
+  assert.equal(long.gaps![0].length, 160);
+  assert.equal(long.paginationReason!.length, 200);
+});
+
+test("#4031 a partial research update keeps the saved checklist, gaps and draft", async () => {
+  const research = new FlashResearch(() => sources);
+  const save = (update: unknown) => (research.tool(() => {}) as any).execute("save", update);
+  await save(updated);
+  await save({ gaps: ["Second archive"] });
+  const saved = JSON.parse(research.compactEvidence()!);
+  assert.equal(saved.draft, draft);
+  assert.deepEqual(saved.gaps, ["Second archive"]);
+  assert.equal(research.hasGaps(), true);
+});
+
+test("#4031 a rejected draft keeps the checklist and names the invalid link", async () => {
+  const issues: unknown[] = [];
+  const research = new FlashResearch(
+    () => sources,
+    undefined,
+    (event) => issues.push(event),
+  );
+  const save = (update: unknown) => (research.tool(() => {}) as any).execute("save", update);
+  await save(updated);
+  const result = await save({
+    checklist: initial.checklist,
+    gaps: ["Unread records"],
+    draft: `Finding [джерело](${citation}) and [джерело](/rer-analysis-neo?m=missing)`,
+  });
+  const text = result.content[0].text;
+  assert.match(text, /but not the draft/);
+  assert.match(text, /m=missing/);
+  assert.ok(text.includes(citation));
+  assert.deepEqual(issues, [
+    { stage: "research", outcome: "citation_rejected", draftIssue: "unknown_link" },
+  ]);
+  const saved = JSON.parse(research.compactEvidence()!);
+  assert.equal(saved.draft, draft);
+  assert.deepEqual(saved.gaps, ["Unread records"]);
+  assert.doesNotThrow(() => research.beforeRetrieval("inbox_messages", { period }));
+  const failed = new FlashResearch(() => sources, undefined, (event) => issues.push(event));
+  await (failed.tool(() => {}) as any).execute("save", { draft: "Uncited finding" });
+  await (failed.tool(() => {}) as any).execute("save", { draft: `https://example.test ${draft}` });
+  assert.deepEqual(
+    issues.slice(1).map((event: any) => event.draftIssue),
+    ["no_citation", "bare_link"],
+  );
+});
+
+test("#4031 validation diagnostics carry field paths and never the received values", () => {
+  const tool: any = {
+    name: "fixture",
+    description: "Fixture",
+    parameters: Type.Object(
+      {
+        checklist: Type.Array(
+          Type.Object({
+            task: Type.String({ maxLength: 5 }),
+            status: Type.Union([Type.Literal("pending"), Type.Literal("done")]),
+          }),
+          { maxItems: 1 },
+        ),
+        draft: Type.String(),
+        count: Type.Integer({ minimum: 3 }),
+      },
+      { additionalProperties: false },
+    ),
+  };
+  const fieldsOf = (args: unknown) => {
+    try {
+      validateToolArguments(tool, { type: "toolCall", id: "1", name: "fixture", arguments: args } as any);
+    } catch (error) {
+      return validationFields({ content: [{ type: "text", text: String((error as Error).message) }] });
+    }
+    return "valid";
+  };
+  const fields = fieldsOf({
+    checklist: [
+      { task: "SENSITIVE VALUE", status: "in_progress" },
+      { task: "b", status: "done" },
+    ],
+    count: 1,
+    SENSITIVE_KEY: "SENSITIVE VALUE",
+  });
+  assert.doesNotMatch(fields!, /SENSITIVE/);
+  for (const expected of [
+    "draft:required",
+    "checklist.0.task:size",
+    "checklist.0.status:enum",
+    "checklist:size",
+    "count:size",
+  ])
+    assert.ok(fields!.split(", ").includes(expected), `${expected} in ${fields}`);
+  assert.equal(new Set(fields!.split(", ")).size, fields!.split(", ").length);
+  assert.equal(validationFields({ content: [{ type: "text", text: "Echo returned HTTP 500" }] }), undefined);
+});
+
+test("#4031 synthesis never blames a limit that did not stop the work", () => {
+  const payload = { systemPrompt: "" } as Parameters<typeof outputRetrySystemPrompt>[0];
+  const timedOut = outputRetrySystemPrompt(payload, { retrieved: false, limit: "time_limit" });
+  assert.match(timedOut, /time budget ended/);
+  assert.match(timedOut, /in the deep mode if needed/);
+  assert.doesNotMatch(timedOut, /No time, tool or budget limit/);
+  const deepTimedOut = outputRetrySystemPrompt(payload, { retrieved: false, limit: "time_limit", deep: true });
+  assert.doesNotMatch(deepTimedOut, /deep mode/);
+  assert.match(deepTimedOut, /State remaining coverage limitations honestly/);
+  // A translation of the previous answer searches nothing and hit no limit.
+  const direct = outputRetrySystemPrompt(payload, { retrieved: false, limit: null });
+  assert.match(direct, /if the request needed Echo data, say that the search did not run/);
+  assert.doesNotMatch(direct, /time budget ended|deep mode/);
+  assert.match(direct, /No time, tool or budget limit stopped this work/);
+  // An unknown outcome keeps saying nothing about limits.
+  assert.doesNotMatch(outputRetrySystemPrompt(payload), /No time, tool or budget limit/);
+});
+
+test("#4031 synthesis keeps room for hidden thinking within the engine's output cap", () => {
+  assert.equal(synthesisTokenLimit(policy, 16_384), 16_384);
+  assert.equal(synthesisTokenLimit(policy, 65_536), 16_384);
+  assert.equal(synthesisTokenLimit(policy, 8192), 8192);
+  assert.equal(synthesisTokenLimit(deepPolicy, 65_536), 65_536);
 });
 
 test("incident 01a18e18: a checkpoint is not started with less research time than it needs", (t) => {
@@ -974,6 +1392,7 @@ test("#3572 Flash reserves synthesis inside unchanged presets without altering o
   for (const [preset, runtime, reserve] of [
     ["fast", 120, 30],
     ["balanced", 300, 60],
+    ["balanced", 600, 60],
     ["deep", 1800, 120],
     ["deep", 14_400, 300],
   ] as const) {

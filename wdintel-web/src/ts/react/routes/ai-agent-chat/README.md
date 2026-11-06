@@ -131,7 +131,7 @@ with its provider and preserves any unsent composer draft. Retry is disabled
 while a submission or another request is active; stream interruptions retain
 their separate reconnect action.
 
-The newest answer offers **Продовжити глибоким аналізом** when its metadata
+The newest answer offers **Продовжити в глибокому режимі** when its metadata
 reports incomplete coverage, it ran below Deep, and the provider offers Deep. The
 button works for a just-finished answer and after reload (`DeepContinuation.tsx`).
 It sends a fixed follow-up prompt through the same path as retry, so the composer
