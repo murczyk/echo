@@ -13,7 +13,6 @@ import type { MessageEntityFilterKind, TagsLayoutVariant, MessageFeedState } fro
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
-import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type {
   AnchorSnapshot,
@@ -54,7 +53,6 @@ export type FeedColumnModel = {
     unreadPrefetchNeeded?: boolean;
     /** When true, flush `pendingNewerItems` into the window after scroll idle. */
     pendingNewerFlushNeeded?: boolean;
-    workspaceFabAvoidance?: DutyWorkspaceFabAvoidance;
     initialScrollAnchorSnapshot?: AnchorSnapshot | null;
     onScrollAnchorSnapshotChange?: (feedId: string, snapshot: AnchorSnapshot | null) => void;
   };

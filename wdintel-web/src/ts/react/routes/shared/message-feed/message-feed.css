@@ -190,3 +190,29 @@
   border: 3px solid transparent;
   background-clip: content-box;
 }
+
+/* Floating stack: the jump-to-newest arrow above the create button. Hosts move it with
+   --message-feed-fab-right / -bottom / -top. */
+.message-feed-floating-controls {
+  position: absolute;
+  z-index: 1;
+  right: var(--message-feed-fab-right, max(12px, env(safe-area-inset-right, 0px)));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  /* The stack itself must not block clicks on the feed behind it. */
+  pointer-events: none;
+}
+
+.message-feed-floating-controls > * {
+  pointer-events: auto;
+}
+
+.message-feed-floating-controls[data-edge='bottom'] {
+  bottom: var(--message-feed-fab-bottom, max(12px, env(safe-area-inset-bottom, 0px)));
+}
+
+.message-feed-floating-controls[data-edge='top'] {
+  top: var(--message-feed-fab-top, max(12px, env(safe-area-inset-top, 0px)));
+}

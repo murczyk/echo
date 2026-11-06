@@ -10,10 +10,12 @@ import {
 type Props = {
   onClick: (focusTarget?: HTMLElement) => void;
   rightInset?: number;
+  // `inline` leaves the position to the parent, e.g. the floating stack of a message feed.
+  placement?: 'absolute' | 'inline';
 };
 
 export const CreateMessageFab = forwardRef<HTMLButtonElement, Props>(function CreateMessageFab(
-  { onClick, rightInset = POWER_FLOATING_CONTROL_EDGE_INSET },
+  { onClick, rightInset = POWER_FLOATING_CONTROL_EDGE_INSET, placement = 'absolute' },
   ref,
 ) {
   const canWrite = useMessageWriteAccess();
@@ -29,16 +31,18 @@ export const CreateMessageFab = forwardRef<HTMLButtonElement, Props>(function Cr
         onClick(focusTarget);
       }}
       sx={{
-        position: 'absolute',
-        right: {
-          xs: `max(${rightInset}px, env(safe-area-inset-right, 0px))`,
-          sm: rightInset,
-        },
-        bottom: {
-          xs: `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`,
-          sm: POWER_FLOATING_CONTROL_EDGE_INSET,
-        },
-        zIndex: 1000,
+        ...(placement === 'absolute' && {
+          position: 'absolute',
+          right: {
+            xs: `max(${rightInset}px, env(safe-area-inset-right, 0px))`,
+            sm: rightInset,
+          },
+          bottom: {
+            xs: `max(${POWER_FLOATING_CONTROL_EDGE_INSET}px, env(safe-area-inset-bottom, 0px))`,
+            sm: POWER_FLOATING_CONTROL_EDGE_INSET,
+          },
+          zIndex: 1000,
+        }),
         width: POWER_FLOATING_CONTROL_SIZE,
         minWidth: POWER_FLOATING_CONTROL_SIZE,
         height: POWER_FLOATING_CONTROL_SIZE,
