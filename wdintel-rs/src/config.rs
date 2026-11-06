@@ -1469,6 +1469,22 @@ pub const OPERATIONAL_METRICS_QUEUE_AGE: &str =
 pub const OPERATIONAL_METRICS_NLP_READY: &str = "echo.messenger.nlp.ready";
 pub const OPERATIONAL_METRICS_UNKNOWN_REPORT_KIND: &str = "unknown";
 pub const OPERATIONAL_METRICS_REPORT_KINDS: &[&str] = &[
+    "tags",
+    "interception",
+    "babak",
+    "mouse",
+    "pelengs",
+    "senders",
+    "posts",
+    "naushnom",
+    "reo",
+    "digest",
+    "posts_docx",
+    "active_networks",
+    "network_frequencies",
+    "report_125",
+    "report_1213",
+    "report_1217",
     crate::report_history::KIND_SUMMARY_TABLE,
     crate::report_history::KIND_KMZ,
     crate::report_history::KIND_GEOJSON,

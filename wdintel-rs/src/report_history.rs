@@ -6682,17 +6682,26 @@ mod tests {
             - Duration::seconds(
                 (REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS + 1) as i64,
             );
-        insert_report_history(
-            &env.dbx,
-            "Tester",
-            KIND_SUMMARY_TABLE,
-            STATUS_IN_PROGRESS,
-            started,
-            Some(started),
-            None,
-        )
-        .await
-        .c(h!())?;
+        let timed_out_kinds: Vec<_> = worker_report_kinds()
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .filter(|kind| {
+                !matches!(*kind, KIND_GOI | KIND_ETALONKA | KIND_GEOJSON)
+            })
+            .collect();
+        for kind in &timed_out_kinds {
+            insert_report_history(
+                &env.dbx,
+                "Tester",
+                kind,
+                STATUS_IN_PROGRESS,
+                started,
+                Some(started),
+                None,
+            )
+            .await
+            .c(h!())?;
+        }
         insert_report_history(
             &env.dbx,
             "Tester",
@@ -6718,13 +6727,16 @@ mod tests {
         fail_timed_out_reports(&env).await.c(h!())?;
         fail_timed_out_reports(&env).await.c(h!())?;
         metrics.force_flush_for_test();
-        assert_eq!(
-            recorder.counter_value(
-                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
-                &[("report_kind", KIND_SUMMARY_TABLE)]
-            ),
-            Some(1)
-        );
+        for kind in timed_out_kinds {
+            assert_eq!(
+                recorder.counter_value(
+                    crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                    &[("report_kind", kind)]
+                ),
+                Some(1),
+                "timeout metric for {kind}"
+            );
+        }
         assert_eq!(
             recorder.counter_value(
                 crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
