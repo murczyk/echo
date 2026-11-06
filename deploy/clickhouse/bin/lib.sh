@@ -782,6 +782,39 @@ gateway_psql() {
     "$@"
 }
 
+# Prints the configured addresses PostgreSQL has no socket on. An unreadable
+# state prints nothing, so a monitoring failure never reports a false outage.
+missing_listen_addresses() {
+  local configured=$1 port=$2 listening address resolved found
+  local -a addresses missing=()
+
+  listening=$(ss -H -ltn "sport = :$port" 2>/dev/null \
+    | awk '{print $4}' \
+    | sed -E 's/:[0-9]+$//; s/^\[//; s/\]$//; s/%.*$//') || return 0
+  IFS=', ' read -r -a addresses <<<"$configured"
+  for address in "${addresses[@]}"; do
+    found=false
+    case $address in
+      '*') grep -qxE '0\.0\.0\.0|\*' <<<"$listening" && found=true ;;
+      localhost) grep -qxE '127\.0\.0\.1|::1' <<<"$listening" && found=true ;;
+      *)
+        grep -qxF -- "$address" <<<"$listening" && found=true
+        for resolved in $(getent ahosts "$address" 2>/dev/null | awk '{print $1}' | sort -u); do
+          grep -qxF -- "$resolved" <<<"$listening" && found=true
+        done
+        ;;
+    esac
+    $found || missing+=("$address")
+  done
+  printf '%s' "${missing[*]:-}"
+}
+
+gateway_missing_listen_addresses() {
+  local configured
+  configured=$(gateway_psql -Atqc 'SHOW listen_addresses' 2>/dev/null) || return 0
+  missing_listen_addresses "$configured" "${ANALYTICS_GATEWAY_PORT:-5432}"
+}
+
 peerdb_psql() {
   PGPASSWORD=$PEERDB_PASSWORD psql -X \
     --host 127.0.0.1 \

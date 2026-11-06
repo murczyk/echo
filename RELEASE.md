@@ -148,6 +148,10 @@ Wait about 5 minutes after the deploy so there is real traffic in the logs.
    before the deploy. Hosts are usually `ct-<server>`, and
    [MONITORING.md](docs/MONITORING.md#for-agents-over-ssh) has the queries.
 
+5. If the host rebooted since the last check, confirm PostgreSQL bound its
+   addresses. See
+   [After a host reboot](deploy/clickhouse/README.md#after-a-host-reboot).
+
 Compare with the pre-deploy period, because some errors are existing noise.
 
 ## Stopping
