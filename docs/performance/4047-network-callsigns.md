@@ -37,20 +37,22 @@ share one zone.
 network needs dozens of sequential queries per request, so a period that is
 still running now takes a shorter path: one
 `resolve_analytics_message_id_scope_for_range` lookup, which also deduplicates
-concurrent requests.
+concurrent requests, plus the exact query over one chunk below its result.
 
 That lookup filters on bare `datetime`, while activity uses
 `COALESCE(datetime, timestamp, created_at)`, and about 7% of production inbox
-rows have a NULL `datetime`. So only its lower bound is used, and the result is
-a superset for ID pruning rather than exact bounds. The activity queries still
-apply the exact date filter.
+rows have a NULL `datetime`, so those rows are invisible to it. The result is
+therefore a superset for ID pruning rather than exact bounds. The activity
+queries still apply the exact date filter.
 
 - The upper bound stays open. A late import with a NULL `datetime` has a far
   higher ID than its timestamp suggests, so a bound taken from dated rows would
   drop it.
 - The lower bound is widened by `ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS`
-  and rounded out to whole hours. It can only leave out a NULL-`datetime` row
-  whose timestamp is more than the margin ahead of its insertion.
+  and rounded out to whole hours, so concurrent requests share one lookup. The
+  chunk below it catches a period whose first rows are undated, as on a young or
+  quiet instance. A row is only left out if it is more than a chunk below the
+  first dated row near the period.
 
 A closed period, such as an ended network or a retired frequency, keeps the
 exact scan because an open upper bound would widen its queries. Those periods

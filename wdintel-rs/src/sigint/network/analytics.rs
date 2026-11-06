@@ -894,7 +894,25 @@ async fn load_message_id_bounds_for_period(
         .await
         .context(h!())?);
     };
-    let min_id = std::cmp::max(network_bounds.0, live_min_id);
+    let chunk_below_min_id = (
+        std::cmp::max(
+            network_bounds.0,
+            live_min_id.saturating_sub(
+                crate::config::ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE,
+            ),
+        ),
+        std::cmp::min(network_bounds.1, live_min_id.saturating_sub(1)),
+    );
+    let min_id = load_exact_message_id_bounds_for_period(
+        db,
+        since,
+        till,
+        chunk_below_min_id,
+    )
+    .await
+    .context(h!())?
+    .map_or(live_min_id, |(undated_min_id, _)| undated_min_id);
+    let min_id = std::cmp::max(network_bounds.0, min_id);
     Ok((min_id <= network_bounds.1).then_some((min_id, network_bounds.1)))
 }
 
@@ -902,11 +920,11 @@ async fn load_message_id_bounds_for_period(
 /// scan. The callers' activity queries still apply the exact date filter.
 ///
 /// The scope is found by bare `datetime`, while activity uses
-/// `COALESCE(datetime, timestamp, created_at)`. The upper bound stays open
-/// because a late import with a NULL `datetime` can have a far higher ID than
-/// its timestamp suggests. Below the bound, the margin only leaves out a row
-/// with a NULL `datetime` whose timestamp is more than the margin ahead of its
-/// insertion.
+/// `COALESCE(datetime, timestamp, created_at)`, so rows with a NULL `datetime`
+/// are invisible to it. The caller leaves the upper bound open because a late
+/// import can have a far higher ID than its timestamp suggests, and checks one
+/// ID chunk below this bound because the first rows of a period may be undated.
+/// A row is only left out if it is more than a chunk below the bound.
 async fn load_live_period_min_message_id(
     db: &DatabaseConnection,
     since: NaiveDateTime,
@@ -1630,7 +1648,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn network_period_bounds_keep_late_imports_in_live_periods_4047() {
+    async fn network_period_bounds_keep_undated_rows_in_live_periods_4047() {
         use crate::entities::{sigint_inbox_item, signal_message};
         use crate::functest::tests::{
             cleanup, mk_sigint_inbox_item, mk_signal_message,
@@ -1651,8 +1669,8 @@ mod tests {
         let since = days_ago(21);
         for (offset, datetime, timestamp, created_at) in [
             (0, Some(days_ago(60)), None, days_ago(60)),
-            (1, Some(since), None, since),
-            (2, None, Some(days_ago(20)), days_ago(20)),
+            (1, None, Some(days_ago(20)), days_ago(20)),
+            (2, Some(days_ago(10)), None, days_ago(10)),
             (3, None, Some(days_ago(5)), now),
         ] {
             let message = mk_signal_message(
@@ -1690,7 +1708,8 @@ mod tests {
             .await
             .unwrap(),
             Some((base + 1, base + 3)),
-            "older rows are pruned and the late import stays in range"
+            "older rows are pruned, undated rows before the first dated one \
+             stay in range, and so does the late import"
         );
     }
 
