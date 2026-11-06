@@ -43,6 +43,20 @@ The [harness evaluations](../ai-eval/HARNESS.md) exercise both retrieval paths,
 actual PostgreSQL search semantics, citations, spelling expansion, permissions
 and date limits. They include untagged production-derived examples for #3572.
 
+## Group scope
+
+Users name a source group as чат, чатик, канал or група. The model passes that
+name in `selectedGroups`, and the runner resolves it to group keys before the
+request runs, from one group list per request. See `runner/group-scope.ts`.
+
+Matching takes an exact key, then an exact name, then a case-insensitive name. A
+name shared by several groups selects all of them, as the UI does. A value that
+matches nothing, or matches names differing only in case, rejects the call with
+the accessible names to choose from. Nothing is matched fuzzily, and a failed
+group list rejects the call, because passing the raw value on would read as "no
+messages" in a group that exists. Echo also returns nothing for a selection with
+no accessible group, so a scope cannot silently widen.
+
 ## Unit lookup
 
 A message's unit is header metadata (`unit_v2`) and links from reference

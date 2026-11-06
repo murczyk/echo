@@ -59,7 +59,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, undeliveredMaps, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
-import { INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
+import { compactGroupCatalog, createGroupScope, GROUP_LOOKUP_BODY, GROUP_LOOKUP_SKILL } from "./group-scope.ts";
+import { GROUP_LOOKUP_DESCRIPTION, INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, SELECTED_GROUPS_DESCRIPTION, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1385,6 +1386,7 @@ function analysisPeriodParameters(maxDays: number) {
       selectedGroups: Type.Optional(
         Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
           maxItems: 128,
+          description: SELECTED_GROUPS_DESCRIPTION,
         }),
       ),
       selectedCallsigns: Type.Optional(
@@ -1463,6 +1465,7 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
     selectedGroups: Type.Optional(
       Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
         maxItems: 128,
+        description: SELECTED_GROUPS_DESCRIPTION,
       }),
     ),
     selectedCallsigns: Type.Optional(
@@ -1661,6 +1664,7 @@ const CALLSIGN_FREQUENCY_MATCHES_PARAMETERS = Type.Object(
     selectedGroups: Type.Optional(
       Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
         maxItems: 128,
+        description: SELECTED_GROUPS_DESCRIPTION,
       }),
     ),
     callsigns: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
@@ -2203,6 +2207,7 @@ export function compactToolResponse(
   ) {
     return compactMessageBearingResponse(route.skill, value, maxCharacters);
   }
+  if (route.skill === GROUP_LOOKUP_SKILL) return compactGroupCatalog(value, maxCharacters);
   if (route.requestKind === "unitLookup") return compactUnitLookup(value, maxCharacters);
   if (route.requestKind === "deviceSearch" || route.requestKind === "positionLookup") return compactDeviceEvidence(value, maxCharacters);
   if (route.requestKind.startsWith("attachment") || route.requestKind.startsWith("deviceFile") || route.requestKind === "uploadRead") {
@@ -2348,6 +2353,7 @@ export function interceptionContextRequestBody(params: unknown): JsonObject {
 }
 
 function routeDescription(route: SkillDefinition): string {
+  if (route.skill === GROUP_LOOKUP_SKILL) return GROUP_LOOKUP_DESCRIPTION;
   if (route.requestKind === "workList" || route.requestKind === "workRead") return WORK_DESCRIPTIONS[route.requestKind];
   if (route.requestKind in DEVICE_DESCRIPTIONS) return DEVICE_DESCRIPTIONS[route.requestKind];
   if (ATTACHMENT_DESCRIPTION[route.requestKind]) return ATTACHMENT_DESCRIPTION[route.requestKind];
@@ -2376,6 +2382,7 @@ function routeDescription(route: SkillDefinition): string {
 }
 
 function routeParameters(route: SkillDefinition) {
+  if (route.skill === GROUP_LOOKUP_SKILL) return Type.Object({});
   if (route.requestKind === "workList" || route.requestKind === "workRead") return WORK_PARAMETERS[route.requestKind];
   if (route.requestKind in DEVICE_PARAMETERS) return DEVICE_PARAMETERS[route.requestKind as keyof typeof DEVICE_PARAMETERS];
   if (route.requestKind in ATTACHMENT_PARAMETERS) return ATTACHMENT_PARAMETERS[route.requestKind as keyof typeof ATTACHMENT_PARAMETERS];
@@ -2415,6 +2422,7 @@ function routeRequestBody(
   params: JsonObject,
   timeContext: TimeContext,
 ): unknown {
+  if (route.skill === GROUP_LOOKUP_SKILL) return GROUP_LOOKUP_BODY;
   if (route.requestKind === "workList" || route.requestKind === "workRead") return params;
   if (route.requestKind.startsWith("device")) return deviceRequest(route.requestKind, params);
   if (route.requestKind.startsWith("attachment")) return attachmentRequest(route.requestKind, params);
@@ -2575,6 +2583,9 @@ export function createRouteActivityTracker() {
   const messageIds = new Set<number>();
   const nextPages = new Map<string, Map<number, number>>();
   return {
+    rememberGroups(groups: unknown): void {
+      rememberActivityGroups(GROUP_LOOKUP_SKILL, groups, groupNames);
+    },
     start(route: SkillDefinition, requestBody: unknown): RouteActivity {
       const body =
         requestBody &&
@@ -2771,6 +2782,13 @@ function createRouteTools(
   recordRetrieval: (skill: string) => void = () => {},
 ) {
   const activity = createRouteActivityTracker();
+  const groupRoute = payload.skills.find((route) => route.skill === GROUP_LOOKUP_SKILL);
+  const groupScope = createGroupScope(
+    groupRoute
+      ? async (signal) => (await echoRequest(payload, authentication, groupRoute.method, groupRoute.path, GROUP_LOOKUP_BODY, signal)).body
+      : null,
+    activity.rememberGroups,
+  );
   return payload.skills.filter((route) => !["mapRecords", "mapDocument", "mapEdit"].includes(route.requestKind) && !DOCUMENT_KINDS.has(route.requestKind)).map((route) =>
     defineTool({
       name: `echo_${route.skill}`,
@@ -2783,7 +2801,7 @@ function createRouteTools(
         countInvocation();
         const requestBody = routeToolRequestBody(
           route,
-          params,
+          await groupScope.resolve(params, signal),
           payload.timeContext!,
         );
         research?.beforeRetrieval(route.skill, requestBody);

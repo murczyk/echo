@@ -1381,14 +1381,17 @@ test("reports validated query scope and actual delivered message counts", () => 
     label: "Перевіряю доступні джерела",
     requestKind: "json",
   });
-  const groupResponse = [{ name: "Радіомережа А" }, { name: "Радіомережа Б" }];
+  const groupResponse = [
+    { master_key: "group.a", name: "Радіомережа А" },
+    { master_key: "group.b", name: "Радіомережа Б" },
+  ];
   const groupResult = tracker.finish(
     groupRoute,
     tracker.start(groupRoute, undefined),
     groupResponse,
     compactToolResponse(groupRoute, groupResponse, 1),
   );
-  assert.equal(groupResult, "Отримано груп джерел для перегляду: 1");
+  assert.equal(groupResult, "Отримано груп джерел для перегляду: 2");
 });
 
 // Regression: https://github.com/echoua/echo/issues/3064

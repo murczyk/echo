@@ -123,6 +123,7 @@ install -m 0644 "$STAGE/map-script.ts" "$PI_ROOT/map-script.ts"
 install -m 0644 "$STAGE/python-sandbox.ts" "$PI_ROOT/python-sandbox.ts"
 install -m 0644 "$STAGE/documents.ts" "$PI_ROOT/documents.ts"
 install -m 0644 "$STAGE/sidc-resolver.ts" "$PI_ROOT/sidc-resolver.ts"
+install -m 0644 "$STAGE/group-scope.ts" "$PI_ROOT/group-scope.ts"
 install -m 0644 "$STAGE/search-guidance.ts" "$PI_ROOT/search-guidance.ts"
 node --experimental-strip-types --input-type=module \
   -e "await import('file://$PI_ROOT/runner.ts')"

@@ -92,6 +92,7 @@ push_template_files() {
     "$BUNDLE_DIR/runner/python-sandbox.ts" \
     "$BUNDLE_DIR/runner/documents.ts" \
     "$BUNDLE_DIR/runner/sidc-resolver.ts" \
+    "$BUNDLE_DIR/runner/group-scope.ts" \
     "$BUNDLE_DIR/runner/search-guidance.ts" \
     "$AGENT_TEMPLATE/var/tmp/echo-ai-agent-template/"
   incus exec "$AGENT_TEMPLATE" -- mkdir -p \
