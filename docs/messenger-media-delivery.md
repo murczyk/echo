@@ -71,6 +71,8 @@ Originals and playback copies live in
 originals are retained for at least 24 hours after publication, irrespective of
 viewing or the message's event timestamp. Copied references share the same object
 and extend its protection. Legacy on-demand cache files remain separate.
+Encrypted media over 10 MiB without a retained copy is decrypted once into that
+on-demand cache: decryption covers the whole object, so it cannot serve ranges.
 
 Completed immutable uploads can be hard-linked; other sources are copied with
 bounded memory. Files are synced and published atomically before upload source
