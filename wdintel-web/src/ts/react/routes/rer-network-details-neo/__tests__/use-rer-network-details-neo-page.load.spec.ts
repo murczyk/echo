@@ -488,6 +488,19 @@ describe('use-rer-network-details-neo-page.load', () => {
       expect(latestState?.networkCallsignStats.get(1)?.messageCount).toBe(5);
     });
 
+    it('forgets locally added rows once a new stats request can see them', async () => {
+      installDefaultApiMocks();
+      renderHookHarness({ ...EMPTY_STATE, networkCallsignsAddedSinceStats: new Set([7]) });
+      mockListAndStats(Promise.resolve({ networkCallsigns: [] }));
+
+      await act(async () => {
+        void latestLoadNetworkCallsignStats?.(42, 'Last21Days');
+      });
+      await flush();
+
+      expect(latestState?.networkCallsignsAddedSinceStats.size).toBe(0);
+    });
+
     it('keeps the list and reports a stats failure separately', async () => {
       installDefaultApiMocks();
       renderHookHarness();

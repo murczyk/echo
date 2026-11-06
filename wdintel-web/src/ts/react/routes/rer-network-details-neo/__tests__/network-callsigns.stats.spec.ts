@@ -5,7 +5,6 @@ import {
   applyNetworkCallsignStats,
   createNetworkCallsignStatsMap,
   findNetworkCallsignIdsOutsidePeriod,
-  includeAddedNetworkCallsigns,
   resolveNetworkCallsignStatsPeriod,
 } from '../network-callsigns.stats';
 
@@ -45,17 +44,23 @@ describe('network-callsigns.stats', () => {
     const stats = createNetworkCallsignStatsMap([networkCallsign(1)]);
 
     expect([
-      ...findNetworkCallsignIdsOutsidePeriod([networkCallsign(1), networkCallsign(2)], stats),
+      ...findNetworkCallsignIdsOutsidePeriod(
+        [networkCallsign(1), networkCallsign(2)],
+        stats,
+        new Set(),
+      ),
     ]).toEqual([2]);
   });
 
-  it('keeps added rows out of the removal set without overwriting known stats', () => {
-    const stats = includeAddedNetworkCallsigns(
-      createNetworkCallsignStatsMap([networkCallsign(1, { messageCount: 5 })]),
-      [networkCallsign(1), networkCallsign(2)],
-    );
+  it('treats rows added since the stats request as unknown, not inactive', () => {
+    const stats = createNetworkCallsignStatsMap([networkCallsign(1)]);
 
-    expect(stats.get(1)?.messageCount).toBe(5);
-    expect(findNetworkCallsignIdsOutsidePeriod([networkCallsign(2)], stats).size).toBe(0);
+    expect([
+      ...findNetworkCallsignIdsOutsidePeriod(
+        [networkCallsign(1), networkCallsign(2), networkCallsign(3)],
+        stats,
+        new Set([3]),
+      ),
+    ]).toEqual([2]);
   });
 });

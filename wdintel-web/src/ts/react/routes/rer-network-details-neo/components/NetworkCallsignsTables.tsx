@@ -130,6 +130,7 @@ export type Props = {
   networkCallsignStatsLoading: boolean;
   networkCallsignStatsError: string | null;
   networkCallsignStatsPeriod: NetworkFreqCallsignsPeriod | null;
+  networkCallsignsAddedSinceStats: ReadonlySet<number>;
   onRetryNetworkCallsignStats: () => void;
   onLoadAllTimeNetworkCallsignStats: () => void;
   catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
@@ -175,6 +176,7 @@ export function NetworkDetailsCallsignsPanel({
   networkCallsignStatsLoading,
   networkCallsignStatsError,
   networkCallsignStatsPeriod,
+  networkCallsignsAddedSinceStats,
   onRetryNetworkCallsignStats,
   onLoadAllTimeNetworkCallsignStats,
   catalogCallsignGroups,
@@ -234,12 +236,17 @@ export function NetworkDetailsCallsignsPanel({
       networkStatsAvailable &&
       networkPeriod !== 'Unlimited' &&
       networkCallsignStatsPeriod === networkPeriod
-        ? findNetworkCallsignIdsOutsidePeriod(networkCallsigns, networkCallsignStats)
+        ? findNetworkCallsignIdsOutsidePeriod(
+            networkCallsigns,
+            networkCallsignStats,
+            networkCallsignsAddedSinceStats,
+          )
         : NO_REMOVED_ROW_IDS,
     [
       networkCallsignStats,
       networkCallsignStatsPeriod,
       networkCallsigns,
+      networkCallsignsAddedSinceStats,
       networkPeriod,
       networkStatsAvailable,
     ],
@@ -441,6 +448,7 @@ export function NetworkDetailsCallsignsPanel({
                 period: networkCallsignStatsPeriod,
                 error: networkCallsignStatsError,
                 exitingRowIds: exitingNetworkRowIds,
+                unknownRowIds: networkCallsignsAddedSinceStats,
                 onRetry: onRetryNetworkCallsignStats,
                 onLoadAllTime: onLoadAllTimeNetworkCallsignStats,
               }}

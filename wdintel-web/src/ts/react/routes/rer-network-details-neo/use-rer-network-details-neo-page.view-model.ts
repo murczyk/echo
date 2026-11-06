@@ -200,6 +200,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     networkCallsignStatsLoading: state.networkCallsignStatsLoading,
     networkCallsignStatsError: state.networkCallsignStatsError,
     networkCallsignStatsPeriod: state.networkCallsignStatsPeriod,
+    networkCallsignsAddedSinceStats: state.networkCallsignsAddedSinceStats,
     catalogCallsignGroups: state.catalogCallsignGroups,
     unknownInterceptedCallsigns: excludeNetworkOwnedInterceptedCallsigns(
       state.unknownInterceptedCallsigns,

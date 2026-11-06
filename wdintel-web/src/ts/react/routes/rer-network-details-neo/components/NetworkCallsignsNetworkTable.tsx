@@ -3,7 +3,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import MilitaryTechOutlinedIcon from '@mui/icons-material/MilitaryTechOutlined';
 import StarIcon from '@mui/icons-material/Star';
 import { Box, Button, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
 import type { NetworkFreqCallsignsPeriod } from '../../../../../Bindings';
@@ -78,6 +78,8 @@ export type NetworkCallsignsTableStats = {
   period: NetworkFreqCallsignsPeriod | null;
   error: string | null;
   exitingRowIds: ReadonlySet<number>;
+  /** Rows the loaded stats cannot describe yet. */
+  unknownRowIds: ReadonlySet<number>;
   onRetry: () => void;
   onLoadAllTime: () => void;
 };
@@ -306,6 +308,13 @@ function NetworkCallsignsNetworkTableContent({
   const loadingRows = useMemo(() => buildNetworkLoadingRows(), []);
   const titleCountLabel = countLabel ?? (isInitialLoading ? NO_DATA_LABEL : null);
   const statsHeaderSuffix = formatNetworkCallsignStatsPeriodSuffix(stats.period);
+  const formatStatsCount = useCallback(
+    (row: NetworkCallsignRowView) =>
+      stats.available && !stats.unknownRowIds.has(row.id)
+        ? String(row.messageCount)
+        : NO_DATA_LABEL,
+    [stats.available, stats.unknownRowIds],
+  );
   const columns = useMemo<AppMrtColumnDef<NetworkCallsignRowView>[]>(
     () => [
       createNetworkCallsignColumn(),
@@ -368,10 +377,8 @@ function NetworkCallsignsNetworkTableContent({
         ...buildStatsColumnCell(
           stats.loading,
           mrtTextCell({
-            displayValue: ({ row }) =>
-              stats.available ? String(row.original.messageCount) : NO_DATA_LABEL,
-            fullValue: ({ row }) =>
-              stats.available ? String(row.original.messageCount) : NO_DATA_LABEL,
+            displayValue: ({ row }) => formatStatsCount(row.original),
+            fullValue: ({ row }) => formatStatsCount(row.original),
           }),
         ),
       },
@@ -401,7 +408,7 @@ function NetworkCallsignsNetworkTableContent({
         )),
       },
     ],
-    [statsHeaderSuffix, stats.available, stats.loading],
+    [formatStatsCount, statsHeaderSuffix, stats.loading],
   );
 
   const table = useAppMaterialReactTable({

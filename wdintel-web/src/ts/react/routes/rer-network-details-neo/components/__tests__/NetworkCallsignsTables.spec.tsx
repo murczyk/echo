@@ -140,6 +140,7 @@ const NETWORK_STATS_PROPS = {
   networkCallsignStatsLoading: false,
   networkCallsignStatsError: null,
   networkCallsignStatsPeriod: 'Last21Days',
+  networkCallsignsAddedSinceStats: new Set<number>(),
   onRetryNetworkCallsignStats: vi.fn(),
   onLoadAllTimeNetworkCallsignStats: vi.fn(),
 } satisfies Partial<CallsignPanelProps>;
@@ -338,6 +339,22 @@ describe('NetworkDetailsCallsignsPanel', () => {
       expect(rowIds()).toEqual([1, 2]);
       expect(childMockState.networkStats?.available).toBe(false);
       expect(childMockState.networkStats?.error).toBe('stats failed');
+    });
+
+    it('keeps a row added after the stats request under a period filter', () => {
+      rendered.push(
+        renderComponent(
+          createPanelProps({
+            networkPeriod: 'Last21Days',
+            networkCallsignStats: ACTIVE_STATS,
+            networkCallsignsAddedSinceStats: new Set([2]),
+          }),
+        ),
+      );
+
+      expect(rowIds()).toEqual([1, 2]);
+      expect(childMockState.networkStats?.exitingRowIds.size).toBe(0);
+      expect([...(childMockState.networkStats?.unknownRowIds ?? [])]).toEqual([2]);
     });
 
     it('fades out rows without activity, then removes them', () => {

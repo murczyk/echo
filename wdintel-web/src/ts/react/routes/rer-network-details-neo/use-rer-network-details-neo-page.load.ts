@@ -298,6 +298,7 @@ export function useRerNetworkDetailsNeoPageLoad(
         networkCallsignStatsLoading: true,
         networkCallsignStatsError: null,
         networkCallsignStatsPeriod: period,
+        networkCallsignsAddedSinceStats: new Set(),
       }));
 
       try {

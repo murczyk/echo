@@ -145,6 +145,8 @@ export type NetworkDetailsNeoPageState = {
   networkCallsignStatsError: string | null;
   /** Window of the latest stats request; null until the first one starts. */
   networkCallsignStatsPeriod: NetworkFreqCallsignsPeriod | null;
+  /** Rows the latest stats request cannot know about. */
+  networkCallsignsAddedSinceStats: ReadonlySet<number>;
   networkCallsignGroups: NetworkCallsignRes[];
   callsignActivityMap: NetworkCallsignActivityMap;
   catalogCallsignGroups: NetworkCallsignCatalogGroupView[];
@@ -314,6 +316,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   networkCallsignStatsLoading: false,
   networkCallsignStatsError: null,
   networkCallsignStatsPeriod: null,
+  networkCallsignsAddedSinceStats: new Set(),
   networkCallsignGroups: [],
   callsignActivityMap: new Map(),
   catalogCallsignGroups: [],

@@ -10,6 +10,7 @@ export function buildCallsignPanelProps(page: Page) {
     networkCallsignStatsLoading: page.networkCallsignStatsLoading,
     networkCallsignStatsError: page.networkCallsignStatsError,
     networkCallsignStatsPeriod: page.networkCallsignStatsPeriod,
+    networkCallsignsAddedSinceStats: page.networkCallsignsAddedSinceStats,
     onRetryNetworkCallsignStats: page.retryNetworkCallsignStats,
     onLoadAllTimeNetworkCallsignStats: page.loadAllTimeNetworkCallsignStats,
     catalogCallsignGroups: page.catalogCallsignGroups,

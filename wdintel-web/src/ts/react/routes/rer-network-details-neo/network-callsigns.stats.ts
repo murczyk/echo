@@ -31,14 +31,6 @@ export function createNetworkCallsignStatsMap(
   );
 }
 
-/** Keeps rows added locally visible under a period filter until stats reload. */
-export function includeAddedNetworkCallsigns(
-  stats: NetworkCallsignStatsMap,
-  addedNetworkCallsigns: NetworkCallsign[],
-): NetworkCallsignStatsMap {
-  return new Map([...createNetworkCallsignStatsMap(addedNetworkCallsigns), ...stats]);
-}
-
 export function applyNetworkCallsignStats(
   networkCallsigns: NetworkCallsign[],
   stats: NetworkCallsignStatsMap,
@@ -51,13 +43,17 @@ export function applyNetworkCallsignStats(
 
 /**
  * A bounded stats response lists only callsigns active in that period, so a
- * missing row means no activity.
+ * missing row means no activity. Rows added since the stats request started are
+ * unknown rather than inactive.
  */
 export function findNetworkCallsignIdsOutsidePeriod(
   networkCallsigns: NetworkCallsign[],
   stats: NetworkCallsignStatsMap,
+  addedSinceStats: ReadonlySet<number>,
 ): ReadonlySet<number> {
-  return new Set(networkCallsigns.filter(({ id }) => !stats.has(id)).map(({ id }) => id));
+  return new Set(
+    networkCallsigns.map(({ id }) => id).filter((id) => !stats.has(id) && !addedSinceStats.has(id)),
+  );
 }
 
 export function formatNetworkCallsignStatsPeriodSuffix(
