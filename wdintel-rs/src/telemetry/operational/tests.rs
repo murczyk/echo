@@ -72,7 +72,7 @@ fn unavailable_expired_and_removed_sources_do_not_reexport_healthy_values() {
     );
 }
 
-async fn seed_account(
+pub(super) async fn seed_account(
     db: &DatabaseConnection,
     now: chrono::DateTime<Utc>,
 ) -> anyhow::Result<(i32, i64)> {
@@ -283,6 +283,16 @@ async fn removal_requested_accounts_do_not_export_operational_metrics(
     let now = Utc::now();
     let (account_id, datasource_id) =
         seed_account(&env.dbx, now).await.c(h!())?;
+    let account_id_label = account_id.to_string();
+    let datasource_id_label = datasource_id.to_string();
+    let labels = [("account_id", account_id_label.as_str())];
+    let (metrics, recorder) = crate::telemetry::Metrics::recording(&env.config);
+    collect::collect(&env, &metrics.operational, now).await;
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder.gauge_value(OPERATIONAL_METRICS_ACCOUNT_ACTIVE, &labels),
+        Some(1)
+    );
     update_account(
         &env.dbx,
         account_id,
@@ -290,9 +300,6 @@ async fn removal_requested_accounts_do_not_export_operational_metrics(
     )
     .await
     .c(h!())?;
-    let account_id = account_id.to_string();
-    let datasource_id_label = datasource_id.to_string();
-    let labels = [("account_id", account_id.as_str())];
     for deleted in [false, true] {
         env.dbx
             .execute_raw(Statement::from_sql_and_values(
@@ -302,8 +309,6 @@ async fn removal_requested_accounts_do_not_export_operational_metrics(
             ))
             .await
             .c(h!())?;
-        let (metrics, recorder) =
-            crate::telemetry::Metrics::recording(&env.config);
         collect::collect(&env, &metrics.operational, now).await;
         metrics.force_flush_for_test();
         for name in [
@@ -311,7 +316,6 @@ async fn removal_requested_accounts_do_not_export_operational_metrics(
             OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
             OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
             OPERATIONAL_METRICS_ACTIVITY_AGE,
-            OPERATIONAL_METRICS_ERRORS,
         ] {
             assert!(recorder.find_with_attributes(name, &labels).is_none());
         }
@@ -329,6 +333,107 @@ async fn removal_requested_accounts_do_not_export_operational_metrics(
             Some(1)
         );
     }
+    Ok(())
+}
+
+// https://github.com/echoua/echo/issues/4034
+#[tokio::test]
+#[serial_test::serial]
+async fn operational_reassignment_and_empty_inventory_replace_entity_series(
+) -> anyhow::Result<()> {
+    let (env, _guard) =
+        crate::functest::tests::cleanup_locked().await.c(h!())?;
+    let now = Utc::now();
+    let (old_account_id, datasource_id) =
+        seed_account(&env.dbx, now).await.c(h!())?;
+    let (new_account_id, other_datasource_id) =
+        seed_account(&env.dbx, now).await.c(h!())?;
+    let (metrics, recorder) = crate::telemetry::Metrics::recording(&env.config);
+    collect::collect(&env, &metrics.operational, now).await;
+    metrics.force_flush_for_test();
+    let datasource_id_label = datasource_id.to_string();
+    let old_account_id_label = old_account_id.to_string();
+    let new_account_id_label = new_account_id.to_string();
+    let old_labels = [
+        ("datasource_id", datasource_id_label.as_str()),
+        ("account_id", old_account_id_label.as_str()),
+    ];
+    assert_eq!(
+        recorder.gauge_value(OPERATIONAL_METRICS_ACCOUNT_ACTIVE, &old_labels),
+        Some(1)
+    );
+    env.dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"update datasource set deleted = id = $2, echo_client_lock_id = (
+                select echo_client_lock_id from datasource where id = $2
+            ) where id in ($1, $2)"#,
+            [datasource_id.into(), other_datasource_id.into()],
+        ))
+        .await
+        .c(h!())?;
+    collect::collect(&env, &metrics.operational, now).await;
+    metrics.force_flush_for_test();
+    for name in [
+        OPERATIONAL_METRICS_ACCOUNT_LINKED,
+        OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+        OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+        OPERATIONAL_METRICS_ACTIVITY_AGE,
+    ] {
+        assert!(recorder.find_with_attributes(name, &old_labels).is_none());
+    }
+    let new_labels = [
+        ("datasource_id", datasource_id_label.as_str()),
+        ("account_id", new_account_id_label.as_str()),
+    ];
+    assert_eq!(
+        recorder.gauge_value(OPERATIONAL_METRICS_ACCOUNT_ACTIVE, &new_labels),
+        Some(1)
+    );
+    assert_eq!(
+        recorder.gauge_f64_value(OPERATIONAL_METRICS_ACTIVITY_AGE, &new_labels),
+        Some(0.0)
+    );
+    assert_eq!(
+        recorder.gauge_value(
+            OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+            &[("account_id", old_account_id_label.as_str())]
+        ),
+        Some(0)
+    );
+    env.dbx
+        .execute_unprepared(
+            r#"update datasource set deleted = true
+               where kind in ('signal', 'whatsapp') or echo_client_lock_id is not null"#,
+        )
+        .await
+        .c(h!())?;
+    env.dbx
+        .execute_unprepared("update echo_client set deleted = true")
+        .await
+        .c(h!())?;
+    collect::collect(&env, &metrics.operational, now).await;
+    metrics.force_flush_for_test();
+    for name in [
+        OPERATIONAL_METRICS_ACCOUNT_LINKED,
+        OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+        OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+        OPERATIONAL_METRICS_ACTIVITY_AGE,
+    ] {
+        assert!(recorder.find(name).is_none());
+    }
+    for source in ["accounts", "datasources"] {
+        assert_eq!(
+            recorder.gauge_value(
+                OPERATIONAL_METRICS_AVAILABLE,
+                &[("source", source)]
+            ),
+            Some(1)
+        );
+    }
+    assert!(recorder
+        .find_with_attributes(OPERATIONAL_METRICS_ERRORS, &old_labels)
+        .is_some());
     Ok(())
 }
 
@@ -431,6 +536,7 @@ async fn operational_collection_cancels_blocked_queries_and_times_out_sources(
     let (metrics, recorder) = crate::telemetry::Metrics::recording(&env.config);
     let mut env = env.as_ref().clone();
     env.metrics = Some(metrics.clone());
+    seed_account(&env.dbx, Utc::now()).await.c(h!())?;
     let lock = env.dbx.begin().await.c(h!())?;
     lock.execute_unprepared("LOCK TABLE echo_account IN ACCESS EXCLUSIVE MODE")
         .await
@@ -485,5 +591,29 @@ async fn operational_collection_cancels_blocked_queries_and_times_out_sources(
         ),
         Some(1)
     );
+    let lock = env.dbx.begin().await.c(h!())?;
+    lock.execute_unprepared(
+        "LOCK TABLE echo_inbox_message IN ACCESS EXCLUSIVE MODE",
+    )
+    .await
+    .c(h!())?;
+    collect::collect(&env, &metrics.operational, Utc::now()).await;
+    metrics.force_flush_for_test();
+    assert_eq!(
+        recorder.gauge_value(
+            OPERATIONAL_METRICS_AVAILABLE,
+            &[("source", "accounts")]
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        recorder.gauge_value(
+            OPERATIONAL_METRICS_AVAILABLE,
+            &[("source", "datasources")]
+        ),
+        Some(0)
+    );
+    assert!(recorder.find(OPERATIONAL_METRICS_ACTIVITY_AGE).is_none());
+    lock.rollback().await.c(h!())?;
     Ok(())
 }

@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use opentelemetry::KeyValue;
 use sea_orm::{
     AccessMode, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    DatabaseTransaction, FromQueryResult, Statement, TransactionTrait,
+    DatabaseTransaction, FromQueryResult, IsolationLevel, Statement,
+    TransactionTrait,
 };
 
 use super::{Exporter, Snapshot};
@@ -23,9 +24,6 @@ pub(super) struct FilesystemProbe {
 impl FilesystemProbe {
     async fn read(&self) -> anyhow::Result<u64> {
         let mut pending = self.pending.lock().await;
-        if pending.as_ref().is_some_and(|read| read.is_finished()) {
-            *pending = None;
-        }
         let read = pending.get_or_insert_with(|| {
             tokio::task::spawn_blocking(
                 crate::server::monitoring::root_available_bytes,
@@ -106,7 +104,10 @@ pub(crate) async fn read_transaction(
     db: &DatabaseConnection,
 ) -> anyhow::Result<DatabaseTransaction> {
     let txn = db
-        .begin_with_config(None, Some(AccessMode::ReadOnly))
+        .begin_with_config(
+            Some(IsolationLevel::RepeatableRead),
+            Some(AccessMode::ReadOnly),
+        )
         .await
         .c(h!())?;
     txn.execute_unprepared(&format!(
@@ -118,8 +119,7 @@ pub(crate) async fn read_transaction(
     Ok(txn)
 }
 
-async fn inventory(db: &DatabaseConnection) -> anyhow::Result<Vec<Account>> {
-    let txn = read_transaction(db).await.c(h!())?;
+async fn inventory(txn: &DatabaseTransaction) -> anyhow::Result<Vec<Account>> {
     let accounts = Account::find_by_statement(Statement::from_string(DatabaseBackend::Postgres, r#"
         select d.id as datasource_id, a.id as account_id, c.id as client_id,
                coalesce(a.source::text, d.kind) as messenger,
@@ -142,8 +142,7 @@ async fn inventory(db: &DatabaseConnection) -> anyhow::Result<Vec<Account>> {
               select 1 from datasource d
               where d.echo_client_lock_id = l.id and not d.deleted
           )
-    "#)).all(&txn).await.c(h!())?;
-    txn.commit().await.c(h!())?;
+    "#)).all(txn).await.c(h!())?;
     Ok(accounts)
 }
 
@@ -152,28 +151,40 @@ async fn accounts_and_datasources(
     exporter: &Exporter,
     now: DateTime<Utc>,
 ) {
-    match bounded(inventory(&env.dbx)).await {
-        Ok(accounts) => {
-            exporter.publish(
-                "accounts",
-                now.timestamp_millis(),
-                Ok(account_snapshot(&accounts)),
-            );
-            initialize_errors(exporter, &accounts);
-            publish(
-                exporter,
-                "datasources",
-                now,
-                datasource_snapshot(&env.dbx, &accounts, now),
-            )
+    let inventory = bounded(async {
+        let txn = read_transaction(&env.dbx).await.c(h!())?;
+        let accounts = inventory(&txn).await.c(h!())?;
+        Ok((txn, accounts))
+    })
+    .await;
+    match inventory {
+        Ok((txn, accounts)) => {
+            let datasources = bounded(async {
+                let snapshot =
+                    datasource_snapshot(&txn, &accounts, now).await.c(h!())?;
+                txn.commit().await.c(h!())?;
+                Ok(snapshot)
+            })
             .await;
+            initialize_errors(exporter, &accounts);
+            exporter.publish_all(
+                now.timestamp_millis(),
+                [
+                    ("accounts", Ok(account_snapshot(&accounts))),
+                    ("datasources", datasources),
+                ],
+            );
         }
         Err(error) => {
-            exporter.publish("accounts", now.timestamp_millis(), Err(error));
-            exporter.publish(
-                "datasources",
+            exporter.publish_all(
                 now.timestamp_millis(),
-                Err(anyhow::anyhow!("account inventory unavailable")),
+                [
+                    ("accounts", Err(error)),
+                    (
+                        "datasources",
+                        Err(anyhow::anyhow!("account inventory unavailable")),
+                    ),
+                ],
             );
         }
     }
@@ -207,15 +218,13 @@ fn account_snapshot(accounts: &[Account]) -> Snapshot {
 }
 
 async fn datasource_snapshot(
-    db: &DatabaseConnection,
+    txn: &DatabaseTransaction,
     accounts: &[Account],
     now: DateTime<Utc>,
 ) -> anyhow::Result<Snapshot> {
-    let txn = read_transaction(db).await.c(h!())?;
-    let monitoring = echo_im::collect_monitoring_data_at(&txn, now)
+    let monitoring = echo_im::collect_monitoring_data_at(txn, now)
         .await
         .c(h!())?;
-    txn.commit().await.c(h!())?;
     let mut snapshot = Snapshot::default();
     for datasource in monitoring {
         for account in accounts.iter().filter(|account| {
@@ -288,4 +297,98 @@ async fn nlp(rq: &reqwest::Client) -> anyhow::Result<Snapshot> {
     let mut snapshot = Snapshot::default();
     snapshot.integer(OPERATIONAL_METRICS_NLP_READY, u64::from(ready), &[]);
     Ok(snapshot)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // https://github.com/echoua/echo/issues/4034
+    #[tokio::test]
+    async fn operational_filesystem_retains_a_probe_completed_after_timeout(
+    ) -> anyhow::Result<()> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let read = tokio::task::spawn_blocking(move || {
+            receiver.blocking_recv().c(h!())
+        });
+        let probe = FilesystemProbe {
+            pending: tokio::sync::Mutex::new(Some(read)),
+        };
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), probe.read())
+                .await
+                .is_err()
+        );
+        sender.send(42).unwrap();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !probe.pending.lock().await.as_ref().unwrap().is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .c(h!())?;
+        assert_eq!(probe.read().await.c(h!())?, 42);
+        assert!(probe.pending.lock().await.is_none());
+        Ok(())
+    }
+
+    // https://github.com/echoua/echo/issues/4034
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn operational_inventory_and_freshness_share_a_database_snapshot(
+    ) -> anyhow::Result<()> {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.c(h!())?;
+        let now = Utc::now();
+        let (account_id, datasource_id) =
+            super::super::tests::seed_account(&env.dbx, now)
+                .await
+                .c(h!())?;
+        let txn = read_transaction(&env.dbx).await.c(h!())?;
+        let accounts = inventory(&txn).await.c(h!())?;
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"update echo_client set deleted = true where id in (
+                    select client_id from echo_client_lock where account_id = $1
+                )"#,
+                [account_id.into()],
+            ))
+            .await
+            .c(h!())?;
+        let snapshot =
+            datasource_snapshot(&txn, &accounts, now).await.c(h!())?;
+        txn.commit().await.c(h!())?;
+        let (metrics, recorder) =
+            crate::telemetry::Metrics::recording(&env.config);
+        metrics.operational.publish_all(
+            now.timestamp_millis(),
+            [
+                ("accounts", Ok(account_snapshot(&accounts))),
+                ("datasources", Ok(snapshot)),
+            ],
+        );
+        let datasource_id = datasource_id.to_string();
+        let labels = [("datasource_id", datasource_id.as_str())];
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.gauge_value(OPERATIONAL_METRICS_ACCOUNT_ACTIVE, &labels),
+            Some(1)
+        );
+        assert_eq!(
+            recorder.gauge_f64_value(OPERATIONAL_METRICS_ACTIVITY_AGE, &labels),
+            Some(0.0)
+        );
+        collect(&env, &metrics.operational, now).await;
+        metrics.force_flush_for_test();
+        for name in [
+            OPERATIONAL_METRICS_ACCOUNT_LINKED,
+            OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+            OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+            OPERATIONAL_METRICS_ACTIVITY_AGE,
+        ] {
+            assert!(recorder.find_with_attributes(name, &labels).is_none());
+        }
+        Ok(())
+    }
 }

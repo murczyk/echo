@@ -226,13 +226,13 @@ async fn queue_metrics_nofail(env: Arc<Env>, cancel_token: CancellationToken) {
         return;
     };
     loop {
-        let result = tokio::time::timeout(
-            Duration::from_secs(OPERATIONAL_METRICS_TIMEOUT_SECS),
-            load_queue_metrics(&env.dbx),
-        )
-        .await
-        .c(h!())
-        .and_then(|result| result);
+        let result = tokio::select! {
+            _ = cancel_token.cancelled() => return,
+            result = tokio::time::timeout(
+                Duration::from_secs(OPERATIONAL_METRICS_TIMEOUT_SECS),
+                load_queue_metrics(&env.dbx),
+            ) => result.c(h!()).and_then(|result| result),
+        };
         match result {
             Ok(snapshot) => metrics.record_messenger_queue_state(
                 snapshot.depth,
@@ -298,4 +298,64 @@ from signal_message_queue
         due_depth: u64::try_from(due_depth).c(h!())?,
         oldest_age_seconds: row.try_get("", "oldest_age_seconds").c(h!())?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // https://github.com/echoua/echo/issues/4034
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn operational_queue_metrics_cancel_a_blocked_database_read(
+    ) -> anyhow::Result<()> {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.c(h!())?;
+        let (metrics, _) = crate::telemetry::Metrics::recording(&env.config);
+        let mut env = env.as_ref().clone();
+        env.metrics = Some(metrics);
+        let lock = env.dbx.begin().await.c(h!())?;
+        lock.execute_unprepared(
+            "LOCK TABLE signal_message_queue IN ACCESS EXCLUSIVE MODE",
+        )
+        .await
+        .c(h!())?;
+        let env = Arc::new(env);
+        let cancel = CancellationToken::new();
+        let worker =
+            tokio::spawn(queue_metrics_nofail(env.clone(), cancel.clone()));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let blocked = env
+                    .dbx
+                    .query_one_raw(Statement::from_string(
+                        DatabaseBackend::Postgres,
+                        r#"select exists (
+                            select 1 from pg_stat_activity
+                            where datname = current_database()
+                              and pid <> pg_backend_pid()
+                              and wait_event_type = 'Lock'
+                              and query like '%from signal_message_queue%'
+                        ) as blocked"#,
+                    ))
+                    .await
+                    .c(h!())?
+                    .c(h!())?;
+                if blocked.try_get::<bool>("", "blocked").c(h!())? {
+                    return anyhow::Ok(());
+                }
+                sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .c(h!())?
+        .c(h!())?;
+        cancel.cancel();
+        tokio::time::timeout(Duration::from_secs(1), worker)
+            .await
+            .c(h!())?
+            .c(h!())?;
+        lock.rollback().await.c(h!())?;
+        Ok(())
+    }
 }

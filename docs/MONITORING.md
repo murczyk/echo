@@ -302,7 +302,9 @@ Paused entities remain observable with active=0. Qualify inactivity/unlinked
 alerts by active=1. Pausing does not manufacture a linked or fresh state.
 Deleted Echo datasources disappear from the next successful inventory; a retained
 Echo IM account can remain as an unmapped account with active=0. Deleted Echo IM
-clients and removed accounts are omitted. An inventory failure omits state and
+clients and removal-requested account locks are omitted. Inventory and freshness
+use one read-only repeatable-read database snapshot, and their replacement
+snapshots are published together. An inventory failure omits state and
 sets availability=0; it does not imply deletion. Datasources with no corresponding
 monitoring account have no activity-age point; an absent age is unknown, not zero.
 The API's pre-existing population is unchanged, so API-only rows can exist.
@@ -347,9 +349,12 @@ Errors lacking account identity remain client-level; they are not assigned to a
 phone number or replicated into every account's series.
 
 Known report kinds and current Signal client/account error combinations publish
-zero counter series before their first error. Counters reset on restart; there
-is no historical replay. Abrupt exits can lose observations since the last
-60-second export. Report updates and metric export are not one atomic durable
+zero counter series before their first error. Cumulative error series retain
+their original identity labels after reassignment or removal until restart;
+their presence does not establish current account membership or activity.
+Use current available inventory to qualify account alerts. Counters reset on
+restart; there is no historical replay. Abrupt exits can lose observations since
+the last 60-second export. Report updates and metric export are not one atomic durable
 transaction; a crash between them can lose an event. Ordinary report failures,
 cancellations, and restart recovery do not increment the timeout counter.
 

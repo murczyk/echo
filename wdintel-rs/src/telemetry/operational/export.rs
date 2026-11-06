@@ -141,28 +141,40 @@ impl Exporter {
         timestamp: i64,
         result: anyhow::Result<Snapshot>,
     ) {
+        self.publish_all(timestamp, [(source, result)]);
+    }
+
+    pub(super) fn publish_all(
+        &self,
+        timestamp: i64,
+        results: impl IntoIterator<Item = (&'static str, anyhow::Result<Snapshot>)>,
+    ) {
         let mut sources = self
             .sources
             .write()
             .expect("operational snapshot lock available");
-        let previous = sources
-            .get(source)
-            .and_then(|previous| previous.last_success);
-        let (snapshot, last_success) = match result {
-            Ok(snapshot) => (Some(snapshot), Some(timestamp as f64 / 1_000.0)),
-            Err(error) => {
-                log::warn!("Operational metrics source={source} unavailable: {error:#}");
-                (None, previous)
-            }
-        };
-        sources.insert(
-            source,
-            Source {
-                updated: Instant::now(),
-                last_success,
-                snapshot,
-            },
-        );
+        for (source, result) in results {
+            let previous = sources
+                .get(source)
+                .and_then(|previous| previous.last_success);
+            let (snapshot, last_success) = match result {
+                Ok(snapshot) => {
+                    (Some(snapshot), Some(timestamp as f64 / 1_000.0))
+                }
+                Err(error) => {
+                    log::warn!("Operational metrics source={source} unavailable: {error:#}");
+                    (None, previous)
+                }
+            };
+            sources.insert(
+                source,
+                Source {
+                    updated: Instant::now(),
+                    last_success,
+                    snapshot,
+                },
+            );
+        }
     }
 }
 
