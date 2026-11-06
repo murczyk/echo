@@ -735,6 +735,10 @@ fn spawn_background_workers(
     spawn_named_worker("iggy_unit_refresh_worker", bg_set, async move {
         crate::iggy::unit_refresh::run_nofail(unit_refresh_env).await;
     });
+    let group_refresh_env = env.clone();
+    spawn_named_worker("iggy_group_refresh_worker", bg_set, async move {
+        crate::iggy::group_refresh::run_nofail(group_refresh_env).await;
+    });
     spawn_named_worker("aor_assignments_worker", bg_set, async move {
         crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10).await;
     });

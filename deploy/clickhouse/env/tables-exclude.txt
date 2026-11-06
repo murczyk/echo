@@ -176,6 +176,9 @@ public.transcription_source
 # Durable Iggy unit visibility refresh jobs.
 public.api_integration_iggy_unit_refresh
 
+# Durable Iggy group visibility refresh jobs.
+public.api_integration_iggy_group_refresh
+
 public.device_audio_forwarding_settings
 public.device_audio_forwarding_group
 public.device_audio_forwarding_delivery
