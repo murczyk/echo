@@ -1,6 +1,7 @@
 export { MessageFeed, MessageFeedRows, shouldShowNewestNavigation } from './MessageFeed';
 export type { MessageFeedNewestNavigation, MessageFeedProps } from './MessageFeed';
 export { MessageFeedItem } from './MessageFeedItem';
+export { MessageFeedScrollFab } from './MessageFeedScrollFab';
 export { MessageFeedSkeletons } from './MessageFeedSkeletons';
 export {
   FEED_FOLLOW_LAYOUT_STABLE_FRAMES,

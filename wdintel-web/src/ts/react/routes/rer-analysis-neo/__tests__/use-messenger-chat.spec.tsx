@@ -1,0 +1,332 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { MessengersMessageItem, MessengersMessagesListRsp } from '../../../../../Bindings';
+
+const apiMock = vi.hoisted(() => ({
+  listMessengersChatMembers: vi.fn(),
+  listMessengersMessages: vi.fn(),
+}));
+vi.mock('../../../services/api/analysis-messengers', () => apiMock);
+
+import { HttpRequestError } from '../../../services/api/client';
+import { MESSENGER_PAGE_SIZE } from '../messenger-chat-window';
+import { senderName, useMessengerChat } from '../use-messenger-chat';
+
+type State = ReturnType<typeof useMessengerChat>;
+
+const message = (id: string): MessengersMessageItem => ({
+  id,
+  externalId: id,
+  sentAt: 0,
+  text: id,
+  isOutgoing: null,
+  hasMedia: null,
+  senderChatMemberId: null,
+  attachments: [],
+  telegram: null,
+});
+const rsp = (
+  ids: string[],
+  olderCursor: string | null,
+  newerCursor: string | null,
+): MessengersMessagesListRsp => ({ items: ids.map(message), olderCursor, newerCursor });
+
+describe('useMessengerChat', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let latest: State;
+
+  function Probe({ anchor = null }: { anchor?: string | null }) {
+    latest = useMessengerChat({ accountId: 'a1', chatId: 'c1', anchorMessageId: anchor });
+    return null;
+  }
+  const ids = () => latest.messages.map((m) => m.id);
+  const mount = (anchor: string | null = null) =>
+    act(async () => root.render(<Probe anchor={anchor} />));
+
+  beforeEach(() => {
+    apiMock.listMessengersChatMembers.mockReset().mockResolvedValue({ items: [] });
+    apiMock.listMessengersMessages.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it('loads the newest page oldest-first when there is no anchor', async () => {
+    apiMock.listMessengersMessages.mockResolvedValueOnce(rsp(['c', 'b', 'a'], 'o', 'n'));
+    await mount();
+    expect(apiMock.listMessengersMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'a1',
+        chatId: 'c1',
+        cursor: null,
+        aroundMessageId: null,
+      }),
+      expect.anything(),
+    );
+    expect(ids()).toEqual(['a', 'b', 'c']);
+    expect(latest.loading).toBe(false);
+    expect(latest.hasMoreAbove).toBe(true);
+    expect(latest.hasMoreBelow).toBe(false);
+  });
+
+  it('opens around the anchor and keeps loading below', async () => {
+    apiMock.listMessengersMessages.mockResolvedValueOnce(
+      rsp(
+        Array.from({ length: MESSENGER_PAGE_SIZE }, (_, i) => `m${MESSENGER_PAGE_SIZE - i}`),
+        'o',
+        'n',
+      ),
+    );
+    await mount('m10');
+    expect(apiMock.listMessengersMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ aroundMessageId: 'm10' }),
+      expect.anything(),
+    );
+    expect(latest.hasMoreBelow).toBe(true);
+  });
+
+  it('falls back to the newest page when the anchor is not visible any more', async () => {
+    apiMock.listMessengersMessages
+      .mockRejectedValueOnce(new HttpRequestError(404, 'Not found'))
+      .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n'));
+    await mount('gone');
+    expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ aroundMessageId: null }),
+      expect.anything(),
+    );
+    expect(ids()).toEqual(['a', 'b']);
+    expect(latest.error).toBeNull();
+  });
+
+  it('reports other anchor failures as an error', async () => {
+    apiMock.listMessengersMessages.mockRejectedValueOnce(new HttpRequestError(500, 'boom'));
+    await mount('x');
+    expect(latest.error).toBe('boom');
+    expect(latest.loading).toBe(false);
+    expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a failed first load', async () => {
+    apiMock.listMessengersMessages
+      .mockRejectedValueOnce(new HttpRequestError(500, 'boom'))
+      .mockResolvedValueOnce(rsp(['a'], null, 'n'));
+    await mount();
+    await act(async () => latest.retry());
+    expect(latest.error).toBeNull();
+    expect(ids()).toEqual(['a']);
+  });
+
+  it('still shows messages when the members request fails', async () => {
+    apiMock.listMessengersChatMembers.mockRejectedValueOnce(new Error('nope'));
+    apiMock.listMessengersMessages.mockResolvedValueOnce(rsp(['a'], null, 'n'));
+    await mount();
+    expect(ids()).toEqual(['a']);
+    expect(latest.memberById.size).toBe(0);
+  });
+
+  it('indexes members by id', async () => {
+    apiMock.listMessengersChatMembers.mockResolvedValueOnce({
+      items: [{ id: 'm1', externalId: '7' }],
+    });
+    apiMock.listMessengersMessages.mockResolvedValueOnce(rsp(['a'], null, 'n'));
+    await mount();
+    expect(latest.memberById.get('m1')?.externalId).toBe('7');
+  });
+
+  it('prepends older messages with the older cursor', async () => {
+    apiMock.listMessengersMessages
+      .mockResolvedValueOnce(rsp(['d', 'c'], 'o1', 'n1'))
+      .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n2'));
+    await mount();
+    await act(async () => latest.loadOlder());
+    expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cursor: 'o1', direction: 'Older' }),
+      expect.anything(),
+    );
+    expect(ids()).toEqual(['a', 'b', 'c', 'd']);
+    expect(latest.hasMoreAbove).toBe(false);
+  });
+
+  it('appends newer messages with the newer cursor', async () => {
+    apiMock.listMessengersMessages
+      .mockResolvedValueOnce(
+        rsp(
+          Array.from({ length: MESSENGER_PAGE_SIZE }, (_, i) => `m${MESSENGER_PAGE_SIZE - i}`),
+          'o',
+          'n1',
+        ),
+      )
+      .mockResolvedValueOnce(rsp(['x'], 'o2', 'n2'));
+    await mount('m10');
+    await act(async () => latest.loadNewer());
+    expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cursor: 'n1', direction: 'Newer' }),
+      expect.anything(),
+    );
+    expect(ids().at(-1)).toBe('x');
+    expect(latest.hasMoreBelow).toBe(false);
+  });
+
+  it('does not request when there is nothing in that direction', async () => {
+    apiMock.listMessengersMessages.mockResolvedValueOnce(rsp(['a'], null, 'n'));
+    await mount();
+    await act(async () => latest.loadOlder());
+    await act(async () => latest.loadNewer());
+    // The newest page still carries a newer cursor, but it is already the chat end.
+    expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start a second request in the same direction while one is running', async () => {
+    let resolve!: (value: MessengersMessagesListRsp) => void;
+    apiMock.listMessengersMessages
+      .mockResolvedValueOnce(rsp(['b'], 'o1', 'n1'))
+      .mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    await mount();
+    await act(async () => {
+      void latest.loadOlder();
+      void latest.loadOlder();
+    });
+    expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(2);
+    expect(latest.loadingAbove).toBe(true);
+    await act(async () => resolve(rsp(['a'], null, 'n0')));
+    expect(latest.loadingAbove).toBe(false);
+  });
+
+  it('stops paging after a failure until the error is cleared', async () => {
+    apiMock.listMessengersMessages
+      .mockResolvedValueOnce(rsp(['b'], 'o1', 'n1'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(rsp(['a'], null, 'n0'));
+    await mount();
+    await act(async () => latest.loadOlder());
+    expect(latest.pagingError).toBe('offline');
+    await act(async () => latest.loadOlder());
+    expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(2);
+    await act(async () => latest.clearPagingError());
+    await act(async () => latest.loadOlder());
+    expect(ids()).toEqual(['a', 'b']);
+  });
+
+  const fullPage = () =>
+    rsp(
+      Array.from({ length: MESSENGER_PAGE_SIZE }, (_, i) => `m${MESSENGER_PAGE_SIZE - i}`),
+      'o',
+      'n1',
+    );
+
+  describe('go to the end', () => {
+    it('replaces the window with the newest page and drops a page request in flight', async () => {
+      let resolveOlder!: (value: MessengersMessagesListRsp) => void;
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockReturnValueOnce(new Promise((r) => (resolveOlder = r)))
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'));
+      await mount('m10');
+      expect(latest.hasMoreBelow).toBe(true);
+      await act(async () => {
+        void latest.loadOlder();
+      });
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await latest.goToEnd();
+      });
+      expect(ok).toBe(true);
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: null, aroundMessageId: null }),
+        expect.anything(),
+      );
+      expect(ids()).toEqual(['y', 'z']);
+      expect(latest.hasMoreBelow).toBe(false);
+      await act(async () => resolveOlder(rsp(['stale'], null, 'n0')));
+      expect(ids()).toEqual(['y', 'z']);
+    });
+
+    it('fetches what arrived since when the newest page is already loaded', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n1'))
+        .mockResolvedValueOnce(rsp(['c'], 'o2', 'n2'));
+      await mount();
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await latest.goToEnd();
+      });
+      expect(ok).toBe(true);
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'n1', direction: 'Newer' }),
+        expect.anything(),
+      );
+      expect(ids()).toEqual(['a', 'b', 'c']);
+      expect(latest.hasMoreBelow).toBe(false);
+    });
+
+    it('keeps the window when nothing new arrived', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n1'))
+        .mockResolvedValueOnce(rsp([], null, 'n1'));
+      await mount();
+      await act(async () => void (await latest.goToEnd()));
+      expect(ids()).toEqual(['a', 'b']);
+      expect(latest.hasMoreBelow).toBe(false);
+    });
+
+    it('reports a failure, so the view does not scroll to a stale end', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n1'))
+        .mockRejectedValueOnce(new Error('offline'));
+      await mount();
+      let ok: boolean | undefined;
+      await act(async () => {
+        ok = await latest.goToEnd();
+      });
+      expect(ok).toBe(false);
+      expect(latest.pagingError).toBe('offline');
+      expect(latest.jumpingToEnd).toBe(false);
+      expect(ids()).toEqual(['a', 'b']);
+    });
+
+    it('shows the jump as running until the request is done', async () => {
+      let resolve!: (value: MessengersMessagesListRsp) => void;
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n1'))
+        .mockReturnValueOnce(new Promise((r) => (resolve = r)));
+      await mount();
+      await act(async () => {
+        void latest.goToEnd();
+      });
+      expect(latest.jumpingToEnd).toBe(true);
+      await act(async () => resolve(rsp([], null, 'n1')));
+      expect(latest.jumpingToEnd).toBe(false);
+    });
+  });
+});
+
+describe('senderName', () => {
+  const member = (patch: object) =>
+    ({
+      externalId: '7',
+      firstName: null,
+      lastName: null,
+      username: null,
+      phone: null,
+      ...patch,
+    }) as never;
+
+  it('prefers the full name, then username, phone and external id', () => {
+    expect(senderName(member({ firstName: 'Ivan', lastName: 'P', username: 'ip' }))).toBe('Ivan P');
+    expect(senderName(member({ lastName: 'P' }))).toBe('P');
+    expect(senderName(member({ username: 'ip', phone: '+1' }))).toBe('ip');
+    expect(senderName(member({ phone: '+1' }))).toBe('+1');
+    expect(senderName(member({}))).toBe('7');
+  });
+});

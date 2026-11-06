@@ -244,7 +244,8 @@ a {
   z-index: 3;
 }
 
-.message-card-root .message-card-thumbnail-control {
+.message-card-root .message-card-thumbnail-control,
+[data-messenger-message] .message-card-thumbnail-control {
   overflow: hidden;
   border-radius: 8px;
 }
@@ -303,7 +304,8 @@ html[data-bs-theme='dark'] .message-card-root {
   line-height: inherit;
 }
 
-.message-card-root .audio-transcription {
+.message-card-root .audio-transcription,
+[data-messenger-message] .audio-transcription {
   font-size: var(--message-card-primary-font-size);
   line-height: 1.5;
 }
@@ -425,6 +427,12 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-previews-large .message-card-root {
   --message-card-attachment-tile-size: 144px;
+}
+
+/* Analysis messenger chat bubbles are not message cards, but reuse the attachment tiles. */
+[data-messenger-message] {
+  --message-card-attachment-tile-size: 144px;
+  --message-card-primary-font-size: 0.875rem;
 }
 
 [data-message-card-text-size='large'] .message-card-root {

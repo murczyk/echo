@@ -9,7 +9,7 @@ export type MessengerAccountItem = {
   // Internal description, editable by the operator.
   internalNotes?: string | null;
   avatarUrl?: string | null;
-  // The account's id inside the messenger itself (Telegram user id).
+  // The account's id inside the external messenger app itself (Telegram user id).
   userId?: string | null;
   // The account's id in the external system.
   externalId?: string | null;

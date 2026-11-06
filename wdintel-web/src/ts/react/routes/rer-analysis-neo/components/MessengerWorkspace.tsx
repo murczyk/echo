@@ -1,10 +1,11 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Collapse, Tooltip } from '@mui/material';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { copyTextToClipboard } from '../../../../copy-to-clipboard';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { formatDate } from '../../../utils/misc';
+import { parseMessengerChatQueryFromWindow, replaceMessengerChatQueryInUrl } from '../helpers';
 import {
   chatSectionOf,
   type MessengerChat,
@@ -12,6 +13,7 @@ import {
   type MessengerChatSection,
 } from '../use-messenger-chats';
 import { MessengerAccountAvatar, type MessengerAccountItem } from './MessengerAccountList';
+import { MessengerChatView } from './MessengerChatView';
 import { MessengerInfoCard } from './MessengerInfoCard';
 import { MessengerNoteCard } from './MessengerNoteCard';
 import { MessengerSearchField } from './MessengerSearchField';
@@ -26,7 +28,7 @@ type Props = {
 // A generic cap until the backend defines its own limit.
 const INTERNAL_NOTES_MAX_LENGTH = 512;
 
-// shortcut: navigation and the main area stay static until messages and contacts are wired.
+// shortcut: the analysis messenger navigation and the main area stay static until messages and contacts are wired.
 const NAV_ITEMS = ['Галерея', 'Контакти'] as const;
 const CHAT_SECTIONS: ReadonlyArray<{ key: MessengerChatSection; title: string }> = [
   { key: 'private', title: 'Приватні' },
@@ -65,7 +67,17 @@ function CopyValue({
   );
 }
 
-function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }) {
+function ChatSection({
+  title,
+  chats,
+  selectedChatId,
+  onSelectChat,
+}: {
+  title: string;
+  chats: MessengerChat[];
+  selectedChatId: string | null;
+  onSelectChat: (chatId: string) => void;
+}) {
   const [open, setOpen] = useState(true);
   return (
     <section>
@@ -87,7 +99,14 @@ function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }
           <ul className="m-0 list-none p-0">
             {chats.map((chat) => (
               <li key={chat.id}>
-                <div className="group-navigation-list-item" data-messenger-chat>
+                <button
+                  type="button"
+                  className="group-navigation-list-item"
+                  data-messenger-chat
+                  data-selected={chat.id === selectedChatId ? 'true' : 'false'}
+                  aria-current={chat.id === selectedChatId ? 'true' : undefined}
+                  onClick={() => onSelectChat(chat.id)}
+                >
                   <MessengerAccountAvatar
                     account={{ id: chat.id, name: chatLabel(chat), phone: '' }}
                   />
@@ -101,7 +120,7 @@ function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }
                       </span>
                     ) : null}
                   </span>
-                </div>
+                </button>
               </li>
             ))}
           </ul>
@@ -111,9 +130,18 @@ function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }
   );
 }
 
-function MessengerSidebar({ account }: { account: MessengerAccountItem }) {
+function MessengerSidebar({
+  account,
+  chatsState: { chats, loading, error, retry },
+  selectedChatId,
+  onSelectChat,
+}: {
+  account: MessengerAccountItem;
+  chatsState: ReturnType<typeof useMessengerChats>;
+  selectedChatId: string | null;
+  onSelectChat: (chatId: string) => void;
+}) {
   const [query, setQuery] = useState('');
-  const { chats, loading, error, retry } = useMessengerChats(account.id);
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? chats.filter((chat) =>
@@ -190,6 +218,8 @@ function MessengerSidebar({ account }: { account: MessengerAccountItem }) {
             key={key}
             title={title}
             chats={visible.filter((chat) => chatSectionOf(chat) === key)}
+            selectedChatId={selectedChatId}
+            onSelectChat={onSelectChat}
           />
         ))
       )}
@@ -215,23 +245,78 @@ export function MessengerWorkspace({ account, loading = false, onSaveInternalNot
     );
   }
   return (
+    <MessengerAccountWorkspace
+      key={account.id}
+      account={account}
+      onSaveInternalNotes={onSaveInternalNotes}
+    />
+  );
+}
+
+// Everything that belongs to one analysis messenger account: its chats, the open chat and the account cards.
+function MessengerAccountWorkspace({
+  account,
+  onSaveInternalNotes,
+}: {
+  account: MessengerAccountItem;
+  onSaveInternalNotes?: Props['onSaveInternalNotes'];
+}) {
+  const chatsState = useMessengerChats(account.id);
+  // The analysis messenger chat and its position come from the URL once, on mount; after that the chat view owns them.
+  const [selected, setSelected] = useState(() => parseMessengerChatQueryFromWindow(account.id));
+  const chat = chatsState.chats.find((item) => item.id === selected.chatId) ?? null;
+  // A failed chat list proves nothing, so a shared link survives it and opens after a retry.
+  const chatMissing =
+    selected.chatId != null && !chatsState.loading && chatsState.error == null && chat == null;
+
+  const selectChat = (chatId: string | null) => {
+    setSelected({ chatId, anchorMessageId: null });
+    if (chatId == null) replaceMessengerChatQueryInUrl({ chatId: null, anchorMessageId: null });
+  };
+
+  // A shared analysis messenger link to a chat that is gone, or that this login cannot see, opens the account instead.
+  useEffect(() => {
+    if (chatMissing) selectChat(null);
+  }, [chatMissing]);
+
+  return (
     <div className="flex h-full min-h-0" data-messenger-workspace>
-      <MessengerSidebar key={account.id} account={account} />
-      <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-        <MessengerNoteCard
-          key={`internal-${account.id}`}
-          title="Внутрішній опис"
-          maxLength={INTERNAL_NOTES_MAX_LENGTH}
-          text={account.internalNotes}
-          onSave={
-            onSaveInternalNotes == null
-              ? undefined
-              : (internalNotes) => onSaveInternalNotes(account.id, internalNotes)
-          }
+      <MessengerSidebar
+        account={account}
+        chatsState={chatsState}
+        selectedChatId={selected.chatId}
+        onSelectChat={selectChat}
+      />
+      {chat != null ? (
+        <MessengerChatView
+          key={chat.id}
+          account={account}
+          chat={chat}
+          title={chatLabel(chat)}
+          initialAnchorId={selected.anchorMessageId}
+          onBack={() => selectChat(null)}
         />
-        <MessengerNoteCard title="Опис" text={account.notes} />
-        <MessengerInfoCard account={account} />
-      </main>
+      ) : selected.chatId != null && chatsState.loading ? (
+        <p className="p-4 opacity-60" role="status">
+          Завантажуємо чат…
+        </p>
+      ) : (
+        <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+          <MessengerNoteCard
+            key={`internal-${account.id}`}
+            title="Внутрішній опис"
+            maxLength={INTERNAL_NOTES_MAX_LENGTH}
+            text={account.internalNotes}
+            onSave={
+              onSaveInternalNotes == null
+                ? undefined
+                : (internalNotes) => onSaveInternalNotes(account.id, internalNotes)
+            }
+          />
+          <MessengerNoteCard title="Опис" text={account.notes} />
+          <MessengerInfoCard account={account} />
+        </main>
+      )}
     </div>
   );
 }

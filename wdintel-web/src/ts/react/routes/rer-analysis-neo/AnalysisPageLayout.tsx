@@ -457,7 +457,7 @@ export function RerAnalysisNeoPage({
           />
         </Box>
 
-        {/* Echo loads keep running behind the messenger workspace, so their errors stay hidden there. */}
+        {/* Echo loads keep running behind the analysis messenger workspace, so their errors stay hidden there. */}
         {page.error && page.leftPanelTab !== LeftPanelTab.Messenger ? (
           <PowerAlert severity="error" role="alert" sx={{ mx: { xs: 1, lg: 2 } }}>
             {page.error}

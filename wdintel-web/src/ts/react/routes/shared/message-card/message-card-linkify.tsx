@@ -4,12 +4,16 @@ import type { SignalGroupEntry } from '../../../../../Bindings';
 import { MessageReferenceLink } from './MessageReferenceLink';
 
 const URL_RE = /https?:\/\/[^\s<>"'`]+/gi;
+// Messengers also link a bare `www.` address; the lookbehind keeps it out of words and e-mail addresses.
+const URL_WITH_WWW_RE = /(?:https?:\/\/|(?<![\w.@/-])www\.(?=[^\s<>"'`.]))[^\s<>"'`]+/gi;
 const TRAILING_PUNCTUATION_RE = /[.,;:!?]+$/;
 const TRAILING_CLOSER_RE = /[)\]}]+$/;
 const MESSAGE_REFERENCE_PATHS = new Set(['/rer-analysis-neo', '/rer-duty-neo']);
 const EMPTY_GROUP_INFOS: Record<string, SignalGroupEntry> = {};
 
 type LinkifiedTextOptions = {
+  // Also link addresses that start with `www.` (opened as https). Off by default.
+  linkWww?: boolean;
   currentOrigin?: string;
   groupInfos?: Record<string, SignalGroupEntry>;
 };
@@ -76,7 +80,7 @@ function trimTrailingCharacters(candidate: string): { url: string; suffix: strin
 
 function toSafeUrl(candidate: string): string | null {
   try {
-    const url = new URL(candidate);
+    const url = new URL(/^www\./i.test(candidate) ? `https://${candidate}` : candidate);
     return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null;
   } catch {
     return null;
@@ -89,7 +93,7 @@ export function renderLinkifiedText(text: string, options: LinkifiedTextOptions 
   const renderedNodes: ReactNode[] = [];
   let lastIndex = 0;
 
-  for (const match of text.matchAll(URL_RE)) {
+  for (const match of text.matchAll(options.linkWww ? URL_WITH_WWW_RE : URL_RE)) {
     const rawUrl = match[0];
     const matchIndex = match.index ?? 0;
     if (matchIndex > lastIndex) {

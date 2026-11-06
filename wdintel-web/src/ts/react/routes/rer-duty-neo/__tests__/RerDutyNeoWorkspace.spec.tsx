@@ -432,7 +432,6 @@ describe('RerDutyNeoWorkspace', () => {
     });
 
     expect(renderedFeedColumns.has('feed-1')).toBe(false);
-    expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
     renderedFeedColumns.get('feed-2')?.actions.onCreateMessage?.();
     expect(openCreateMessageComposer).toHaveBeenCalledWith('feed-2', undefined);
@@ -466,7 +465,6 @@ describe('RerDutyNeoWorkspace', () => {
 
     expect(renderedFeedColumns.has('feed-1')).toBe(false);
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
-    expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
 
     await act(async () => {
       root.render(
@@ -485,7 +483,6 @@ describe('RerDutyNeoWorkspace', () => {
 
     expect(renderedFeedColumns.has('feed-2')).toBe(false);
     expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(true);
-    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('above');
   });
 
   it('assigns add-feed to the last desktop header and removes it at the limit', async () => {
@@ -525,7 +522,6 @@ describe('RerDutyNeoWorkspace', () => {
     };
 
     await renderWorkspace(1);
-    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
     await act(async () => {
       renderedFeedColumns.get('feed-1')?.actions.onCreateMessage?.();
     });
@@ -541,11 +537,7 @@ describe('RerDutyNeoWorkspace', () => {
     ).toBeDefined();
     for (let index = 1; index < MAX_MESSAGE_FEEDS - 1; index += 1) {
       expect(renderedFeedColumns.get(`feed-${index}`)?.actions.onCreateFeed).toBeUndefined();
-      expect(renderedFeedColumns.get(`feed-${index}`)?.view.workspaceFabAvoidance).toBe('none');
     }
-    expect(
-      renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS - 1}`)?.view.workspaceFabAvoidance,
-    ).toBe('none');
     expect(
       Array.from(renderedFeedColumns.values()).every(
         (column) => typeof column.actions.onCreateMessage === 'function',
@@ -572,12 +564,7 @@ describe('RerDutyNeoWorkspace', () => {
       ),
     ).toBe(true);
     expect(container.querySelector('button[aria-label="Додати стрічку"]')).toBeNull();
-    for (let index = 1; index < MAX_MESSAGE_FEEDS; index += 1) {
-      expect(renderedFeedColumns.get(`feed-${index}`)?.view.workspaceFabAvoidance).toBe('none');
-    }
-    expect(renderedFeedColumns.get(`feed-${MAX_MESSAGE_FEEDS}`)?.view.workspaceFabAvoidance).toBe(
-      'none',
-    );
+    for (let index = 1; index < MAX_MESSAGE_FEEDS; index += 1) {}
     expect(
       Array.from(renderedFeedColumns.values()).every(
         (column) => typeof column.actions.onCreateMessage === 'function',

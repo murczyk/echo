@@ -56,6 +56,9 @@ const MESSAGES_PAGE_PARAM = 'messagesPage';
 const GROUP_SCOPE_PARAM = 'group';
 const LEFT_PANEL_TAB_PARAM = 'leftPanelTab';
 const MESSENGER_ACCOUNT_PARAM = 'messengerAccount';
+const MESSENGER_CHAT_PARAM = 'messengerChat';
+// The first message the reader has in view in an analysis messenger chat; reopening the URL starts the chat there.
+const MESSENGER_ANCHOR_PARAM = 'messengerAnchor';
 
 export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
@@ -255,7 +258,7 @@ export type MessengerQueryState = {
   messengerAccountId: string | null;
 };
 
-// The account only means something inside the messenger tab, so it is ignored elsewhere.
+// The account only means something inside the analysis messenger tab, so it is ignored elsewhere.
 export function parseMessengerQueryStateFromWindow(): MessengerQueryState {
   if (typeof window === 'undefined') {
     return { leftPanelTab: LeftPanelTab.EchoGroups, messengerAccountId: null };
@@ -275,11 +278,18 @@ export function replaceMessengerQueryStateInUrl(state: MessengerQueryState): voi
   const url = new URL(window.location.href);
   if (state.leftPanelTab === LeftPanelTab.Messenger) {
     url.searchParams.set(LEFT_PANEL_TAB_PARAM, state.leftPanelTab);
+    // The chat belongs to its account, so another account never inherits it.
+    if (url.searchParams.get(MESSENGER_ACCOUNT_PARAM) !== state.messengerAccountId) {
+      url.searchParams.delete(MESSENGER_CHAT_PARAM);
+      url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
+    }
     if (state.messengerAccountId == null) url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
     else url.searchParams.set(MESSENGER_ACCOUNT_PARAM, state.messengerAccountId);
   } else {
     url.searchParams.delete(LEFT_PANEL_TAB_PARAM);
     url.searchParams.delete(MESSENGER_ACCOUNT_PARAM);
+    url.searchParams.delete(MESSENGER_CHAT_PARAM);
+    url.searchParams.delete(MESSENGER_ANCHOR_PARAM);
   }
   const query = url.searchParams.toString();
   const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
@@ -926,4 +936,50 @@ export function queryStateMatchesSavedFilter(
   if (isNullOrUndefined(stateKey) || isNullOrUndefined(savedFilterKey)) return false;
 
   return stateKey === savedFilterKey;
+}
+
+export type MessengerChatQueryState = {
+  chatId: string | null;
+  anchorMessageId: string | null;
+};
+
+// The analysis messenger chat only counts for the account it was written with, so a stale link cannot open it elsewhere.
+export function parseMessengerChatQueryFromWindow(accountId: string): MessengerChatQueryState {
+  const none = { chatId: null, anchorMessageId: null };
+  if (typeof window === 'undefined') return none;
+  const searchParams = new URL(window.location.href).searchParams;
+  if (searchParams.get(MESSENGER_ACCOUNT_PARAM)?.trim() !== accountId) return none;
+  const chatId = searchParams.get(MESSENGER_CHAT_PARAM)?.trim() || null;
+  if (chatId == null) return none;
+  return { chatId, anchorMessageId: searchParams.get(MESSENGER_ANCHOR_PARAM)?.trim() || null };
+}
+
+// Position changes while reading, so this only ever replaces the history entry. After a navigation to
+// another route the page may still be mounted for a moment, so only its own route is ever written.
+export function replaceMessengerChatQueryInUrl(state: MessengerChatQueryState): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (url.pathname.replace(/\/+$/, '') !== `/${ANALYSIS_ROUTE_PAGE_ID}`) return;
+  if (!url.searchParams.has(MESSENGER_ACCOUNT_PARAM)) return;
+  const entries = [
+    [MESSENGER_CHAT_PARAM, state.chatId],
+    // Without a chat there is nothing to be positioned in.
+    [MESSENGER_ANCHOR_PARAM, state.chatId == null ? null : state.anchorMessageId],
+  ] as const;
+  for (const [param, value] of entries) {
+    if (value == null) url.searchParams.delete(param);
+    else url.searchParams.set(param, value);
+  }
+  const query = url.searchParams.toString();
+  const href = `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`;
+  if (href === `${window.location.pathname}${window.location.search}${url.hash}`) return;
+  window.history.replaceState(window.history.state, '', href);
+}
+
+// A shareable URL that opens the analysis messenger chat at the given message.
+export function buildMessengerChatLink(chatId: string, anchorMessageId: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set(MESSENGER_CHAT_PARAM, chatId);
+  url.searchParams.set(MESSENGER_ANCHOR_PARAM, anchorMessageId);
+  return url.toString();
 }

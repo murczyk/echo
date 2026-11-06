@@ -28,7 +28,7 @@ export function toMessengerAccountItem(account: MessengersAccountItem): Messenge
   };
 }
 
-// Loads only while `enabled`, so users without access never hit the endpoint.
+// Loads the analysis messenger accounts only while `enabled`, so users without access never hit the endpoint.
 export function useMessengerAccounts(enabled: boolean) {
   const [accounts, setAccounts] = useState<MessengerAccountItem[]>([]);
   const [loaded, setLoaded] = useState(false);

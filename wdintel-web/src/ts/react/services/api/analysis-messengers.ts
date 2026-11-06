@@ -2,13 +2,17 @@ import type {
   MessengersAccountUpdateReq,
   MessengersAccountsListRsp,
   MessengersChatsListReq,
+  MessengersChatMembersListReq,
+  MessengersChatMembersListRsp,
   MessengersChatsListRsp,
+  MessengersMessagesListReq,
+  MessengersMessagesListRsp,
 } from '../../../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { postJson, postVoid } from './client';
 import type { RequestOptions } from './client';
 
-// Read-only messengers viewer API for the analysis page, `/api/messengers`. Requires the CyberMessengers role.
+// Read-only analysis messenger viewer API, `/api/messengers`. Requires the CyberMessengers role.
 
 export async function listMessengersAccounts(
   options?: RequestOptions,
@@ -32,5 +36,28 @@ export async function listMessengersChats(
 ): Promise<MessengersChatsListRsp> {
   return transformSnakeToCamel<MessengersChatsListRsp>(
     await postJson<unknown>('/api/messengers/chats/list', transformCamelToSnake(req), options),
+  );
+}
+
+export async function listMessengersChatMembers(
+  req: MessengersChatMembersListReq,
+  options?: RequestOptions,
+): Promise<MessengersChatMembersListRsp> {
+  return transformSnakeToCamel<MessengersChatMembersListRsp>(
+    await postJson<unknown>(
+      '/api/messengers/chats/members/list',
+      transformCamelToSnake(req),
+      options,
+    ),
+  );
+}
+
+// One page of analysis messenger messages, newest first. Cursors are opaque; see docs/MESSENGERS_API.md for the paging modes.
+export async function listMessengersMessages(
+  req: MessengersMessagesListReq,
+  options?: RequestOptions,
+): Promise<MessengersMessagesListRsp> {
+  return transformSnakeToCamel<MessengersMessagesListRsp>(
+    await postJson<unknown>('/api/messengers/messages/list', transformCamelToSnake(req), options),
   );
 }

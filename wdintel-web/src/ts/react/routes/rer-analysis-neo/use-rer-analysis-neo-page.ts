@@ -202,7 +202,7 @@ export function useRerAnalysisNeoPage(
     'loading',
   );
   // Wait for the user: before the role is known the tab reads as echo groups, and writing that
-  // would strip a shared messenger link from the URL.
+  // would strip a shared analysis messenger link from the URL.
   useEffect(() => {
     if (currentUserStatus !== 'success' || !ownsWindowUrl()) return;
     replaceMessengerQueryStateInUrl(

@@ -204,6 +204,134 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(feedRef.current?.highlightLinkedMessage('123')).toBe(true);
   });
 
+  describe('default jump-to-newest control', () => {
+    const scrollOptions = {
+      hasReachedStart: true,
+      onLoadOlder: () => undefined,
+      autoScrollAllowed: false,
+    };
+    const renderFeed = (
+      newestNavigation: React.ComponentProps<typeof MessageFeed>['newestNavigation'],
+      onCreateMessage?: () => void,
+    ) =>
+      act(async () =>
+        root.render(
+          <MessageFeed
+            items={[1, 2]}
+            getMessageId={getId}
+            scrollOptions={scrollOptions}
+            newestNavigation={newestNavigation}
+            onCreateMessage={onCreateMessage}
+          >
+            <div data-message-id="1">first</div>
+            <div data-message-id="2">second</div>
+          </MessageFeed>,
+        ),
+      );
+    const fab = () => container.querySelector<HTMLButtonElement>('[data-message-feed-scroll-fab]');
+
+    it('shows the shared arrow while the newest message is not loaded and calls the handler', async () => {
+      const onClick = vi.fn();
+      await renderFeed({ edge: 'bottom', newestLoaded: false, onClick, label: 'To the end' });
+      expect(fab()?.getAttribute('aria-label')).toBe('To the end');
+      await act(async () => fab()?.click());
+      expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('applies the host class names next to the default placement class', async () => {
+      await renderFeed({
+        edge: 'bottom',
+        newestLoaded: false,
+        onClick: () => undefined,
+        className: '[--message-feed-fab-right:32px]',
+      });
+      const wrapper = container.querySelector<HTMLElement>('[data-message-feed-floating-controls]');
+      expect(wrapper?.className).toContain('[--message-feed-fab-right:32px]');
+      expect(wrapper?.className).toContain('message-feed-floating-controls');
+      expect(wrapper?.dataset.edge).toBe('bottom');
+    });
+
+    it('stacks the create button under the arrow and leaves it alone when the arrow is hidden', async () => {
+      const onCreateMessage = vi.fn();
+      await renderFeed(
+        { edge: 'bottom', newestLoaded: false, onClick: () => undefined },
+        onCreateMessage,
+      );
+      const stack = container.querySelector(
+        '[data-message-feed-floating-controls][data-edge="bottom"]',
+      );
+      const buttons = [...(stack?.querySelectorAll('button') ?? [])];
+      expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+        'До найновіших повідомлень',
+        'Додати повідомлення',
+      ]);
+
+      await renderFeed(
+        { edge: 'bottom', newestLoaded: true, onClick: () => undefined },
+        onCreateMessage,
+      );
+      expect(fab()).toBeNull();
+      expect(
+        container.querySelector(
+          '[data-message-feed-floating-controls] button[aria-label="Додати повідомлення"]',
+        ),
+      ).not.toBeNull();
+    });
+
+    it('passes the clicked create button to the handler and shows no button without a handler', async () => {
+      const onCreateMessage = vi.fn();
+      await renderFeed(
+        { edge: 'bottom', newestLoaded: true, onClick: () => undefined },
+        onCreateMessage,
+      );
+      const create = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Додати повідомлення"]',
+      );
+      await act(async () => create?.click());
+      expect(onCreateMessage).toHaveBeenCalledTimes(1);
+      expect(onCreateMessage.mock.calls[0][0]).toBe(create);
+
+      await renderFeed({ edge: 'bottom', newestLoaded: true, onClick: () => undefined });
+      expect(container.querySelector('button[aria-label="Додати повідомлення"]')).toBeNull();
+      expect(container.querySelector('[data-message-feed-floating-controls]')).toBeNull();
+    });
+
+    it('works with a create button and no arrow', async () => {
+      await renderFeed(undefined, vi.fn());
+      expect(container.querySelector('button[aria-label="Додати повідомлення"]')).not.toBeNull();
+      expect(fab()).toBeNull();
+    });
+
+    it('shows nothing without a handler', async () => {
+      await renderFeed({ edge: 'bottom', newestLoaded: false });
+      expect(fab()).toBeNull();
+    });
+
+    it('hides the arrow when the newest message is loaded and the reader is at that edge', async () => {
+      await renderFeed({ edge: 'bottom', newestLoaded: true, onClick: () => undefined });
+      expect(fab()).toBeNull();
+    });
+
+    it('disables the arrow while it is loading', async () => {
+      await renderFeed({
+        edge: 'bottom',
+        newestLoaded: false,
+        onClick: () => undefined,
+        loading: true,
+      });
+      expect(fab()?.disabled).toBe(true);
+    });
+
+    it('still renders a host control passed as renderControl', async () => {
+      await renderFeed({
+        edge: 'bottom',
+        renderControl: () => <button data-host-control>host</button>,
+      });
+      expect(container.querySelector('[data-host-control]')).not.toBeNull();
+      expect(fab()).toBeNull();
+    });
+  });
+
   describe('data-message-id registration fallback', () => {
     // Analysis renders its cards as plain children, so this fallback is the only thing that
     // registers them for scrolling, anchors and highlighting.
@@ -615,7 +743,10 @@ describe('MessageFeed integration — https://github.com/echoua/echo/issues/3689
     expect(control?.dataset.atNewestEdge).toBe('false');
 
     await act(async () => root.render(renderFeed('bottom')));
-    expect(control?.dataset.atNewestEdge).toBe('true');
+    // The arrow moves to the other floating container when the edge changes, so it is a new node.
+    expect(
+      container.querySelector<HTMLElement>('[data-newest-navigation]')?.dataset.atNewestEdge,
+    ).toBe('true');
   });
 
   it('navigates to a composed child without a host-owned scroll hook', async () => {
