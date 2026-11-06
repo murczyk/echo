@@ -930,16 +930,22 @@ async fn load_live_period_min_message_id(
     since: NaiveDateTime,
     till: NaiveDateTime,
 ) -> Result<Option<i64>, AppError> {
-    let (search_since, search_till) =
-        message_id_scope_search_window(since, till).context(h!())?;
-    if search_till <= Utc::now().naive_utc() {
+    let freshness_max_age_ms =
+        crate::config::ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT;
+    let closed_period_cutoff = Utc::now().naive_utc()
+        - Duration::milliseconds(
+            i64::try_from(freshness_max_age_ms).context(h!())?,
+        );
+    if till <= closed_period_cutoff {
         return Ok(None);
     }
+    let (search_since, search_till) =
+        message_id_scope_search_window(since, till).context(h!())?;
     let scope = resolve_analytics_message_id_scope_for_range(
         search_since,
         search_till,
         db,
-        crate::config::ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT,
+        freshness_max_age_ms,
     )
     .await
     .context(h!())?;
@@ -1672,6 +1678,8 @@ mod tests {
             (1, None, Some(days_ago(20)), days_ago(20)),
             (2, Some(days_ago(10)), None, days_ago(10)),
             (3, None, Some(days_ago(5)), now),
+            (4, Some(now - Duration::hours(1)), None, now),
+            (5, Some(now + Duration::hours(1)), None, now),
         ] {
             let message = mk_signal_message(
                 &env.dbx,
@@ -1698,18 +1706,26 @@ mod tests {
             .await
             .unwrap();
         }
+        let bounds = (base, base + 5);
+        assert_eq!(
+            load_message_id_bounds_for_period(&env.dbx, since, now, bounds)
+                .await
+                .unwrap(),
+            Some((base + 1, base + 5)),
+            "older rows are pruned, undated rows before the first dated one \
+             stay in range, and the upper bound stays open past the period"
+        );
         assert_eq!(
             load_message_id_bounds_for_period(
                 &env.dbx,
                 since,
-                now,
-                (base, base + 3)
+                now - Duration::hours(12),
+                bounds
             )
             .await
             .unwrap(),
             Some((base + 1, base + 3)),
-            "older rows are pruned, undated rows before the first dated one \
-             stay in range, and so does the late import"
+            "a period closed hours ago keeps the exact scan"
         );
     }
 
