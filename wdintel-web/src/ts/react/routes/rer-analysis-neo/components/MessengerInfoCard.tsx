@@ -7,7 +7,6 @@ import type { MessengerAccountItem } from './MessengerAccountList';
 
 type Props = {
   account: MessengerAccountItem;
-  onExternalIdClick?: (account: MessengerAccountItem) => void;
 };
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -23,7 +22,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function MessengerInfoCard({ account, onExternalIdClick }: Props) {
+export function MessengerInfoCard({ account }: Props) {
   return (
     <MessengerCard title="Інформація">
       <Row label="Ім'я">{account.name || NO_DATA_LABEL}</Row>
@@ -31,20 +30,7 @@ export function MessengerInfoCard({ account, onExternalIdClick }: Props) {
       <Row label="Ім'я користувача">
         {account.username ? `@${account.username}` : NO_DATA_LABEL}
       </Row>
-      <Row label="External ID">
-        {account.externalId ? (
-          <button
-            type="button"
-            className="cursor-pointer underline"
-            data-messenger-external-id
-            onClick={() => onExternalIdClick?.(account)}
-          >
-            {account.externalId}
-          </button>
-        ) : (
-          NO_DATA_LABEL
-        )}
-      </Row>
+      <Row label="External ID">{account.externalId || NO_DATA_LABEL}</Row>
       <Row label="User ID">{account.userId || NO_DATA_LABEL}</Row>
       <Row label="Створено">{formatDateTime24(account.createdAt)}</Row>
       <Row label="Оновлено">{formatDateTime24(account.lastSync)}</Row>

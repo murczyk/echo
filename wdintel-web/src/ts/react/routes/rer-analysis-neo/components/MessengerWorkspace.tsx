@@ -1,7 +1,8 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Collapse } from '@mui/material';
-import { useState } from 'react';
+import { Collapse, Tooltip } from '@mui/material';
+import { useState, type ReactNode } from 'react';
 
+import { copyTextToClipboard } from '../../../../copy-to-clipboard';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { formatDate } from '../../../utils/misc';
 import {
@@ -20,7 +21,6 @@ type Props = {
   loading?: boolean;
   onSaveInternalNotes?: (accountId: string, internalNotes: string) => Promise<void>;
   // shortcut: the external id will open another app, wire the target when it exists.
-  onExternalIdClick?: (account: MessengerAccountItem) => void;
 };
 
 // A generic cap until the backend defines its own limit.
@@ -40,6 +40,30 @@ const formatChatDate = (ms: number) =>
   formatDate(ms, { day: '2-digit', month: '2-digit', year: '2-digit' });
 
 const chatLabel = (chat: MessengerChat) => chat.title || chat.username || chat.externalId;
+
+function CopyValue({
+  text,
+  className,
+  children,
+}: {
+  text: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip title="копіювати">
+      <button
+        type="button"
+        className={`cursor-pointer text-start ${className ?? ''}`}
+        onClick={() => {
+          void copyTextToClipboard(text);
+        }}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}
 
 function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }) {
   const [open, setOpen] = useState(true);
@@ -87,13 +111,7 @@ function ChatSection({ title, chats }: { title: string; chats: MessengerChat[] }
   );
 }
 
-function MessengerSidebar({
-  account,
-  onExternalIdClick,
-}: {
-  account: MessengerAccountItem;
-  onExternalIdClick?: (account: MessengerAccountItem) => void;
-}) {
+function MessengerSidebar({ account }: { account: MessengerAccountItem }) {
   const [query, setQuery] = useState('');
   const { chats, loading, error, retry } = useMessengerChats(account.id);
   const needle = query.trim().toLowerCase();
@@ -112,29 +130,33 @@ function MessengerSidebar({
       <div className="flex items-center gap-3 px-3 py-1">
         <MessengerAccountAvatar account={account} />
         <span className="flex min-w-0 flex-col">
-          <span className="group-navigation-name" title={account.name}>
+          <CopyValue text={account.name} className="group-navigation-name">
             {account.name}
-          </span>
-          <span className="group-navigation-name text-xs opacity-60">{account.phone}</span>
+          </CopyValue>
+          {account.phone ? (
+            <CopyValue
+              text={account.phone.startsWith('+') ? account.phone : `+${account.phone}`}
+              className="group-navigation-name text-xs opacity-60"
+            >
+              {account.phone}
+            </CopyValue>
+          ) : null}
           {account.username ? (
-            <span className="group-navigation-name text-xs opacity-60">@{account.username}</span>
+            <CopyValue
+              text={`@${account.username}`}
+              className="group-navigation-name text-xs opacity-60"
+            >
+              @{account.username}
+            </CopyValue>
           ) : null}
           {account.userId ? (
             <span className="group-navigation-name text-xs opacity-60" data-messenger-user-id>
-              User ID: {account.userId}
+              User ID: <CopyValue text={account.userId}>{account.userId}</CopyValue>
             </span>
           ) : null}
           {account.externalId ? (
             <span className="group-navigation-name text-xs opacity-60">
-              External ID:{' '}
-              <button
-                type="button"
-                className="cursor-pointer underline hover:opacity-100"
-                data-messenger-external-id
-                onClick={() => onExternalIdClick?.(account)}
-              >
-                {account.externalId}
-              </button>
+              External ID: <CopyValue text={account.externalId}>{account.externalId}</CopyValue>
             </span>
           ) : null}
         </span>
@@ -175,12 +197,7 @@ function MessengerSidebar({
   );
 }
 
-export function MessengerWorkspace({
-  account,
-  loading = false,
-  onSaveInternalNotes,
-  onExternalIdClick,
-}: Props) {
+export function MessengerWorkspace({ account, loading = false, onSaveInternalNotes }: Props) {
   if (account == null && loading) {
     return (
       <p className="p-4 opacity-60" role="status">
@@ -199,7 +216,7 @@ export function MessengerWorkspace({
   }
   return (
     <div className="flex h-full min-h-0" data-messenger-workspace>
-      <MessengerSidebar key={account.id} account={account} onExternalIdClick={onExternalIdClick} />
+      <MessengerSidebar key={account.id} account={account} />
       <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
         <MessengerNoteCard
           key={`internal-${account.id}`}
@@ -213,7 +230,7 @@ export function MessengerWorkspace({
           }
         />
         <MessengerNoteCard title="Опис" text={account.notes} />
-        <MessengerInfoCard account={account} onExternalIdClick={onExternalIdClick} />
+        <MessengerInfoCard account={account} />
       </main>
     </div>
   );

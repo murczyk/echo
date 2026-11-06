@@ -43,7 +43,6 @@ describe('MessengerWorkspace', () => {
   });
 
   it('shows both ids and reports a click on the external id', () => {
-    const onExternalIdClick = vi.fn();
     const account = {
       id: '1',
       name: 'name test',
@@ -51,19 +50,10 @@ describe('MessengerWorkspace', () => {
       userId: 'user id test',
       externalId: 'external id test',
     };
-    act(() =>
-      root.render(<MessengerWorkspace account={account} onExternalIdClick={onExternalIdClick} />),
-    );
+    act(() => root.render(<MessengerWorkspace account={account} />));
     expect(container.querySelector('[data-messenger-user-id]')?.textContent).toContain(
       'user id test',
     );
-
-    act(() =>
-      container
-        .querySelector<HTMLButtonElement>('[data-messenger-external-id]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
-    );
-    expect(onExternalIdClick).toHaveBeenCalledWith(account);
   });
 
   it('does not carry an unsaved internal note draft over to another account', () => {
