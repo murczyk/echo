@@ -32,7 +32,9 @@
 ## Releases
 
 - "Prepare release", "make release", and "prepare and make release" mean the
-  process in [RELEASE.md](./RELEASE.md). Follow it.
+  process in [RELEASE.md](./RELEASE.md). So do "prepare stable release", "make
+  stable release", and "prepare and make stable release", which release what is
+  on `stable` without merging `main`. Follow it.
 
 ## Documentation scope
 

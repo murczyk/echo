@@ -7,14 +7,17 @@ A release has two phases, run from a clean `stable` checkout:
 - **Make**: deploy to every other active server and upgrade its AI harness.
 
 "Prepare release", "make release", and "prepare and make release" mean these
-phases.
+phases. "Prepare stable release", "make stable release", and "prepare and make
+stable release" release what is on `stable` without merging `main`; see
+[Stable release](#stable-release).
 
 ## Approval
 
 A user message asking for a phase approves exactly that phase's operations and
 targets, as AGENTS.md allows. Prepare covers pushing `stable` and `main`,
 deploying the canaries, and upgrading their AI harness. Make covers deploying
-the remaining active servers and upgrading their AI harness.
+the remaining active servers and upgrading their AI harness. A stable release
+covers the same, except that its Prepare pushes only `stable`.
 
 Everything else still needs separate approval, including:
 
@@ -91,6 +94,38 @@ starting the next. Use `just deploy` or `just deploy-from-local` as in Prepare.
 Do not use `just deploy-many`, because it leaves no log check between servers.
 
 For "prepare and make release", start Make straight after Prepare if the
+canaries are clean.
+
+## Stable release
+
+A stable release ships what is already on `stable`, for example a hotfix while
+`main` holds work that is not ready. It never merges `main` into `stable` and
+leaves `main` untouched. The next normal release brings `stable` back into
+`main` in Prepare step 1.
+
+"Prepare stable release" replaces Prepare steps 1 to 3 with these two steps, then
+continues from Prepare step 4:
+
+1. Update `stable` and list what came after the last bump:
+
+   ```bash
+   git switch stable
+   git pull --ff-only origin stable
+   last_bump=$(git log -1 --format=%h --grep='^bump: ')
+   git log --oneline "$last_bump"..
+   git diff "$last_bump" -- CHANGELOG.md | grep -E '^\+.*(👷|🚨)'
+   ```
+
+   If the log lists only `[skip ci]` commits, the last bump's deb already is this
+   release, so also skip Prepare steps 4 and 5.
+
+2. Check that each listed commit passed the tests. Builds from `stable` skip
+   them, so that run is on the commit's PR or on `main`, and a commit pushed
+   straight to `stable` has none. Report any such commit with the `👷`/`🚨`
+   entries.
+
+"Make stable release" is [Make](#make) as written, because Make merges nothing.
+For "prepare and make stable release", start it straight after Prepare if the
 canaries are clean.
 
 ## Upgrading the AI harness
