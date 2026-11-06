@@ -1794,7 +1794,7 @@ async fn read_active_sigint_groups_since(
 #[post("/api/user/sigint-groups-detailed")]
 pub async fn user_sigint_groups_detailed(
     env: actix_web::web::Data<Env>,
-    req: Json<SigintGroupsReq>,
+    req: Json<SigintGroupsDetailedReq>,
     user: Identity,
 ) -> Result<Json<Vec<SignalGroupEntryF2>>, AppError> {
     // let res = get_identity_sigint_groups_since(&env.dbx, &user, req.since_date_inclusive_ms).await.c(h!())?;
@@ -1825,9 +1825,15 @@ pub async fn user_sigint_groups_detailed(
             .c(h!())?;
         keys = recent_keys.into_iter().flatten().collect();
     }
-    let groups = crate::messenger::group::collect_groups_f2(keys, &env)
-        .await
-        .c(h!())?;
+    let groups = crate::messenger::group::collect_groups_f2(
+        keys,
+        &env,
+        crate::messenger::group::CollectGroupsOpts {
+            skip_group_stats: req.skip_group_stats.unwrap_or(false),
+        },
+    )
+    .await
+    .c(h!())?;
     Ok(Json(groups))
 }
 
