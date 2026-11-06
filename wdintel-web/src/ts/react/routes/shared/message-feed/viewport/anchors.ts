@@ -7,7 +7,7 @@ import {
   isAtPhysicalBottom,
 } from '../internal/scroll-math';
 import type { WindowedFeedScrollRefs } from '../internal/internal.types';
-import type { VisibleAnchor } from '../message-feed.types';
+import type { MessageFeedId, VisibleAnchor } from '../message-feed.types';
 
 const MAX_SYNC_ANCHOR_CORRECTIONS = 5;
 const READ_VISIBLE_FRACTION = 0.5;
@@ -53,7 +53,7 @@ export function useWindowedFeedScrollAnchors(args: {
     [onAnchorSnapshotChange, refs],
   );
 
-  const collectVisibleAnchors = useCallback((): VisibleAnchor[] => {
+  const collectVisibleAnchors = useCallback((): VisibleAnchor<MessageFeedId>[] => {
     const scroller = refs.scrollerRef.current;
     if (!scroller) return [];
     const scrollerRect = scroller.getBoundingClientRect();
@@ -101,7 +101,7 @@ export function useWindowedFeedScrollAnchors(args: {
 
     if (firstVisibleIdx === -1) return [];
 
-    const anchors: VisibleAnchor[] = [];
+    const anchors: VisibleAnchor<MessageFeedId>[] = [];
     for (let i = firstVisibleIdx; i < ids.length; i++) {
       const id = ids[i];
       const node = refs.itemRefsRef.current.get(id);
@@ -116,9 +116,9 @@ export function useWindowedFeedScrollAnchors(args: {
     return anchors;
   }, [refs]);
 
-  const collectMountedItemOffsets = useCallback((): Map<number, number> => {
+  const collectMountedItemOffsets = useCallback((): Map<MessageFeedId, number> => {
     const scroller = refs.scrollerRef.current;
-    const offsets = new Map<number, number>();
+    const offsets = new Map<MessageFeedId, number>();
     if (!scroller) return offsets;
     const scrollerTop = scroller.getBoundingClientRect().top;
     for (const id of refs.itemIdsRef.current) {
@@ -193,7 +193,7 @@ export function useWindowedFeedScrollAnchors(args: {
       touchAnchorSnapshotScrollMetrics();
       return;
     }
-    const itemOffsets = new Map<number, number>();
+    const itemOffsets = new Map<MessageFeedId, number>();
     for (const anchor of anchors) {
       itemOffsets.set(anchor.id, anchor.offsetTop);
     }
@@ -346,7 +346,7 @@ export function useWindowedFeedScrollAnchors(args: {
       const maxCorrections = options?.settleSynchronousLayout ? MAX_SYNC_ANCHOR_CORRECTIONS : 1;
 
       const applyDelta = (
-        id: number,
+        id: MessageFeedId,
         expectedOffsetTop: number,
         reason: string,
       ): AnchorRestoreOutcome | null => {

@@ -14,6 +14,7 @@ export { ScrollNavigationIntent } from './message-feed.types';
 export type {
   AnchorSnapshot,
   MessageFeedHandle,
+  MessageFeedId,
   MessageFeedScrollOptions,
   ExplicitScrollNavigation,
   ReachedBottomContext,

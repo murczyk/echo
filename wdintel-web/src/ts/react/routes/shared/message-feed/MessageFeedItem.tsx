@@ -1,13 +1,15 @@
 import { createContext, useContext, type HTMLAttributes, type ReactNode } from 'react';
-import type { WindowedFeedScrollHandle } from './message-feed.types';
+import type { MessageFeedId, WindowedFeedScrollHandle } from './message-feed.types';
 
-const ItemRegistrationContext = createContext<WindowedFeedScrollHandle['setItemRef'] | null>(null);
+const ItemRegistrationContext = createContext<
+  WindowedFeedScrollHandle<MessageFeedId>['setItemRef'] | null
+>(null);
 
 export function MessageFeedItemRegistration({
   setItemRef,
   children,
 }: {
-  setItemRef: WindowedFeedScrollHandle['setItemRef'];
+  setItemRef: WindowedFeedScrollHandle<MessageFeedId>['setItemRef'];
   children: ReactNode;
 }) {
   return (
@@ -21,7 +23,7 @@ export function MessageFeedItem({
   id,
   children,
   ...props
-}: Omit<HTMLAttributes<HTMLDivElement>, 'id'> & { id: number }) {
+}: Omit<HTMLAttributes<HTMLDivElement>, 'id'> & { id: MessageFeedId }) {
   const setItemRef = useContext(ItemRegistrationContext);
   if (!setItemRef) throw new Error('MessageFeedItem must be inside MessageFeed');
   return (

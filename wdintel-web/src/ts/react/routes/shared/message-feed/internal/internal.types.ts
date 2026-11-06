@@ -3,6 +3,7 @@ import type {
   AnchorSnapshot,
   ExplicitScrollNavigation,
   FeedScrollDiagnostics,
+  MessageFeedId,
   ReachedBottomContext,
   ScrollNavigationIntent,
   UseWindowedFeedScrollOptions,
@@ -37,7 +38,7 @@ export type WindowedFeedScrollCallbacks = {
   onLoadNewer?: () => void | Promise<unknown>;
   onFlushPendingNewer?: (context: {
     physicallyAtBottom: boolean;
-    visibleAnchorIds: readonly number[];
+    visibleAnchorIds: readonly MessageFeedId[];
   }) => void | Promise<unknown>;
   onScrollToTop?: () => void;
   onReachedBottom?: (context: ReachedBottomContext) => boolean | void;
@@ -45,18 +46,18 @@ export type WindowedFeedScrollCallbacks = {
   onNearBottomChange?: (near: boolean) => void;
   onAtBottomChange?: (atBottom: boolean) => void;
   onPhysicalBottomChange?: (atBottom: boolean) => void;
-  onVisibleMessageIds?: (lastVisibleId: number, opts?: { atBottom?: boolean }) => void;
-  onFirstVisibleMessage?: (id: number, index: number) => void;
-  onVisibleMessages?: (ids: readonly number[]) => void;
+  onVisibleMessageIds?: (lastVisibleId: MessageFeedId, opts?: { atBottom?: boolean }) => void;
+  onFirstVisibleMessage?: (id: MessageFeedId, index: number) => void;
+  onVisibleMessages?: (ids: readonly MessageFeedId[]) => void;
 };
 
 export type WindowedFeedScrollRefs = {
   diagnosticsRef: MutableRefObject<FeedScrollDiagnostics | undefined>;
   scrollerRef: MutableRefObject<HTMLDivElement | null>;
   listRef: MutableRefObject<HTMLElement | null>;
-  itemRefsRef: MutableRefObject<Map<number, HTMLElement>>;
-  itemIdsRef: MutableRefObject<readonly number[]>;
-  anchorSnapshotRef: MutableRefObject<AnchorSnapshot | null>;
+  itemRefsRef: MutableRefObject<Map<MessageFeedId, HTMLElement>>;
+  itemIdsRef: MutableRefObject<readonly MessageFeedId[]>;
+  anchorSnapshotRef: MutableRefObject<AnchorSnapshot<MessageFeedId> | null>;
   callbacksRef: MutableRefObject<WindowedFeedScrollCallbacks>;
   loadOlderTriggeredRef: MutableRefObject<boolean>;
   loadNewerTriggeredRef: MutableRefObject<boolean>;
@@ -91,7 +92,7 @@ export type WindowedFeedScrollRefs = {
   >;
   isRestoringAnchorRef: MutableRefObject<boolean>;
   restoredScrollTopRef: MutableRefObject<number | null>;
-  previousItemIdsRef: MutableRefObject<readonly number[]>;
+  previousItemIdsRef: MutableRefObject<readonly MessageFeedId[]>;
   previousResetKeyRef: MutableRefObject<string | number | null>;
   previousTopStatusRef: MutableRefObject<TopStatus>;
   isWatchModeRef: MutableRefObject<boolean>;
@@ -118,7 +119,7 @@ export type FeedScrollHelpers = {
 
 export type FeedLayoutOptions = FeedScrollHelpers &
   Pick<
-    UseWindowedFeedScrollOptions,
+    UseWindowedFeedScrollOptions<MessageFeedId>,
     | 'focus'
     | 'debugFeedId'
     | 'viewportPreservationKey'
@@ -129,12 +130,12 @@ export type FeedLayoutOptions = FeedScrollHelpers &
     enabled: boolean;
     enabledBeforeRender: boolean;
     topStatus: TopStatus;
-    itemIds: readonly number[];
+    itemIds: readonly MessageFeedId[];
     initialPosition: 'start' | 'end';
     initialPositioningReady: boolean;
-    initialAnchorSnapshotRef: MutableRefObject<AnchorSnapshot | null>;
-    directItemTargetIdRef: MutableRefObject<number | null>;
-    releasedFocusRef: MutableRefObject<number | null>;
+    initialAnchorSnapshotRef: MutableRefObject<AnchorSnapshot<MessageFeedId> | null>;
+    directItemTargetIdRef: MutableRefObject<MessageFeedId | null>;
+    releasedFocusRef: MutableRefObject<MessageFeedId | null>;
     bottomSpacerPx: number;
     setBottomSpacerPx: (value: number) => void;
     centerTrackedItem: (reason: string) => HTMLElement | null;

@@ -16,12 +16,16 @@ import { MessageFeedItemRegistration } from './MessageFeedItem';
 import { MessageFeedSkeletons } from './MessageFeedSkeletons';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import {
-  areNumberArraysEqual,
+  areIdArraysEqual,
   isAtPhysicalBottom,
   LOAD_NEWER_SCROLL_IDLE_MS,
   nowMs,
 } from './internal/scroll-math';
-import type { MessageFeedHandle, MessageFeedScrollOptions } from './message-feed.types';
+import type {
+  MessageFeedHandle,
+  MessageFeedId,
+  MessageFeedScrollOptions,
+} from './message-feed.types';
 import './message-feed.css';
 
 export { MessageFeedRows } from './MessageFeedViewport';
@@ -35,8 +39,11 @@ export function shouldShowNewestNavigation(atNewestEdge: boolean, newestLoaded: 
   return !atNewestEdge || !newestLoaded;
 }
 
-export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & {
-  scrollOptions: MessageFeedScrollOptions;
+export type MessageFeedProps<T, Id extends MessageFeedId = number> = Omit<
+  MessageFeedViewportProps<T, Id>,
+  'scroll'
+> & {
+  scrollOptions: MessageFeedScrollOptions<Id>;
   newestNavigation?: MessageFeedNewestNavigation;
   isLoading?: boolean;
   showLoadingSkeleton?: boolean;
@@ -45,10 +52,10 @@ export type MessageFeedProps<T> = Omit<MessageFeedViewportProps<T>, 'scroll'> & 
   hasMoreAbove?: boolean;
   hasMoreBelow?: boolean;
   skeletonCount?: number;
-  editorHighlightedMessageId?: number | null;
+  editorHighlightedMessageId?: Id | null;
 };
 
-function MessageFeedInner<T>(
+function MessageFeedInner<T, Id extends MessageFeedId = number>(
   {
     scrollOptions,
     newestNavigation,
@@ -68,8 +75,8 @@ function MessageFeedInner<T>(
     beforeMessages,
     afterMessages,
     ...viewportProps
-  }: MessageFeedProps<T>,
-  ref: ForwardedRef<MessageFeedHandle>,
+  }: MessageFeedProps<T, Id>,
+  ref: ForwardedRef<MessageFeedHandle<Id>>,
 ) {
   const itemIds = useMemo(() => items.map(getMessageId), [items, getMessageId]);
   const incoming = {
@@ -98,7 +105,7 @@ function MessageFeedInner<T>(
     }, delayMs);
   }, []);
   useLayoutEffect(() => {
-    const sameWindow = areNumberArraysEqual(shown.items.map(getMessageId), itemIds);
+    const sameWindow = areIdArraysEqual(shown.items.map(getMessageId), itemIds);
     const unchanged =
       shown.items === items &&
       shown.children === viewportProps.children &&
@@ -159,12 +166,10 @@ function MessageFeedInner<T>(
     loadingOlder: shown.loadingAbove,
     loadingNewer: shown.loadingBelow,
   });
-  const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<number | null>(null);
+  const [linkedHighlightedMessageId, setLinkedHighlightedMessageId] = useState<Id | null>(null);
   const highlightedElementRef = useRef<HTMLElement | null>(null);
-  const highlightedWindowRef = useRef<readonly number[] | null>(null);
-  const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly number[] } | null>(
-    null,
-  );
+  const highlightedWindowRef = useRef<readonly Id[] | null>(null);
+  const highlightLoadStartRef = useRef<{ items: readonly T[]; ids: readonly Id[] } | null>(null);
   const highlightedMessageId = editorHighlightedMessageId ?? linkedHighlightedMessageId;
   useLayoutEffect(() => {
     const loadingContent =
@@ -177,7 +182,7 @@ function MessageFeedInner<T>(
       highlightLoadStartRef.current ??= { items: visibleItems, ids: visibleItemIds };
     } else if (highlightLoadStartRef.current !== null) {
       const started = highlightLoadStartRef.current;
-      if (started.items !== visibleItems || !areNumberArraysEqual(started.ids, visibleItemIds)) {
+      if (started.items !== visibleItems || !areIdArraysEqual(started.ids, visibleItemIds)) {
         highlightLoadStartRef.current = null;
         setLinkedHighlightedMessageId(null);
       } else if (items === visibleItems) {
@@ -188,7 +193,7 @@ function MessageFeedInner<T>(
       linkedHighlightedMessageId !== null &&
       (!visibleItemIds.includes(linkedHighlightedMessageId) ||
         (highlightedWindowRef.current !== null &&
-          !areNumberArraysEqual(highlightedWindowRef.current, visibleItemIds)))
+          !areIdArraysEqual(highlightedWindowRef.current, visibleItemIds)))
     ) {
       setLinkedHighlightedMessageId(null);
     }
@@ -233,7 +238,7 @@ function MessageFeedInner<T>(
     visibleItems,
   ]);
   const highlightLinkedMessage = useCallback(
-    (id: number) => {
+    (id: Id) => {
       if (!scroll.getItemElement(id)) return false;
       highlightLoadStartRef.current = null;
       highlightedWindowRef.current = visibleItemIds;
@@ -353,6 +358,6 @@ function MessageFeedInner<T>(
   );
 }
 
-export const MessageFeed = forwardRef(MessageFeedInner) as <T>(
-  props: MessageFeedProps<T> & RefAttributes<MessageFeedHandle>,
+export const MessageFeed = forwardRef(MessageFeedInner) as <T, Id extends MessageFeedId = number>(
+  props: MessageFeedProps<T, Id> & RefAttributes<MessageFeedHandle<Id>>,
 ) => ReactElement;
