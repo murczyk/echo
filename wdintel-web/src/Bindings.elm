@@ -2791,6 +2791,7 @@ type alias MessengersContactItem =
     , isMutual : Maybe (Bool)
     , isCloseFriend : Maybe (Bool)
     , createdAt : Int
+    , updatedAt : Int
     , telegram : Maybe (MessengersTelegramAccountId)
     }
 
@@ -2808,6 +2809,7 @@ messengersContactItemEncoder struct =
         , ( "is_mutual", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isMutual )
         , ( "is_close_friend", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isCloseFriend )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
         , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
         ]
 
@@ -2833,6 +2835,7 @@ messengersContactsListRspEncoder struct =
 type MessengersMessagesDirection
     = Older
     | Newer
+    | Oldest
 
 
 messengersMessagesDirectionEncoder : MessengersMessagesDirection -> Json.Encode.Value
@@ -2842,6 +2845,8 @@ messengersMessagesDirectionEncoder enum =
             Json.Encode.string "Older"
         Newer ->
             Json.Encode.string "Newer"
+        Oldest ->
+            Json.Encode.string "Oldest"
 
 type alias MessengersMessagesListReq =
     { accountId : String
@@ -23016,6 +23021,7 @@ messengersContactItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_mutual" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_close_friend" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
 
 
@@ -23046,6 +23052,15 @@ messengersMessagesDirectionDecoder =
                     case x of
                         "Newer" ->
                             Json.Decode.succeed Newer
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Oldest" ->
+                            Json.Decode.succeed Oldest
                         unexpected ->
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )

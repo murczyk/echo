@@ -304,7 +304,7 @@ type MessengersMessagesListReq = {
   chat_id: string
   cursor: string | null                 // from a previous response
   limit: number | null                  // default 50, at most 100
-  direction: "Older" | "Newer" | null   // default "Older"
+  direction: "Older" | "Newer" | "Oldest" | null   // default "Older"
   around_message_id: string | null      // Echo message uuid
 }
 
@@ -339,6 +339,7 @@ Modes:
 | Request | Returns |
 |---|---|
 | No `cursor`, no `around_message_id` | The newest page |
+| `direction: "Oldest"`, no `cursor` | The first page of the chat, for going to its start |
 | `cursor` from `older_cursor`, `direction` `"Older"` or omitted | Messages sent before that point |
 | `cursor` from `newer_cursor`, `direction: "Newer"` | The messages closest after that point |
 | `around_message_id` | That message with messages on both sides: `limit / 2` newer, the rest older including the message itself |
@@ -393,12 +394,14 @@ Semantics:
   message text.
 - A cursor is a position in the timeline, not a reference to a message, so it
   stays valid if the message is deleted. Treat it as opaque.
-- Without a `cursor`, `direction` has no effect.
+- Without a `cursor`, `"Older"` and `"Newer"` have no effect.
+- `"Oldest"` cannot be combined with `cursor`. Its `older_cursor` is `null`;
+  continue from `newer_cursor` with `direction: "Newer"`.
 - `around_message_id` cannot be combined with `cursor` or `direction`.
 - An empty `Newer` page means nothing new. Both cursors in the response repeat
   the request's cursor, so it can be sent again to check for new messages.
-- `older_cursor` is only known to be final on `Older`, newest and around pages.
-  On a `Newer` page it is the oldest item, and the next `Older` request can
+- `older_cursor` is only known to be final on `Older`, `Oldest`, newest and
+  around pages. On a `Newer` page it is the oldest item, and the next `Older` request can
   return an empty page.
 - `text` is the stored message body; a message without text has `""`.
 - `sender_chat_member_id` is the `id` of an item from `chats/members/list`,

@@ -1084,6 +1084,7 @@ export type MessengersContactItem = {
   isMutual: boolean | null;
   isCloseFriend: boolean | null;
   createdAt: number;
+  updatedAt: number;
   telegram: MessengersTelegramAccountId | null;
 };
 
@@ -1097,6 +1098,7 @@ export type MessengersContactsListRsp = {
 export type MessengersMessagesDirection =
   | 'Older'
   | 'Newer'
+  | 'Oldest'
 ;
 
 export type MessengersMessagesListReq = {

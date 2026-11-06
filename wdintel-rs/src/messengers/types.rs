@@ -107,6 +107,7 @@ pub struct MessengersChatItem {
 pub enum MessengersMessagesDirection {
     Older,
     Newer,
+    Oldest,
 }
 
 #[derive(

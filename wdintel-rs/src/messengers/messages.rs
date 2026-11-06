@@ -59,6 +59,7 @@ impl TimelinePosition {
 
 enum PageRequest {
     Latest,
+    Oldest,
     Older(TimelinePosition),
     Newer(TimelinePosition),
     Around(Uuid),
@@ -148,9 +149,19 @@ fn page_request(
         }
         return Ok(PageRequest::Around(parse_echo_uuid(message_id).c(h!())?));
     }
+    let oldest = req.direction == Some(MessengersMessagesDirection::Oldest);
     let Some(cursor) = &req.cursor else {
-        return Ok(PageRequest::Latest);
+        return Ok(if oldest {
+            PageRequest::Oldest
+        } else {
+            PageRequest::Latest
+        });
     };
+    if oldest {
+        return Err(AppError::BL {
+            msg: "direction Oldest excludes cursor".to_string(),
+        });
+    }
     let position = TimelinePosition::decode(cursor).c(h!())?;
     Ok(match req.direction {
         Some(MessengersMessagesDirection::Newer) => {
@@ -168,6 +179,7 @@ async fn load_page(
 ) -> Result<MessagePage, AppError> {
     match page_request {
         PageRequest::Latest => load_older_page(dbx, chat_id, None, limit).await,
+        PageRequest::Oldest => load_oldest_page(dbx, chat_id, limit).await,
         PageRequest::Older(position) => {
             load_older_page(dbx, chat_id, Some(position), limit).await
         }
@@ -193,13 +205,30 @@ async fn load_older_page(
     Ok(MessagePage { rows, older, newer })
 }
 
+/// The start of the chat, so nothing is older than this page.
+async fn load_oldest_page(
+    dbx: &DatabaseConnection,
+    chat_id: Uuid,
+    limit: u64,
+) -> Result<MessagePage, AppError> {
+    let rows = load_newer_rows(dbx, chat_id, None, limit).await.c(h!())?;
+    let newer = rows.first().map(MessageRow::position);
+    Ok(MessagePage {
+        rows,
+        older: None,
+        newer,
+    })
+}
+
 async fn load_newer_page(
     dbx: &DatabaseConnection,
     chat_id: Uuid,
     after: TimelinePosition,
     limit: u64,
 ) -> Result<MessagePage, AppError> {
-    let rows = load_newer_rows(dbx, chat_id, after, limit).await.c(h!())?;
+    let rows = load_newer_rows(dbx, chat_id, Some(after), limit)
+        .await
+        .c(h!())?;
     let older = rows.last().map(MessageRow::position).or(Some(after));
     let newer = rows.first().map(MessageRow::position).or(Some(after));
     Ok(MessagePage { rows, older, newer })
@@ -217,7 +246,7 @@ async fn load_around_page(
         .await
         .c(h!())?;
     let newer_limit = limit / 2;
-    let mut rows = load_newer_rows(dbx, chat_id, target, newer_limit)
+    let mut rows = load_newer_rows(dbx, chat_id, Some(target), newer_limit)
         .await
         .c(h!())?;
     let filter = Some(timeline_filter("<=", target));
@@ -255,15 +284,19 @@ async fn load_older_rows(
     Ok((rows, older))
 }
 
-/// The `limit` messages closest after `after`, newest first.
+/// The `limit` messages closest after `after`, or from the start of the chat
+/// without it, newest first.
 async fn load_newer_rows(
     dbx: &DatabaseConnection,
     chat_id: Uuid,
-    after: TimelinePosition,
+    after: Option<TimelinePosition>,
     limit: u64,
 ) -> Result<Vec<MessageRow>, AppError> {
-    let mut rows = visible_messages(chat_id)
-        .filter(timeline_filter(">", after))
+    let mut query = visible_messages(chat_id);
+    if let Some(after) = after {
+        query = query.filter(timeline_filter(">", after));
+    }
+    let mut rows = query
         .order_by_asc(sigint_chat_message::Column::MessengerSentAt)
         .order_by_asc(sigint_chat_message::Column::Id)
         .limit(limit)
