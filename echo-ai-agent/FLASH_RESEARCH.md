@@ -71,7 +71,10 @@ answer, so an empty final turn is not a provider failure. A last draft refresh
 runs only after four or more retrievals, because it is a fallback that costs
 research-effort turns.
 
-Synthesis uses the same context-aware evidence packing as other engines and at
+Synthesis has no tools and sees only delivered evidence, so its request also carries
+`completedActions`: the harness's record of each public tool's calls, failures and
+result counts. Without it, a search that found nothing or a published map looks like
+work that never ran. Synthesis uses the same context-aware evidence packing as other engines and at
 most 16,384 output tokens (the whole configured output cap on Deep), bounded by
 that cap. Hidden thinking counts against it. It preserves
 full records when they fit rather than cutting each source to a fixed prefix.

@@ -111,7 +111,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.06.1";
+const HARNESS_RELEASE = "2026.11.06.2";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -3431,6 +3431,7 @@ const NO_RETRIEVAL_RETRY_NOTICE = " The time budget ended before any search; add
 const NO_LIMIT_NOTICE = " No time, tool or budget limit stopped this work: never claim that one did, even if an earlier answer in the conversation says so.";
 const COVERAGE_GUIDANCE = "State remaining coverage limitations honestly without delaying the supported findings.";
 const FINAL_FINDINGS_GUIDANCE = "Report anything searched for and not found as a finding. Do not add a section about incomplete coverage.";
+const COMPLETED_ACTIONS_GUIDANCE = " completedActions in the request is the harness's record of what this request really did. Those tools ran: never say that tools did not run or were unavailable, and call one failed only when its failed count says so. A search with zero results found nothing, so report that as a finding. A listed map exists: present it through its reference.";
 
 type SynthesisOutcome = {
   retrieved?: boolean;
@@ -3654,13 +3655,13 @@ async function completeLimitedResearch(options: {
     engine: options.selectedEngine,
     apiKey: payload.providerApiKey ?? "echo-local-tokenless",
     policy: budget.policy,
-    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? " Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph." : ""),
+    systemPrompt: outputRetrySystemPrompt(payload, { retrieved: options.retrieved, limit: budget.reason ?? null, deep, unfinished }) + (options.research ? ` Use Markdown headings for requested groups and short cited bullets. Preserve useful factual detail; do not compress all groups into one paragraph.${COMPLETED_ACTIONS_GUIDANCE}` : ""),
     prompt: JSON.stringify({
       conversation: payload.history
         .slice(-4)
         .map(({ role, content }) => ({ role, content })),
       request: payload.prompt,
-      ...(options.research ? { maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
+      ...(options.research ? { completedActions: options.research.completedActions(), maps: mapRegistry.list().filter((map) => map.validCount > 0).map(({ id, title, totalCount, published }) => ({ title, totalCount, published, reference: `[мапа](echo-map:${id})` })) } : {}),
     }),
     evidence,
     checkpoint: options.research?.compactEvidence() ?? options.checkpoint,
@@ -4031,6 +4032,8 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
           research.noteToolRun();
           delete event.arguments;
         }
+        if (research && event.type === "tool_end")
+          research.noteToolResult(String(event.tool), Boolean(event.is_error));
         emit(event);
       },
       Boolean(research),
