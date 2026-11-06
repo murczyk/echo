@@ -116,6 +116,13 @@ class GroupScope(unittest.TestCase):
         self.assertIn('required_answer_missing',
                       grade(sample, [read, {'type': 'eval_answer', 'text': 'Сьогодні сто зіткнень.'}])['failures'])
 
+    def test_an_earlier_citation_does_not_excuse_an_uncited_final_answer(self):
+        sample = group_case('follow-up-inherits')
+        key = sample['expect']['groupScope']['keys'][0]
+        read = retrieval({'selected_groups': [key]}, [group_message(sample, 101), group_message(sample, 102)])
+        events = [read, *cited(sample, 101, 102), read, {'type': 'eval_answer', 'text': 'Без посилань.'}]
+        self.assertIn('required_evidence_not_cited', grade(sample, events)['failures'])
+
     def test_an_earlier_answer_cannot_hide_an_out_of_scope_citation(self):
         sample = group_case('follow-up-inherits')
         key = sample['expect']['groupScope']['keys'][0]

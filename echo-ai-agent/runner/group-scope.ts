@@ -12,6 +12,11 @@ export interface EchoGroup {
   name: string;
 }
 
+export interface GroupOutcome {
+  problems?: string[];
+  read?: string[];
+}
+
 export function groupCatalog(value: unknown): EchoGroup[] {
   if (!Array.isArray(value)) throw new Error("Echo group list is unavailable");
   const groups = new Map<string, EchoGroup>();
@@ -108,7 +113,7 @@ export function compactGroupCatalog(
 export function createGroupScope(
   loadGroups: ((signal?: AbortSignal) => Promise<unknown>) | null,
   rememberGroups: (groups: EchoGroup[]) => void,
-  noteUnresolved: (values: string[]) => void = () => {},
+  noteGroups: (outcome: GroupOutcome) => void = () => {},
 ) {
   let catalog: Promise<EchoGroup[]> | null = null;
   let scoped = false;
@@ -138,8 +143,16 @@ export function createGroupScope(
       scoped = true;
       const groups = await load(loadGroups, signal);
       rememberGroups(groups);
-      noteUnresolved(unresolvedGroups(values, groups));
-      return { ...params, selectedGroups: resolveGroups(values, groups) };
+      noteGroups({
+        problems: unresolvedGroups(values, groups).map((value) => groupProblem(value, groups)),
+      });
+      const selected = resolveGroups(values, groups);
+      noteGroups({
+        read: groups
+          .filter((group) => selected.includes(group.master_key))
+          .map((group) => group.name),
+      });
+      return { ...params, selectedGroups: selected };
     },
   };
 }

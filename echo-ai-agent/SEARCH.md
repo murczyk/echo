@@ -63,7 +63,13 @@ read to known messages. If a model wrongly scopes a plain subject, it therefore
 cannot fall back to an unscoped search in that request; the user sees "not found",
 which is safer than a silently wrong scope. Each request starts fresh, so a
 follow-up relies on the prompt, and the evaluations measure it. Bounded research
-passes unresolved names to synthesis, which writes the final answer.
+passes the groups it read and any group problems to synthesis, which writes the
+final answer.
+
+Known limits: `position_lookup` and `messages_by_id` have no group filter, so they
+are not scoped, and the `messageIds` exemption trusts the IDs it receives. On
+engines without bounded research, a budget stop can omit a rejected group from the
+final answer; the answer is still marked as limited coverage and never widens.
 
 ## Unit lookup
 

@@ -15,6 +15,7 @@ import {
   type ExecutionPolicy,
   type ResearchBudget,
 } from "./execution-policy.ts";
+import type { GroupOutcome } from "./group-scope.ts";
 import type { WorkJournal } from "./work-memory.ts";
 
 export const FLASH_ENGINE = "glm-5.3-flash-uncensored";
@@ -347,7 +348,8 @@ export class FlashResearch {
   private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
   private startFailed = false;
-  private readonly unresolved = new Set<string>();
+  private readonly groupProblems = new Set<string>();
+  private readonly groupsRead = new Set<string>();
   private readonly actions = new Map<string, CompletedAction>();
   private retrievalBatchAllowed = true;
   private paginationUpdateRequired = false;
@@ -514,14 +516,15 @@ export class FlashResearch {
     this.publicToolRuns += 1;
   }
 
-  noteUnresolvedGroups(values: string[]): void {
-    for (const value of values) this.unresolved.add(value);
+  noteGroups({ problems = [], read = [] }: GroupOutcome): void {
+    for (const problem of problems) this.groupProblems.add(problem);
+    for (const name of read) this.groupsRead.add(name);
   }
 
   // Tool-free synthesis would otherwise see only a failed call, not that the
-  // group the user named does not exist.
-  unresolvedGroups(): string[] {
-    return [...this.unresolved];
+  // group the user named does not exist, or which group an empty read covered.
+  groupScope(): { groupProblems: string[]; groupsRead: string[] } {
+    return { groupProblems: [...this.groupProblems], groupsRead: [...this.groupsRead] };
   }
 
   private action(tool: string): CompletedAction {

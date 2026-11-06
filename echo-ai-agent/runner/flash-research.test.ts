@@ -1775,7 +1775,30 @@ test("#4053 synthesis learns that a named group was not found", async (t) => {
   assert.equal(reads.length, 0);
   assert.equal(synthesisBodies.length, 1);
   const request = JSON.parse(JSON.parse(synthesisBodies[0]).messages[1].content);
-  assert.deepEqual(request.unresolvedGroups, ["Горобець"]);
+  assert.deepEqual(request.groupProblems, [
+    'Group "Горобець" is not among the accessible groups.',
+  ]);
+  assert.deepEqual(request.groupsRead, []);
+});
+
+test("#4053 synthesis can tell a corrected name from a missing group", async (t) => {
+  const { reads, synthesisBodies } = await researchWithProviderScript(t, [
+    () =>
+      stream("", {
+        name: "echo_inbox_messages",
+        args: { period, selectedGroups: ["ДЕВОПС"] },
+      }),
+    () =>
+      stream("", {
+        name: "echo_inbox_messages",
+        args: { period, selectedGroups: ["DEVOPS"] },
+      }),
+    () => stream(""),
+  ]);
+  assert.equal(reads.length, 1);
+  const request = JSON.parse(JSON.parse(synthesisBodies[0]).messages[1].content);
+  assert.deepEqual(request.groupsRead, ["DEVOPS"]);
+  assert.equal(request.groupProblems.length, 1);
 });
 
 test("#4053 a failed-start message never logs the provider's text", () => {

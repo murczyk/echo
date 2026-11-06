@@ -8,6 +8,7 @@ import {
   GROUP_LOOKUP_BODY,
   GROUP_LOOKUP_SKILL,
   resolveGroups,
+  type GroupOutcome,
 } from "./group-scope.ts";
 
 const GROUPS = [
@@ -181,14 +182,25 @@ test("#4053 a selected scope cannot be dropped by omitting it", async () => {
 });
 
 test("#4053 a rejected group also keeps the request scoped and is reported", async () => {
-  const unresolved: string[][] = [];
-  const scope = createGroupScope(async () => GROUPS, () => {}, (values) => unresolved.push(values));
+  const outcomes: GroupOutcome[] = [];
+  const scope = createGroupScope(async () => GROUPS, () => {}, (outcome) => outcomes.push(outcome));
   await assert.rejects(scope.resolve({ selectedGroups: ["DEVOPS", "Горобець"] }, true), /Горобець/);
   await assert.rejects(scope.resolve({ search: "x" }, true), /already selected a group/);
   assert.deepEqual(await scope.resolve({ selectedGroups: ["DEVOPS"] }, true), {
     selectedGroups: ["group.devops"],
   });
-  assert.deepEqual(unresolved, [["Горобець"], []]);
+  assert.deepEqual(outcomes, [
+    { problems: ['Group "Горобець" is not among the accessible groups.'] },
+    { problems: [] },
+    { read: ["DEVOPS"] },
+  ]);
+});
+
+test("#4053 an ambiguous name is reported as ambiguous, not as missing", async () => {
+  const outcomes: GroupOutcome[] = [];
+  const scope = createGroupScope(async () => GROUPS, () => {}, (outcome) => outcomes.push(outcome));
+  await assert.rejects(scope.resolve({ selectedGroups: ["альфа"] }, true), /ambiguous/);
+  assert.match(outcomes[0].problems![0], /is ambiguous between/);
 });
 
 test("#4053 malformed values are left for request validation", async () => {

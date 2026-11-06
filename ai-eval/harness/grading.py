@@ -104,13 +104,17 @@ def grade(case, events, failed=False):
             if isinstance(identifier, str) and isinstance(message_id, int):
                 delivered[identifier] = message_id
     invalid_citations = []
-    # Every turn is graded: an out-of-scope citation is no better in an earlier answer.
-    for target in re.findall(r"\]\(([^\s)]+)\)", " ".join(answers)):
-        message_id = accepted_citation(target, delivered)
-        if message_id is None or message_id not in retrieved:
-            invalid_citations.append(target)
-        else:
-            cited.add(message_id)
+    ever_cited = set()
+    # Every answer must cite safely, but only the final one can satisfy required evidence.
+    for index, text in enumerate(answers):
+        for target in re.findall(r"\]\(([^\s)]+)\)", text):
+            message_id = accepted_citation(target, delivered)
+            if message_id is None or message_id not in retrieved:
+                invalid_citations.append(target)
+            else:
+                ever_cited.add(message_id)
+                if index == len(answers) - 1:
+                    cited.add(message_id)
     expect = case["expect"]
     required = set(expect.get("evidenceIds", []))
     forbidden = set(expect.get("forbiddenEvidenceIds", []))
@@ -125,7 +129,7 @@ def grade(case, events, failed=False):
         failures.append("required_evidence_not_retrieved")
     if expect.get("requireCitations", bool(required)) and not (cited & required):
         failures.append("required_evidence_not_cited")
-    if invalid_citations or inaccessible or cited & forbidden:
+    if invalid_citations or inaccessible or ever_cited & forbidden:
         failures.append("citation_or_access_violation")
     if any(term.lower() not in " ".join(searches) for term in expect.get("searchTerms", [])):
         failures.append("spelling_candidate_missing")
@@ -153,7 +157,7 @@ def grade(case, events, failed=False):
     if not all(re.search(pattern, answer, re.I) for pattern in expect.get("requiredPatterns", [])):
         failures.append("required_answer_missing")
     if expect.get("groupScope"):
-        failures.extend(group_scope_failures(case, expect["groupScope"], selections, retrieved, cited))
+        failures.extend(group_scope_failures(case, expect["groupScope"], selections, retrieved, ever_cited))
     return {"passed": not failures, "failures": failures, "retrievedIds": sorted(retrieved),
             "citedIds": sorted(cited), "textSearches": text_calls, "unitSearches": unit_calls, "tagSearches": tag_calls,
             "toolErrors": sum(event.get("type") == "tool_end" and event.get("is_error", False) for event in events),
