@@ -317,7 +317,7 @@ export class FlashResearch {
   private state?: ResearchState;
   private draft?: string;
   private retrievals = 0;
-  private progressReported = false;
+  private toolRunsAtProgress?: number;
   private publicToolRuns = 0;
   private retrievalBatchAllowed = true;
   private paginationUpdateRequired = false;
@@ -468,7 +468,7 @@ export class FlashResearch {
   }
 
   noteProgress(): void {
-    this.progressReported = true;
+    this.toolRunsAtProgress = this.publicToolRuns;
   }
 
   noteToolRun(): void {
@@ -485,12 +485,16 @@ export class FlashResearch {
       .map((item) => item.task);
   }
 
+  get hasPendingTasks(): boolean {
+    return this.pendingTasks.length > 0;
+  }
+
   // With saved state the checklist decides. Without it, the one sign of unfinished work
   // is a public promise of progress that no tool call followed.
   private get unfinished(): boolean {
     return this.state
-      ? this.pendingTasks.length > 0
-      : this.progressReported && this.publicToolRuns === 0;
+      ? this.hasPendingTasks
+      : this.toolRunsAtProgress === this.publicToolRuns;
   }
 
   shouldContinue(budget: ResearchBudget): boolean {
@@ -529,9 +533,12 @@ export class FlashResearch {
     this.researchStartedAt = undefined;
   }
 
+  // The refresh only protects against a failed synthesis, and it costs research-effort
+  // turns: minutes on GLM-5.3. A short answer is not worth that, and synthesis has its evidence.
   shouldRefreshDraft(budget: ResearchBudget): boolean {
     return (
       this.retrievals > 0 &&
+      this.ledger.length >= REFRESH_RETRIEVALS &&
       budget.remainingResearchMs() >
         2 * Math.max(0, ...this.observedMs.values()) + TURN_MARGIN_MS
     );

@@ -256,7 +256,9 @@ export interface CompletionDiagnostic {
     | "tool_error"
     | "context_limit"
     | "time_limit"
-    | "tool_limit";
+    | "tool_limit"
+    | "continued"
+    | "draft_refresh";
   stopReason?: string;
   rawStopReason?: string;
   inputTokens?: number;

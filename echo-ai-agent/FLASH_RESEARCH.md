@@ -67,7 +67,9 @@ runner re-prompts the model to do the work or mark it done or blocked. Deep allo
 three re-prompts and the other presets one, while time for a turn remains. A
 re-prompt that runs no tool ends the loop. There is no forced tool choice here.
 Research may also end without any text, as GLM-5.3 does: synthesis writes the
-answer, so an empty final turn is not a provider failure.
+answer, so an empty final turn is not a provider failure. A last draft refresh
+runs only after four or more retrievals, because it is a fallback that costs
+research-effort turns.
 
 Synthesis uses the same context-aware evidence packing as other engines and at
 most 16,384 output tokens (the whole configured output cap on Deep), bounded by

@@ -312,7 +312,9 @@ for (const [scenario, modelName] of [
         refresh();
       }
     }
-    if (scenario === "refresh-final") read({ period, search: "late survey" });
+    if (scenario === "refresh-final")
+      for (const search of ["late survey", "later survey", "latest survey"])
+        read({ period, search });
     if (scenario === "empty-refresh")
       calls.push({ name: "update_research", args: initial });
     if (scenario === "tool-limit") {
@@ -807,8 +809,12 @@ for (const [scenario, modelName] of [
     );
     if (scenario.startsWith("deep-")) {
       assert.ok(!answer.includes("Охоплення джерел неповне"));
-      assert.equal(Boolean(coverage), scenario === "deep-hard-stop");
+      assert.equal(
+        coverage?.reason,
+        { "deep-hard-stop": "time_limit", "deep-stalled": "incomplete_research" }[scenario],
+      );
       assert.equal(answer.includes("Вичерпано час глибокого режиму"), scenario === "deep-hard-stop");
+      assert.equal(answer.includes("не виконавши всі заплановані кроки"), scenario === "deep-stalled");
     } else assert.equal(Boolean(coverage), answer.includes("Охоплення джерел неповне"));
     const diagnostics = events.filter(
       (event) => event.type === "completion_diagnostic",
@@ -845,9 +851,11 @@ for (const [scenario, modelName] of [
     assert.ok(!answer.includes("UNFINISHED"));
     assert.ok(!answer.includes("уривки джерел"));
     if (scenario === "no-draft") assert.ok(answer.includes(FLASH_INABILITY));
+    else if (scenario === "deep-stalled")
+      assert.ok(answer.startsWith("The botanical survey is ready."));
     else if (
       scenario.startsWith("user-text") ||
-      ["history-aggregate", "deep-stalled"].includes(scenario)
+      scenario === "history-aggregate"
     )
       assert.equal(answer.trim(), "The botanical survey is ready.");
     else if (scenario === "user-map") {
@@ -924,7 +932,11 @@ for (const [scenario, modelName] of [
       assert.ok(!prompt.includes("time budget ended"));
       assert.ok(!prompt.includes("deep mode"));
       assert.ok(prompt.includes("No time, tool or budget limit stopped this work"));
-      assert.ok(prompt.includes("Do not add a section about incomplete coverage"));
+      // Abandoned tasks may be stated; only finished work reports gaps as plain findings.
+      assert.equal(
+        prompt.includes("Do not add a section about incomplete coverage"),
+        scenario !== "deep-stalled",
+      );
     }
     if (scenario === "deep-stalled")
       assert.ok(synthesisBodies.at(-1)!.includes("No Echo data was searched"));
@@ -1063,6 +1075,11 @@ test("#4031 a turn ending with declared work left is continued only while it is 
   research.noteProgress();
   assert.equal(research.shouldContinue(budget), true);
   assert.match(research.continuationPrompt(), /announced work/);
+  research.noteToolRun();
+  assert.equal(research.shouldContinue(budget), false);
+  // A promise made after earlier work still needs a tool of its own.
+  research.noteProgress();
+  assert.equal(research.shouldContinue(budget), true);
   research.noteToolRun();
   assert.equal(research.shouldContinue(budget), false);
   await save(initial);

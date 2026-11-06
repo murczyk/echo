@@ -389,6 +389,8 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "context_limit"
             | "time_limit"
             | "tool_limit"
+            | "continued"
+            | "draft_refresh"
     ) {
         return None;
     }
@@ -898,6 +900,13 @@ mod tests {
         };
         assert_eq!(rejected("unknown_link")["draftIssue"], "unknown_link");
         assert!(rejected("private text").get("draftIssue").is_none());
+        for outcome in ["continued", "draft_refresh"] {
+            assert!(completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": outcome
+            }))
+            .is_some());
+        }
     }
 
     #[test]
