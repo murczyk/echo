@@ -194,15 +194,28 @@ export type CallsignsBootstrapData = {
   callsigns: ListCallsignsRsp;
 };
 
+async function fetchNetworkCallsigns(
+  payload: Parameters<typeof postJson>[1],
+): Promise<ListNetworkCallsignsRes> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', payload);
+  return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
+}
+
 export async function listNetworkCallsigns(
   req: ListNetworkCallsignsReq,
 ): Promise<ListNetworkCallsignsRes> {
   const payload = transformCamelToSnake(req) as Parameters<typeof postJson>[1];
   const cacheKey = JSON.stringify(payload);
-  return dedupeInFlightRequest(inFlightNetworkCallsignsListRequests, cacheKey, async () => {
-    const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', payload);
-    return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
-  });
+  return dedupeInFlightRequest(inFlightNetworkCallsignsListRequests, cacheKey, () =>
+    fetchNetworkCallsigns(payload),
+  );
+}
+
+/** Never joins an in-flight request: the caller may need data newer than that request. */
+export async function listNetworkCallsignStats(
+  req: ListNetworkCallsignsReq,
+): Promise<ListNetworkCallsignsRes> {
+  return fetchNetworkCallsigns(transformCamelToSnake(req) as Parameters<typeof postJson>[1]);
 }
 
 export async function getNetworkCallsigns(

@@ -17,6 +17,7 @@ import {
 import { getEncryptions } from '../../services/api/encryptions';
 import {
   listNetworkCallsigns,
+  listNetworkCallsignStats,
   getNetworkCallsigns,
   listSources,
 } from '../../services/api/callsigns';
@@ -302,7 +303,7 @@ export function useRerNetworkDetailsNeoPageLoad(
       }));
 
       try {
-        const { networkCallsigns } = await listNetworkCallsigns({
+        const { networkCallsigns } = await listNetworkCallsignStats({
           networkId: targetNetworkId,
           sortBy: ['NetworkCallsignAsc'],
           period,

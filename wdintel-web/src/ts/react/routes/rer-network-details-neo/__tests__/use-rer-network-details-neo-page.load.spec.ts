@@ -27,6 +27,7 @@ import { excludeNetworkOwnedInterceptedCallsigns } from '../network-callsigns.ta
 
 const callsignsApiMock = vi.hoisted(() => ({
   listNetworkCallsigns: vi.fn(),
+  listNetworkCallsignStats: vi.fn(),
   getNetworkCallsigns: vi.fn(),
   getNetworkCallsignsActivity: vi.fn(),
   listSources: vi.fn(),
@@ -168,6 +169,7 @@ afterEach(() => {
   latestLoadPelengPoints = null;
   latestSetState = null;
   callsignsApiMock.listNetworkCallsigns.mockReset();
+  callsignsApiMock.listNetworkCallsignStats.mockReset();
   callsignsApiMock.getNetworkCallsigns.mockReset();
   callsignsApiMock.getNetworkCallsignsActivity.mockReset();
   callsignsApiMock.listSources.mockReset();
@@ -242,6 +244,7 @@ function installDefaultApiMocks() {
   otherApiMocks.getNetworkGroupsActivityOne.mockResolvedValue({});
   otherApiMocks.listNetworkPoints.mockResolvedValue({ points: [] });
   callsignsApiMock.listNetworkCallsigns.mockResolvedValue({ networkCallsigns: [] });
+  callsignsApiMock.listNetworkCallsignStats.mockResolvedValue({ networkCallsigns: [] });
   callsignsApiMock.getNetworkCallsigns.mockResolvedValue({ callsigns: [] });
   callsignsApiMock.getNetworkCallsignsActivity.mockResolvedValue({ callsignsActivity: [] });
   callsignsApiMock.listSources.mockResolvedValue([]);
@@ -434,13 +437,11 @@ describe('use-rer-network-details-neo-page.load', () => {
 
   describe('network list and stats stages', () => {
     const ROW = { id: 1, callsign: 'СОКІЛ-1', messageCount: 0 } as NetworkCallsign;
-    type ListReq = { includeActivityInfo: boolean; period: string | null };
 
     function mockListAndStats(statsResponse: Promise<{ networkCallsigns: NetworkCallsign[] }>) {
       callsignsApiMock.listSources.mockResolvedValue([]);
-      callsignsApiMock.listNetworkCallsigns.mockImplementation((req: ListReq) =>
-        req.includeActivityInfo ? statsResponse : Promise.resolve({ networkCallsigns: [ROW] }),
-      );
+      callsignsApiMock.listNetworkCallsigns.mockResolvedValue({ networkCallsigns: [ROW] });
+      callsignsApiMock.listNetworkCallsignStats.mockReturnValue(statsResponse);
     }
 
     async function flush() {
@@ -467,7 +468,7 @@ describe('use-rer-network-details-neo-page.load', () => {
         period: null,
         includeActivityInfo: false,
       });
-      expect(callsignsApiMock.listNetworkCallsigns).toHaveBeenCalledWith({
+      expect(callsignsApiMock.listNetworkCallsignStats).toHaveBeenCalledWith({
         networkId: 42,
         sortBy: ['NetworkCallsignAsc'],
         period: 'Last21Days',
@@ -522,8 +523,9 @@ describe('use-rer-network-details-neo-page.load', () => {
       renderHookHarness();
       const slow = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
       const fast = createDeferred<{ networkCallsigns: NetworkCallsign[] }>();
-      callsignsApiMock.listNetworkCallsigns.mockImplementation((req: ListReq) =>
-        req.period === 'Unlimited' ? slow.promise : fast.promise,
+      callsignsApiMock.listNetworkCallsignStats.mockImplementation(
+        (req: { period: string | null }) =>
+          req.period === 'Unlimited' ? slow.promise : fast.promise,
       );
 
       await act(async () => {
