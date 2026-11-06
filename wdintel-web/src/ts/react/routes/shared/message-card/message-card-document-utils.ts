@@ -72,7 +72,7 @@ export function isDocumentPreviewAttachment(m: MessageMediaInfo): boolean {
   return getDocumentKind(m) !== 'unsupported';
 }
 
-export function collectMessageDocuments(msg: InboxMessage): MessageCardDocument[] {
+export function collectMessageDocuments(msg: Pick<InboxMessage, 'media'>): MessageCardDocument[] {
   const documentsByHref = new Map<string, MessageCardDocument>();
 
   const add = (document: MessageCardDocument) => {

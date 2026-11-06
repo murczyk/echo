@@ -17,7 +17,7 @@ afterEach(() => {
   container = null;
 });
 
-async function renderText(text: string) {
+async function renderText(text: string, linkWww = false) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -27,6 +27,7 @@ async function renderText(text: string) {
         {renderLinkifiedText(text, {
           currentOrigin: 'https://echo.test',
           groupInfos: {},
+          linkWww,
         })}
       </div>,
     );
@@ -73,5 +74,35 @@ describe('renderLinkifiedText', () => {
     const view = await renderText(`Дивись ${url}`);
 
     expect(view.querySelector('a')?.textContent).toBe(url);
+  });
+
+  describe('www addresses', () => {
+    const hrefs = (c: HTMLElement) =>
+      [...c.querySelectorAll('a')].map((a) => a.getAttribute('href'));
+
+    it('leaves a bare www address as text unless asked to link it', async () => {
+      const c = await renderText('see www.example.com now');
+      expect(c.querySelector('a')).toBeNull();
+    });
+
+    it('links a www address as https and keeps the visible text and the trailing punctuation', async () => {
+      const c = await renderText('go to www.ArashiShop.ir, then (www.example.com/a_b).', true);
+      expect(hrefs(c)).toEqual(['https://www.arashishop.ir/', 'https://www.example.com/a_b']);
+      expect([...c.querySelectorAll('a')].map((a) => a.textContent)).toEqual([
+        'www.ArashiShop.ir',
+        'www.example.com/a_b',
+      ]);
+      expect(c.textContent).toBe('go to www.ArashiShop.ir, then (www.example.com/a_b).');
+    });
+
+    it('still links scheme addresses and does not link www inside words or e-mail addresses', async () => {
+      const c = await renderText('https://a.test x@www.b.test awww.c.test http://d.test', true);
+      expect(hrefs(c)).toEqual(['https://a.test/', 'http://d.test/']);
+    });
+
+    it('ignores "www." without a host', async () => {
+      const c = await renderText('www. and www..', true);
+      expect(c.querySelector('a')).toBeNull();
+    });
   });
 });
