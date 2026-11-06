@@ -1,6 +1,7 @@
 pub mod access;
 pub mod accounts;
 pub mod chats;
+pub mod contacts;
 pub mod members;
 pub mod messages;
 pub mod types;
@@ -12,7 +13,8 @@ use crate::messengers::types::{
     MessengersAccountUpdateReq, MessengersAccountsListReq,
     MessengersAccountsListRsp, MessengersChatMembersListReq,
     MessengersChatMembersListRsp, MessengersChatsListReq,
-    MessengersChatsListRsp, MessengersMessagesListReq,
+    MessengersChatsListRsp, MessengersContactsListReq,
+    MessengersContactsListRsp, MessengersMessagesListReq,
     MessengersMessagesListRsp,
 };
 use crate::types::{Env, ShortContext};
@@ -67,6 +69,19 @@ pub async fn chat_members_list(
 ) -> Result<Json<MessengersChatMembersListRsp>, AppError> {
     let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
     let rsp = members::list_chat_members(&env.dbx, &scope, req.into_inner())
+        .await
+        .c(h!())?;
+    Ok(Json(rsp))
+}
+
+#[post("/api/messengers/contacts/list")]
+pub async fn contacts_list(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<MessengersContactsListReq>,
+) -> Result<Json<MessengersContactsListRsp>, AppError> {
+    let scope = ensure_messengers_access(&env.dbx, &user).await.c(h!())?;
+    let rsp = contacts::list_contacts(&env.dbx, &scope, req.into_inner())
         .await
         .c(h!())?;
     Ok(Json(rsp))

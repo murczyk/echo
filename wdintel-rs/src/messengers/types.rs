@@ -210,3 +210,40 @@ pub struct MessengersAccountUpdateReq {
     pub account_id: String,
     pub internal_notes: Option<String>,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersContactsListReq {
+    pub account_id: String,
+    pub page: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersContactsListRsp {
+    pub items: Vec<MessengersContactItem>,
+    pub total: u64,
+    pub page: u64,
+    pub page_size: u64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MessengersContactItem {
+    pub id: String,
+    pub messenger_type: String,
+    pub external_id: String,
+    pub username: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub phone: Option<String>,
+    pub is_mutual: Option<bool>,
+    pub is_close_friend: Option<bool>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub telegram: Option<MessengersTelegramAccountId>,
+}

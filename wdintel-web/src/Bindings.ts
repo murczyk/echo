@@ -1067,6 +1067,33 @@ export type MessengersChatMembersListRsp = {
   items: Array<MessengersChatMemberItem>;
 };
 
+export type MessengersContactsListReq = {
+  accountId: string;
+  page: number | null;
+  limit: number | null;
+};
+
+export type MessengersContactItem = {
+  id: string;
+  messengerType: string;
+  externalId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  phone: string | null;
+  isMutual: boolean | null;
+  isCloseFriend: boolean | null;
+  createdAt: number;
+  telegram: MessengersTelegramAccountId | null;
+};
+
+export type MessengersContactsListRsp = {
+  items: Array<MessengersContactItem>;
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
 export type MessengersMessagesDirection =
   | 'Older'
   | 'Newer'

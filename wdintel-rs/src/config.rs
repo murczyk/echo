@@ -779,6 +779,8 @@ pub const ROLE_MESSENGER_INGEST: &str = "MessengerIngest";
 pub const ROLE_CYBER_MESSENGERS: &str = "CyberMessengers";
 pub const MESSENGERS_MESSAGES_DEFAULT_LIMIT: i64 = 50;
 pub const MESSENGERS_MESSAGES_MAX_LIMIT: i64 = 100;
+pub const MESSENGERS_CONTACTS_DEFAULT_LIMIT: i64 = 100;
+pub const MESSENGERS_CONTACTS_MAX_LIMIT: i64 = 250;
 
 pub const MESSENGER_INGEST_DATASOURCE_KIND: &str = "echo_messenger_ingest";
 /// Master keys of messenger account groups are this prefix plus the account id.

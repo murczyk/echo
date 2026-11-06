@@ -2764,6 +2764,72 @@ messengersChatMembersListRspEncoder struct =
         ]
 
 
+type alias MessengersContactsListReq =
+    { accountId : String
+    , page : Maybe (Int)
+    , limit : Maybe (Int)
+    }
+
+
+messengersContactsListReqEncoder : MessengersContactsListReq -> Json.Encode.Value
+messengersContactsListReqEncoder struct =
+    Json.Encode.object
+        [ ( "account_id", (Json.Encode.string) struct.accountId )
+        , ( "page", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.page )
+        , ( "limit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.limit )
+        ]
+
+
+type alias MessengersContactItem =
+    { id : String
+    , messengerType : String
+    , externalId : String
+    , username : Maybe (String)
+    , firstName : Maybe (String)
+    , lastName : Maybe (String)
+    , phone : Maybe (String)
+    , isMutual : Maybe (Bool)
+    , isCloseFriend : Maybe (Bool)
+    , createdAt : Int
+    , telegram : Maybe (MessengersTelegramAccountId)
+    }
+
+
+messengersContactItemEncoder : MessengersContactItem -> Json.Encode.Value
+messengersContactItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "messenger_type", (Json.Encode.string) struct.messengerType )
+        , ( "external_id", (Json.Encode.string) struct.externalId )
+        , ( "username", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.username )
+        , ( "first_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.firstName )
+        , ( "last_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.lastName )
+        , ( "phone", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.phone )
+        , ( "is_mutual", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isMutual )
+        , ( "is_close_friend", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isCloseFriend )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "telegram", (Maybe.withDefault Json.Encode.null << Maybe.map (messengersTelegramAccountIdEncoder)) struct.telegram )
+        ]
+
+
+type alias MessengersContactsListRsp =
+    { items : List (MessengersContactItem)
+    , total : Int
+    , page : Int
+    , pageSize : Int
+    }
+
+
+messengersContactsListRspEncoder : MessengersContactsListRsp -> Json.Encode.Value
+messengersContactsListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (messengersContactItemEncoder)) struct.items )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "page", (Json.Encode.int) struct.page )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
 type MessengersMessagesDirection
     = Older
     | Newer
@@ -22927,6 +22993,39 @@ messengersChatMembersListRspDecoder : Json.Decode.Decoder MessengersChatMembersL
 messengersChatMembersListRspDecoder =
     Json.Decode.succeed MessengersChatMembersListRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersChatMemberItemDecoder))))
+
+
+messengersContactsListReqDecoder : Json.Decode.Decoder MessengersContactsListReq
+messengersContactsListReqDecoder =
+    Json.Decode.succeed MessengersContactsListReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "account_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+messengersContactItemDecoder : Json.Decode.Decoder MessengersContactItem
+messengersContactItemDecoder =
+    Json.Decode.succeed MessengersContactItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_type" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "external_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "username" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "first_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "last_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "phone" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_mutual" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_close_friend" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "telegram" (Json.Decode.nullable (messengersTelegramAccountIdDecoder))))
+
+
+messengersContactsListRspDecoder : Json.Decode.Decoder MessengersContactsListRsp
+messengersContactsListRspDecoder =
+    Json.Decode.succeed MessengersContactsListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (messengersContactItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
 
 
 messengersMessagesDirectionDecoder : Json.Decode.Decoder MessengersMessagesDirection

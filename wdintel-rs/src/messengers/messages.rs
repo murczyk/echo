@@ -98,7 +98,12 @@ pub(crate) async fn list_messages(
     scope: &MessengersScope,
     req: MessengersMessagesListReq,
 ) -> Result<MessengersMessagesListRsp, AppError> {
-    let limit = page_limit(req.limit).c(h!())?;
+    let limit = page_limit(
+        req.limit,
+        MESSENGERS_MESSAGES_DEFAULT_LIMIT,
+        MESSENGERS_MESSAGES_MAX_LIMIT,
+    )
+    .c(h!())?;
     let page_request = page_request(&req).c(h!())?;
     let account = resolve_account(&env.dbx, scope, &req.account_id)
         .await
@@ -117,13 +122,15 @@ pub(crate) async fn list_messages(
     })
 }
 
-fn page_limit(limit: Option<i64>) -> Result<u64, AppError> {
-    let limit = limit.unwrap_or(MESSENGERS_MESSAGES_DEFAULT_LIMIT);
-    if !(1..=MESSENGERS_MESSAGES_MAX_LIMIT).contains(&limit) {
+pub(crate) fn page_limit(
+    limit: Option<i64>,
+    default: i64,
+    max: i64,
+) -> Result<u64, AppError> {
+    let limit = limit.unwrap_or(default);
+    if !(1..=max).contains(&limit) {
         return Err(AppError::BL {
-            msg: format!(
-                "invalid limit: {limit}, max {MESSENGERS_MESSAGES_MAX_LIMIT}"
-            ),
+            msg: format!("invalid limit: {limit}, max {max}"),
         });
     }
     Ok(limit as u64)

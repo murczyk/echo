@@ -1,7 +1,7 @@
 # Messengers viewer API
 
 Draft specification of the API that the Echo web UI uses to browse ingested
-messenger data: accounts, their chats, chat members and messages. The
+messenger data: accounts, their contacts, chats, chat members and messages. The
 data is pushed by collectors through the
 [messenger ingest API](MESSENGER_INGEST.md). Sections marked **Planned** are
 proposals, not contracts.
@@ -20,6 +20,7 @@ are removed from the RER inbox and analysis feeds; see
 | `POST /accounts/update` | Implemented | `MessengersAccountUpdateReq` | `null` |
 | `POST /chats/list` | Implemented | `MessengersChatsListReq` | `MessengersChatsListRsp` |
 | `POST /chats/members/list` | Implemented | `MessengersChatMembersListReq` | `MessengersChatMembersListRsp` |
+| `POST /contacts/list` | Implemented | `MessengersContactsListReq` | `MessengersContactsListRsp` |
 | `POST /messages/list` | Implemented | `MessengersMessagesListReq` | `MessengersMessagesListRsp` |
 
 Every route is a read except `accounts/update`, the only write, which changes
@@ -40,8 +41,8 @@ fields without changing the route.
   and zone), the same check that protects inbox messages and media. The ingest
   datasource must be linked to the viewer's zone, otherwise the account is not
   visible.
-- Chats, members and messages are only reachable through a parent resolved
-  within the caller's scope.
+- Chats, members, contacts and messages are only reachable through a parent
+  resolved within the caller's scope.
 - Attachments are served by the existing `/api/messenger/media/{id}` routes.
   They require the base role and a group shared with the message, which the
   rules above already imply.
@@ -57,8 +58,8 @@ fields without changing the route.
 | Timestamps | Integer milliseconds since the Unix epoch, UTC |
 | Optional fields | `T \| null` |
 | Collections | Always present, may be empty; never `null` |
-| Pagination | `messages/list` only. The other lists return every item |
-| Deleted rows | Soft-deleted accounts, chats and messages are left out of lists, and a deleted account or chat is a `404`. Deleted chat members stay in `chats/members/list` with `deleted: true` |
+| Pagination | Cursor on `messages/list`, page number on `contacts/list`. The other lists return every item |
+| Deleted rows | Soft-deleted accounts, chats, contacts and messages are left out of lists, and a deleted account or chat is a `404`. Deleted chat members stay in `chats/members/list` with `deleted: true` |
 
 A disabled ingest datasource only stops ingest; data already stored stays
 readable.
@@ -72,7 +73,7 @@ account.
 
 | Status | Meaning | Body |
 |---|---|---|
-| `400` | Invalid uuid, or an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list` | Plain-text message |
+| `400` | Invalid uuid, an invalid `cursor`, `limit`, `direction` or combination of them on `messages/list`, or an invalid `page` or `limit` on `contacts/list` | Plain-text message |
 | `401` | Not authenticated | `Unauthenticated` |
 | `403` | Missing `CyberMessengers`, or missing `Rer` / `CyberViewerRestricted` | `Forbidden` |
 | `404` | Account or chat is unknown, deleted, outside the caller's groups, or the chat is not under that account. Also an `around_message_id` that is not a visible message of the chat | `Not found` |
@@ -246,6 +247,50 @@ type MessengersChatMemberItem = {
 }
 ```
 
+## Contacts
+
+### `POST /contacts/list`
+
+One page of the live contacts of an account, ordered by `id`. Contacts
+come from the account's address book and are separate from chat members: the
+same person can be both, with different details. Messages do not reference
+contacts, so unlike chat members, deleted contacts are left out.
+
+```ts
+type MessengersContactsListReq = {
+  account_id: string
+  page: number | null                   // from 1, default 1
+  limit: number | null                  // default 50, at most 100
+}
+
+type MessengersContactsListRsp = {
+  items: MessengersContactItem[]
+  total: number                         // live contacts of the account
+  page: number
+  page_size: number                     // the limit applied
+}
+
+type MessengersContactItem = {
+  id: string                            // Echo contact uuid
+  messenger_type: string
+  external_id: string
+  username: string | null
+  first_name: string | null             // as saved in the account's address book
+  last_name: string | null
+  phone: string | null
+  is_mutual: boolean | null
+  is_close_friend: boolean | null
+  created_at: number                    // epoch ms, when Echo first stored it
+  telegram: { user_id: string } | null
+}
+```
+
+- A page past the end is empty, with the correct `total`.
+- Pages are offsets, so a sync between two requests can shift rows, and a
+  contact can repeat or be skipped.
+- `created_at` is not when the contact joined the address book, which collectors
+  do not send. A contact restored after deletion keeps its original value.
+
 ## Messages
 
 ### `POST /messages/list`
@@ -412,9 +457,5 @@ timeline directly and the message cursor stays the same.
 
 ### Avatars
 
-`avatar_url` on accounts, chats and members, and a route that serves
+`avatar_url` on accounts, chats, members and contacts, and a route that serves
 `messenger_avatar` content behind a group check. No such route exists yet.
-
-### Contacts
-
-`POST /contacts/list` for the contacts of one account.
