@@ -697,7 +697,7 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         .collect();
     for (preset, runtime, reserve) in [
         (Preset::Fast, 120, 60),
-        (Preset::Balanced, 300, 120),
+        (Preset::Balanced, 600, 120),
         (Preset::Deep, 14_400, 600),
     ] {
         let flash_policy = reasoning::resolve(&config, &flash, preset, false);
@@ -730,12 +730,24 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         }
         assert!(flash_policy.reasoning_effort.is_none());
     }
+    // #4031: Balanced runs longer on non-OpenAI engines only.
+    let balanced_runtime = |engine| {
+        reasoning::resolve(&config, engine, Preset::Balanced, false)
+            .max_runtime_seconds
+    };
+    assert_eq!(balanced_runtime(&gemma), 600, "gemma");
+    assert_eq!(balanced_runtime(&sol), 300, "gpt");
+    for openai in &openai_engines {
+        assert_eq!(balanced_runtime(openai), 300, "{}", openai.model_name);
+    }
     let policy = reasoning::resolve(
         &config,
         &engine,
         crate::ai_agent::types::AiAgentReasoningPreset::Balanced,
         false,
     );
+    let runtime_seconds = policy.max_runtime_seconds as i64;
+    let research_seconds = runtime_seconds - policy.finalization_seconds as i64;
     let mut request = request.into_active_model();
     request.started_at = Set(Some(chrono::Utc::now().naive_utc()));
     request.execution_policy =
@@ -807,7 +819,8 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         .unwrap();
     let mut request = request.into_active_model();
     request.started_at = Set(Some(
-        (chrono::Utc::now() - chrono::Duration::seconds(241)).naive_utc(),
+        (chrono::Utc::now() - chrono::Duration::seconds(research_seconds + 1))
+            .naive_utc(),
     ));
     let request = request.update(&env.dbx).await.unwrap();
     let limited = issue_test_provider(&env, &request, Some(&engine)).await;
@@ -842,7 +855,8 @@ async fn issue_3724_reasoning_policy_reserved_synthesis_and_kept_its_deadline()
         .unwrap();
     let mut request = request.into_active_model();
     request.started_at = Set(Some(
-        (chrono::Utc::now() - chrono::Duration::seconds(301)).naive_utc(),
+        (chrono::Utc::now() - chrono::Duration::seconds(runtime_seconds + 1))
+            .naive_utc(),
     ));
     let request = request.update(&env.dbx).await.unwrap();
     let expired = issue_test_provider(&env, &request, Some(&engine)).await;

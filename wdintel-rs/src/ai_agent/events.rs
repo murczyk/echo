@@ -389,6 +389,8 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "context_limit"
             | "time_limit"
             | "tool_limit"
+            | "continued"
+            | "draft_refresh"
     ) {
         return None;
     }
@@ -410,6 +412,11 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             ) {
                 diagnostic[key] = Value::String(value.to_string());
             }
+        }
+    }
+    if let Some(issue) = event.get("draftIssue").and_then(Value::as_str) {
+        if matches!(issue, "no_citation" | "unknown_link" | "bare_link") {
+            diagnostic["draftIssue"] = Value::String(issue.to_string());
         }
     }
     for key in [
@@ -470,6 +477,21 @@ fn is_script_tool(tool: &str) -> bool {
 fn diagnostic_line(event: &Value, key: &str, limit: usize) -> Option<String> {
     let line = event.get(key)?.as_str()?.lines().next()?.trim();
     (!line.is_empty()).then(|| line.chars().take(limit).collect())
+}
+
+/// Paths and fixed kinds only: anything that could be a received value is dropped.
+fn validation_fields(event: &Value) -> Option<String> {
+    diagnostic_line(
+        event,
+        "fields",
+        AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
+    )
+    .filter(|fields| {
+        fields.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'.' | b':' | b',' | b' ')
+        })
+    })
 }
 
 fn is_exception_name(value: &str) -> bool {
@@ -555,6 +577,9 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
         AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
     ) {
         diagnostic["category"] = Value::String(category);
+    }
+    if let Some(fields) = validation_fields(event) {
+        diagnostic["fields"] = Value::String(fields);
     }
     if is_script_tool(tool) {
         add_script_failure(event, &mut diagnostic);
@@ -837,6 +862,51 @@ mod tests {
         assert!(completion_diagnostic(&serde_json::json!({
             "type": "completion_diagnostic", "stage": "secret", "outcome": "complete"
         })).is_none());
+    }
+
+    #[test]
+    fn issue_4031_named_private_tools_and_kept_only_field_paths() {
+        let event = serde_json::json!({
+            "type": "tool_diagnostic", "tool": "update_research",
+            "reason": "invalid_arguments",
+            "fields": "checklist.0.status:enum, draft:required"
+        });
+        assert_eq!(
+            tool_diagnostic(&event).unwrap(),
+            serde_json::json!({
+                "tool": "update_research", "reason": "invalid_arguments",
+                "fields": "checklist.0.status:enum, draft:required"
+            })
+        );
+        for value in ["Позивний Орнитолог", "draft:\"secret\"", "a=b"]
+        {
+            let diagnostic = tool_diagnostic(&serde_json::json!({
+                "type": "tool_diagnostic", "tool": "update_research",
+                "reason": "invalid_arguments", "fields": value
+            }))
+            .unwrap();
+            assert!(diagnostic.get("fields").is_none(), "{value}");
+        }
+    }
+
+    #[test]
+    fn issue_4031_reported_why_a_draft_was_rejected() {
+        let rejected = |issue| {
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": "citation_rejected", "draftIssue": issue
+            }))
+            .unwrap()
+        };
+        assert_eq!(rejected("unknown_link")["draftIssue"], "unknown_link");
+        assert!(rejected("private text").get("draftIssue").is_none());
+        for outcome in ["continued", "draft_refresh"] {
+            assert!(completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": outcome
+            }))
+            .is_some());
+        }
     }
 
     #[test]

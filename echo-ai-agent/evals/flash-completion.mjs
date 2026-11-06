@@ -33,7 +33,7 @@ const multiplier = Number(
 assert.ok([1, 2].includes(multiplier), "reserve multiplier must be 1 or 2");
 const [runtime, reserve] = {
   fast: [120, 30],
-  balanced: [300, 60],
+  balanced: [openai || multiplier === 1 ? 300 : 600, 60],
   deep: [1800, 120],
 }[preset];
 const correlationId = "019fc7f7-9770-7f83-9c1a-211af29b02e6";
@@ -171,6 +171,9 @@ globalThis.fetch = async (url, init) => {
     ...init,
     headers,
     body: JSON.stringify(body),
+  }).catch((error) => {
+    entry.error = String(error?.cause?.code ?? error?.cause ?? error).slice(0, 120);
+    throw error;
   });
   entry.httpStatus = response.status;
   const text = await response.text();
@@ -204,6 +207,8 @@ await runAgent(
       prompt:
         scenario === "attachments"
           ? "Summarize the botanical report attachment from the last day, grouped by team. Read its full sections and use headings and citations."
+          : scenario === "short"
+            ? "Хто така команда Iris, яка її функція?"
           : scenario === "followup"
             ? "Reformat the previous answer with a heading per team and short cited bullets. Do not add new facts."
             : scenario === "exhaustive"
@@ -316,6 +321,9 @@ write(
       fallback: Boolean(lastDraft && answer.startsWith(lastDraft)),
       diagnostics: events.filter(
         (event) => event.type === "completion_diagnostic",
+      ),
+      toolDiagnostics: events.filter(
+        (event) => event.type === "tool_diagnostic",
       ),
       completion: events.find((event) => event.type === "completion_metadata"),
     },

@@ -202,7 +202,11 @@ pub fn resolve(
             config::AI_AGENT_FAST_FINALIZATION_SEC,
         ),
         AiAgentReasoningPreset::Balanced => (
-            config::AI_AGENT_BALANCED_RUNTIME_SEC,
+            if bounded_research(name) {
+                config::AI_AGENT_BOUNDED_BALANCED_RUNTIME_SEC
+            } else {
+                config::AI_AGENT_BALANCED_RUNTIME_SEC
+            },
             config::AI_AGENT_BALANCED_FINALIZATION_SEC,
         ),
         AiAgentReasoningPreset::Deep => (

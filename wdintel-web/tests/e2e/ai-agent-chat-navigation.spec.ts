@@ -978,14 +978,17 @@ for (const width of [1280, 320]) {
     const submitted: { reasoningPreset: string; hasPrompt: boolean }[] = [];
     await page.route('**/api/ai-agent/requests/create', (route) => {
       const { reasoningPreset, prompt } = route.request().postDataJSON();
-      submitted.push({ reasoningPreset, hasPrompt: prompt.startsWith('Продовж роботу') });
+      submitted.push({
+        reasoningPreset,
+        hasPrompt: prompt.startsWith('Продовж попереднє завдання'),
+      });
       return route.fulfill({
         json: { requestId: 'request-continued', conversationId, state: 'queued' },
       });
     });
     await page.goto(`/?conversation=${conversationId}`);
     const continuation = page.getByRole('button', {
-      name: 'Продовжити глибоким аналізом',
+      name: 'Продовжити в глибокому режимі',
       exact: true,
     });
     await expect(continuation).toBeEnabled();
