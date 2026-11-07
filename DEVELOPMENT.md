@@ -46,12 +46,15 @@ Rules:
 
 ## What a staging check has to prove
 
-A check counts only if it reaches the changed code. Before relying on one, work
-out which code path the test data takes, and prove that the check fails without
-the change.
+A check counts only if it reaches the bug. Before relying on one, work out which
+code path the test data takes, and prove that the check fails without the change.
 
-For example, encrypted media inside the 24-hour retention window is served from
-a local decrypted copy and never reaches the decrypt path. The first check for
-[#4006](https://github.com/echoua/echo/issues/4006) passed for that reason, and
-the failure appeared a day later. See
-[messenger media delivery](./docs/messenger-media-delivery.md).
+- **Chromium hides concurrency bugs.** Its HTTP cache runs requests for one URL
+  one at a time, so a burst of parallel `Range` requests never reaches the server
+  as a burst. Check in Firefox, or disable the cache in Chromium.
+- **Fresh data can skip the code path.** Encrypted media inside the 24-hour
+  retention window comes from a local decrypted copy and never reaches the
+  decrypt path. See [messenger media delivery](./docs/messenger-media-delivery.md).
+
+The check for [#4006](https://github.com/echoua/echo/issues/4006) passed although
+the preview still failed in Firefox on aged files. Either of these can hide that.
