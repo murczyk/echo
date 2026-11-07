@@ -58,10 +58,10 @@ import {
   SettingsManager,
   type AgentSession,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
 import { countKnownReports, createMapTools, EDIT_GUIDANCE, knownReportsGuidance, MapRegistry, MAP_GUIDANCE, normalizeToolArguments, SCRIPT_GUIDANCE, preserveMapReferences, publishReferencedDrafts, stripUnpublishedMapLinks, undeliveredMaps, validateMapEdit, validateMapSummaries, type MapEditContext, type MapSummary } from "./maps.ts";
 import { compactGroupCatalog, createGroupScope, GROUP_LOOKUP_BODY, GROUP_LOOKUP_SKILL } from "./group-scope.ts";
-import { GROUP_LOOKUP_DESCRIPTION, INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, SELECTED_GROUPS_DESCRIPTION, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
+import { FREQUENCY_SUMMARY_DESCRIPTION, FREQUENCY_SUMMARY_FREQUENCIES_DESCRIPTION, FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION, FREQUENCY_SUMMARY_UNITS_DESCRIPTION, GROUP_LOOKUP_DESCRIPTION, INBOX_FREQUENCIES_DESCRIPTION, INBOX_SEARCH_DESCRIPTION, INBOX_UNIT_IDS_DESCRIPTION, INBOX_UNITS_DESCRIPTION, POSITION_LOOKUP_DESCRIPTION, SEARCH_GUIDANCE, SELECTED_GROUPS_DESCRIPTION, UNIT_LOOKUP_DESCRIPTION } from "./search-guidance.ts";
 import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -1302,27 +1302,31 @@ function selectedUnitsBody(input: JsonObject): JsonObject {
   return body;
 }
 
+const ANALYSIS_PERIOD_FIELDS = [
+  "period",
+  "selectedGroups",
+  "selectedCallsigns",
+  "maxItems",
+];
+const FREQUENCY_SUMMARY_FIELDS = [
+  ...ANALYSIS_PERIOD_FIELDS,
+  "selectedFrequencies",
+  "selectedUnitIds",
+  "selectedUnits",
+];
+
 export function analysisPeriodRequestBody(
   params: unknown,
   timeContext: TimeContext,
   maxDays = 366,
   label = "analysis",
+  allowedFields: readonly string[] = ANALYSIS_PERIOD_FIELDS,
 ): JsonObject {
   if (!params || typeof params !== "object" || Array.isArray(params)) {
     throw new Error(`${label} input must be an object`);
   }
   const input = params as JsonObject;
-  if (
-    Object.keys(input).some(
-      (key) =>
-        ![
-          "period",
-          "selectedGroups",
-          "selectedCallsigns",
-          "maxItems",
-        ].includes(key),
-    )
-  ) {
+  if (Object.keys(input).some((key) => !allowedFields.includes(key))) {
     throw new Error(`${label} input contains an unsupported field`);
   }
   validateIgnoredMaxItems(input);
@@ -1339,6 +1343,25 @@ export function analysisPeriodRequestBody(
     ...selectedCallsignsBody(input),
   };
   return body;
+}
+
+export function frequencySummaryRequestBody(
+  params: unknown,
+  timeContext: TimeContext,
+): JsonObject {
+  const body = analysisPeriodRequestBody(
+    params,
+    timeContext,
+    366,
+    "frequency summary",
+    FREQUENCY_SUMMARY_FIELDS,
+  );
+  const input = params as JsonObject;
+  return {
+    ...body,
+    ...selectedFrequenciesBody(input),
+    ...selectedUnitsBody(input),
+  };
 }
 
 export function dailyActivityRequestBody(
@@ -1380,7 +1403,40 @@ function periodParameters(maxDays: number) {
   ]);
 }
 
-function analysisPeriodParameters(maxDays: number) {
+function selectedFrequenciesParameter(description: string) {
+  return Type.Optional(
+    Type.Array(Type.String({ minLength: 1, maxLength: 32 }), {
+      minItems: 1,
+      maxItems: 32,
+      description,
+    }),
+  );
+}
+
+function selectedUnitIdsParameter(description: string) {
+  return Type.Optional(
+    Type.Array(Type.Integer({ minimum: 1 }), {
+      minItems: 1,
+      maxItems: 128,
+      description,
+    }),
+  );
+}
+
+function selectedUnitsParameter(description: string) {
+  return Type.Optional(
+    Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
+      minItems: 1,
+      maxItems: 128,
+      description,
+    }),
+  );
+}
+
+function analysisPeriodParameters(
+  maxDays: number,
+  filters: Record<string, TSchema> = {},
+) {
   return Type.Object(
     {
       period: periodParameters(maxDays),
@@ -1404,6 +1460,7 @@ function analysisPeriodParameters(maxDays: number) {
             "Compatibility hint; the endpoint's fixed limit applies.",
         }),
       ),
+      ...filters,
     },
     { additionalProperties: false },
   );
@@ -1411,6 +1468,15 @@ function analysisPeriodParameters(maxDays: number) {
 
 const DAILY_ACTIVITY_PARAMETERS = analysisPeriodParameters(366);
 const ANALYSIS_PERIOD_PARAMETERS = analysisPeriodParameters(366);
+const FREQUENCY_SUMMARY_PARAMETERS = analysisPeriodParameters(366, {
+  selectedFrequencies: selectedFrequenciesParameter(
+    FREQUENCY_SUMMARY_FREQUENCIES_DESCRIPTION,
+  ),
+  selectedUnitIds: selectedUnitIdsParameter(
+    FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION,
+  ),
+  selectedUnits: selectedUnitsParameter(FREQUENCY_SUMMARY_UNITS_DESCRIPTION),
+});
 const CALLSIGN_RELATIONS_PARAMETERS = analysisPeriodParameters(31);
 
 const INBOX_MESSAGES_PARAMETERS = Type.Object(
@@ -1475,27 +1541,11 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
         maxItems: 128,
       }),
     ),
-    selectedFrequencies: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 32 }), {
-        minItems: 1,
-        maxItems: 32,
-        description: INBOX_FREQUENCIES_DESCRIPTION,
-      }),
+    selectedFrequencies: selectedFrequenciesParameter(
+      INBOX_FREQUENCIES_DESCRIPTION,
     ),
-    selectedUnitIds: Type.Optional(
-      Type.Array(Type.Integer({ minimum: 1 }), {
-        minItems: 1,
-        maxItems: 128,
-        description: INBOX_UNIT_IDS_DESCRIPTION,
-      }),
-    ),
-    selectedUnits: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 200 }), {
-        minItems: 1,
-        maxItems: 128,
-        description: INBOX_UNITS_DESCRIPTION,
-      }),
-    ),
+    selectedUnitIds: selectedUnitIdsParameter(INBOX_UNIT_IDS_DESCRIPTION),
+    selectedUnits: selectedUnitsParameter(INBOX_UNITS_DESCRIPTION),
     cursor: Type.Optional(
       Type.Integer({
         minimum: 1,
@@ -2362,7 +2412,9 @@ function routeDescription(route: SkillDefinition): string {
   switch (route.requestKind) {
     case "analysisPeriod":
     case "dailyActivity":
-      return "Read analysis data for a rolling-hour or Europe/Kyiv calendar period and optional group scope.";
+      return route.skill === "frequency_summary"
+        ? FREQUENCY_SUMMARY_DESCRIPTION
+        : "Read analysis data for a rolling-hour or Europe/Kyiv calendar period and optional group scope.";
     case "directionFindings":
       return "Read direction-finding activity for a rolling-hour or Europe/Kyiv calendar period and optional group scope.";
     case "callsignFrequencyMatches":
@@ -2390,6 +2442,8 @@ function routeParameters(route: SkillDefinition) {
   if (route.requestKind in UPLOAD_PARAMETERS) return UPLOAD_PARAMETERS[route.requestKind as keyof typeof UPLOAD_PARAMETERS];
   switch (route.requestKind) {
     case "analysisPeriod":
+      if (route.skill === "frequency_summary")
+        return FREQUENCY_SUMMARY_PARAMETERS;
       return route.skill === "callsign_relations"
         ? CALLSIGN_RELATIONS_PARAMETERS
         : ANALYSIS_PERIOD_PARAMETERS;
@@ -2430,6 +2484,8 @@ function routeRequestBody(
   if (UPLOAD_KINDS.has(route.requestKind)) return uploadRequest(route.requestKind, params);
   switch (route.requestKind) {
     case "analysisPeriod":
+      if (route.skill === "frequency_summary")
+        return frequencySummaryRequestBody(params, timeContext);
       return analysisPeriodRequestBody(
         params,
         timeContext,
@@ -3187,9 +3243,44 @@ const VALIDATION_KINDS: readonly [RegExp, string][] = [
   [/must be|expected|type/i, "type"],
 ];
 
+type ToolParameterNames = ReadonlyMap<string, ReadonlySet<string>>;
+
+export function toolParameterNames(
+  tools: readonly { name: string; parameters?: unknown }[],
+): ToolParameterNames {
+  return new Map(
+    tools.map((tool) => [
+      tool.name,
+      new Set(Object.keys((tool.parameters as { properties?: object } | undefined)?.properties ?? {})),
+    ]),
+  );
+}
+
+/** Rejected top-level arguments that some other tool defines. A key the model
+ * invented stays unnamed: it could carry a value, while these are Echo's own
+ * schema text. */
+function misplacedParameters(
+  toolName: unknown,
+  received: string | undefined,
+  parameterNames: ToolParameterNames,
+): string[] {
+  const accepted = parameterNames.get(String(toolName));
+  if (!accepted || received === undefined) return [];
+  const defined = new Set([...parameterNames.values()].flatMap((names) => [...names]));
+  try {
+    return Object.keys(JSON.parse(received)).filter((key) => defined.has(key) && !accepted.has(key));
+  } catch {
+    return [];
+  }
+}
+
 /** Field paths and a fixed kind of a failed argument validation; never the received values. */
-export function validationFields(result: unknown): string | undefined {
-  const [errors] = toolResultText(result).split("\n\nReceived arguments:");
+export function validationFields(
+  result: unknown,
+  toolName?: unknown,
+  parameterNames: ToolParameterNames = new Map(),
+): string | undefined {
+  const [errors, received] = toolResultText(result).split("\n\nReceived arguments:");
   if (!/^Validation failed for tool/.test(errors)) return undefined;
   const fields = [...errors.matchAll(/^ {2}- ([^:\n]*): (.*)$/gm)].flatMap(([, path, message]) => {
     const field = path.trim();
@@ -3197,7 +3288,11 @@ export function validationFields(result: unknown): string | undefined {
     const kind = VALIDATION_KINDS.find(([pattern]) => pattern.test(message))?.[1] ?? "other";
     return [`${field}:${kind}`];
   });
-  return fields.length ? [...new Set(fields)].join(", ") : undefined;
+  const misplaced = fields.includes("root:additional")
+    ? misplacedParameters(toolName, received, parameterNames)
+    : [];
+  const named = [...misplaced.map((name) => `${name}:additional`), ...fields];
+  return named.length ? [...new Set(named)].join(", ") : undefined;
 }
 
 export function toolErrorSummary(toolName: unknown, result: unknown): string {
@@ -3333,6 +3428,7 @@ function createToolEventPublisher(
   toolLabels: ReadonlyMap<string, string>,
   emitEvent: (event: JsonObject) => void,
   privatePagination: boolean,
+  parameterNames: ToolParameterNames,
 ) {
   const activityLabels = new Map<string, string>();
   const pendingStarts = new Map<string, JsonObject>();
@@ -3355,7 +3451,7 @@ function createToolEventPublisher(
         reason: toolErrorReason(event.result),
         handledPrivately,
         category: toolErrorSummary(event.toolName, event.result),
-        fields: validationFields(event.result),
+        fields: validationFields(event.result, event.toolName, parameterNames),
         ...scriptFailure(event.toolName, event.result),
         ...(status ? { httpStatus: Number(status[1]) } : {}),
       });
@@ -3398,8 +3494,9 @@ export function subscribeToEvents(
   emitAssistant: () => boolean,
   emitEvent: (event: JsonObject) => void = emit,
   privatePagination = false,
+  parameterNames: ToolParameterNames = new Map(),
 ): () => void {
-  const publishToolEvent = createToolEventPublisher(toolLabels, emitEvent, privatePagination);
+  const publishToolEvent = createToolEventPublisher(toolLabels, emitEvent, privatePagination, parameterNames);
   return session.subscribe((event: any) => {
     if (emitAssistant()) {
       const progress = sessionProgress(event);
@@ -4039,6 +4136,7 @@ export async function runAgent(payload: RunnerPayload): Promise<void> {
         emit(event);
       },
       Boolean(research),
+      toolParameterNames(tools),
     );
     const contextCompaction = installContextCompaction(
       session,

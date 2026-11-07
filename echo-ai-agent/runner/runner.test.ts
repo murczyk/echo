@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  frequencySummaryRequestBody,
   mapOutcomeNotices,
   mapOutcomeRepairPrompt,
   observeMapOutcome,
@@ -619,6 +620,31 @@ test("passes an inherited callsign through applicable analysis tools", () => {
     skip_group_stats: true,
     selected_callsigns: ["сивий"],
   });
+});
+
+test("#4070 frequency summary accepts the filters its route supports", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 31 },
+    selectedFrequencies: ["163,935", "3330"],
+    selectedUnitIds: [7, 7],
+    selectedUnits: ["8 дшр"],
+  };
+  assert.deepEqual(frequencySummaryRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
+    till_date_noninclusive_ms: Date.parse("2026-08-04T21:00:00Z"),
+    selected_freqs: ["163.9350", "3330"],
+    selected_unit_ids: [7],
+    selected_units: ["8 дшр"],
+  });
+  assert.throws(
+    () => frequencySummaryRequestBody({ ...params, search: "x" }, context),
+    /unsupported field/,
+  );
+  assert.throws(
+    () => analysisPeriodRequestBody(params, context),
+    /unsupported field/,
+  );
 });
 
 test("passes unit filters to inbox requests and validates them", () => {

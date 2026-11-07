@@ -1,12 +1,22 @@
 export const INBOX_SEARCH_DESCRIPTION = `Read one 20-message page for a Europe/Kyiv period and optional group scope. search searches message text and indexed attachment names and contents; selectedCallsigns searches incomplete extracted tags. They are ANDed when combined: for callsign investigations make separate text-only and tag-only calls and combine their evidence. Each query has its own nextCursor. Plain words use Russian stemming and eligible plain terms also match prefixes. Unquoted or joins alternatives; -word excludes. Quoted text is a case-insensitive substring, with % as a wildcard. Quoted alternatives require separate calls, not quoted OR. Search does not automatically translate Ukrainian spellings to Russian.`;
 
-export const INBOX_FREQUENCIES_DESCRIPTION = `Radio frequencies in MHz, for example 163.935, 163,935 or 163.9350. Echo stores frequencies with four decimals and normalizes these values, so all three are the same frequency; integer-only values such as 3330 are kept unchanged. Several frequencies are alternatives (OR); ANDed with search, selectedCallsigns and units. Prefer this over search when the user names a frequency.`;
+const FREQUENCY_FORMAT = `Radio frequencies in MHz, for example 163.935, 163,935 or 163.9350. Echo stores frequencies with four decimals and normalizes these values, so all three are the same frequency; integer-only values such as 3330 are kept unchanged.`;
+
+export const INBOX_FREQUENCIES_DESCRIPTION = `${FREQUENCY_FORMAT} Several frequencies are alternatives (OR); ANDed with search, selectedCallsigns and units. Prefer this over search when the user names a frequency.`;
 
 export const INBOX_UNIT_IDS_DESCRIPTION = `Unit IDs from unit lookup. Matches only messages linked to those units through reference networks; messages attributed to a unit only by their header need selectedUnits. The unit name is usually NOT in the message text. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with search and selectedCallsigns.`;
 
 export const INBOX_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover header-only attribution (alternatives, OR). ANDed with search and selectedCallsigns.`;
 
-export const UNIT_LOOKUP_DESCRIPTION = `Find known units by designation and return their IDs and hierarchy. Use the IDs as selectedUnitIds in inbox requests. Spacing and hyphen variants are tolerated; follow nextCursor (afterUnitId) for further matches, because a formation may consist of several unit rows and each ID matches only itself; if several units match, compare their hierarchy to the user's wording before choosing, and mention the ambiguity.`;
+export const FREQUENCY_SUMMARY_DESCRIPTION = `Read per-frequency activity for a rolling-hour or Europe/Kyiv calendar period, optionally narrowed by groups, callsigns, frequencies or units.`;
+
+export const FREQUENCY_SUMMARY_FREQUENCIES_DESCRIPTION = `${FREQUENCY_FORMAT} Several frequencies are alternatives (OR); ANDed with selectedCallsigns and units.`;
+
+export const FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION = `Unit IDs from unit lookup. Matches only messages linked to those units through reference networks; messages attributed to a unit only by their header need selectedUnits. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with selectedFrequencies and selectedCallsigns.`;
+
+export const FREQUENCY_SUMMARY_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover header-only attribution (alternatives, OR). ANDed with selectedFrequencies and selectedCallsigns.`;
+
+export const UNIT_LOOKUP_DESCRIPTION = `Find known units by designation and return their IDs and hierarchy. Use the IDs as selectedUnitIds in inbox and frequency summary requests. Spacing and hyphen variants are tolerated; follow nextCursor (afterUnitId) for further matches, because a formation may consist of several unit rows and each ID matches only itself; if several units match, compare their hierarchy to the user's wording before choosing, and mention the ambiguity.`;
 
 export const POSITION_LOOKUP_DESCRIPTION = `Find named positions, crews and callsigns tied to places, by name and/or coordinates (MGRS, SK-42 X/Y, lat,lng) with radiusMeters (default 1000). Returns known: consolidated locations with certainty; located: mentions with coordinates; other: mentions without coordinates for context. Name matching ignores case, dashes and Latin look-alike letters. Read listed messages with messages_by_id before citing them.`;
 
