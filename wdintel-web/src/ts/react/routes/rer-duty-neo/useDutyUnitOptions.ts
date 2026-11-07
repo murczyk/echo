@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchInboxUnitStats } from '../../services/api/inbox-unit-stats';
 import type { UnitCountOption } from '../shared/unit-children-filter';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
@@ -26,7 +26,14 @@ export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
         ].some((values) => (values?.length ?? 0) > 0),
       })
     : null;
-  const [counts, setCounts] = useState<{ key: string; options: UnitCountOption[] } | null>(null);
+  const scope = useMemo(
+    () => ({ requestKey, hierarchy: panel.sources.unitHierarchy }),
+    [requestKey, panel.sources.unitHierarchy],
+  );
+  const [counts, setCounts] = useState<{
+    scope: typeof scope;
+    options: UnitCountOption[];
+  } | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const onErrorRef = useRef(panel.actions.onUnitStatsError);
   onErrorRef.current = panel.actions.onUnitStatsError;
@@ -37,7 +44,7 @@ export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
       if (controller.signal.aborted) return;
       await fetchInboxUnitStats(requestRef.current!, { signal: controller.signal })
         .then(({ options }) => {
-          if (!controller.signal.aborted) setCounts({ key: requestKey, options });
+          if (!controller.signal.aborted) setCounts({ scope, options });
         })
         .catch((error: unknown) => {
           if (!controller.signal.aborted)
@@ -50,13 +57,13 @@ export function useDutyUnitOptions(panel: FeedFilterPanelModel) {
       controller.abort();
       refreshRef.current = async () => {};
     };
-  }, [requestKey]);
+  }, [scope]);
   useInboxChangedMessageIds({
     enabled: requestKey !== null,
     refreshOnMount: true,
-    scopeKey: requestKey,
+    scopeKey: scope,
     minIntervalMs: panel.sources.unitStatsRefreshIntervalMs ?? INBOX_COUNT_POLL_INTERVAL_MS,
     onMessageIds: () => refreshRef.current(),
   });
-  return { options: counts?.key === requestKey ? counts.options : EMPTY_OPTIONS };
+  return { options: counts?.scope === scope ? counts.options : EMPTY_OPTIONS };
 }

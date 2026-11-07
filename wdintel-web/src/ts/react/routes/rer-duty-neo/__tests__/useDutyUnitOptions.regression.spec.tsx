@@ -4,6 +4,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { UnitStatsRsp } from '../../../../../Bindings';
 import { fetchInboxUnitStats } from '../../../services/api/inbox-unit-stats';
+import {
+  buildUnitHierarchyIndex,
+  type UnitHierarchyIndex,
+} from '../../shared/unit-children-filter';
 import type { FeedFilterPanelModel } from '../FeedFilterPanel';
 import { useDutyUnitOptions } from '../useDutyUnitOptions';
 import { buildInboxReq, emptyFilter } from '../utils';
@@ -22,7 +26,13 @@ function counts(count: number): UnitStatsRsp {
   return { units: [], options: [{ value: 'unit-parent:group:2:6 А', label: '6 А', count }] };
 }
 
-function Harness({ frequency = '' }: { frequency?: string }) {
+function Harness({
+  frequency = '',
+  hierarchy,
+}: {
+  frequency?: string;
+  hierarchy?: UnitHierarchyIndex;
+}) {
   const panel = {
     sources: {
       unitStatsReq: buildInboxReq({
@@ -30,6 +40,7 @@ function Harness({ frequency = '' }: { frequency?: string }) {
         loadLatest: true,
       }),
       unitStatsRefreshIntervalMs: 1000,
+      unitHierarchy: hierarchy,
     },
     actions: { onUnitStatsError: vi.fn() },
   } as FeedFilterPanelModel;
@@ -106,6 +117,23 @@ it('#3527 discards counts from the old filter scope after a filter change', asyn
   const oldSignal = vi.mocked(fetchInboxUnitStats).mock.calls[0][1]?.signal;
   await act(async () => root.render(<Harness frequency="222" />));
   expect(oldSignal?.aborted).toBe(true);
+  await act(async () => second.resolve(counts(5)));
+  await act(async () => first.resolve(counts(99)));
+  expect(container.textContent).toBe('6 А:5');
+});
+
+it('#3527 refreshes reconciled parent counts and rejects the previous catalog response', async () => {
+  const first = deferred();
+  const second = deferred();
+  vi.mocked(fetchInboxUnitStats)
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  const hierarchy = buildUnitHierarchyIndex([]);
+  await act(async () => root.render(<Harness hierarchy={hierarchy} />));
+  const oldSignal = vi.mocked(fetchInboxUnitStats).mock.calls[0][1]?.signal;
+  await act(async () => root.render(<Harness hierarchy={buildUnitHierarchyIndex([])} />));
+  expect(oldSignal?.aborted).toBe(true);
+  expect(fetchInboxUnitStats).toHaveBeenCalledTimes(2);
   await act(async () => second.resolve(counts(5)));
   await act(async () => first.resolve(counts(99)));
   expect(container.textContent).toBe('6 А:5');

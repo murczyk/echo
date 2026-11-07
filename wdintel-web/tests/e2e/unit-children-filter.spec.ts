@@ -28,6 +28,7 @@ for (const analysis of [false, true]) {
     });
     let catalogRequests = 0;
     let catalogRecovered = false;
+    let catalogRevision = '3527';
     await page.route('**/api/sigint/units', async (route) => {
       await route.fulfill({
         json: transformCamelToSnake({
@@ -47,13 +48,13 @@ for (const analysis of [false, true]) {
         await route.fulfill({ status: 503, body: 'Temporary catalog failure #3527' });
         return;
       }
-      if (route.request().postDataJSON().known_revision === '3527') {
+      if (route.request().postDataJSON().known_revision === catalogRevision) {
         await route.fulfill({ json: null });
         return;
       }
       await route.fulfill({
         json: transformCamelToSnake({
-          revision: '3527',
+          revision: catalogRevision,
           groups: [
             { id: 'group:0:Регіон', label: 'Регіон', level: 0, parentIndex: null },
             { id: 'group:0:Регіон|1:Округ', label: 'Округ', level: 1, parentIndex: 0 },
@@ -211,6 +212,17 @@ for (const analysis of [false, true]) {
       await expect(page.getByRole('button', { name: '27 омсбр (7)', exact: true })).toBeVisible({
         timeout: 10000,
       });
+    }
+    const countBeforeReconciliation = countRequests;
+    catalogRevision = '3527-reconciled';
+    countOffset = 2;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect.poll(() => countRequests).toBeGreaterThan(countBeforeReconciliation);
+    if (analysis) {
+      await combo.click();
+      await expect(page.getByRole('option', { name: /^27 омсбр/ })).toContainText('9');
+    } else {
+      await expect(page.getByRole('button', { name: '27 омсбр (9)', exact: true })).toBeVisible();
     }
   });
 }

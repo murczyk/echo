@@ -18,12 +18,16 @@ requests. Duty's other feeds can continue loading.
 Parent counts add the counts of their own rows and descendants. Leaf counts
 use distinct message IDs, including when a message has multiple link kinds.
 A message linked to two different descendant units contributes to both units'
-counts; the parent shows their sum. Both pages load the hierarchy automatically, without a checkbox or hierarchy
-progress bar. The Rust backend enriches leaf counts with parents from the Redis
-hierarchy cache and returns ready-to-use filter options. Duty count refreshes
+counts; the parent shows their sum. Both pages load the hierarchy automatically,
+without a checkbox or hierarchy progress bar. The Rust backend enriches leaf
+counts with parents from the Redis hierarchy cache and returns ready-to-use
+filter options. Duty count refreshes
 coalesce inbox changes, wait for in-flight requests, and respect the configured
 poll interval after completion. Changing the filter scope cancels obsolete work;
 inbox changes do not interrupt an active count.
+Hierarchy reconciliation refreshes server-enriched options on both pages even
+when the expanded unit IDs stay unchanged, and rejects responses from the
+previous catalog. Analysis refreshes only its previously requested unit facet.
 Its unit facet preserves other include/exclude filters while omitting unit filters.
 Analytics history and the PostgreSQL recent tail use disjoint creation-time
 ranges, with PostgreSQL fallback if analytics fails. Unbounded Duty fallback
@@ -61,6 +65,8 @@ Regression coverage:
 
 - `wdintel-web/src/ts/react/routes/shared/__tests__/unit-children-filter.regression.spec.ts`
 - `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyFeeds.spec.ts`
+- `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutyUnitOptions.regression.spec.tsx`
+- `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data-filter-sections.spec.ts`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-data.core.inbox-refresh.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-rer-analysis-neo-page.spec.tsx`
 - `wdintel-web/src/ts/react/routes/rer-analysis-neo/__tests__/use-analysis-saved-filters.spec.tsx`
