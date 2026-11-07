@@ -14,6 +14,8 @@ mod m20261030_114640_device_rating_description;
 mod m20261030_143441_device_activity_breakdown;
 mod m20261031_155820_api_sender;
 mod m20261101_151245_ai_agent_uploads;
+mod m20261104_165252_rer_report_unit_selection;
+mod m20261105_212108_iggy_group_refresh_queue;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1230,6 +1232,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20261103_120000_ai_agent_documents::Migration),
             Box::new(m20261104_083000_group_message_requirements::Migration),
             Box::new(m20261105_142754_messenger_account_internal_notes::Migration),
+            Box::new(m20261104_165252_rer_report_unit_selection::Migration),
+            Box::new(m20261105_212108_iggy_group_refresh_queue::Migration),
         ]
     }
 }

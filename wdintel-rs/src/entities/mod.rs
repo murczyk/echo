@@ -63,6 +63,7 @@ pub mod aor_location_config;
 pub mod api_integration;
 pub mod api_integration_iggy_destination;
 pub mod api_integration_iggy_event;
+pub mod api_integration_iggy_group_refresh;
 pub mod api_integration_iggy_unit_refresh;
 pub mod api_sender;
 pub mod area_of_responsibility;

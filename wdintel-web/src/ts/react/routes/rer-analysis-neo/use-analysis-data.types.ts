@@ -41,7 +41,7 @@ export type UseAnalysisDataProps = {
   focusedMessageActive?: boolean;
   newestFirst: boolean;
   onBeforeRealtimeMessageListChange?: () => void;
-  onError: (message: string) => void;
+  onError: (message: string, persistent?: boolean) => void;
   onUnauthorized: (error: unknown) => boolean;
   shouldLoadNewCallsigns: boolean;
   queryState: import('./types').AnalysisQueryState;

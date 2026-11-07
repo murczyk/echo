@@ -1,36 +1,35 @@
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import ClearIcon from '@mui/icons-material/Clear';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
 import {
-  Box,
   CircularProgress,
-  Collapse,
   IconButton,
   InputAdornment,
   List,
-  ListItemButton,
-  ListItemText,
   Paper,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { isPresent } from '../../../utils/misc';
 
-import {
-  buildUnitHierarchyTree,
-  HIERARCHY_KEYS,
-  type TreeNode,
-  type TreeLeafNode,
-} from '../../shared/unit-hierarchy';
+import { HIERARCHY_KEYS, type TreeNode } from '../../shared/unit-hierarchy';
 
+import { UnitTreeItem } from './UnitStatsTreeItem';
+import { UnitStatsCounterLegend } from './UnitStatsCounters';
+import {
+  buildUnitTree,
+  collectExpansionPathToSelectedFilter,
+  collectGroupIds,
+  matchesUnitSearch,
+  normalizeSearchQuery,
+  reconcileUnitStats,
+} from './UnitStatsSidebar.tree';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
-import type { SelectedSidebarUnitFilter, UnitHierarchyFilter, UnitStatView } from '../types';
+import type { SelectedSidebarUnitFilter, UnitStatView } from '../types';
 
 type Props = {
   stats: UnitStatView[];
@@ -66,128 +65,6 @@ const HIERARCHY_LABELS = [
 ] as const;
 const SIDEBAR_FILTER_DEBOUNCE_MS = 180;
 
-function collapseTerminalSingleUnitGroups(nodes: TreeNode[]): TreeNode[] {
-  return nodes.map((node) => {
-    if (node.kind === 'leaf') return node;
-    if (node.children.length === 1 && node.children[0].kind === 'leaf') {
-      return { ...node.children[0], label: node.label };
-    }
-
-    return { ...node, children: collapseTerminalSingleUnitGroups(node.children) };
-  });
-}
-
-export function buildUnitTree(stats: UnitStatView[], cachedTree?: TreeNode[] | null): TreeNode[] {
-  if (!cachedTree) return collapseTerminalSingleUnitGroups(buildUnitHierarchyTree(stats));
-  const rows = new Map(stats.map((row, rank) => [row.unitId, { row, rank }]));
-  const ranks = new Map<string, number>();
-  const visit = (nodes: TreeNode[]): TreeNode[] =>
-    nodes
-      .flatMap((node): TreeNode[] => {
-        if (node.kind === 'leaf') {
-          const match = rows.get(node.unitId);
-          if (!match) return [];
-          rows.delete(node.unitId);
-          ranks.set(node.id, match.rank);
-          return [
-            {
-              ...node,
-              unitName: match.row.unitName,
-              label: match.row.unitName,
-              count: match.row.count,
-            },
-          ];
-        }
-        const children = visit(node.children);
-        if (children.length === 0) return [];
-        ranks.set(
-          node.id,
-          children.reduce((rank, child) => Math.min(rank, ranks.get(child.id)!), Infinity),
-        );
-        return [
-          { ...node, children, count: children.reduce((total, child) => total + child.count, 0) },
-        ];
-      })
-      .sort((left, right) => ranks.get(left.id)! - ranks.get(right.id)!);
-  const nodes = visit(cachedTree);
-  rows.forEach(({ row, rank }) => {
-    const id = `unit:${row.unitId}`;
-    ranks.set(id, rank);
-    nodes.push({
-      kind: 'leaf',
-      id,
-      unitId: row.unitId,
-      unitName: row.unitName,
-      label: row.unitName,
-      count: row.count,
-    });
-  });
-  nodes.sort((left, right) => ranks.get(left.id)! - ranks.get(right.id)!);
-  return collapseTerminalSingleUnitGroups(nodes);
-}
-
-function reconcileUnitStats(stats: UnitStatView[], cachedTree?: TreeNode[] | null): UnitStatView[] {
-  if (!cachedTree) return stats;
-  const current = new Map<number, Partial<UnitStatView>>();
-  const visit = (nodes: TreeNode[], hierarchy: Partial<UnitStatView>) => {
-    nodes.forEach((node) => {
-      if (node.kind === 'leaf') {
-        current.set(node.unitId, { ...hierarchy, unitName: node.unitName });
-      } else {
-        visit(
-          node.children,
-          Object.fromEntries(HIERARCHY_KEYS.map((key) => [key, node.hierarchy[key] ?? ''])),
-        );
-      }
-    });
-  };
-  visit(cachedTree, Object.fromEntries(HIERARCHY_KEYS.map((key) => [key, ''])));
-  return stats.map((row) => ({ ...row, ...current.get(row.unitId) }));
-}
-
-function collectGroupIds(nodes: TreeNode[]): string[] {
-  const ids: string[] = [];
-  for (const node of nodes) {
-    if (node.kind !== 'group') continue;
-    ids.push(node.id, ...collectGroupIds(node.children));
-  }
-  return ids;
-}
-
-function normalizeSearchQuery(value: string): string {
-  return value.trim().toLocaleLowerCase();
-}
-
-function areHierarchyFiltersEqual(left: UnitHierarchyFilter, right: UnitHierarchyFilter): boolean {
-  return HIERARCHY_KEYS.every((key) => left[key] === right[key]);
-}
-
-function matchesUnitSearch(row: UnitStatView, normalizedQuery: string): boolean {
-  if (normalizedQuery === '') return true;
-
-  const haystack = [
-    row.unitName,
-    row.armyRegion,
-    row.militaryDistrict,
-    row.army,
-    row.corps,
-    row.division,
-    row.brigade,
-    row.regiment,
-    row.battalion,
-    row.company,
-    row.platoon,
-    row.squad,
-    row.section,
-    row.teamOrCrew,
-    row.other,
-  ]
-    .join(' ')
-    .toLocaleLowerCase();
-
-  return haystack.includes(normalizedQuery);
-}
-
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -202,167 +79,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   }, [value, delayMs]);
 
   return debouncedValue;
-}
-
-function collectExpansionPathToSelectedFilter(
-  nodes: TreeNode[],
-  selectedUnitFilter: SelectedSidebarUnitFilter,
-): string[] {
-  const path = collectExpansionPathToSelectedFilterInner(nodes, selectedUnitFilter);
-  return path ?? [];
-}
-
-function isSelectedLeafNode(node: TreeLeafNode, selectedUnitFilter?: SelectedSidebarUnitFilter) {
-  if (selectedUnitFilter?.kind !== 'leaf') return false;
-  if (selectedUnitFilter.unitId !== undefined) return selectedUnitFilter.unitId === node.unitId;
-  return selectedUnitFilter.unitName === node.unitName;
-}
-
-function collectExpansionPathToSelectedFilterInner(
-  nodes: TreeNode[],
-  selectedUnitFilter: SelectedSidebarUnitFilter,
-): string[] | null {
-  for (const node of nodes) {
-    if (node.kind === 'leaf') {
-      if (isSelectedLeafNode(node, selectedUnitFilter)) return [];
-      continue;
-    }
-
-    if (
-      selectedUnitFilter.kind === 'group' &&
-      areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy)
-    ) {
-      return [node.id];
-    }
-
-    const childPath = collectExpansionPathToSelectedFilterInner(node.children, selectedUnitFilter);
-    if (childPath !== null) {
-      return [node.id, ...childPath];
-    }
-  }
-
-  return null;
-}
-
-type TreeItemProps = {
-  node: TreeNode;
-  depth: number;
-  expandedIds: Set<string>;
-  onToggle: (nodeId: string) => void;
-  onPickUnitFilter: (filter: SelectedSidebarUnitFilter) => void;
-  selectedUnitFilter?: SelectedSidebarUnitFilter;
-  countLabel: string;
-};
-
-function UnitTreeItem({
-  node,
-  depth,
-  expandedIds,
-  onToggle,
-  onPickUnitFilter,
-  selectedUnitFilter,
-  countLabel,
-}: TreeItemProps) {
-  const paddingLeft = 1 + depth * 2;
-
-  if (node.kind === 'leaf') {
-    return (
-      <ListItemButton
-        onClick={() =>
-          onPickUnitFilter({
-            kind: 'leaf',
-            label: node.label,
-            unitName: node.unitName,
-            unitId: node.unitId,
-          })
-        }
-        selected={isSelectedLeafNode(node, selectedUnitFilter)}
-        sx={{ pl: paddingLeft + 5, pr: 1.5 }}
-        aria-label={`Фільтрувати за підрозділом ${node.label}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
-      >
-        <ListItemText
-          primary={node.label}
-          primaryTypographyProps={{ noWrap: true, title: node.label }}
-        />
-        <PowerChip
-          size="small"
-          label={node.count}
-          interactive={false}
-          unselectedOpacity={1}
-          unselectedBackgroundColor="action.selected"
-          unselectedTextColor="text.primary"
-          unselectedBorderColor="transparent"
-          sx={{ ml: 1 }}
-        />
-      </ListItemButton>
-    );
-  }
-
-  const isExpanded = expandedIds.has(node.id);
-  const isSelected =
-    selectedUnitFilter?.kind === 'group' &&
-    areHierarchyFiltersEqual(node.hierarchy, selectedUnitFilter.hierarchy);
-  const collapseId = `${node.id}-children`;
-
-  return (
-    <>
-      <Box sx={{ display: 'flex', alignItems: 'stretch' }}>
-        <IconButton
-          size="small"
-          onClick={() => onToggle(node.id)}
-          aria-expanded={isExpanded}
-          aria-controls={collapseId}
-          aria-label={`${isExpanded ? 'Згорнути' : 'Розгорнути'} гілку ${node.label}`}
-          sx={{
-            ml: paddingLeft,
-            mr: 0.5,
-            alignSelf: 'center',
-          }}
-        >
-          {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-        </IconButton>
-        <ListItemButton
-          onClick={() =>
-            onPickUnitFilter({ kind: 'group', label: node.label, hierarchy: node.hierarchy })
-          }
-          selected={isSelected}
-          sx={{ minWidth: 0, flex: 1, pr: 1.5 }}
-          aria-label={`Фільтрувати за гілкою ${node.label}, ${countLabel.toLocaleLowerCase()} ${node.count}`}
-        >
-          <ListItemText
-            primary={node.label}
-            primaryTypographyProps={{ noWrap: true, title: node.label }}
-          />
-          <PowerChip
-            size="small"
-            label={node.count}
-            interactive={false}
-            unselectedOpacity={1}
-            unselectedBackgroundColor="action.selected"
-            unselectedTextColor="text.primary"
-            unselectedBorderColor="transparent"
-            sx={{ ml: 1 }}
-          />
-        </ListItemButton>
-      </Box>
-      <Collapse in={isExpanded} timeout="auto" unmountOnExit id={collapseId}>
-        <List dense disablePadding>
-          {node.children.map((child) => (
-            <UnitTreeItem
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              expandedIds={expandedIds}
-              onToggle={onToggle}
-              onPickUnitFilter={onPickUnitFilter}
-              selectedUnitFilter={selectedUnitFilter}
-              countLabel={countLabel}
-            />
-          ))}
-        </List>
-      </Collapse>
-    </>
-  );
 }
 
 function formatSelectedFilterLabel(selectedUnitFilter: SelectedSidebarUnitFilter): string {
@@ -407,6 +123,17 @@ export function UnitStatsSidebar({
   );
   const tree = useMemo(() => buildUnitTree(filteredStats, cachedTree), [filteredStats, cachedTree]);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const onToggle = useCallback((nodeId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
   const total = filteredStats.reduce((sum, row) => sum + row.count, 0);
   const totalOverall = stats.reduce((sum, row) => sum + row.count, 0);
 
@@ -438,7 +165,10 @@ export function UnitStatsSidebar({
           borderRadius: 0,
         }}
       >
-        <Typography variant="h6">{additionalFilters ? 'Фільтри' : 'Підрозділи'}</Typography>
+        <div className="flex items-center gap-echo-xs">
+          <Typography variant="h6">{additionalFilters ? 'Фільтри' : 'Підрозділи'}</Typography>
+          {!additionalFilters ? <UnitStatsCounterLegend countLabel={countLabel} /> : null}
+        </div>
         {onToggleOpen ? (
           <IconButton
             onClick={onToggleOpen}
@@ -453,18 +183,6 @@ export function UnitStatsSidebar({
         ) : null}
       </Paper>
     );
-  }
-
-  function onToggle(nodeId: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(nodeId)) {
-        next.delete(nodeId);
-      } else {
-        next.add(nodeId);
-      }
-      return next;
-    });
   }
 
   return (
@@ -494,7 +212,10 @@ export function UnitStatsSidebar({
         }}
       >
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-          <Typography variant="h6">{additionalFilters ? 'Фільтри' : 'Підрозділи'}</Typography>
+          <div className="flex items-center gap-echo-xs">
+            <Typography variant="h6">{additionalFilters ? 'Фільтри' : 'Підрозділи'}</Typography>
+            {!additionalFilters ? <UnitStatsCounterLegend countLabel={countLabel} /> : null}
+          </div>
           <Stack
             direction="row"
             spacing={1}
@@ -532,7 +253,12 @@ export function UnitStatsSidebar({
           </Stack>
         </Stack>
         {additionalFilters}
-        {additionalFilters ? <Typography variant="subtitle2">Підрозділи</Typography> : null}
+        {additionalFilters ? (
+          <div className="flex items-center gap-echo-xs">
+            <Typography variant="subtitle2">Підрозділи</Typography>
+            <UnitStatsCounterLegend countLabel={countLabel} />
+          </div>
+        ) : null}
         {selectedUnitFilter ? (
           <Stack spacing={0.75}>
             <Typography variant="caption" color="text.secondary">

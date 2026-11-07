@@ -103,6 +103,8 @@ impl Drop for ReportWorkerPermit {
 pub enum ReportHistoryRequest {
     AnalysisReport {
         payload: Box<ReportPreviewReq>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rer_scope: Option<crate::rer_report_admin::scope::RerReportScope>,
     },
     AnalysisExport {
         payload: Box<AnalysisStatsReq>,
@@ -976,7 +978,7 @@ fn report_history_period(request: &serde_json::Value) -> Option<String> {
     let request =
         serde_json::from_value::<ReportHistoryRequest>(request.clone()).ok()?;
     match request {
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, .. } => {
             report_history_period_from_ms(
                 payload.req.since_date_inclusive_ms?,
                 payload.req.till_date_inclusive_ms?,
@@ -1079,7 +1081,7 @@ fn report_history_detail_refs(
 
     let mut refs = ReportHistoryDetailRefs::default();
     match request {
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, .. } => {
             extend_unique_i64(
                 &mut refs.aor_ids,
                 payload.req.selected_aors.iter().flatten().copied(),
@@ -1614,10 +1616,24 @@ pub async fn enqueue_report(
     dbx: &DatabaseConnection,
     requested_by_login_id: &uuid::Uuid,
     report_kind: &str,
-    request: ReportHistoryRequest,
+    mut request: ReportHistoryRequest,
     file_name: Option<String>,
     content_type: Option<String>,
 ) -> Result<report_history::Model, AppError> {
+    if let ReportHistoryRequest::AnalysisReport { payload, rer_scope } =
+        &mut request
+    {
+        if payload.kind == KIND_RER_REPORT && rer_scope.is_none() {
+            let scope =
+                crate::rer_report_admin::scope::capture(dbx).await.c(h!())?;
+            if scope.units.is_empty() {
+                return Err(AppError::BL {
+                    msg: "Не налаштовано підрозділи для звіту РЕР".to_string(),
+                });
+            }
+            *rer_scope = Some(scope);
+        }
+    }
     let request = serde_json::to_value(request).c(h!())?;
     let txn = dbx.begin().await.c(h!())?;
     lock_report_request(&txn, requested_by_login_id, report_kind, &request)
@@ -2728,7 +2744,7 @@ async fn require_report_download_device_access(
             .await
             .c(h!())?;
         }
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, .. } => {
             crate::rer_importer::inbox::require_device_filters(
                 dbx,
                 user_login,
@@ -3517,7 +3533,7 @@ async fn generate_report(
     let request: ReportHistoryRequest =
         serde_json::from_value(report_history.request.clone()).c(h!())?;
     match request {
-        ReportHistoryRequest::AnalysisReport { payload } => {
+        ReportHistoryRequest::AnalysisReport { payload, rer_scope } => {
             let generated =
                 crate::rer_importer::reports::report_docx_generate_file(
                     report_history.requested_by_login_id,
@@ -3525,6 +3541,7 @@ async fn generate_report(
                     *payload,
                     false,
                     Some(bgtask_id),
+                    rer_scope.as_ref(),
                 )
                 .await
                 .c(h!())?;
@@ -3895,6 +3912,11 @@ async fn fail_in_progress_report(
         .await
         .c(h!())?;
     if let Some(report_history) = &report_history {
+        if let Some(metrics) = &env.metrics {
+            metrics
+                .operational
+                .record_report_timeout(&report_history.report_kind);
+        }
         complete_pending_report_download_attempts(
             &env.dbx,
             report_history.id,
@@ -4123,6 +4145,7 @@ mod tests {
             selected_networks: None,
             without_network: None,
             only_with_network: None,
+            only_for_rer_report: None,
             metadata_cc: None,
             metadata_sender: None,
             metadata_receiver: None,
@@ -4390,6 +4413,7 @@ mod tests {
         denied_device_names: Option<Vec<String>>,
     ) -> ReportHistoryRequest {
         ReportHistoryRequest::AnalysisReport {
+            rer_scope: None,
             payload: Box::new(ReportPreviewReq {
                 kind: "tags".to_string(),
                 req: crate::rer_importer::types::InboxMessagesReq {
@@ -6505,6 +6529,229 @@ mod tests {
             .contains(
                 "already finished or cancelled before bgtask attachment"
             ));
+        Ok(())
+    }
+    #[tokio::test]
+    #[serial]
+    async fn issue_3940_queued_report_keeps_configuration_and_deduplicates_by_snapshot(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let metadata =
+            crate::entities::sigint_unit_rer_report_metadata::ActiveModel {
+                sigint_unit_id: Set(unit.id),
+                report_name: Set(Some("Перший".into())),
+                locations: Set(json!([])),
+                labels: Set(json!(["Перший"])),
+                ..Default::default()
+            }
+            .insert(&env.dbx)
+            .await
+            .unwrap();
+        let mut request = analysis_report_request(None, None);
+        if let ReportHistoryRequest::AnalysisReport { payload, .. } =
+            &mut request
+        {
+            payload.kind = KIND_RER_REPORT.into();
+        }
+        let first = enqueue_report(
+            &env.dbx,
+            &login,
+            KIND_RER_REPORT,
+            request.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let duplicate = enqueue_report(
+            &env.dbx,
+            &login,
+            KIND_RER_REPORT,
+            request.clone(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.id, duplicate.id);
+        let mut metadata = metadata.into_active_model();
+        metadata.report_name = Set(Some("Другий".into()));
+        metadata.update(&env.dbx).await.unwrap();
+        let second = enqueue_report(
+            &env.dbx,
+            &login,
+            KIND_RER_REPORT,
+            request,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_ne!(first.id, second.id);
+        for (report, expected_name) in [(first, "Перший"), (second, "Другий")]
+        {
+            let ReportHistoryRequest::AnalysisReport {
+                rer_scope: Some(scope),
+                ..
+            } = serde_json::from_value(report.request).unwrap()
+            else {
+                panic!("queued RER report must retain its scope");
+            };
+            assert_eq!(scope.units[&unit.id].target.report_name, expected_name);
+        }
+    }
+
+    // https://github.com/echoua/echo/issues/4034
+    #[tokio::test]
+    #[serial]
+    async fn operational_timeouts_count_only_the_winning_failure_transition(
+    ) -> anyhow::Result<()> {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.c(h!())?;
+        let (metrics, recorder) =
+            crate::telemetry::Metrics::recording(&env.config);
+        let mut env = env.as_ref().clone();
+        env.metrics = Some(metrics.clone());
+        env.config.skip_discord_notifications = Some(true);
+        let now = Utc::now().naive_utc();
+        let report = insert_report_history(
+            &env.dbx,
+            "Tester",
+            KIND_GOI,
+            STATUS_IN_PROGRESS,
+            now,
+            Some(now),
+            None,
+        )
+        .await
+        .c(h!())?;
+        let (first, second) = tokio::join!(
+            fail_in_progress_report(&env, report.id, "timeout".to_string()),
+            fail_in_progress_report(&env, report.id, "timeout".to_string()),
+        );
+        assert_eq!(
+            usize::from(first.c(h!())?.is_some())
+                + usize::from(second.c(h!())?.is_some()),
+            1
+        );
+        fail_timed_out_reports(&env).await.c(h!())?;
+        handle_report_timeout(&env, &report, report_timeout_error(&report))
+            .await
+            .c(h!())?;
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[("report_kind", KIND_GOI)]
+            ),
+            Some(1)
+        );
+        insert_report_history(
+            &env.dbx,
+            "Tester",
+            "4034-unsupported",
+            STATUS_PLANNED,
+            now,
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
+        assert!(fail_next_unknown_report(&env).await.c(h!())?.is_some());
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[(
+                    "report_kind",
+                    crate::config::OPERATIONAL_METRICS_UNKNOWN_REPORT_KIND
+                )],
+            ),
+            Some(0)
+        );
+        let started = now
+            - Duration::seconds(
+                (REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS + 1) as i64,
+            );
+        let timed_out_kinds: Vec<_> = worker_report_kinds()
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .filter(|kind| {
+                !matches!(*kind, KIND_GOI | KIND_ETALONKA | KIND_GEOJSON)
+            })
+            .collect();
+        for kind in &timed_out_kinds {
+            insert_report_history(
+                &env.dbx,
+                "Tester",
+                kind,
+                STATUS_IN_PROGRESS,
+                started,
+                Some(started),
+                None,
+            )
+            .await
+            .c(h!())?;
+        }
+        insert_report_history(
+            &env.dbx,
+            "Tester",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            started,
+            Some(started),
+            None,
+        )
+        .await
+        .c(h!())?;
+        insert_report_history(
+            &env.dbx,
+            "Tester",
+            KIND_GEOJSON,
+            STATUS_DONE,
+            started,
+            Some(started),
+            None,
+        )
+        .await
+        .c(h!())?;
+        fail_timed_out_reports(&env).await.c(h!())?;
+        fail_timed_out_reports(&env).await.c(h!())?;
+        metrics.force_flush_for_test();
+        for kind in timed_out_kinds {
+            assert_eq!(
+                recorder.counter_value(
+                    crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                    &[("report_kind", kind)]
+                ),
+                Some(1),
+                "timeout metric for {kind}"
+            );
+        }
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[("report_kind", KIND_ETALONKA)]
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[("report_kind", KIND_GEOJSON)]
+            ),
+            Some(0)
+        );
         Ok(())
     }
 }

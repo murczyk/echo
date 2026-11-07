@@ -127,6 +127,17 @@ export function AnalysisFiltersPanel({
   }, [derived.unitsOptions, queryState.unitHierarchy, queryState.unitsSelected]);
   const unitParents = useUnitParentOptions(true, unitOptions, queryState.unitHierarchy);
   const derivedWithParents = { ...derived, unitsOptions: unitParents.options };
+  const countsWithParents = useMemo(() => {
+    if (counts?.unitsCount == null) return counts;
+    const unitValues = new Set(derived.unitsOptions.map((option) => option.value));
+    return {
+      ...counts,
+      unitsCount:
+        counts.unitsCount +
+        unitParents.options.filter((option) => option.count > 0 && !unitValues.has(option.value))
+          .length,
+    };
+  }, [counts, derived.unitsOptions, unitParents.options]);
 
   const toggleSection = (section: FilterSectionId) => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
@@ -229,7 +240,7 @@ export function AnalysisFiltersPanel({
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   threadOnly={page.threadMode != null}
-                  counts={counts}
+                  counts={countsWithParents}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derivedWithParents}
                   expandedSections={expandedSections}
@@ -294,7 +305,7 @@ export function AnalysisFiltersPanel({
               <Box sx={{ display: 'flex', flexDirection: 'column' }}>
                 <AnalysisFiltersPanelSections
                   threadOnly={page.threadMode != null}
-                  counts={counts}
+                  counts={countsWithParents}
                   cyberEchoEnabled={cyberEchoEnabled}
                   derived={derivedWithParents}
                   expandedSections={expandedSections}

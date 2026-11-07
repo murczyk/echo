@@ -71,6 +71,7 @@ vi.mock('../app6d-catalog', async (importOriginal) => {
 });
 
 import { AiAgentChat } from '..';
+import { DEEP_CONTINUATION_PROMPT } from '../DeepContinuation';
 import { resetSharedMapDocuments } from '../map-documents';
 import { AI_AGENT_NEW_CONVERSATION_EVENT } from '../conversation-url';
 import { HttpRequestError } from '../../../services/api/client';
@@ -157,7 +158,10 @@ const SECOND_PROVIDER = {
   isDefault: false,
 };
 
-async function remountWithProviders(providers: Array<typeof PROVIDER>) {
+async function remountWithProviders(
+  providers: Array<typeof PROVIDER>,
+  reasoningPresets = REASONING_PRESETS,
+) {
   mocks.configuration.mockResolvedValue({
     enabled: true,
     reasoningPresetsEnabled: true,
@@ -165,7 +169,7 @@ async function remountWithProviders(providers: Array<typeof PROVIDER>) {
     providers: providers.map((provider) => ({
       ...provider,
       reasoningAvailable: true,
-      reasoningPresets: REASONING_PRESETS,
+      reasoningPresets,
     })),
   });
   await act(async () => root.unmount());
@@ -195,6 +199,7 @@ function streamEvent(
   sequence: number,
   type: AiAgentEvent['type'],
   text: string,
+  extra: Partial<AiAgentEvent> = {},
 ) {
   connections.get(requestId)?.onEvent({
     sequence,
@@ -210,6 +215,7 @@ function streamEvent(
     path: null,
     status: null,
     isError: null,
+    ...extra,
   });
 }
 
@@ -1042,6 +1048,206 @@ describe('AiAgentChat request queue', () => {
     );
   });
 });
+describe('#4031 Deep continuation of incomplete answers', () => {
+  const CONTINUE = 'Продовжити в глибокому режимі';
+  const INCOMPLETE = { coverageLimited: true, reason: 'incomplete_research' };
+
+  function continueButtons() {
+    return Array.from(container.querySelectorAll('button')).filter(
+      (button) => button.textContent?.trim() === CONTINUE,
+    );
+  }
+
+  function answer(requestId: string, content: string, overrides: object = {}) {
+    return {
+      id: `${requestId}-assistant`,
+      requestId,
+      requestState: 'completed',
+      role: 'assistant',
+      content,
+      createdAt: Date.now(),
+      startedAt: Date.now() - 300_000,
+      citations: [],
+      reasoningPreset: 'balanced',
+      completionMetadata: INCOMPLETE,
+      ...overrides,
+    };
+  }
+
+  async function openConversation(messages: object[], presets = REASONING_PRESETS): Promise<void> {
+    mocks.conversation.mockResolvedValue({ ...CONVERSATION, messages });
+    window.history.replaceState({}, '', `?conversation=${CONVERSATION.id}`);
+    await remountWithProviders([PROVIDER], presets);
+  }
+
+  async function finishIncompleteRequest(requestId: string) {
+    mocks.conversation.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [answer(requestId, 'Часткова відповідь')],
+    });
+    await remountWithProviders([PROVIDER]);
+    mocks.submit.mockResolvedValueOnce({
+      id: requestId,
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    setTextarea('Огляд за тиждень');
+    submitForm();
+    await flush();
+    await act(async () => streamEvent(requestId, 1, 'assistant_snapshot', 'Часткова відповідь'));
+    await act(async () =>
+      streamEvent(requestId, 2, 'completion_metadata', '', { completionMetadata: INCOMPLETE }),
+    );
+    expect(continueButtons()).toHaveLength(0);
+    await act(async () => streamEvent(requestId, 3, 'completion', ''));
+    await flush();
+  }
+
+  it('sends a just-finished answer on as a one-shot Deep follow-up', async () => {
+    await finishIncompleteRequest('request-limited');
+    expect(continueButtons()).toHaveLength(1);
+    expect(container.textContent).toContain('до 4 год; нові повідомлення чекатимуть у черзі');
+
+    setTextarea('Незавершена чернетка');
+    await flush();
+    mocks.submit.mockResolvedValueOnce({
+      id: 'request-continued',
+      conversationId: CONVERSATION.id,
+      state: 'running',
+    });
+    await act(async () => {
+      clickButton(CONTINUE);
+      clickButton(CONTINUE);
+    });
+    await flush();
+
+    expect(mocks.submit).toHaveBeenCalledTimes(2);
+    expect(mocks.submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        conversationId: CONVERSATION.id,
+        message: DEEP_CONTINUATION_PROMPT,
+        reasoningPreset: 'deep',
+      }),
+    );
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'Незавершена чернетка',
+    );
+    expect(selector('Глибина аналізу').textContent).toContain('Збалансований');
+    expect(container.textContent).toContain('Ви · Глибокий');
+    expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('brings the button back when the follow-up is rejected', async () => {
+    await finishIncompleteRequest('request-limited');
+    mocks.submit.mockRejectedValueOnce(new Error('мережа недоступна'));
+    await act(async () => clickButton(CONTINUE));
+    await flush();
+
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося надіслати запит: мережа недоступна',
+    });
+    expect(continueButtons()).toHaveLength(1);
+    expect(continueButtons()[0].disabled).toBe(false);
+  });
+
+  it('sends nothing when another tab already moved the conversation on', async () => {
+    await openConversation([answer('request-limited', 'Часткова відповідь')]);
+    await chooseOption('Глибина аналізу', 'Глибокий');
+    mocks.conversation.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [
+        answer('request-limited', 'Часткова відповідь'),
+        answer('request-elsewhere', 'Відповідь з іншої вкладки', { completionMetadata: null }),
+      ],
+    });
+    await act(async () => clickButton(CONTINUE));
+    await flush();
+
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: 'Не вдалося надіслати запит: у розмові вже є новіший запит',
+    });
+    expect(container.textContent).toContain('Відповідь з іншої вкладки');
+    expect(continueButtons()).toHaveLength(0);
+    expect(selector('Глибина аналізу').textContent).toContain('Глибокий');
+  });
+
+  it('never posts into a conversation opened while the check was running', async () => {
+    const limited = { ...CONVERSATION, messages: [answer('request-limited', 'Часткова')] };
+    await openConversation(limited.messages);
+    let finishCheck: (conversation: typeof limited) => void = () => {};
+    mocks.conversation.mockImplementationOnce(
+      () => new Promise((resolve) => (finishCheck = resolve)),
+    );
+    await act(async () => clickButton(CONTINUE));
+    await act(async () => {
+      window.dispatchEvent(new Event(AI_AGENT_NEW_CONVERSATION_EVENT));
+    });
+    await flush();
+    await act(async () => finishCheck(limited));
+    await flush();
+
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it('restores the button after reload, including for a context-limited answer', async () => {
+    await openConversation([
+      answer('request-context', 'Обрізана відповідь', {
+        completionMetadata: { coverageLimited: true, reason: 'context_limit' },
+      }),
+    ]);
+    expect(continueButtons()).toHaveLength(1);
+  });
+
+  it('offers it only on the newest answer', async () => {
+    await openConversation([
+      answer('request-older', 'Старіша відповідь'),
+      answer('request-newer', 'Новіша відповідь'),
+    ]);
+    expect(continueButtons()).toHaveLength(1);
+    const answers = container.querySelector('[data-testid="ai-agent-chat-messages"]')!;
+    expect(answers.textContent!.indexOf(CONTINUE)).toBeGreaterThan(
+      answers.textContent!.indexOf('Новіша відповідь'),
+    );
+
+    await openConversation([
+      answer('request-older', 'Старіша відповідь'),
+      answer('request-newer', 'Повна відповідь', { completionMetadata: null }),
+    ]);
+    expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('is absent when Deep was already used or is unavailable', async () => {
+    await openConversation([answer('request-deep', 'Глибока', { reasoningPreset: 'deep' })]);
+    expect(continueButtons()).toHaveLength(0);
+
+    await openConversation(
+      [answer('request-limited', 'Часткова')],
+      REASONING_PRESETS.filter((option) => option.preset !== 'deep'),
+    );
+    expect(continueButtons()).toHaveLength(0);
+  });
+
+  it('leaves the coverage footer off a Deep answer, which states its own stop', async () => {
+    const STOPPED = { coverageLimited: true, reason: 'time_limit' };
+    await openConversation([
+      answer('request-deep', 'Глибока', { reasoningPreset: 'deep', completionMetadata: STOPPED }),
+    ]);
+    expect(container.textContent).not.toContain('Охоплення джерел неповне');
+
+    await openConversation([answer('request-limited', 'Часткова')]);
+    expect(container.textContent).toContain('Охоплення джерел неповне');
+  });
+
+  it('asks to finish the task without assuming it was an analysis', () => {
+    expect(DEEP_CONTINUATION_PROMPT).toContain('доведи його до кінця');
+    expect(DEEP_CONTINUATION_PROMPT).toContain('мапами');
+    expect(DEEP_CONTINUATION_PROMPT).not.toMatch(/аналіз|джерела новим пошуком/);
+  });
+});
+
 describe('AiAgentChat conversation controls', () => {
   it('renders the polished empty state, provider control, and hidden history pane', () => {
     expect(container.textContent).toContain('Спитайте ЕХО');

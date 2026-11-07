@@ -4,7 +4,7 @@
 
 - The system setting «Режим РЕР» is enabled when `hide_networks` is false; saving the switch preserves the inverse value in the existing API field.
 - New Analysis defaults to closed groups and open filters in this mode, unless panel state is supplied in the URL.
-- Shared Analysis and Duty cards replace the unit heading with networks, group, sender, and location in that order. Missing networks never restore the unit heading. Frequency, permitted device details, and the DMR metadata control remain in the body; moved metadata is not duplicated there.
+- Shared Analysis and Duty cards replace the unit heading with networks, group, sender, and location in that order. Missing networks never restore the unit heading. The explicit unit remains in the body after frequency and permitted device details, in the former network-binding position, even when no networks or other body metadata are available. The DMR metadata control also remains in the body; moved header metadata is not duplicated there.
 - Disabling РЕР mode retains the unit heading and hides networks. Existing group visibility and device access rules still apply.
 - Existing tests: `wdintel-web/tests/e2e/message-card-rer-mode.spec.ts`, `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/message-card/__tests__/MessageCard.spec.tsx`.
 

@@ -8,8 +8,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  # A newer PR or main commit contains the older one, so only the latest needs testing.
+  # Each stable push keeps a unique group because it publishes a release.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && 'main') || github.run_id }}
+  # A running main check always finishes, so a burst of merges cannot starve it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   agent-management:
@@ -141,6 +144,13 @@ jobs:
         timeout-minutes: 60
         shell: "bash --noprofile --norc {0}"
         run: bash deploy/ci/run_on_build_main.sh stage run-tests
+
+      # Cancelling this job kills the SSH client but leaves the remote test run alive.
+      - name: Stop leftover test processes on echo-build-main
+        if: always() && (github.event_name != 'push' || github.ref != 'refs/heads/stable')
+        continue-on-error: true
+        shell: "bash --noprofile --norc {0}"
+        run: bash deploy/ci/run_on_build_main.sh stage reap-tests
 
       - name: Mark deploy started in redis on echo-build-main
         if: github.event_name == 'push' && github.ref == 'refs/heads/stable'

@@ -2,7 +2,12 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AiAgentMapDocument, AiAgentMapSummary } from '../../../../../Bindings';
+import type {
+  AiAgentMapDocument,
+  AiAgentMapRecord,
+  AiAgentMapSummary,
+} from '../../../../../Bindings';
+import { recordPosition } from '../MapInspector';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -389,5 +394,17 @@ describe('#3064 map documents', () => {
     } finally {
       mocks.workspaceFrom = original;
     }
+  });
+});
+
+describe('#4038 map record positions', () => {
+  const position = (coordinateSystem: string, originalX: string, originalY: string) =>
+    recordPosition({ coordinateSystem, originalX, originalY } as AiAgentMapRecord);
+
+  it('shows each format as it was written', () => {
+    expect(position('wgs84', '47.54821', '35.38674')).toBe('WGS-84: 47.54821 35.38674');
+    expect(position('wgs84', '47.54821, 35.38674', '')).toBe('WGS-84: 47.54821, 35.38674');
+    expect(position('mgrs', '36T XT 79584 68848', '')).toBe('MGRS: 36T XT 79584 68848');
+    expect(position('msk2000', '5215227', '6548669')).toBe('msk2000: X=5215227, Y=6548669');
   });
 });

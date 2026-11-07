@@ -7,7 +7,7 @@ use crate::types::*;
 use crate::users::ensure_admin;
 use actix_web::post;
 use actix_web::web::Json;
-use sea_orm::{ActiveValue::Set, *};
+use sea_orm::{sea_query::OnConflict, ActiveValue::Set, *};
 
 fn parse_selected_configs(row: &aor_location_config::Model) -> Vec<String> {
     row.settlements_configs
@@ -152,16 +152,24 @@ pub async fn init_aor_location_config(
             .c(h!())?
             .is_some();
         if !exists {
-            aor_location_config::ActiveModel {
-                id: NotSet,
-                aor_id: Set(aor.id),
-                // Empty explicit selection -> fallback to default
-                // settlements list from config.toml.
-                settlements_configs: Set(serde_json::json!([])),
-                created_at: NotSet,
-                updated_at: NotSet,
-            }
-            .insert(dbx)
+            // Importers seed concurrently, so this row may already exist.
+            aor_location_config::Entity::insert(
+                aor_location_config::ActiveModel {
+                    id: NotSet,
+                    aor_id: Set(aor.id),
+                    // Empty explicit selection -> fallback to default
+                    // settlements list from config.toml.
+                    settlements_configs: Set(serde_json::json!([])),
+                    created_at: NotSet,
+                    updated_at: NotSet,
+                },
+            )
+            .on_conflict(
+                OnConflict::column(aor_location_config::Column::AorId)
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec_without_returning(dbx)
             .await
             .c(h!())?;
         }

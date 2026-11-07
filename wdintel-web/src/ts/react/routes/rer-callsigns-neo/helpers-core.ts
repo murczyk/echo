@@ -84,7 +84,7 @@ export function getExportPermissionFromRoles(rolesList: string[]): ExportPermiss
 }
 
 export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
-  const { filters, sort, query, sidebarUnitHierarchyFilter = null } = input;
+  const { filters, sort, query, sidebarUnitHierarchyFilter = null, sidebarUnitId = null } = input;
 
   return {
     afterId: query.afterId,
@@ -94,7 +94,8 @@ export function buildListCallsignsReq(input: BuildReqInput): ListCallsignsReq {
     filterPosition: filters.filterPosition.trim() || null,
     filterFullName: filters.filterFullName.trim() || null,
     filterComment: filters.filterComment.trim() || null,
-    filterUnit: filters.filterUnit.trim() || null,
+    filterUnitId: sidebarUnitId,
+    filterUnit: sidebarUnitId === null ? filters.filterUnit.trim() || null : null,
     filterUnitArmyRegion: normalizeHierarchyFilterValue(sidebarUnitHierarchyFilter?.armyRegion),
     filterUnitMilitaryDistrict: normalizeHierarchyFilterValue(
       sidebarUnitHierarchyFilter?.militaryDistrict,

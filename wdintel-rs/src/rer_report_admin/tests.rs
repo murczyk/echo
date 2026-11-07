@@ -23,7 +23,7 @@ async fn rer_report_eligibility_matches_exact_access_list() {
 
 #[tokio::test]
 #[serial]
-async fn unit_merge_unions_rer_report_metadata() {
+async fn unit_merge_keeps_survivor_report_name_and_unions_locations() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let source = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
     let target = mk_sigint_unit(&env.dbx, Default::default()).await.unwrap();
@@ -42,6 +42,7 @@ async fn unit_merge_unions_rer_report_metadata() {
         sigint_unit_rer_report_metadata::ActiveModel {
             sigint_unit_id: Set(unit_id),
             locations: Set(locations),
+            report_name: Set(labels[0].as_str().map(str::to_string)),
             labels: Set(labels),
             ..Default::default()
         }
@@ -75,7 +76,8 @@ async fn unit_merge_unions_rer_report_metadata() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].sigint_unit_id, target.id);
     assert_eq!(rows[0].locations, serde_json::json!(["A", "B", "C"]));
-    assert_eq!(rows[0].labels, serde_json::json!(["T", "S"]));
+    assert_eq!(rows[0].labels, serde_json::json!(["T"]));
+    assert_eq!(rows[0].report_name.as_deref(), Some("T"));
     assert!(
         sigint_unit::Entity::find_by_id(source.id)
             .one(&env.dbx)
@@ -84,6 +86,131 @@ async fn unit_merge_unions_rer_report_metadata() {
             .unwrap()
             .deleted
     );
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3940_unit_merges_revalidate_report_name_parents() {
+    for (source_name, target_name) in [
+        (Some("Shared"), None),
+        (Some("Source"), Some("Shared")),
+        (None, Some("Shared")),
+    ] {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let source = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set("West".into()),
+                corps: Set("1 AK".into()),
+                division: Set("1 мсд".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let target = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set(if target_name.is_none() {
+                    "East".into()
+                } else {
+                    String::new()
+                }),
+                corps: Set("1 AK".into()),
+                division: Set("1 мсд".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let peer = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                army_region: Set(if target_name.is_none() {
+                    "West".into()
+                } else {
+                    String::new()
+                }),
+                corps: Set("1 AK".into()),
+                division: Set("1 мсд".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (unit_id, report_name) in [
+            (source.id, source_name),
+            (target.id, target_name),
+            (peer.id, Some("Shared")),
+        ] {
+            if let Some(report_name) = report_name {
+                create_metadata(
+                    &env.dbx,
+                    &CreateRerReportMetadataReq {
+                        sigint_unit_id: unit_id,
+                        report_name: report_name.into(),
+                        locations: vec![],
+                    },
+                )
+                .await
+                .unwrap();
+            }
+        }
+        scope::capture(&env.dbx).await.unwrap();
+        let metadata = list_metadata(&env.dbx).await.unwrap();
+        let login = source.created_by_login_id;
+        let transaction = crate::sigint::unit::begin_unit_merge_transaction(
+            &env.dbx,
+            &[source.id, target.id],
+        )
+        .await
+        .unwrap();
+        let error = crate::sigint::unit::merge_units_in_transaction(
+            login,
+            &transaction,
+            source.id,
+            target.id,
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:?}").contains("іншою ієрархією"));
+        transaction.rollback().await.unwrap();
+        assert_eq!(list_metadata(&env.dbx).await.unwrap(), metadata);
+        for unit in [&source, &target] {
+            assert_eq!(
+                sigint_unit::Entity::find_by_id(unit.id)
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .as_ref(),
+                Some(unit)
+            );
+        }
+        scope::capture(&env.dbx).await.unwrap();
+        let peer_metadata = metadata
+            .iter()
+            .find(|row| row.sigint_unit_id == peer.id)
+            .unwrap();
+        delete_metadata(&env.dbx, peer_metadata.id).await.unwrap();
+        let transaction = crate::sigint::unit::begin_unit_merge_transaction(
+            &env.dbx,
+            &[source.id, target.id],
+        )
+        .await
+        .unwrap();
+        crate::sigint::unit::merge_units_in_transaction(
+            login,
+            &transaction,
+            source.id,
+            target.id,
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+        let scope = scope::capture(&env.dbx).await.unwrap();
+        assert_eq!(scope.units[&target.id].target.report_name, "Shared");
+        assert!(!scope.units.contains_key(&source.id));
+    }
 }
 
 #[tokio::test]
@@ -132,7 +259,7 @@ async fn metadata_crud_preserves_rows_when_reassignment_conflicts() {
         &CreateRerReportMetadataReq {
             sigint_unit_id: first.id,
             locations: vec![" A ".into(), "A".into()],
-            labels: vec!["first".into()],
+            report_name: "first".into(),
         },
     )
     .await
@@ -142,7 +269,7 @@ async fn metadata_crud_preserves_rows_when_reassignment_conflicts() {
         &CreateRerReportMetadataReq {
             sigint_unit_id: second.id,
             locations: vec![],
-            labels: vec!["second".into()],
+            report_name: "second".into(),
         },
     )
     .await
@@ -151,7 +278,7 @@ async fn metadata_crud_preserves_rows_when_reassignment_conflicts() {
         id: first.id,
         sigint_unit_id: second.sigint_unit_id,
         locations: vec!["changed".into()],
-        labels: vec![],
+        report_name: "name".into(),
     };
     assert!(update_metadata(&env.dbx, &update).await.is_err());
     assert_eq!(
@@ -165,7 +292,7 @@ async fn metadata_crud_preserves_rows_when_reassignment_conflicts() {
     update.sigint_unit_id = first.sigint_unit_id;
     let saved = update_metadata(&env.dbx, &update).await.unwrap();
     assert_eq!(saved.locations, vec!["changed".to_string()]);
-    assert!(saved.labels.is_empty());
+    assert_eq!(saved.report_name, "name");
     delete_metadata(&env.dbx, first.id).await.unwrap();
     assert!(metadata_item_by_id(&env.dbx, first.id).await.is_err());
     assert_eq!(list_metadata(&env.dbx).await.unwrap(), vec![second]);
@@ -183,7 +310,7 @@ async fn metadata_edits_preserve_unavailable_units_without_allowing_reassignment
         &CreateRerReportMetadataReq {
             sigint_unit_id: unit.id,
             locations: vec!["original".into()],
-            labels: vec![],
+            report_name: "name".into(),
         },
     )
     .await
@@ -205,17 +332,17 @@ async fn metadata_edits_preserve_unavailable_units_without_allowing_reassignment
             id: metadata.id,
             sigint_unit_id: unit.id,
             locations: vec!["updated".into()],
-            labels: vec!["label".into()],
+            report_name: "label".into(),
         };
         let saved = update_metadata(&env.dbx, &update).await.unwrap();
         assert_eq!(saved.locations, update.locations);
-        assert_eq!(saved.labels, update.labels);
+        assert_eq!(saved.report_name, update.report_name);
         assert!(create_metadata(
             &env.dbx,
             &CreateRerReportMetadataReq {
                 sigint_unit_id: target.id,
                 locations: vec!["new".into()],
-                labels: vec![],
+                report_name: "name".into(),
             },
         )
         .await
@@ -251,7 +378,7 @@ async fn metadata_creation_waits_for_merge_and_rejects_deleted_source() {
     let req = CreateRerReportMetadataReq {
         sigint_unit_id: source.id,
         locations: vec!["location".into()],
-        labels: vec![],
+        report_name: "name".into(),
     };
     let creation = create_metadata(&env.dbx, &req);
     tokio::pin!(creation);
@@ -288,7 +415,7 @@ async fn metadata_deletion_rejects_a_row_moved_by_a_concurrent_merge() {
         &CreateRerReportMetadataReq {
             sigint_unit_id: source.id,
             locations: vec!["location".into()],
-            labels: vec![],
+            report_name: "name".into(),
         },
     )
     .await
@@ -315,4 +442,78 @@ async fn metadata_deletion_rejects_a_row_moved_by_a_concurrent_merge() {
     let saved = metadata_item_by_id(&env.dbx, metadata.id).await.unwrap();
     assert_eq!(saved.sigint_unit_id, target.id);
     assert_eq!(saved.locations, metadata.locations);
+}
+
+#[tokio::test]
+#[serial]
+async fn issue_3940_migration_keeps_first_label_and_seeds_empty_names() {
+    use sea_orm_migration::{MigratorTrait, SchemaManager};
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let transaction = env.dbx.begin().await.unwrap();
+    let first = mk_sigint_unit(&transaction, Default::default())
+        .await
+        .unwrap();
+    let empty = mk_sigint_unit(&transaction, Default::default())
+        .await
+        .unwrap();
+    let blank = mk_sigint_unit(&transaction, Default::default())
+        .await
+        .unwrap();
+    for (unit_id, labels) in [
+        (first.id, serde_json::json!([" Перший ", "Другий"])),
+        (empty.id, serde_json::json!([])),
+        (blank.id, serde_json::json!(["   ", "Другий"])),
+    ] {
+        sigint_unit_rer_report_metadata::ActiveModel {
+            sigint_unit_id: Set(unit_id),
+            labels: Set(labels),
+            locations: Set(serde_json::json!([])),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .await
+        .unwrap();
+    }
+    transaction.execute_unprepared(r#"alter table sigint_unit_rer_report_metadata drop column report_name"#).await.unwrap();
+    let migration = echo_migration::Migrator::migrations()
+        .into_iter()
+        .find(|migration| {
+            migration.name() == "m20261104_165252_rer_report_unit_selection"
+        })
+        .unwrap();
+    migration
+        .up(&SchemaManager::new(&transaction))
+        .await
+        .unwrap();
+    let first = sigint_unit_rer_report_metadata::Entity::find()
+        .filter(
+            sigint_unit_rer_report_metadata::Column::SigintUnitId.eq(first.id),
+        )
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    let empty_name = sigint_unit_rer_report_metadata::Entity::find()
+        .filter(
+            sigint_unit_rer_report_metadata::Column::SigintUnitId.eq(empty.id),
+        )
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.report_name.as_deref(), Some("Перший"));
+    assert_eq!(first.labels, serde_json::json!(["Перший"]));
+    assert_eq!(empty_name.report_name.as_deref(), Some(empty.name.trim()));
+    assert_eq!(empty_name.labels, serde_json::json!([empty.name.trim()]));
+    let blank_name = sigint_unit_rer_report_metadata::Entity::find()
+        .filter(
+            sigint_unit_rer_report_metadata::Column::SigintUnitId.eq(blank.id),
+        )
+        .one(&transaction)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(blank_name.report_name.as_deref(), Some(blank.name.trim()));
+    assert_eq!(blank_name.labels, serde_json::json!([blank.name.trim()]));
+    transaction.rollback().await.unwrap();
 }

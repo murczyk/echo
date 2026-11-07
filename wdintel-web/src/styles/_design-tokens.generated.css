@@ -29,6 +29,8 @@
   --color-echo-on-primary: var(--echo-color-on-primary);
   --color-echo-secondary: var(--echo-color-secondary);
   --color-echo-success: var(--echo-color-success);
+  --color-echo-own-records: var(--echo-color-own-records);
+  --color-echo-on-own-records: var(--echo-color-on-own-records);
   --color-echo-warning: var(--echo-color-warning);
   --color-echo-error: var(--echo-color-error);
   --color-echo-info: var(--echo-color-info);
@@ -83,6 +85,8 @@
   --echo-color-on-primary: #ffffff;
   --echo-color-secondary: #d3871d;
   --echo-color-success: #16a34a;
+  --echo-color-own-records: #66bb6a;
+  --echo-color-on-own-records: #000000;
   --echo-color-warning: #ea580c;
   --echo-color-error: #dc2626;
   --echo-color-info: #1565c0;
@@ -160,6 +164,8 @@ html[data-bs-theme='dark'] {
   --echo-color-on-primary: #000000;
   --echo-color-secondary: #d3871d;
   --echo-color-success: #16a34a;
+  --echo-color-own-records: #66bb6a;
+  --echo-color-on-own-records: #000000;
   --echo-color-warning: #ea580c;
   --echo-color-error: #dc2626;
   --echo-color-info: #90caf9;

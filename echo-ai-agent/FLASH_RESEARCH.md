@@ -5,18 +5,20 @@ engine (GLM-5.3, Gemma) uses it when [reasoning presets](../docs/ai/reasoning-pr
 give the request a budget; without presets those engines keep their unbudgeted
 path. OpenAI engines keep the generic path, where a failed final synthesis yields a
 short notice instead of raw source excerpts. The selected provider and total
-Fast/Balanced/Deep deadlines are 120/300/14400 seconds, and document requests
-in Fast or Balanced get 1800 seconds. These engines reserve 60/120/600 seconds
+Fast/Balanced/Deep deadlines are 120/600/14400 seconds (OpenAI Balanced stays at
+300), and document requests in Fast or Balanced get 1800 seconds. These engines reserve 60/120/600 seconds
 (240 for documents) of those deadlines for synthesis (Rust `reasoning::resolve`;
-the runner also accepts the base 30/60/300/120 reserves, and Deep at the former
-1800/120, so policies queued before a change still validate). When the user asks
+the runner also accepts the base 30/60/300/120 reserves, Balanced at the former
+300 seconds and Deep at the former 1800/120, so policies queued before a change
+still validate). When the user asks
 for a document, it must be saved during research: the tool-free synthesis cannot
 create files, and when no Echo search ran it says so instead of reporting that
 Echo has no data. Flash without presets keeps its existing ten-minute deadline
 with a two-minute synthesis reserve; final generation keeps the legacy gateway's
 authorized `research` purpose.
 
-Before retrieval, Flash saves a short checklist with `update_research`. Broad
+Research starts with retrieval: nothing has to be saved first, because a slow
+provider turn spent on planning can use up most of a Balanced window. Broad
 summaries start with a sample, then use focused searches chosen from the request
 and observed evidence. Continuing unfiltered inbox pagination, or reading more than three pages of
 one search, requires a specific coverage requirement in
@@ -31,11 +33,16 @@ automatically. Rejected or failed checkpoints keep recovery blocked.
 After four retrieval attempts, the next research turn is restricted to
 `update_research` with a forced tool choice. An already admitted tool batch
 finishes before this boundary, including calls beyond the fourth retrieval.
-Retrieval resumes only after a successful state update; a rejected or failed
-update does not reopen it. The initial-plan and pagination checks still apply.
+Retrieval resumes after any saved update. A draft that fails citation validation
+is not saved, but the checklist and gaps are, the previous draft stays, and the
+tool result names the invalid links; only a failed save keeps retrieval closed.
+The pagination checks still apply.
 State contains task status, a cited Markdown answer draft (up to 8,000 characters)
 and coverage gaps; it must not
-contain hidden reasoning or deliberation. Queries and returned continuation
+contain hidden reasoning or deliberation. The tool's schema is deliberately loose:
+`normalizedResearchUpdate` fits what the model sends to these limits, because a
+schema failure costs a whole provider turn. `report_progress` also fits its text
+rather than failing. Queries and returned continuation
 cursors are recorded automatically. Completed updates use the existing work
 journal's checkpoint records, with no new storage or container filesystem tool.
 When work memory is enabled, follow-ups receive the compact state through the
@@ -48,11 +55,35 @@ Every provider turn receives private remaining research/total time, tool allowan
 and estimated context headroom. A warning requests completion before the research
 boundary. Observed provider durations prevent starting a research or checkpoint
 call that would consume the remaining research allowance; before the first
-checkpoint has been observed, one minute is assumed. Transitions happen
+checkpoint has been observed, one minute is assumed. Until something has been
+retrieved, a research turn is always started: stopping then guarantees a useless
+answer, while a turn cut off at the research deadline leaves the synthesis reserve
+intact. Transitions happen
 between completed tool rounds; deadline timers and cancellation remain backstops.
 
-Synthesis uses the same context-aware evidence packing as other engines and at
-most 8,192 output tokens, bounded by the configured output cap. It preserves
+A turn that ends with pending checklist items, or with no saved state after a
+public progress report that no tool call followed, does not end research: the
+runner re-prompts the model to do the work or mark it done or blocked. Deep allows
+three re-prompts and the other presets one, while time for a turn remains. A
+re-prompt that runs no tool ends the loop. There is no forced tool choice here.
+Deep that ran no tool at all also gets one re-prompt to search first, because a
+word with an everyday meaning may be a callsign. Reformatting or translating
+earlier text, and tasks answerable from what the user supplied, may still finish
+without tools.
+A provider failure before the first tool call also gets one re-prompt, in every
+preset, because nothing is lost by trying again. Authorization and content-filter
+failures are not retried, and a repeated failure ends research as before.
+Research may also end without any text, as GLM-5.3 does: synthesis writes the
+answer, so an empty final turn is not a provider failure. A last draft refresh
+runs only after four or more retrievals, because it is a fallback that costs
+research-effort turns.
+
+Synthesis has no tools and sees only delivered evidence, so its request also carries
+`completedActions`: the harness's record of each public tool's calls, failures and
+result counts. Without it, a search that found nothing or a published map looks like
+work that never ran. Synthesis uses the same context-aware evidence packing as other engines and at
+most 16,384 output tokens (the whole configured output cap on Deep), bounded by
+that cap. Hidden thinking counts against it. It preserves
 full records when they fit rather than cutting each source to a fixed prefix.
 The compact saved draft is included once. A truncated, empty, interrupted or
 citation-invalid completion may receive one corrective attempt if its observed
@@ -66,7 +97,15 @@ validate against the available citations. Without a validated draft, it returns 
 short inability notice. Answers grounded solely in user-provided text need no
 invented citation, and registered map links remain supported. It never
 substitutes raw source excerpts. Unread cursors,
-incomplete tasks or remaining gaps produce a brief coverage qualification.
+incomplete tasks or remaining gaps produce a brief coverage qualification. Every
+such answer also emits `completion_metadata`: the budget limit's reason when one
+was reached, otherwise `incomplete_research` (also used for a fallback answer),
+which the chat uses to offer a Deep continuation. Deep is the exception: gaps
+reported on finished work are findings. Only a real stop, work left undone or a
+failed synthesis qualify its answer, with one line naming that. A progress note
+after real work earns a re-prompt but no such label, because models also announce
+the final summary that way. When no limit stopped the work, that prompt
+also forbids claiming one did, even if an earlier answer in the conversation said so.
 Authorization failures, content filters, cancellation and persistence failures
 retain their fail-closed behavior.
 
@@ -88,7 +127,11 @@ and hidden reasoning are excluded. This also records successful requests that
 returned a fallback draft instead of a completed synthesis.
 
 Tool failures also emit private `tool_diagnostic` frames with an allowlisted
-reason code, a recognized tool name and an optional HTTP status. The worker logs
+reason code, a recognized tool name and an optional HTTP status. Failed argument
+validation adds `fields`: paths and a fixed kind such as
+`checklist.0.status:enum`, never the received values. A draft rejected by
+`update_research` logs `citation_rejected` with `draftIssue` (`no_citation`,
+`unknown_link` or `bare_link`). The worker logs
 these against the request ID without arguments, source content or raw errors.
 Deferred pagination prerequisites stay out of public tool activity; genuine
 failures retain public error events with a safe `errorReason` code.
@@ -110,7 +153,7 @@ When comparing GLM-5.3 or Gemma against a base runner built before they used thi
 workflow, add `1` as a final argument: that runner accepts the doubled synthesis
 reserve only for Flash.
 
-Scenarios are `grouped`, `long`, `attachments`, `exhaustive` and `followup`;
+Scenarios are `grouped`, `short`, `long`, `attachments`, `exhaustive` and `followup`;
 presets are `fast`,
 `balanced` and `deep`. Run the same fixture against the base runner and Sol for
 comparison. Results contain provider finish reasons, usage, selected-answer

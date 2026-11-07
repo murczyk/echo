@@ -118,7 +118,7 @@ type BuildReloadParamsInput = {
   focusedWindow: InboxWindowRsp | null;
   focusedMessageActive: boolean;
   newestFirst: boolean;
-  onError: (message: string) => void;
+  onError: (message: string, persistent?: boolean) => void;
   onUnauthorized: (error: unknown) => boolean;
   queryState: AnalysisQueryState;
   rightSidebarTab: UseAnalysisDataProps['rightSidebarTab'];

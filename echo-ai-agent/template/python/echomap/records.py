@@ -42,13 +42,15 @@ def citation(source):
 
 @dataclass
 class Record:
-    """One map point. Copy coordinates exactly as written; Echo normalizes
-    and projects them and keeps invalid rows in CSV."""
+    """One map point. Copy coordinates exactly as written; Echo recognizes
+    the format from the values (MSK-2000/СК-42 X and Y, WGS-84 latitude and
+    longitude, or a whole MGRS reference in x), projects them and keeps invalid
+    rows in CSV."""
 
     name: str
     x: str
-    y: str
-    crs: str = "msk2000"
+    y: str = ""
+    crs: str = ""
     sidc: str = ""
     when: str | None = None
     comments: list = field(default_factory=list)

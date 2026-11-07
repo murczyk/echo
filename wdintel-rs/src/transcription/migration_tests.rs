@@ -17,10 +17,13 @@ async fn migrate_sources(
         })
         .context("transcription source migration missing")
         .context(crate::h!())?;
-    migration
-        .up(&SchemaManager::new(&transaction))
-        .await
-        .context(crate::h!())?;
+    let outcome = migration.up(&SchemaManager::new(&transaction)).await;
+    if let Err(error) = outcome {
+        // A dropped transaction rolls back later, still holding its locks when
+        // the caller retries.
+        transaction.rollback().await.context(crate::h!())?;
+        return Err(error).context(crate::h!());
+    }
     transaction.commit().await.context(crate::h!())?;
     Ok(())
 }

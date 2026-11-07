@@ -180,7 +180,9 @@ export function parseRerAnalysisQueryStateFromSearchParams(
     }
 
     if (field.type === 'string[]') {
-      parsed[field.key] = params.getAll(field.param).filter((value) => value !== '');
+      parsed[field.key] = params
+        .getAll(field.param)
+        .filter((value) => field.key === 'unitsSelected' || value !== '');
       continue;
     }
 

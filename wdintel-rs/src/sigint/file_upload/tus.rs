@@ -1922,6 +1922,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial_test::serial]
     async fn fallback_completion_without_caller_acceptance_removes_promoted_artifacts(
     ) {
         let directory = tempfile::tempdir().unwrap();

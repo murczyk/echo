@@ -254,6 +254,10 @@ async fn load_kmz_report_items(
         &req.only_with_network,
     )
     .context(h!())?;
+    let items = crate::rer_report_admin::scope::filter_query(
+        items,
+        req.only_for_rer_report,
+    );
     let items = filter_selected_metadata_for_analysis_stats(items, req)
         .context(h!())?;
     let items = filter_search_with_mode(items, &req.search, req.search_mode)

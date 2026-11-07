@@ -1,6 +1,6 @@
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import { Box, Stack, Tooltip } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 
 import type { AnalysisPageActions, AnalysisPageState } from '../types';
 import { AnalysisSearchControls } from './AnalysisSearchControls';
@@ -28,6 +28,7 @@ export function AnalysisHeaderControls({
   showDateRange = true,
 }: AnalysisHeaderControlsProps) {
   const [compactSearchOpen, setCompactSearchOpen] = useState(Boolean(queryState.search));
+  const [clearingSearch, startClearingSearch] = useTransition();
   const dateTimeRangeValue = {
     fromDateTimeStr: queryState.fromDateTimeStr,
     toDateTimeStr: queryState.toDateTimeStr,
@@ -40,8 +41,8 @@ export function AnalysisHeaderControls({
   }, [isCompactLayout, queryState.search]);
 
   const closeCompactSearch = () => {
-    updateQueryState({ search: '' });
     setCompactSearchOpen(false);
+    startClearingSearch(() => updateQueryState({ search: '' }));
   };
 
   return (
@@ -60,7 +61,7 @@ export function AnalysisHeaderControls({
     >
       {!isCompactLayout || compactSearchOpen ? (
         <AnalysisSearchControls
-          queryState={queryState}
+          queryState={clearingSearch ? { ...queryState, search: '' } : queryState}
           updateQueryState={updateQueryState}
           isCompactLayout={isCompactLayout}
           onClose={closeCompactSearch}

@@ -10223,6 +10223,25 @@ mod tests {
             selected_senders: None,
             ..matching_sender_req.clone()
         };
+        for selected_senders in [None, Some(vec!["sender-c".to_string()])] {
+            let unmatched_group_req = InboxMessagesReq {
+                selected_groups: Some(vec!["DEVOPS".to_string()]),
+                selected_senders,
+                ..all_groups_req.clone()
+            };
+            assert!(
+                get_inbox_messages(
+                    &login.id,
+                    &logins,
+                    &env,
+                    &unmatched_group_req
+                )
+                .await
+                .unwrap()
+                .is_empty(),
+                "a selection matching no group must not widen to all groups"
+            );
+        }
         let all_groups_messages =
             get_inbox_messages(&login.id, &logins, &env, &all_groups_req)
                 .await

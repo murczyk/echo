@@ -1,5 +1,6 @@
 use super::auth;
 use super::reasoning::{ProviderApi, ProviderPurpose};
+use crate::ai_engine::StreamBodyTimer;
 use crate::config::{
     AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC, AI_AGENT_OPENAI_GPT_6_LUNA,
     AI_AGENT_OPENAI_GPT_6_SOL, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
@@ -709,6 +710,9 @@ async fn proxy_provider_call(
         ));
     }
     let engine_id = ai_engine.id;
+    let stream_timer = streamed
+        .then(|| client.start_stream_body_timer(&ai_engine))
+        .flatten();
     let response_limit = if streamed {
         AI_AGENT_PROVIDER_STREAM_MAX_BYTES
     } else {
@@ -761,7 +765,30 @@ async fn proxy_provider_call(
             .insert_header((header::CACHE_CONTROL, "no-store"));
         response
     };
-    Ok(response.streaming(enforce_stream_deadline(stream, stream_deadline)))
+    Ok(response.streaming(observe_stream_body(
+        enforce_stream_deadline(stream, stream_deadline),
+        stream_timer,
+    )))
+}
+
+fn observe_stream_body(
+    stream: impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>>,
+    timer: Option<StreamBodyTimer>,
+) -> impl futures_util::Stream<Item = Result<Bytes, actix_web::Error>> {
+    futures_util::stream::unfold(
+        (Box::pin(stream), timer),
+        |(mut stream, mut timer)| async move {
+            let chunk = stream.next().await;
+            if let Some(timer) = timer.as_mut() {
+                match &chunk {
+                    None => timer.completed(),
+                    Some(Err(_)) => timer.failed(),
+                    Some(Ok(_)) => {}
+                }
+            }
+            chunk.map(|chunk| (chunk, (stream, timer)))
+        },
+    )
 }
 
 fn enforce_stream_deadline(
@@ -1151,8 +1178,111 @@ mod tests {
         .await
         .unwrap();
         assert!(to_bytes(response.into_body()).await.is_err());
-        handle.stop(true).await;
+        handle.stop(false).await;
         task.await.unwrap().unwrap();
+    }
+
+    fn recording_engine_client() -> (
+        crate::ai_engine::AiEngineClient,
+        crate::telemetry::Metrics,
+        crate::telemetry::metrics::MetricsRecorder,
+    ) {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let (metrics, recorder) = crate::telemetry::Metrics::recording(&config);
+        let client = crate::ai_engine::AiEngineClient::new(
+            sea_orm::DatabaseConnection::default(),
+            None,
+        )
+        .unwrap()
+        .with_metrics(Some(metrics.clone()), "echo-test");
+        (client, metrics, recorder)
+    }
+
+    fn assert_one_stream_sample(
+        recorder: &crate::telemetry::metrics::MetricsRecorder,
+        outcome: &str,
+    ) {
+        let record = recorder
+            .find_with_attributes(
+                "echo.ai_provider.stream.duration",
+                &[("outcome", outcome), ("process", "echo-test")],
+            )
+            .unwrap_or_else(|| panic!("no stream sample for {outcome}"));
+        assert!(matches!(
+            record.value,
+            crate::telemetry::metrics::RecordedMetricValue::Histogram {
+                count: 1,
+                ..
+            }
+        ));
+    }
+
+    #[actix_web::test]
+    async fn issue_4029_stream_metrics_record_how_the_body_ended() {
+        let (client, metrics, recorder) = recording_engine_client();
+        let ai_engine =
+            checkpoint_fixture_engine("127.0.0.1:1".parse().unwrap());
+        let chunk = Ok::<_, actix_web::Error>(Bytes::from_static(b"data"));
+
+        let completed = observe_stream_body(
+            futures_util::stream::iter([chunk]),
+            client.start_stream_body_timer(&ai_engine),
+        );
+        assert_eq!(completed.collect::<Vec<_>>().await.len(), 1);
+
+        let failed = observe_stream_body(
+            enforce_stream_deadline(
+                futures_util::stream::pending(),
+                Duration::from_millis(1),
+            ),
+            client.start_stream_body_timer(&ai_engine),
+        )
+        .collect::<Vec<_>>()
+        .await;
+        assert!(failed[0].is_err());
+
+        drop(observe_stream_body(
+            futures_util::stream::pending(),
+            client.start_stream_body_timer(&ai_engine),
+        ));
+
+        metrics.force_flush_for_test();
+        for outcome in ["completed", "failed", "cancelled"] {
+            assert_one_stream_sample(&recorder, outcome);
+        }
+    }
+
+    #[actix_web::test]
+    async fn issue_4029_gateway_records_a_streamed_call() {
+        use actix_web::body::to_bytes;
+        let events = Bytes::from_static(b"data: [DONE]\n\n");
+        let (server, address) = checkpoint_fixture_server(events.clone());
+        let handle = server.handle();
+        let task = actix_web::rt::spawn(server);
+        let (client, metrics, recorder) = recording_engine_client();
+
+        let response = proxy_provider_request(
+            &client,
+            checkpoint_fixture_engine(address),
+            json!({"stream": true}),
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(to_bytes(response.into_body()).await.unwrap(), events);
+        handle.stop(false).await;
+        task.await.unwrap().unwrap();
+
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                "echo.ai_provider.requests.count",
+                &[("streaming", "true"), ("outcome", "ok")],
+            ),
+            Some(1)
+        );
+        assert_one_stream_sample(&recorder, "completed");
     }
 
     #[test]

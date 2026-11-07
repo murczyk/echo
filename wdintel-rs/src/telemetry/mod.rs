@@ -1,4 +1,5 @@
 pub(crate) mod metrics;
+pub(crate) mod operational;
 
-pub(crate) use metrics::FileAnalysisDbOperation;
 pub use metrics::Metrics;
+pub(crate) use metrics::{AiProviderLabels, FileAnalysisDbOperation};

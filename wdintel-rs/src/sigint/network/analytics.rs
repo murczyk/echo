@@ -1,5 +1,7 @@
 use crate::entities::{datasource_group, sigint_network, sigint_network_freq};
 use crate::error::AppError;
+use crate::rer_importer::analysis::stats::resolve_analytics_message_id_scope_for_range;
+use crate::rer_importer::analysis::AnalyticsMessageIdScope;
 use crate::sigint::etalonka::query::CallsignActivityInfo;
 use crate::sigint::etalonka::types::NetworkPointQueryRes;
 use crate::sigint::network::types::{
@@ -7,7 +9,7 @@ use crate::sigint::network::types::{
     NetworkFreqCallsignsPeriod, NetworkGroupsActivitySummaryRsp,
 };
 use crate::types::*;
-use chrono::{Duration, NaiveDateTime, Utc};
+use chrono::{Duration, DurationRound, NaiveDateTime, Utc};
 use sea_orm::*;
 use sqlx::FromRow;
 use std::collections::{HashMap, HashSet};
@@ -870,7 +872,116 @@ async fn load_networks_message_id_bounds(
     Ok(bounds.min_id.zip(bounds.max_id))
 }
 
+/// Narrows `network_bounds` to the message IDs a period can touch. A period that
+/// is still running needs only one query for its lower bound; a closed period
+/// keeps the exact scan.
 async fn load_message_id_bounds_for_period(
+    db: &DatabaseConnection,
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+    network_bounds: (i64, i64),
+) -> Result<Option<(i64, i64)>, AppError> {
+    let live_min_id = load_live_period_min_message_id(db, since, till)
+        .await
+        .context(h!())?;
+    let Some(live_min_id) = live_min_id else {
+        return Ok(load_exact_message_id_bounds_for_period(
+            db,
+            since,
+            till,
+            network_bounds,
+        )
+        .await
+        .context(h!())?);
+    };
+    let chunk_below_min_id = (
+        std::cmp::max(
+            network_bounds.0,
+            live_min_id.saturating_sub(
+                crate::config::ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE,
+            ),
+        ),
+        std::cmp::min(network_bounds.1, live_min_id.saturating_sub(1)),
+    );
+    let min_id = load_exact_message_id_bounds_for_period(
+        db,
+        since,
+        till,
+        chunk_below_min_id,
+    )
+    .await
+    .context(h!())?
+    .map_or(live_min_id, |(undated_min_id, _)| undated_min_id);
+    let min_id = std::cmp::max(network_bounds.0, min_id);
+    Ok((min_id <= network_bounds.1).then_some((min_id, network_bounds.1)))
+}
+
+/// Lower ID bound for a running period, or `None` if the period needs the exact
+/// scan. The callers' activity queries still apply the exact date filter.
+///
+/// The scope is found by bare `datetime`, while activity uses
+/// `COALESCE(datetime, timestamp, created_at)`, so rows with a NULL `datetime`
+/// are invisible to it. The caller leaves the upper bound open because a late
+/// import can have a far higher ID than its timestamp suggests, and checks one
+/// ID chunk below this bound because the first rows of a period may be undated.
+/// A row is only left out if it is more than a chunk below the bound.
+async fn load_live_period_min_message_id(
+    db: &DatabaseConnection,
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> Result<Option<i64>, AppError> {
+    let freshness_max_age_ms =
+        crate::config::ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT;
+    let closed_period_cutoff = Utc::now().naive_utc()
+        - Duration::milliseconds(
+            i64::try_from(freshness_max_age_ms).context(h!())?,
+        );
+    if till <= closed_period_cutoff {
+        return Ok(None);
+    }
+    let (search_since, search_till) =
+        message_id_scope_search_window(since, till).context(h!())?;
+    let scope = resolve_analytics_message_id_scope_for_range(
+        search_since,
+        search_till,
+        db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?;
+    Ok(match scope {
+        AnalyticsMessageIdScope::From(min_id) => Some(min_id),
+        AnalyticsMessageIdScope::Empty
+        | AnalyticsMessageIdScope::Inclusive { .. } => None,
+    })
+}
+
+/// Widens the period by the margin and rounds it out to whole hours, so that
+/// concurrent requests with different "now" values share one scope lookup.
+fn message_id_scope_search_window(
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> anyhow::Result<(NaiveDateTime, NaiveDateTime)> {
+    let margin = Duration::days(
+        crate::config::ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS,
+    );
+    let hour = Duration::hours(1);
+    let since = since
+        .checked_sub_signed(margin)
+        .context(h!())?
+        .duration_trunc(hour)
+        .c(h!())?;
+    let till = till
+        .checked_add_signed(margin)
+        .context(h!())?
+        .duration_trunc(hour)
+        .c(h!())?
+        .checked_add_signed(hour)
+        .context(h!())?;
+    Ok((since, till))
+}
+
+async fn load_exact_message_id_bounds_for_period(
     db: &DatabaseConnection,
     since: NaiveDateTime,
     till: NaiveDateTime,
@@ -1538,6 +1649,83 @@ mod tests {
             .await
             .unwrap(),
             None
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn network_period_bounds_keep_undated_rows_in_live_periods_4047() {
+        use crate::entities::{sigint_inbox_item, signal_message};
+        use crate::functest::tests::{
+            cleanup, mk_sigint_inbox_item, mk_signal_message,
+        };
+        let env = cleanup().await.unwrap();
+        let base = signal_message::Entity::find()
+            .select_only()
+            .column_as(signal_message::Column::Id.max(), "id")
+            .into_tuple::<Option<i64>>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .flatten()
+            .unwrap_or(0)
+            + 1;
+        let now = Utc::now().naive_utc();
+        let days_ago = |days| now - Duration::days(days);
+        let since = days_ago(21);
+        for (offset, datetime, timestamp, created_at) in [
+            (0, Some(days_ago(60)), None, days_ago(60)),
+            (1, None, Some(days_ago(20)), days_ago(20)),
+            (2, Some(days_ago(10)), None, days_ago(10)),
+            (3, None, Some(days_ago(5)), now),
+            (4, Some(now - Duration::hours(1)), None, now),
+            (5, Some(now + Duration::hours(1)), None, now),
+        ] {
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    id: Set(base + offset),
+                    timestamp: Set(timestamp),
+                    created_at: Set(created_at),
+                    datasource_group_id: Set(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    date: Set(None),
+                    time: Set(None),
+                    datetime: Set(datetime),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let bounds = (base, base + 5);
+        assert_eq!(
+            load_message_id_bounds_for_period(&env.dbx, since, now, bounds)
+                .await
+                .unwrap(),
+            Some((base + 1, base + 5)),
+            "older rows are pruned, undated rows before the first dated one \
+             stay in range, and the upper bound stays open past the period"
+        );
+        assert_eq!(
+            load_message_id_bounds_for_period(
+                &env.dbx,
+                since,
+                now - Duration::hours(12),
+                bounds
+            )
+            .await
+            .unwrap(),
+            Some((base + 1, base + 3)),
+            "a period closed hours ago keeps the exact scan"
         );
     }
 

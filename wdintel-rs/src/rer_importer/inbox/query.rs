@@ -15,6 +15,7 @@ use crate::rer_importer::analysis::analytics_unit::{
     apply_resolved_analytics_unit_filters_with_ids,
     resolve_analytics_unit_filters, ResolvedAnalyticsUnitFilters,
 };
+use crate::rer_importer::analysis::stats::effective_groups_with_access;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
 use crate::sigint::sender::{
@@ -485,18 +486,8 @@ fn apply_flat_analytics_group_filters(
     scope: &AnalyticsMessageIdScope,
 ) -> Select<signal_message::Entity> {
     let allowed = allowed_groups.iter().collect::<BTreeSet<_>>();
-    let selected_groups = req
-        .selected_groups
-        .as_ref()
-        .map(|groups| {
-            groups
-                .iter()
-                .filter(|group| allowed.contains(group))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-        .filter(|groups| !groups.is_empty())
-        .unwrap_or_else(|| allowed_groups.to_vec());
+    let selected_groups =
+        effective_groups_with_access(&req.selected_groups, allowed_groups);
     let access_alias = Alias::new("analytics_access_group");
     let mut access_condition = analytics_message_group_join_condition(
         access_alias.clone(),
@@ -839,6 +830,10 @@ where
         ));
     }
 
+    q = crate::rer_report_admin::scope::filter_query(
+        q,
+        req.only_for_rer_report,
+    );
     q = get_pagination_filters_with_conn(
         dbx,
         purpose == InboxQueryPurpose::Analytics,
@@ -3821,6 +3816,25 @@ mod tests {
             (
                 vec![],
                 InboxMessagesReq::default(),
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq {
+                    selected_groups: Some(vec![other.clone()]),
+                    ..Default::default()
+                },
+                AnalyticsMessageIdScope::From(ids[0]),
+                vec![],
+            ),
+            (
+                vec![allowed.clone()],
+                InboxMessagesReq {
+                    selected_groups: Some(vec![other.clone()]),
+                    selected_senders: Some(vec!["first".into()]),
+                    ..Default::default()
+                },
                 AnalyticsMessageIdScope::From(ids[0]),
                 vec![],
             ),

@@ -581,6 +581,30 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.queryState.freqsSelected).toEqual(['111.1']);
   });
 
+  it.each([
+    { label: 'unknown unit', unitsSelected: [''] },
+    { label: 'unknown and named units', unitsSelected: ['', 'Header Unit'] },
+    { label: 'named unit', unitsSelected: ['Header Unit'] },
+  ])(
+    '#4022 retains $label when an editor overlay pops to the same URL',
+    async ({ unitsSelected }) => {
+      window.history.replaceState({}, '', '/rer-analysis-neo');
+      renderHook();
+      await flushEffects();
+
+      await act(async () => latest?.updateQueryState({ unitsSelected }));
+      await flushEffects();
+      expect(latest?.queryState.unitsSelected).toEqual(unitsSelected);
+      expect(new URL(window.location.href).searchParams.getAll('units')).toEqual(unitsSelected);
+
+      act(() => window.dispatchEvent(new PopStateEvent('popstate')));
+      await flushEffects();
+
+      expect(latest?.queryState.unitsSelected).toEqual(unitsSelected);
+      expect(new URL(window.location.href).searchParams.getAll('units')).toEqual(unitsSelected);
+    },
+  );
+
   // Regression: https://github.com/echoua/echo/issues/3992
   it('leaves the next route URL untouched when SPA navigation leaves analysis', async () => {
     window.history.replaceState(
@@ -832,7 +856,7 @@ describe('useRerAnalysisNeoPage', () => {
       expect(latest?.queryState.onlyWithNetwork).toBe(expected);
       expect(new URLSearchParams(window.location.search).has('onlyWithNetwork')).toBe(expected);
       expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].queryState.onlyWithNetwork).toBe(expected);
-      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyWithNetwork).toBe(
+      expect(inboxMessagesMock.fetchInboxWindow.mock.calls[0]?.[0].inboxReq.onlyForRerReport).toBe(
         expected,
       );
     },
@@ -936,6 +960,7 @@ describe('useRerAnalysisNeoPage', () => {
       deferInitialLoad: true,
     });
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
     expect(window.location.search).toContain('device-1');
   });
 
@@ -952,6 +977,7 @@ describe('useRerAnalysisNeoPage', () => {
       deferInitialLoad: true,
     });
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
     expect(window.location.search).toContain('device-1');
   });
 
@@ -962,6 +988,7 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.networkVisibilityReady).toBe(false);
     expect(latest?.error).not.toBeNull();
+    expect(latest?.errorPersistent).toBe(true);
   });
 
   // Regression: https://github.com/echoua/echo/issues/3461
@@ -1350,6 +1377,51 @@ describe('useRerAnalysisNeoPage', () => {
 
     expect(latest?.hideBotTags).toBe(true);
   });
+  it('#4019 preserves a failed setup explanation when inbox loading or filters clear their own errors', async () => {
+    currentUserMock.fetchCurrentUser.mockRejectedValueOnce(new Error('user failed'));
+    renderHook();
+    await flushEffects();
+    const error = latest?.error;
+    const occurrence = latest?.errorOccurrence;
+    expect(error).toContain('Не вдалося завантажити поточного користувача');
+    const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError('Recoverable action failed'));
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorOccurrence).toBe(occurrence);
+    await act(async () => onError(''));
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorPersistent).toBe(true);
+    await act(async () => latest?.resetFilters());
+    expect(latest?.error).toBe(error);
+    expect(latest?.errorPersistent).toBe(true);
+  });
+
+  it('#4019 keeps recoverable page errors transient, including before messages load', async () => {
+    currentAnalysisData!.hasLoadedInitialMessages = false;
+    renderHook();
+    await flushEffects();
+    const onError = useAnalysisDataMock.mock.calls.at(-1)?.[0].onError;
+    await act(async () => onError('Inbox unavailable', true));
+    expect(latest?.errorPersistent).toBe(true);
+    await act(async () => latest?.updateQueryState({ fromDateTimeStr: 'invalid' }));
+    await act(async () => {
+      await latest?.findCallsignFrequencyMatches(['test'], 1);
+    });
+    expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
+    expect(latest?.errorPersistent).toBe(false);
+    const occurrence = latest?.errorOccurrence;
+    await act(async () => {
+      await latest?.findCallsignFrequencyMatches(['test'], 1);
+    });
+    expect(latest?.error).toBe('Перевірте дату та час перед пошуком частот.');
+    expect(latest?.errorPersistent).toBe(false);
+    expect(latest?.errorOccurrence).not.toBe(occurrence);
+    await act(async () => onError('Inbox unavailable', true));
+    await act(async () => latest?.resetFilters());
+    expect(latest?.error).toBeNull();
+    expect(latest?.errorPersistent).toBe(false);
+  });
+
   it('keeps the direct-link error when the regular message list clears its error', async () => {
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({ message: null });
     window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);

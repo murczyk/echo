@@ -1290,6 +1290,15 @@ export function MessageCardMetadata({
         {showSecondaryMetadata && isPresent(deviceName) && deviceName !== '' ? (
           <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} wrapText={wrapText} />
         ) : null}
+        {placement === MessageCardMetadataPlacement.Content &&
+        isPresent(etalonDisplayModel.headerUnit) ? (
+          <MetaLine
+            icon={<SquareTwoToneIcon className="message-card-unit-icon" />}
+            title="Підрозділ"
+            text={etalonDisplayModel.headerUnit}
+            wrapText
+          />
+        ) : null}
         {placement === MessageCardMetadataPlacement.All ? (
           <NetworkEtalonSection
             etalonDisplayModel={etalonDisplayModel}

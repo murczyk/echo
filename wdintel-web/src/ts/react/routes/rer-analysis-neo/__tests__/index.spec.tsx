@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { createRoot } from 'react-dom/client';
-import { act, forwardRef, useImperativeHandle, useState } from 'react';
+import { act, forwardRef, memo, useImperativeHandle, useState } from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +11,7 @@ import { emptyQueryState } from '.././helpers';
 const useRerAnalysisNeoPageMock = vi.hoisted(() => vi.fn());
 const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 const notifyMock = vi.hoisted(() => vi.fn());
+const dismissMock = vi.hoisted(() => vi.fn());
 const createMessageFabPropsHistory = vi.hoisted(() => [] as Array<{ onClick?: () => void }>);
 const editorGuardMocks = vi.hoisted(() => ({ dirty: false }));
 const messagesPanePropsHistory = vi.hoisted(() => [] as Array<Record<string, unknown>>);
@@ -64,11 +65,11 @@ const manageMessageDrawerPropsHistory = vi.hoisted(
       transparentEmbeddedSurface?: boolean;
       initialGroupMasterKey?: string | null;
       initialFocusTarget?: HTMLElement | null;
-      initialGroupMasterKey?: string | null;
     }>,
 );
 
 vi.mock('@mui/material', () => ({
+  GlobalStyles: () => null,
   ToggleButtonGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ToggleButton: ({ children }: { children: ReactNode }) => (
     <button type="button">{children}</button>
@@ -235,6 +236,7 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
+  ThemeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   useTheme: () => ({
     breakpoints: { down: (key: string) => key },
     palette: {
@@ -328,36 +330,38 @@ vi.mock('.././components/AnalysisMapPane', () => ({
 }));
 
 vi.mock('.././components/AnalysisMessagesPane', () => ({
-  AnalysisMessagesPane: (props: {
-    onOpenEditor?: (messageId: number, focusTarget?: HTMLElement) => void;
-    onCreateReport?: (
-      messageId: number,
-      etalonDisplayModel: unknown,
-      focusTarget: HTMLElement,
-    ) => void;
-    onEditReport?: (reportId: number, sourceMessageId: number) => void;
-  }) => {
-    messagesPanePropsHistory.push(props);
-    return (
-      <div data-testid="messages-pane">
-        <button
-          type="button"
-          aria-label="analysis-edit-message"
-          onClick={(event) => props.onOpenEditor?.(42, event.currentTarget)}
-        />
-        <button
-          type="button"
-          aria-label="analysis-create-report"
-          onClick={(event) => props.onCreateReport?.(42, {}, event.currentTarget)}
-        />
-        <button
-          type="button"
-          aria-label="analysis-edit-report"
-          onClick={() => props.onEditReport?.(91, 42)}
-        />
-      </div>
-    );
-  },
+  AnalysisMessagesPane: memo(
+    (props: {
+      onOpenEditor?: (messageId: number, focusTarget?: HTMLElement) => void;
+      onCreateReport?: (
+        messageId: number,
+        etalonDisplayModel: unknown,
+        focusTarget: HTMLElement,
+      ) => void;
+      onEditReport?: (reportId: number, sourceMessageId: number) => void;
+    }) => {
+      messagesPanePropsHistory.push(props);
+      return (
+        <div data-testid="messages-pane">
+          <button
+            type="button"
+            aria-label="analysis-edit-message"
+            onClick={(event) => props.onOpenEditor?.(42, event.currentTarget)}
+          />
+          <button
+            type="button"
+            aria-label="analysis-create-report"
+            onClick={(event) => props.onCreateReport?.(42, {}, event.currentTarget)}
+          />
+          <button
+            type="button"
+            aria-label="analysis-edit-report"
+            onClick={() => props.onEditReport?.(91, 42)}
+          />
+        </div>
+      );
+    },
+  ),
 }));
 
 vi.mock('.././components/AnalysisReportDialog', () => ({
@@ -383,7 +387,7 @@ vi.mock('../../shared/manage-message/CreateMessageFab', () => ({
   },
 }));
 vi.mock('../../../components/PowerSnackbar', () => ({
-  usePowerSnackbar: () => ({ notify: notifyMock }),
+  usePowerSnackbar: () => ({ notify: notifyMock, dismiss: dismissMock }),
 }));
 
 vi.mock('../../shared/manage-message/ManageMessageDrawer', () => ({
@@ -481,6 +485,8 @@ function buildPage() {
     countsLoading: true,
     directMessageError: null,
     error: null,
+    errorPersistent: false,
+    errorOccurrence: 0,
     editorMessage: null,
     editorEditAsReport: false,
     reportSource: null,
@@ -662,7 +668,8 @@ describe('RerAnalysisNeoPage', () => {
     useRerAnalysisNeoPageMock.mockReset();
     useMediaQueryMock.mockReset();
     useMediaQueryMock.mockReturnValue(false);
-    notifyMock.mockReset();
+    notifyMock.mockReset().mockReturnValue(42);
+    dismissMock.mockReset();
     useRerAnalysisNeoPageMock.mockReturnValue(buildPage());
     createMessageFabPropsHistory.splice(0);
     manageMessageDrawerPropsHistory.splice(0);
@@ -671,6 +678,85 @@ describe('RerAnalysisNeoPage', () => {
     debugRuntime.reset();
     vi.useFakeTimers();
   });
+
+  it.each([
+    ['filters', '[data-analysis-filter-toggle]'],
+    ['create editor', '[aria-label="create-message-fab"]'],
+  ])(
+    '#4019 opens %s without rendering the unchanged feed or rerunning data hooks',
+    async (_name, selector) => {
+      window.history.replaceState({}, '', '?filterPanelOpen=false');
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      rendered.push(container);
+      const root = createRoot(container);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      const feedRenders = messagesPanePropsHistory.length;
+      const dataRenders = useRerAnalysisNeoPageMock.mock.calls.length;
+      const trigger = container.querySelector<HTMLButtonElement>(selector);
+      expect(trigger).not.toBeNull();
+      await act(async () => trigger?.click());
+      if (_name === 'create editor') {
+        expect(manageMessageDrawerPropsHistory.at(-1)?.open).toBe(true);
+      } else {
+        expect(new URL(window.location.href).searchParams.get('filterPanelOpen')).toBe('true');
+      }
+      expect(messagesPanePropsHistory).toHaveLength(feedRenders);
+      expect(useRerAnalysisNeoPageMock).toHaveBeenCalledTimes(dataRenders);
+      await act(async () => root.unmount());
+    },
+  );
+
+  it.each([false, true])(
+    '#4019 keeps only the current page error in the snackbar (persistent: %s)',
+    async (persistent) => {
+      const page = buildPage();
+      page.error = 'Internal server error';
+      page.errorPersistent = persistent;
+      useRerAnalysisNeoPageMock.mockReturnValue(page);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      rendered.push(container);
+      const root = createRoot(container);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+
+      expect(notifyMock).toHaveBeenCalledWith({
+        severity: 'error',
+        message: page.error,
+        durationMs: persistent ? null : undefined,
+      });
+      expect(container.textContent).not.toContain(page.error);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenCalledTimes(1);
+
+      expect(dismissMock).not.toHaveBeenCalled();
+      page.errorOccurrence += 1;
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenCalledTimes(2);
+      expect(notifyMock).toHaveBeenLastCalledWith({
+        severity: 'error',
+        message: page.error,
+        durationMs: persistent ? null : undefined,
+      });
+      expect(dismissMock).toHaveBeenCalledExactlyOnceWith(42);
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenCalledTimes(2);
+      page.error = 'Не вдалося завантажити повідомлення';
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(notifyMock).toHaveBeenLastCalledWith({
+        severity: 'error',
+        message: page.error,
+        durationMs: persistent ? null : undefined,
+      });
+      expect(notifyMock).toHaveBeenCalledTimes(3);
+      expect(dismissMock).toHaveBeenCalledTimes(2);
+      page.error = null;
+      await act(async () => root.render(<RerAnalysisNeoPage />));
+      expect(dismissMock).toHaveBeenCalledTimes(3);
+      expect(notifyMock).toHaveBeenCalledTimes(3);
+      await act(async () => root.unmount());
+    },
+  );
 
   it('records the current Analysis page state during a debug session', async () => {
     const page = buildPage();
@@ -742,7 +828,7 @@ describe('RerAnalysisNeoPage', () => {
     expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
   });
 
-  it('hides the Echo load error banner while the messenger workspace is open', async () => {
+  it('hides the Echo load error snackbar while the messenger workspace is open', async () => {
     const page = buildPage();
     page.error = 'echo load failed';
     useRerAnalysisNeoPageMock.mockReturnValue(page);
@@ -752,11 +838,16 @@ describe('RerAnalysisNeoPage', () => {
     const root = createRoot(container);
 
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(container.textContent).toContain('echo load failed');
+    expect(notifyMock).toHaveBeenCalledExactlyOnceWith({
+      severity: 'error',
+      message: 'echo load failed',
+      durationMs: undefined,
+    });
 
     page.leftPanelTab = LeftPanelTab.Messenger;
     await act(async () => root.render(<RerAnalysisNeoPage />));
-    expect(container.textContent).not.toContain('echo load failed');
+    expect(dismissMock).toHaveBeenCalledExactlyOnceWith(42);
+    expect(notifyMock).toHaveBeenCalledTimes(1);
     root.unmount();
   });
 

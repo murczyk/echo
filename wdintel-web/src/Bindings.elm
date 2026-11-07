@@ -1858,6 +1858,7 @@ type alias InboxMessagesReq =
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
     , onlyWithNetwork : Maybe (Bool)
+    , onlyForRerReport : Maybe (Bool)
     , metadataCc : Maybe (List (String))
     , metadataSender : Maybe (List (String))
     , metadataReceiver : Maybe (List (String))
@@ -1929,6 +1930,7 @@ inboxMessagesReqEncoder struct =
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
         , ( "only_with_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyWithNetwork )
+        , ( "only_for_rer_report", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyForRerReport )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataReceiver )
@@ -3102,6 +3104,7 @@ type alias AnalysisStatsReq =
     , selectedNetworks : Maybe (List (Int))
     , withoutNetwork : Maybe (Bool)
     , onlyWithNetwork : Maybe (Bool)
+    , onlyForRerReport : Maybe (Bool)
     , metadataCc : Maybe (List (String))
     , metadataSender : Maybe (List (String))
     , metadataReceiver : Maybe (List (String))
@@ -3145,6 +3148,7 @@ analysisStatsReqEncoder struct =
         , ( "selected_networks", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedNetworks )
         , ( "without_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.withoutNetwork )
         , ( "only_with_network", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyWithNetwork )
+        , ( "only_for_rer_report", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyForRerReport )
         , ( "metadata_cc", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataCc )
         , ( "metadata_sender", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataSender )
         , ( "metadata_receiver", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.metadataReceiver )
@@ -12401,6 +12405,7 @@ type alias ListCallsignsReq =
     , filterPosition : Maybe (String)
     , filterFullName : Maybe (String)
     , filterComment : Maybe (String)
+    , filterUnitId : Maybe (Int)
     , filterUnit : Maybe (String)
     , filterUnitArmyRegion : Maybe (String)
     , filterUnitMilitaryDistrict : Maybe (String)
@@ -12434,6 +12439,7 @@ listCallsignsReqEncoder struct =
         , ( "filter_position", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterPosition )
         , ( "filter_full_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterFullName )
         , ( "filter_comment", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterComment )
+        , ( "filter_unit_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.filterUnitId )
         , ( "filter_unit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnit )
         , ( "filter_unit_army_region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitArmyRegion )
         , ( "filter_unit_military_district", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.filterUnitMilitaryDistrict )
@@ -12494,6 +12500,7 @@ type alias ListNetworkCallsignsReq =
     { networkId : Int
     , sortBy : Maybe (List (ListNetworkCallsignsSortBy))
     , period : Maybe (NetworkFreqCallsignsPeriod)
+    , includeActivityInfo : Maybe (Bool)
     }
 
 
@@ -12503,6 +12510,7 @@ listNetworkCallsignsReqEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (listNetworkCallsignsSortByEncoder))) struct.sortBy )
         , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
+        , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeActivityInfo )
         ]
 
 
@@ -15668,8 +15676,11 @@ type alias RerReportMetadataItem =
     { id : Int
     , sigintUnitId : Int
     , sigintUnitName : String
+    , reportParentContext : String
+    , sigintUnitActive : Bool
+    , sigintUnitDeleted : Bool
     , locations : List (String)
-    , labels : List (String)
+    , reportName : String
     }
 
 
@@ -15679,8 +15690,11 @@ rerReportMetadataItemEncoder struct =
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
         , ( "sigint_unit_name", (Json.Encode.string) struct.sigintUnitName )
+        , ( "report_parent_context", (Json.Encode.string) struct.reportParentContext )
+        , ( "sigint_unit_active", (Json.Encode.bool) struct.sigintUnitActive )
+        , ( "sigint_unit_deleted", (Json.Encode.bool) struct.sigintUnitDeleted )
         , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
-        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        , ( "report_name", (Json.Encode.string) struct.reportName )
         ]
 
 
@@ -15699,7 +15713,7 @@ rerReportMetadataListRspEncoder struct =
 type alias CreateRerReportMetadataReq =
     { sigintUnitId : Int
     , locations : List (String)
-    , labels : List (String)
+    , reportName : String
     }
 
 
@@ -15708,7 +15722,7 @@ createRerReportMetadataReqEncoder struct =
     Json.Encode.object
         [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
         , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
-        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        , ( "report_name", (Json.Encode.string) struct.reportName )
         ]
 
 
@@ -15716,7 +15730,7 @@ type alias UpdateRerReportMetadataReq =
     { id : Int
     , sigintUnitId : Int
     , locations : List (String)
-    , labels : List (String)
+    , reportName : String
     }
 
 
@@ -15726,7 +15740,7 @@ updateRerReportMetadataReqEncoder struct =
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
         , ( "locations", (Json.Encode.list (Json.Encode.string)) struct.locations )
-        , ( "labels", (Json.Encode.list (Json.Encode.string)) struct.labels )
+        , ( "report_name", (Json.Encode.string) struct.reportName )
         ]
 
 
@@ -22074,6 +22088,7 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_with_network" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "only_for_rer_report" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -22497,6 +22512,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_networks" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "without_network" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_with_network" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "only_for_rer_report" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_cc" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_sender" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata_receiver" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
@@ -29254,6 +29270,7 @@ listCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_position" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_full_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_comment" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_id" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_army_region" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filter_unit_military_district" (Json.Decode.nullable (Json.Decode.string))))
@@ -29330,6 +29347,7 @@ listNetworkCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list (listNetworkCallsignsSortByDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 listNetworkCallsignsResDecoder : Json.Decode.Decoder ListNetworkCallsignsRes
@@ -31100,8 +31118,11 @@ rerReportMetadataItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_parent_context" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_active" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_deleted" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_name" (Json.Decode.string)))
 
 
 rerReportMetadataListRspDecoder : Json.Decode.Decoder RerReportMetadataListRsp
@@ -31115,7 +31136,7 @@ createRerReportMetadataReqDecoder =
     Json.Decode.succeed CreateRerReportMetadataReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_name" (Json.Decode.string)))
 
 
 updateRerReportMetadataReqDecoder : Json.Decode.Decoder UpdateRerReportMetadataReq
@@ -31124,7 +31145,7 @@ updateRerReportMetadataReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "labels" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "report_name" (Json.Decode.string)))
 
 
 deleteRerReportMetadataReqDecoder : Json.Decode.Decoder DeleteRerReportMetadataReq

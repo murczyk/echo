@@ -1,5 +1,6 @@
-use crate::config::RER_REPORT_OTHER_TAG_LABEL;
-use crate::delta::bgtask_log;
+use super::rer_selection::{
+    load_report_unit_links, resolve_configured_item_unit,
+};
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -19,10 +20,7 @@ use docx_rs::{
     AlignmentType, BreakType, Docx, LineSpacing, PageMargin, Paragraph, Run,
     RunFonts,
 };
-use log::error;
-use sea_orm::sea_query::{
-    extension::postgres::PgExpr, Alias, Expr, ExprTrait, SimpleExpr,
-};
+use sea_orm::sea_query::{Alias, Expr, ExprTrait, SimpleExpr};
 use sea_orm::*;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -38,47 +36,25 @@ const DOCX_A4_HEIGHT: u32 = 16838;
 const DOCX_PAGE_MARGIN_20MM: i32 = 1134;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct UnitPath(Vec<String>);
+pub(super) struct UnitPath(pub(super) Vec<String>);
 
 impl UnitPath {
     fn parent_path(&self) -> UnitPath {
         UnitPath(vec![self.0[0].clone()])
     }
-
-    fn is_same_or_parent_of(&self, other: &UnitPath) -> bool {
-        self.0.len() <= other.0.len()
-            && self
-                .0
-                .iter()
-                .zip(other.0.iter())
-                .all(|(left, right)| left == right)
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct UnitIdentity {
-    path: UnitPath,
-    parent_name: String,
-    unit_name: String,
-}
-
-#[derive(Clone, Debug)]
-struct ItemUnitCandidate {
-    identity: UnitIdentity,
-    network_location: String,
+pub(super) struct UnitIdentity {
+    pub(super) path: UnitPath,
+    pub(super) parent_name: String,
+    pub(super) unit_name: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct ResolvedItemUnit {
-    identity: UnitIdentity,
-    locations: BTreeSet<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum ItemUnitResolution {
-    None,
-    Target(ResolvedItemUnit),
-    Conflict(Vec<UnitIdentity>),
+pub(super) struct ResolvedItemUnit {
+    pub(super) identity: UnitIdentity,
+    pub(super) locations: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -140,8 +116,11 @@ pub async fn report_docx_kind_rer(
     req: &ReportPreviewReq,
     outpath: &Path,
     bgtask_id: Option<i64>,
+    scope: Option<&crate::rer_report_admin::scope::RerReportScope>,
 ) -> Result<String, AppError> {
-    let report = load_report(user_login, env, req, bgtask_id).await.c(h!())?;
+    let report = load_report(user_login, env, req, bgtask_id, scope)
+        .await
+        .c(h!())?;
     let record_count = report
         .parents
         .values()
@@ -149,6 +128,12 @@ pub async fn report_docx_kind_rer(
         .fold(0_usize, |count, unit| {
             count.saturating_add(unit.messages.len())
         });
+    if record_count == 0 {
+        return Err(AppError::BL {
+            msg: "Немає повідомлень для звіту РЕР за вибраний період і фільтри"
+                .to_string(),
+        });
+    }
     crate::report_history::ensure_report_record_count(record_count)
         .context(h!())?;
     let report_till = format_report_till(req).c(h!())?;
@@ -205,13 +190,15 @@ fn write_report_docx(
         ));
 
     for parent in report.parents.values() {
-        docx = docx.add_paragraph(text_paragraph(
-            &parent.name,
-            true,
-            false,
-            AlignmentType::Center,
-            true,
-        ));
+        if !parent.name.is_empty() {
+            docx = docx.add_paragraph(text_paragraph(
+                &parent.name,
+                true,
+                false,
+                AlignmentType::Center,
+                true,
+            ));
+        }
 
         for section in parent.units.values() {
             docx = docx
@@ -370,82 +357,90 @@ async fn load_report(
     env: &Env,
     req: &ReportPreviewReq,
     bgtask_id: Option<i64>,
+    snapshot: Option<&crate::rer_report_admin::scope::RerReportScope>,
 ) -> Result<RerReport, AppError> {
     let dbx = &env.dbx;
-    let item_ids = crate::rer_importer::analysis::with_analytics_read_fallback(
+    let loaded;
+    let scope = match snapshot {
+        Some(scope) => scope,
+        None => {
+            loaded =
+                crate::rer_report_admin::scope::capture(dbx).await.c(h!())?;
+            &loaded
+        }
+    };
+    if scope.units.is_empty() {
+        return Err(AppError::BL {
+            msg: "Не налаштовано підрозділи для звіту РЕР".to_string(),
+        });
+    }
+    let mut candidate_req = req.clone();
+    candidate_req.req.only_for_rer_report = None;
+    let item_ids = load_candidate_item_ids(
+        dbx,
+        user_login,
         env,
-        "RER report candidate scan",
-        crate::rer_importer::analysis::analytics_inbox_request_supported(
-            &req.req,
-        ),
-        |db| async move {
-            load_candidate_item_ids(&db, user_login, env, req, true, true).await
-        },
-        |db| async move {
-            load_candidate_item_ids(&db, user_login, env, req, true, true).await
-        },
+        &candidate_req,
+        false,
+        true,
+        Some(scope),
     )
     .await
     .c(h!())?;
+    let unit_links = load_report_unit_links(dbx, &item_ids, scope)
+        .await
+        .c(h!())?;
     let callsigns_by_item_id =
-        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids).await?;
-    let blacklist = crate::sigint::comments::load_blacklist(dbx).await?;
+        crate::inbox::callsigns::load_by_item_ids(dbx, &item_ids)
+            .await
+            .context(h!())?;
+    let blacklist = crate::sigint::comments::load_blacklist(dbx)
+        .await
+        .context(h!())?;
     let mut report = RerReport::default();
-    for item_id in item_ids {
-        if item_has_other_tag(dbx, item_id).await.c(h!())? {
-            continue;
-        }
-        let Some(item) = sigint_inbox_item::Entity::find_by_id(item_id)
-            .one(dbx)
-            .await
-            .c(h!())?
-        else {
-            continue;
-        };
-        let Some(message) = signal_message::Entity::find_by_id(item_id)
-            .one(dbx)
-            .await
-            .c(h!())?
-        else {
-            continue;
-        };
-        let Some(timestamp) = report_message_timestamp(&item, &message) else {
-            continue;
-        };
-        let comments = load_non_empty_comments(dbx, item_id, &blacklist)
-            .await
-            .c(h!())?;
-        if comments.is_empty() {
-            continue;
-        }
-        let candidates =
-            load_item_unit_candidates(dbx, item_id, req).await.c(h!())?;
-        let Some(target) =
-            resolve_item_unit(dbx, bgtask_id, "РЕР Звіт", item_id, &candidates)
+    for ids in item_ids.chunks(crate::config::RER_REPORT_HYDRATION_BATCH_SIZE) {
+        for (item, message, comments) in
+            super::rer_hydration::load_items(dbx, ids, &blacklist)
                 .await
                 .c(h!())?
-        else {
-            continue;
-        };
-        let callsigns = callsigns_by_item_id
-            .get(&item_id)
-            .cloned()
-            .unwrap_or_default()
-            .effective();
-        insert_report_message(
-            &mut report,
-            target,
-            item_id,
-            timestamp,
-            item.is_time_null == Some(true),
-            comments.join("; "),
-            message_body_without_duplicate_comments(
-                &message, &comments, &blacklist,
+        {
+            let item_id = item.id;
+            let Some(timestamp) = report_message_timestamp(&item, &message)
+            else {
+                continue;
+            };
+            let Some(target) = resolve_configured_item_unit(
+                dbx,
+                bgtask_id,
+                item_id,
+                unit_links.get(&item_id),
+                scope,
             )
-            .c(h!())?,
-            parse_callsigns(&callsigns),
-            parse_points(&item),
-        );
+            .await
+            .c(h!())?
+            else {
+                continue;
+            };
+            let callsigns = callsigns_by_item_id
+                .get(&item_id)
+                .cloned()
+                .unwrap_or_default()
+                .effective();
+            insert_report_message(
+                &mut report,
+                target,
+                item_id,
+                timestamp,
+                item.is_time_null == Some(true),
+                comments.join("; "),
+                message_body_without_duplicate_comments(
+                    &message, &comments, &blacklist,
+                )
+                .c(h!())?,
+                parse_callsigns(&callsigns),
+                parse_points(&item),
+            );
+        }
     }
     Ok(report)
 }
@@ -464,12 +459,16 @@ async fn load_sposob_report(
             &req.req,
         ),
         |db| async move {
-            load_candidate_item_ids(&db, user_login, env, req, false, false)
-                .await
+            load_candidate_item_ids(
+                &db, user_login, env, req, false, false, None,
+            )
+            .await
         },
         |db| async move {
-            load_candidate_item_ids(&db, user_login, env, req, false, false)
-                .await
+            load_candidate_item_ids(
+                &db, user_login, env, req, false, false, None,
+            )
+            .await
         },
     )
     .await
@@ -584,6 +583,7 @@ async fn load_candidate_item_ids(
     req: &ReportPreviewReq,
     require_network_link: bool,
     require_non_empty_comments: bool,
+    scope: Option<&crate::rer_report_admin::scope::RerReportScope>,
 ) -> Result<Vec<i64>, AppError> {
     let report_settings =
         crate::system_settings::get_report_generation_settings(&env.dbx)
@@ -613,6 +613,7 @@ async fn load_candidate_item_ids(
                 chunk.end,
                 require_network_link,
                 require_non_empty_comments,
+                scope,
             )
             .await
             .context(h!())?,
@@ -629,6 +630,7 @@ async fn load_candidate_item_ids_chunk(
     period_end: ReportPeriodEnd,
     require_network_link: bool,
     require_non_empty_comments: bool,
+    scope: Option<&crate::rer_report_admin::scope::RerReportScope>,
 ) -> Result<Vec<i64>, AppError> {
     let (candidate_req, since_ms, till_ms) =
         candidate_query_req_without_date_bounds(req);
@@ -646,6 +648,13 @@ async fn load_candidate_item_ids_chunk(
         require_non_empty_comments,
     )?;
 
+    let query = if let Some(scope) = scope {
+        query.filter(crate::rer_report_admin::scope::membership_expr(
+            scope.units.keys().copied(),
+        ))
+    } else {
+        query
+    };
     Ok(query
         .select_only()
         .distinct()
@@ -783,22 +792,7 @@ fn non_empty_comment_exists() -> SimpleExpr {
     Expr::exists(subquery).or(Expr::exists(legacy_subquery))
 }
 
-async fn load_non_empty_comments(
-    dbx: &DatabaseConnection,
-    item_id: i64,
-    blacklist: &[String],
-) -> Result<Vec<String>, AppError> {
-    let comments =
-        crate::sigint::comments::find_rer_report_comments(dbx, &[item_id])
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|comment| comment.comment)
-            .collect();
-    Ok(filter_report_comments(comments, blacklist))
-}
-
-fn filter_report_comments(
+pub(super) fn filter_report_comments(
     comments: Vec<String>,
     blacklist: &[String],
 ) -> Vec<String> {
@@ -983,248 +977,6 @@ pub(crate) fn sposob_report_unit_name(
     Ok(unit_name.to_string())
 }
 
-async fn load_item_unit_candidates(
-    dbx: &DatabaseConnection,
-    item_id: i64,
-    req: &ReportPreviewReq,
-) -> Result<Vec<ItemUnitCandidate>, AppError> {
-    let networks = load_item_networks(dbx, item_id, req).await.c(h!())?;
-    let mut candidates = vec![];
-    for network in networks {
-        let units = load_network_units(dbx, network.id).await.c(h!())?;
-        for unit in units {
-            let Some(identity) = unit_identity(&unit) else {
-                continue;
-            };
-            candidates.push(ItemUnitCandidate {
-                identity,
-                network_location: network.location.clone(),
-            });
-        }
-    }
-    Ok(candidates)
-}
-
-async fn load_item_networks(
-    dbx: &DatabaseConnection,
-    item_id: i64,
-    req: &ReportPreviewReq,
-) -> Result<Vec<sigint_network::Model>, AppError> {
-    let mut query = sigint_network::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_network::Relation::SigintInboxItemNetwork.def(),
-        )
-        .filter(
-            sigint_inbox_item_network::Column::SigintInboxItemId.eq(item_id),
-        )
-        .filter(sigint_network::Column::Deleted.eq(false));
-    if let Some(network_ids) = req
-        .req
-        .selected_networks
-        .as_ref()
-        .filter(|network_ids| !network_ids.is_empty())
-    {
-        query =
-            query.filter(sigint_network::Column::Id.is_in(network_ids.clone()));
-    }
-    let mut networks = query.all(dbx).await.c(h!())?;
-    if let Some(aor_ids) = req
-        .req
-        .selected_aors
-        .as_ref()
-        .filter(|aor_ids| !aor_ids.is_empty())
-    {
-        let network_ids = networks
-            .iter()
-            .map(|network| network.id)
-            .collect::<Vec<_>>();
-        let allowed = sigint_network_aor::Entity::find()
-            .filter(sigint_network_aor::Column::NetworkId.is_in(network_ids))
-            .filter(sigint_network_aor::Column::AorId.is_in(aor_ids.clone()))
-            .select_only()
-            .column(sigint_network_aor::Column::NetworkId)
-            .into_tuple::<i64>()
-            .all(dbx)
-            .await
-            .c(h!())?
-            .into_iter()
-            .collect::<HashSet<_>>();
-        networks.retain(|network| allowed.contains(&network.id));
-    }
-    Ok(networks)
-}
-
-async fn load_network_units(
-    dbx: &DatabaseConnection,
-    network_id: i64,
-) -> Result<Vec<sigint_unit::Model>, AppError> {
-    Ok(sigint_unit::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_unit::Relation::SigintNetworkUnit.def(),
-        )
-        .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .order_by_asc(sigint_unit::Column::Army)
-        .order_by_asc(sigint_unit::Column::Division)
-        .order_by_asc(sigint_unit::Column::Regiment)
-        .order_by_asc(sigint_unit::Column::Battalion)
-        .order_by_asc(sigint_unit::Column::Company)
-        .order_by_asc(sigint_unit::Column::Name)
-        .all(dbx)
-        .await
-        .c(h!())?)
-}
-
-async fn item_has_other_tag(
-    dbx: &DatabaseConnection,
-    item_id: i64,
-) -> Result<bool, AppError> {
-    let count = sigint_inbox_item_tag::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_tag::Relation::Tag.def(),
-        )
-        .filter(sigint_inbox_item_tag::Column::SigintInboxItemId.eq(item_id))
-        .filter(
-            Expr::col((tag::Entity, tag::Column::Label))
-                .ilike(RER_REPORT_OTHER_TAG_LABEL),
-        )
-        .count(dbx)
-        .await
-        .c(h!())?;
-    Ok(count > 0)
-}
-
-async fn resolve_item_unit(
-    dbx: &DatabaseConnection,
-    bgtask_id: Option<i64>,
-    report_name: &str,
-    item_id: i64,
-    candidates: &[ItemUnitCandidate],
-) -> Result<Option<ResolvedItemUnit>, AppError> {
-    match resolve_item_unit_candidates(candidates) {
-        ItemUnitResolution::None => Ok(None),
-        ItemUnitResolution::Target(target) => Ok(Some(target)),
-        ItemUnitResolution::Conflict(identities) => {
-            log_unrelated_unit_conflict(
-                dbx,
-                bgtask_id,
-                report_name,
-                item_id,
-                &identities,
-            )
-            .await
-            .c(h!())?;
-            Ok(None)
-        }
-    }
-}
-
-fn resolve_item_unit_candidates(
-    candidates: &[ItemUnitCandidate],
-) -> ItemUnitResolution {
-    let identities = candidates
-        .iter()
-        .map(|candidate| {
-            (candidate.identity.path.clone(), candidate.identity.clone())
-        })
-        .collect::<BTreeMap<_, _>>();
-    if identities.is_empty() {
-        return ItemUnitResolution::None;
-    }
-
-    let retained = identities
-        .values()
-        .filter(|identity| {
-            !identities.keys().any(|candidate_path| {
-                candidate_path != &identity.path
-                    && candidate_path.is_same_or_parent_of(&identity.path)
-            })
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if retained.len() != 1 {
-        return ItemUnitResolution::Conflict(retained);
-    }
-
-    let identity = retained.into_iter().next().unwrap();
-    let locations = candidates
-        .iter()
-        .filter(|candidate| {
-            identity.path.is_same_or_parent_of(&candidate.identity.path)
-        })
-        .map(|candidate| candidate.network_location.trim().to_string())
-        .filter(|location| !location.is_empty())
-        .collect::<BTreeSet<_>>();
-
-    ItemUnitResolution::Target(ResolvedItemUnit {
-        identity,
-        locations,
-    })
-}
-
-async fn log_unrelated_unit_conflict(
-    dbx: &DatabaseConnection,
-    bgtask_id: Option<i64>,
-    report_name: &str,
-    item_id: i64,
-    identities: &[UnitIdentity],
-) -> Result<(), AppError> {
-    let units = identities
-        .iter()
-        .map(format_unit_identity)
-        .collect::<Vec<_>>()
-        .join("; ");
-    let message = format!(
-        "{report_name}: пропущено перехоплення #{item_id}, повʼязане з неповʼязаними підрозділами: {units}"
-    );
-    error!("{message}");
-    bgtask_log(bgtask_id, &message, dbx).await.c(h!())?;
-    Ok(())
-}
-
-fn unit_identity(unit: &sigint_unit::Model) -> Option<UnitIdentity> {
-    let hierarchy_segments = [
-        unit.army.as_str(),
-        unit.division.as_str(),
-        unit.regiment.as_str(),
-        unit.battalion.as_str(),
-        unit.company.as_str(),
-    ]
-    .into_iter()
-    .map(str::trim)
-    .filter(|segment| !segment.is_empty())
-    .map(ToString::to_string)
-    .collect::<Vec<_>>();
-    let segments = if hierarchy_segments.is_empty() {
-        [unit.name.as_str()]
-            .into_iter()
-            .map(str::trim)
-            .filter(|segment| !segment.is_empty())
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-    } else {
-        hierarchy_segments
-    };
-    if segments.is_empty() {
-        return None;
-    }
-    let parent_name = segments[0].clone();
-    let unit_name = if segments.len() == 1 {
-        segments[0].clone()
-    } else {
-        segments[1..].join(" ")
-    };
-    Some(UnitIdentity {
-        path: UnitPath(segments),
-        parent_name,
-        unit_name,
-    })
-}
-
 fn parse_callsigns(callsigns: &[String]) -> Vec<String> {
     callsigns
         .iter()
@@ -1272,23 +1024,11 @@ fn format_unit_heading(
     identity: &UnitIdentity,
     locations: &BTreeSet<String>,
 ) -> String {
-    let names = if identity.parent_name == identity.unit_name {
-        identity.unit_name.clone()
-    } else {
-        format!("{} {}", identity.unit_name, identity.parent_name)
-    };
+    let names = identity.unit_name.clone();
     if locations.is_empty() {
         names
     } else {
         format!("{names}: р-н {}", join_set_comma(locations))
-    }
-}
-
-fn format_unit_identity(identity: &UnitIdentity) -> String {
-    if identity.parent_name == identity.unit_name {
-        identity.unit_name.clone()
-    } else {
-        format!("{} {}", identity.unit_name, identity.parent_name)
     }
 }
 
@@ -1759,6 +1499,172 @@ mod tests {
         assert_eq!(comments, vec!["unsent comment"]);
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn issue_3940_report_groups_configured_units_without_networks() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        let now = Utc::now().naive_utc();
+        for fixture in [
+            ("7 дшд", "1 бр", "Зведений підрозділ", "Північ"),
+            ("7 дшд", "2 бр", "Зведений підрозділ", "Південь"),
+            ("", "", "Зведений підрозділ", "Невідомий район"),
+            ("", "3 бр", "Підрозділ бригади", "Захід"),
+            ("", "", "Неповний підрозділ", "Схід"),
+        ] {
+            seed_configured_report_item(&env.dbx, now, fixture).await;
+        }
+        let mut req = report_preview_req_with_till(
+            (now + chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+        );
+        req.req.since_date_inclusive_ms = Some(
+            (now - chrono::Duration::hours(1))
+                .and_utc()
+                .timestamp_millis(),
+        );
+        let snapshot = crate::rer_report_admin::scope::load(&env.dbx)
+            .await
+            .unwrap();
+        let report = load_report(&login, &env, &req, None, Some(&snapshot))
+            .await
+            .unwrap();
+        let parents = report
+            .parents
+            .values()
+            .map(|parent| (parent.name.as_str(), parent))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            parents.keys().copied().collect::<Vec<_>>(),
+            ["", "3 бр", "7 дшд"]
+        );
+        assert_eq!(parents["7 дшд"].units.len(), 1);
+        let section = parents["7 дшд"].units.values().next().unwrap();
+        assert_eq!(section.identity.unit_name, "Зведений підрозділ");
+        assert_eq!(section.messages.len(), 2);
+        assert_eq!(
+            section.locations,
+            BTreeSet::from(["Північ".into(), "Південь".into()])
+        );
+        assert_eq!(parents["3 бр"].units.len(), 1);
+        assert_eq!(parents[""].units.len(), 2);
+        assert_eq!(
+            parents
+                .values()
+                .flat_map(|parent| parent.units.values())
+                .map(|section| section.messages.len())
+                .sum::<usize>(),
+            5
+        );
+        let file = NamedTempFile::new().unwrap();
+        write_report_docx(&report, "15.00 06.11.2026", file.path()).unwrap();
+        let xml = document_xml(file.path());
+        assert_eq!(xml.matches(r#"w:val="center""#).count(), 5);
+        assert!(!xml.contains("58 ЗВА"));
+        assert!(!xml.contains("1 полк"));
+        req.req.search = Some("нічого-не-знайдено-3940".into());
+        assert!(load_report(&login, &env, &req, None, Some(&snapshot))
+            .await
+            .unwrap()
+            .parents
+            .is_empty());
+    }
+
+    async fn seed_configured_report_item(
+        dbx: &DatabaseConnection,
+        now: NaiveDateTime,
+        (division, brigade, report_name, location): (&str, &str, &str, &str),
+    ) {
+        let unit = mk_sigint_unit(
+            dbx,
+            sigint_unit::ActiveModel {
+                army: Set("58 ЗВА".into()),
+                corps: Set("1 АК".into()),
+                division: Set(division.into()),
+                brigade: Set(brigade.into()),
+                regiment: Set("1 полк".into()),
+                battalion: Set("1 батальйон".into()),
+                company: Set("1 рота".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_unit_rer_report_metadata::ActiveModel {
+            sigint_unit_id: Set(unit.id),
+            report_name: Set(Some(report_name.into())),
+            labels: Set(serde_json::json!([report_name])),
+            locations: Set(serde_json::json!([location])),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let message = mk_signal_message(
+            dbx,
+            signal_message::ActiveModel {
+                body: Set(Some(format!("Перехоплення {location}"))),
+                timestamp: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message_group(
+            dbx,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some("vukho-test-master-key".into())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(message.id), unit_id: Set(unit.id),
+            kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed), ..Default::default()
+        }.insert(dbx).await.unwrap();
+        mk_sigint_comment(
+            dbx,
+            sigint_comment::ActiveModel {
+                signal_message_id: Set(message.id),
+                comment: Set("Бойова активність".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    async fn load_non_empty_comments(
+        db: &DatabaseConnection,
+        item_id: i64,
+        blacklist: &[String],
+    ) -> Result<Vec<String>, AppError> {
+        Ok(super::super::rer_hydration::load_comments(
+            db,
+            &[item_id],
+            blacklist,
+        )
+        .await
+        .c(h!())?
+        .remove(&item_id)
+        .unwrap_or_default())
+    }
+
     fn dt(hour: u32, minute: u32) -> NaiveDateTime {
         NaiveDate::from_ymd_opt(2026, 6, 27)
             .unwrap()
@@ -1823,55 +1729,6 @@ mod tests {
             post_id: None,
             device_name_id: None,
             network: None,
-        }
-    }
-
-    fn unit(
-        army: &str,
-        division: &str,
-        regiment: &str,
-        battalion: &str,
-        company: &str,
-        name: &str,
-    ) -> sigint_unit::Model {
-        sigint_unit::Model {
-            combat_type_id: None,
-            id: 1,
-            other: String::new(),
-            team_or_crew: String::new(),
-            section: String::new(),
-            squad: String::new(),
-            platoon: String::new(),
-            company: company.to_string(),
-            regiment: regiment.to_string(),
-            brigade: String::new(),
-            division: division.to_string(),
-            corps: String::new(),
-            army: army.to_string(),
-            army_region: String::new(),
-            military_district: String::new(),
-            active: true,
-            deleted: false,
-            created_at: dt(0, 0),
-            created_by_login_id: uuid::Uuid::nil(),
-            name: name.to_string(),
-            comment: String::new(),
-            battalion: battalion.to_string(),
-            search_tsv: None,
-            sigint_origin_id: None,
-            original_id: None,
-            is_deduplicate_candidate: None,
-            orbit_note: None,
-            present_in_orbit: None,
-            is_inconsistent: false,
-            updated_at: Default::default(),
-        }
-    }
-
-    fn candidate(identity: UnitIdentity, location: &str) -> ItemUnitCandidate {
-        ItemUnitCandidate {
-            identity,
-            network_location: location.to_string(),
         }
     }
 
@@ -2014,117 +1871,6 @@ mod tests {
     }
 
     #[test]
-    fn unit_identity_uses_highest_level_as_parent_and_lower_levels_as_unit() {
-        let identity =
-            unit_identity(&unit("6 А", "68 мсд", "423 мсп", "1 мсб", "", ""))
-                .unwrap();
-
-        assert_eq!(identity.parent_name, "6 А");
-        assert_eq!(identity.unit_name, "68 мсд 423 мсп 1 мсб");
-        assert_eq!(
-            identity.path,
-            UnitPath(vec![
-                "6 А".to_string(),
-                "68 мсд".to_string(),
-                "423 мсп".to_string(),
-                "1 мсб".to_string(),
-            ])
-        );
-    }
-
-    #[test]
-    fn unit_identity_uses_hierarchy_instead_of_generated_name() {
-        let identity = unit_identity(&unit(
-            "6 А",
-            "68 мсд",
-            "423 мсп",
-            "1 мсб",
-            "",
-            "1 мсб 423 мсп 68 мсд 6 А",
-        ))
-        .unwrap();
-
-        assert_eq!(
-            identity.path,
-            UnitPath(vec![
-                "6 А".to_string(),
-                "68 мсд".to_string(),
-                "423 мсп".to_string(),
-                "1 мсб".to_string(),
-            ])
-        );
-        assert_eq!(identity.unit_name, "68 мсд 423 мсп 1 мсб");
-    }
-
-    #[test]
-    fn unit_identity_keeps_single_segment_as_leaf() {
-        let identity =
-            unit_identity(&unit("", "", "", "", "", "1843 омсб")).unwrap();
-
-        assert_eq!(identity.parent_name, "1843 омсб");
-        assert_eq!(identity.unit_name, "1843 омсб");
-    }
-
-    #[test]
-    fn resolve_item_unit_candidates_deduplicates_same_unit_and_locations() {
-        let identity =
-            unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
-        let resolution = resolve_item_unit_candidates(&[
-            candidate(identity.clone(), "район А"),
-            candidate(identity.clone(), "район Б"),
-        ]);
-
-        let ItemUnitResolution::Target(target) = resolution else {
-            panic!("expected target");
-        };
-        assert_eq!(target.identity, identity);
-        assert_eq!(
-            target.locations,
-            BTreeSet::from(["район А".to_string(), "район Б".to_string()])
-        );
-    }
-
-    #[test]
-    fn resolve_item_unit_candidates_discards_child_when_parent_is_linked() {
-        let parent = unit_identity(&unit("6 А", "", "", "", "", "")).unwrap();
-        let child =
-            unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
-        let resolution = resolve_item_unit_candidates(&[
-            candidate(parent.clone(), "район штабу"),
-            candidate(child, "район батальйону"),
-        ]);
-
-        let ItemUnitResolution::Target(target) = resolution else {
-            panic!("expected target");
-        };
-        assert_eq!(target.identity, parent);
-        assert_eq!(
-            target.locations,
-            BTreeSet::from([
-                "район батальйону".to_string(),
-                "район штабу".to_string(),
-            ])
-        );
-    }
-
-    #[test]
-    fn resolve_item_unit_candidates_reports_unrelated_units() {
-        let first =
-            unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
-        let second =
-            unit_identity(&unit("8 А", "20 мсд", "", "", "", "")).unwrap();
-        let resolution = resolve_item_unit_candidates(&[
-            candidate(first, "район А"),
-            candidate(second, "район Б"),
-        ]);
-
-        let ItemUnitResolution::Conflict(conflicts) = resolution else {
-            panic!("expected conflict");
-        };
-        assert_eq!(conflicts.len(), 2);
-    }
-
-    #[test]
     fn parse_points_uses_coords_and_pipe_delimited_location_v2() {
         let item = sigint_inbox_item::Model {
             is_time_null: None,
@@ -2233,8 +1979,11 @@ mod tests {
 
     #[test]
     fn write_report_docx_renders_report_maker_text_order() {
-        let identity =
-            unit_identity(&unit("6 А", "68 мсд", "", "", "", "")).unwrap();
+        let identity = UnitIdentity {
+            path: UnitPath(vec!["6 А".into(), "68 мсд".into()]),
+            parent_name: "6 А".into(),
+            unit_name: "68 мсд".into(),
+        };
         let mut report = RerReport::default();
         insert_report_message(
             &mut report,
@@ -2260,7 +2009,7 @@ mod tests {
             "Про результати аналізу радіоперехоплень",
             "станом на 15.00 27.06.2026",
             "6 А",
-            "68 мсд 6 А: р-н північ",
+            "68 мсд: р-н північ",
             "Позивні: ",
             "БАРС",
             "Точки: ",

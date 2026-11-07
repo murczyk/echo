@@ -68,6 +68,10 @@ export function useRerNetworkDetailsNeoPageCallsignMutations({ state, setState }
           return {
             ...current,
             networkCallsigns: nextNetworkCallsigns,
+            networkCallsignsAddedSinceStats: new Set([
+              ...current.networkCallsignsAddedSinceStats,
+              ...addedNetworkCallsigns.map(({ id }) => id),
+            ]),
             networkCallsignGroups: nextNetworkCallsignGroups,
             catalogCallsignGroups: nextCatalogCallsignGroups,
             callsignCount: nextNetworkCallsigns.length,

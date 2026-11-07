@@ -5,6 +5,7 @@ use crate::telemetry::Metrics;
 
 // https://github.com/echoua/echo/issues/3826
 #[tokio::test]
+#[serial_test::serial]
 async fn account_recency_uses_time_after_loading_accounts() -> anyhow::Result<()>
 {
     let (env, _guard) = cleanup_locked().await.c(h!())?;
@@ -50,6 +51,7 @@ async fn account_recency_uses_time_after_loading_accounts() -> anyhow::Result<()
 
 // https://github.com/echoua/echo/issues/3826
 #[tokio::test]
+#[serial_test::serial]
 async fn observation_exports_reconcile_windows_and_clear_failed_sources(
 ) -> anyhow::Result<()> {
     let (env, _guard) = cleanup_locked().await.c(h!())?;

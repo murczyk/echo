@@ -21,10 +21,20 @@
   service restarts, migrations, database writes, analytics reconciliation,
   resnapshots, and rollbacks. A check that writes heartbeat or health metadata
   is a mutation too. A documented procedure or skill is not user approval.
+- A user message asking to prepare or make a release is explicit approval for
+  exactly the operations and targets [RELEASE.md](./RELEASE.md) lists for that
+  phase; nothing else in that file is approved by it.
 - Keep remote investigation read-only until mutations are approved. If an
   operation fails or partially completes, report its state and obtain approval
   for recovery actions outside the approved scope; do not expand the scope
   automatically.
+
+## Releases
+
+- "Prepare release", "make release", and "prepare and make release" mean the
+  process in [RELEASE.md](./RELEASE.md). So do "prepare stable release", "make
+  stable release", and "prepare and make stable release", which release what is
+  on `stable` without merging `main`. Follow it.
 
 ## Documentation scope
 
@@ -96,6 +106,7 @@
 - Also suggest creating a new issue. If the user chooses this option, create the issue, add it to the project, and set its status to `In Progress`.
 - Whenever creating a new issue, self-assign it to the authenticated GitHub user (`gh issue create --assignee @me`).
 - Ensure the selected or newly created issue belongs to the project. Suggest labels (tags) based on similar recent issues in `Done`, `Testing`, and `Ready` from the current user and other users.
+- In PR descriptions, link issues with `Refs #123`. Do not use closing keywords such as `Closes`, `Fixes`, or `Resolves` unless explicitly asked: merging would close the issue, and an issue is done only when it is deployed and its manual steps are finished.
 
 ## Changelog
 

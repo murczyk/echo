@@ -106,6 +106,7 @@ async fn cache_single_flight_survives_a_canceled_reader() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn cache_admission_keeps_live_lease_and_counts_pending_reservation() {
     let root = tempfile::tempdir().unwrap();
     let cache = cache(root.path(), 6, Duration::from_secs(2));
@@ -225,6 +226,7 @@ async fn cache_deadline_keeps_population_slot_until_blocking_work_finishes() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
 async fn cache_janitor_skips_live_owner_and_removes_dead_namespace() {
     let root = tempfile::tempdir().unwrap();
     let orphan = root.path().join("owner-orphan");

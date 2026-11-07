@@ -258,14 +258,18 @@ where
 {
     let allowed: HashSet<&String> =
         allowed_groups.iter().collect::<HashSet<_>>();
-    let selected_groups = selected_groups.as_ref().map(|groups| {
-        groups
-            .iter()
-            .filter(|key| allowed.contains(key))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
-    let selected_groups = selected_groups.filter(|groups| !groups.is_empty());
+    // An empty selection means "no filter". A selection that matches no
+    // accessible group stays Some(vec![]) and must return nothing, not widen.
+    let selected_groups = selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .map(|groups| {
+            groups
+                .iter()
+                .filter(|key| allowed.contains(key))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
     let selected_senders = selected_senders
         .as_ref()
         .filter(|senders| !senders.is_empty())
@@ -4991,6 +4995,10 @@ fn filter_summary_table_aors_and_networks_for_scope(
     req: &AnalysisStatsReq,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<signal_message::Entity>, AppError> {
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        req.only_for_rer_report,
+    );
     let query =
         stats::filter_selected_aors_for_scope(query, &req.selected_aors, scope)
             .context(h!())?;
@@ -6027,6 +6035,10 @@ fn build_correlated_freq_messages_query(
     } else {
         query
     };
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        req.only_for_rer_report,
+    );
     let query = filter_selected_metadata_for_analysis_stats(query, req)?;
     filter_selected_device_names(query, &req.selected_device_names)
 }
@@ -6291,6 +6303,10 @@ pub async fn edit_freq_unit_name(
         &reqan.only_with_network,
     )
     .context(h!())?;
+    let rows_res = crate::rer_report_admin::scope::filter_query(
+        rows_res,
+        reqan.only_for_rer_report,
+    );
     let rows_res =
         filter_selected_metadata_for_analysis_stats(rows_res, &reqan)?;
     let rows_res = filter_search_with_mode(
@@ -7302,6 +7318,10 @@ fn build_new_callsign_filtered_items_query(
         &req.only_with_network,
     )
     .c(h!())?;
+    let query = crate::rer_report_admin::scope::filter_query(
+        query,
+        req.only_for_rer_report,
+    );
     let query = filter_selected_metadata_for_analysis_stats(query, req)?;
     Ok(match callsign_source {
         crate::inbox::callsigns::EffectiveCallsignSqlSource::Postgres => {
@@ -9238,8 +9258,9 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     // Analytics scopes are materialized from interception-time partitions. Until
     // their creation-time equivalent is available, route creation-basis requests
     // through PostgreSQL so every panel describes the same message set.
-    req.message_time_basis
-        != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
+    req.only_for_rer_report != Some(true)
+        && req.message_time_basis
+            != Some(crate::user_settings::MessageTimeBasis::MessageCreation)
         && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
 }
@@ -9290,7 +9311,8 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    req.or_with_extended_form != Some(true)
+    req.only_for_rer_report != Some(true)
+        && req.or_with_extended_form != Some(true)
         && analytics_text_search_supported(&req.search, req.search_mode)
         && (!crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
             || (req.load_latest == Some(true) && req.nolimit != Some(true)))

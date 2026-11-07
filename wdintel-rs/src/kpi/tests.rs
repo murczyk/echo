@@ -35,6 +35,7 @@ fn presets_tolerate_bounded_browser_clock_skew() {
 
 // https://github.com/echoua/echo/issues/3826
 #[tokio::test]
+#[serial_test::serial]
 async fn retained_history_uses_half_open_periods_and_valid_duration_samples(
 ) -> anyhow::Result<()> {
     let (env, _guard) = cleanup_locked().await.c(h!())?;
@@ -185,6 +186,7 @@ async fn assert_history_metrics(
 
 // https://github.com/echoua/echo/issues/3826
 #[tokio::test]
+#[serial_test::serial]
 async fn report_metric_totals_survive_dashboard_author_limit(
 ) -> anyhow::Result<()> {
     use crate::config::*;
@@ -288,6 +290,7 @@ async fn sign_in(
 }
 
 #[actix_web::test]
+#[serial_test::serial]
 async fn kpi_endpoints_require_admin_before_reading_any_source(
 ) -> anyhow::Result<()> {
     use actix_identity::IdentityMiddleware;

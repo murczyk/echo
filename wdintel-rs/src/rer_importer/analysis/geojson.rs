@@ -156,28 +156,32 @@ pub(crate) async fn rer_analysis_geojson_bytes(
     .context(h!())?;
     let mut callsign_inbox_items = Vec::new();
     for chunk in callsign_chunks {
+        let callsign_items = signal_message::Entity::find()
+            .join(
+                JoinType::InnerJoin,
+                signal_message::Relation::SigintInboxItem.def(),
+            )
+            .select_only()
+            .column_as(sigint_inbox_item::Column::Id, "id")
+            .column_as(sigint_inbox_item::Column::Freq, "freq")
+            .filter(
+                sigint_inbox_item::Column::Freq.eq_any(unique_freqs.clone()),
+            )
+            .filter(
+                sigint_inbox_item::Column::Datetime
+                    .gte(dt_from_millis(chunk.since_ms).context(h!())?),
+            )
+            .filter(
+                sigint_inbox_item::Column::Datetime
+                    .lt(dt_from_millis(chunk.till_ms).context(h!())?),
+            )
+            .filter(signal_message::Column::Deleted.eq(false));
+        let callsign_items = crate::rer_report_admin::scope::filter_query(
+            callsign_items,
+            req.only_for_rer_report,
+        );
         callsign_inbox_items.extend(
-            signal_message::Entity::find()
-                .join(
-                    JoinType::InnerJoin,
-                    signal_message::Relation::SigintInboxItem.def(),
-                )
-                .select_only()
-                .column_as(sigint_inbox_item::Column::Id, "id")
-                .column_as(sigint_inbox_item::Column::Freq, "freq")
-                .filter(
-                    sigint_inbox_item::Column::Freq
-                        .eq_any(unique_freqs.clone()),
-                )
-                .filter(
-                    sigint_inbox_item::Column::Datetime
-                        .gte(dt_from_millis(chunk.since_ms).context(h!())?),
-                )
-                .filter(
-                    sigint_inbox_item::Column::Datetime
-                        .lt(dt_from_millis(chunk.till_ms).context(h!())?),
-                )
-                .filter(signal_message::Column::Deleted.eq(false))
+            callsign_items
                 .into_model::<CallsignInboxItem>()
                 .all(&env.dbx)
                 .await
@@ -394,6 +398,10 @@ async fn load_geojson_report_items(
         &req.only_with_network,
     )
     .context(h!())?;
+    let items = crate::rer_report_admin::scope::filter_query(
+        items,
+        req.only_for_rer_report,
+    );
     let items = filter_selected_metadata_for_analysis_stats(items, req)
         .context(h!())?;
     let items = filter_search_with_mode(items, &req.search, req.search_mode)

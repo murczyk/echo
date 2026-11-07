@@ -5,6 +5,7 @@ SigNoz is available only from the Eagle Atria Tailscale network.
 ## For humans
 
 - [Errors dashboard](http://signoz-echo.eagle-atria.ts.net:8080/dashboard/019fcb8d-cc4f-7e13-869d-2d6029b687d2?relativeTime=1h)
+- [AI providers dashboard](http://signoz-echo.eagle-atria.ts.net:8080/dashboard/01a1ab5f-22f4-7764-a7c1-5c44d57675c1?relativeTime=6h)
 - [All dashboards](http://signoz-echo.eagle-atria.ts.net:8080/dashboard)
 - [Logs Explorer](http://signoz-echo.eagle-atria.ts.net:8080/logs/logs-explorer?relativeTime=1h)
 
@@ -19,8 +20,8 @@ SigNoz stores password factors, not recoverable plaintext passwords, in
 reset access when necessary.
 
 Dashboard IDs change when a dashboard is recreated. If a direct link stops
-working, open **All dashboards**, find the errors dashboard, and update this
-document with its new link.
+working, open **All dashboards**, find the dashboard, and update this document
+with its new link.
 
 ## For agents over SSH
 
@@ -140,6 +141,11 @@ SIGNOZ_QUERY
 This SSH query deliberately returns a broad set of error-like messages. The UI
 saved `ERROR` view owns the current noise exclusions and may show fewer rows.
 
+`severity_text` is empty for Echo application logs, so match on `body`. The
+Errors dashboard counts any line containing `error` in any case, including INFO
+lines and the continuation lines of multi-line errors. A bar therefore counts
+lines rather than failures. To explain one, run the panel's own filter.
+
 To restrict the SSH query to one service, add a parameter to
 `clickhouse-client`:
 
@@ -227,6 +233,160 @@ another failure.
   `service.name`. Do not remove the timestamp predicate or limit.
 
 ## Metrics
+
+
+### Operational alert signals (#4034)
+
+The existing `signoz_metrics_enabled` and `signoz_metrics_endpoint` settings
+control these metrics. Collection starts with the messenger/background workers,
+independently of requests to `/api/monitoring`. Live installations have one
+collector in `echo-bgworker`; debug mode uses its combined web/background process.
+No new feature flag, PostgreSQL schema, runtime package, or analytics resnapshot
+is required. Existing Discord senders remain enabled.
+An enabled exporter with a missing or malformed HTTP(S) endpoint logs a startup
+warning and leaves collection disabled.
+
+Resources retain `service.name=wdintel-rs`, `service.namespace=echo`,
+`host.name=public_host`, and, when configured, `service.instance.id=server_id`.
+Use `service.instance.id` to distinguish installations; use `host.name` when the
+server ID is absent. Different installations must not share both identities.
+Event counters also carry `process=echo-web|echo-bgworker|echo-report-worker|echo-oneoff`
+because these processes share resource identity.
+
+In the table, **entity** means the applicable numeric database IDs
+`datasource_id`, `account_id` (Echo IM account), and `client_id`, plus
+`messenger=signal|whatsapp`. Missing relationships omit their IDs. Display names,
+service names, phone numbers, message/response/error text, URLs, credentials,
+report IDs, and user IDs are never exported as labels.
+
+| Instrument | Type / unit | Labels and meaning |
+| --- | --- | --- |
+| `echo.datasource.activity.age` | Gauge / `s` | entity, `source=datasources`; age at the observation time, clamped to zero for future timestamps |
+| `echo.datasource.active` | Gauge / `1` | entity, `source=accounts`; 1 active, 0 paused |
+| `echo.system.filesystem.available_bytes` | Gauge / `By` | `mountpoint=/`, `source=filesystem`; available bytes, not total or free bytes including reserved blocks |
+| `echo.messenger.account.linked` | Gauge / `1` | entity, `source=accounts`; explicit 1 linked, 0 unlinked |
+| `echo.messenger.account.active` | Gauge / `1` | entity, `source=accounts`; 1 has an active Echo datasource, 0 paused or unmapped |
+| `echo.messenger.restapi.errors.count` | Cumulative counter / `1` | `path=echo_im`, `messenger=signal`, `operation=receive|send|request`, `error_kind=timeout|other`, `process`, known client/account/datasource IDs |
+| `echo.report.timeouts.count` | Cumulative counter / `1` | `report_kind`, `process`; one winning timeout transition per generation attempt |
+| `echo.operational.source.available` | Gauge / `1` | `source=accounts|datasources|filesystem|queue|nlp`; fresh successful observation=1, failure/expiry=0 |
+| `echo.operational.source.updated_at` | Gauge / `s` | `source`; Unix time of the last successful observation, absent until first success |
+
+State collection runs at startup and every **60 seconds**; the existing OTLP
+reader exports every **60 seconds**. Queue collection retains its separate
+60-second loop. Per-source collection and database statements have a **10-second**
+budget. Sources do not overlap their own collection, and failures in one do not
+stop unrelated sources. State expires after **180 seconds** even if its collector
+stops progressing. Allow collection plus export delay when comparing with the UI.
+
+Each successful collection replaces its source snapshot, including an empty
+snapshot. An unavailable source emits availability=0 and omits its data instead
+of reporting zeros or carrying old healthy values forward. The last-success time
+is retained and does not advance on failure. A real zero-byte filesystem result
+is available=1; a failed filesystem read is available=0 with no byte value.
+NLP not-ready responses and transport failures are observed unhealthy readiness
+(`echo.messenger.nlp.ready=0`); a collector timeout/expiry is source unavailability.
+
+Reuse `echo.messenger.queue.items` (`state=total|due`),
+`echo.messenger.queue.oldest.age`, and `echo.messenger.nlp.ready`. These gauges
+now also carry their `source` and use the same availability/expiry rules.
+Processing counters and latency histograms retain their existing names and labels.
+An empty queue successfully publishes zero depth and zero age.
+
+#### Freshness and lifecycle
+
+The endpoint and collector share Echo IM's timestamp selector:
+`last_inbox_at_ms.unwrap_or(last_sync_at_ms)`. Inbox time is the maximum
+`echo_inbox_message.created_at` per account, unless it predates `linked_at`.
+The sync fallback retains the existing 10-minute stale/unlinked adjustment and
+seven-day fallback for missing sync time. Inbox time takes precedence even when
+sync time is newer. The endpoint retains its response shape and five-second cache.
+For an exact comparison, use the same identified account row and UTC observation
+time; subtract its selected milliseconds from that time and clamp at zero.
+
+Paused entities remain observable with active=0. Qualify inactivity/unlinked
+alerts by active=1. Pausing does not manufacture a linked or fresh state.
+Deleted Echo datasources disappear from the next successful inventory; a retained
+Echo IM account can remain as an unmapped account with active=0. Deleted Echo IM
+clients and removal-requested account locks are omitted. Inventory and freshness
+use one read-only repeatable-read database snapshot, and their replacement
+snapshots are published together. An inventory failure omits state and
+sets availability=0; it does not imply deletion. Datasources with no corresponding
+monitoring account have no activity-age point; an absent age is unknown, not zero.
+The API's pre-existing population is unchanged, so API-only rows can exist.
+
+Historical SigNoz points are not deleted when a label set disappears. For a
+state query, select each installation's latest source export first, require
+availability=1 and a last-success time younger than 180 seconds, then retain only
+entity points belonging to that export/current snapshot. Do not use an unrestricted
+long-window last-value query or replace absent values with zero. Apply current
+active inventory when alerting on accounts; relinking can change identity labels.
+Use a separate no-data condition when no source export has arrived for 180 seconds:
+missing exports must not resolve an unhealthy alert. Availability=0 detects a
+running exporter with failed/stalled collection; no-data detects loss of exporter
+or ingestion. Counter alerts use increases/rates, with reset handling, rather
+than raw cumulative values. Keep process identity when calculating increases,
+then aggregate across processes as needed.
+
+#### Discord condition mapping and gaps
+
+| Condition / sender | Signal and evaluation |
+| --- | --- |
+| Datasource freshness from `/api/monitoring` | Activity age, qualified by active inventory and fresh available sources. External consumers' thresholds are not present in this repository; preserve their configured thresholds when creating rules. |
+| Root space from `/api/monitoring` | Available bytes on `/`; convert existing API thresholds from truncated MiB (1 MiB = 1,048,576 bytes). External alert thresholds are not defined in Echo. |
+| Unlinked datasource (`messenger/worker/mod.rs`) | Linked=0 and active=1. Discord retries failed deliveries and suppresses successful repeats for one hour; metric state continues every minute. |
+| Batched Signal errors (`echo-im`'s `signal/restapi_error_alert.rs`) | Error-counter increases by client/account and kind. Discord batches up to three previews and has a ten-minute per-client cooldown; metrics are independent of notification delivery and database commit. |
+| Signal timeout burst (`server/healthcheck.rs`) | Intended condition: more than four receive timeouts in 15 minutes, with a one-hour Discord cooldown. **Legacy gap:** that worker reads `signal_restapi_error`; current Echo IM writes `echo_restapi_error`. The legacy receive function has no callers in this repository. New `path=echo_im` counters do not claim to reproduce historical/external legacy-table inserts. |
+| Report timeout (`report_history.rs`) | Timeout-counter increase by kind. Limits remain one hour, or three hours for Etalonka; both direct timeout and periodic sweep count only the winning database transition. |
+| Queue/processing/NLP | Existing queue depth/age, processing outcome/latency, ingestion, and NLP readiness instruments; keep the existing recommendations below and add source availability/no-data checks. |
+| Private-message Discord notification | Informational notification, deliberately outside operational metric parity; no message content or private-message receipt counter is exported. Discord delivery continues. |
+| Deployment/CI Discord messages | Workflow notifications from `justfile` and `scripts/notifications`, outside application metric coverage. |
+| ML training completion (`echo-ai/src/echo_ai/upload.py`) | Informational training/artifact notification, outside runtime operational metric parity. |
+
+The structured Echo IM observer distinguishes typed transport/elapsed timeouts and
+`process killed as timeout reached` from other errors. Receive errors include
+partial responses containing valid messages plus a trailing error. Handled
+`FileAlreadyExistsException` responses are excluded. Each receive/send attempt is counted at most once across nested error handling;
+internal retries and subsequent calls are separate observations. Failed API
+responses are counted even if a later retry succeeds. Other observed request transport failures have operation=request
+and client-level attribution. Non-receive/send parsing failures outside these
+boundaries and independent CLI/standalone Echo IM processes are not covered.
+Errors lacking account identity remain client-level; they are not assigned to a
+phone number or replicated into every account's series.
+
+Known report kinds and current Signal client/account error combinations publish
+zero counter series before their first error. Cumulative error series retain
+their original identity labels after reassignment or removal until restart;
+their presence does not establish current account membership or activity.
+Use current available inventory to qualify account alerts. Counters reset on
+restart; there is no historical replay. Abrupt exits can lose observations since
+the last 60-second export. Report updates and metric export are not one atomic durable
+transaction; a crash between them can lose an event. Ordinary report failures,
+cancellations, and restart recovery do not increment the timeout counter.
+
+#### Rollout verification
+
+Finish local functional tests and query-cost review first. The freshness read
+still aggregates inbox history for live accounts (using the existing account
+index), and has a statement timeout; representative production-scale plan evidence
+is required before enabling it on an installation. Do not add an unreviewed index
+or run an analytics resnapshot to bypass a slow-query failure.
+
+Read-only `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON)` on `echo-cbr`
+on 2026-11-05 measured the current live-account freshness aggregation at
+0.287 ms (110 inbox rows, 13 shared buffers) and the inventory query at
+0.334 ms (5 result rows, 19 shared-buffer hits). Both ran inside a read-only
+transaction with a 10-second statement timeout and rollback. The small current
+CBR population does not establish cost on larger installations; repeat plan
+review there before enabling export.
+
+After approval naming the operation and installation, deploy the application
+with the pinned Echo IM commit, configure the existing exporter if necessary,
+and restart only the approved services. No separate Signal/WhatsApp package
+upgrade is needed. Changes to SigNoz alert definitions need their own approval.
+Verify healthy state points and zero counters arrive with the expected resource
+and numeric IDs, compare activity age at a shared observation time, and observe
+failed/recovered/expired sources with approved fixtures. Confirm Discord remains
+enabled. Fault injection on a real environment requires approval as well.
 
 ### Admin KPI snapshots
 
@@ -323,6 +483,64 @@ This feature changes no replicated schema, exclusions, or migration-impact
 declarations and requires no analytics resnapshot or mirror reconciliation.
 Configuration changes and service restarts still require approval naming the
 rollout operation and server.
+
+### AI provider metrics
+
+`wdintel-rs` records model calls made through the application's shared
+`AiEngineClient`. Read these on the **AI providers** dashboard, which is defined
+in `deploy/signoz/dashboards/ai-providers.json`.
+
+| Metric | Attributes | Meaning |
+|---|---|---|
+| `echo.ai_provider.requests.count` | `provider`, `model_name`, `process`, `streaming`, `outcome` | One per call, including calls that never reached the provider. |
+| `echo.ai_provider.response_start.duration` | same | Seconds from sending the call until response headers. |
+| `echo.ai_provider.stream.duration` | `provider`, `model_name`, `process`, `outcome` | Seconds from response headers until the stream ended, for AI agent gateway streams. |
+
+Attribute values:
+
+- `provider`: `gov_ua`, `openai`, `internal` (plain `http` engine URLs) or
+  `other`. `gov_ua` is one gateway hosting several vendors, so compare models
+  by `model_name`.
+- `process`: `echo-web`, `echo-bgworker`, `echo-report-worker` or `echo-oneoff`.
+  All processes share one metric identity, so always keep this attribute: their
+  cumulative counters would otherwise collide.
+- `streaming`: for a non-streamed call, headers usually arrive when generation
+  finishes, so `response_start` is close to the full response time. For a
+  streamed call it is only the wait before output begins.
+- `outcome`: `ok`, `rate_limited`, `client_error`, `server_error`, `timeout`,
+  `connect_error`, `transport_error`, `cancelled`, `cooldown_expired` or
+  `local_error`. The last two never reached the provider, so they are counted
+  but add no duration sample.
+- Stream `outcome`: `completed`, `failed` or `cancelled`.
+
+When reading the numbers:
+
+- `ok` means headers arrived. A stream can still fail afterwards, so check the
+  stream outcomes too.
+- A hung provider mostly appears as `cancelled`, not `timeout`, because the
+  outer timeout fires first. `cancelled` also covers runner aborts and the
+  worker time limit, so it is not always the provider's fault.
+- `response_start` excludes Echo's local 429 cooldown wait, but includes the
+  settings load, the Azure token fetch and any 401 retry. Caller latency can
+  therefore be much longer than the provider time shown.
+- Stream duration includes backpressure from the reader.
+- Bgworker and report-worker can lose up to the last 60 seconds of data on
+  restart, because only the web process shuts metrics down explicitly.
+
+Not covered: agent `DirectHttp` engines, the document extractor's direct vLLM
+calls, Echo GPU transcription, and command-line tools that build their own
+client, such as callsign reprocessing and `ai-position-eval`. vLLM has its own
+metrics. Only hosts with `signoz_metrics_enabled = true` export any of these
+metrics.
+
+Change the dashboard by editing the JSON, then run
+`just signoz-install-dashboard --verify` to run every panel's queries without
+saving, and `just signoz-install-dashboard` to save it.
+
+Percentile panels must use ClickHouse SQL. The ClickHouse on `signoz-echo` has
+no `histogramQuantile` function, so a percentile on a histogram in the SigNoz
+query builder fails with an HTTP 500. The dashboard uses ClickHouse's built-in
+`quantilePrometheusHistogram` instead.
 
 ### Other application metrics
 

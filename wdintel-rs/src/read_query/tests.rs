@@ -407,7 +407,7 @@ async fn historical_counts_leave_read_capacity_for_pages_3780() {
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let active = env.dbx.query_one_raw(Statement::from_string(DbBackend::Postgres,
-                "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE state='active' AND query LIKE 'SELECT pg_sleep(30) /* count_lane_3780 */%'",
+                "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE datname=current_database() AND state='active' AND query LIKE 'SELECT pg_sleep(30) /* count_lane_3780 */%'",
             )).await.unwrap().unwrap().try_get::<i64>("", "count").unwrap();
             if active == ANALYSIS_SOURCE_COUNT_MAX_PER_LOGIN as i64 { break; }
             tokio::time::sleep(Duration::from_millis(10)).await;

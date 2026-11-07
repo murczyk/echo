@@ -80,6 +80,11 @@ for (const analysis of [false, true]) {
     const statsEndpoint = analysis
       ? '/api/rer/analysis/stats/units'
       : '/api/rer-importer/get-inbox-unit-stats';
+    if (analysis) {
+      await page.route('**/api/rer/analysis/stats/units/count', async (route) => {
+        await route.fulfill({ json: units.length });
+      });
+    }
     await page.route(`**${statsEndpoint}`, async (route) => {
       countRequests += 1;
       const filtered = route.request().postDataJSON().selected_freqs?.length > 0;
@@ -99,8 +104,7 @@ for (const analysis of [false, true]) {
         inboxRequests.push(request.postDataJSON());
     });
     await page.goto(analysis ? '/rer-analysis-neo?filterPanelOpen=true' : '/rer-duty-neo');
-    if (analysis) await page.getByRole('button', { name: /^Підрозділи/ }).click();
-    else
+    if (!analysis)
       await page
         .getByRole('button', { name: /^Фільтри/ })
         .first()
@@ -112,7 +116,7 @@ for (const analysis of [false, true]) {
       page.getByRole('progressbar', { name: 'Завантаження ієрархії підрозділів' }),
     ).toHaveCount(0);
     await expect.poll(() => catalogRequests).toBeGreaterThan(0);
-    await expect.poll(() => countRequests).toBeGreaterThan(0);
+    if (!analysis) await expect.poll(() => countRequests).toBeGreaterThan(0);
     const initialCatalogRequests = catalogRequests;
     catalogReleased = true;
     releaseCatalog();
@@ -121,6 +125,11 @@ for (const analysis of [false, true]) {
     const catalogBeforeFocus = catalogRequests;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await expect.poll(() => catalogRequests).toBe(catalogBeforeFocus + 1);
+    if (analysis) {
+      await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи4');
+      await expect(page.getByRole('combobox', { name: 'Підрозділи', exact: true })).toHaveCount(0);
+      await page.getByRole('button', { name: /^Підрозділи/ }).click();
+    }
     const countBeforeSelection = countRequests;
     const combo = analysis
       ? page.getByRole('combobox', { name: 'Підрозділи', exact: true })
@@ -155,6 +164,8 @@ for (const analysis of [false, true]) {
       .poll(() => inboxRequests.at(-1)?.selected_unit_ids?.slice().sort())
       .toEqual([21, 22]);
     const countBeforeFrequency = countRequests;
+    if (analysis)
+      await expect(page.getByRole('button', { name: /^Підрозділи/ })).toHaveText('Підрозділи1 з 4');
     if (analysis) await page.getByRole('button', { name: /^Частоти/ }).click();
     const frequency = analysis
       ? page.getByRole('combobox', { name: 'Частоти', exact: true })

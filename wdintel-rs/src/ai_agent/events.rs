@@ -1,6 +1,9 @@
 use super::types::AiAgentMessageCitation;
 use crate::config::{
-    AI_AGENT_EVENT_PAYLOAD_MAX_BYTES, AI_AGENT_PROGRESS_MAX_CHARS,
+    AI_AGENT_DIAGNOSTIC_TOKEN_CHARS, AI_AGENT_EVENT_PAYLOAD_MAX_BYTES,
+    AI_AGENT_PROGRESS_MAX_CHARS, AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
+    AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_INPUT_MAX_CHARS,
+    AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS,
 };
 use crate::entities::{ai_agent_request, ai_agent_request_event};
 use crate::error::AppError;
@@ -13,6 +16,7 @@ use sea_orm::{
     TransactionTrait,
 };
 use serde_json::Value;
+use std::sync::LazyLock;
 use uuid::Uuid;
 
 const EVENT_TYPES: &[&str] = &[
@@ -385,6 +389,8 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             | "context_limit"
             | "time_limit"
             | "tool_limit"
+            | "continued"
+            | "draft_refresh"
     ) {
         return None;
     }
@@ -408,6 +414,23 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
             }
         }
     }
+    if let Some(issue) = event.get("draftIssue").and_then(Value::as_str) {
+        if matches!(issue, "no_citation" | "unknown_link" | "bare_link") {
+            diagnostic["draftIssue"] = Value::String(issue.to_string());
+        }
+    }
+    if let Some(kind) = event.get("failureKind").and_then(Value::as_str) {
+        if matches!(
+            kind,
+            "rate_limit"
+                | "authorization"
+                | "interrupted_stream"
+                | "provider_error"
+                | "empty"
+        ) {
+            diagnostic["failureKind"] = Value::String(kind.to_string());
+        }
+    }
     for key in [
         "inputTokens",
         "outputTokens",
@@ -417,12 +440,105 @@ pub fn completion_diagnostic(event: &Value) -> Option<Value> {
         "remainingMs",
         "maxTokens",
         "attempt",
+        "httpStatus",
     ] {
         if let Some(value) = event.get(key).and_then(Value::as_u64) {
             diagnostic[key] = Value::from(value);
         }
     }
     Some(diagnostic)
+}
+
+/// How loudly to log a tool diagnostic. A failure the model can recover from
+/// by itself (bad arguments, a 4xx) is a warning; flow control is not a failure.
+pub fn tool_diagnostic_level(diagnostic: &Value) -> log::Level {
+    if diagnostic.get("handledPrivately").and_then(Value::as_bool) == Some(true)
+    {
+        return log::Level::Info;
+    }
+    let status = diagnostic.get("httpStatus").and_then(Value::as_u64);
+    match diagnostic.get("reason").and_then(Value::as_str) {
+        Some("tool_error" | "network_error" | "map_not_published") => {
+            log::Level::Error
+        }
+        Some("http_error") if status.is_none_or(|code| code >= 500) => {
+            log::Level::Error
+        }
+        Some("http_error" | "invalid_arguments") => log::Level::Warn,
+        _ => log::Level::Info,
+    }
+}
+
+fn is_local_tool(tool: &str) -> bool {
+    ["echo_map_", "echo_document_"].iter().any(|prefix| {
+        tool.strip_prefix(prefix).is_some_and(|name| {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        })
+    })
+}
+
+fn is_script_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "echo_map_script" | "echo_map_from_reports" | "echo_document_script"
+    )
+}
+
+fn diagnostic_line(event: &Value, key: &str, limit: usize) -> Option<String> {
+    let line = event.get(key)?.as_str()?.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.chars().take(limit).collect())
+}
+
+/// Paths and fixed kinds only: anything that could be a received value is dropped.
+fn validation_fields(event: &Value) -> Option<String> {
+    diagnostic_line(
+        event,
+        "fields",
+        AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
+    )
+    .filter(|fields| {
+        fields.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'.' | b':' | b',' | b' ')
+        })
+    })
+}
+
+fn is_exception_name(value: &str) -> bool {
+    value.len() <= 80
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.')
+        })
+}
+
+/// Same rules as `redact_runner_stderr` in the AI-agent dispatcher.
+fn redact_diagnostic(value: &str) -> String {
+    static BEARER: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+").unwrap()
+    });
+    static SECRET: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(
+            r#"(?i)(bootstrap_?token|authorization|cookie|api[_-]?key|password|token)(["']?\s*[:=]\s*["']?)[^\r\n]+"#,
+        )
+        .unwrap()
+    });
+    static WORD: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"[A-Za-z0-9_-]+").unwrap());
+    let value = BEARER.replace_all(value, "Bearer [REDACTED]");
+    let value = SECRET.replace_all(&value, "${1}${2}[REDACTED]");
+    // A whole run of exactly this length: `regex` has no lookaround, and
+    // matching the neighbours would consume a separator between two tokens.
+    WORD.replace_all(&value, |word: &regex::Captures| {
+        if word[0].len() == AI_AGENT_DIAGNOSTIC_TOKEN_CHARS {
+            "[REDACTED]".to_string()
+        } else {
+            word[0].to_string()
+        }
+    })
+    .into_owned()
 }
 
 pub fn tool_diagnostic(event: &Value) -> Option<Value> {
@@ -439,11 +555,13 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
             | "cancelled"
             | "network_error"
             | "tool_error"
+            | "map_not_published"
     ) {
         return None;
     }
     let tool = event.get("tool").and_then(Value::as_str).unwrap_or("");
     let tool = if matches!(tool, "report_progress" | "update_research")
+        || is_local_tool(tool)
         || tool.strip_prefix("echo_").is_some_and(|skill| {
             super::route_registry::ROUTES
                 .iter()
@@ -466,7 +584,40 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
             }
         }
     }
+    if let Some(category) = diagnostic_line(
+        event,
+        "category",
+        AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS,
+    ) {
+        diagnostic["category"] = Value::String(category);
+    }
+    if let Some(fields) = validation_fields(event) {
+        diagnostic["fields"] = Value::String(fields);
+    }
+    if is_script_tool(tool) {
+        add_script_failure(event, &mut diagnostic);
+    }
     Some(diagnostic)
+}
+
+/// Script tools alone may report text: the exception class and the final
+/// traceback line, which can occasionally echo a value from the source data.
+fn add_script_failure(event: &Value, diagnostic: &mut Value) {
+    let input_limit = AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_INPUT_MAX_CHARS;
+    if let Some(exception) = diagnostic_line(event, "exception", input_limit)
+        .filter(|name| is_exception_name(name))
+    {
+        diagnostic["exception"] = Value::String(exception);
+    }
+    // Redact before the final cap: a cut token would no longer be recognized.
+    if let Some(detail) = diagnostic_line(event, "detail", input_limit) {
+        diagnostic["detail"] = Value::String(
+            redact_diagnostic(&detail)
+                .chars()
+                .take(AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS)
+                .collect(),
+        );
+    }
 }
 
 pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
@@ -503,6 +654,7 @@ pub fn normalize_runner_event(event: Value) -> Option<(String, Value)> {
                     | "tool_limit"
                     | "context_limit"
                     | "provider_error"
+                    | "incomplete_research"
             )
         {
             return None;
@@ -726,6 +878,73 @@ mod tests {
     }
 
     #[test]
+    fn issue_4053_kept_failure_kind_and_status_but_never_other_text() {
+        let diagnostic = |kind: &str| {
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": "provider_error", "failureKind": kind,
+                "httpStatus": 400
+            }))
+            .unwrap()
+        };
+        assert_eq!(
+            diagnostic("empty"),
+            serde_json::json!({
+                "stage": "research", "outcome": "provider_error",
+                "failureKind": "empty", "httpStatus": 400
+            })
+        );
+        assert!(diagnostic("private provider text")
+            .get("failureKind")
+            .is_none());
+    }
+
+    #[test]
+    fn issue_4031_named_private_tools_and_kept_only_field_paths() {
+        let event = serde_json::json!({
+            "type": "tool_diagnostic", "tool": "update_research",
+            "reason": "invalid_arguments",
+            "fields": "checklist.0.status:enum, draft:required"
+        });
+        assert_eq!(
+            tool_diagnostic(&event).unwrap(),
+            serde_json::json!({
+                "tool": "update_research", "reason": "invalid_arguments",
+                "fields": "checklist.0.status:enum, draft:required"
+            })
+        );
+        for value in ["Позивний Орнитолог", "draft:\"secret\"", "a=b"]
+        {
+            let diagnostic = tool_diagnostic(&serde_json::json!({
+                "type": "tool_diagnostic", "tool": "update_research",
+                "reason": "invalid_arguments", "fields": value
+            }))
+            .unwrap();
+            assert!(diagnostic.get("fields").is_none(), "{value}");
+        }
+    }
+
+    #[test]
+    fn issue_4031_reported_why_a_draft_was_rejected() {
+        let rejected = |issue| {
+            completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": "citation_rejected", "draftIssue": issue
+            }))
+            .unwrap()
+        };
+        assert_eq!(rejected("unknown_link")["draftIssue"], "unknown_link");
+        assert!(rejected("private text").get("draftIssue").is_none());
+        for outcome in ["continued", "draft_refresh"] {
+            assert!(completion_diagnostic(&serde_json::json!({
+                "type": "completion_diagnostic", "stage": "research",
+                "outcome": outcome
+            }))
+            .is_some());
+        }
+    }
+
+    #[test]
     fn issue_3572_kept_tool_failure_diagnostics_private_and_allowlisted() {
         let event = serde_json::json!({
             "type": "tool_diagnostic", "tool": "echo_inbox_messages",
@@ -761,6 +980,112 @@ mod tests {
         .unwrap()
         .get("httpStatus")
         .is_none());
+    }
+
+    #[test]
+    fn issue_4038_script_failures_name_their_tool_and_exception() {
+        let diagnostic = tool_diagnostic(&serde_json::json!({
+            "type": "tool_diagnostic", "tool": "echo_map_script",
+            "reason": "tool_error", "handledPrivately": false,
+            "category": "Скрипт обробки завершився помилкою",
+            "exception": "KeyError", "detail": "KeyError: 'latitude'",
+            "error": "secret", "arguments": {"code": "secret"}
+        }))
+        .unwrap();
+        assert_eq!(
+            diagnostic,
+            serde_json::json!({
+                "tool": "echo_map_script", "reason": "tool_error",
+                "handledPrivately": false,
+                "category": "Скрипт обробки завершився помилкою",
+                "exception": "KeyError", "detail": "KeyError: 'latitude'"
+            })
+        );
+        assert_eq!(tool_diagnostic_level(&diagnostic), log::Level::Error);
+    }
+
+    #[test]
+    fn issue_4038_only_script_tools_may_report_text() {
+        for tool in ["echo_map_append", "echo_inbox_messages", "secret"] {
+            let diagnostic = tool_diagnostic(&serde_json::json!({
+                "type": "tool_diagnostic", "tool": tool, "reason": "tool_error",
+                "exception": "KeyError", "detail": "secret payload"
+            }))
+            .unwrap();
+            assert!(diagnostic.get("detail").is_none(), "{tool}");
+            assert!(diagnostic.get("exception").is_none(), "{tool}");
+        }
+    }
+
+    #[test]
+    fn issue_4038_script_detail_is_capped_scrubbed_and_one_line() {
+        let token = "a".repeat(43);
+        let detail = |text: String| {
+            tool_diagnostic(&serde_json::json!({
+                "type": "tool_diagnostic", "tool": "echo_document_script",
+                "reason": "tool_error", "detail": text, "exception": "not a class"
+            }))
+            .unwrap()
+        };
+        let long = detail("x ".repeat(450));
+        assert_eq!(long["detail"].as_str().unwrap().chars().count(), 300);
+        let crossing = format!("{} {token} end", "x ".repeat(135));
+        assert!(!detail(crossing)["detail"]
+            .as_str()
+            .unwrap()
+            .contains("aaaa"));
+        assert!(long.get("exception").is_none());
+        for (input, output) in [
+            (
+                "Authorization: Bearer abc.def".to_string(),
+                "Authorization: [REDACTED]",
+            ),
+            (
+                "failed with Bearer abc.def".to_string(),
+                "failed with Bearer [REDACTED]",
+            ),
+            ("password=hunter2".to_string(), "password=[REDACTED]"),
+            (format!("id {token} end"), "id [REDACTED] end"),
+            (format!("{token} {token}"), "[REDACTED] [REDACTED]"),
+            ("first\nsecond".to_string(), "first"),
+        ] {
+            assert_eq!(detail(input)["detail"], output);
+        }
+    }
+
+    #[test]
+    fn issue_4038_levels_separate_failures_from_flow_control() {
+        let level =
+            |diagnostic: serde_json::Value| tool_diagnostic_level(&diagnostic);
+        for reason in ["tool_error", "network_error", "map_not_published"] {
+            assert_eq!(
+                level(serde_json::json!({"reason": reason})),
+                log::Level::Error
+            );
+        }
+        let http = |status: u64| serde_json::json!({"reason": "http_error", "httpStatus": status});
+        assert_eq!(level(http(503)), log::Level::Error);
+        assert_eq!(level(http(409)), log::Level::Warn);
+        assert_eq!(
+            level(serde_json::json!({"reason": "http_error"})),
+            log::Level::Error
+        );
+        assert_eq!(
+            level(serde_json::json!({"reason": "invalid_arguments"})),
+            log::Level::Warn
+        );
+        for reason in ["cancelled", "research_checkpoint_required"] {
+            assert_eq!(
+                level(serde_json::json!({"reason": reason})),
+                log::Level::Info
+            );
+        }
+        assert_eq!(
+            level(serde_json::json!({
+                "reason": "tool_error", "handledPrivately": true
+            })),
+            log::Level::Info
+        );
     }
 
     #[test]
@@ -826,6 +1151,13 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(payload["reason"], "provider_error", "#3572");
+        let (_, payload) = normalize_runner_event(serde_json::json!({
+            "type": "completion_metadata",
+            "coverageLimited": true,
+            "reason": "incomplete_research"
+        }))
+        .unwrap();
+        assert_eq!(payload["reason"], "incomplete_research", "#4031");
         assert!(normalize_runner_event(serde_json::json!({
             "type": "completion_metadata",
             "coverageLimited": true,

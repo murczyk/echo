@@ -25,7 +25,8 @@ def build_test_executable() -> tuple[Path, Path]:
         "--no-run",
         "--message-format=json",
     ]
-    process = subprocess.run(command, check=True, text=True, capture_output=True)
+    # stderr stays attached so compile errors reach the log.
+    process = subprocess.run(command, check=True, text=True, stdout=subprocess.PIPE)
     executable = None
     test_directory = None
     for line in process.stdout.splitlines():

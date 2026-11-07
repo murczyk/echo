@@ -3,9 +3,29 @@ import os
 from pathlib import Path
 import unittest
 
-from fixtures import response
+from fixtures import group_details, response, selectable_groups
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+class GroupScope(unittest.TestCase):
+    case = {'groups': ['key-a', 'key-b'], 'groupNames': {'key-a': 'DEVOPS'}, 'messages': []}
+
+    def test_names_differ_from_keys_and_default_to_the_key(self):
+        self.assertEqual([(item['master_key'], item['name']) for item in group_details(self.case)],
+                         [('key-a', 'DEVOPS'), ('key-b', 'key-b')])
+        self.assertEqual(len(response(self.case, '/api/user/sigint-groups-detailed', {}, {})), 2)
+
+    def test_unmatched_selection_finds_nothing_like_production(self):
+        self.assertEqual(selectable_groups(self.case, {'selected_groups': ['DEVOPS']}, {}), set())
+        self.assertEqual(selectable_groups(self.case, {'selected_groups': ['key-a', 'x']}, {}), {'key-a'})
+        self.assertEqual(selectable_groups(self.case, {}, {}), {'key-a', 'key-b'})
+        self.assertEqual(selectable_groups(self.case, {'selected_groups': []}, {}), {'key-a', 'key-b'})
+
+    def test_legacy_fallback_reproduces_the_incident_widening(self):
+        settings = {'legacyGroupFallback': True}
+        self.assertEqual(selectable_groups(self.case, {'selected_groups': ['DEVOPS']}, settings), {'key-a', 'key-b'})
+        self.assertEqual(selectable_groups(self.case, {'selected_groups': ['key-a']}, settings), {'key-a'})
 
 
 class SearchRegression(unittest.TestCase):

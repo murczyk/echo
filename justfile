@@ -1,4 +1,4 @@
-set positional-arguments := true
+set positional-arguments
 
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
@@ -112,6 +112,10 @@ servers-active:
 
 servers-ai:
     @echo "{{ ai_servers }}"
+
+# Create or update the AI providers dashboard. `--check` sends GET requests only.
+signoz-install-dashboard *args:
+    python3 deploy/signoz/install_dashboard.py {{ args }}
 
 # Inspect AI harnesses using the dev binary; dev-tmux owns rebuilds/restarts.
 ai-control-panel *args:
@@ -316,20 +320,11 @@ test-be:
     export CARGO_INCREMENTAL=1
     export RUSTC_WRAPPER=""
 
-    if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ "${GITHUB_EVENT_NAME:-}" = "workflow_dispatch" ]; then
-        echo "Running cargo clippy..."
-        cargo clippy --all-targets --all-features -- -D warnings
-    else
-        echo "Skipping clippy in time-critical CI; run it locally or with workflow_dispatch"
-    fi
+    echo "Running cargo clippy..."
+    cargo clippy --all-targets --all-features -- -D warnings
 
-    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "Running curated Rust tests in CI with optimizations..."
-        cargo test --release --locked -p wdintel-rs
-    else
-        echo "Running curated Rust tests locally with optimizations..."
-        cargo test --release -p wdintel-rs
-    fi
+    echo "Running curated Rust tests locally with optimizations..."
+    cargo test --release -p wdintel-rs
 
 test: test-fe test-be
 

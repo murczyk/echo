@@ -136,6 +136,7 @@ type ListCallsignsReqBody = {
   filter_position: ListCallsignsReq['filterPosition'];
   filter_full_name: ListCallsignsReq['filterFullName'];
   filter_comment: ListCallsignsReq['filterComment'];
+  filter_unit_id: ListCallsignsReq['filterUnitId'];
   filter_unit: ListCallsignsReq['filterUnit'];
   filter_unit_army_region: ListCallsignsReq['filterUnitArmyRegion'];
   filter_unit_military_district: ListCallsignsReq['filterUnitMilitaryDistrict'];
@@ -193,15 +194,28 @@ export type CallsignsBootstrapData = {
   callsigns: ListCallsignsRsp;
 };
 
+async function fetchNetworkCallsigns(
+  payload: Parameters<typeof postJson>[1],
+): Promise<ListNetworkCallsignsRes> {
+  const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', payload);
+  return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
+}
+
 export async function listNetworkCallsigns(
   req: ListNetworkCallsignsReq,
 ): Promise<ListNetworkCallsignsRes> {
   const payload = transformCamelToSnake(req) as Parameters<typeof postJson>[1];
   const cacheKey = JSON.stringify(payload);
-  return dedupeInFlightRequest(inFlightNetworkCallsignsListRequests, cacheKey, async () => {
-    const raw = await postJson<unknown>('/api/sigint/network-callsigns/list', payload);
-    return transformSnakeToCamel<ListNetworkCallsignsRes>(raw);
-  });
+  return dedupeInFlightRequest(inFlightNetworkCallsignsListRequests, cacheKey, () =>
+    fetchNetworkCallsigns(payload),
+  );
+}
+
+/** Never joins an in-flight request: the caller may need data newer than that request. */
+export async function listNetworkCallsignStats(
+  req: ListNetworkCallsignsReq,
+): Promise<ListNetworkCallsignsRes> {
+  return fetchNetworkCallsigns(transformCamelToSnake(req) as Parameters<typeof postJson>[1]);
 }
 
 export async function getNetworkCallsigns(
@@ -378,6 +392,7 @@ function toListCallsignsReqBody(req: ListCallsignsReq): ListCallsignsReqBody {
     filter_position: req.filterPosition,
     filter_full_name: req.filterFullName,
     filter_comment: req.filterComment,
+    filter_unit_id: req.filterUnitId,
     filter_unit: req.filterUnit,
     filter_unit_army_region: req.filterUnitArmyRegion,
     filter_unit_military_district: req.filterUnitMilitaryDistrict,

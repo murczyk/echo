@@ -23,12 +23,13 @@ export type PowerSnackbarSeverity = 'success' | 'info' | 'warning' | 'error';
 export type PowerSnackbarNotification = {
   message: ReactNode;
   severity: PowerSnackbarSeverity;
-  durationMs?: number;
+  durationMs?: number | null;
 };
 
 type QueuedNotification = PowerSnackbarNotification & { id: number };
 type PowerSnackbarContextValue = {
   notify: (notification: PowerSnackbarNotification) => number;
+  dismiss: (id: number) => void;
 };
 
 const PowerSnackbarContext = createContext<PowerSnackbarContextValue | null>(null);
@@ -50,8 +51,9 @@ export function PowerSnackbarProvider({
   bottomInset?: number | string;
 }) {
   const nextIdRef = useRef(0);
-  const [current, setCurrent] = useState<QueuedNotification | null>(null);
   const [queue, setQueue] = useState<QueuedNotification[]>([]);
+  const current = queue[0] ?? null;
+  const currentId = current?.id;
   const [open, setOpen] = useState(false);
   const exitFallbackRef = useRef<ExitFallback | null>(null);
 
@@ -61,13 +63,14 @@ export function PowerSnackbarProvider({
     return id;
   }, []);
 
+  const dismiss = useCallback((id: number) => {
+    exitFallbackRef.current = releaseExitFallback(exitFallbackRef.current, id);
+    setQueue((previous) => previous.filter((notification) => notification.id !== id));
+  }, []);
+
   useEffect(() => {
-    if (current || queue.length === 0) return;
-    const [next, ...remaining] = queue;
-    setQueue(remaining);
-    setCurrent(next ?? null);
-    setOpen(true);
-  }, [current, queue]);
+    setOpen(currentId !== undefined);
+  }, [currentId]);
 
   const handleClose = useCallback(
     (_event?: unknown, reason?: string) => {
@@ -78,7 +81,7 @@ export function PowerSnackbarProvider({
         const timerId = setTimeout(() => {
           if (exitFallbackRef.current?.notificationId !== exitingId) return;
           exitFallbackRef.current = consumeExitFallback(exitFallbackRef.current, exitingId);
-          setCurrent((previous) => (previous?.id === exitingId ? null : previous));
+          setQueue((previous) => previous.filter((notification) => notification.id !== exitingId));
         }, 300);
         exitFallbackRef.current = replaceExitFallback(exitFallbackRef.current, exitingId, timerId);
       }
@@ -88,7 +91,7 @@ export function PowerSnackbarProvider({
 
   const handleExited = useCallback((exitingId: number) => {
     exitFallbackRef.current = releaseExitFallback(exitFallbackRef.current, exitingId);
-    setCurrent((previous) => (previous?.id === exitingId ? null : previous));
+    setQueue((previous) => previous.filter((notification) => notification.id !== exitingId));
   }, []);
 
   useEffect(
@@ -118,7 +121,7 @@ export function PowerSnackbarProvider({
         }
       : `calc(100dvh - ${inset(bottomInset)} - ${DEFAULT_NARROW_INSET}px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))`;
 
-  const contextValue = useMemo(() => ({ notify }), [notify]);
+  const contextValue = useMemo(() => ({ notify, dismiss }), [notify, dismiss]);
 
   return (
     <PowerSnackbarContext.Provider value={contextValue}>
@@ -129,7 +132,11 @@ export function PowerSnackbarProvider({
             key={current.id}
             open={open}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-            autoHideDuration={current.durationMs ?? DEFAULT_DURATION_MS[current.severity]}
+            autoHideDuration={
+              current.durationMs === undefined
+                ? DEFAULT_DURATION_MS[current.severity]
+                : current.durationMs
+            }
             onClose={handleClose}
             slotProps={{ transition: { onExited: () => handleExited(current.id) } }}
             sx={{
@@ -184,7 +191,7 @@ export function usePowerSnackbar(): PowerSnackbarContextValue {
 
 export function useOptionalPowerSnackbar(): PowerSnackbarContextValue {
   const context = useContext(PowerSnackbarContext);
-  return context ?? { notify: () => 0 };
+  return context ?? { notify: () => 0, dismiss: () => {} };
 }
 
 export const POWER_SNACKBAR_DEFAULT_DURATION_MS = DEFAULT_DURATION_MS;

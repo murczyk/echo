@@ -41,8 +41,9 @@ for (const host of ['analysis', 'duty'] as const) {
   }, testInfo) => {
     await page.setViewportSize({ width: 1512, height: 1080 });
     const response = createLoadedInboxResponse();
+    const unit = 'Тестовий підрозділ із довгою назвою для перевірки перенесення тексту';
     Object.assign(response.inbox_items[0][1], {
-      unit: 'Прихований підрозділ',
+      unit,
       location: 'Тестова локація',
       groupMasterKey: 'Тестова група',
       sender: 'Тестовий відправник',
@@ -77,7 +78,8 @@ for (const host of ['analysis', 'duty'] as const) {
       await expect(header).toContainText(text);
       await expect(details).not.toContainText(text);
     }
-    await expect(card).not.toContainText('Прихований підрозділ');
+    await expect(header).not.toContainText(unit);
+    await expect(details.getByTitle(unit, { exact: true })).toBeVisible();
     await expect(details).toContainText('123.4');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(
@@ -88,6 +90,7 @@ for (const host of ['analysis', 'duty'] as const) {
         await page.setViewportSize({ width, height: 1080 });
         if (host === 'analysis' && width <= 768) await page.keyboard.press('Escape');
         await expect(header).toBeVisible();
+        await expect(details.getByTitle(unit, { exact: true })).toBeVisible();
         expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
           true,
         );
@@ -97,14 +100,14 @@ for (const host of ['analysis', 'duty'] as const) {
     Object.assign(response.inbox_items[0][1], { networkIds: [] });
     await page.goto(path);
     await expect(header).toContainText('Тестова локація');
-    await expect(card).not.toContainText('Прихований підрозділ');
+    await expect(header).not.toContainText(unit);
+    await expect(details.getByTitle(unit, { exact: true })).toBeVisible();
     await expect(header.locator('[data-message-card-network-item="true"]')).toHaveCount(0);
     Object.assign(response.inbox_items[0][1], { networkIds: [7, 8] });
     hideNetworks = true;
     await page.goto(path);
-    await expect(header.locator('[data-message-card-header-unit-row="true"]')).toContainText(
-      'Прихований підрозділ',
-    );
+    await expect(header.locator('[data-message-card-header-unit-row="true"]')).toContainText(unit);
+    await expect(details).not.toContainText(unit);
     await expect(details).toContainText('Тестова група');
     await expect(details).toContainText('Тестовий відправник');
     await expect(details).toContainText('Тестова локація');
