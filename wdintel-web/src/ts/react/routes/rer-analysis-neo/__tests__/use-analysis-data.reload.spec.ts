@@ -120,7 +120,7 @@ beforeEach(() => {
   mocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
   mocks.fetchAnalysisCallsigns.mockResolvedValue({ callsigns: [] });
   mocks.fetchAnalysisCallsignInfos.mockResolvedValue([]);
-  mocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
+  mocks.fetchAnalysisUnits.mockResolvedValue({ units: [], options: [] });
   mocks.fetchAnalysisLocations.mockResolvedValue({ locations: [] });
   mocks.getUnitsByIds.mockResolvedValue([]);
   mocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
@@ -647,6 +647,7 @@ describe('reloadAnalysisData', () => {
     });
     mocks.fetchAnalysisUnits.mockResolvedValue({
       units: [{ unitId: 1, name: 'UNIT-1', count: 12 }],
+      options: [{ value: 'unit-id:1', label: 'UNIT-1', count: 12 }],
     });
     mocks.fetchAnalysisLocations.mockResolvedValue({
       locations: [{ location: 'LOC-1', count: 13 }],

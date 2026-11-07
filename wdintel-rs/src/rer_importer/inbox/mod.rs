@@ -1424,6 +1424,14 @@ fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
             .denied_units
             .as_ref()
             .is_some_and(|units| !units.is_empty())
+        || req
+            .selected_unit_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
+        || req
+            .denied_unit_ids
+            .as_ref()
+            .is_some_and(|ids| !ids.is_empty())
 }
 
 fn effective_inbox_groups(
@@ -2019,6 +2027,7 @@ async fn query_inbox_unit_stats(
     .c(h!())?;
     Ok(rows
         .into_iter()
+        .filter(|row| row.count > 0)
         .map(|row| AnalysisStatsUnit {
             unit_id: row.unit_id,
             name: row.name,
@@ -2060,6 +2069,25 @@ async fn load_inbox_unit_stats(
     query_inbox_unit_stats(connection, query).await.c(h!())
 }
 
+async fn load_fallback_inbox_unit_stats(
+    login: &Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    policy_req: &InboxMessagesReq,
+) -> anyhow::Result<Vec<AnalysisStatsUnit>> {
+    let lower_bound =
+        rer_duty_neo_adaptive_lower_bound(login, env, policy_req).await;
+    let mut req = req.clone();
+    if let Some(lower_bound) = lower_bound {
+        req.since_date_inclusive_ms =
+            Some(lower_bound.and_utc().timestamp_millis());
+        req.sort_by = Some(InboxMessagesSortBy::IMSCreatedAt);
+    }
+    load_inbox_unit_stats(login, env, &req, None, None, None)
+        .await
+        .c(h!())
+}
+
 fn merge_inbox_unit_stats(
     historical: Vec<AnalysisStatsUnit>,
     fresh_tail: Vec<AnalysisStatsUnit>,
@@ -2092,6 +2120,7 @@ async fn inbox_unit_stats(
     require_device_filters(&env.dbx, &login, &req)
         .await
         .c(h!())?;
+    let fallback_req = req.clone();
     req.selected_units = None;
     req.selected_unit_ids = None;
     req.denied_units = None;
@@ -2135,13 +2164,11 @@ async fn inbox_unit_stats(
             Ok(merge_inbox_unit_stats(historical, fresh_tail).c(h!())?)
         },
         |_db| async move {
-            Ok(load_inbox_unit_stats(
+            Ok(load_fallback_inbox_unit_stats(
                 &login,
                 analytics_env,
                 analytics_req,
-                None,
-                None,
-                None,
+                &fallback_req,
             )
             .await
             .c(h!())?)
@@ -2149,7 +2176,11 @@ async fn inbox_unit_stats(
     )
     .await
     .c(h!())?;
-    Ok(Json(UnitStatsRsp { units }))
+    Ok(Json(
+        crate::rer_importer::unit_stats::enrich(&env, units)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/rer-importer/get-inbox-count")]
@@ -6298,6 +6329,19 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 name: Set("Duty count unit".to_string()),
+                army: Set("6 А".to_string()),
+                brigade: Set("27 омсбр".to_string()),
+                company: Set("1 мср".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Deleted duty count unit".to_string()),
+                deleted: Set(true),
                 ..Default::default()
             },
         )
@@ -6314,7 +6358,7 @@ mod tests {
                 signal_message::ActiveModel {
                     datasource_group_id: Set(Some(datasource_group.id)),
                     created_at: Set(if index == 0 {
-                        boundary - Duration::seconds(1)
+                        boundary - Duration::days(15)
                     } else {
                         boundary
                     }),
@@ -6346,6 +6390,14 @@ mod tests {
             )
             .await
             .unwrap();
+            sigint_inbox_item_unit::Entity::insert(
+                sigint_inbox_item_unit::ActiveModel {
+                    item_id: Set(message.id),
+                    unit_id: Set(deleted_unit.id),
+                    kind: Set(crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind::Parsed),
+                    ..Default::default()
+                },
+            ).exec(&env.dbx).await.unwrap();
             if linked {
                 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
                 for kind in [
@@ -6427,6 +6479,72 @@ mod tests {
         assert_eq!(fresh_tail[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
         let merged = merge_inbox_unit_stats(historical, fresh_tail).unwrap();
         assert_eq!(merged.iter().map(|unit| unit.count).sum::<i64>(), 2);
+        crate::sigint::unit::hierarchy::mark_dirty(&mut env.redis.clone())
+            .await
+            .unwrap();
+        let enriched = crate::rer_importer::unit_stats::enrich(&env, merged)
+            .await
+            .unwrap();
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(|option| option.label == "27 омсбр")
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(|option| option.label == "6 А")
+                .unwrap()
+                .count,
+            1
+        );
+        assert_eq!(
+            enriched
+                .options
+                .iter()
+                .find(
+                    |option| option.label == ANALYSIS_STATS_UNDEFINED_UNIT_NAME
+                )
+                .unwrap()
+                .value,
+            ANALYSIS_STATS_UNDEFINED_UNIT_NAME
+        );
+        let policy_req = InboxMessagesReq {
+            selected_unit_ids: Some(vec![unit.id]),
+            page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+            ..req.clone()
+        };
+        let fallback =
+            load_fallback_inbox_unit_stats(&login.id, &env, &req, &policy_req)
+                .await
+                .unwrap();
+        assert_eq!(fallback.len(), 1);
+        assert_eq!(fallback[0].unit_id, ANALYSIS_STATS_UNDEFINED_UNIT_ID);
+        let ids = (0..20_001)
+            .map(|index| i64::MAX - index)
+            .chain(std::iter::once(unit.id))
+            .collect::<Vec<_>>();
+        let selected = crate::rer_importer::analysis::filter_selected_unit_ids(
+            sigint_inbox_item::Entity::find(),
+            &Some(ids.clone()),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(selected.len(), 2);
+        let denied = crate::rer_importer::analysis::filter_denied_unit_ids(
+            sigint_inbox_item::Entity::find(),
+            &Some(ids),
+        )
+        .all(&env.dbx)
+        .await
+        .unwrap();
+        assert_eq!(denied.len(), 1);
     }
 
     #[serial]

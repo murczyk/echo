@@ -2,6 +2,10 @@ import { useEffect, useRef } from 'react';
 
 type Params = {
   ignoreEvent?: (event: InboxChangedEvent) => boolean;
+  minIntervalMs?: number;
+  scopeKey?: unknown;
+  enabled?: boolean;
+  refreshOnMount?: boolean;
   onMessageIds: (messageIds: number[], events: InboxChangedEvent[]) => void | Promise<void>;
 };
 
@@ -46,68 +50,91 @@ export function inboxChangedEvents(detail: unknown): InboxChangedEvent[] {
   }));
 }
 
-export function useInboxChangedMessageIds({ ignoreEvent, onMessageIds }: Params) {
+export function useInboxChangedMessageIds({
+  ignoreEvent,
+  onMessageIds,
+  minIntervalMs = 0,
+  scopeKey,
+  enabled = true,
+  refreshOnMount = false,
+}: Params) {
   const ignoreEventRef = useRef(ignoreEvent);
   const onMessageIdsRef = useRef(onMessageIds);
-  const pendingEventsRef = useRef<Map<number, InboxChangedEvent>>(new Map());
-  const refreshInFlightRef = useRef(false);
-  const isMountedRef = useRef(false);
-
+  const intervalRef = useRef(minIntervalMs);
   useEffect(() => {
     ignoreEventRef.current = ignoreEvent;
     onMessageIdsRef.current = onMessageIds;
-  }, [ignoreEvent, onMessageIds]);
+    intervalRef.current = minIntervalMs;
+  }, [ignoreEvent, onMessageIds, minIntervalMs]);
 
   useEffect(() => {
-    isMountedRef.current = true;
-
-    const flushPendingIds = async () => {
-      if (refreshInFlightRef.current) return;
-      refreshInFlightRef.current = true;
+    if (!enabled) return;
+    let disposed = false;
+    let inFlight = false;
+    let completedAt: number | null = null;
+    let initialRefresh = refreshOnMount;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    let wake: (() => void) | null = null;
+    const pending = new Map<number, InboxChangedEvent>();
+    const flush = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
-        while (pendingEventsRef.current.size > 0 && isMountedRef.current) {
-          const pendingEvents = Array.from(pendingEventsRef.current.values());
-          pendingEventsRef.current.clear();
+        while ((initialRefresh || pending.size > 0) && !disposed) {
+          const interval = Math.max(0, intervalRef.current);
+          const delay =
+            completedAt === null
+              ? 0
+              : Math.max(0, Math.min(interval, completedAt + interval - Date.now()));
+          if (delay > 0) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+              timeout = setTimeout(resolve, delay);
+            });
+            timeout = null;
+            wake = null;
+          }
+          if (disposed) return;
+          initialRefresh = false;
+          const events = Array.from(pending.values());
+          pending.clear();
           try {
             await onMessageIdsRef.current(
-              pendingEvents.map((event) => event.messageId),
-              pendingEvents,
+              events.map((event) => event.messageId),
+              events,
             );
           } catch (error) {
             console.error(error);
+          } finally {
+            completedAt = Date.now();
           }
         }
       } finally {
-        refreshInFlightRef.current = false;
+        inFlight = false;
       }
     };
-
-    const enqueueEvents = (events: InboxChangedEvent[]) => {
-      if (events.length === 0) return;
-      events.forEach((event) => {
-        const pendingEvent = pendingEventsRef.current.get(event.messageId);
-        pendingEventsRef.current.set(event.messageId, {
-          messageId: event.messageId,
-          origin: event.origin ?? pendingEvent?.origin ?? null,
-          intelligenceReport: event.intelligenceReport || pendingEvent?.intelligenceReport === true,
-        });
-      });
-      void flushPendingIds();
-    };
-
     const onInboxChanged = (event: Event) => {
       const events = inboxChangedEvents((event as CustomEvent<unknown>).detail).filter(
         (inboxEvent) => !ignoreEventRef.current?.(inboxEvent),
       );
-      enqueueEvents(events);
+      events.forEach((event) => {
+        const previous = pending.get(event.messageId);
+        pending.set(event.messageId, {
+          messageId: event.messageId,
+          origin: event.origin ?? previous?.origin ?? null,
+          intelligenceReport: event.intelligenceReport || previous?.intelligenceReport === true,
+        });
+      });
+      if (pending.size > 0) void flush();
     };
-
     window.addEventListener('echo-inbox-changed', onInboxChanged);
-
+    if (refreshOnMount) void flush();
     return () => {
-      isMountedRef.current = false;
-      pendingEventsRef.current.clear();
+      disposed = true;
+      pending.clear();
+      if (timeout !== null) clearTimeout(timeout);
+      wake?.();
       window.removeEventListener('echo-inbox-changed', onInboxChanged);
     };
-  }, []);
+  }, [enabled, scopeKey, refreshOnMount]);
 }
