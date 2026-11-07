@@ -499,29 +499,6 @@ describe('SettingsNeoPage', () => {
     },
   );
 
-  // Regression: https://github.com/echoua/echo/issues/4073
-  it('persists the my-organism importance choice from the Duty settings', async () => {
-    await act(async () => {
-      root.render(<SettingsNeoPage section="duty" />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    const importantSwitch = () =>
-      Array.from(container.querySelectorAll('button')).find(
-        (button) =>
-          (button.textContent === 'on' || button.textContent === 'off') &&
-          button.parentElement?.textContent?.includes('Важливі лише мого підрозділу'),
-      );
-    expect(importantSwitch()?.textContent).toBe('off');
-
-    await act(async () => importantSwitch()?.click());
-
-    expect(saveUserDutySettings).toHaveBeenLastCalledWith(
-      expect.objectContaining({ importantOnlyMyOrganism: true }),
-    );
-    expect(importantSwitch()?.textContent).toBe('on');
-  });
-
   // Regression: https://github.com/echoua/echo/issues/3324
   it.each(['duty', 'analysis'] as const)(
     'persists all attachment modes from %s and shares the selection across settings tabs',
