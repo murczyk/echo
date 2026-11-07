@@ -37,7 +37,6 @@ import { isAbortError } from '../../services/api/client';
 import { getGroupInfosBatch } from '../../services/api/inbox-reference-data';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
-import { getUnitIdFilterValue } from '../../utils/unit-search';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
   buildAnalysisReq,
@@ -546,11 +545,10 @@ export async function loadFilterSectionData(
       if (isStale() || isAborted()) return;
       context.setOptions((current) => ({
         ...current,
-        units: toFilterOptions(
-          unitsRsp.units,
-          (item) => getUnitIdFilterValue(item.unitId),
-          (item) => item.name,
-          (item) => item.count,
+        units: unitsRsp.options,
+        unitParentCount: Math.max(
+          0,
+          unitsRsp.options.length - unitsRsp.units.filter((unit) => unit.count > 0).length,
         ),
       }));
       return;

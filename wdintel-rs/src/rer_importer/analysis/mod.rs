@@ -1102,13 +1102,14 @@ fn linked_unit_ids_condition(
             ))
             .eq(message_id),
         )
-        .and_where(
+        .and_where(unit_ids_condition(
             Expr::col((
                 link_alias.clone(),
                 sigint_inbox_item_unit::Column::UnitId,
             ))
-            .is_in(unit_ids.to_vec()),
-        )
+            .into_simple_expr(),
+            unit_ids,
+        ))
         .and_where(
             Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
         );
@@ -1124,6 +1125,22 @@ fn linked_unit_ids_condition(
         query.offset(0);
     }
     Expr::exists(query.to_owned())
+}
+
+fn unit_ids_condition(column: SimpleExpr, unit_ids: &[i64]) -> SimpleExpr {
+    if unit_ids.is_empty() {
+        return Expr::cust("FALSE");
+    }
+    unit_ids
+        .chunks(crate::config::ANALYTICS_UNIT_FILTER_IDS_CHUNK_SIZE)
+        .fold(Condition::any(), |condition, ids| {
+            condition.add(
+                column
+                    .clone()
+                    .is_in(ids.iter().map(|id| Expr::cust(id.to_string()))),
+            )
+        })
+        .into()
 }
 
 pub(crate) fn filter_denied_units_correlated<Q>(
@@ -8835,7 +8852,11 @@ async fn unit_stats(
     )
     .await
     .context(h!())?;
-    Ok(Json(UnitStatsRsp { units }))
+    Ok(Json(
+        crate::rer_importer::unit_stats::enrich(&env, units)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/rer/analysis/stats/locations")]

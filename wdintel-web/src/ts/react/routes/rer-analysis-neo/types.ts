@@ -122,6 +122,7 @@ export type AnalysisFilterOptions = {
   newFreqs: AnalysisFilterOption[];
   callsigns: AnalysisFilterOption[];
   units: AnalysisFilterOption[];
+  unitParentCount?: number;
   locations: AnalysisFilterOption[];
   posts: AnalysisFilterOption[];
   networks: AnalysisFilterOption[];
