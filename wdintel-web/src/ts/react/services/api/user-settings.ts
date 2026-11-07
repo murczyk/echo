@@ -61,6 +61,7 @@ export type UserDutySettings = {
   mediaSummaryEnabled: boolean;
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: UserDutySettingsDto['aiPositionHighlightsEnabled'];
+  minimalReportWindowEnabled: boolean;
 };
 
 export type UserDutySettingsUpdate = Omit<UserDutySettings, 'messageCardQuickAction'> & {
@@ -89,6 +90,7 @@ type UserDutySettingsWire = Omit<
   | 'messageSortBy'
   | 'messageAutoParseEnabled'
   | 'aiPositionHighlightsEnabled'
+  | 'minimalReportWindowEnabled'
 > & {
   messageCardQuickAction?: MessageCardQuickAction | null;
   messageTextPreviewLines?: string | null;
@@ -106,6 +108,7 @@ type UserDutySettingsWire = Omit<
   messageSortBy?: MessageTimeBasis | null;
   messageAutoParseEnabled?: boolean | null;
   aiPositionHighlightsEnabled?: UserDutySettingsDto['aiPositionHighlightsEnabled'] | null;
+  minimalReportWindowEnabled?: boolean | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -180,6 +183,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     mediaSummaryEnabled: raw.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
     aiPositionHighlightsEnabled: raw.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled: raw.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
+    minimalReportWindowEnabled: raw.minimalReportWindowEnabled ?? false,
   };
 }
 
@@ -212,6 +216,7 @@ export async function saveUserSettings(
       mediaSummaryEnabled: body.mediaSummaryEnabled,
       aiPositionHighlightsEnabled: body.aiPositionHighlightsEnabled,
       messageAutoParseEnabled: body.messageAutoParseEnabled,
+      minimalReportWindowEnabled: body.minimalReportWindowEnabled,
     },
     { signal },
   );

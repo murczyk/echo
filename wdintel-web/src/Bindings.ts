@@ -8157,4 +8157,5 @@ export type UserDutySettingsDto = {
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  minimalReportWindowEnabled: boolean;
 };
