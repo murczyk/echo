@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { validateToolArguments } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
-import { outputRetrySystemPrompt, runAgent, validatePayload, validationFields } from "./runner.ts";
+import { outputRetrySystemPrompt, runAgent, toolParameterNames, validatePayload, validationFields } from "./runner.ts";
 import {
   DEEP_RESEARCH_CONTINUATIONS,
   FlashResearch,
@@ -1386,6 +1386,28 @@ test("#4031 validation diagnostics carry field paths and never the received valu
     assert.ok(fields!.split(", ").includes(expected), `${expected} in ${fields}`);
   assert.equal(new Set(fields!.split(", ")).size, fields!.split(", ").length);
   assert.equal(validationFields({ content: [{ type: "text", text: "Echo returned HTTP 500" }] }), undefined);
+});
+
+test("#4070 a rejected argument is named only when another tool defines it", () => {
+  const closed = { additionalProperties: false };
+  const tools: any[] = [
+    { name: "narrow", parameters: Type.Object({ period: Type.String() }, closed) },
+    { name: "wide", parameters: Type.Object({ period: Type.String(), selectedFrequencies: Type.Array(Type.String()) }, closed) },
+  ];
+  const fieldsOf = (args: unknown) => {
+    try {
+      validateToolArguments(tools[0], { type: "toolCall", id: "1", name: "narrow", arguments: args } as any);
+    } catch (error) {
+      const result = { content: [{ type: "text", text: String((error as Error).message) }] };
+      return validationFields(result, "narrow", toolParameterNames(tools));
+    }
+    return "valid";
+  };
+  assert.equal(
+    fieldsOf({ period: "p", selectedFrequencies: ["SENSITIVE VALUE"] }),
+    "selectedFrequencies:additional, root:additional",
+  );
+  assert.equal(fieldsOf({ period: "p", SENSITIVE_KEY: "SENSITIVE VALUE" }), "root:additional");
 });
 
 test("#4031 synthesis never blames a limit that did not stop the work", () => {

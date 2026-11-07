@@ -636,11 +636,17 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.07.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.07.2";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
+/// The AI runner refuses a response over 2 MiB, and an unscoped month of
+/// frequency activity exceeds that without these bounds.
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS: usize = 128;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES: usize = 32;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS: usize = 200;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;

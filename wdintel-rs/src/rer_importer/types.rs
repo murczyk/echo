@@ -1541,6 +1541,23 @@ pub struct SummaryTableFreq {
     pub rows: Vec<SummaryTableFreqRow>,
 }
 
+#[derive(Debug, Serialize, PartialEq)]
+pub struct AiFrequencySummaryRow {
+    pub freq: String,
+    pub count: i64,
+    pub callsigns: Vec<String>,
+    pub units: Vec<String>,
+    pub locations: Vec<String>,
+}
+
+/// `rows` holds the most active frequencies; `total_rows` counts every match.
+#[derive(Debug, Serialize, PartialEq)]
+pub struct AiFrequencySummary {
+    pub rows: Vec<AiFrequencySummaryRow>,
+    pub total_rows: usize,
+    pub row_values_truncated: bool,
+}
+
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
