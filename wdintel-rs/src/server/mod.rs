@@ -55,6 +55,21 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
     Ok(Some(listener))
 }
 
+pub(crate) fn identity_middleware() -> IdentityMiddleware {
+    IdentityMiddleware::builder()
+        .visit_deadline(Some(std::time::Duration::from_secs(
+            IDENTITY_DURATION_HOURS * 60 * 60,
+        )))
+        .build()
+}
+
+pub(crate) fn session_middleware(
+    store: RedisSessionStore,
+    secret: &str,
+) -> SessionMiddleware<RedisSessionStore> {
+    SessionMiddleware::new(store, Key::from(secret.as_bytes()))
+}
+
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     Ok(new_env_with_initialization(mode, true).await.c(h!())?)
 }
@@ -2127,19 +2142,13 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 api_rate_limit::throttle_api_users,
             ))
-            .wrap(
-                IdentityMiddleware::builder()
-                    .visit_deadline(Some(std::time::Duration::from_secs(
-                        IDENTITY_DURATION_HOURS * 60 * 60,
-                    )))
-                    .build(),
-            )
+            .wrap(identity_middleware())
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
             ))
-            .wrap(SessionMiddleware::new(
+            .wrap(session_middleware(
                 redis_session_store.clone(),
-                Key::from(cookie_secret.as_bytes()),
+                &cookie_secret,
             ))
             .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(
