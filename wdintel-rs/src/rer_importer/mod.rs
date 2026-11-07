@@ -212,19 +212,82 @@ async fn messenger_media(
         .await;
     }
 
-    if req.method() == actix_web::http::Method::HEAD
+    let mut response = if req.method() == actix_web::http::Method::HEAD
         && !crate::messenger::audio_ref::is_reference(&media)
     {
-        return Ok(messenger_media_head_response(
+        messenger_media_head_response(
             &media.content_type,
             media.file_name.as_deref(),
             u64::try_from(media.size_bytes).c(h!())?,
-        ));
-    }
+        )
+    } else {
+        serve_messenger_media(&req, env.as_ref(), &media)
+            .await
+            .c(h!())?
+    };
+    apply_media_document_security_headers(&mut response, &media.content_type);
+    Ok(response)
+}
 
-    Ok(serve_messenger_media(&req, env.as_ref(), &media)
-        .await
-        .c(h!())?)
+// Media comes from senders, and "open in a new tab" loads it as a page on Echo's
+// origin. Scripts are disabled and the page gets an opaque origin, so it cannot
+// reach the session or the API. In-app <img>, <video>, <audio> and fetch() loads
+// do not apply a response CSP, so previews are not affected.
+const MEDIA_DOCUMENT_CSP: &str =
+    "sandbox; default-src 'none'; img-src 'self' blob: data:; \
+     media-src 'self' blob: data:; style-src 'unsafe-inline'; \
+     frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+// A video or audio tab is a page the browser builds, and its player requests the
+// file again. From a sandboxed page that request has a null origin and no
+// session cookie, so it gets a 401. These files cannot run script, and nosniff
+// stops a mislabelled file from rendering as HTML, so they keep Echo's origin.
+const MEDIA_PLAYER_DOCUMENT_CSP: &str =
+    "default-src 'none'; img-src 'self' blob: data:; \
+     media-src 'self' blob: data:; style-src 'unsafe-inline'; \
+     frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+
+fn is_browser_player_media(content_type: &str) -> bool {
+    let essence = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase();
+    essence.starts_with("video/") || essence.starts_with("audio/")
+}
+
+fn apply_media_document_security_headers(
+    response: &mut HttpResponse,
+    content_type: &str,
+) {
+    let csp = if is_browser_player_media(content_type) {
+        MEDIA_PLAYER_DOCUMENT_CSP
+    } else {
+        MEDIA_DOCUMENT_CSP
+    };
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        header::HeaderValue::from_static(csp),
+    );
+    // CSP does not cover DNS prefetching, which would tell a sender's DNS
+    // server that the file was opened.
+    headers.insert(
+        header::HeaderName::from_static("x-dns-prefetch-control"),
+        header::HeaderValue::from_static("off"),
+    );
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        header::HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("cross-origin-resource-policy"),
+        header::HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        header::HeaderValue::from_static("no-referrer"),
+    );
 }
 
 async fn load_authorized_messenger_media(
