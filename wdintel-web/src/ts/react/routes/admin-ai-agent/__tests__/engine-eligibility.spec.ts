@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  AI_AGENT_GATEWAY_TOKEN_NOTICE,
   AI_AGENT_TOKEN_WARNING,
   getAiAgentTokenNotice,
   isAiAgentEligibleEngine,
@@ -84,10 +83,16 @@ describe('isAiAgentEligibleEngine', () => {
       getAiAgentTokenNotice({
         enabled: true,
         hasToken: true,
-        url: 'https://api.openai.com/v1',
-      }),
-    ).toEqual({ message: AI_AGENT_GATEWAY_TOKEN_NOTICE, severity: 'info' });
+        url: 'https://inference.ai.mod.gov.ua/v1',
+      })?.severity,
+    ).toBe('info');
   });
+});
+
+it('refuses direct OpenAI engines even with a stored token', () => {
+  const engine = { enabled: true, hasToken: true, url: 'https://api.openai.com/v1' };
+  expect(isAiAgentEligibleEngine(engine)).toBe(false);
+  expect(getAiAgentTokenNotice(engine)).toBeNull();
 });
 
 // Regression: https://github.com/echoua/echo/issues/3682

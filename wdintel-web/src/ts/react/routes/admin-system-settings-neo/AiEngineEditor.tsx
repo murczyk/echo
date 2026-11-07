@@ -30,7 +30,7 @@ type AiEngineForm = {
 
 const EMPTY_FORM: AiEngineForm = {
   name: '',
-  url: 'https://api.openai.com/v1',
+  url: 'https://inference.ai.mod.gov.ua/v1',
   modelName: '',
   token: '',
   clearToken: false,
@@ -178,7 +178,7 @@ export function AiEngineEditor({
           label="Base URL"
           value={form.url}
           onChange={(event) => patchForm({ url: event.target.value })}
-          helperText="https://inference.ai.mod.gov.ua/v1, https://api.openai.com/v1 або http://spark:8000/v1"
+          helperText="https://inference.ai.mod.gov.ua/v1 або http://spark:8000/v1"
         />
         <TextField
           fullWidth
