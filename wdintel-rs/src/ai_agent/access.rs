@@ -254,16 +254,6 @@ pub fn agent_provider_transport(
     {
         return Some(AgentProviderTransport::DirectHttp);
     }
-    if url.scheme() == "https"
-        && url.host_str() == Some("api.openai.com")
-        && url.port().is_none_or(|port| port == 443)
-        && ai_engine
-            .token
-            .as_deref()
-            .is_some_and(|token| !token.trim().is_empty())
-    {
-        return Some(AgentProviderTransport::EchoGateway);
-    }
     None
 }
 
@@ -410,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn harness_engine_accepts_internal_http_and_exact_openai_base() {
+    fn harness_engine_accepts_internal_http_and_refuses_direct_openai() {
         assert_eq!(
             agent_provider_transport(&engine(
                 "http://vllm.example:8000/v1",
@@ -427,22 +417,16 @@ mod tests {
             )),
             Some(AgentProviderTransport::DirectHttp)
         );
-        assert_eq!(
-            agent_provider_transport(&engine(
-                "https://api.openai.com/v1",
-                Some("real-token"),
-                true,
-            )),
-            Some(AgentProviderTransport::EchoGateway)
-        );
-        assert_eq!(
-            agent_provider_transport(&engine(
-                "https://api.openai.com:443/v1/",
-                Some("real-token"),
-                true,
-            )),
-            Some(AgentProviderTransport::EchoGateway)
-        );
+        assert!(!is_agent_engine(&engine(
+            "https://api.openai.com/v1",
+            Some("real-token"),
+            true,
+        )));
+        assert!(!is_agent_engine(&engine(
+            "https://api.openai.com:443/v1/",
+            Some("real-token"),
+            true,
+        )));
         assert!(!is_agent_engine(&engine(
             "http://vllm.example:8000",
             None,

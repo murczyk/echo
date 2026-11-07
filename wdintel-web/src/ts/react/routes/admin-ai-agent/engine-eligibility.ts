@@ -5,8 +5,6 @@ const DISPATCHER_HOSTNAME_RE =
 
 export const AI_AGENT_TOKEN_WARNING =
   'Увага: використання цього провайдера ШІ агентом передає токен до ізольованого контейнера.';
-export const AI_AGENT_GATEWAY_TOKEN_NOTICE =
-  'Шлюз Echo передає до контейнера лише короткочасну можливість запиту; реальний токен OpenAI додається сервером Echo.';
 
 function isIpv4Address(hostname: string): boolean {
   const parts = hostname.split('.');
@@ -97,12 +95,6 @@ export function getAiAgentEngineCompatibility(
         explanation: 'Доступний через захищений шлюз Echo.',
       };
     }
-    if (isEchoGatewayUrl(url) && !engine.hasToken) {
-      return {
-        compatible: false,
-        explanation: 'Шлюз Echo для OpenAI потребує токен провайдера.',
-      };
-    }
     if (url.protocol !== 'http:') {
       return {
         compatible: false,
@@ -135,9 +127,6 @@ export function getAiAgentEngineTransport(
     if (url.hostname.toLowerCase() === 'inference.ai.mod.gov.ua') {
       return isGovernmentAiUrl(url) ? 'echo_gateway' : null;
     }
-    if (isEchoGatewayUrl(url) && engine.hasToken) {
-      return 'echo_gateway';
-    }
     if (url.protocol === 'http:' && isDispatcherUpstreamHost(url.hostname)) {
       return 'direct_http';
     }
@@ -162,14 +151,9 @@ export function getAiAgentTokenNotice(
   if (!engine.hasToken) {
     return null;
   }
-  switch (getAiAgentEngineTransport(engine)) {
-    case 'direct_http':
-      return { message: AI_AGENT_TOKEN_WARNING, severity: 'warning' };
-    case 'echo_gateway':
-      return { message: AI_AGENT_GATEWAY_TOKEN_NOTICE, severity: 'info' };
-    default:
-      return null;
-  }
+  return getAiAgentEngineTransport(engine) === 'direct_http'
+    ? { message: AI_AGENT_TOKEN_WARNING, severity: 'warning' }
+    : null;
 }
 
 function isCleanProviderUrl(url: URL): boolean {
@@ -179,14 +163,6 @@ function isCleanProviderUrl(url: URL): boolean {
     !url.search &&
     !url.hash &&
     url.pathname.replace(/\/+$/, '') === '/v1'
-  );
-}
-
-function isEchoGatewayUrl(url: URL): boolean {
-  return (
-    url.protocol === 'https:' &&
-    url.hostname.toLowerCase() === 'api.openai.com' &&
-    (url.port || '443') === '443'
   );
 }
 

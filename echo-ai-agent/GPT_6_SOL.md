@@ -1,5 +1,9 @@
 # GPT-6 Sol and Luna rollout
 
+> Direct `api.openai.com` engines are no longer allowed. Configure these models
+> on `https://inference.ai.mod.gov.ua/v1`. The steps below are kept as release
+> history.
+
 This release supports `gpt-6-sol` and `gpt-6-luna` in the homepage AI chat, using Echo's existing
 OpenAI Chat Completions gateway. Both the gateway and runner explicitly disable
 reasoning for tool calls. Both models require `reasoning_effort: "none"` for

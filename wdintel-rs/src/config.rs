@@ -156,6 +156,7 @@ pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GOVERNMENT_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
 pub const AI_PROVIDER_METRICS_OPENAI_HOST: &str = "api.openai.com";
+pub const AI_ENGINE_BLOCKED_OPENAI_DOMAIN: &str = "openai.com";
 pub const AI_PROVIDER_METRICS_PROCESS_ONEOFF: &str = "echo-oneoff";
 pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
 pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
@@ -606,7 +607,6 @@ pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
-pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_MODEL_PREFIXES: &[&str] = &["gpt-", "o1", "o3", "o4"];
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
