@@ -44,6 +44,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setMessageSortBy: (value: MessageTimeBasis) => void;
   setMessageAutoParseEnabled: (value: boolean) => void;
   setMinimalReportWindowEnabled: (value: boolean) => void;
+  setImportantOnlyMyOrganism: (value: boolean) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
   retryLoad: () => void;
 };
@@ -74,6 +75,7 @@ function normalizeDutySettings(
     messageAutoParseEnabled:
       settings?.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
     minimalReportWindowEnabled: settings?.minimalReportWindowEnabled ?? false,
+    importantOnlyMyOrganism: settings?.importantOnlyMyOrganism ?? false,
   };
 }
 
@@ -221,6 +223,8 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, messageAutoParseEnabled: value })),
     setMinimalReportWindowEnabled: (value) =>
       setSettings((current) => ({ ...current, minimalReportWindowEnabled: value })),
+    setImportantOnlyMyOrganism: (value) =>
+      setSettings((current) => ({ ...current, importantOnlyMyOrganism: value })),
     scheduleSave,
     retryLoad,
   };

@@ -1,5 +1,14 @@
 {
   "migrations": {
+    "echo:m20261107_175132_important_only_my_organism": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20261107_175019_duty_selected_groups_flag": {
       "changes": [
         { "table": "public.system_settings", "strategy": "cdc_backfill" }

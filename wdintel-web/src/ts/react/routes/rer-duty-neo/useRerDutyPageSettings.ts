@@ -34,6 +34,7 @@ export type RerDutyPageSettings = {
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   minimalReportWindowEnabled: boolean;
+  importantOnlyMyOrganism: boolean;
 };
 
 export type DeviceAccess =
@@ -71,6 +72,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
   const [minimalReportWindowEnabled, setMinimalReportWindowEnabled] = useState(false);
+  const [importantOnlyMyOrganism, setImportantOnlyMyOrganism] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,6 +91,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
         setMinimalReportWindowEnabled(prefs.minimalReportWindowEnabled ?? false);
+        setImportantOnlyMyOrganism(prefs.importantOnlyMyOrganism ?? false);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -100,6 +103,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
         setMinimalReportWindowEnabled(false);
+        setImportantOnlyMyOrganism(false);
       }
     };
     loadLayout();
@@ -121,6 +125,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
           minimalReportWindowEnabled?: boolean;
+          importantOnlyMyOrganism?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -153,6 +158,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       }
       if (typeof detail?.minimalReportWindowEnabled === 'boolean') {
         setMinimalReportWindowEnabled(detail.minimalReportWindowEnabled);
+      }
+      if (typeof detail?.importantOnlyMyOrganism === 'boolean') {
+        setImportantOnlyMyOrganism(detail.importantOnlyMyOrganism);
       }
     };
 
@@ -243,5 +251,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
+    importantOnlyMyOrganism,
   };
 }

@@ -32,19 +32,26 @@ export async function bookmarkRemove(req: BookmarkRmReq): Promise<void> {
   await postVoid('/api/rer/bookmark/delete', { message_id: req.messageId });
 }
 
-export async function importantAdd(req: ImportantAddReq): Promise<boolean> {
+export async function importantAdd(req: ImportantAddReq): Promise<ImportantMutationRsp> {
   const raw = await postJson<unknown>('/api/rer/important/add', {
     message_id: req.messageId,
     group_master_key: req.groupMasterKey,
     notify_group: req.notifyGroup,
     operation_id: req.operationId,
   });
-  return transformSnakeToCamel<ImportantMutationRsp>(raw).important;
+  return transformSnakeToCamel<ImportantMutationRsp>(raw);
 }
 
-export async function importantRemove(req: ImportantRmReq): Promise<boolean> {
-  const raw = await postJson<unknown>('/api/rer/important/delete', { message_id: req.messageId });
-  return transformSnakeToCamel<ImportantMutationRsp>(raw).important;
+export async function importantRemove({
+  messageId,
+  keepAiImportance = false,
+}: Omit<ImportantRmReq, 'keepAiImportance'> &
+  Partial<Pick<ImportantRmReq, 'keepAiImportance'>>): Promise<ImportantMutationRsp> {
+  const raw = await postJson<unknown>('/api/rer/important/delete', {
+    message_id: messageId,
+    ...(keepAiImportance ? { keep_ai_importance: true } : {}),
+  });
+  return transformSnakeToCamel<ImportantMutationRsp>(raw);
 }
 
 export async function deleteMessage(req: InboxDeleteReq): Promise<void> {

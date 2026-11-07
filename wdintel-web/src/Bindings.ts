@@ -497,6 +497,7 @@ export type InboxMessage = {
   checked: boolean;
   important: boolean;
   aiImportant: boolean;
+  importantByMyOrganism: boolean;
   bookmarked: boolean;
   timestamp: number | null;
   createdAt: number | null;
@@ -1889,10 +1890,12 @@ export type ImportantAddReq = {
 
 export type ImportantRmReq = {
   messageId: number;
+  keepAiImportance: boolean;
 };
 
 export type ImportantMutationRsp = {
   important: boolean;
+  importantByMyOrganism: boolean;
 };
 
 export type ImportantListReq = {
@@ -8158,4 +8161,5 @@ export type UserDutySettingsDto = {
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   minimalReportWindowEnabled: boolean;
+  importantOnlyMyOrganism: boolean;
 };

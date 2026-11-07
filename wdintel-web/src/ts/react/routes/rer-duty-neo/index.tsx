@@ -133,6 +133,7 @@ export function RerDutyNeoPage({
     mediaSummaryEnabled,
     messageTextPreviewLines,
     minimalReportWindowEnabled,
+    importantOnlyMyOrganism,
   } = useRerDutyPageSettings();
   const requestEditorIntent = useCallback(
     (
@@ -537,6 +538,7 @@ export function RerDutyNeoPage({
     collapseMediaPreviews,
     mediaSummaryEnabled,
     messageTextPreviewLines,
+    importantOnlyMyOrganism,
     openReportEditor,
     openMessageEditor,
     openReportComposer,

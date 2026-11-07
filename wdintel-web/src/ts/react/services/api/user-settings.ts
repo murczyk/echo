@@ -62,6 +62,7 @@ export type UserDutySettings = {
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: UserDutySettingsDto['aiPositionHighlightsEnabled'];
   minimalReportWindowEnabled: boolean;
+  importantOnlyMyOrganism: boolean;
 };
 
 export type UserDutySettingsUpdate = Omit<UserDutySettings, 'messageCardQuickAction'> & {
@@ -91,6 +92,7 @@ type UserDutySettingsWire = Omit<
   | 'messageAutoParseEnabled'
   | 'aiPositionHighlightsEnabled'
   | 'minimalReportWindowEnabled'
+  | 'importantOnlyMyOrganism'
 > & {
   messageCardQuickAction?: MessageCardQuickAction | null;
   messageTextPreviewLines?: string | null;
@@ -109,6 +111,7 @@ type UserDutySettingsWire = Omit<
   messageAutoParseEnabled?: boolean | null;
   aiPositionHighlightsEnabled?: UserDutySettingsDto['aiPositionHighlightsEnabled'] | null;
   minimalReportWindowEnabled?: boolean | null;
+  importantOnlyMyOrganism?: boolean | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -184,6 +187,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     aiPositionHighlightsEnabled: raw.aiPositionHighlightsEnabled ?? false,
     messageAutoParseEnabled: raw.messageAutoParseEnabled ?? DEFAULT_MESSAGE_AUTO_PARSE_ENABLED,
     minimalReportWindowEnabled: raw.minimalReportWindowEnabled ?? false,
+    importantOnlyMyOrganism: raw.importantOnlyMyOrganism ?? false,
   };
 }
 
@@ -217,6 +221,7 @@ export async function saveUserSettings(
       aiPositionHighlightsEnabled: body.aiPositionHighlightsEnabled,
       messageAutoParseEnabled: body.messageAutoParseEnabled,
       minimalReportWindowEnabled: body.minimalReportWindowEnabled,
+      importantOnlyMyOrganism: body.importantOnlyMyOrganism,
     },
     { signal },
   );

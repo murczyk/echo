@@ -123,6 +123,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
       minimalReportWindowEnabled: dutySettings.minimalReportWindowEnabled,
+      importantOnlyMyOrganism: dutySettings.importantOnlyMyOrganism,
       ...overrides,
     });
   };
@@ -334,6 +335,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onMinimalReportWindowEnabledChange={(value) => {
                 dutySettings.setMinimalReportWindowEnabled(value);
                 scheduleDutySettingsSave({ minimalReportWindowEnabled: value });
+              }}
+              importantOnlyMyOrganism={dutySettings.importantOnlyMyOrganism}
+              onImportantOnlyMyOrganismChange={(value) => {
+                dutySettings.setImportantOnlyMyOrganism(value);
+                scheduleDutySettingsSave({ importantOnlyMyOrganism: value });
               }}
               doNotPersistCurrentFilter={dutyFilterPersistenceDisabled}
               onDoNotPersistCurrentFilterChange={(value) => {

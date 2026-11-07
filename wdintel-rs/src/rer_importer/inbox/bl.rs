@@ -794,7 +794,7 @@ pub async fn aggregate_to_inbox_messages(
             .into_iter()
             .map(|entry| (entry.message_id, entry.comments))
             .collect();
-    let important_ids = sigint_important::Entity::find()
+    let important_marks = sigint_important::Entity::find()
         .filter(
             sigint_important::Column::SignalMessageId
                 .eq_any(message_ids.clone()),
@@ -802,8 +802,18 @@ pub async fn aggregate_to_inbox_messages(
         .filter(sigint_important::Column::Deleted.eq(false))
         .all(&env.dbx)
         .await
-        .c(h!())?
-        .into_iter()
+        .c(h!())?;
+    let important_ids = important_marks
+        .iter()
+        .map(|imp| imp.signal_message_id)
+        .collect::<HashSet<_>>();
+    let organism_logins = logins.iter().collect::<HashSet<_>>();
+    let my_organism_important_ids = important_marks
+        .iter()
+        .filter(|imp| {
+            imp.login_id
+                .is_some_and(|login| organism_logins.contains(&login))
+        })
         .map(|imp| imp.signal_message_id)
         .collect::<HashSet<_>>();
     #[derive(sea_orm::FromQueryResult)]
@@ -1193,6 +1203,8 @@ pub async fn aggregate_to_inbox_messages(
                 checked: message.checked.unwrap_or(false),
                 important: important_ids.contains(&message.id),
                 ai_important: ai_important_ids.contains(&message.id),
+                important_by_my_organism: my_organism_important_ids
+                    .contains(&message.id),
                 bookmarked: bookmarked_ids.contains(&message.id),
                 timestamp: message
                     .timestamp

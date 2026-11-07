@@ -142,6 +142,24 @@
 - **Source implementation:** `routes/rer-duty-neo/useDutyMinimalReportEditor.ts`, `routes/rer-duty-neo/index.tsx`, `routes/shared/manage-message/MinimalReportEditor.tsx`, `routes/shared/manage-message/ManageMessageDrawer.tsx`.
 - **Existing test(s):** `wdintel-web/tests/e2e/rer-duty-minimal-report.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutyMinimalReportEditor.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.
 - **Original Echo issue/PR, if known:** [#4008](https://github.com/echoua/echo/issues/4008)
+## Duty importance of my organism
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-important-only-my-organism`
+- **Affected route/component:** Duty message cards, Settings Duty section.
+- **User role or permission:** any Duty user.
+- **Preconditions:** the user enabled "Важливі лише мого підрозділу".
+- **User action or external event:** a Duty feed renders a marked message, or the user marks or unmarks one.
+- **Expected observable result:** the card shows the «Важливе» mark only when a person in the viewer's organism (same organism, no parents or children) set it. Marks from other organisms, AI marks and automatic ⚠️ marks are hidden. Messages stay in the feed. Marking a message that only another organism marked adds the viewer's mark through the usual flow.
+- **Loading/empty/error/success behavior:** the feed keeps both `important` and `importantByMyOrganism`, so flipping the setting changes cards without a refetch. Mutation responses and refreshes update both values.
+- **URL, localStorage, or user-settings persistence:** `importantOnlyMyOrganism` is a per-user setting, off by default. Older clients that omit it preserve the stored value.
+- **API endpoint and compatibility requirements:** `InboxMessage.important_by_my_organism` and the same field of `ImportantMutationRsp` are relative to the viewer. With the setting on, Duty sends `keep_ai_importance` to `POST /api/rer/important/delete`, which then removes only the viewer's own mark and leaves an AI mark in place, because the viewer can't see it. Other views omit the field and also suppress the AI mark, as before.
+- **Responsive and keyboard requirements:** none beyond the shared card.
+- **Known race/idempotency constraints:** none beyond the shared importance operation.
+- **Scope:** Analysis, reports, inbox mentions and classic Duty keep the aggregate mark.
+- **Source implementation:** `routes/rer-duty-neo/FeedColumnContent.tsx`, `routes/rer-duty-neo/useRerDutyMessageItemActions.ts`, `routes/settings-neo/SettingsDutySection.tsx`, `wdintel-rs/src/rer_importer/important.rs`, `wdintel-rs/src/rer_importer/inbox/bl.rs`.
+- **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/FeedColumnContent.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useRerDutyMessageActions.spec.tsx`, `wdintel-web/src/ts/react/routes/settings-neo/__tests__/index.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#4073](https://github.com/echoua/echo/issues/4073)
 
 ## Duty radio-filter isolation
 

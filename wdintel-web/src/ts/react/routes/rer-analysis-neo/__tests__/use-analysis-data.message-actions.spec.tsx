@@ -213,8 +213,8 @@ describe('useAnalysisDataMessageActions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    hoisted.importantAdd.mockResolvedValue(true);
-    hoisted.importantRemove.mockResolvedValue(false);
+    hoisted.importantAdd.mockResolvedValue({ important: true, importantByMyOrganism: true });
+    hoisted.importantRemove.mockResolvedValue({ important: false, importantByMyOrganism: false });
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
     hoisted.inboxMessageTagsAdd.mockResolvedValue(undefined);
     hoisted.inboxMessageTagsRm.mockResolvedValue(undefined);
@@ -353,7 +353,10 @@ describe('useAnalysisDataMessageActions', () => {
   );
 
   it('#3646 clears AI origin while preserving aggregate importance returned by the server', async () => {
-    hoisted.importantRemove.mockResolvedValueOnce(true);
+    hoisted.importantRemove.mockResolvedValueOnce({
+      important: true,
+      importantByMyOrganism: false,
+    });
     const apiRef = await renderHarness([[1, buildMessage({ important: true, aiImportant: true })]]);
 
     await act(async () => {

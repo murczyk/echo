@@ -91,6 +91,7 @@ export type FeedColumnModel = {
     collapseMediaPreviews?: boolean;
     mediaSummaryEnabled?: boolean;
     messageTextPreviewLines: MessageTextPreviewLineLimit;
+    importantOnlyMyOrganism: boolean;
     tagsMap: Record<number, Tag>;
     tagsOrder: number[];
     botTagAction: MessageCardBotTagAction | null;
@@ -109,7 +110,11 @@ export type FeedColumnModel = {
     }) => void | Promise<unknown>;
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-    onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+    onMessageImportant: (
+      msgId: number,
+      currentlyImportant: boolean,
+      keepAiImportance: boolean,
+    ) => void;
     onMessageCopy: (text: string, feedbackId: string) => void;
     onMessageCreateReport: (
       msgId: number,

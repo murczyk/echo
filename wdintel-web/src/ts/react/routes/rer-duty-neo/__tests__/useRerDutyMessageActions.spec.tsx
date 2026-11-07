@@ -290,8 +290,8 @@ describe('useRerDutyMessageActions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    hoisted.importantAdd.mockResolvedValue(true);
-    hoisted.importantRemove.mockResolvedValue(false);
+    hoisted.importantAdd.mockResolvedValue({ important: true, importantByMyOrganism: true });
+    hoisted.importantRemove.mockResolvedValue({ important: false, importantByMyOrganism: false });
     hoisted.deleteMessage.mockResolvedValue(undefined);
     hoisted.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });
     hoisted.inboxMessageTagsModelError.mockResolvedValue(undefined);
@@ -367,8 +367,77 @@ describe('useRerDutyMessageActions', () => {
     expect(document.body.querySelector('[role="status"]')?.textContent).toContain(message);
   });
 
+  it('#4073 keeps an AI mark the viewer cannot see when unmarking', async () => {
+    hoisted.importantRemove.mockResolvedValueOnce({
+      important: true,
+      importantByMyOrganism: false,
+    });
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [
+                [
+                  1,
+                  buildMessage({
+                    important: true,
+                    aiImportant: true,
+                    importantByMyOrganism: true,
+                  }),
+                ],
+              ],
+            }),
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      await apiRef.current!.handleMessageImportant('mf-0', 1, true, true);
+    });
+
+    expect(hoisted.importantRemove).toHaveBeenCalledWith({
+      messageId: 1,
+      keepAiImportance: true,
+    });
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].aiImportant).toBe(true);
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].importantByMyOrganism).toBe(false);
+  });
+
+  it('#4073 records my organism mark on a message another organism already marked', async () => {
+    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          initialFeeds={[
+            buildFeed({
+              items: [[1, buildMessage({ important: true, importantByMyOrganism: false })]],
+            }),
+          ]}
+        />,
+      );
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-important-message-updated', {
+          detail: { messageId: 1, important: true, importantByMyOrganism: true },
+        }),
+      );
+    });
+
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].importantByMyOrganism).toBe(true);
+  });
+
   it('#3646 removes AI origin without clearing another user importance', async () => {
-    hoisted.importantRemove.mockResolvedValueOnce(true);
+    hoisted.importantRemove.mockResolvedValueOnce({
+      important: true,
+      importantByMyOrganism: false,
+    });
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     await act(async () => {
       root.render(
@@ -387,9 +456,13 @@ describe('useRerDutyMessageActions', () => {
       await apiRef.current!.handleMessageImportant('mf-0', 1, true);
     });
 
-    expect(hoisted.importantRemove).toHaveBeenCalledWith({ messageId: 1 });
+    expect(hoisted.importantRemove).toHaveBeenCalledWith({
+      messageId: 1,
+      keepAiImportance: false,
+    });
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].important).toBe(true);
     expect(apiRef.current!.messageFeeds[0].items[0]?.[1].aiImportant).toBe(false);
+    expect(apiRef.current!.messageFeeds[0].items[0]?.[1].importantByMyOrganism).toBe(false);
   });
 
   it('#3610 opens the shared notification dialog for a new Duty importance mark', async () => {
@@ -1633,7 +1706,7 @@ describe('useRerDutyMessageActions', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('echo-important-message-updated', {
-          detail: { messageId: 1, important: true },
+          detail: { messageId: 1, important: true, importantByMyOrganism: true },
         }),
       );
     });
@@ -1649,7 +1722,7 @@ describe('useRerDutyMessageActions', () => {
     await act(async () => {
       window.dispatchEvent(
         new CustomEvent('echo-important-message-updated', {
-          detail: { messageId: 1, important: true },
+          detail: { messageId: 1, important: true, importantByMyOrganism: true },
         }),
       );
     });

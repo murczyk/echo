@@ -91,6 +91,9 @@ fn model_to_dto(
         minimal_report_window_enabled: m
             .minimal_report_window_enabled
             .unwrap_or(false),
+        important_only_my_organism: m
+            .important_only_my_organism
+            .unwrap_or(false),
     }
 }
 
@@ -122,6 +125,10 @@ fn preserve_omitted_compatibility_fields(
     if body.get("minimalReportWindowEnabled").is_none() {
         incoming.minimal_report_window_enabled =
             existing.minimal_report_window_enabled;
+    }
+    if body.get("importantOnlyMyOrganism").is_none() {
+        incoming.important_only_my_organism =
+            existing.important_only_my_organism;
     }
 }
 
@@ -165,7 +172,8 @@ pub async fn user_settings_put(
         || body.get("messageSortBy").is_none()
         || body.get("messageAutoParseEnabled").is_none()
         || body.get("aiPositionHighlightsEnabled").is_none()
-        || body.get("minimalReportWindowEnabled").is_none();
+        || body.get("minimalReportWindowEnabled").is_none()
+        || body.get("importantOnlyMyOrganism").is_none();
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
     if needs_existing {
@@ -235,6 +243,7 @@ pub async fn user_settings_put(
         minimal_report_window_enabled: Set(Some(
             dto.minimal_report_window_enabled,
         )),
+        important_only_my_organism: Set(Some(dto.important_only_my_organism)),
         receive_alerts_in_messenger: NotSet,
         updated_at: Set(now),
     })
@@ -258,6 +267,7 @@ pub async fn user_settings_put(
                 user_settings::Column::MessageSortBy,
                 user_settings::Column::MessageAutoParseEnabled,
                 user_settings::Column::MinimalReportWindowEnabled,
+                user_settings::Column::ImportantOnlyMyOrganism,
                 user_settings::Column::UpdatedAt,
             ])
             .update_columns(

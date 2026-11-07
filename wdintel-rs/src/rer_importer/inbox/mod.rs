@@ -2518,6 +2518,7 @@ fn generic_submit_item_to_inbox_message(
         checked: true,
         important: false,
         ai_important: false,
+        important_by_my_organism: false,
         bookmarked: false,
         timestamp: Some(timestamp.and_utc().timestamp_millis()),
         created_at: None,
@@ -9025,6 +9026,54 @@ mod tests {
                 1
             );
         }
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4073
+    #[serial]
+    #[tokio::test]
+    async fn echo_4073_inbox_scopes_importance_to_my_organism() {
+        let env = cleanup().await.unwrap();
+        let viewer = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let colleague = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let outsider = mk_login(&env.dbx, Default::default()).await.unwrap();
+        let logins = vec![viewer.id, colleague.id];
+        let mut marked = vec![];
+        for (label, marker) in [
+            ("colleague", Some(colleague.id)),
+            ("outsider", Some(outsider.id)),
+            ("system", None),
+        ] {
+            let message =
+                seed_message_with_media(&env, &datasource_group, None, label)
+                    .await
+                    .unwrap();
+            mk_sigint_important(
+                &env.dbx,
+                sigint_important::ActiveModel {
+                    login_id: Set(marker),
+                    signal_message_id: Set(message.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            marked.push(message.id);
+        }
+
+        let messages =
+            get_inbox_messages_by_ids(&viewer.id, &logins, &env, &marked)
+                .await
+                .unwrap()
+                .into_iter()
+                .collect::<HashMap<_, _>>();
+
+        assert_eq!(messages.len(), 3);
+        assert!(marked.iter().all(|id| messages[id].important));
+        assert!(messages[&marked[0]].important_by_my_organism);
+        assert!(!messages[&marked[1]].important_by_my_organism);
+        assert!(!messages[&marked[2]].important_by_my_organism);
     }
 
     #[serial]

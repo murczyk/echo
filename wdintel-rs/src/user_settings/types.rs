@@ -143,6 +143,8 @@ pub struct UserDutySettingsDto {
     pub ai_position_highlights_enabled: bool,
     #[serde(default)]
     pub minimal_report_window_enabled: bool,
+    #[serde(default)]
+    pub important_only_my_organism: bool,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
@@ -178,6 +180,7 @@ impl Default for UserDutySettingsDto {
             message_sort_by: MessageTimeBasis::MessageInterception,
             message_auto_parse_enabled: default_message_auto_parse_enabled(),
             minimal_report_window_enabled: false,
+            important_only_my_organism: false,
         }
     }
 }
