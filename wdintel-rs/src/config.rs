@@ -788,6 +788,7 @@ pub const COORDS_PER_FREQ_PER_LOC_LIMIT: usize = 10;
 pub const SERVER_MONITORING_CACHE_TTL_SEC: u64 = 5;
 pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
+pub const SESSION_CLI_HOST_SUFFIX: &str = "-staging";
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";

@@ -28,6 +28,9 @@
   operation fails or partially completes, report its state and obtain approval
   for recovery actions outside the approved scope; do not expand the scope
   automatically.
+- To check a deployed change as a real user on staging, follow
+  [DEVELOPMENT.md](./DEVELOPMENT.md). Issuing a session is a mutation of that
+  environment and works on staging only.
 
 ## Releases
 
