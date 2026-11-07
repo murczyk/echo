@@ -165,9 +165,9 @@ In the `ШІ` administration section:
    upstream instead of checking TCP connectivity alone.
 3. Select the fixed template login and reconcile its roles.
 4. Allowlist the intended providers and select the default engine. Internal
-   HTTP `/v1` engines use the instance-bound direct proxy. Government engines
-   at `https://inference.ai.mod.gov.ua/v1` use Echo's scoped capability gateway.
-   Direct OpenAI engines are refused.
+   HTTP `/v1` engines use the instance-bound direct proxy. The exact
+   `https://api.openai.com/v1` engine requires a stored token and uses Echo's
+   scoped capability gateway; the real token remains in Echo.
 5. Select the reviewer engine and configure the Mattermost webhook.
 6. Keep the feature and security review disabled until validation succeeds.
 7. Open a user's `AI Agent` tab and run `Test connection`; verify the linked
