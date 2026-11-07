@@ -153,6 +153,9 @@ async fn new_env_from_config(
     initialize: bool,
     config: Config,
 ) -> Result<Arc<Env>, AppError> {
+    if config.enable_duty_search.is_none() {
+        warn!("enable_duty_search is not configured; Duty search is disabled");
+    }
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await

@@ -30,6 +30,8 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
   const [saveFilterNameByFeedId, setSaveFilterNameByFeedId] = useState<Record<string, string>>({});
   const [reloadFreqsLoading, setReloadFreqsLoading] = useState(false);
   const [featureStrictNetworks, setFeatureStrictNetworks] = useState(false);
+  const [enableDutySearch, setEnableDutySearch] = useState(false);
+  const [serverInfoReady, setServerInfoReady] = useState(false);
   const [locationsList, setLocationsList] = useState<string[]>([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
   const mountedRef = useRef(true);
@@ -88,9 +90,14 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     }
     try {
       const serverInfo = await fetchServerInfo();
-      if (mountedRef.current) setFeatureStrictNetworks(serverInfo.featureStrictNetworks);
+      if (mountedRef.current) {
+        setFeatureStrictNetworks(serverInfo.featureStrictNetworks);
+        setEnableDutySearch(serverInfo.enableDutySearch);
+      }
     } catch (e) {
       console.warn('loadFilterOptions: fetchServerInfo failed', e);
+    } finally {
+      if (mountedRef.current) setServerInfoReady(true);
     }
   }, [radioFeaturesAllowed]);
 
@@ -150,6 +157,8 @@ export function useRerDutyFilterOptions(radioFeaturesAllowed = true) {
     locationsList,
     locationsLoading,
     reloadLocations,
+    enableDutySearch,
+    serverInfoReady,
     featureStrictNetworks,
   };
 }

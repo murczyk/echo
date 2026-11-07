@@ -279,6 +279,9 @@ export function useRerDutyInitialLoad(params: Params) {
                   items,
                   loading: false,
                   referenceTimeMs: Date.now(),
+                  historySinceMs: response.historySinceMs ?? candidate.historySinceMs ?? null,
+                  historyPeriodMs: response.historyPeriodMs ?? candidate.historyPeriodMs ?? null,
+                  hasReachedStart: !initialTarget && loadedItems.length === 0,
                   pendingNewerItems: [],
                   evictedNewerTailId: initialTarget ? (historicalReadThrough?.id ?? null) : null,
                   historicalReadThrough:

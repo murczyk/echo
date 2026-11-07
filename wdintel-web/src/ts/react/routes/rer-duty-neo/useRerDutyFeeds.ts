@@ -177,6 +177,8 @@ export function useRerDutyFeeds(
   const callsignRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isUnmountedRef = useRef(false);
   const feedState = useRerDutyFeedState({
+    enableDutySearch: filterOpts.enableDutySearch,
+    dutySearchReady: filterOpts.serverInfoReady,
     freqs: filterOpts.freqs,
     freqsReady: filterOpts.freqsReady,
     setProfiles: filterOpts.setProfiles,
@@ -609,6 +611,7 @@ export function useRerDutyFeeds(
     unitsMap: feedState.unitsMap,
     persistentUnitFilterValues,
     callsignInfoMap: feedState.callsignInfoMap,
+    enableDutySearch: filterOpts.enableDutySearch,
     featureStrictNetworks: filterOpts.featureStrictNetworks,
     watchModeByFeedId: feedState.watchModeByFeedId,
     setWatchModeByFeedId: feedState.setWatchModeByFeedId,

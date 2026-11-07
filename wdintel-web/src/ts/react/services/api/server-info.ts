@@ -10,6 +10,8 @@ type ServerInfoLike = {
   grafana_address?: string;
   featureDelta?: boolean;
   feature_delta?: boolean;
+  enableDutySearch?: boolean;
+  enable_duty_search?: boolean;
   featureAnalysisMap?: boolean;
   feature_analysis_map?: boolean;
   featureStrictNetworks?: boolean;
@@ -25,6 +27,7 @@ function normalizeServerInfo(raw: ServerInfoLike | null | undefined): ServerInfo
     publicHost: raw?.publicHost ?? raw?.public_host ?? '',
     grafanaAddress: raw?.grafanaAddress ?? raw?.grafana_address ?? '',
     featureDelta: raw?.featureDelta ?? raw?.feature_delta ?? false,
+    enableDutySearch: raw?.enableDutySearch ?? raw?.enable_duty_search ?? false,
     featureAnalysisMap: raw?.featureAnalysisMap ?? raw?.feature_analysis_map ?? false,
     featureStrictNetworks: raw?.featureStrictNetworks ?? raw?.feature_strict_networks ?? false,
     featureMyAdminGroupsEdit:

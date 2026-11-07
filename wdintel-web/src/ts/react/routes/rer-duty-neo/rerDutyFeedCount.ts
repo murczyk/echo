@@ -5,6 +5,8 @@ export function buildFeedCountSignature(feed: MessageFeedState, freqs: string[])
     unitsIncludeChildren: feed.unitsIncludeChildren ?? false,
     groupScopeMasterKey: feed.groupScopeMasterKey ?? null,
     filter: {
+      search: feed.filter.search ?? null,
+      searchMode: feed.filter.searchMode ?? null,
       groupsSelected: feed.filter.groupsSelected ?? null,
       deniedGroups: feed.filter.groupsDenied ?? null,
       sendersSelected: feed.filter.sendersSelected ?? null,

@@ -2,17 +2,20 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import { Autocomplete, InputAdornment, Popover, TextField, Tooltip } from '@mui/material';
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useId, useState, useTransition } from 'react';
 
 import { PowerIconButton } from '../../../components/PowerIconButton';
 import { ANALYSIS_SEARCH_DOC_URL, ANALYSIS_SEARCH_MODES } from '../config';
-import type { AnalysisPageActions, AnalysisPageState } from '../types';
+import type { AnalysisPageState } from '../types';
 
-type Props = Pick<AnalysisPageState, 'queryState'> &
-  Pick<AnalysisPageActions, 'updateQueryState'> & {
-    isCompactLayout: boolean;
-    onClose: () => void;
-  };
+type SearchState = Pick<AnalysisPageState['queryState'], 'search' | 'searchMode'>;
+
+type Props = {
+  queryState: SearchState;
+  updateQueryState: (updates: Partial<SearchState>) => void;
+  isCompactLayout: boolean;
+  onClose: () => void;
+};
 
 export function AnalysisSearchControls({
   queryState,
@@ -20,6 +23,7 @@ export function AnalysisSearchControls({
   isCompactLayout,
   onClose,
 }: Props) {
+  const helpId = useId();
   const [helpAnchor, setHelpAnchor] = useState<HTMLElement | null>(null);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [search, setSearch] = useState(queryState.search ?? '');
@@ -122,7 +126,7 @@ export function AnalysisSearchControls({
         <PowerIconButton
           aria-label="Довідка про пошук"
           aria-expanded={Boolean(helpAnchor)}
-          aria-controls={helpAnchor ? 'analysis-search-help' : undefined}
+          aria-controls={helpAnchor ? helpId : undefined}
           size="small"
           onClick={(event) => setHelpAnchor(event.currentTarget)}
         >
@@ -130,7 +134,7 @@ export function AnalysisSearchControls({
         </PowerIconButton>
       </Tooltip>
       <Popover
-        id="analysis-search-help"
+        id={helpId}
         open={Boolean(helpAnchor)}
         anchorEl={helpAnchor}
         onClose={() => setHelpAnchor(null)}

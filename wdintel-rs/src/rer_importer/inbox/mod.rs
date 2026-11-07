@@ -496,6 +496,8 @@ async fn inbox_window_bl(
     Ok(Some(InboxWindowRsp {
         target_message_id,
         inbox: InboxMessagesRsp {
+            history_since_ms: None,
+            history_period_ms: None,
             inbox_items,
             poll_cursor_id: None,
             callsigns,
@@ -844,6 +846,8 @@ async fn messages_by_id_with_metadata(
     .c(h!())?;
 
     Ok(Json(InboxMessagesRsp {
+        history_since_ms: None,
+        history_period_ms: None,
         inbox_items: messages,
         poll_cursor_id: None,
         callsigns,
@@ -1277,6 +1281,20 @@ async fn inbox_messages(
     } else {
         None
     };
+    let mut req = req;
+    let history_since_ms = if env.config.enable_duty_search.unwrap_or(false) {
+        rer_duty_neo_adaptive_lower_bound(&login, &env, &req)
+            .await
+            .map(|since| since.and_utc().timestamp_millis())
+    } else {
+        None
+    };
+    let history_period_ms = history_since_ms.map(|_| {
+        Duration::days(RER_DUTY_NEO_ADAPTIVE_CUTOFF_DAYS).num_milliseconds()
+    });
+    if let Some(since) = history_since_ms {
+        req.since_date_inclusive_ms = Some(since);
+    }
     let inbox_items = get_inbox_messages_with_analytics_candidates(
         &login, &logins, &env, &req,
     )
@@ -1313,6 +1331,8 @@ async fn inbox_messages(
     };
 
     Ok(Json(InboxMessagesApiRsp::regular(InboxMessagesRsp {
+        history_since_ms,
+        history_period_ms,
         inbox_items,
         poll_cursor_id,
         callsigns,
@@ -1329,6 +1349,8 @@ fn around_message_ref(req: &InboxMessagesReq) -> Option<String> {
 
 fn empty_inbox_messages_rsp(page_limit: Option<i64>) -> InboxMessagesRsp {
     InboxMessagesRsp {
+        history_since_ms: None,
+        history_period_ms: None,
         inbox_items: vec![],
         poll_cursor_id: None,
         callsigns: vec![],

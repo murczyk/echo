@@ -616,6 +616,8 @@ pub struct InboxWindowRsp {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxMessagesRsp {
+    pub history_since_ms: Option<i64>,
+    pub history_period_ms: Option<i64>,
     pub inbox_items: Vec<(i64, InboxMessage)>,
     pub poll_cursor_id: Option<i64>,
     pub callsigns: Vec<CallsignInfoRes>,
@@ -1700,6 +1702,10 @@ pub struct RerDutyQueryState {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct RerDutyQueryStateWf {
+    #[serde(default)]
+    pub search: Option<String>,
+    #[serde(default)]
+    pub search_mode: Option<AnalysisSearchMode>,
     pub groups_selected: Option<Vec<String>>,
     pub groups_denied: Option<Vec<String>>,
     pub senders_selected: Option<Vec<String>>,

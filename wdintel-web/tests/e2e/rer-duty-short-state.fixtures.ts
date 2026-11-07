@@ -9,6 +9,7 @@ import {
 } from './fixture-responses';
 
 type ShortStateFixtureOptions = {
+  enableDutySearch?: boolean;
   userRoles?: string[];
   enableAudioTranscription?: boolean;
   dutyExcludeMenuEnabled?: boolean;
@@ -253,7 +254,10 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api-public/server-info') {
-      await fulfillJson(route, serverInfoResponse());
+      await fulfillJson(route, {
+        ...serverInfoResponse(),
+        enable_duty_search: options.enableDutySearch,
+      });
       return;
     }
 

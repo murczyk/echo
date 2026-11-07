@@ -72,6 +72,7 @@ function buildFeedColumnView(
     tailAvailabilityByFeedId,
   } = deps.feeds;
   return {
+    enableDutySearch: deps.feeds.enableDutySearch,
     narrowScreen: deps.narrowScreen,
     linkedMessageFocus:
       deps.linkedMessageFocus?.feedId === feed.id &&
@@ -168,6 +169,12 @@ function buildFeedFilterPanel(
 
   return {
     feedId: feed.id,
+    search: deps.feeds.enableDutySearch
+      ? {
+          queryState: { search: feed.filter.search ?? '', searchMode: feed.filter.searchMode },
+          updateQueryState: (updates) => applyFilter(feed.id, { ...feed.filter, ...updates }),
+        }
+      : undefined,
     hideGroupSelection: Boolean(feed.groupScopeMasterKey),
     hasActiveFilter:
       hasActiveFeedFilter(
@@ -179,6 +186,8 @@ function buildFeedFilterPanel(
       feed.highlightSignalsEnabled ||
       feed.onlyMyUnitTagsEnabled,
     filterState: {
+      search: feed.filter.search,
+      searchMode: feed.filter.searchMode,
       groupsSelected: feed.filter.groupsSelected ?? [],
       deniedGroups: feed.filter.groupsDenied ?? [],
       sendersSelected: feed.filter.sendersSelected ?? [],

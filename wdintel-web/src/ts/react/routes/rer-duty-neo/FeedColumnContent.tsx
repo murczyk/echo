@@ -1,5 +1,5 @@
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import { Box, CircularProgress, Fab, Paper, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Fab, Paper, Typography } from '@mui/material';
 import {
   forwardRef,
   memo,
@@ -251,6 +251,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
       messageTimeBasis="creation"
+      searchText={filterState.search}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -959,7 +960,20 @@ export const FeedColumnContent = memo(
             className: 'm-0 list-none rer-duty pt-2 pl-3',
           }}
           beforeList={
-            !feed.loadingOlder && feed.hasReachedStart ? (
+            !feed.loading &&
+            view.enableDutySearch &&
+            feed.historySinceMs != null &&
+            feed.historyPeriodMs != null &&
+            feed.hasReachedStart ? (
+              <div className="flex justify-center pt-12 pb-2">
+                <Button
+                  disabled={feed.loadingOlder}
+                  onClick={() => void column.actions.onLoadHistory?.()}
+                >
+                  Завантажити ще
+                </Button>
+              </div>
+            ) : !feed.loadingOlder && feed.hasReachedStart ? (
               <Typography
                 variant="body2"
                 color="text.secondary"
@@ -983,6 +997,7 @@ export const FeedColumnContent = memo(
     const prevView = prevProps.column.view;
     const nextView = nextProps.column.view;
     if (
+      prevView.enableDutySearch !== nextView.enableDutySearch ||
       prevView.narrowScreen !== nextView.narrowScreen ||
       prevView.feedCount !== nextView.feedCount ||
       prevView.canRemove !== nextView.canRemove ||
@@ -1033,6 +1048,7 @@ export const FeedColumnContent = memo(
     const prevActions = prevProps.column.actions;
     const nextActions = nextProps.column.actions;
     if (
+      prevActions.onLoadHistory !== nextActions.onLoadHistory ||
       prevActions.onLoadOlder !== nextActions.onLoadOlder ||
       prevActions.onLoadNewer !== nextActions.onLoadNewer ||
       prevActions.onFlushPendingNewer !== nextActions.onFlushPendingNewer ||
