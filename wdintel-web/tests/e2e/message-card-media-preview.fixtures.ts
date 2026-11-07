@@ -161,9 +161,9 @@ const LARGE_IMAGE_SVG = `
     <text x="80" y="1200" fill="white" font-size="80">E2E attachment</text>
   </svg>`;
 
-function buildValidWavAudioFixture(): Buffer {
+export function buildValidWavAudioFixture(seconds = 0.1): Buffer {
   const sampleRate = 8_000;
-  const sampleCount = sampleRate / 10;
+  const sampleCount = Math.round(sampleRate * seconds);
   const sampleBytes = 2;
   const audio = Buffer.alloc(44 + sampleCount * sampleBytes);
 

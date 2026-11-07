@@ -1,4 +1,5 @@
-import { Dialog } from '@mui/material';
+import { Dialog, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 
 import { shouldIgnoreArrowNavigation } from '../document-preview-utils';
@@ -30,6 +31,7 @@ import {
   type AttachmentPreviewStageNavigationSide,
 } from './AttachmentPreviewStageCarouselNav';
 import { useBrowserBackOverlay } from '../../../../hooks/use-browser-back-overlay';
+import { useAttachmentPreviewEdgeToEdge } from './use-attachment-preview-edge-to-edge';
 
 const REPORT_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.report-visible';
 const MESSAGE_VISIBILITY_STORAGE_KEY = 'echo.message-attachment-preview.message-visible';
@@ -105,6 +107,11 @@ export function MessageCardAttachmentPreviewDialog({
   const reportTextPreviewEnabled = reportDraft != null;
   const textPreviewKind = reportDraft?.kind ?? 'report';
   const [isEditing, setIsEditing] = useState(false);
+  const narrowViewport = useMediaQuery(useTheme().breakpoints.down('sm'));
+  const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
+  const mobileViewport = narrowViewport || touchLandscape;
+  const isImageOrVideo = item.type === 'image' || item.type === 'video';
+  useAttachmentPreviewEdgeToEdge(mobileViewport && !isEditing);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const childOverlayOpenRef = useRef(false);
@@ -208,7 +215,12 @@ export function MessageCardAttachmentPreviewDialog({
         closeDialog();
         return;
       }
-      if (childOverlayOpen || navigation.count <= 1 || shouldIgnoreArrowNavigation(event.target))
+      if (
+        fullscreenExitRef.current ||
+        childOverlayOpen ||
+        navigation.count <= 1 ||
+        shouldIgnoreArrowNavigation(event.target)
+      )
         return;
 
       if (isEditing && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
@@ -264,7 +276,7 @@ export function MessageCardAttachmentPreviewDialog({
           ...getAttachmentPreviewDialogPaperSx(),
           backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
           ...paperSx,
-          ...(item.type === 'video'
+          ...(isImageOrVideo || mobileViewport
             ? { '@supports (height: 100dvh)': { height: '100dvh', maxHeight: '100dvh' } }
             : {}),
         },

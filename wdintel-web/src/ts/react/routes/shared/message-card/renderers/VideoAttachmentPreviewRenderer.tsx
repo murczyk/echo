@@ -726,8 +726,8 @@ export function VideoAttachmentPreviewRenderer({
       immersive
       stage={stage}
       infoPopover={infoPopover}
-      navigation={navigation}
-      swipeEnabled={zoom <= 100}
+      navigation={fullscreen.active ? undefined : navigation}
+      swipeEnabled={!fullscreen.active && zoom <= 100}
     />
   );
 }

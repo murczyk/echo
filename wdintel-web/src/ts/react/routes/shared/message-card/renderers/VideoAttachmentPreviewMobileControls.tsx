@@ -78,18 +78,6 @@ export function VideoAttachmentPreviewMobileControls({
   onFullscreen,
 }: MobileControlsProps) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLButtonElement | null>(null);
-  useLayoutEffect(() => {
-    const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
-    if (!viewport) return;
-    const content = viewport.content;
-    const directives = content
-      .split(',')
-      .filter((directive) => !/^\s*viewport-fit\s*=/i.test(directive));
-    viewport.content = [...directives, 'viewport-fit=cover'].join(',');
-    return () => {
-      viewport.content = content;
-    };
-  }, []);
   const pointerActive = useRef(false);
   const focusActive = useRef(false);
   useEffect(() => () => onInteraction(false), [onInteraction]);
@@ -157,6 +145,9 @@ export function VideoAttachmentPreviewMobileControls({
           left: 0,
           right: 0,
           backgroundColor: 'background.paper',
+          '& [data-attachment-preview-header-navigation]': {
+            display: fullscreenActive ? 'none' : undefined,
+          },
           pt: 'env(safe-area-inset-top, 0px)',
           pl: 'env(safe-area-inset-left, 0px)',
           pr: 'env(safe-area-inset-right, 0px)',
@@ -198,7 +189,7 @@ export function VideoAttachmentPreviewMobileControls({
           pointerEvents: 'none',
         }}
       >
-        {navigation.count > 1 ? (
+        {!fullscreenActive && navigation.count > 1 ? (
           <Box
             data-video-carousel
             sx={{

@@ -10,7 +10,10 @@ export function XlsxSheetTabs({
   onSelectIndex: (index: number) => void;
 }) {
   return (
-    <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', px: 2, py: 1 }}>
+    <Box
+      data-attachment-preview-sheet-tabs
+      sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', px: 2, py: 1 }}
+    >
       {sheetNames.map((name, index) => (
         <Button
           key={name}

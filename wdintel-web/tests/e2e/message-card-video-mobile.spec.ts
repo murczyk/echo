@@ -34,6 +34,65 @@ test.afterAll(async () => {
   if (portraitDirectory) await rm(portraitDirectory, { recursive: true, force: true });
 });
 
+test('@regression #3340 photo and video navigation preserves the mobile viewport', async ({
+  page,
+}, testInfo) => {
+  const { dialog, video } = await openVideo(page, 'duty');
+  await video.evaluate((element) => element.pause());
+  const videoStage = await dialog.locator('[data-attachment-preview-swipe-content]').boundingBox();
+  await dialog.locator('[data-attachment-preview-nav="prev"]:visible').click();
+  const viewer = page.getByRole('dialog', { name: /^Перегляд (зображення|відео)$/ });
+  const initialBounds = await viewer.boundingBox();
+  const initialStage = await viewer
+    .locator('[data-attachment-preview-swipe-content]')
+    .boundingBox();
+  const viewportTrace = await page.evaluateHandle(() => {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')!;
+    const changes: Array<string | null> = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.oldValue !== meta.content) changes.push(record.oldValue);
+      }
+    });
+    observer.observe(meta, {
+      attributes: true,
+      attributeFilter: ['content'],
+      attributeOldValue: true,
+    });
+    return { changes, observer };
+  });
+  for (let index = 0; index < 3; index++) {
+    await viewer.locator('[data-attachment-preview-nav="next"]:visible').click();
+    await expect
+      .poll(() => video.evaluate((element) => element.readyState))
+      .toBeGreaterThanOrEqual(2);
+    await video.evaluate((element) => element.pause());
+    expect(await viewer.boundingBox()).toEqual(initialBounds);
+    expect(await viewer.locator('[data-attachment-preview-swipe-content]').boundingBox()).toEqual(
+      videoStage,
+    );
+    await viewer.locator('[data-attachment-preview-nav="prev"]:visible').click();
+    await expect(viewer.locator('[data-image-preview-image]')).toBeVisible();
+    expect(await viewer.boundingBox()).toEqual(initialBounds);
+    expect(await viewer.locator('[data-attachment-preview-swipe-content]').boundingBox()).toEqual(
+      initialStage,
+    );
+  }
+  const changes = await viewportTrace.evaluate(({ changes }) => changes);
+  await testInfo.attach('viewport-changes', {
+    body: JSON.stringify(changes),
+    contentType: 'application/json',
+  });
+  await viewportTrace.evaluate(({ observer }) => observer.disconnect());
+  await viewportTrace.dispose();
+  expect(changes).toEqual([]);
+  await viewer.getByRole('button', { name: 'Закрити', exact: true }).click();
+  await expect(page.locator('meta[name="viewport"]')).not.toHaveAttribute(
+    'content',
+    /viewport-fit=cover/,
+  );
+});
+
 async function openVideo(
   page: Page,
   host: 'analysis' | 'duty',
@@ -728,6 +787,8 @@ for (const host of ['analysis', 'duty'] as const) {
   }, testInfo) => {
     const { dialog, video } = await openVideo(page, host);
     const original = await video.elementHandle();
+    const originalSrc = await video.getAttribute('src');
+    await expect(dialog.locator('[data-video-carousel]')).toBeVisible();
     await video.evaluate((element) => {
       element.pause();
       element.currentTime = 1;
@@ -742,6 +803,35 @@ for (const host of ['analysis', 'duty'] as const) {
     await expect(
       dialog.getByRole('button', { name: 'Вийти з повноекранного режиму', exact: true }),
     ).toBeVisible();
+    await expect(dialog.locator('[data-video-carousel]')).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: /^(Попереднє|Наступне)$/ })).toHaveCount(0);
+    await swipe(page, { x: 280, y: 300 }, { x: 80, y: 300 });
+    await expect(video).toHaveAttribute('src', originalSrc!);
+    await swipe(page, { x: 80, y: 300 }, { x: 280, y: 300 });
+    await expect(video).toHaveAttribute('src', originalSrc!);
+    await page.keyboard.press('ArrowRight');
+    await expect(video).toHaveAttribute('src', originalSrc!);
+    await page.keyboard.press('ArrowLeft');
+    await expect(video).toHaveAttribute('src', originalSrc!);
+    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    const screen = await page.context().newCDPSession(page);
+    await screen.send('Emulation.setDeviceMetricsOverride', {
+      width: 812,
+      height: 375,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenOrientation: { type: 'landscapePrimary', angle: 90 },
+    });
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(812);
+    await expect(dialog.getByRole('button', { name: /^(Попереднє|Наступне)$/ })).toHaveCount(0);
+    await screen.send('Emulation.setDeviceMetricsOverride', {
+      width: 375,
+      height: 812,
+      deviceScaleFactor: 1,
+      mobile: true,
+      screenOrientation: { type: 'portraitPrimary', angle: 0 },
+    });
+    await screen.detach();
     await page.touchscreen.tap(180, 300);
     await expect(dialog.locator('[data-mobile-video-controls]')).toHaveAttribute(
       'data-visible',
@@ -770,6 +860,9 @@ for (const host of ['analysis', 'duty'] as const) {
     await expect(video).toHaveJSProperty('playbackRate', 1.5);
     await expect(video).toHaveJSProperty('muted', true);
     await expect(video).toHaveJSProperty('paused', true);
+    await expect(dialog.locator('[data-video-carousel]')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Попереднє', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Перегляд зображення' })).toBeVisible();
   });
 }
 
@@ -807,6 +900,13 @@ test('@regression #3340 iPhone fullscreen uses native video controls and restore
   const original = await video.elementHandle();
   await video.evaluate((element) => element.pause());
   await dialog.getByRole('button', { name: 'На весь екран', exact: true }).click();
+  await expect(video).toHaveJSProperty('controls', true);
+  const originalSrc = await video.getAttribute('src');
+  await page.keyboard.press('ArrowRight');
+  await expect(video).toHaveAttribute('src', originalSrc!);
+  await expect(video).toHaveJSProperty('controls', true);
+  await page.keyboard.press('ArrowLeft');
+  await expect(video).toHaveAttribute('src', originalSrc!);
   await expect(video).toHaveJSProperty('controls', true);
   await video.evaluate((element) => {
     element.currentTime = 1;
@@ -979,7 +1079,7 @@ test('@regression #3340 portrait fullscreen header keeps clear of screen edges a
       .getByRole('button', { name: 'Попереднє', exact: true })
       .filter({ visible: true })
       .click();
-    await expect(viewportMeta).not.toHaveAttribute('content', /viewport-fit=cover/);
+    await expect(viewportMeta).toHaveAttribute('content', /viewport-fit=cover/);
     await page
       .getByRole('button', { name: 'Наступне', exact: true })
       .filter({ visible: true })

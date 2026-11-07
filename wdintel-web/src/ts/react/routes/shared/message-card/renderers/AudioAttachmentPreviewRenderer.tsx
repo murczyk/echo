@@ -63,7 +63,13 @@ export function AudioAttachmentPreviewRenderer({
         if (region === 'background') onClose();
       }}
     >
-      <div className="flex h-full w-full min-h-0 overflow-y-auto overscroll-contain touch-pan-y">
+      <div
+        className="flex h-full w-full min-h-0 overflow-y-auto overscroll-contain touch-pan-y"
+        style={{
+          paddingTop: 'var(--attachment-preview-content-inset, 0px)',
+          paddingBottom: 'var(--attachment-preview-content-bottom-inset, 0px)',
+        }}
+      >
         <div
           data-audio-preview-content
           className="m-auto flex w-[min(685px,calc(100%-32px))] flex-col py-[24px]"
@@ -107,6 +113,8 @@ export function AudioAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome="toggle"
+      headerInFlow={reportDraft != null && reportVisible}
       navigation={navigation}
       header={
         <MessageCardAttachmentPreviewHeader

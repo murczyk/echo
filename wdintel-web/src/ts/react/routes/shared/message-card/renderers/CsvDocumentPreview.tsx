@@ -95,7 +95,7 @@ export function CsvDocumentPreview({
 
   if (status === 'error') {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
+      <Box sx={{ p: 3, pt: 'var(--attachment-preview-content-inset, 24px)', textAlign: 'center' }}>
         <Typography variant="h6" sx={{ mb: 1, color: 'text.primary' }}>
           Помилка перегляду
         </Typography>

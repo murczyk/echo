@@ -332,6 +332,10 @@ export function ZipFilePreview({
   const stage = (
     <div
       className={`min-h-0 flex-1 overflow-auto p-3 ${loading ? 'grid place-items-center' : ''}`}
+      style={{
+        paddingTop: 'var(--attachment-preview-content-inset, 12px)',
+        paddingBottom: 'var(--attachment-preview-content-bottom-inset, 12px)',
+      }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       {loading ? (
@@ -391,6 +395,7 @@ export function ZipDocumentPreview({
   const downloadName = deriveDocumentDownloadName(document, navigation.index);
   return (
     <MessageCardAttachmentPreviewLayout
+      mobileChrome="toggle"
       navigation={navigation}
       swipeEnabled={false}
       header={
