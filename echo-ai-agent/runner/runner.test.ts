@@ -648,6 +648,36 @@ test("#4070 frequency summary accepts the filters its route supports", () => {
   );
 });
 
+test("#4070 frequency summary compaction keeps ranked rows and shows they are partial", () => {
+  const route = { skill: "frequency_summary", requestKind: "analysisPeriod" as const };
+  const value = {
+    rows: Array.from({ length: 128 }, (_, index) => ({
+      freq: `${index}`,
+      count: 1000 - index,
+      callsigns: Array.from({ length: 32 }, (_, item) => `позивний ${item}`),
+      units: ["підрозділ"],
+      locations: [],
+    })),
+    total_rows: 11636,
+    row_values_truncated: false,
+  };
+
+  const tiny = JSON.parse(compactToolResponse(route, value, 1));
+  assert.equal(tiny.rows.length, 1);
+  assert.equal(tiny.rows[0].count, 1000);
+  assert.equal(tiny.total_rows, 11636);
+  assert.equal(tiny.row_values_truncated, false);
+
+  const bounded = JSON.parse(compactToolResponse(route, value, 128, 3000));
+  assert.ok(bounded.rows.length >= 1 && bounded.rows.length < 128);
+  assert.deepEqual(bounded.rows[0].units, ["підрозділ"]);
+  assert.equal(bounded.rows[0].callsigns.length, 4);
+  assert.equal(bounded.rows[0].count, 1000);
+  assert.equal(bounded.total_rows, 11636);
+  assert.equal(bounded.row_values_truncated, true);
+  assert.ok(JSON.stringify(bounded).length <= 3000);
+});
+
 test("passes unit filters to inbox requests and validates them", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   const params = {
@@ -1747,6 +1777,11 @@ test("discards a truncated or empty citation repair", () => {
 test("#3064 map tool errors get specific labels while route errors stay generic", () => {
   const result = (text: string) => ({ content: [{ type: "text", text }] });
   assert.equal(toolErrorReason(result("Echo response is too large")), "response_too_large");
+  assert.equal(toolErrorReason(result("The operation was aborted due to timeout")), "timeout");
+  assert.equal(toolErrorReason(result("Echo redirects are not allowed")), "echo_redirect");
+  assert.equal(toolErrorReason(result("Unexpected end of JSON input")), "invalid_response");
+  assert.equal(toolErrorReason(result("terminated")), "network_error");
+  assert.equal(toolErrorReason(result("anything")), "tool_error");
   assert.equal(toolErrorSummary("echo_inbox_messages", result("anything")), "Не вдалося завантажити дані за вказаними параметрами.");
   assert.equal(toolErrorSummary("echo_map_edit", result('Невідома операція «retype». Допустимі op: add, setSidc. Приклад: {"sidc":"10031000001211000000"}')), "Некоректні параметри зміни мапи");
   assert.equal(toolErrorSummary("echo_map_edit", result("Echo returned HTTP 409: Мапа змінилася.")), "Мапа змінилася; потрібно перечитати її");

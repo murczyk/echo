@@ -14268,7 +14268,7 @@ fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
     ));
     rows.push(row(9997, 1_000, 1));
 
-    let summary = rank_ai_frequency_summary(SummaryTableFreq { rows });
+    let summary = rank_ai_frequency_summary(SummaryTableFreq { rows }).unwrap();
 
     assert_eq!(
         summary.total_rows,
@@ -14286,4 +14286,22 @@ fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
         .rows
         .windows(2)
         .all(|pair| pair[0].count >= pair[1].count));
+
+    let long = "підрозділ ".repeat(40);
+    let rows = (0..AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS)
+        .map(|index| SummaryTableFreqRow {
+            callsigns: vec![long.clone(); 32],
+            units: vec![long.clone(); 32],
+            locations: vec![long.clone(); 32],
+            ..row(index, 1, 0)
+        })
+        .collect::<Vec<_>>();
+    let summary = rank_ai_frequency_summary(SummaryTableFreq { rows }).unwrap();
+    assert_eq!(summary.total_rows, AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    assert!(!summary.rows.is_empty());
+    assert!(summary.rows.len() < AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    assert!(
+        serde_json::to_vec(&summary).unwrap().len()
+            <= AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES + 1024
+    );
 }

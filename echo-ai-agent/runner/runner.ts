@@ -124,6 +124,8 @@ const TOOL_RESPONSE_MAX_CHARACTERS = 96_000;
 const TOOL_CONTEXT_MAX_CHARACTERS = 192_000;
 const TOOL_CONTEXT_CHARACTERS_PER_TOKEN = 4;
 const TOOL_DEFAULT_MAX_ITEMS = 64;
+const FREQUENCY_SUMMARY_LISTS = ["callsigns", "units", "locations"];
+const FREQUENCY_SUMMARY_LIST_LIMITS = [32, 16, 8, 4];
 const PROVIDER_ID = "echo-vllm";
 const VLLM_BASE_URL = "http://127.0.0.1:18000/v1";
 const PROVIDER_GATEWAY_PATH = "/api/ai-agent/provider/v1";
@@ -2245,6 +2247,40 @@ function withToolTruncation(
   return { items: value, _echoTruncation: metadata };
 }
 
+function frequencySummaryDocument(
+  summary: JsonObject,
+  rows: JsonObject[],
+  listLimit: number,
+): JsonObject {
+  const longer = (row: JsonObject, name: string) => (row[name] as unknown[]).length > listLimit;
+  const shortened = (row: JsonObject) => Object.fromEntries(
+    FREQUENCY_SUMMARY_LISTS.map((name) => [name, (row[name] as unknown[]).slice(0, listLimit)]),
+  );
+  return {
+    rows: rows.map((row) => ({ ...row, ...shortened(row) })),
+    total_rows: summary.total_rows,
+    row_values_truncated: Boolean(summary.row_values_truncated) ||
+      rows.some((row) => FREQUENCY_SUMMARY_LISTS.some((name) => longer(row, name))),
+  };
+}
+
+/** Rows are ranked by activity, so lists shrink before a row is dropped, and
+ * every field stays so a partial result cannot pass as complete. */
+function compactFrequencySummary(value: unknown, maxItems: number, maxCharacters: number): string {
+  const summary = value as JsonObject;
+  const rows = (summary.rows as JsonObject[]).slice(0, maxItems);
+  for (const listLimit of FREQUENCY_SUMMARY_LIST_LIMITS) {
+    const encoded = JSON.stringify(frequencySummaryDocument(summary, rows, listLimit));
+    if (encoded.length <= maxCharacters) return encoded;
+  }
+  const shortest = FREQUENCY_SUMMARY_LIST_LIMITS.at(-1)!;
+  for (let count = rows.length - 1; count >= 1; count -= 1) {
+    const encoded = JSON.stringify(frequencySummaryDocument(summary, rows.slice(0, count), shortest));
+    if (encoded.length <= maxCharacters) return encoded;
+  }
+  return "{}";
+}
+
 export function compactToolResponse(
   route: Pick<SkillDefinition, "skill" | "requestKind">,
   value: unknown,
@@ -2259,6 +2295,7 @@ export function compactToolResponse(
   ) {
     return compactMessageBearingResponse(route.skill, value, maxCharacters);
   }
+  if (route.skill === "frequency_summary") return compactFrequencySummary(value, maxItems, maxCharacters);
   if (route.skill === GROUP_LOOKUP_SKILL) return compactGroupCatalog(value, maxCharacters);
   if (route.requestKind === "unitLookup") return compactUnitLookup(value, maxCharacters);
   if (route.requestKind === "deviceSearch" || route.requestKind === "positionLookup") return compactDeviceEvidence(value, maxCharacters);
@@ -3189,6 +3226,14 @@ function turnAssistantText(messages: unknown[]): string {
 }
 
 const ROUTE_TOOL_ERROR = "Не вдалося завантажити дані за вказаними параметрами.";
+// Only messages the runner or platform produces, so a reason never rests on
+// text that came from a tool's data.
+const ROUTE_FAILURE_REASONS: Array<[RegExp, string]> = [
+  [/^The operation was aborted due to timeout$/, "timeout"],
+  [/^Echo response is too large$/, "response_too_large"],
+  [/^Echo redirects are not allowed$/, "echo_redirect"],
+  [/^(Unexpected|Unterminated|Expected|Bad) .*JSON/s, "invalid_response"],
+];
 // Map tools report a fixed category, never the raw error text or payload.
 const MAP_TOOL_ERRORS: Array<[RegExp, string]> = [
   [/HTTP 409|змінилася/i, "Мапа змінилася; потрібно перечитати її"],
@@ -3232,9 +3277,8 @@ export function toolErrorReason(result: unknown): string {
     return "invalid_arguments";
   if (/^(Operation aborted|This operation was aborted)$/.test(text))
     return "cancelled";
-  if (/^fetch failed$/.test(text)) return "network_error";
-  if (text === RESPONSE_TOO_LARGE) return "response_too_large";
-  return "tool_error";
+  if (/^(fetch failed|terminated)$/.test(text)) return "network_error";
+  return ROUTE_FAILURE_REASONS.find(([pattern]) => pattern.test(text))?.[1] ?? "tool_error";
 }
 
 const VALIDATION_KINDS: readonly [RegExp, string][] = [

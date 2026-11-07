@@ -460,7 +460,8 @@ pub fn tool_diagnostic_level(diagnostic: &Value) -> log::Level {
     match diagnostic.get("reason").and_then(Value::as_str) {
         Some(
             "tool_error" | "network_error" | "map_not_published"
-            | "response_too_large",
+            | "response_too_large" | "timeout" | "echo_redirect"
+            | "invalid_response",
         ) => log::Level::Error,
         Some("http_error") if status.is_none_or(|code| code >= 500) => {
             log::Level::Error
@@ -558,6 +559,9 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
             | "tool_error"
             | "map_not_published"
             | "response_too_large"
+            | "timeout"
+            | "echo_redirect"
+            | "invalid_response"
     ) {
         return None;
     }
@@ -1064,6 +1068,9 @@ mod tests {
             "network_error",
             "map_not_published",
             "response_too_large",
+            "timeout",
+            "echo_redirect",
+            "invalid_response",
         ] {
             assert_eq!(
                 level(serde_json::json!({"reason": reason})),

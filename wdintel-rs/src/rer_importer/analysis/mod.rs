@@ -4050,10 +4050,12 @@ pub async fn ai_frequency_summary(
     )
     .await
     .c(h!())?;
-    Ok(Json(rank_ai_frequency_summary(summary)))
+    Ok(Json(rank_ai_frequency_summary(summary).c(h!())?))
 }
 
-fn rank_ai_frequency_summary(summary: SummaryTableFreq) -> AiFrequencySummary {
+fn rank_ai_frequency_summary(
+    summary: SummaryTableFreq,
+) -> anyhow::Result<AiFrequencySummary> {
     let mut rows = summary.rows;
     let total_rows = rows.len();
     rows.sort_by(|left, right| {
@@ -4070,11 +4072,28 @@ fn rank_ai_frequency_summary(summary: SummaryTableFreq) -> AiFrequencySummary {
                 values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
             })
     });
-    AiFrequencySummary {
-        rows: rows.into_iter().map(ai_frequency_summary_row).collect(),
+    let rows = rows.into_iter().map(ai_frequency_summary_row);
+    Ok(AiFrequencySummary {
+        rows: ai_frequency_rows_within_budget(rows).c(h!())?,
         total_rows,
         row_values_truncated,
+    })
+}
+
+fn ai_frequency_rows_within_budget(
+    rows: impl Iterator<Item = AiFrequencySummaryRow>,
+) -> anyhow::Result<Vec<AiFrequencySummaryRow>> {
+    let mut remaining = AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES;
+    let mut kept = Vec::new();
+    for row in rows {
+        let bytes = serde_json::to_vec(&row).c(h!())?.len();
+        if bytes > remaining {
+            break;
+        }
+        remaining -= bytes;
+        kept.push(row);
     }
+    Ok(kept)
 }
 
 fn ai_frequency_summary_row(row: SummaryTableFreqRow) -> AiFrequencySummaryRow {
