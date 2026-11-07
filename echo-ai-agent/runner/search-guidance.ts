@@ -12,9 +12,9 @@ export const FREQUENCY_SUMMARY_DESCRIPTION = `Read per-frequency activity for a 
 
 export const FREQUENCY_SUMMARY_FREQUENCIES_DESCRIPTION = `${FREQUENCY_FORMAT} Several frequencies are alternatives (OR); ANDed with selectedCallsigns and units.`;
 
-export const FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION = `Unit IDs from unit lookup. Matches only messages linked to those units through reference networks; messages attributed to a unit only by their header need selectedUnits. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with selectedFrequencies and selectedCallsigns.`;
+export const FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION = `Unit IDs from unit lookup. Matches messages linked to those units through a reference network or a parsed message header; headers that never resolved to a unit need selectedUnits. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with selectedFrequencies and selectedCallsigns.`;
 
-export const FREQUENCY_SUMMARY_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover header-only attribution (alternatives, OR). ANDed with selectedFrequencies and selectedCallsigns.`;
+export const FREQUENCY_SUMMARY_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover headers that never resolved to a unit (alternatives, OR). ANDed with selectedFrequencies and selectedCallsigns.`;
 
 export const UNIT_LOOKUP_DESCRIPTION = `Find known units by designation and return their IDs and hierarchy. Use the IDs as selectedUnitIds in inbox and frequency summary requests. Spacing and hyphen variants are tolerated; follow nextCursor (afterUnitId) for further matches, because a formation may consist of several unit rows and each ID matches only itself; if several units match, compare their hierarchy to the user's wording before choosing, and mention the ambiguity.`;
 
