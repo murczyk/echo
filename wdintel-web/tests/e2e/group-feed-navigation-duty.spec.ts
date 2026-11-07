@@ -4,7 +4,11 @@ import type { InboxMessage } from '../../src/Bindings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
-import { emptyNetworksListResponse, emptyUnitsListResponse } from './fixture-responses';
+import {
+  emptyNetworksListResponse,
+  emptyUnitsListResponse,
+  systemSettingsCurrentResponse,
+} from './fixture-responses';
 
 const groups = [
   { masterKey: 'group-a', name: 'Group Alpha', colorKey: 'blue' },
@@ -62,6 +66,31 @@ async function installGroupNavigationMocks(page: Page) {
 }
 
 test.describe('Duty group feed navigation', () => {
+  test('@regression hides the selected-groups island when the system setting is off', async ({
+    page,
+  }) => {
+    await installGroupNavigationMocks(page);
+    await page.route('**/api/system-settings/current', (route) =>
+      route.fulfill({
+        json: systemSettingsCurrentResponse({ dutySelectedGroupsEnabled: false }),
+      }),
+    );
+    await page.route('**/api/sigint/units', (route) =>
+      route.fulfill({ json: emptyUnitsListResponse() }),
+    );
+    await page.route('**/api/sigint/network-list', (route) =>
+      route.fulfill({ json: emptyNetworksListResponse() }),
+    );
+    const state = {
+      messageFeeds: [['mf-island-off', {}, { groupScopeMasterKey: 'group-a' }]],
+    };
+    await page.goto(`/rer-duty-neo?state=${encodeURIComponent(JSON.stringify(state))}`);
+    const column = page.locator('[data-duty-feed-column]').first();
+    await expect(column.locator('[data-duty-message-id]').first()).toBeVisible();
+    await expect(column.getByRole('button', { name: 'Розгорнути список груп' })).toBeVisible();
+    await expect(column.locator('[data-group-island]')).toHaveCount(0);
+  });
+
   test('@regression #3324 keeps the group island below open feed panels and above messages', async ({
     page,
   }, testInfo) => {

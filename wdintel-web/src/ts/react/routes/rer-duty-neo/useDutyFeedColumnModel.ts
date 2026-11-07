@@ -30,6 +30,7 @@ export type DutyFeedColumnModelDeps = {
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
   hideNetworks: boolean;
+  dutySelectedGroupsEnabled: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
@@ -431,6 +432,7 @@ export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
     filterPanel: buildFeedFilterPanel(feed, deps),
     groupNavigation: {
       scope: groupFilterScope(feed.filter.groupsSelected ?? []),
+      showSelectedGroups: deps.dutySelectedGroupsEnabled,
       groupName: feed.groupScopeMasterKey
         ? (deps.feeds.groupInfos[feed.groupScopeMasterKey]?.name ?? feed.groupScopeMasterKey)
         : 'Всі групи',

@@ -16,6 +16,7 @@ mod m20261031_155820_api_sender;
 mod m20261101_151245_ai_agent_uploads;
 mod m20261104_165252_rer_report_unit_selection;
 mod m20261105_212108_iggy_group_refresh_queue;
+mod m20261107_175019_duty_selected_groups_flag;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1232,6 +1233,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_083000_group_message_requirements::Migration),
             Box::new(m20261104_165252_rer_report_unit_selection::Migration),
             Box::new(m20261105_212108_iggy_group_refresh_queue::Migration),
+            Box::new(m20261107_175019_duty_selected_groups_flag::Migration),
         ]
     }
 }

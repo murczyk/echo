@@ -575,6 +575,7 @@ function systemSettings() {
     hide_networks: false,
     disable_bot_tags: false,
     duty_exclude_menu_enabled: true,
+    duty_selected_groups_enabled: true,
     analysis_aor_filter_enabled: false,
     ai_position_highlights_enabled: false,
     important_notify_all_enabled: true,

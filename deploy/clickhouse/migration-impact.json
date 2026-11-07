@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261107_175019_duty_selected_groups_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261105_212108_iggy_group_refresh_queue": { "changes": [{ "table": "public.api_integration_iggy_group_refresh", "strategy": "excluded" }] },
     "echo:m20261104_165252_rer_report_unit_selection": { "changes": [{ "table": "public.sigint_unit_rer_report_metadata", "strategy": "excluded" }] },
     "echo:m20261104_083000_group_message_requirements": {

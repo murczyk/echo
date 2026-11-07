@@ -26,6 +26,7 @@ export type RerDutyPageSettings = {
   hideNetworks: boolean;
   networkVisibilityReady: boolean;
   dutyExcludeMenuEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   collapseMediaPreviews: boolean;
   largeMediaPreviews: boolean;
   largeMessageCardText: boolean;
@@ -57,6 +58,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [hideBotTags, setHideBotTags] = useState(false);
   const [hideNetworks, setHideNetworks] = useState(false);
   const [dutyExcludeMenuEnabled, setDutyExcludeMenuEnabled] = useState(false);
+  const [dutySelectedGroupsEnabled, setDutySelectedGroupsEnabled] = useState(false);
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
@@ -163,6 +165,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setHideBotTags(settings.disableBotTags ?? false);
         setHideNetworks(settings.hideNetworks ?? false);
         setDutyExcludeMenuEnabled(settings.dutyExcludeMenuEnabled ?? true);
+        setDutySelectedGroupsEnabled(settings.dutySelectedGroupsEnabled ?? true);
         setDevicesSettingsStatus('success');
       })
       .catch((error) => {
@@ -171,6 +174,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setAudioTranscriptionEnabled(false);
         setHideBotTags(false);
         setHideNetworks(false);
+        setDutySelectedGroupsEnabled(true);
         setDevicesSettingsStatus('error');
         setDeviceAccessError(error instanceof Error ? error.message : String(error));
       });
@@ -223,6 +227,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     hideNetworks,
     networkVisibilityReady: devicesSettingsStatus === 'success',
     dutyExcludeMenuEnabled,
+    dutySelectedGroupsEnabled,
     collapseMediaPreviews,
     largeMediaPreviews,
     largeMessageCardText,
