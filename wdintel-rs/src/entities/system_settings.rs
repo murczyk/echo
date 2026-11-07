@@ -67,6 +67,7 @@ pub struct Model {
     pub report_global_concurrency: Option<i32>,
     pub report_kind_concurrency: Option<i32>,
     pub report_etalonka_concurrency: Option<i32>,
+    pub duty_selected_groups_enabled: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

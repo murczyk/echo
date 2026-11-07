@@ -60,6 +60,7 @@ type SystemSettingsForm = {
   disableBotTags: boolean;
   hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
@@ -109,6 +110,7 @@ type SystemSettingsPayload = {
   disableBotTags: boolean;
   hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
@@ -158,6 +160,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   disableBotTags: false,
   hideNetworks: false,
   dutyExcludeMenuEnabled: true,
+  dutySelectedGroupsEnabled: true,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
   importantNotifyAllEnabled: true,
@@ -257,6 +260,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     disableBotTags: item?.disableBotTags ?? false,
     hideNetworks: item?.hideNetworks ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
+    dutySelectedGroupsEnabled: item?.dutySelectedGroupsEnabled ?? true,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
     importantNotifyAllEnabled: item?.importantNotifyAllEnabled ?? true,
@@ -309,6 +313,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.disableBotTags === b.disableBotTags &&
     a.hideNetworks === b.hideNetworks &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
+    a.dutySelectedGroupsEnabled === b.dutySelectedGroupsEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
     a.importantNotifyAllEnabled === b.importantNotifyAllEnabled &&
@@ -417,6 +422,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     disableBotTags: form.disableBotTags,
     hideNetworks: form.hideNetworks,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
+    dutySelectedGroupsEnabled: form.dutySelectedGroupsEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
     importantNotifyAllEnabled: form.importantNotifyAllEnabled,
@@ -810,6 +816,15 @@ function DutySettingsSection({
           />
         }
         label="Меню «—» (мінус) в оперативному"
+      />
+      <FormControlLabel
+        control={
+          <Switch
+            checked={form.dutySelectedGroupsEnabled}
+            onChange={(_, checked) => patchForm({ dutySelectedGroupsEnabled: checked })}
+          />
+        }
+        label="Відображати обрані групи в оперативному"
       />
       <FormControlLabel
         control={
@@ -1386,6 +1401,7 @@ export function AdminSystemSettingsNeoPage() {
       disableBotTags: payload.disableBotTags,
       hideNetworks: payload.hideNetworks,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
+      dutySelectedGroupsEnabled: payload.dutySelectedGroupsEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
       importantNotifyAllEnabled: payload.importantNotifyAllEnabled,
