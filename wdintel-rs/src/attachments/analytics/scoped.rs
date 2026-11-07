@@ -110,7 +110,11 @@ struct ChangedTerms<'a> {
 }
 
 fn requires_source(reason: &str) -> anyhow::Result<()> {
-    log::info!(target: "attachment_search_coverage", "reason={reason}");
+    if reason == "recent_message_change" {
+        log::info!(target: "attachment_search_coverage", "reason={reason}");
+    } else {
+        log::warn!(target: "attachment_search_coverage", "reason={reason}");
+    }
     Err(AttachmentSearchCoverageError).c(h!())
 }
 
