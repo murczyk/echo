@@ -94,7 +94,9 @@ async fn start_session(
 mod tests {
     use super::*;
     use crate::entities::login;
-    use crate::functest::tests::{cleanup, mk_login, mk_test_identity};
+    use crate::functest::tests::{
+        cleanup, mk_login, mk_organism, mk_test_identity,
+    };
     use actix_identity::Identity;
     use actix_session::Session;
     use actix_web::test::read_body;
@@ -174,16 +176,18 @@ mod tests {
     #[tokio::test]
     async fn logins_that_cannot_sign_in_get_no_cookie() {
         let env = cleanup().await.unwrap();
-        let deleted = mk_login(
-            &env.dbx,
-            login::ActiveModel {
-                deleted: Set(true),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+        let organism = mk_organism(&env.dbx, Default::default()).await.unwrap();
+        let login_in_organism = |deleted| login::ActiveModel {
+            organism_id: Set(Some(organism.id)),
+            deleted: Set(deleted),
+            ..Default::default()
+        };
+        let active =
+            mk_login(&env.dbx, login_in_organism(false)).await.unwrap();
+        let deleted =
+            mk_login(&env.dbx, login_in_organism(true)).await.unwrap();
 
+        assert!(issued_cookie(env.clone(), &active.login).await.is_ok());
         assert!(issued_cookie(env.clone(), &deleted.login).await.is_err());
         assert!(issued_cookie(env, "no-such-login").await.is_err());
     }

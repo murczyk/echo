@@ -8,11 +8,16 @@ can be checked in a real browser without a password or a pasted cookie:
 ```bash
 umask 077
 ssh echo-cbr-staging 'sudo wdintel-rs --mode=live issue-session --login ziggy' \
-  2>/dev/null | tail -n 1 > "$scratch/session-cookie"
+  | grep '^id=' > "$scratch/session-cookie"
 ```
 
-The output is one `id=<value>` line. The command runs the server's real login
-behind its real session middleware, so the session behaves like a normal one.
+The cookie is the one `id=<value>` line on stdout. If `grep` finds none, the
+command failed: read its output instead of using the file.
+
+The command starts the session through the server's real login code and session
+middleware, so it behaves like a normal session once issued. It skips the
+password and 2FA, which is why it only runs on staging. Disabled and deleted
+accounts are still refused.
 
 Use it with `curl -b "$(cat "$scratch/session-cookie")"`, or in Playwright:
 
