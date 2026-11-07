@@ -203,6 +203,7 @@ function buildFeedFilterPanel(
       locationsList,
       unitsList: Object.values(unitsMap),
       unitStatsReq: deps.feeds.buildReqForFeed(feed, { loadLatest: true }),
+      unitStatsRefreshIntervalMs: deps.feeds.pollIntervalMs,
       unitHierarchy: deps.feeds.unitHierarchy,
       persistentUnitFilterValues,
     },

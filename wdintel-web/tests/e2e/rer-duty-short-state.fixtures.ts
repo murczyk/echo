@@ -373,7 +373,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/rer-importer/get-inbox-unit-stats') {
-      await fulfillJson(route, { units: [] });
+      await fulfillJson(route, { units: [], options: [] });
       return;
     }
 

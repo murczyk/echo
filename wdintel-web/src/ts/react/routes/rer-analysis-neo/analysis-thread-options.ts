@@ -9,8 +9,15 @@ export function analysisThreadOptions(
   tags: Record<number, Tag>,
   units: Record<number, Unit>,
 ): AnalysisFilterOptions {
-  const counts = new Map<keyof AnalysisFilterOptions, Map<string, AnalysisFilterOption>>();
-  const add = (section: keyof AnalysisFilterOptions, value: string | null, label = value) => {
+  const counts = new Map<
+    Exclude<keyof AnalysisFilterOptions, 'unitParentCount'>,
+    Map<string, AnalysisFilterOption>
+  >();
+  const add = (
+    section: Exclude<keyof AnalysisFilterOptions, 'unitParentCount'>,
+    value: string | null,
+    label = value,
+  ) => {
     if (value == null || value === '') return;
     const options = counts.get(section) ?? new Map();
     counts.set(section, options);

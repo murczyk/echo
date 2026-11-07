@@ -5713,6 +5713,13 @@ export type TagStatsRsp = {
 
 export type UnitStatsRsp = {
   units: Array<AnalysisStatsUnit>;
+  options: Array<UnitStatsOption>;
+};
+
+export type UnitStatsOption = {
+  value: string;
+  label: string;
+  count: number;
 };
 
 export type LocationStatsRsp = {

@@ -1304,6 +1304,16 @@ pub struct MetadataStatsRsp {
 )]
 pub struct UnitStatsRsp {
     pub units: Vec<AnalysisStatsUnit>,
+    pub options: Vec<UnitStatsOption>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitStatsOption {
+    pub value: String,
+    pub label: String,
+    pub count: i64,
 }
 
 #[derive(

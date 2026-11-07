@@ -14766,6 +14766,7 @@ tagStatsRspEncoder struct =
 
 type alias UnitStatsRsp =
     { units : List (AnalysisStatsUnit)
+    , options : List (UnitStatsOption)
     }
 
 
@@ -14773,6 +14774,23 @@ unitStatsRspEncoder : UnitStatsRsp -> Json.Encode.Value
 unitStatsRspEncoder struct =
     Json.Encode.object
         [ ( "units", (Json.Encode.list (analysisStatsUnitEncoder)) struct.units )
+        , ( "options", (Json.Encode.list (unitStatsOptionEncoder)) struct.options )
+        ]
+
+
+type alias UnitStatsOption =
+    { value : String
+    , label : String
+    , count : Int
+    }
+
+
+unitStatsOptionEncoder : UnitStatsOption -> Json.Encode.Value
+unitStatsOptionEncoder struct =
+    Json.Encode.object
+        [ ( "value", (Json.Encode.string) struct.value )
+        , ( "label", (Json.Encode.string) struct.label )
+        , ( "count", (Json.Encode.int) struct.count )
         ]
 
 
@@ -30210,6 +30228,15 @@ unitStatsRspDecoder : Json.Decode.Decoder UnitStatsRsp
 unitStatsRspDecoder =
     Json.Decode.succeed UnitStatsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (analysisStatsUnitDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "options" (Json.Decode.list (unitStatsOptionDecoder))))
+
+
+unitStatsOptionDecoder : Json.Decode.Decoder UnitStatsOption
+unitStatsOptionDecoder =
+    Json.Decode.succeed UnitStatsOption
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "value" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "label" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 
 locationStatsRspDecoder : Json.Decode.Decoder LocationStatsRsp

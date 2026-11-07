@@ -18,12 +18,19 @@ requests. Duty's other feeds can continue loading.
 Parent counts add the counts of their own rows and descendants. Leaf counts
 use distinct message IDs, including when a message has multiple link kinds.
 A message linked to two different descendant units contributes to both units'
-counts; the parent shows their sum. Both pages load the hierarchy automatically
-and aggregate parent counts locally, without a checkbox or hierarchy progress
-bar. Duty fetches leaf counts automatically and coalesces inbox-change refreshes.
+counts; the parent shows their sum. Both pages load the hierarchy automatically, without a checkbox or hierarchy
+progress bar. The Rust backend enriches leaf counts with parents from the Redis
+hierarchy cache and returns ready-to-use filter options. Duty count refreshes
+coalesce inbox changes, wait for in-flight requests, and respect the configured
+poll interval after completion. Changing the filter scope cancels obsolete work;
+inbox changes do not interrupt an active count.
 Its unit facet preserves other include/exclude filters while omitting unit filters.
 Analytics history and the PostgreSQL recent tail use disjoint creation-time
-ranges, with PostgreSQL fallback if analytics fails.
+ranges, with PostgreSQL fallback if analytics fails. Unbounded Duty fallback
+counts reuse the initial-load adaptive 14-day cutoff for high traffic, unit
+filters, or unavailable traffic statistics. Explicit date ranges are preserved.
+Concrete descendant IDs are filtered in OR-connected IN lists of at most 10,000
+IDs; excluded units negate the complete union of those lists.
 
 Saved Analysis filters retain the original selection in optional
 `unit_filter` metadata alongside the concrete request snapshot. Older clients
@@ -47,6 +54,8 @@ its creation-time ordering and unread-state contract. Explicit Duty reloads and
 reconciliation also wait until selected and excluded parents can expand.
 Analysis direct-message and reply windows wait for the same hierarchy and never
 turn an unresolved request into an unrestricted around-message request.
+Thread-only facets derived from already-loaded messages retain local parent
+enrichment; normal backend facet responses arrive enriched and skip that work.
 
 Regression coverage:
 
