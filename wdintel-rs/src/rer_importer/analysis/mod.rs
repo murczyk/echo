@@ -4065,13 +4065,7 @@ fn rank_ai_frequency_summary(
             .then_with(|| left.freq.cmp(&right.freq))
     });
     rows.truncate(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
-    let row_values_truncated = rows.iter().any(|row| {
-        [&row.callsigns, &row.units, &row.locations]
-            .iter()
-            .any(|values| {
-                values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
-            })
-    });
+    let row_values_truncated = rows.iter().any(ai_frequency_row_exceeds_limits);
     let rows = rows.into_iter().map(ai_frequency_summary_row);
     Ok(AiFrequencySummary {
         rows: ai_frequency_rows_within_budget(rows).c(h!())?,
@@ -4096,10 +4090,30 @@ fn ai_frequency_rows_within_budget(
     Ok(kept)
 }
 
+fn ai_frequency_row_exceeds_limits(row: &SummaryTableFreqRow) -> bool {
+    [&row.callsigns, &row.units, &row.locations]
+        .iter()
+        .any(|values| {
+            values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+                || values.iter().any(|value| {
+                    value.chars().count()
+                        > AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+                })
+        })
+}
+
 fn ai_frequency_summary_row(row: SummaryTableFreqRow) -> AiFrequencySummaryRow {
-    let bounded = |mut values: Vec<String>| {
-        values.truncate(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES);
+    let bounded = |values: Vec<String>| {
         values
+            .into_iter()
+            .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES)
+            .map(|value| {
+                value
+                    .chars()
+                    .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS)
+                    .collect()
+            })
+            .collect()
     };
     AiFrequencySummaryRow {
         freq: row.freq,

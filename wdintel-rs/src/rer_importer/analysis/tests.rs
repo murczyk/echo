@@ -14304,4 +14304,19 @@ fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
         serde_json::to_vec(&summary).unwrap().len()
             <= AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES + 1024
     );
+
+    let oversized = SummaryTableFreqRow {
+        units: vec!["п".repeat(17_000); 32],
+        ..row(1, 1, 0)
+    };
+    let summary = rank_ai_frequency_summary(SummaryTableFreq {
+        rows: vec![oversized],
+    })
+    .unwrap();
+    assert_eq!(summary.rows.len(), 1);
+    assert_eq!(
+        summary.rows[0].units[0].chars().count(),
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+    );
+    assert!(summary.row_values_truncated);
 }
