@@ -115,6 +115,7 @@ async fn load_search_coverage(
         .c(h!())?
         .c(h!())?;
     if !ready.try_get::<bool>("", "ready").c(h!())? {
+        log::warn!(target: "attachment_search_coverage", "reason=coverage_unavailable");
         return Err(AttachmentSearchCoverageError).c(h!());
     }
     let coverage = analytics
@@ -125,6 +126,7 @@ async fn load_search_coverage(
         .await
         .c(h!())?;
     let Some(coverage) = coverage else {
+        log::warn!(target: "attachment_search_coverage", "reason=coverage_unavailable");
         return Err(AttachmentSearchCoverageError).c(h!());
     };
     Ok(AttachmentSearchCoverage {

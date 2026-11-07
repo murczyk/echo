@@ -10876,6 +10876,45 @@ fn analytics_failure_reason_separates_local_source_saturation_3978() {
     );
 }
 
+fn attachment_coverage_error() -> AppError {
+    use crate::types::ShortContext;
+    let coverage: anyhow::Result<()> =
+        Err(crate::attachments::analytics::AttachmentSearchCoverageError)
+            .c(h!());
+    coverage.c(h!()).unwrap_err().into()
+}
+
+#[tokio::test]
+async fn count_stats_attachment_coverage_miss_retries_postgres() {
+    // 0 is a closed circuit; 1 is an expired cooldown, i.e. a half-open probe.
+    for initial_state in [0, 1] {
+        let retry_state = AtomicU64::new(initial_state);
+        let retry_attempt = analytics_retry_attempt(&retry_state).unwrap();
+        let postgres_attempts = std::sync::atomic::AtomicUsize::new(0);
+        let response = with_count_stats_analytics_fallback(
+            Some(async { Err::<&str, AppError>(attachment_coverage_error()) }),
+            None,
+            core::time::Duration::from_secs(1),
+            async {
+                postgres_attempts
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok::<_, AppError>("postgres")
+            },
+            "circuit_open",
+            Some(retry_attempt),
+            core::time::Duration::from_secs(30),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response, "postgres");
+        assert_eq!(
+            postgres_attempts.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(retry_state.load(std::sync::atomic::Ordering::Acquire), 0);
+    }
+}
+
 #[tokio::test]
 async fn count_stats_local_source_rejection_keeps_circuit_closed_3978() {
     // 0 is a closed circuit; 1 is an expired cooldown, i.e. a half-open probe.
