@@ -259,7 +259,8 @@ deleted directly, keeping cleanup seeks bounded even with a large expired backlo
 Both tracking tables stay excluded from CDC.
 History coverage and replication health checks remain required. Coverage logs
 distinguish `tracking_incomplete`, `retention_window`, `history_incomplete`,
-`change_limit` and `recent_message_change`.
+`change_limit` and `recent_message_change`. `recent_message_change` is expected
+routing and logs at INFO; the other reasons log at WARN.
 
 Body, filename, attachment-content, frequency, UID, prefix, quoted, and negative
 search semantics are unchanged. Existing freshness checks, source tails,
