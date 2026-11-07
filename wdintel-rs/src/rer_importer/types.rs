@@ -2017,6 +2017,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected_omitted_keys = BTreeSet::from([
             "ai_important".to_string(),
+            "important_by_my_organism".to_string(),
             "callsign_tokens".to_string(),
             "created_at".to_string(),
             "created_at_order".to_string(),
