@@ -88,6 +88,9 @@ fn model_to_dto(
         message_auto_parse_enabled: m
             .message_auto_parse_enabled
             .unwrap_or_else(types::default_message_auto_parse_enabled),
+        minimal_report_window_enabled: m
+            .minimal_report_window_enabled
+            .unwrap_or(false),
     }
 }
 
@@ -115,6 +118,10 @@ fn preserve_omitted_compatibility_fields(
     if body.get("messageAutoParseEnabled").is_none() {
         incoming.message_auto_parse_enabled =
             existing.message_auto_parse_enabled;
+    }
+    if body.get("minimalReportWindowEnabled").is_none() {
+        incoming.minimal_report_window_enabled =
+            existing.minimal_report_window_enabled;
     }
 }
 
@@ -157,7 +164,8 @@ pub async fn user_settings_put(
         || body.get("largeMediaPreviews").is_none()
         || body.get("messageSortBy").is_none()
         || body.get("messageAutoParseEnabled").is_none()
-        || body.get("aiPositionHighlightsEnabled").is_none();
+        || body.get("aiPositionHighlightsEnabled").is_none()
+        || body.get("minimalReportWindowEnabled").is_none();
     let mut dto: UserDutySettingsDto =
         serde_json::from_value(body.clone()).c(h!())?;
     if needs_existing {
@@ -224,6 +232,9 @@ pub async fn user_settings_put(
             MessageTimeBasis::MessageCreation => "creation".to_owned(),
         })),
         message_auto_parse_enabled: Set(Some(dto.message_auto_parse_enabled)),
+        minimal_report_window_enabled: Set(Some(
+            dto.minimal_report_window_enabled,
+        )),
         receive_alerts_in_messenger: NotSet,
         updated_at: Set(now),
     })
@@ -246,6 +257,7 @@ pub async fn user_settings_put(
                 user_settings::Column::AiPositionHighlightsEnabled,
                 user_settings::Column::MessageSortBy,
                 user_settings::Column::MessageAutoParseEnabled,
+                user_settings::Column::MinimalReportWindowEnabled,
                 user_settings::Column::UpdatedAt,
             ])
             .update_columns(

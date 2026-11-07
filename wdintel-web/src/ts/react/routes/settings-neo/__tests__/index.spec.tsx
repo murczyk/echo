@@ -426,6 +426,28 @@ describe('SettingsNeoPage', () => {
     expect(saveUserDutySettings).not.toHaveBeenCalled();
   });
 
+  it('persists the minimal report window choice from the Duty settings', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="duty" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const minimalSwitch = () =>
+      Array.from(container.querySelectorAll('button')).find(
+        (button) =>
+          (button.textContent === 'on' || button.textContent === 'off') &&
+          button.parentElement?.textContent?.includes('Мінімалістичне вікно розвіддонесення'),
+      );
+    expect(minimalSwitch()?.textContent).toBe('off');
+
+    await act(async () => minimalSwitch()?.click());
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minimalReportWindowEnabled: true }),
+    );
+    expect(minimalSwitch()?.textContent).toBe('on');
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3324
   it.each(['duty', 'analysis'] as const)(
     'persists the card text size from %s and defaults older settings to compact text',
@@ -550,6 +572,7 @@ describe('SettingsNeoPage', () => {
       mediaSummaryEnabled: true,
       aiPositionHighlightsEnabled: false,
       messageAutoParseEnabled: false,
+      minimalReportWindowEnabled: false,
       messageTextPreviewLines: 20,
       messageSortBy: 'interception',
     });

@@ -99,7 +99,7 @@
 - **Behavior ID:** `react-user-settings-compatibility-defaults`
 - **Status:** operational compatibility
 - **Affected route/component:** user-settings API boundary
-- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
+- **Expected observable result:** omitted or unsupported settings normalize to `analysisMapInSidebar: false`, `dutyAudioTranscriptionCollapsed: false`, `analysisAudioTranscriptionCollapsed: false`, `showAnalysisCallsignAddForm: false`, `showClassicDuty: false`, `showClassicAnalysis: false`, `dutyCollapseMediaPreviews: true`, `mediaSummaryEnabled: false`, `minimalReportWindowEnabled: false`, `messageTextPreviewLines: 20`, and `messageSortBy: interception`.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/user-settings.ts`
 - **Existing tests:** No direct default-suite test; behavior is preserved by this contract.
 

@@ -32,6 +32,7 @@ export type RerDutyPageSettings = {
   messageCardQuickAction: MessageCardQuickAction;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  minimalReportWindowEnabled: boolean;
 };
 
 export type DeviceAccess =
@@ -67,6 +68,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
+  const [minimalReportWindowEnabled, setMinimalReportWindowEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +86,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMessageCardQuickAction(prefs.messageCardQuickAction ?? 'createReport');
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
+        setMinimalReportWindowEnabled(prefs.minimalReportWindowEnabled ?? false);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
@@ -94,6 +97,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setMessageCardQuickAction('createReport');
         setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
+        setMinimalReportWindowEnabled(false);
       }
     };
     loadLayout();
@@ -114,6 +118,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           messageCardQuickAction?: MessageCardQuickAction;
           mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
+          minimalReportWindowEnabled?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -143,6 +148,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         detail?.messageTextPreviewLines === null
       ) {
         setMessageTextPreviewLines(detail.messageTextPreviewLines);
+      }
+      if (typeof detail?.minimalReportWindowEnabled === 'boolean') {
+        setMinimalReportWindowEnabled(detail.minimalReportWindowEnabled);
       }
     };
 
@@ -229,5 +237,6 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     messageCardQuickAction,
     mediaSummaryEnabled,
     messageTextPreviewLines,
+    minimalReportWindowEnabled,
   };
 }
