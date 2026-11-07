@@ -17,6 +17,7 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod cli_session;
 pub mod display_name;
 pub mod login_totp;
 pub mod messenger_profile;

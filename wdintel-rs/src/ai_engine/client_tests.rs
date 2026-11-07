@@ -71,6 +71,24 @@ async fn issue_3913_government_cooldown_is_shared_across_engine_rows_and_respect
     }
 }
 
+#[tokio::test]
+async fn direct_openai_engine_is_refused_before_any_request() {
+    let client =
+        AiEngineClient::new(DatabaseConnection::default(), None).unwrap();
+    let mut engine = metrics_test_engine("https://api.openai.com/v1");
+    engine.token = Some("stored-token".to_string());
+    let error = client
+        .send_agent_request_inner(
+            &engine,
+            json!({}),
+            Duration::from_secs(1),
+            false,
+        )
+        .await
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("OpenAI"), "{error:#}");
+}
+
 fn settings_request(secret: Option<&str>) -> SaveAiGovUaSettingsReq {
     SaveAiGovUaSettingsReq {
         enabled: true,

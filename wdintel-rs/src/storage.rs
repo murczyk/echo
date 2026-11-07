@@ -1532,6 +1532,8 @@ mod tests {
         ));
     }
 
+    // Holds the shared decryption permits, which other media tests need.
+    #[serial_test::serial]
     #[tokio::test]
     async fn unrestricted_download_ignores_messenger_decryption_limit() {
         let op = Operator::new(Memory::default()).unwrap().finish();

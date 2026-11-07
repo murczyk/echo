@@ -9457,11 +9457,19 @@ where
                     return Err(err);
                 }
                 let open_circuit = reason == "analytics_error";
-                warn!(
-                    "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                    started.elapsed(),
-                    err
-                );
+                if is_expected_analytics_fallback(reason) {
+                    log_expected_analytics_fallback(
+                        "analysis stats count",
+                        reason,
+                        started.elapsed(),
+                    );
+                } else {
+                    warn!(
+                        "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                        started.elapsed(),
+                        err
+                    );
+                }
                 open_circuit
             }
             Err(_) => {
@@ -9677,9 +9685,17 @@ where
                     return Err(err);
                 }
                 let open_circuit = reason == "analytics_error";
-                warn!(
-                    "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
-                );
+                if is_expected_analytics_fallback(reason) {
+                    log_expected_analytics_fallback(
+                        operation,
+                        reason,
+                        started.elapsed(),
+                    );
+                } else {
+                    warn!(
+                        "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
+                    );
+                }
                 open_circuit
             }
             None => {
@@ -9918,6 +9934,20 @@ fn analytics_failure_reason(
     } else {
         "analytics_error"
     }
+}
+
+/// A coverage miss is a routing decision rather than a failed query: the
+/// attachment search guard has logged why, and PostgreSQL serves the request.
+fn is_expected_analytics_fallback(reason: &str) -> bool {
+    reason == "attachment_history_incomplete"
+}
+
+fn log_expected_analytics_fallback(
+    operation: &str,
+    reason: &str,
+    elapsed: core::time::Duration,
+) {
+    info!(target: "analytics_route", "request_id={} operation={operation:?} route=analytics outcome=fallback reason={reason} elapsed_ms={}", crate::read_query::request_id(), elapsed.as_millis());
 }
 
 fn analytics_pool_is_at_capacity(analytics_conn: &DatabaseConnection) -> bool {

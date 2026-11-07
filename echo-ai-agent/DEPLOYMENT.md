@@ -446,6 +446,18 @@ log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
 `invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
 `wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.
 
+## Published bytes realigned (release 2026.11.07.1)
+
+Release `2026.11.06.4` was published to the agent hosts before two commits changed the
+harness under the same ID, so the merged code and the published bundle differ and
+the panel refuses it as an ID collision. This release carries the merged code,
+including those two group-scope fixes, under a new ID.
+
+Deploy the matching application, then upgrade each namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.07.1`, previewing with
+`--dry-run` first. No migration or provider change is needed. `2026.11.06.4` stays in the
+compatible runner lists. Roll back the application and harness as a pair.
+
 ## Group scope and failed first calls (release 2026.11.06.4)
 
 Deploy the matching application, then upgrade the approved installation's
