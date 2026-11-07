@@ -225,7 +225,7 @@ async fn messenger_media(
             .await
             .c(h!())?
     };
-    apply_media_document_security_headers(&mut response);
+    apply_media_document_security_headers(&mut response, &media.content_type);
     Ok(response)
 }
 
@@ -237,12 +237,38 @@ const MEDIA_DOCUMENT_CSP: &str =
     "sandbox; default-src 'none'; img-src 'self' blob: data:; \
      media-src 'self' blob: data:; style-src 'unsafe-inline'; \
      frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
+// A video or audio tab is a page the browser builds, and its player requests the
+// file again. From a sandboxed page that request has a null origin and no
+// session cookie, so it gets a 401. These files cannot run script, and nosniff
+// stops a mislabelled file from rendering as HTML, so they keep Echo's origin.
+const MEDIA_PLAYER_DOCUMENT_CSP: &str =
+    "default-src 'none'; img-src 'self' blob: data:; \
+     media-src 'self' blob: data:; style-src 'unsafe-inline'; \
+     frame-ancestors 'self'; base-uri 'none'; form-action 'none'";
 
-fn apply_media_document_security_headers(response: &mut HttpResponse) {
+fn is_browser_player_media(content_type: &str) -> bool {
+    let essence = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim()
+        .to_ascii_lowercase();
+    essence.starts_with("video/") || essence.starts_with("audio/")
+}
+
+fn apply_media_document_security_headers(
+    response: &mut HttpResponse,
+    content_type: &str,
+) {
+    let csp = if is_browser_player_media(content_type) {
+        MEDIA_PLAYER_DOCUMENT_CSP
+    } else {
+        MEDIA_DOCUMENT_CSP
+    };
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
-        header::HeaderValue::from_static(MEDIA_DOCUMENT_CSP),
+        header::HeaderValue::from_static(csp),
     );
     // CSP does not cover DNS prefetching, which would tell a sender's DNS
     // server that the file was opened.
