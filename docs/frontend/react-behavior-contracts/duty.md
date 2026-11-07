@@ -125,6 +125,23 @@
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/RerDutyNeoWorkspace.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/duty-editor-layout.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`, `wdintel-web/tests/e2e/message-card-duty-header.spec.ts`.
 - **Original Echo issue/PR, if known:** [#3547](https://github.com/echoua/echo/issues/3547)
 
+## Duty minimal report window
+
+- **Status:** normative
+- **Behavior ID:** `react-duty-minimal-report-window`
+- **Affected route/component:** Duty workspace, shared Manage Message editor, Settings Duty section.
+- **User role or permission:** users permitted to create or edit intelligence reports.
+- **Preconditions:** the user enabled "Мінімалістичне вікно розвіддонесення" and the viewport uses the embedded editor (`>=1024px`). Analysis and narrower viewports keep their regular editors.
+- **User action or external event:** the user starts creating a report from a message, opens an own report for editing, or expands the panel.
+- **Expected observable result:** the report opens in a small panel centered over the source feed column, which fades behind it. The original message sits on top with a text-only report form underneath, and the panel does not change feed tracks, column count, or scroll position. The fade is visual only, so cards in the faded column stay clickable. A separate expand control moves the same report to the full side panel. A later report starts in the panel again; expanding is not remembered.
+- **Loading/empty/error/success behavior:** the panel hides the report editor's other fields but uses the same form state, source metadata and attachment inheritance, so expanding keeps the draft. The panel starts no AI suggestion request; expanding starts it. A pasted file, a rejected file, or a failed validation on a field the panel hides expands to the full panel instead of hiding the attachment or error. The panel scrolls on short viewports, so its actions stay reachable. A report saved without a group has no group requirements, so the panel only blocks submission on a unit that needs an explicit selection, and tells the user to expand.
+- **URL, localStorage, or user-settings persistence:** `minimalReportWindowEnabled` is a per-user setting, off by default. Older clients that omit it preserve the stored value.
+- **API endpoint and compatibility requirements:** a new report submitted from the panel has no group field, so it is saved with the existing "Не відправляти" destination and the panel says so. Expanding a new report keeps that destination preselected, so the full panel does not ask for a group the user never saw; choosing a group happens there. The panel must never guess a group. Editing keeps the report's existing group.
+- **Responsive and keyboard requirements:** Cmd/Ctrl+Enter submits, Escape closes while focus belongs to the panel and follows the dirty-state guard, and closing restores focus to the invoking control.
+- **Known race/idempotency constraints:** starting a different report follows the dirty-draft guard and moves the panel to that message's column. Starting the same report from another column is the same intent and keeps the draft where it is. If the source column is removed, the panel moves to a remaining column.
+- **Source implementation:** `routes/rer-duty-neo/useDutyMinimalReportEditor.ts`, `routes/rer-duty-neo/index.tsx`, `routes/shared/manage-message/MinimalReportEditor.tsx`, `routes/shared/manage-message/ManageMessageDrawer.tsx`.
+- **Existing test(s):** `wdintel-web/tests/e2e/rer-duty-minimal-report.spec.ts`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/useDutyMinimalReportEditor.spec.tsx`, `wdintel-web/src/ts/react/routes/rer-duty-neo/__tests__/index.spec.tsx`, `wdintel-web/src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#4008](https://github.com/echoua/echo/issues/4008)
 ## Duty importance of my organism
 
 - **Status:** normative

@@ -33621,6 +33621,7 @@ type alias UserDutySettingsDto =
     , messageSortBy : MessageTimeBasis
     , messageAutoParseEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , minimalReportWindowEnabled : Bool
     , importantOnlyMyOrganism : Bool
     }
 
@@ -33645,4 +33646,5 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiPositionHighlightsEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool), Json.Decode.succeed False ]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]))

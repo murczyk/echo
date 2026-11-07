@@ -122,6 +122,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       aiPositionHighlightsEnabled: dutySettings.aiPositionHighlightsEnabled,
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
+      minimalReportWindowEnabled: dutySettings.minimalReportWindowEnabled,
       importantOnlyMyOrganism: dutySettings.importantOnlyMyOrganism,
       ...overrides,
     });
@@ -329,6 +330,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
                 scheduleDutySettingsSave({ disableAutoScroll: value });
+              }}
+              minimalReportWindowEnabled={dutySettings.minimalReportWindowEnabled}
+              onMinimalReportWindowEnabledChange={(value) => {
+                dutySettings.setMinimalReportWindowEnabled(value);
+                scheduleDutySettingsSave({ minimalReportWindowEnabled: value });
               }}
               importantOnlyMyOrganism={dutySettings.importantOnlyMyOrganism}
               onImportantOnlyMyOrganismChange={(value) => {

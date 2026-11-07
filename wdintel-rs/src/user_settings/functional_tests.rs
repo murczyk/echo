@@ -425,6 +425,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     .await;
     assert!(!settings.ai_position_highlights_enabled);
     assert!(!settings.large_media_previews);
+    assert!(!settings.minimal_report_window_enabled);
     assert!(!settings.important_only_my_organism);
     assert_eq!(
         serde_json::to_value(&settings).unwrap()["largeMessageCardText"],
@@ -432,6 +433,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     );
     let mut settings = serde_json::to_value(settings).unwrap();
     settings["aiPositionHighlightsEnabled"] = true.into();
+    settings["minimalReportWindowEnabled"] = true.into();
     settings["importantOnlyMyOrganism"] = true.into();
     settings["largeMediaPreviews"] = true.into();
     settings["largeMessageCardText"] = true.into();
@@ -446,6 +448,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     .await;
     assert!(saved.ai_position_highlights_enabled);
     assert!(saved.large_media_previews);
+    assert!(saved.minimal_report_window_enabled);
     assert!(saved.important_only_my_organism);
     assert_eq!(
         serde_json::to_value(&saved).unwrap()["largeMessageCardText"],
@@ -455,6 +458,10 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
         .as_object_mut()
         .unwrap()
         .remove("aiPositionHighlightsEnabled");
+    settings
+        .as_object_mut()
+        .unwrap()
+        .remove("minimalReportWindowEnabled");
     settings
         .as_object_mut()
         .unwrap()
@@ -479,6 +486,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     .await;
     assert!(saved.ai_position_highlights_enabled);
     assert!(saved.large_media_previews);
+    assert!(saved.minimal_report_window_enabled);
     assert!(saved.important_only_my_organism);
     assert_eq!(saved.tags_layout, DutyTagsLayout::Hidden);
     assert_eq!(
@@ -488,6 +496,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     settings["aiPositionHighlightsEnabled"] = false.into();
     settings["largeMediaPreviews"] = false.into();
     settings["largeMessageCardText"] = false.into();
+    settings["minimalReportWindowEnabled"] = false.into();
     settings["importantOnlyMyOrganism"] = false.into();
     let _: UserDutySettingsDto = test::call_and_read_body_json(
         &app,
@@ -508,6 +517,7 @@ async fn settings_opt_ins_survive_older_clients_3064_3324() {
     .await;
     assert!(!settings.ai_position_highlights_enabled);
     assert!(!settings.large_media_previews);
+    assert!(!settings.minimal_report_window_enabled);
     assert!(!settings.important_only_my_organism);
     assert_eq!(
         serde_json::to_value(&settings).unwrap()["largeMessageCardText"],

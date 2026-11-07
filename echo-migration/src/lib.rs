@@ -522,6 +522,7 @@ mod m20261031_104502_role_message_settings;
 mod m20261102_131738_report_concurrency_settings;
 mod m20261103_073829_important_notify_all_flag;
 mod m20261103_120000_ai_agent_documents;
+mod m20261104_064753_minimal_report_window;
 
 pub struct Migrator;
 
@@ -1233,6 +1234,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_083000_group_message_requirements::Migration),
             Box::new(m20261104_165252_rer_report_unit_selection::Migration),
             Box::new(m20261105_212108_iggy_group_refresh_queue::Migration),
+            Box::new(m20261104_064753_minimal_report_window::Migration),
             Box::new(m20261107_175132_important_only_my_organism::Migration),
         ]
     }

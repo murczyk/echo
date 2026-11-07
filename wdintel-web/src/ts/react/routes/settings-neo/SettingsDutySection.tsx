@@ -69,6 +69,8 @@ export type SettingsDutySectionProps = {
   onImportantOnlyMyOrganismChange: (value: boolean) => void;
   doNotPersistCurrentFilter: boolean;
   onDoNotPersistCurrentFilterChange: (value: boolean) => void;
+  minimalReportWindowEnabled: boolean;
+  onMinimalReportWindowEnabledChange: (value: boolean) => void;
   audioTranscriptionCollapsed: boolean;
   onAudioTranscriptionCollapsedChange: (value: boolean) => void;
   showAudioTranscriptionSettings: boolean;
@@ -102,6 +104,8 @@ export function SettingsDutySection({
   onImportantOnlyMyOrganismChange,
   doNotPersistCurrentFilter,
   onDoNotPersistCurrentFilterChange,
+  minimalReportWindowEnabled,
+  onMinimalReportWindowEnabledChange,
   audioTranscriptionCollapsed,
   onAudioTranscriptionCollapsedChange,
   showAudioTranscriptionSettings,
@@ -173,6 +177,41 @@ export function SettingsDutySection({
               onCollapsedByDefaultChange={onAudioTranscriptionCollapsedChange}
             />
           ) : null}
+
+          <Box sx={cardSx}>
+            <Stack spacing={1.5}>
+              <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+                Розвіддонесення
+              </Typography>
+              <FormControlLabel
+                sx={{
+                  alignItems: 'flex-start',
+                  m: 0,
+                  gap: 1.5,
+                  '& .MuiFormControlLabel-label': { width: '100%' },
+                }}
+                control={
+                  <Switch
+                    checked={minimalReportWindowEnabled}
+                    onChange={(_, checked) => onMinimalReportWindowEnabledChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label={
+                  <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                      Мінімалістичне вікно розвіддонесення
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                      На широких екранах розвіддонесення пишеться в невеликій панелі поверх стрічки,
+                      а колонки залишаються на місці. Панель показує оригінальне повідомлення й поле
+                      для тексту, а кнопка розгортання відкриває повну бічну панель.
+                    </Typography>
+                  </Stack>
+                }
+              />
+            </Stack>
+          </Box>
 
           <Box sx={cardSx}>
             <Stack spacing={1.5}>
