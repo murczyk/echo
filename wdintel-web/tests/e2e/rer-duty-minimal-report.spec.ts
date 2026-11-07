@@ -73,8 +73,8 @@ function openReportFromColumn(page: Page, index: number, text = SOURCE_TEXT) {
 function columnBoxes(page: Page) {
   return page.locator('[data-duty-feed-column]').evaluateAll((columns) =>
     columns.map((column) => {
-      const { left, width } = column.getBoundingClientRect();
-      return { left, width };
+      const { left, top, width, height } = column.getBoundingClientRect();
+      return { left, top, width, height };
     }),
   );
 }
@@ -99,6 +99,19 @@ test.describe('#4008 minimal report window', () => {
     const column = columnsBefore[1]!;
     expect(panelBox!.x).toBeGreaterThanOrEqual(column.left);
     expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(column.left + column.width);
+    const columnMiddle = column.top + column.height / 2;
+    expect(Math.abs(panelBox!.y + panelBox!.height / 2 - columnMiddle)).toBeLessThanOrEqual(1);
+
+    const fade = page
+      .locator('[data-duty-feed-column]')
+      .nth(1)
+      .locator('[data-manage-message-minimal-scrim]');
+    await expect(fade).toHaveCSS('pointer-events', 'none');
+    expect(await fade.boundingBox()).toMatchObject({ y: column.top, height: column.height });
+
+    const originalBox = await panel.getByText(COPIED_TEXT).boundingBox();
+    const titleBox = await panel.getByRole('heading').boundingBox();
+    expect(originalBox!.y + originalBox!.height).toBeLessThanOrEqual(titleBox!.y);
 
     const reportText = panel.getByRole('textbox', { name: 'Текст розвіддонесення' });
     await expect(reportText).toBeFocused();
