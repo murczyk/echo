@@ -10,6 +10,7 @@ import {
   mapOutcomeRepairPrompt,
   observeMapOutcome,
   scriptFailure,
+  toolErrorReason,
   toolErrorSummary,
   analysisPeriodRequestBody,
   callsignFrequencyMatchesRequestBody,
@@ -1745,6 +1746,7 @@ test("discards a truncated or empty citation repair", () => {
 
 test("#3064 map tool errors get specific labels while route errors stay generic", () => {
   const result = (text: string) => ({ content: [{ type: "text", text }] });
+  assert.equal(toolErrorReason(result("Echo response is too large")), "response_too_large");
   assert.equal(toolErrorSummary("echo_inbox_messages", result("anything")), "Не вдалося завантажити дані за вказаними параметрами.");
   assert.equal(toolErrorSummary("echo_map_edit", result('Невідома операція «retype». Допустимі op: add, setSidc. Приклад: {"sidc":"10031000001211000000"}')), "Некоректні параметри зміни мапи");
   assert.equal(toolErrorSummary("echo_map_edit", result("Echo returned HTTP 409: Мапа змінилася.")), "Мапа змінилася; потрібно перечитати її");

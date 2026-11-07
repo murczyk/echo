@@ -110,6 +110,7 @@ import { ContextCheckpointProviderError, ContextCompactionLimitError, installCon
 
 const MAX_INPUT_BYTES = 512 * 1024;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
@@ -744,7 +745,7 @@ function restoreHistory(
 async function readBoundedBytes(response: Response, limit: number): Promise<Uint8Array> {
   const declaredLength = Number(response.headers.get("content-length") ?? "0");
   if (declaredLength > limit)
-    throw new Error("Echo response is too large");
+    throw new Error(RESPONSE_TOO_LARGE);
   if (!response.body) return new Uint8Array();
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -755,7 +756,7 @@ async function readBoundedBytes(response: Response, limit: number): Promise<Uint
     size += value.byteLength;
     if (size > limit) {
       await reader.cancel();
-      throw new Error("Echo response is too large");
+      throw new Error(RESPONSE_TOO_LARGE);
     }
     chunks.push(value);
   }
@@ -3232,6 +3233,7 @@ export function toolErrorReason(result: unknown): string {
   if (/^(Operation aborted|This operation was aborted)$/.test(text))
     return "cancelled";
   if (/^fetch failed$/.test(text)) return "network_error";
+  if (text === RESPONSE_TOO_LARGE) return "response_too_large";
   return "tool_error";
 }
 

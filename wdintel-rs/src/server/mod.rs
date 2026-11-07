@@ -1351,6 +1351,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::sender_stats_count)
             .service(crate::rer_importer::analysis::group_stats_count)
             .service(crate::rer_importer::analysis::summary_table_freq)
+            .service(crate::rer_importer::analysis::ai_frequency_summary)
             .service(crate::rer_importer::analysis::summary_table_task_launch)
             .service(crate::rer_importer::analysis::correlated_freqs)
             .service(crate::rer_importer::analysis::kmz_task_launch)

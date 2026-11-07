@@ -458,9 +458,10 @@ pub fn tool_diagnostic_level(diagnostic: &Value) -> log::Level {
     }
     let status = diagnostic.get("httpStatus").and_then(Value::as_u64);
     match diagnostic.get("reason").and_then(Value::as_str) {
-        Some("tool_error" | "network_error" | "map_not_published") => {
-            log::Level::Error
-        }
+        Some(
+            "tool_error" | "network_error" | "map_not_published"
+            | "response_too_large",
+        ) => log::Level::Error,
         Some("http_error") if status.is_none_or(|code| code >= 500) => {
             log::Level::Error
         }
@@ -556,6 +557,7 @@ pub fn tool_diagnostic(event: &Value) -> Option<Value> {
             | "network_error"
             | "tool_error"
             | "map_not_published"
+            | "response_too_large"
     ) {
         return None;
     }
@@ -1057,7 +1059,12 @@ mod tests {
     fn issue_4038_levels_separate_failures_from_flow_control() {
         let level =
             |diagnostic: serde_json::Value| tool_diagnostic_level(&diagnostic);
-        for reason in ["tool_error", "network_error", "map_not_published"] {
+        for reason in [
+            "tool_error",
+            "network_error",
+            "map_not_published",
+            "response_too_large",
+        ] {
             assert_eq!(
                 level(serde_json::json!({"reason": reason})),
                 log::Level::Error

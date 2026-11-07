@@ -245,7 +245,7 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
     },
     ReadOnlyRoute {
         method: "POST",
-        path: "/api/rer/analysis/summary-table-freq",
+        path: "/api/rer/analysis/ai/frequency-summary",
         skill: "frequency_summary",
         label: "Аналізую активність частот",
         request_kind: "analysisPeriod",

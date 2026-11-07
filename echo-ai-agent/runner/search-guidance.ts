@@ -4,15 +4,17 @@ const FREQUENCY_FORMAT = `Radio frequencies in MHz, for example 163.935, 163,935
 
 export const INBOX_FREQUENCIES_DESCRIPTION = `${FREQUENCY_FORMAT} Several frequencies are alternatives (OR); ANDed with search, selectedCallsigns and units. Prefer this over search when the user names a frequency.`;
 
-export const INBOX_UNIT_IDS_DESCRIPTION = `Unit IDs from unit lookup. Matches only messages linked to those units through reference networks; messages attributed to a unit only by their header need selectedUnits. The unit name is usually NOT in the message text. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with search and selectedCallsigns.`;
+const UNIT_IDS_MATCHING = `Unit IDs from unit lookup. Matches messages linked to those units through a reference network or a parsed message header; headers that never resolved to a unit need selectedUnits.`;
 
-export const INBOX_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover header-only attribution (alternatives, OR). ANDed with search and selectedCallsigns.`;
+export const INBOX_UNIT_IDS_DESCRIPTION = `${UNIT_IDS_MATCHING} The unit name is usually NOT in the message text. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with search and selectedCallsigns.`;
 
-export const FREQUENCY_SUMMARY_DESCRIPTION = `Read per-frequency activity for a rolling-hour or Europe/Kyiv calendar period, optionally narrowed by groups, callsigns, frequencies or units.`;
+export const INBOX_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover headers that never resolved to a unit (alternatives, OR). ANDed with search and selectedCallsigns.`;
+
+export const FREQUENCY_SUMMARY_DESCRIPTION = `Read per-frequency activity for a rolling-hour or Europe/Kyiv calendar period, optionally narrowed by groups, callsigns, frequencies or units. Returns the most active frequencies first. total_rows counts every match, so when it exceeds the rows returned the result is partial: narrow the request rather than presenting it as complete. row_values_truncated means some callsign, unit or location lists are incomplete.`;
 
 export const FREQUENCY_SUMMARY_FREQUENCIES_DESCRIPTION = `${FREQUENCY_FORMAT} Several frequencies are alternatives (OR); ANDed with selectedCallsigns and units.`;
 
-export const FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION = `Unit IDs from unit lookup. Matches messages linked to those units through a reference network or a parsed message header; headers that never resolved to a unit need selectedUnits. When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with selectedFrequencies and selectedCallsigns.`;
+export const FREQUENCY_SUMMARY_UNIT_IDS_DESCRIPTION = `${UNIT_IDS_MATCHING} When both selectedUnitIds and selectedUnits are given they are alternatives (OR); both are ANDed with selectedFrequencies and selectedCallsigns.`;
 
 export const FREQUENCY_SUMMARY_UNITS_DESCRIPTION = `Exact unit header strings copied from the unit field of retrieved messages (e.g. «8 дшр 3 дшб 104 дшп 76 дшд пдв»). Send together with selectedUnitIds to also cover headers that never resolved to a unit (alternatives, OR). ANDed with selectedFrequencies and selectedCallsigns.`;
 

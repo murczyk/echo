@@ -4031,11 +4031,71 @@ pub async fn summary_table_freq(
     Ok(Json(summary_table_freq_1(&user, &env, &req).await.c(h!())?))
 }
 
-pub async fn summary_table_freq_1(
+/// Frequency activity for the AI agent: the most active rows, bounded and
+/// without the coordinates it never reads.
+#[post("/api/rer/analysis/ai/frequency-summary")]
+pub async fn ai_frequency_summary(
+    user: actix_identity::Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<AnalysisStatsReq>,
+) -> Result<Json<AiFrequencySummary>, AppError> {
+    ensure_base_role(&env.dbx, &user).await.c(h!())?;
+    let (login, master_keys) =
+        summary_table_freq_access(&user, &env, &req).await.c(h!())?;
+    let summary = summary_table_freq_without_coordinates_by_login(
+        &login,
+        &env,
+        &req,
+        &master_keys,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(rank_ai_frequency_summary(summary)))
+}
+
+fn rank_ai_frequency_summary(summary: SummaryTableFreq) -> AiFrequencySummary {
+    let mut rows = summary.rows;
+    let total_rows = rows.len();
+    rows.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.freq.cmp(&right.freq))
+    });
+    rows.truncate(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    let row_values_truncated = rows.iter().any(|row| {
+        [&row.callsigns, &row.units, &row.locations]
+            .iter()
+            .any(|values| {
+                values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+            })
+    });
+    AiFrequencySummary {
+        rows: rows.into_iter().map(ai_frequency_summary_row).collect(),
+        total_rows,
+        row_values_truncated,
+    }
+}
+
+fn ai_frequency_summary_row(row: SummaryTableFreqRow) -> AiFrequencySummaryRow {
+    let bounded = |mut values: Vec<String>| {
+        values.truncate(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES);
+        values
+    };
+    AiFrequencySummaryRow {
+        freq: row.freq,
+        count: row.count,
+        callsigns: bounded(row.callsigns),
+        units: bounded(row.units),
+        locations: bounded(row.locations),
+    }
+}
+
+async fn summary_table_freq_access(
     user: &Identity,
     env: &Env,
     req: &AnalysisStatsReq,
-) -> Result<SummaryTableFreq, AppError> {
+) -> Result<(uuid::Uuid, Vec<String>), AppError> {
     let master_keys =
         get_identity_sigint_groups_noimport(&env.dbx, user, &env.config)
             .await
@@ -4044,6 +4104,16 @@ pub async fn summary_table_freq_1(
     require_analysis_device_filter_access(&env.dbx, &login, req)
         .await
         .c(h!())?;
+    Ok((login, master_keys))
+}
+
+pub async fn summary_table_freq_1(
+    user: &Identity,
+    env: &Env,
+    req: &AnalysisStatsReq,
+) -> Result<SummaryTableFreq, AppError> {
+    let (login, master_keys) =
+        summary_table_freq_access(user, env, req).await.c(h!())?;
     summary_table_freq_by_login(&login, env, req, &master_keys).await
 }
 

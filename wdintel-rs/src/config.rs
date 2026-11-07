@@ -641,6 +641,10 @@ pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
+/// The AI runner refuses a response over 2 MiB, and an unscoped month of
+/// frequency activity exceeds that without these bounds.
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS: usize = 128;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES: usize = 128;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;

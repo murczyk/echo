@@ -14245,3 +14245,45 @@ async fn echo_3461_activity_daily_requires_device_filter_access() {
         );
     }
 }
+
+#[test]
+fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
+    let row = |index: usize, count: i64, values: usize| SummaryTableFreqRow {
+        freq: format!("{index:04}"),
+        count,
+        callsigns: vec!["позивний".to_string(); values],
+        units: vec![],
+        locations: vec![],
+        coords: vec![],
+        locality_coords: vec![],
+    };
+    let extra = 2;
+    let mut rows = (0..AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS + extra)
+        .map(|index| row(index, index as i64, 1))
+        .collect::<Vec<_>>();
+    rows.push(row(
+        9998,
+        1_000,
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES + 1,
+    ));
+    rows.push(row(9997, 1_000, 1));
+
+    let summary = rank_ai_frequency_summary(SummaryTableFreq { rows });
+
+    assert_eq!(
+        summary.total_rows,
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS + extra + 2
+    );
+    assert_eq!(summary.rows.len(), AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS);
+    assert_eq!(summary.rows[0].freq, "9997");
+    assert_eq!(summary.rows[1].freq, "9998");
+    assert_eq!(
+        summary.rows[1].callsigns.len(),
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+    );
+    assert!(summary.row_values_truncated);
+    assert!(summary
+        .rows
+        .windows(2)
+        .all(|pair| pair[0].count >= pair[1].count));
+}
