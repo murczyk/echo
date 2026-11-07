@@ -33,6 +33,7 @@ export type DutyFeedColumnModelDeps = {
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  importantOnlyMyOrganism: boolean;
   openReportEditor: (feedId: string, reportId: number, sourceMessageId: number) => void;
   openMessageEditor: (
     feedId: string,
@@ -400,6 +401,7 @@ function buildFeedMessageCard(
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
+    importantOnlyMyOrganism: deps.importantOnlyMyOrganism,
     tagsMap,
     tagsOrder,
     botTagAction,

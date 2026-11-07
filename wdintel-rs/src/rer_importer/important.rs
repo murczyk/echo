@@ -32,6 +32,8 @@ pub struct ImportantAddReq {
 )]
 pub struct ImportantMutationRsp {
     pub important: bool,
+    #[serde(default)]
+    pub important_by_my_organism: bool,
 }
 
 async fn important_state<C>(
@@ -57,6 +59,46 @@ where
         .await
         .context(h!())?
         .is_some())
+}
+
+/// Current aggregate state, plus the part of it the actor's organism set.
+async fn importance_response<C>(
+    dbx: &C,
+    login: Uuid,
+    message_ids: &[i64],
+) -> anyhow::Result<ImportantMutationRsp>
+where
+    C: ConnectionTrait,
+{
+    let important = important_state(dbx, message_ids).await.context(h!())?;
+    if !important {
+        return Ok(ImportantMutationRsp {
+            important,
+            important_by_my_organism: false,
+        });
+    }
+    let organism_logins =
+        crate::users::get_organism_login_ids_by_id(dbx, &login)
+            .await
+            .c(h!())?;
+    let important_by_my_organism = sigint_important::Entity::find()
+        .filter(
+            sigint_important::Column::SignalMessageId
+                .is_in(message_ids.to_vec()),
+        )
+        .filter(sigint_important::Column::LoginId.is_in(organism_logins))
+        .filter(sigint_important::Column::Deleted.eq(false))
+        .select_only()
+        .column(sigint_important::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .context(h!())?
+        .is_some();
+    Ok(ImportantMutationRsp {
+        important,
+        important_by_my_organism,
+    })
 }
 
 async fn add_missing_importants(
@@ -412,7 +454,8 @@ async fn set_importance(
     important: bool,
     notification_group: Option<&str>,
     operation_id: Option<Uuid>,
-) -> anyhow::Result<bool> {
+    keep_ai_importance: bool,
+) -> anyhow::Result<ImportantMutationRsp> {
     let txn = env.dbx.begin().await.context(h!())?;
     let affected_ids =
         crate::rer_importer::inbox::find_all_duplicates(&txn, message_id)
@@ -430,10 +473,11 @@ async fn set_importance(
         .await
         .context(h!())?
         {
-            let important =
-                important_state(&txn, &affected_ids).await.context(h!())?;
+            let response = importance_response(&txn, login, &affected_ids)
+                .await
+                .context(h!())?;
             txn.commit().await.context(h!())?;
-            return Ok(important);
+            return Ok(response);
         }
     }
     if important {
@@ -462,7 +506,7 @@ async fn set_importance(
             }
         }
     } else {
-        if !affected_ids.is_empty() {
+        if !affected_ids.is_empty() && !keep_ai_importance {
             suppress_ai_importance_if_allowed(env, &txn, login, message_id)
                 .await
                 .c(h!())?;
@@ -471,12 +515,14 @@ async fn set_importance(
             .await
             .context(h!())?;
     }
-    let important = important_state(&txn, &affected_ids).await.context(h!())?;
+    let response = importance_response(&txn, login, &affected_ids)
+        .await
+        .context(h!())?;
     if let Some(operation_id) = operation_id {
         txn.execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "update importance_operation set result_important = $2 where operation_id = $1",
-            vec![operation_id.into(), important.into()],
+            vec![operation_id.into(), response.important.into()],
         ))
         .await
         .context(h!())?;
@@ -492,7 +538,7 @@ async fn set_importance(
             error
         );
     }
-    Ok(important)
+    Ok(response)
 }
 
 #[post("/api/rer/important/add")]
@@ -542,13 +588,14 @@ async fn important_add(
             msg: "Контекст групи можливий лише для сповіщення".into(),
         });
     }
-    let important = set_importance(
+    let response = set_importance(
         &env,
         login,
         req.message_id,
         true,
         notification_group,
         req.operation_id,
+        false,
     )
     .await
     .c(h!())?;
@@ -558,7 +605,7 @@ async fn important_add(
         req.message_id, login
     );
 
-    Ok(Json(ImportantMutationRsp { important }))
+    Ok(Json(response))
 }
 
 #[derive(
@@ -616,6 +663,19 @@ pub struct ImportantRmReq {
     pub message_id: i64,
 }
 
+async fn hides_foreign_importance(
+    env: &Env,
+    login: Uuid,
+) -> anyhow::Result<bool> {
+    Ok(user_settings::Entity::find()
+        .filter(user_settings::Column::LoginId.eq(login))
+        .one(&env.dbx)
+        .await
+        .context(h!())?
+        .and_then(|settings| settings.important_only_my_organism)
+        .unwrap_or(false))
+}
+
 #[post("/api/rer/important/delete")]
 async fn important_rm(
     user: Identity,
@@ -624,17 +684,28 @@ async fn important_rm(
 ) -> Result<Json<ImportantMutationRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    let important =
-        set_importance(&env, login, req.message_id, false, None, None)
-            .await
-            .c(h!())?;
+    // With the option on, the viewer can't see AI marks, so unmarking must not
+    // remove one for everyone else.
+    let keep_ai_importance =
+        hides_foreign_importance(&env, login).await.c(h!())?;
+    let response = set_importance(
+        &env,
+        login,
+        req.message_id,
+        false,
+        None,
+        None,
+        keep_ai_importance,
+    )
+    .await
+    .c(h!())?;
 
     println!(
         "Remove important sign for message {} by {}",
         req.message_id, login
     );
 
-    Ok(Json(ImportantMutationRsp { important }))
+    Ok(Json(response))
 }
 
 pub fn is_important(body: &str) -> bool {
@@ -935,16 +1006,20 @@ mod tests {
             .unwrap();
         let operation_id = Uuid::now_v7();
 
-        assert!(set_importance(
-            &env,
-            actor.id,
-            inbox_item.id,
-            true,
-            Some(&group.master_key),
-            Some(operation_id),
-        )
-        .await
-        .unwrap());
+        assert!(
+            set_importance(
+                &env,
+                actor.id,
+                inbox_item.id,
+                true,
+                Some(&group.master_key),
+                Some(operation_id),
+                false,
+            )
+            .await
+            .unwrap()
+            .important
+        );
 
         let important = sigint_important::Entity::find()
             .filter(sigint_important::Column::LoginId.eq(Some(actor.id)))
@@ -1026,16 +1101,20 @@ mod tests {
             .unwrap()
             .is_some());
 
-        assert!(set_importance(
-            &env,
-            actor.id,
-            inbox_item.id,
-            true,
-            Some(&group.master_key),
-            Some(operation_id),
-        )
-        .await
-        .unwrap());
+        assert!(
+            set_importance(
+                &env,
+                actor.id,
+                inbox_item.id,
+                true,
+                Some(&group.master_key),
+                Some(operation_id),
+                false,
+            )
+            .await
+            .unwrap()
+            .important
+        );
         assert_eq!(
             notification_event::Entity::find()
                 .filter(
@@ -1402,6 +1481,114 @@ mod tests {
         .unwrap();
         assert!(expected.contains(&group.master_key));
         assert_eq!(actual, vec![granted.id]);
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4073
+    #[actix_web::test]
+    #[serial]
+    async fn echo_4073_unmarking_reports_my_organism_and_keeps_unseen_ai_mark()
+    {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let base = find_test_login(&env.dbx).await.unwrap();
+        let mk_member = |organism_id: i64| {
+            let dbx = env.dbx.clone();
+            let zone = base.sigint_zone_id;
+            async move {
+                mk_login(
+                    &dbx,
+                    login::ActiveModel {
+                        organism_id: Set(Some(organism_id)),
+                        sigint_zone_id: Set(zone),
+                        roles: Set(serde_json::json!(["Rer"])),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap()
+            }
+        };
+        let my_organism =
+            crate::functest::tests::mk_organism(&env.dbx, Default::default())
+                .await
+                .unwrap();
+        let other_organism =
+            crate::functest::tests::mk_organism(&env.dbx, Default::default())
+                .await
+                .unwrap();
+        let viewer = mk_member(my_organism.id).await;
+        let colleague = mk_member(my_organism.id).await;
+        let outsider = mk_member(other_organism.id).await;
+        let set = |login: Uuid, id: i64, important: bool, keep_ai: bool| {
+            let env = env.clone();
+            async move {
+                set_importance(&env, login, id, important, None, None, keep_ai)
+                    .await
+                    .unwrap()
+            }
+        };
+        let scoped = |important_by_my_organism: bool| ImportantMutationRsp {
+            important: true,
+            important_by_my_organism,
+        };
+
+        // A colleague's mark counts. Unmarking mine keeps the foreign mark.
+        let shared = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        set(outsider.id, shared.id, true, false).await;
+        assert_eq!(set(viewer.id, shared.id, true, false).await, scoped(true));
+        assert_eq!(
+            set(viewer.id, shared.id, false, false).await,
+            scoped(false)
+        );
+        assert_eq!(
+            set(colleague.id, shared.id, true, false).await,
+            scoped(true)
+        );
+        assert_eq!(set(viewer.id, shared.id, false, false).await, scoped(true));
+
+        // With the option on, unmarking leaves the unseen AI mark in place.
+        let analysed = mk_sigint_inbox_item(&env.dbx, Default::default())
+            .await
+            .unwrap();
+        let ai_mark = sigint_important::ActiveModel {
+            signal_message_id: Set(analysed.id),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "insert into ai_transcript_analysis_job (message_id, important_id, state) values ($1, $2, 'completed')",
+                vec![analysed.id.into(), ai_mark.id.into()],
+            ))
+            .await
+            .unwrap();
+        env.dbx
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "insert into user_settings (login_id, important_only_my_organism) values ($1, true)",
+                vec![viewer.id.into()],
+            ))
+            .await
+            .unwrap();
+        assert!(hides_foreign_importance(&env, viewer.id).await.unwrap());
+        assert!(!hides_foreign_importance(&env, colleague.id).await.unwrap());
+        set(viewer.id, analysed.id, true, true).await;
+        assert_eq!(
+            set(viewer.id, analysed.id, false, true).await,
+            scoped(false)
+        );
+        assert!(
+            !sigint_important::Entity::find_by_id(ai_mark.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[actix_web::test]

@@ -1316,6 +1316,7 @@ type alias InboxMessage =
     , checked : Bool
     , important : Bool
     , aiImportant : Bool
+    , importantByMyOrganism : Bool
     , bookmarked : Bool
     , timestamp : Maybe (Int)
     , createdAt : Maybe (Int)
@@ -1370,6 +1371,7 @@ inboxMessageEncoder struct =
         , ( "checked", (Json.Encode.bool) struct.checked )
         , ( "important", (Json.Encode.bool) struct.important )
         , ( "ai_important", (Json.Encode.bool) struct.aiImportant )
+        , ( "important_by_my_organism", (Json.Encode.bool) struct.importantByMyOrganism )
         , ( "bookmarked", (Json.Encode.bool) struct.bookmarked )
         , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
         , ( "created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.createdAt )
@@ -4901,6 +4903,7 @@ importantRmReqEncoder struct =
 
 type alias ImportantMutationRsp =
     { important : Bool
+    , importantByMyOrganism : Bool
     }
 
 
@@ -4908,6 +4911,7 @@ importantMutationRspEncoder : ImportantMutationRsp -> Json.Encode.Value
 importantMutationRspEncoder struct =
     Json.Encode.object
         [ ( "important", (Json.Encode.bool) struct.important )
+        , ( "important_by_my_organism", (Json.Encode.bool) struct.importantByMyOrganism )
         ]
 
 
@@ -21372,6 +21376,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "checked" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_important" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_by_my_organism" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "bookmarked" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.nullable (Json.Decode.int))))
@@ -23373,6 +23378,7 @@ importantMutationRspDecoder : Json.Decode.Decoder ImportantMutationRsp
 importantMutationRspDecoder =
     Json.Decode.succeed ImportantMutationRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_by_my_organism" (Json.Decode.bool)))
 
 
 importantListReqDecoder : Json.Decode.Decoder ImportantListReq
@@ -33612,6 +33618,7 @@ type alias UserDutySettingsDto =
     , messageSortBy : MessageTimeBasis
     , messageAutoParseEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
+    , importantOnlyMyOrganism : Bool
     }
 
 
@@ -33635,3 +33642,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageSortBy" (messageTimeBasisDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageAutoParseEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiPositionHighlightsEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]))

@@ -65,7 +65,7 @@ describe('ImportantMessageDialog', () => {
 
   it('#3610 submits a personal mark when notification is switched off', async () => {
     const updated = vi.fn();
-    importantAdd.mockResolvedValueOnce(true);
+    importantAdd.mockResolvedValueOnce({ important: true, importantByMyOrganism: true });
     window.addEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, updated);
     renderDialog();
     await requestImportantMessage();
@@ -131,7 +131,7 @@ describe('ImportantMessageDialog', () => {
   it('#3987 marks directly without the dialog when notify-all is disabled', async () => {
     const updated = vi.fn();
     currentSystemSettings.mockResolvedValue({ importantNotifyAllEnabled: false });
-    importantAdd.mockResolvedValueOnce(true);
+    importantAdd.mockResolvedValueOnce({ important: true, importantByMyOrganism: true });
     window.addEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, updated);
     renderDialog();
     await requestImportantMessage();
@@ -149,6 +149,7 @@ describe('ImportantMessageDialog', () => {
     expect((updated.mock.calls[0][0] as CustomEvent).detail).toEqual({
       messageId: 17,
       important: true,
+      importantByMyOrganism: true,
     });
     window.removeEventListener(IMPORTANT_MESSAGE_UPDATED_EVENT, updated);
   });

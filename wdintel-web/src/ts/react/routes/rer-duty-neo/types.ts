@@ -90,6 +90,7 @@ export type FeedColumnModel = {
     collapseMediaPreviews?: boolean;
     mediaSummaryEnabled?: boolean;
     messageTextPreviewLines: MessageTextPreviewLineLimit;
+    importantOnlyMyOrganism: boolean;
     tagsMap: Record<number, Tag>;
     tagsOrder: number[];
     botTagAction: MessageCardBotTagAction | null;

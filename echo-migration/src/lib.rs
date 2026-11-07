@@ -537,6 +537,7 @@ mod m20261010_094039_settlement_alias_lookup_indexes;
 mod m20261010_110158_ai_settlement_worker_groups;
 
 mod m20261104_083000_group_message_requirements;
+mod m20261107_175132_important_only_my_organism;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1232,6 +1233,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_083000_group_message_requirements::Migration),
             Box::new(m20261104_165252_rer_report_unit_selection::Migration),
             Box::new(m20261105_212108_iggy_group_refresh_queue::Migration),
+            Box::new(m20261107_175132_important_only_my_organism::Migration),
         ]
     }
 }

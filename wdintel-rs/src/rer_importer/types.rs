@@ -60,6 +60,9 @@ pub struct InboxMessage {
     pub important: bool,
     #[serde(default)]
     pub ai_important: bool,
+    /// Viewer-relative: someone in the viewer's organism marked this message.
+    #[serde(default)]
+    pub important_by_my_organism: bool,
     pub bookmarked: bool,
     pub timestamp: Option<i64>,
     #[serde(default)]
@@ -202,6 +205,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             checked: payload.checked,
             important: payload.important,
             ai_important: false,
+            important_by_my_organism: false,
             bookmarked: payload.bookmarked,
             timestamp: payload.timestamp,
             created_at: None,

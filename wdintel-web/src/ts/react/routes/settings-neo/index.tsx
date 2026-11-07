@@ -122,6 +122,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       aiPositionHighlightsEnabled: dutySettings.aiPositionHighlightsEnabled,
       messageSortBy: dutySettings.messageSortBy,
       messageAutoParseEnabled: dutySettings.messageAutoParseEnabled,
+      importantOnlyMyOrganism: dutySettings.importantOnlyMyOrganism,
       ...overrides,
     });
   };
@@ -328,6 +329,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
                 scheduleDutySettingsSave({ disableAutoScroll: value });
+              }}
+              importantOnlyMyOrganism={dutySettings.importantOnlyMyOrganism}
+              onImportantOnlyMyOrganismChange={(value) => {
+                dutySettings.setImportantOnlyMyOrganism(value);
+                scheduleDutySettingsSave({ importantOnlyMyOrganism: value });
               }}
               doNotPersistCurrentFilter={dutyFilterPersistenceDisabled}
               onDoNotPersistCurrentFilterChange={(value) => {

@@ -1,4 +1,5 @@
-import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { Box, FormControlLabel, Stack, Switch, Tooltip, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import type {
@@ -18,6 +19,34 @@ const cardSx = {
   p: { xs: 2, sm: 2.5 },
 };
 
+const IMPORTANT_ONLY_MY_ORGANISM_TOOLTIP =
+  'Позначку «Важливе» в Оперативному буде показано лише тоді, коли її поставив користувач вашого підрозділу. Позначки інших підрозділів, ШІ та автоматичні позначки приховано. Самі повідомлення залишаються в стрічці.';
+
+function ImportantOnlyMyOrganismLabel() {
+  return (
+    <Box
+      component="span"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, minWidth: 0, pt: 0.25 }}
+    >
+      <Typography component="span" variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+        Важливі лише мого підрозділу
+      </Typography>
+      <Tooltip title={IMPORTANT_ONLY_MY_ORGANISM_TOOLTIP} placement="top">
+        <Box
+          component="span"
+          tabIndex={0}
+          sx={{ display: 'inline-flex', color: 'text.secondary', lineHeight: 0, cursor: 'default' }}
+          aria-label={IMPORTANT_ONLY_MY_ORGANISM_TOOLTIP}
+          // The icon sits inside the switch's <label>; a click must not toggle it.
+          onClick={(event) => event.preventDefault()}
+        >
+          <InfoOutlinedIcon sx={{ fontSize: 16 }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  );
+}
+
 export type SettingsDutySectionProps = {
   messageCardQuickAction: MessageCardQuickAction;
   onMessageCardQuickActionChange: (value: MessageCardQuickAction) => void;
@@ -36,6 +65,8 @@ export type SettingsDutySectionProps = {
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
+  importantOnlyMyOrganism: boolean;
+  onImportantOnlyMyOrganismChange: (value: boolean) => void;
   doNotPersistCurrentFilter: boolean;
   onDoNotPersistCurrentFilterChange: (value: boolean) => void;
   audioTranscriptionCollapsed: boolean;
@@ -67,6 +98,8 @@ export function SettingsDutySection({
   onAiPositionHighlightsEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
+  importantOnlyMyOrganism,
+  onImportantOnlyMyOrganismChange,
   doNotPersistCurrentFilter,
   onDoNotPersistCurrentFilterChange,
   audioTranscriptionCollapsed,
@@ -173,6 +206,22 @@ export function SettingsDutySection({
                     </Typography>
                   </Stack>
                 }
+              />
+              <FormControlLabel
+                sx={{
+                  alignItems: 'flex-start',
+                  m: 0,
+                  gap: 1.5,
+                  '& .MuiFormControlLabel-label': { width: '100%' },
+                }}
+                control={
+                  <Switch
+                    checked={importantOnlyMyOrganism}
+                    onChange={(_, checked) => onImportantOnlyMyOrganismChange(checked)}
+                    disabled={loadInProgress}
+                  />
+                }
+                label={<ImportantOnlyMyOrganismLabel />}
               />
               <FormControlLabel
                 sx={{
