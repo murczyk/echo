@@ -4090,33 +4090,40 @@ fn ai_frequency_rows_within_budget(
     Ok(kept)
 }
 
-fn ai_frequency_row_exceeds_limits(row: &SummaryTableFreqRow) -> bool {
-    [&row.callsigns, &row.units, &row.locations]
-        .iter()
-        .any(|values| {
-            values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
-                || values.iter().any(|value| {
-                    value.chars().count()
-                        > AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
-                })
-        })
+fn ai_frequency_value_exceeds_limit(value: &str) -> bool {
+    value.chars().count() > AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
 }
 
+fn ai_frequency_row_exceeds_limits(row: &SummaryTableFreqRow) -> bool {
+    ai_frequency_value_exceeds_limit(&row.freq)
+        || [&row.callsigns, &row.units, &row.locations]
+            .iter()
+            .any(|values| {
+                values.len() > AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES
+                    || values
+                        .iter()
+                        .any(|value| ai_frequency_value_exceeds_limit(value))
+            })
+}
+
+fn ai_frequency_bounded_value(value: String) -> String {
+    value
+        .chars()
+        .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS)
+        .collect()
+}
+
+/// Every string is capped, so no single row can fill the byte budget.
 fn ai_frequency_summary_row(row: SummaryTableFreqRow) -> AiFrequencySummaryRow {
     let bounded = |values: Vec<String>| {
         values
             .into_iter()
             .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES)
-            .map(|value| {
-                value
-                    .chars()
-                    .take(AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS)
-                    .collect()
-            })
+            .map(ai_frequency_bounded_value)
             .collect()
     };
     AiFrequencySummaryRow {
-        freq: row.freq,
+        freq: ai_frequency_bounded_value(row.freq),
         count: row.count,
         callsigns: bounded(row.callsigns),
         units: bounded(row.units),

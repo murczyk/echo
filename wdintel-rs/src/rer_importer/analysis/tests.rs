@@ -14306,6 +14306,7 @@ fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
     );
 
     let oversized = SummaryTableFreqRow {
+        freq: "\u{1}".repeat(200_000),
         units: vec!["п".repeat(17_000); 32],
         ..row(1, 1, 0)
     };
@@ -14316,6 +14317,10 @@ fn issue_4070_ai_frequency_summary_keeps_the_most_active_rows() {
     assert_eq!(summary.rows.len(), 1);
     assert_eq!(
         summary.rows[0].units[0].chars().count(),
+        AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
+    );
+    assert_eq!(
+        summary.rows[0].freq.chars().count(),
         AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS
     );
     assert!(summary.row_values_truncated);
