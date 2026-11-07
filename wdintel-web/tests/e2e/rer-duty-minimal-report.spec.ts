@@ -147,7 +147,16 @@ test.describe('#4008 minimal report window', () => {
     await expect(editor.getByRole('textbox', { name: 'Текст розвіддонесення' })).toHaveValue(
       'Чернетка',
     );
-    await expect(editor.getByRole('combobox', { name: 'Відправити в групу' })).toHaveValue('');
+    await expect(editor.getByRole('combobox', { name: 'Відправити в групу' })).toHaveValue(
+      'Не відправляти',
+    );
+
+    const submitted = page.waitForRequest('**/api/1.1/submit-direct');
+    await editor.getByRole('button', { name: 'Створити', exact: true }).click();
+    expect((await submitted).postDataJSON()).toMatchObject({
+      full_body: 'Чернетка',
+      signal_group_master_key: null,
+    });
   });
 
   test('moves to another message and guards a dirty draft', async ({ page }) => {

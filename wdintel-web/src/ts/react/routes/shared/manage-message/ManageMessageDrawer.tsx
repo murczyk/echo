@@ -445,7 +445,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     const interactionActive = props.interactionActive ?? true;
     const intentKey = props.intentKey ?? 'manage-message';
     const minimalReport = props.minimalReport ?? null;
-    const expandMinimalReport = minimalReport?.onExpand;
+    const requestMinimalReportExpand = minimalReport?.onExpand;
     const { ref: editorWidthRef, width: editorWidth } = useObservedWidth<HTMLDivElement>();
     const adaptiveEmbeddedForm = presentation === 'embedded' && props.adaptiveEmbeddedForm === true;
     const embeddedFormLayout = resolveManageMessageEmbeddedFormLayout(
@@ -644,8 +644,20 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
 
     // The panel has no attachment list, so a pasted file or its rejection must not stay invisible.
     const attachmentsNeedPanel = uppyFiles.length > 0 || Boolean(drawerState.attachmentErrorMsg);
+    // A report needs an explicit destination, and the minimal panel has no group field. Never
+    // guess a group here: only a deliberate choice in the full panel may send the report.
+    const applyMinimalReportDestination = useCallback(() => {
+      if (methods.getValues('signalGroupMasterKey')?.trim()) return;
+      methods.setValue('signalGroupMasterKey', DO_NOT_SEND_GROUP_VALUE, { shouldValidate: true });
+    }, [methods]);
+    const expandMinimalReport = useCallback(() => {
+      if (!requestMinimalReportExpand) return;
+      applyMinimalReportDestination();
+      requestMinimalReportExpand();
+    }, [applyMinimalReportDestination, requestMinimalReportExpand]);
+
     useEffect(() => {
-      if (attachmentsNeedPanel) expandMinimalReport?.();
+      if (attachmentsNeedPanel) expandMinimalReport();
     }, [attachmentsNeedPanel, expandMinimalReport]);
 
     const handleDeleteConfirm = async () => {
@@ -758,17 +770,11 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
     );
 
     if (minimalReport) {
-      // A report needs an explicit destination, and this panel has no group field. Never
-      // guess a group here: only a deliberate choice in the full panel may send the report.
       const reportGroupKey = methods.getValues('signalGroupMasterKey')?.trim() ?? '';
       const submitMinimalReport: FormEventHandler<HTMLFormElement> = (event) => {
-        if (!reportGroupKey) {
-          methods.setValue('signalGroupMasterKey', DO_NOT_SEND_GROUP_VALUE, {
-            shouldValidate: true,
-          });
-        }
+        applyMinimalReportDestination();
         // Failures on fields this panel hides are only reachable in the full panel.
-        void methods.handleSubmit(onSubmit, minimalReport.onExpand)(event);
+        void methods.handleSubmit(onSubmit, expandMinimalReport)(event);
       };
       return (
         <RadioFeaturesProvider allowed={drawerState.radioFeaturesAllowed}>
@@ -803,7 +809,7 @@ export const ManageMessageDrawer = forwardRef<ManageMessageEditorHandle, Props>(
               interactionActive={interactionActive}
               onSubmit={submitMinimalReport}
               onRequestClose={handleDrawerClose}
-              onExpand={minimalReport.onExpand}
+              onExpand={expandMinimalReport}
             />
           ) : null}
           {editorDialogs}
