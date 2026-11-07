@@ -174,6 +174,13 @@ tool, and share its schema builder rather than copying it. Reject guidance that
 steers the model toward an argument the tool rejects. Text reused from another
 tool is the usual cause: it can name parameters this tool lacks.
 
+Require a route serving a tool to bound its own response. The runner refuses
+anything over `MAX_RESPONSE_BYTES`, so an unbounded list works on small scopes
+and fails on large ones. Order rows by what matters most, because compaction
+keeps the first items, and report the total so a partial list cannot pass as
+complete. Add a new tool diagnostic reason to the allowlists in
+`wdintel-rs/src/ai_agent/events.rs` as well, or Echo discards it.
+
 Rejected arguments fail before reaching Echo and show the user a generic failed
 step, so a review of recurring `invalid_arguments` diagnostics should look for
 this drift before blaming the model.
