@@ -331,6 +331,26 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     await act(async () => reloaded.root.unmount());
   });
 
+  it('saves the Duty selected-groups flag and reloads the disabled choice', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#duty');
+    const first = await renderPage();
+    const groupsToggle = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('label'))
+        .find((label) => label.textContent?.includes('Відображати обрані групи в оперативному'))
+        ?.querySelector<HTMLInputElement>('input');
+    expect(groupsToggle(first.container)?.checked).toBe(true);
+    await act(async () => groupsToggle(first.container)?.click());
+    await act(async () => button(first.container, 'зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({ dutySelectedGroupsEnabled: false }),
+    );
+    await act(async () => first.root.unmount());
+    mocks.list.mockResolvedValue([{ id: 2, deleted: false, dutySelectedGroupsEnabled: false }]);
+    const reloaded = await renderPage();
+    expect(groupsToggle(reloaded.container)?.checked).toBe(false);
+    await act(async () => reloaded.root.unmount());
+  });
+
   // Regression: https://github.com/echoua/echo/issues/3568
   it('#3568 saves the Analysis AOR-filter flag and reloads the disabled choice', async () => {
     window.history.replaceState({}, '', '/admin/system-settings-neo#analysis');

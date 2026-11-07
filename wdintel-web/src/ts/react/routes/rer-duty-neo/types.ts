@@ -61,6 +61,7 @@ export type FeedColumnModel = {
   filterPanel: FeedFilterPanelModel;
   groupNavigation?: {
     scope: GroupScope;
+    showSelectedGroups: boolean;
     groupName: string;
     onSelect: (scope: GroupScope) => void;
     onError: (error: unknown) => void;

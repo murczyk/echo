@@ -5797,6 +5797,7 @@ export type SystemSettingsCurrentRsp = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5846,6 +5847,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5898,6 +5900,7 @@ export type CreateSystemSettingsReq = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
+  dutySelectedGroupsEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;

@@ -1,5 +1,6 @@
 use crate::config::{
-    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
+    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
+    IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
     REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT,
@@ -209,6 +210,9 @@ fn map_system_settings_item(
         ai_position_highlights_enabled: settings
             .ai_position_highlights_enabled
             .unwrap_or(false),
+        duty_selected_groups_enabled: settings
+            .duty_selected_groups_enabled
+            .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
         important_notify_all_enabled: settings
             .important_notify_all_enabled
             .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -820,6 +824,7 @@ fn system_settings_active_model(
         duty_exclude_menu_enabled: Set(Some(req.duty_exclude_menu_enabled)),
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
+        duty_selected_groups_enabled: Set(req.duty_selected_groups_enabled),
         important_notify_all_enabled: Set(req.important_notify_all_enabled),
         api_rate_limit_replenish_interval_ms: Set(Some(
             req.api_rate_limit_replenish_interval_ms
@@ -923,6 +928,15 @@ async fn create_system_settings_for_login(
                 })
             })
             .unwrap_or(false),
+    );
+    req.duty_selected_groups_enabled = Some(
+        req.duty_selected_groups_enabled
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .and_then(|settings| settings.duty_selected_groups_enabled)
+            })
+            .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
     );
     req.important_notify_all_enabled = Some(
         req.important_notify_all_enabled
@@ -1096,6 +1110,9 @@ pub async fn current_system_settings(
             ai_position_highlights_enabled: settings
                 .ai_position_highlights_enabled
                 .unwrap_or(false),
+            duty_selected_groups_enabled: settings
+                .duty_selected_groups_enabled
+                .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
             important_notify_all_enabled: settings
                 .important_notify_all_enabled
                 .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -1140,6 +1157,7 @@ pub async fn current_system_settings(
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
+            duty_selected_groups_enabled: DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
             important_notify_all_enabled: IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
             api_rate_limit_replenish_interval_ms:
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -1658,6 +1676,52 @@ mod tests {
                 important_notify_all_enabled(&env.dbx).await.unwrap(),
                 expected
             );
+        }
+    }
+
+    // Regression: legacy admin clients omit the field, so saving from one must
+    // not re-enable the indicator on a server where it was turned off.
+    #[tokio::test]
+    #[serial]
+    async fn duty_selected_groups_defaults_on_and_survives_legacy_saves() {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy_settings = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            map_system_settings_item(legacy_settings)
+                .unwrap()
+                .duty_selected_groups_enabled
+        );
+
+        let mut legacy_body =
+            serde_json::to_value(settings_req(false)).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("duty_selected_groups_enabled");
+        let legacy_req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        assert_eq!(legacy_req.duty_selected_groups_enabled, None);
+
+        let mut req = settings_req(false);
+        for (incoming, expected) in [
+            (Some(false), false),
+            (None, false),
+            (Some(true), true),
+            (None, true),
+        ] {
+            req.duty_selected_groups_enabled = incoming;
+            let req = if incoming.is_none() {
+                &legacy_req
+            } else {
+                &req
+            };
+            let saved = create_system_settings_for_login(&env.dbx, &login, req)
+                .await
+                .unwrap();
+            assert_eq!(saved.duty_selected_groups_enabled, Some(expected));
         }
     }
 
@@ -2225,6 +2289,7 @@ mod tests {
             duty_exclude_menu_enabled: true,
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
+            duty_selected_groups_enabled: Some(true),
             important_notify_all_enabled: Some(true),
             api_rate_limit_replenish_interval_ms: Some(
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -2314,6 +2379,7 @@ mod tests {
             duty_exclude_menu_enabled: Set(None),
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
+            duty_selected_groups_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             api_rate_limit_replenish_interval_ms: Set(None),
             api_rate_limit_burst_size: Set(None),

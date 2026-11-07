@@ -9,6 +9,11 @@
         }
       ]
     },
+    "echo:m20261107_175019_duty_selected_groups_flag": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261104_064753_minimal_report_window": {
       "changes": [
         {

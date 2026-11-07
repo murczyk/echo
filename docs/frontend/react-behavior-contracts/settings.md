@@ -46,7 +46,7 @@
 ## System-setting persistence
 
 - **Behavior ID:** `react-system-settings-persistence`
-- **Expected observable result:** disabling the Duty minus menu or 2FA persists through save and the next load reflects the disabled state.
+- **Expected observable result:** disabling the Duty minus menu, the Duty selected-groups indicator, or 2FA persists through save and the next load reflects the disabled state.
 - **Existing test(s):** `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`
 - **Original Echo issue/PR, if known:** [#3568](https://github.com/echoua/echo/issues/3568)
 
