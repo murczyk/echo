@@ -213,7 +213,7 @@ describe('FeedColumnContent', () => {
     );
     expect(importantButton?.getAttribute('aria-pressed')).toBe('false');
     await act(async () => importantButton?.click());
-    expect(onMessageImportant).toHaveBeenCalledWith(1, false);
+    expect(onMessageImportant).toHaveBeenCalledWith(1, false, true);
   });
 
   it('keeps the first unread divider in place while reading and receiving messages (#3727)', async () => {

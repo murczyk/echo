@@ -1890,6 +1890,7 @@ export type ImportantAddReq = {
 
 export type ImportantRmReq = {
   messageId: number;
+  keepAiImportance: boolean;
 };
 
 export type ImportantMutationRsp = {

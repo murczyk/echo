@@ -4891,6 +4891,7 @@ importantAddReqEncoder struct =
 
 type alias ImportantRmReq =
     { messageId : Int
+    , keepAiImportance : Bool
     }
 
 
@@ -4898,6 +4899,7 @@ importantRmReqEncoder : ImportantRmReq -> Json.Encode.Value
 importantRmReqEncoder struct =
     Json.Encode.object
         [ ( "message_id", (Json.Encode.int) struct.messageId )
+        , ( "keep_ai_importance", (Json.Encode.bool) struct.keepAiImportance )
         ]
 
 
@@ -23372,6 +23374,7 @@ importantRmReqDecoder : Json.Decode.Decoder ImportantRmReq
 importantRmReqDecoder =
     Json.Decode.succeed ImportantRmReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "keep_ai_importance" (Json.Decode.bool)))
 
 
 importantMutationRspDecoder : Json.Decode.Decoder ImportantMutationRsp

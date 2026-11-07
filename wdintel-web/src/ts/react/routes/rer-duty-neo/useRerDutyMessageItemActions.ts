@@ -116,7 +116,7 @@ export function useRerDutyMessageItemActions(params: Params) {
   );
 
   const handleMessageImportant = useCallback(
-    async (feedId: string, id: number, currentlyImportant: boolean) => {
+    async (feedId: string, id: number, currentlyImportant: boolean, keepAiImportance = false) => {
       if (!currentlyImportant) {
         requestImportantMessage({
           messageId: id,
@@ -125,7 +125,10 @@ export function useRerDutyMessageItemActions(params: Params) {
         return;
       }
       try {
-        const { important, importantByMyOrganism } = await importantRemove({ messageId: id });
+        const { important, importantByMyOrganism } = await importantRemove({
+          messageId: id,
+          keepAiImportance,
+        });
         setMessageFeeds((prev) =>
           prev.map((w) =>
             w.id === feedId
@@ -133,7 +136,15 @@ export function useRerDutyMessageItemActions(params: Params) {
                   ...w,
                   items: w.items.map(([msgId, msg]) =>
                     msgId === id
-                      ? [msgId, { ...msg, important, importantByMyOrganism, aiImportant: false }]
+                      ? [
+                          msgId,
+                          {
+                            ...msg,
+                            important,
+                            importantByMyOrganism,
+                            aiImportant: keepAiImportance && msg.aiImportant,
+                          },
+                        ]
                       : [msgId, msg],
                   ),
                 }

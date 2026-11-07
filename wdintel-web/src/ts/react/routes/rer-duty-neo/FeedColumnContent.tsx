@@ -158,7 +158,11 @@ type DutyMessageCardItemProps = {
   tagsOrder?: number[];
   filterState: RerDutyFeedFilterState;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageImportant: (
+    msgId: number,
+    currentlyImportant: boolean,
+    keepAiImportance: boolean,
+  ) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
   onMessageCreateReport: (
     msgId: number,
@@ -268,7 +272,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       tagsMap={tagsMap}
       tagsOrder={tagsOrder}
       onBookmark={() => onMessageBookmark(id, msg.bookmarked)}
-      onImportant={() => onMessageImportant(id, cardMsg.important)}
+      onImportant={() => onMessageImportant(id, cardMsg.important, importantOnlyMyOrganism)}
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
       onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
       onCopyMessageLink={() =>
@@ -354,7 +358,11 @@ type DutyMessageListProps = {
   tagsOrder?: number[];
   filterState: RerDutyFeedFilterState;
   onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-  onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+  onMessageImportant: (
+    msgId: number,
+    currentlyImportant: boolean,
+    keepAiImportance: boolean,
+  ) => void;
   onMessageCopy: (text: string, feedbackId: string) => void;
   onMessageCreateReport: (
     msgId: number,

@@ -661,19 +661,10 @@ async fn importants_list(
 )]
 pub struct ImportantRmReq {
     pub message_id: i64,
-}
-
-async fn hides_foreign_importance(
-    env: &Env,
-    login: Uuid,
-) -> anyhow::Result<bool> {
-    Ok(user_settings::Entity::find()
-        .filter(user_settings::Column::LoginId.eq(login))
-        .one(&env.dbx)
-        .await
-        .context(h!())?
-        .and_then(|settings| settings.important_only_my_organism)
-        .unwrap_or(false))
+    /// Set by views that hide AI marks: unmarking there must not remove one
+    /// the viewer can't see.
+    #[serde(default)]
+    pub keep_ai_importance: bool,
 }
 
 #[post("/api/rer/important/delete")]
@@ -684,10 +675,6 @@ async fn important_rm(
 ) -> Result<Json<ImportantMutationRsp>, AppError> {
     ensure_base_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
-    // With the option on, the viewer can't see AI marks, so unmarking must not
-    // remove one for everyone else.
-    let keep_ai_importance =
-        hides_foreign_importance(&env, login).await.c(h!())?;
     let response = set_importance(
         &env,
         login,
@@ -695,7 +682,7 @@ async fn important_rm(
         false,
         None,
         None,
-        keep_ai_importance,
+        req.keep_ai_importance,
     )
     .await
     .c(h!())?;
@@ -1547,7 +1534,7 @@ mod tests {
         );
         assert_eq!(set(viewer.id, shared.id, false, false).await, scoped(true));
 
-        // With the option on, unmarking leaves the unseen AI mark in place.
+        // A view that hides AI marks leaves the unseen one in place.
         let analysed = mk_sigint_inbox_item(&env.dbx, Default::default())
             .await
             .unwrap();
@@ -1566,16 +1553,6 @@ mod tests {
             ))
             .await
             .unwrap();
-        env.dbx
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "insert into user_settings (login_id, important_only_my_organism) values ($1, true)",
-                vec![viewer.id.into()],
-            ))
-            .await
-            .unwrap();
-        assert!(hides_foreign_importance(&env, viewer.id).await.unwrap());
-        assert!(!hides_foreign_importance(&env, colleague.id).await.unwrap());
         set(viewer.id, analysed.id, true, true).await;
         assert_eq!(
             set(viewer.id, analysed.id, false, true).await,
@@ -1728,6 +1705,7 @@ mod tests {
                 .cookie(session_cookie.clone())
                 .set_json(ImportantRmReq {
                     message_id: inbox_item.id,
+                    keep_ai_importance: false,
                 })
                 .to_request(),
         )
@@ -1758,6 +1736,7 @@ mod tests {
                 .cookie(session_cookie)
                 .set_json(ImportantRmReq {
                     message_id: inbox_item.id,
+                    keep_ai_importance: false,
                 })
                 .to_request(),
         )
@@ -1855,6 +1834,7 @@ mod tests {
                 .cookie(session_cookie.clone())
                 .set_json(ImportantRmReq {
                     message_id: inbox_item.id,
+                    keep_ai_importance: false,
                 })
                 .to_request(),
         )

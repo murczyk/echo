@@ -42,8 +42,15 @@ export async function importantAdd(req: ImportantAddReq): Promise<ImportantMutat
   return transformSnakeToCamel<ImportantMutationRsp>(raw);
 }
 
-export async function importantRemove(req: ImportantRmReq): Promise<ImportantMutationRsp> {
-  const raw = await postJson<unknown>('/api/rer/important/delete', { message_id: req.messageId });
+export async function importantRemove({
+  messageId,
+  keepAiImportance = false,
+}: Omit<ImportantRmReq, 'keepAiImportance'> &
+  Partial<Pick<ImportantRmReq, 'keepAiImportance'>>): Promise<ImportantMutationRsp> {
+  const raw = await postJson<unknown>('/api/rer/important/delete', {
+    message_id: messageId,
+    ...(keepAiImportance ? { keep_ai_importance: true } : {}),
+  });
   return transformSnakeToCamel<ImportantMutationRsp>(raw);
 }
 

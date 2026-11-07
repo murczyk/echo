@@ -780,7 +780,7 @@ update vps msg model =
 
         ImportantRemove id_ ->
             { model = model
-            , cmds = E.sendCmd <| Api.rer_important_rm ImportantRemoveDone { messageId = id_ }
+            , cmds = E.sendCmd <| Api.rer_important_rm ImportantRemoveDone { messageId = id_, keepAiImportance = False }
             , sigs = []
             , messages =
                 updateV id_

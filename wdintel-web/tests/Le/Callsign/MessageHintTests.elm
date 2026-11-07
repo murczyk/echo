@@ -91,6 +91,7 @@ message textMarked callsigns networkIds =
     , checked = False
     , important = False
     , aiImportant = False
+    , importantByMyOrganism = False
     , bookmarked = False
     , timestamp = Nothing
     , createdAt = Nothing

@@ -109,7 +109,11 @@ export type FeedColumnModel = {
     }) => void | Promise<unknown>;
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
-    onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
+    onMessageImportant: (
+      msgId: number,
+      currentlyImportant: boolean,
+      keepAiImportance: boolean,
+    ) => void;
     onMessageCopy: (text: string, feedbackId: string) => void;
     onMessageCreateReport: (
       msgId: number,
