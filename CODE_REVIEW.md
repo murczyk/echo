@@ -148,6 +148,36 @@ syncs the packaged exclusions before running migrations and fails if analytics
 does not become healthy afterward. Do not replace that guard with a warning or
 an automatic full-mirror resync.
 
+## AI agent tool contracts
+
+Treat each `echo_*` tool and its backend route as one API across two codebases.
+Nothing generates the tool from the Rust request type, so a mismatch reaches
+production without a compile error. Apply this review to any change to a tool's
+parameters in `echo-ai-agent/runner/runner.ts`, and to any change to the request
+type behind a route in `wdintel-rs/src/ai_agent/route_registry.rs`.
+
+Require these to agree in the same pull request:
+
+- the filters the route applies, on both its analytics and PostgreSQL paths;
+- the tool's TypeBox parameters;
+- the field allowlist and body mapping in its request builder;
+- tool, parameter, and system guidance that names or implies those parameters.
+
+Do not require a tool to expose every request field; most `AnalysisStatsReq`
+fields are of no use to the agent. When a sibling tool already filters the same
+data by some dimension, require the change to expose that filter too or state
+why not. The model carries parameters across tools, so an omission surfaces as a
+rejected call.
+
+Give the same filter the same parameter name, limits, and semantics on every
+tool, and share its schema builder rather than copying it. Reject guidance that
+steers the model toward an argument the tool rejects. Text reused from another
+tool is the usual cause: it can name parameters this tool lacks.
+
+Rejected arguments fail before reaching Echo and show the user a generic failed
+step, so a review of recurring `invalid_arguments` diagnostics should look for
+this drift before blaming the model.
+
 ## Configuration compatibility
 
 When adding configuration values, prefer backward-compatible behavior for
