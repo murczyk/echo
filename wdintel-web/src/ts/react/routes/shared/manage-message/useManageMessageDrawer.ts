@@ -777,16 +777,15 @@ export function useManageMessageDrawer({
     uppyFiles,
   ]);
 
+  // Group requirements cannot apply here: the minimal panel has no group field.
   const reportDetailsMissing =
     isReportCreateMode &&
     reportCopyLoaded &&
-    ((unitRequired && !formValues.unit?.trim()) ||
-      (deviceRequired && !formValues.deviceName?.trim()) ||
-      !isMessageUnitSelectionValid(
-        formValues.unit,
-        formValues.unitSelection,
-        formValues.unitNetworkSelection,
-      ));
+    !isMessageUnitSelectionValid(
+      formValues.unit,
+      formValues.unitSelection,
+      formValues.unitNetworkSelection,
+    );
 
   useEffect(() => {
     if (!formReady) {

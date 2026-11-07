@@ -46,6 +46,9 @@ async function openThreeColumnDuty(page: Page, minimalReportWindowEnabled: boole
       }),
     }),
   );
+  await page.route('**/api/sigint/units/hierarchy', (route) =>
+    route.fulfill({ json: { revision: 'e2e', groups: [], units: [] } }),
+  );
   await page.goto('/rer-duty-neo');
   await dutyMocks.systemSettingsReady;
   await expect(page.getByText(SOURCE_TEXT).first()).toBeVisible();

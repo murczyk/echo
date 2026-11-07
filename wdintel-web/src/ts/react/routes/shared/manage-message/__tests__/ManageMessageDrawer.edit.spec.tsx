@@ -6989,11 +6989,6 @@ describe('ManageMessageDrawer edit mode', () => {
 
     afterEach(() => {
       minimalHosts.splice(0).forEach((element) => element.remove());
-      vi.mocked(getMessageCreationSettings).mockResolvedValue({
-        unitRequired: false,
-        deviceRequired: false,
-        allowUnitCreation: true,
-      });
     });
 
     it('shows only the original and report text inside the feed host', async () => {
@@ -7212,13 +7207,12 @@ describe('ManageMessageDrawer edit mode', () => {
       await act(async () => root.unmount());
     });
 
-    it('explains why a role-required field blocks the panel', async () => {
-      vi.mocked(getMessageCreationSettings).mockResolvedValue({
-        unitRequired: true,
-        deviceRequired: false,
-        allowUnitCreation: true,
+    it('explains why an unresolved unit blocks the panel', async () => {
+      const { host, onExpand, root } = setUpMinimalReport({
+        ...minimalPayload,
+        unit: 'Невизначений підрозділ',
+        unit_id: 0,
       });
-      const { host, onExpand, root } = setUpMinimalReport();
       await act(async () => root.render(reportDrawer({ host, onExpand })));
 
       await typeReport('quick report');
