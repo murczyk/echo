@@ -2,6 +2,16 @@
 
 - Read README.md to understand the general project purpose
 
+## Shared UI design context
+
+- For main `wdintel-web` UI work, read [PRODUCT.md](./PRODUCT.md),
+  [DESIGN.md](./DESIGN.md), the [layout contract](./docs/frontend/layout-component-contract.md),
+  and the affected surface's local `AGENTS.md`. These files do not define GOI/docs UI.
+- Use `echo-ui-brief` when scoping a UI change and `echo-ui-review` when reviewing it.
+  See [context use](./docs/frontend/design-workflow.md) and
+  [team tools](./docs/frontend/design-tools.md) for discovery, optional integrations,
+  and verification limits. Personal plugins are not prerequisites.
+
 ## Deployment and real-environment approval
 
 - Require explicit user approval naming the operation and target before deploying

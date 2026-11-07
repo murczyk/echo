@@ -13,3 +13,13 @@
 *.scss  @ozelenyi @vladyslav-koshulko @thepeterfalk
 *.sass  @ozelenyi @vladyslav-koshulko @thepeterfalk
 *.less  @ozelenyi @vladyslav-koshulko @thepeterfalk
+
+# Shared product/design context and team tooling
+/PRODUCT.md @ozelenyi @vladyslav-koshulko @thepeterfalk
+/DESIGN.md @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/echo-ui-brief/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/echo-ui-review/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.agents/skills/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.impeccable/config.json @ozelenyi @vladyslav-koshulko @thepeterfalk
+/docs/frontend/design-workflow.md @ozelenyi @vladyslav-koshulko @thepeterfalk
+/docs/frontend/design-tools.md @ozelenyi @vladyslav-koshulko @thepeterfalk
