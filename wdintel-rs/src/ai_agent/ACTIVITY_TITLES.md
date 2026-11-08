@@ -28,12 +28,14 @@ assistant-text, and citation events do not themselves change the current step.
 
 ## Generation and factual detail
 
-The backend uses an enabled, agent-allowed `DirectHttp` engine, which is the
-configured general vLLM engine on current installations. It prefers the
-configured default or reviewer when that engine is among the eligible local
-engines; otherwise it chooses deterministically by engine name and identifier.
-Engines outside the agent allowlist, including the separate OCR engine, are
-excluded. The main query keeps its selected provider.
+The backend prefers an enabled government `gpt-6-luna` engine, chosen by engine
+name and identifier, even when chat users cannot select it: slower models miss
+the two-second deadline (#4079). Without one, it uses an enabled, agent-allowed
+`DirectHttp` or government engine. It prefers the configured default or
+reviewer when that engine is eligible; otherwise it chooses deterministically
+by engine name and identifier. Other engines outside the agent allowlist,
+including the separate OCR engine, are excluded. Title generation does not
+change the chat model list, and the main query keeps its selected provider.
 
 Each request has one generation task and one latest pending action. Repeated
 retrievals reuse a request-local title cache for the same public action. The
@@ -62,8 +64,9 @@ categorical failures or engine identity and generation duration.
 Deploy the matching Echo backend and frontend. Title generation changes no
 agent protocol and requires no migration or additional harness upgrade beyond
 the [live-progress release](../../../echo-ai-agent/PROGRESS.md#rollout). If title
-generation is unavailable, inspect the enabled agent-allowed local engine and
-its service; the immediate public action continues to work while it recovers.
+generation is unavailable, inspect the enabled government `gpt-6-luna` engine
+or, without one, the enabled agent-allowed engine and its service; the
+immediate public action continues to work while it recovers.
 
 Submit **знайди 20 головних подій за тиждень, по підрозділах противника** in a new
 development conversation. Verify a short action title, muted factual detail,
@@ -76,7 +79,9 @@ current step.
 Regression coverage:
 
 - `wdintel-rs/src/ai_agent/activity_titles.rs` parses operational title JSON and
-  rejects private or invented-count output (#3064).
+  rejects private or invented-count output (#3064), and chooses an enabled
+  government `gpt-6-luna` outside the chat allowlist before the default engine
+  (#4079).
 - `wdintel-rs/src/ai_agent/events.rs` preserves runner sanitization and rejects
   forged presentation metadata.
 - `wdintel-web/src/ts/react/routes/ai-agent-chat/__tests__/index.spec.ts` covers

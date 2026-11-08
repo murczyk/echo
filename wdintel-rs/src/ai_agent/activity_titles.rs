@@ -6,13 +6,14 @@ use crate::config::{
     AI_AGENT_ACTIVITY_TITLE_CONCURRENCY, AI_AGENT_ACTIVITY_TITLE_MAX_CHARS,
     AI_AGENT_ACTIVITY_TITLE_MAX_GENERATIONS,
     AI_AGENT_ACTIVITY_TITLE_MAX_TOKENS, AI_AGENT_ACTIVITY_TITLE_PROMPT,
-    AI_AGENT_ACTIVITY_TITLE_TIMEOUT_MS, AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
+    AI_AGENT_ACTIVITY_TITLE_TIMEOUT_MS, AI_AGENT_OPENAI_GPT_6_LUNA,
+    AI_CHAT_ROLE_SYSTEM, AI_CHAT_ROLE_USER,
 };
 use crate::entities::ai_engine;
 use crate::h;
 use crate::types::{info, warn, Context, Deserialize, ShortContext};
 use regex::Regex;
-use sea_orm::DatabaseConnection;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -139,6 +140,9 @@ async fn load_title_engine(
     if !settings.feature_enabled {
         return Ok(None);
     }
+    if let Some(engine) = government_luna_engine(dbx).await.context(h!())? {
+        return Ok(Some(engine));
+    }
     let mut engines = access::allowed_engines(dbx).await.context(h!())?;
     engines.retain(|engine| {
         access::agent_provider_transport(engine)
@@ -148,12 +152,6 @@ async fn load_title_engine(
     engines.sort_by(|left, right| {
         (&left.name, left.id).cmp(&(&right.name, right.id))
     });
-    if let Some(index) = engines.iter().position(|engine| {
-        crate::ai_engine::client::is_government_url(&engine.url)
-            && engine.model_name == crate::config::AI_AGENT_OPENAI_GPT_6_LUNA
-    }) {
-        return Ok(Some(engines.remove(index)));
-    }
     for preferred in [
         settings.default_ai_engine_id,
         settings.reviewer_ai_engine_id,
@@ -168,6 +166,25 @@ async fn load_title_engine(
         }
     }
     Ok(engines.into_iter().next())
+}
+
+async fn government_luna_engine(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Option<ai_engine::Model>> {
+    let engines = ai_engine::Entity::find()
+        .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::ModelName.eq(AI_AGENT_OPENAI_GPT_6_LUNA))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    Ok(engines
+        .into_iter()
+        .filter(|engine| {
+            crate::ai_engine::client::is_government_url(&engine.url)
+        })
+        .min_by(|left, right| {
+            (&left.name, left.id).cmp(&(&right.name, right.id))
+        }))
 }
 
 async fn generate_titles(
@@ -347,7 +364,102 @@ fn public_text(text: &str, max_chars: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_title;
+    use super::{access, load_title_engine, parse_title};
+    use crate::config::{
+        AI_AGENT_GLM_5_3, AI_AGENT_OPENAI_GPT_6_LUNA, AI_GOV_UA_API_BASE,
+    };
+    use crate::entities::{ai_agent_allowed_engine, ai_engine};
+    use sea_orm::{
+        sea_query::Expr, ActiveModelTrait, ActiveValue::Set, ColumnTrait,
+        DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
+    };
+    use serial_test::serial;
+    use uuid::Uuid;
+
+    async fn government_engine(
+        dbx: &DatabaseConnection,
+        model_name: &str,
+    ) -> ai_engine::Model {
+        ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("issue-4079-{model_name}-{}", Uuid::now_v7())),
+            url: Set(AI_GOV_UA_API_BASE.to_string()),
+            model_name: Set(model_name.to_string()),
+            enabled: Set(true),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/4079
+    #[tokio::test]
+    #[serial]
+    async fn issue_4079_titles_use_enabled_government_luna_outside_allowed_models(
+    ) {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let dbx = &env.dbx;
+        // ai_engine rows outlive cleanup; other fixtures may hold luna.
+        let other_luna_ids = ai_engine::Entity::find()
+            .filter(ai_engine::Column::Enabled.eq(true))
+            .filter(ai_engine::Column::ModelName.eq(AI_AGENT_OPENAI_GPT_6_LUNA))
+            .all(dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|engine| engine.id)
+            .collect::<Vec<_>>();
+        set_engines_enabled(dbx, &other_luna_ids, false).await;
+        let glm = government_engine(dbx, AI_AGENT_GLM_5_3).await;
+        ai_agent_allowed_engine::ActiveModel {
+            ai_engine_id: Set(glm.id),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        let luna = government_engine(dbx, AI_AGENT_OPENAI_GPT_6_LUNA).await;
+        let settings = access::settings(dbx).await.unwrap();
+        let mut enabled = settings.clone().into_active_model();
+        enabled.feature_enabled = Set(true);
+        enabled.default_ai_engine_id = Set(Some(glm.id));
+        enabled.update(dbx).await.unwrap();
+
+        let title_engine = load_title_engine(dbx).await.unwrap();
+        assert_eq!(title_engine.map(|engine| engine.id), Some(luna.id));
+        let mut luna = luna.into_active_model();
+        luna.enabled = Set(false);
+        luna.update(dbx).await.unwrap();
+        let title_engine = load_title_engine(dbx).await.unwrap();
+        assert_eq!(title_engine.map(|engine| engine.id), Some(glm.id));
+
+        settings
+            .into_active_model()
+            .reset_all()
+            .update(dbx)
+            .await
+            .unwrap();
+        ai_agent_allowed_engine::Entity::delete_by_id(glm.id)
+            .exec(dbx)
+            .await
+            .unwrap();
+        set_engines_enabled(dbx, &other_luna_ids, true).await;
+    }
+
+    async fn set_engines_enabled(
+        dbx: &DatabaseConnection,
+        ids: &[Uuid],
+        enabled: bool,
+    ) {
+        ai_engine::Entity::update_many()
+            .col_expr(ai_engine::Column::Enabled, Expr::value(enabled))
+            .filter(ai_engine::Column::Id.is_in(ids.iter().copied()))
+            .exec(dbx)
+            .await
+            .unwrap();
+    }
 
     // Regression: https://github.com/echoua/echo/issues/3064
     #[test]
