@@ -239,7 +239,7 @@ another failure.
 Admins switch metrics export on and set the OTLP gRPC endpoint, such as
 `http://signoz-echo.eagle-atria.ts.net:4317`, on the **Моніторинг** tab of the
 system settings. Every Echo process builds its exporter at start, so a change
-applies after Echo restarts.
+applies after Echo and the report worker restart.
 
 These settings used to be the `signoz_metrics_enabled` and
 `signoz_metrics_endpoint` keys in `/etc/echo/config.toml`. When the saved

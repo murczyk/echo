@@ -1173,10 +1173,12 @@ function MonitoringSettingsSection({
   form,
   patchForm,
   onOpenControlTab,
+  onOpenReportsTab,
 }: {
   form: SystemSettingsForm;
   patchForm: PatchSystemSettingsForm;
   onOpenControlTab: () => void;
+  onOpenReportsTab: () => void;
 }) {
   return (
     <>
@@ -1202,7 +1204,7 @@ function MonitoringSettingsSection({
         }}
       />
       <Typography variant="body2" color="text.secondary">
-        Зміни діють після перезапуску Echo. Перезапустити Echo можна на вкладці{' '}
+        Зміни діють після перезапуску Echo на вкладці{' '}
         <Link
           href="#control"
           onClick={(event) => {
@@ -1211,6 +1213,16 @@ function MonitoringSettingsSection({
           }}
         >
           «Керування»
+        </Link>{' '}
+        і воркера звітів на вкладці{' '}
+        <Link
+          href="#reports"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenReportsTab();
+          }}
+        >
+          «Звіти»
         </Link>
         .
       </Typography>
@@ -1825,6 +1837,7 @@ export function AdminSystemSettingsNeoPage() {
                           form={form}
                           patchForm={patchForm}
                           onOpenControlTab={() => selectTab('control')}
+                          onOpenReportsTab={() => selectTab('reports')}
                         />
                       </Stack>
                     ) : null}

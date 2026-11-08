@@ -13,7 +13,9 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         // Null means "never set": the application imports the legacy
-        // config.toml values into the active row at startup.
+        // config.toml values into the active row at startup. The update
+        // keeps it null; it only gives PeerDB the row change it needs to
+        // publish the new columns to analytics.
         manager
             .get_connection()
             .execute_unprepared(
@@ -21,6 +23,10 @@ impl MigrationTrait for Migration {
 alter table system_settings
     add column signoz_metrics_enabled boolean,
     add column signoz_metrics_endpoint text;
+
+update system_settings
+set signoz_metrics_enabled = null
+where deleted = false;
                 "#,
             )
             .await

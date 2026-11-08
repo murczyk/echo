@@ -262,7 +262,8 @@
 - Administrators enable SigNoz metrics export and set its OTLP gRPC address in
   `/admin/system-settings-neo#monitoring`. The values are part of the versioned
   system settings, replace the `config.toml` keys, and apply only after Echo
-  restarts; the tab says so and links to the restart on the Control tab.
+  and the report worker restart; the tab says so and links to the Echo restart
+  on the Control tab and the report worker restart on the Reports tab.
 - Saving always sends the switch and the trimmed address, empty as `null`.
   Enabling without an address, or entering an address that is not an http(s) URL
   with a host, shows an error without saving; the backend rejects the same input.

@@ -460,7 +460,9 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     const controls = signozMetricsControls(container);
     expect(controls.enabled?.checked).toBe(false);
     expect(controls.endpoint?.value).toBe('http://old-signoz:4317');
-    expect(container.textContent).toContain('Зміни діють після перезапуску Echo.');
+    expect(container.textContent).toContain(
+      'Зміни діють після перезапуску Echo на вкладці «Керування» і воркера звітів на вкладці «Звіти».',
+    );
 
     await enableSignozMetrics(container, ' http://signoz-echo.eagle-atria.ts.net:4317 ');
 

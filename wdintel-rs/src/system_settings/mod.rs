@@ -926,7 +926,7 @@ async fn create_system_settings_for_login(
     reconcile_api_rate_limit_settings(&mut req, settings.as_ref());
     reconcile_report_concurrency_settings(&mut req, settings.as_ref())
         .context(h!())?;
-    signoz_metrics::reconcile(&mut req, settings.as_ref())?;
+    signoz_metrics::reconcile(&mut req, settings.as_ref()).context(h!())?;
     validate_api_rate_limit_settings(&req).context(h!())?;
     req.ai_position_highlights_enabled = Some(
         req.ai_position_highlights_enabled
