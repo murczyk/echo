@@ -234,11 +234,25 @@ another failure.
 
 ## Metrics
 
+### Export settings
+
+Admins switch metrics export on and set the OTLP gRPC endpoint, such as
+`http://signoz-echo.eagle-atria.ts.net:4317`, on the **Моніторинг** tab of the
+system settings. Every Echo process builds its exporter at start, so a change
+applies after Echo restarts.
+
+These settings used to be the `signoz_metrics_enabled` and
+`signoz_metrics_endpoint` keys in `/etc/echo/config.toml`. When the saved
+settings are still empty, `echo-web` and `echo-bgworker` copy those keys into
+them at start and log that the keys can be removed. Until then, and whenever a
+process cannot read the settings, the keys still apply. Once the settings are
+saved, the keys are ignored. Remove them from `config.toml` and from the
+server's Bitwarden config note after the import.
 
 ### Operational alert signals (#4034)
 
-The existing `signoz_metrics_enabled` and `signoz_metrics_endpoint` settings
-control these metrics. Collection starts with the messenger/background workers,
+The Signoz metrics export settings control these metrics (see
+[Export settings](#export-settings)). Collection starts with the messenger/background workers,
 independently of requests to `/api/monitoring`. Live installations have one
 collector in `echo-bgworker`; debug mode uses its combined web/background process.
 No new feature flag, PostgreSQL schema, runtime package, or analytics resnapshot
@@ -391,8 +405,8 @@ enabled. Fault injection on a real environment requires approval as well.
 ### Admin KPI snapshots
 
 The API process collects the system-wide, unfiltered `/admin/kpi` values at
-startup and hourly while `signoz_kpi_metrics_enabled = true`,
-`signoz_metrics_enabled = true`, and `signoz_metrics_endpoint` is configured.
+startup and hourly while `signoz_kpi_metrics_enabled = true` and metrics export
+is enabled with an endpoint.
 KPI collection defaults to disabled when its flag is absent. An enabled KPI flag
 without a usable metrics exporter logs a startup warning. Enable it on an
 approved rollout target after checking query plans/cost for that instance's
@@ -530,8 +544,7 @@ When reading the numbers:
 Not covered: agent `DirectHttp` engines, the document extractor's direct vLLM
 calls, Echo GPU transcription, and command-line tools that build their own
 client, such as callsign reprocessing and `ai-position-eval`. vLLM has its own
-metrics. Only hosts with `signoz_metrics_enabled = true` export any of these
-metrics.
+metrics. Only hosts with metrics export enabled send any of these metrics.
 
 Change the dashboard by editing the JSON, then run
 `just signoz-install-dashboard --verify` to run every panel's queries without

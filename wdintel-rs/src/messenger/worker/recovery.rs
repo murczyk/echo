@@ -3140,6 +3140,8 @@ mod tests {
             messenger_media_cache_retention_hours: Set(None),
             messenger_media_cache_max_size_gib: Set(None),
             messenger_media_cache_min_free_gib: Set(None),
+            signoz_metrics_enabled: Set(None),
+            signoz_metrics_endpoint: Set(None),
         }
         .insert(dbx)
         .await

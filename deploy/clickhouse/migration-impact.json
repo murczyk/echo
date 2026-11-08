@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20261108_090102_signoz_metrics_settings": {
+      "changes": [
+        { "table": "public.system_settings", "strategy": "cdc_backfill" }
+      ]
+    },
     "echo:m20261107_175132_important_only_my_organism": {
       "changes": [
         {

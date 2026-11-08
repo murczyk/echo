@@ -471,13 +471,17 @@ async fn operational_otlp_export_uses_existing_config_and_filters_sensitive_attr
             cancel.clone().cancelled_owned(),
         ),
     );
-    let mut config =
-        crate::config::read_config(crate::types::Mode::Test).unwrap();
-    config.signoz_metrics_enabled = Some(true);
-    config.signoz_metrics_endpoint = Some("http://[invalid]".to_string());
-    assert!(crate::telemetry::Metrics::from_config(&config).is_none());
-    config.signoz_metrics_endpoint = Some(endpoint);
-    let metrics = crate::telemetry::Metrics::from_config(&config).unwrap();
+    let config = crate::config::read_config(crate::types::Mode::Test).unwrap();
+    let mut settings = crate::telemetry::SignozMetricsSettings {
+        enabled: true,
+        endpoint: Some("http://[invalid]".to_string()),
+    };
+    assert!(
+        crate::telemetry::Metrics::from_settings(&config, &settings).is_none()
+    );
+    settings.endpoint = Some(endpoint);
+    let metrics =
+        crate::telemetry::Metrics::from_settings(&config, &settings).unwrap();
     let mut snapshot = Snapshot::default();
     snapshot.integer(
         OPERATIONAL_METRICS_ROOT_BYTES,

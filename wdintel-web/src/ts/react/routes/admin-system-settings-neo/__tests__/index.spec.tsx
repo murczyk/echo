@@ -94,6 +94,26 @@ function dutyTestSwitch(container: HTMLElement): HTMLInputElement | null {
   );
 }
 
+function signozMetricsControls(container: HTMLElement) {
+  return {
+    enabled: Array.from(container.querySelectorAll('label'))
+      .find((label) => label.textContent?.includes('Експорт метрик до SigNoz'))
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]'),
+    endpoint: container.querySelector<HTMLInputElement>('input[type="url"]'),
+  };
+}
+
+async function enableSignozMetrics(container: HTMLElement, endpoint: string) {
+  const controls = signozMetricsControls(container);
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+  await act(async () => {
+    controls.enabled?.click();
+    setValue.call(controls.endpoint, endpoint);
+    controls.endpoint?.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => button(container, 'зберегти')?.click());
+}
+
 describe('AdminSystemSettingsNeoPage success notifications', () => {
   beforeEach(() => {
     window.history.replaceState({}, '', '/admin/system-settings-neo');
@@ -422,6 +442,47 @@ describe('AdminSystemSettingsNeoPage success notifications', () => {
     expect(window.location.hash).toBe('#analysis');
     expect(replaceState).toHaveBeenCalledOnce();
     expect(pushState).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/4034
+  it('#4034 loads and saves SigNoz metrics export settings on the Monitoring tab', async () => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#monitoring');
+    mocks.list.mockResolvedValue([
+      {
+        id: 1,
+        deleted: false,
+        signozMetricsEnabled: false,
+        signozMetricsEndpoint: 'http://old-signoz:4317',
+      },
+    ]);
+    const { container, root } = await renderPage();
+    const controls = signozMetricsControls(container);
+    expect(controls.enabled?.checked).toBe(false);
+    expect(controls.endpoint?.value).toBe('http://old-signoz:4317');
+    expect(container.textContent).toContain('Зміни діють після перезапуску Echo.');
+
+    await enableSignozMetrics(container, ' http://signoz-echo.eagle-atria.ts.net:4317 ');
+
+    expect(mocks.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signozMetricsEnabled: true,
+        signozMetricsEndpoint: 'http://signoz-echo.eagle-atria.ts.net:4317',
+      }),
+    );
+    await act(async () => root.unmount());
+  });
+  it.each([
+    ['', 'вкажіть адресу SigNoz'],
+    ['signoz-echo:4317', 'має бути http або https URL'],
+  ])('#4034 blocks enabling SigNoz metrics with endpoint %j', async (endpoint, message) => {
+    window.history.replaceState({}, '', '/admin/system-settings-neo#monitoring');
+    const { container, root } = await renderPage();
+
+    await enableSignozMetrics(container, endpoint);
+
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(message);
     await act(async () => root.unmount());
   });
 
