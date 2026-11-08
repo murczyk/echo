@@ -2191,9 +2191,12 @@ pub struct Config {
     pub signoz_logs_enabled: Option<bool>,
     /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
     pub signoz_logs_endpoint: Option<String>,
-    /// Enable application metrics export to Signoz over OTLP gRPC.
+    /// Legacy: metrics export is set on the Monitoring tab of the admin
+    /// system settings. Startup imports this value there once; remove it
+    /// from config.toml afterwards.
     pub signoz_metrics_enabled: Option<bool>,
-    /// Signoz OTLP gRPC endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:4317.
+    /// Legacy, imported like `signoz_metrics_enabled`; an OTLP gRPC endpoint
+    /// such as http://signoz-echo.eagle-atria.ts.net:4317.
     pub signoz_metrics_endpoint: Option<String>,
     /// Collect hourly admin KPI snapshots through the enabled metrics exporter.
     pub signoz_kpi_metrics_enabled: Option<bool>,

@@ -256,3 +256,16 @@
   `wdintel-web/tests/e2e/rer-report-admin.spec.ts`,
   `wdintel-web/src/ts/react/routes/admin-all-reports/__tests__/index.spec.tsx`, and
   `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/RerReportSettings.spec.tsx`.
+
+## Monitoring administration
+
+- Administrators enable SigNoz metrics export and set its OTLP gRPC address in
+  `/admin/system-settings-neo#monitoring`. The values are part of the versioned
+  system settings, replace the `config.toml` keys, and apply only after Echo
+  and the report worker restart; the tab says so and links to the Echo restart
+  on the Control tab and the report worker restart on the Reports tab.
+- Saving always sends the switch and the trimmed address, empty as `null`.
+  Enabling without an address, or entering an address that is not an http(s) URL
+  with a host, shows an error without saving; the backend rejects the same input.
+- Coverage: `wdintel-web/src/ts/react/routes/admin-system-settings-neo/__tests__/index.spec.tsx`.
+- Original Echo issue: [#4034](https://github.com/echoua/echo/issues/4034)

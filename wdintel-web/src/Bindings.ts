@@ -5857,6 +5857,8 @@ export type SystemSettingsItem = {
   messengerMediaCacheRetentionHours: number;
   messengerMediaCacheMaxSizeGib: number;
   messengerMediaCacheMinFreeGib: number;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -5910,6 +5912,8 @@ export type CreateSystemSettingsReq = {
   messengerMediaCacheRetentionHours: number;
   messengerMediaCacheMaxSizeGib: number;
   messengerMediaCacheMinFreeGib: number;
+  signozMetricsEnabled: boolean | null;
+  signozMetricsEndpoint: string | null;
 };
 
 export type ActivateSystemSettingsReq = {
