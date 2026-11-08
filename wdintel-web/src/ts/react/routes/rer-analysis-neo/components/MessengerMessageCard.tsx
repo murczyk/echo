@@ -1,10 +1,12 @@
 import LinkIcon from '@mui/icons-material/Link';
-import { Tooltip } from '@mui/material';
-import { memo, useMemo } from 'react';
+import MessageIcon from '@mui/icons-material/Message';
+import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import { Menu, MenuItem } from '@mui/material';
+import { memo, useMemo, useState } from 'react';
 
 import type { MessengersMessageItem } from '../../../../../Bindings';
 import { missingAttachmentNotice } from '../messenger-message-ui';
-import { formatDateTime24 } from '../../../utils/misc';
+import { ELLIPSIS, formatDateTime24 } from '../../../utils/misc';
 import { renderLinkifiedText } from '../../shared/message-card/message-card-linkify';
 import { MessageFeedItem } from '../../shared/message-feed';
 import { MessengerMessageAttachments } from './MessengerMessageAttachments';
@@ -16,7 +18,10 @@ type Props = {
   // The sender's name added in front of this message when a selection of a private chat is copied.
   copyPrefix: string | null;
   onCopyLink: (messageId: string) => void;
+  onCopyText: (text: string) => void;
 };
+
+const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 
 const BUBBLE_COLORS = {
   incoming: 'bg-black/5 dark:bg-white/10',
@@ -31,7 +36,14 @@ function MessengerMessageCardBase({
   showSenderName,
   copyPrefix,
   onCopyLink,
+  onCopyText,
 }: Props) {
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const closeMenu = () => setMenuAnchor(null);
+  const runAndClose = (action: () => void) => () => {
+    closeMenu();
+    action();
+  };
   // Links open in a new tab, `www.` addresses too. An empty origin keeps echo's own message links
   // as plain links: an analysis messenger text is not an echo message reference.
   const text = useMemo(
@@ -53,40 +65,64 @@ function MessengerMessageCardBase({
         data-messenger-outgoing={outgoing ? 'true' : undefined}
       >
         <div
-          className={`flex max-w-[80%] min-w-0 flex-col gap-1 rounded-lg px-3 py-2 ${
+          className={`max-w-[80%] flow-root min-w-0 rounded-lg px-3 py-2 ${
             outgoing ? BUBBLE_COLORS.outgoing : BUBBLE_COLORS.incoming
           }`}
         >
-          {showSenderName && senderName ? (
-            <div className="text-xs font-medium opacity-70" data-messenger-sender>
-              {senderName}
+          <div className="message-card-action-group float-right mb-1 ml-2">
+            <button
+              type="button"
+              className="message-card-action-btn"
+              title={COPY_TITLE}
+              aria-label={COPY_TITLE}
+              aria-haspopup="menu"
+              aria-expanded={menuAnchor != null ? 'true' : undefined}
+              data-messenger-menu
+              onClick={(event) => setMenuAnchor(event.currentTarget)}
+            >
+              <ContentCopyOutlinedIcon className="message-card-action-btn__icon" />
+            </button>
+          </div>
+          <div className="[&>*+*]:mt-1">
+            {showSenderName && senderName ? (
+              <div className="text-xs font-medium opacity-70" data-messenger-sender>
+                {senderName}
+              </div>
+            ) : null}
+            <div
+              className="text-sm break-words whitespace-pre-wrap"
+              data-messenger-copy-text
+              data-copy-sender={copyPrefix ?? undefined}
+            >
+              {text}
+              {attachmentNotice != null ? <div>{attachmentNotice}</div> : null}
             </div>
-          ) : null}
-          <div
-            className="text-sm break-words whitespace-pre-wrap"
-            data-messenger-copy-text
-            data-copy-sender={copyPrefix ?? undefined}
-          >
-            {text}
-            {attachmentNotice != null ? <div>{attachmentNotice}</div> : null}
+            {message.attachments.length > 0 ? (
+              <div className="clear-both">
+                <MessengerMessageAttachments attachments={message.attachments} />
+              </div>
+            ) : null}
+            <div className="text-right text-xs opacity-80">{formatDateTime24(message.sentAt)}</div>
           </div>
-          {message.attachments.length > 0 ? (
-            <MessengerMessageAttachments attachments={message.attachments} />
-          ) : null}
-          <div className="flex items-center justify-end gap-1 text-xs opacity-80">
-            <Tooltip title="Копіювати посилання на повідомлення">
-              <button
-                type="button"
-                className="-my-1 inline-flex size-6 cursor-pointer items-center justify-center rounded-echo-pill text-echo-text-muted hover:bg-echo-hover hover:text-echo-text focus-visible:outline-2 focus-visible:outline-echo-focus"
-                aria-label="Копіювати посилання на повідомлення"
-                data-messenger-copy-link
-                onClick={() => onCopyLink(message.id)}
-              >
+          <Menu anchorEl={menuAnchor} open={menuAnchor != null} onClose={closeMenu}>
+            <MenuItem
+              data-messenger-copy-text-action
+              onClick={runAndClose(() => onCopyText(message.text))}
+            >
+              <span className="message-card-header-menu-row">
+                <MessageIcon fontSize="small" />
+                <span className="message-card-header-menu-row__label">Копіювати повідомлення</span>
+              </span>
+            </MenuItem>
+            <MenuItem data-messenger-copy-link onClick={runAndClose(() => onCopyLink(message.id))}>
+              <span className="message-card-header-menu-row">
                 <LinkIcon fontSize="small" />
-              </button>
-            </Tooltip>
-            <span>{formatDateTime24(message.sentAt)}</span>
-          </div>
+                <span className="message-card-header-menu-row__label">
+                  Копіювати посилання на повідомлення
+                </span>
+              </span>
+            </MenuItem>
+          </Menu>
         </div>
       </div>
     </MessageFeedItem>

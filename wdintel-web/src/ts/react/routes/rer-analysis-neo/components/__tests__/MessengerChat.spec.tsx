@@ -351,11 +351,28 @@ describe('messenger chat in the workspace', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     await mount();
     await openGroupChat();
-    await click('[data-messenger-copy-link]');
+    await click('[data-messenger-menu]');
+    await act(async () => {
+      document.querySelector<HTMLElement>('[data-messenger-copy-link]')!.click();
+    });
 
     const link = new URL(writeText.mock.calls[0][0]);
     expect(link.searchParams.get('messengerChat')).toBe('c1');
     expect(link.searchParams.get('messengerAnchor')).toBe('msg1');
     expect(link.searchParams.get('messengerAccount')).toBe('a1');
+  });
+
+  it('copies the message text from the menu', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    await mount();
+    await openGroupChat();
+    await click('[data-messenger-menu]');
+    await act(async () => {
+      document.querySelector<HTMLElement>('[data-messenger-copy-text-action]')!.click();
+    });
+
+    expect(writeText).toHaveBeenCalledWith(expect.any(String));
+    expect(writeText.mock.calls[0][0]).not.toContain('messengerChat');
   });
 });

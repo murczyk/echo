@@ -119,6 +119,7 @@ export function MessengerChatView({ account, chat, title, initialAnchorId, onBac
     },
     [chat.id],
   );
+  const copyText = useCallback((text: string) => void copyTextToClipboard(text), []);
   const { goToEnd: loadEnd } = chatState;
   const goToEnd = useCallback(async () => {
     if (await loadEnd()) {
@@ -166,10 +167,11 @@ export function MessengerChatView({ account, chat, title, initialAnchorId, onBac
           showSenderName={sender.showName}
           copyPrefix={sender.needsCopyPrefix ? sender.copyName : null}
           onCopyLink={copyLink}
+          onCopyText={copyText}
         />
       );
     },
-    [account.name, chat.chatType, copyLink, memberById],
+    [account.name, chat.chatType, copyLink, copyText, memberById],
   );
 
   return (
