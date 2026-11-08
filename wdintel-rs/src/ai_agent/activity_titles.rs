@@ -171,6 +171,9 @@ async fn load_title_engine(
 async fn government_luna_engine(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Option<ai_engine::Model>> {
+    if !crate::ai_engine::gov::gateway_enabled(dbx).await.c(h!())? {
+        return Ok(None);
+    }
     let engines = ai_engine::Entity::find()
         .filter(ai_engine::Column::Enabled.eq(true))
         .filter(ai_engine::Column::ModelName.eq(AI_AGENT_OPENAI_GPT_6_LUNA))
@@ -367,8 +370,11 @@ mod tests {
     use super::{access, load_title_engine, parse_title};
     use crate::config::{
         AI_AGENT_GLM_5_3, AI_AGENT_OPENAI_GPT_6_LUNA, AI_GOV_UA_API_BASE,
+        AI_GOV_UA_SETTINGS_ID,
     };
-    use crate::entities::{ai_agent_allowed_engine, ai_engine};
+    use crate::entities::{
+        ai_agent_allowed_engine, ai_engine, ai_gov_ua_settings,
+    };
     use sea_orm::{
         sea_query::Expr, ActiveModelTrait, ActiveValue::Set, ColumnTrait,
         DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter,
@@ -426,9 +432,20 @@ mod tests {
         enabled.feature_enabled = Set(true);
         enabled.default_ai_engine_id = Set(Some(glm.id));
         enabled.update(dbx).await.unwrap();
+        let gateway =
+            ai_gov_ua_settings::Entity::find_by_id(AI_GOV_UA_SETTINGS_ID)
+                .one(dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        set_gateway_enabled(dbx, &gateway, true).await;
 
         let title_engine = load_title_engine(dbx).await.unwrap();
         assert_eq!(title_engine.map(|engine| engine.id), Some(luna.id));
+        set_gateway_enabled(dbx, &gateway, false).await;
+        let title_engine = load_title_engine(dbx).await.unwrap();
+        assert_eq!(title_engine.map(|engine| engine.id), Some(glm.id));
+        set_gateway_enabled(dbx, &gateway, true).await;
         let mut luna = luna.into_active_model();
         luna.enabled = Set(false);
         luna.update(dbx).await.unwrap();
@@ -446,6 +463,22 @@ mod tests {
             .await
             .unwrap();
         set_engines_enabled(dbx, &other_luna_ids, true).await;
+        gateway
+            .into_active_model()
+            .reset_all()
+            .update(dbx)
+            .await
+            .unwrap();
+    }
+
+    async fn set_gateway_enabled(
+        dbx: &DatabaseConnection,
+        gateway: &ai_gov_ua_settings::Model,
+        enabled: bool,
+    ) {
+        let mut gateway = gateway.clone().into_active_model();
+        gateway.enabled = Set(Some(enabled));
+        gateway.update(dbx).await.unwrap();
     }
 
     async fn set_engines_enabled(

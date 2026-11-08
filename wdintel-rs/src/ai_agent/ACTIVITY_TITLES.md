@@ -28,9 +28,10 @@ assistant-text, and citation events do not themselves change the current step.
 
 ## Generation and factual detail
 
-The backend prefers an enabled government `gpt-6-luna` engine, chosen by engine
-name and identifier, even when chat users cannot select it: slower models miss
-the two-second deadline (#4079). Without one, it uses an enabled, agent-allowed
+While the government AI gateway is enabled, the backend prefers an enabled
+government `gpt-6-luna` engine, chosen by engine name and identifier, even when
+chat users cannot select it: slower models miss the two-second deadline
+(#4079). Without one, it uses an enabled, agent-allowed
 `DirectHttp` or government engine. It prefers the configured default or
 reviewer when that engine is eligible; otherwise it chooses deterministically
 by engine name and identifier. Other engines outside the agent allowlist,

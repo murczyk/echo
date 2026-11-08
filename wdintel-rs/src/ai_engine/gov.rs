@@ -35,6 +35,13 @@ pub(super) async fn load(
         .c(h!())
 }
 
+/// Whether government engines can serve requests at all.
+pub(crate) async fn gateway_enabled(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    Ok(load(dbx).await.c(h!())?.enabled == Some(true))
+}
+
 #[post("/api/admin/ai-engines/gov/settings")]
 pub async fn get_settings(
     env: web::Data<Env>,
