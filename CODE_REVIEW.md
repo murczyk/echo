@@ -187,6 +187,20 @@ Rejected arguments fail before reaching Echo and show the user a generic failed
 step, so a review of recurring `invalid_arguments` diagnostics should look for
 this drift before blaming the model.
 
+## Admin settings over config.toml
+
+Make almost every new configurable value an admin UI setting stored in the
+database, usually a `system_settings` column, rather than a `config.toml` key.
+Keep `config.toml` minimal: only what a process needs before it can reach the
+database, secrets and keys, local paths, host identity (`public_host`,
+`server_id`), and values read by processes outside Echo, such as the
+`signoz_logs_*` keys that Vector reads.
+
+When moving an existing `config.toml` key into the admin UI, import its value
+automatically at startup so deployed servers keep their behavior, and log that
+the key can be removed. See `wdintel-rs/src/system_settings/signoz_metrics.rs`
+and `wdintel-rs/src/ai_agent/dispatcher.rs`.
+
 ## Configuration compatibility
 
 When adding configuration values, prefer backward-compatible behavior for
