@@ -114,7 +114,7 @@ const RESPONSE_TOO_LARGE = "Echo response is too large";
 const LEGACY_PROVIDER_REQUEST_MAX_BYTES = 2 * 1024 * 1024;
 const MAX_TOOL_INVOCATIONS = 128;
 const MAX_CONSECUTIVE_TOOL_ERRORS = 6;
-const HARNESS_RELEASE = "2026.11.07.2";
+const HARNESS_RELEASE = "2026.11.08.1";
 const RUNNER_PROTOCOL_VERSION = 1;
 const INBOX_MAX_DAYS = 31;
 const INBOX_PAGE_LIMIT = 20;
@@ -1525,9 +1525,9 @@ const INBOX_MESSAGES_PARAMETERS = Type.Object(
         }),
       }),
     ]),
+    // No minLength: models send "" for an unfiltered read, which means the same as omitting it.
     search: Type.Optional(
       Type.String({
-        minLength: 1,
         maxLength: 2000,
         description: INBOX_SEARCH_DESCRIPTION,
       }),
@@ -1619,9 +1619,9 @@ export function inboxMessagesRequestBody(
     ...selectedFrequenciesBody(input),
     ...selectedUnitsBody(input),
   };
-  if (input.search !== undefined) {
-    body.search = requireString(input.search, "search", 2000).trim();
-    if (!body.search) throw new Error("search must not be blank");
+  if (input.search !== undefined && input.search !== "") {
+    const search = requireString(input.search, "search", 2000).trim();
+    if (search) body.search = search;
   }
   if (input.cursor !== undefined) {
     if (!Number.isSafeInteger(input.cursor) || (input.cursor as number) < 1) {
@@ -3320,13 +3320,53 @@ function misplacedParameters(
   }
 }
 
+// Echo's own argument checks run after schema validation and explain in prose.
+// These name the rejected parameter when the message does not start with it.
+const ARGUMENT_CHECK_FIELDS: readonly [RegExp, string][] = [
+  [/^this request already selected a group/, "selectedGroups:required"],
+  [/^Group .* is (?:not among the accessible groups|ambiguous between)/s, "selectedGroups:unknown"],
+];
+const ARGUMENT_CHECK_SUBJECTS: readonly [RegExp, string][] = [
+  [/\bperiod\b|^recent (?:hours|Kyiv days)\b|\bdate range\b/, "period"],
+  [/^selected callsign\b/, "selectedCallsigns"],
+  [/^selected frequency\b/, "selectedFrequencies"],
+  [/^selected unit\b/, "selectedUnits"],
+  [/\binput (?:contains|must)\b/, "root"],
+];
+const ARGUMENT_CHECK_KINDS: readonly [RegExp, string][] = [
+  [/unsupported field/, "additional"],
+  [/blank/, "blank"],
+  [/reversed/, "order"],
+  [/between|at most|exceed|entries|characters|\d+ to \d+/, "size"],
+];
+
+/** The parameter one of Echo's own argument checks rejected, with a fixed kind;
+ * group names, dates and other received values never leave the runner. */
+function argumentCheckField(
+  message: string,
+  toolName: unknown,
+  parameterNames: ToolParameterNames,
+): string | undefined {
+  const fixed = ARGUMENT_CHECK_FIELDS.find(([pattern]) => pattern.test(message))?.[1];
+  if (fixed) return fixed;
+  const path = /^[A-Za-z][A-Za-z0-9_.]*/.exec(message)?.[0];
+  const named = path && parameterNames.get(String(toolName))?.has(path.split(".")[0]) ? path : undefined;
+  const field = named ?? ARGUMENT_CHECK_SUBJECTS.find(([pattern]) => pattern.test(message))?.[1];
+  if (!field) return undefined;
+  const kind = ARGUMENT_CHECK_KINDS.find(([pattern]) => pattern.test(message))?.[1] ?? "invalid";
+  return `${field}:${kind}`;
+}
+
 /** Field paths and a fixed kind of a failed argument validation; never the received values. */
 export function validationFields(
   result: unknown,
   toolName?: unknown,
   parameterNames: ToolParameterNames = new Map(),
 ): string | undefined {
-  const [errors, received] = toolResultText(result).split("\n\nReceived arguments:");
+  const text = toolResultText(result);
+  const rejected = /^Invalid Echo tool arguments: (.*)$/s.exec(text);
+  if (rejected) return argumentCheckField(rejected[1], toolName, parameterNames);
+  const [errors, received] = text.split("\n\nReceived arguments:");
   if (!/^Validation failed for tool/.test(errors)) return undefined;
   const fields = [...errors.matchAll(/^ {2}- ([^:\n]*): (.*)$/gm)].flatMap(([, path, message]) => {
     const field = path.trim();
