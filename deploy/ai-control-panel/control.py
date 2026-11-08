@@ -354,8 +354,11 @@ class Control:
         previous = json.loads(path.read_text()) if path.exists() else {}
         if previous and previous.get('phase') != 'complete':
             raise RuntimeError(f'{host}: recover the previous rollout first')
+        # Only a failed rollout of this same namespace and agent VM can ask to re-enable AI.
+        same_destination = (previous.get('namespace'), previous.get('agent_host')) == (row['namespace'], self.agent_host)
         journal = {'host': host, 'agent_host': self.agent_host, 'namespace': row['namespace'], 'enabled': row['enabled'],
-                   'pending_enable': bool(previous.get('pending_enable')), 'phase': 'starting'}
+                   'observed_enabled': row['enabled'], 'pending_enable': bool(same_destination and previous.get('pending_enable')),
+                   'phase': 'starting'}
         self.shared.write_json(path, journal)
         try:
             maintenance = Maintenance(self.probe_command(host, maintenance=True))
@@ -371,6 +374,7 @@ class Control:
                 raise RuntimeError('Echo harness requirement changed since preview')
             # A failed rollout that restored an incompatible harness had to leave
             # AI disabled; the flag it saved is the state to restore now.
+            journal['observed_enabled'] = current['enabled']
             journal['enabled'] = current['enabled'] or journal['pending_enable']
             if journal['enabled'] and not current['enabled']:
                 message(f'{host}: AI was left disabled by the failed rollout; it will be re-enabled after the upgrade')
@@ -461,6 +465,7 @@ class Control:
     def restore_namespace(self, journal, maintenance):
         states = journal.get('states', [])
         release = maintenance.ready['required_release']
+        replaced = bool(journal.get('job'))
         if journal.get('job'):
             saved = self.host_action('job', {'namespace':journal['namespace'],'job':journal['job']})
             if saved['phase'] == 'complete':
@@ -472,6 +477,15 @@ class Control:
             result = self.host_action('recover', {'namespace':journal['namespace']}, timeout=600)
             states = result['states']
             release = result['release']
+            replaced = True
+        if not replaced:
+            # Nothing was replaced, so the harness release is unknown here: put the
+            # flag back as this attempt found it and keep any saved intention.
+            enabled = journal.get('observed_enabled', journal['enabled'])
+            maintenance.call({'action':'finish','states':states,'enabled':enabled})
+            if journal.get('pending_enable'):
+                message('AI remains disabled until the harness upgrade completes.')
+            return
         compatible = release == maintenance.ready['required_release']
         maintenance.call({'action':'finish','states':states,'enabled':journal['enabled'] and compatible})
         if not compatible:

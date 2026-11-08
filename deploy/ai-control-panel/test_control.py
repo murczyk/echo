@@ -172,7 +172,8 @@ class AiFlagAcrossFailedRolloutTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             journal = directory / 'journal.json'
-            journal.write_text(json.dumps({'phase': 'complete', 'enabled': True, 'pending_enable': True}))
+            journal.write_text(json.dumps({'phase': 'complete', 'namespace': 'echo-test', 'agent_host': control.AGENT_HOST,
+                                           'enabled': True, 'pending_enable': True}))
             changed = dict(self.row(False), template_id='other')
             run = directory / 'run-0'
             run.mkdir()
@@ -185,6 +186,54 @@ class AiFlagAcrossFailedRolloutTests(unittest.TestCase):
             self.assertEqual([json.loads(line)['action'] for line in requests.read_text().splitlines()], ['abort'])
             saved = json.loads(journal.read_text())
             self.assertEqual((saved['phase'], saved['pending_enable']), ('complete', True))
+
+
+    def test_4077_failure_before_replacement_keeps_ai_disabled_and_the_saved_flag(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            journal = directory / 'journal.json'
+            journal.write_text(json.dumps({'phase': 'complete', 'namespace': 'echo-test', 'agent_host': control.AGENT_HOST,
+                                           'enabled': True, 'pending_enable': True}))
+
+            def replace_fails(action, request=None, **kwargs):
+                if action == 'replace':
+                    raise RuntimeError(control.LOCK_BUSY_ERROR)
+                return {'pending': []}
+            run = directory / 'run-0'
+            run.mkdir()
+            helper, requests = maintenance_helper(run, self.row(False), self.release)
+            controller = controller_for(helper)
+            with mock.patch.object(controller, 'journal_path', return_value=journal), \
+                 mock.patch.object(controller, 'host_action', side_effect=replace_fails), \
+                 mock.patch.object(control, 'emit'):
+                with self.assertRaisesRegex(RuntimeError, 'AI stays disabled'):
+                    controller.upgrade_namespace(self.row(False), {'release': self.release})
+            commands = [json.loads(line) for line in requests.read_text().splitlines()]
+            self.assertEqual([command['action'] for command in commands], ['begin', 'finish'])
+            self.assertFalse(commands[-1]['enabled'])
+            self.assertTrue(json.loads(journal.read_text())['pending_enable'])
+
+    def test_4077_saved_flag_only_applies_to_its_own_destination(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            journal = directory / 'journal.json'
+            journal.write_text(json.dumps({'phase': 'complete', 'namespace': 'echo-elsewhere', 'agent_host': control.AGENT_HOST,
+                                           'enabled': True, 'pending_enable': True}))
+            passing = {'replace': {'id': 'job-1', 'containers': []}, 'finish': {'states': []}}
+            commands, error = self.run_upgrade(directory, journal, self.row(False), passing)
+            self.assertIsNone(error)
+            self.assertFalse(commands[-1]['enabled'])
+
+    def test_4077_recovering_an_interrupted_start_keeps_the_saved_flag(self):
+        controller = controller_for(Path('/bin/true'))
+        maintenance = mock.Mock(ready={'required_release': self.release})
+        journal = {'namespace': 'echo-test', 'enabled': False, 'observed_enabled': False,
+                   'pending_enable': True, 'phase': 'starting'}
+        with mock.patch.object(controller, 'host_action', return_value={'pending': []}), \
+             mock.patch.object(control, 'emit'):
+            controller.restore_namespace(journal, maintenance)
+        maintenance.call.assert_called_once_with({'action': 'finish', 'states': [], 'enabled': False})
+        self.assertTrue(journal['pending_enable'])
 
 
 class HostActionLockRetryTests(unittest.TestCase):
