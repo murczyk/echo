@@ -150,17 +150,22 @@ release the notice names. The panel refuses to upgrade ahead of the deploy.
    just ai-control-panel upgrade --host <server> --release <release>
    ```
 
-   Queued or running AI requests on the server block the upgrade. The first
-   upgrade on each agent VM also needs a moment when no request is running on
-   any namespace of that VM, including other servers. If that fails with
-   `[Errno 11] Resource temporarily unavailable`, nothing has changed: retry the
-   same command once those requests finish.
+   Queued or running AI requests on the server block the upgrade. Steps that
+   find the agent VM busy with other servers' requests wait and retry on their
+   own. If an upgrade still fails, the panel recovers the previous containers.
+   When the restored harness doesn't match the running Echo build, AI stays
+   disabled and the error says so. Rerun the same command once the VM is quiet:
+   it finishes the upgrade and switches AI back on.
 
-3. Confirm the server now reports its harness as current:
+3. Confirm the server now reports its harness as current and AI is still on:
 
    ```bash
    python3 deploy/ai-control-panel/deploy-notice.py <server>
+   just ai-control-panel scan --host <server> --json 2>/dev/null | grep '^{"hosts"' | python3 -c 'import json,sys; print(json.load(sys.stdin)["hosts"][0]["enabled"])'
    ```
+
+   The scan must print `True` unless AI was already off on that server before the
+   upgrade.
 
 ## Checking a server
 
