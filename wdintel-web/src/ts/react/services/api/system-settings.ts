@@ -56,6 +56,8 @@ type SystemSettingsItemRaw = {
   peleng_bounds_bottom_right_lat?: number | null;
   peleng_bounds_bottom_right_lng?: number | null;
   echo_restapi_error_discord_webhook_url?: string | null;
+  signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 type SystemSettingsCurrentRspRaw = {
@@ -152,6 +154,8 @@ type CreateSystemSettingsReqRaw = {
   peleng_bounds_bottom_right_lat: number | null;
   peleng_bounds_bottom_right_lng: number | null;
   echo_restapi_error_discord_webhook_url: string | null;
+  signoz_metrics_enabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signoz_metrics_endpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 type ActivateSystemSettingsReqRaw = {
@@ -210,6 +214,8 @@ export type SystemSettingsItem = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  signozMetricsEnabled: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signozMetricsEndpoint: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 export type SystemSettingsCurrent = {
@@ -302,6 +308,8 @@ export type CreateSystemSettingsInput = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  signozMetricsEnabled?: BackendSystemSettingsItem['signozMetricsEnabled'];
+  signozMetricsEndpoint?: BackendSystemSettingsItem['signozMetricsEndpoint'];
 };
 
 function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
@@ -357,6 +365,8 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     pelengBoundsBottomRightLat: raw.peleng_bounds_bottom_right_lat ?? null,
     pelengBoundsBottomRightLng: raw.peleng_bounds_bottom_right_lng ?? null,
     echoRestapiErrorDiscordWebhookUrl: raw.echo_restapi_error_discord_webhook_url ?? null,
+    signozMetricsEnabled: raw.signoz_metrics_enabled ?? false,
+    signozMetricsEndpoint: raw.signoz_metrics_endpoint ?? null,
   };
 }
 
@@ -460,6 +470,8 @@ export async function createSystemSettings(
     peleng_bounds_bottom_right_lat: input.pelengBoundsBottomRightLat,
     peleng_bounds_bottom_right_lng: input.pelengBoundsBottomRightLng,
     echo_restapi_error_discord_webhook_url: input.echoRestapiErrorDiscordWebhookUrl,
+    signoz_metrics_enabled: input.signozMetricsEnabled,
+    signoz_metrics_endpoint: input.signozMetricsEndpoint,
   };
   const data = await postJson<SystemSettingsItemRaw>('/api/admin/system-settings/create', req);
   return normalizeItem(data);

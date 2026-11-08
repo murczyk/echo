@@ -203,29 +203,46 @@ pub struct Metrics {
     ocr_storage_deferrals: Counter<u64>,
 }
 
+/// Whether and where to export metrics; kept in the admin system settings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignozMetricsSettings {
+    pub enabled: bool,
+    pub endpoint: Option<String>,
+}
+
+pub fn is_valid_signoz_metrics_endpoint(endpoint: &str) -> bool {
+    matches!(
+        reqwest::Url::parse(endpoint),
+        Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
+    )
+}
+
 impl Metrics {
-    pub fn from_config(config: &Config) -> Option<Self> {
-        if !config.signoz_metrics_enabled.unwrap_or(false) {
+    /// Builds the exporter. `config` only supplies the resource identity.
+    pub fn from_settings(
+        config: &Config,
+        settings: &SignozMetricsSettings,
+    ) -> Option<Self> {
+        if !settings.enabled {
             return None;
         }
 
-        let Some(endpoint) = config
-            .signoz_metrics_endpoint
+        let Some(endpoint) = settings
+            .endpoint
             .as_deref()
             .map(str::trim)
             .filter(|endpoint| !endpoint.is_empty())
         else {
             warn!(
-                "Signoz metrics are enabled, but signoz_metrics_endpoint is missing"
+                "Signoz metrics are enabled, but the Signoz metrics endpoint is missing"
             );
             return None;
         };
 
-        if !matches!(
-            reqwest::Url::parse(endpoint),
-            Ok(url) if matches!(url.scheme(), "http" | "https") && url.host_str().is_some()
-        ) {
-            warn!("Signoz metrics are enabled, but signoz_metrics_endpoint is invalid");
+        if !is_valid_signoz_metrics_endpoint(endpoint) {
+            warn!(
+                "Signoz metrics are enabled, but the Signoz metrics endpoint is invalid"
+            );
             return None;
         }
 
@@ -1403,15 +1420,16 @@ mod tests {
     use crate::types::Mode;
 
     #[test]
-    fn metrics_are_disabled_when_config_is_absent() {
-        let mut config = crate::config::read_config(Mode::Test).unwrap();
-        config.signoz_metrics_enabled = None;
-        config.signoz_metrics_endpoint = None;
+    fn metrics_are_disabled_without_a_usable_endpoint() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let mut settings = SignozMetricsSettings::default();
+        assert!(Metrics::from_settings(&config, &settings).is_none());
 
-        assert!(Metrics::from_config(&config).is_none());
+        settings.enabled = true;
+        assert!(Metrics::from_settings(&config, &settings).is_none());
 
-        config.signoz_metrics_enabled = Some(true);
-        assert!(Metrics::from_config(&config).is_none());
+        settings.endpoint = Some("signoz:4317".to_string());
+        assert!(Metrics::from_settings(&config, &settings).is_none());
     }
 
     #[test]

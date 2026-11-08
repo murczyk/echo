@@ -124,6 +124,23 @@ async fn new_env_with_initialization(
         .c(h!())?)
 }
 
+async fn new_metrics(
+    dbx: &sea_orm::DatabaseConnection,
+    config: &Config,
+    initialize: bool,
+) -> Option<crate::telemetry::Metrics> {
+    use crate::system_settings::signoz_metrics;
+    if initialize {
+        if let Err(error) =
+            signoz_metrics::import_legacy_config(dbx, config).await
+        {
+            warn!("Importing Signoz metrics settings failed: {error:?}");
+        }
+    }
+    let settings = signoz_metrics::effective(dbx, config).await;
+    crate::telemetry::Metrics::from_settings(config, &settings)
+}
+
 fn ai_provider_metrics_process() -> &'static str {
     crate::pg_runtime_pool_role().map_or(
         crate::config::AI_PROVIDER_METRICS_PROCESS_ONEOFF,
@@ -136,7 +153,6 @@ async fn new_env_from_config(
     initialize: bool,
     config: Config,
 ) -> Result<Arc<Env>, AppError> {
-    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -158,6 +174,7 @@ async fn new_env_from_config(
         .await
         .c(h!())?;
     }
+    let metrics = new_metrics(&dbx, &config, initialize).await;
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -2014,7 +2031,7 @@ pub async fn main_server(
         );
     } else if config.signoz_kpi_metrics_enabled.unwrap_or(false) {
         log::warn!(
-            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check signoz_metrics_enabled and signoz_metrics_endpoint"
+            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check the Monitoring tab in system settings"
         );
     }
     let deployment_maintenance = web::Data::new(

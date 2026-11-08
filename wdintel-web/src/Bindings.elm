@@ -15044,6 +15044,8 @@ type alias SystemSettingsItem =
     , messengerMediaCacheRetentionHours : Int
     , messengerMediaCacheMaxSizeGib : Int
     , messengerMediaCacheMinFreeGib : Int
+    , signozMetricsEnabled : Bool
+    , signozMetricsEndpoint : Maybe (String)
     }
 
 
@@ -15101,6 +15103,8 @@ systemSettingsItemEncoder struct =
         , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
         , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
+        , ( "signoz_metrics_enabled", (Json.Encode.bool) struct.signozMetricsEnabled )
+        , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
         ]
 
 
@@ -15163,6 +15167,8 @@ type alias CreateSystemSettingsReq =
     , messengerMediaCacheRetentionHours : Int
     , messengerMediaCacheMaxSizeGib : Int
     , messengerMediaCacheMinFreeGib : Int
+    , signozMetricsEnabled : Maybe (Bool)
+    , signozMetricsEndpoint : Maybe (String)
     }
 
 
@@ -15215,6 +15221,8 @@ createSystemSettingsReqEncoder struct =
         , ( "messenger_media_cache_retention_hours", (Json.Encode.int) struct.messengerMediaCacheRetentionHours )
         , ( "messenger_media_cache_max_size_gib", (Json.Encode.int) struct.messengerMediaCacheMaxSizeGib )
         , ( "messenger_media_cache_min_free_gib", (Json.Encode.int) struct.messengerMediaCacheMinFreeGib )
+        , ( "signoz_metrics_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.signozMetricsEnabled )
+        , ( "signoz_metrics_endpoint", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.signozMetricsEndpoint )
         ]
 
 
@@ -30404,6 +30412,8 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -30461,6 +30471,8 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_retention_hours" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_max_size_gib" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messenger_media_cache_min_free_gib" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signoz_metrics_endpoint" (Json.Decode.nullable (Json.Decode.string))))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

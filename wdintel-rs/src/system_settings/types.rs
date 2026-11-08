@@ -123,6 +123,10 @@ pub struct SystemSettingsItem {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+    #[serde(default)]
+    pub signoz_metrics_enabled: bool,
+    #[serde(default)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 #[derive(
@@ -217,6 +221,11 @@ pub struct CreateSystemSettingsReq {
     pub messenger_media_cache_max_size_gib: i64,
     #[serde(default = "default_media_cache_min_free_gib")]
     pub messenger_media_cache_min_free_gib: i64,
+    /// Omitted by older clients; the saved value is then kept.
+    #[serde(default)]
+    pub signoz_metrics_enabled: Option<bool>,
+    #[serde(default)]
+    pub signoz_metrics_endpoint: Option<String>,
 }
 
 fn default_api_rate_limit_replenish_interval_ms() -> i64 {

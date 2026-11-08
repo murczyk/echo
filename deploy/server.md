@@ -299,11 +299,10 @@ locally on the server as `postgres`).
     - `signoz_logs_enabled = true`
     - `signoz_logs_endpoint = "http://signoz-echo.eagle-atria.ts.net:8082"`
   - restart vector: `sudo systemctl restart echo-vector`
-- For Signoz device metrics:
-  - set in `/etc/echo/config.toml`:
-    - `signoz_metrics_enabled = true`
-    - `signoz_metrics_endpoint = "http://signoz-echo.eagle-atria.ts.net:4317"`
-  - restart the backend: `sudo systemctl restart wdintel-rs`
+- For Signoz metrics:
+  - on the system settings **Моніторинг** tab, enable the export with
+    endpoint `http://signoz-echo.eagle-atria.ts.net:4317`
+  - restart Echo: `sudo systemctl restart wdintel-rs wdintel-rs-bgworker wdintel-rs-report-worker`
 
 ## При пререїзді на новий сервер
 

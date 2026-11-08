@@ -95,6 +95,8 @@ type SystemSettingsForm = {
   pelengBoundsBottomRightLat: string;
   pelengBoundsBottomRightLng: string;
   echoRestapiErrorDiscordWebhookUrl: string;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string;
 };
 
 type PatchSystemSettingsForm = (patch: Partial<SystemSettingsForm>) => void;
@@ -145,6 +147,8 @@ type SystemSettingsPayload = {
   pelengBoundsBottomRightLat: number | null;
   pelengBoundsBottomRightLng: number | null;
   echoRestapiErrorDiscordWebhookUrl: string | null;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string | null;
 };
 
 const DUTY_POLL_INTERVAL_SEC_MIN = 5;
@@ -195,6 +199,8 @@ const EMPTY_FORM: SystemSettingsForm = {
   pelengBoundsBottomRightLat: '',
   pelengBoundsBottomRightLng: '',
   echoRestapiErrorDiscordWebhookUrl: '',
+  signozMetricsEnabled: false,
+  signozMetricsEndpoint: '',
 };
 
 const SUPPORT_NON_RER_TOOLTIP =
@@ -213,6 +219,7 @@ const DUTY_POLL_INTERVAL_TOOLTIP =
   'Резервна перевірка нових повідомлень; події надходять одразу між перевірками.';
 const DUTY_TEST_REPLAY_INTERVAL_TOOLTIP =
   'Пауза між тестовими повідомленнями. Перше повідомлення надходить одразу, після останнього цикл починається знову.';
+const SIGNOZ_METRICS_ENDPOINT_EXAMPLE = 'http://signoz-echo.eagle-atria.ts.net:4317';
 const DISABLE_BOT_TAGS_TOOLTIP =
   'Приховує теги, додані ботом, на сторінках «Аналіз» та «Оперативний Neo» і призупиняє створення нових. Після вимкнення наявні теги знову відображатимуться, а бот продовжить роботу.';
 
@@ -298,6 +305,8 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     pelengBoundsBottomRightLat: coordinateToInput(item?.pelengBoundsBottomRightLat ?? null),
     pelengBoundsBottomRightLng: coordinateToInput(item?.pelengBoundsBottomRightLng ?? null),
     echoRestapiErrorDiscordWebhookUrl: item?.echoRestapiErrorDiscordWebhookUrl ?? '',
+    signozMetricsEnabled: item?.signozMetricsEnabled ?? false,
+    signozMetricsEndpoint: item?.signozMetricsEndpoint ?? '',
   };
 }
 
@@ -347,7 +356,9 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.pelengBoundsTopLeftLng === b.pelengBoundsTopLeftLng &&
     a.pelengBoundsBottomRightLat === b.pelengBoundsBottomRightLat &&
     a.pelengBoundsBottomRightLng === b.pelengBoundsBottomRightLng &&
-    a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl
+    a.echoRestapiErrorDiscordWebhookUrl === b.echoRestapiErrorDiscordWebhookUrl &&
+    a.signozMetricsEnabled === b.signozMetricsEnabled &&
+    a.signozMetricsEndpoint === b.signozMetricsEndpoint
   );
 }
 
@@ -407,6 +418,7 @@ function normalizeForm(form: SystemSettingsForm): SystemSettingsForm {
     pelengBoundsBottomRightLat: normalizeCoordinateInput(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: normalizeCoordinateInput(form.pelengBoundsBottomRightLng),
     echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl.trim(),
+    signozMetricsEndpoint: form.signozMetricsEndpoint.trim(),
   };
 }
 
@@ -457,6 +469,8 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     pelengBoundsBottomRightLat: coordinateToPayload(form.pelengBoundsBottomRightLat),
     pelengBoundsBottomRightLng: coordinateToPayload(form.pelengBoundsBottomRightLng),
     echoRestapiErrorDiscordWebhookUrl: form.echoRestapiErrorDiscordWebhookUrl || null,
+    signozMetricsEnabled: form.signozMetricsEnabled,
+    signozMetricsEndpoint: form.signozMetricsEndpoint || null,
   };
 }
 
@@ -1136,6 +1150,86 @@ function NotificationsSettingsSection({
   );
 }
 
+function isValidSignozMetricsEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+function validateSignozMetricsSettings(form: SystemSettingsForm): string | null {
+  if (form.signozMetricsEndpoint && !isValidSignozMetricsEndpoint(form.signozMetricsEndpoint)) {
+    return `Моніторинг: адреса SigNoz має бути http або https URL, наприклад ${SIGNOZ_METRICS_ENDPOINT_EXAMPLE}.`;
+  }
+  if (form.signozMetricsEnabled && !form.signozMetricsEndpoint) {
+    return 'Моніторинг: вкажіть адресу SigNoz, щоб увімкнути експорт метрик.';
+  }
+  return null;
+}
+
+function MonitoringSettingsSection({
+  form,
+  patchForm,
+  onOpenControlTab,
+  onOpenReportsTab,
+}: {
+  form: SystemSettingsForm;
+  patchForm: PatchSystemSettingsForm;
+  onOpenControlTab: () => void;
+  onOpenReportsTab: () => void;
+}) {
+  return (
+    <>
+      <Typography component="h2" variant="subtitle1" sx={{ m: 0, fontWeight: 600 }}>
+        Моніторинг
+      </Typography>
+      <MainSettingsSwitchRow
+        checked={form.signozMetricsEnabled}
+        label="Експорт метрик до SigNoz"
+        onChange={(checked) => patchForm({ signozMetricsEnabled: checked })}
+      />
+      <TextField
+        fullWidth
+        label="Адреса OTLP gRPC"
+        type="url"
+        placeholder={SIGNOZ_METRICS_ENDPOINT_EXAMPLE}
+        value={form.signozMetricsEndpoint}
+        onChange={(event) => {
+          patchForm({ signozMetricsEndpoint: event.target.value });
+        }}
+        onBlur={(event) => {
+          patchForm({ signozMetricsEndpoint: event.target.value.trim() });
+        }}
+      />
+      <Typography variant="body2" color="text.secondary">
+        Зміни діють після перезапуску Echo на вкладці{' '}
+        <Link
+          href="#control"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenControlTab();
+          }}
+        >
+          «Керування»
+        </Link>{' '}
+        і воркера звітів на вкладці{' '}
+        <Link
+          href="#reports"
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenReportsTab();
+          }}
+        >
+          «Звіти»
+        </Link>
+        .
+      </Typography>
+    </>
+  );
+}
+
 type OrbitCleanupDialogStep = 'first-confirmation' | 'final-confirmation' | 'roadblocks' | null;
 
 function OrbitIntegrationsSection({
@@ -1381,6 +1475,12 @@ export function AdminSystemSettingsNeoPage() {
     setForm((prev) => ({ ...prev, ...patch }));
   }
 
+  function selectTab(tab: SystemSettingsTab) {
+    if (tab === activeTab) return;
+    setActiveTab(tab);
+    replaceSystemSettingsTabUrl(tab);
+  }
+
   async function saveSystemSettings(nextForm: SystemSettingsForm) {
     const payload = formToPayload(nextForm);
     await createSystemSettings({
@@ -1430,6 +1530,8 @@ export function AdminSystemSettingsNeoPage() {
       pelengBoundsBottomRightLat: payload.pelengBoundsBottomRightLat,
       pelengBoundsBottomRightLng: payload.pelengBoundsBottomRightLng,
       echoRestapiErrorDiscordWebhookUrl: payload.echoRestapiErrorDiscordWebhookUrl,
+      signozMetricsEnabled: payload.signozMetricsEnabled,
+      signozMetricsEndpoint: payload.signozMetricsEndpoint,
     });
   }
 
@@ -1469,7 +1571,8 @@ export function AdminSystemSettingsNeoPage() {
       validateReportConcurrencySettings(nextForm) ??
       validateApiRateLimitSettings(nextForm) ??
       validateMediaCacheSettings(nextForm) ??
-      validatePelengBounds(nextForm);
+      validatePelengBounds(nextForm) ??
+      validateSignozMetricsSettings(nextForm);
     if (validationError) {
       setForm(nextForm);
       setSaveError(validationError);
@@ -1506,11 +1609,7 @@ export function AdminSystemSettingsNeoPage() {
           <Box component="form" onSubmit={handleSaveSystemSettings} noValidate>
             <Tabs
               value={activeTab}
-              onChange={(_, value: SystemSettingsTab) => {
-                if (value === activeTab) return;
-                setActiveTab(value);
-                replaceSystemSettingsTabUrl(value);
-              }}
+              onChange={(_, value: SystemSettingsTab) => selectTab(value)}
               variant="scrollable"
               allowScrollButtonsMobile
               sx={{
@@ -1571,6 +1670,12 @@ export function AdminSystemSettingsNeoPage() {
                 label="Нотифікації"
                 id="system-settings-neo-tab-notifications"
                 aria-controls="system-settings-neo-panel-notifications"
+              />
+              <Tab
+                value="monitoring"
+                label="Моніторинг"
+                id="system-settings-neo-tab-monitoring"
+                aria-controls="system-settings-neo-panel-monitoring"
               />
               <Tab
                 value="cache"
@@ -1716,6 +1821,24 @@ export function AdminSystemSettingsNeoPage() {
                     {activeTab === 'notifications' ? (
                       <Stack spacing={3}>
                         <NotificationsSettingsSection form={form} patchForm={patchForm} />
+                      </Stack>
+                    ) : null}
+                  </Box>
+
+                  <Box
+                    id="system-settings-neo-panel-monitoring"
+                    role="tabpanel"
+                    hidden={activeTab !== 'monitoring'}
+                    aria-labelledby="system-settings-neo-tab-monitoring"
+                  >
+                    {activeTab === 'monitoring' ? (
+                      <Stack spacing={3}>
+                        <MonitoringSettingsSection
+                          form={form}
+                          patchForm={patchForm}
+                          onOpenControlTab={() => selectTab('control')}
+                          onOpenReportsTab={() => selectTab('reports')}
+                        />
                       </Stack>
                     ) : null}
                   </Box>

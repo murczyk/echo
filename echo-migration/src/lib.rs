@@ -540,6 +540,7 @@ mod m20261010_110158_ai_settlement_worker_groups;
 
 mod m20261104_083000_group_message_requirements;
 mod m20261107_175132_important_only_my_organism;
+mod m20261108_090102_signoz_metrics_settings;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
@@ -1238,6 +1239,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261104_064753_minimal_report_window::Migration),
             Box::new(m20261107_175019_duty_selected_groups_flag::Migration),
             Box::new(m20261107_175132_important_only_my_organism::Migration),
+            Box::new(m20261108_090102_signoz_metrics_settings::Migration),
         ]
     }
 }

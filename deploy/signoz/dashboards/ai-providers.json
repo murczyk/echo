@@ -99,7 +99,7 @@
               "width": 6,
               "height": 6,
               "content": {
-                "$ref": "#/spec/panels/4815db68-d489-535d-8538-7b4dfa4dd3ec"
+                "$ref": "#/spec/panels/eaab544e-78f6-5e9c-a0b2-1cfb893a28e2"
               }
             },
             {
@@ -173,12 +173,88 @@
               "content": {
                 "$ref": "#/spec/panels/687c4ab1-9930-5a34-8083-11be0fce896a"
               }
+            },
+            {
+              "x": 0,
+              "y": 30,
+              "width": 6,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/4815db68-d489-535d-8538-7b4dfa4dd3ec"
+              }
+            },
+            {
+              "x": 6,
+              "y": 30,
+              "width": 6,
+              "height": 6,
+              "content": {
+                "$ref": "#/spec/panels/4f13fc4d-4251-5217-bf18-f0747d046462"
+              }
             }
           ]
         }
       }
     ],
     "panels": {
+      "eaab544e-78f6-5e9c-a0b2-1cfb893a28e2": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Requests per interval by model",
+            "description": "All calls in each time bucket, including failed ones and calls stopped before they reached the provider. Bars are stacked by model, so a bar's height is the total. Buckets are 5 minutes for ranges up to 6 hours, 1 hour up to 7 days, and 1 day (UTC) beyond. The first and last bars can cover part of a bucket."
+          },
+          "plugin": {
+            "kind": "signoz/BarChartPanel",
+            "spec": {
+              "visualization": {
+                "timePreference": "global_time",
+                "fillSpans": false,
+                "stackedBarChart": true
+              },
+              "formatting": {
+                "unit": "short",
+                "decimalPrecision": "2"
+              },
+              "axes": {
+                "softMin": 0,
+                "softMax": 0,
+                "isLogScale": false
+              },
+              "legend": {
+                "position": "bottom",
+                "mode": "list",
+                "customColors": null
+              },
+              "thresholds": null
+            }
+          },
+          "queries": [
+            {
+              "kind": "time_series",
+              "spec": {
+                "plugin": {
+                  "kind": "signoz/CompositeQuery",
+                  "spec": {
+                    "queries": [
+                      {
+                        "type": "clickhouse_sql",
+                        "spec": {
+                          "name": "A",
+                          "query": "SELECT ts, model_name, interval, sum(delta) AS value\nFROM (\n  SELECT\n    fingerprint,\n    multiIf($end_timestamp_ms - $start_timestamp_ms <= 21600000, 300, $end_timestamp_ms - $start_timestamp_ms <= 604800000, 3600, 86400) AS bucket_seconds,\n    multiIf(bucket_seconds = 300, '5m', bucket_seconds = 3600, '1h', '1d') AS interval,\n    toStartOfInterval(toDateTime(intDiv(unix_milli, 1000)), toIntervalSecond(bucket_seconds)) AS ts,\n    if(value >= previous, value - previous, value) AS delta\n  FROM (\n    SELECT\n      fingerprint,\n      unix_milli,\n      value,\n      lagInFrame(value, 1, 0) OVER (PARTITION BY fingerprint ORDER BY unix_milli ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS previous\n    FROM signoz_metrics.distributed_samples_v4\n    WHERE metric_name = 'echo.ai_provider.requests.count'\n      AND unix_milli >= $start_timestamp_ms - 3600000\n      AND unix_milli <= $end_timestamp_ms\n      AND bitAnd(flags, 1) = 0\n  )\n  WHERE unix_milli >= $start_timestamp_ms\n) AS points\nINNER JOIN (\n  SELECT DISTINCT\n    fingerprint,\n    JSONExtractString(labels, 'model_name') AS model_name\n  FROM signoz_metrics.distributed_time_series_v4\n  WHERE metric_name = 'echo.ai_provider.requests.count'\n    AND unix_milli >= $start_timestamp_ms - 7200000\n    AND (has(arrayFlatten([$host]), '__all__') OR has(arrayFlatten([$host]), JSONExtractString(labels, 'host.name')))\n    AND (has(arrayFlatten([$provider]), '__all__') OR has(arrayFlatten([$provider]), JSONExtractString(labels, 'provider')))\n    AND (has(arrayFlatten([$model_name]), '__all__') OR has(arrayFlatten([$model_name]), JSONExtractString(labels, 'model_name')))\n) AS series USING fingerprint\nGROUP BY ts, model_name, interval\nORDER BY ts",
+                          "disabled": false,
+                          "legend": "{{model_name}} per {{interval}}"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "links": []
+        }
+      },
       "4815db68-d489-535d-8538-7b4dfa4dd3ec": {
         "kind": "Panel",
         "spec": {
@@ -914,6 +990,52 @@
                         "spec": {
                           "name": "A",
                           "query": "SELECT\n  counts.provider AS provider,\n  counts.model_name AS model_name,\n  counts.requests AS requests,\n  round(100 * counts.failed / counts.requests, 1) AS failed_percent,\n  latency.p50_seconds AS p50_seconds,\n  latency.p95_seconds AS p95_seconds\nFROM (\n  SELECT provider, model_name, sum(delta) AS requests, sumIf(delta, outcome != 'ok') AS failed\n  FROM (\n  SELECT provider, model_name, outcome, sum(delta) AS delta\n  FROM (\n    SELECT fingerprint, if(value >= previous, value - previous, value) AS delta\n    FROM (\n      SELECT\n        fingerprint,\n        unix_milli,\n        value,\n        lagInFrame(value, 1, 0) OVER (PARTITION BY fingerprint ORDER BY unix_milli ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS previous\n      FROM signoz_metrics.distributed_samples_v4\n      WHERE metric_name = 'echo.ai_provider.requests.count'\n        AND unix_milli >= $start_timestamp_ms - 3600000\n        AND unix_milli <= $end_timestamp_ms\n        AND bitAnd(flags, 1) = 0\n    )\n    WHERE unix_milli >= $start_timestamp_ms\n  ) AS points\n  INNER JOIN (\n    SELECT DISTINCT\n      fingerprint,\n      JSONExtractString(labels, 'provider') AS provider,\n      JSONExtractString(labels, 'model_name') AS model_name,\n      JSONExtractString(labels, 'outcome') AS outcome\n    FROM signoz_metrics.distributed_time_series_v4\n    WHERE metric_name = 'echo.ai_provider.requests.count'\n      AND unix_milli >= $start_timestamp_ms - 7200000\n      AND (has(arrayFlatten([$host]), '__all__') OR has(arrayFlatten([$host]), JSONExtractString(labels, 'host.name')))\n      AND (has(arrayFlatten([$provider]), '__all__') OR has(arrayFlatten([$provider]), JSONExtractString(labels, 'provider')))\n      AND (has(arrayFlatten([$model_name]), '__all__') OR has(arrayFlatten([$model_name]), JSONExtractString(labels, 'model_name')))\n  ) AS series USING fingerprint\n  GROUP BY provider, model_name, outcome\n  )\n  GROUP BY provider, model_name\n  HAVING requests > 0\n) AS counts\nLEFT JOIN (\n  SELECT\n    provider,\n    model_name,\n    quantilePrometheusHistogramIf(0.5)(le, delta, outcome = 'ok') AS p50,\n    if(isNaN(p50), NULL, round(p50, 2)) AS p50_seconds,\n    quantilePrometheusHistogramIf(0.95)(le, delta, outcome = 'ok') AS p95,\n    if(isNaN(p95), NULL, round(p95, 2)) AS p95_seconds\n  FROM (\n    SELECT provider, model_name, le, outcome, sum(delta) AS delta\n    FROM (\n    SELECT ts, provider, model_name, le, outcome, sum(delta) AS delta\n  FROM (\n    SELECT\n      fingerprint,\n      toStartOfInterval(toDateTime(intDiv(unix_milli, 1000)), toIntervalSecond(greatest(300, intDiv($end_timestamp_ms - $start_timestamp_ms, 200000)))) AS ts,\n      if(value >= previous, value - previous, value) AS delta\n    FROM (\n      SELECT\n        fingerprint,\n        unix_milli,\n        value,\n        lagInFrame(value, 1, 0) OVER (PARTITION BY fingerprint ORDER BY unix_milli ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS previous\n      FROM signoz_metrics.distributed_samples_v4\n      WHERE metric_name = 'echo.ai_provider.response_start.duration.bucket'\n        AND unix_milli >= $start_timestamp_ms - 3600000\n        AND unix_milli <= $end_timestamp_ms\n        AND bitAnd(flags, 1) = 0\n    )\n    WHERE unix_milli >= $start_timestamp_ms\n  ) AS points\n  INNER JOIN (\n    SELECT DISTINCT\n      fingerprint,\n      JSONExtractString(labels, 'provider') AS provider,\n      JSONExtractString(labels, 'model_name') AS model_name,\n      JSONExtractString(labels, 'outcome') AS outcome,\n      if(JSONExtractString(labels, 'le') = '+Inf', inf, toFloat64(JSONExtractString(labels, 'le'))) AS le\n    FROM signoz_metrics.distributed_time_series_v4\n    WHERE metric_name = 'echo.ai_provider.response_start.duration.bucket'\n      AND unix_milli >= $start_timestamp_ms - 7200000\n      AND (has(arrayFlatten([$host]), '__all__') OR has(arrayFlatten([$host]), JSONExtractString(labels, 'host.name')))\n      AND (has(arrayFlatten([$provider]), '__all__') OR has(arrayFlatten([$provider]), JSONExtractString(labels, 'provider')))\n      AND (has(arrayFlatten([$model_name]), '__all__') OR has(arrayFlatten([$model_name]), JSONExtractString(labels, 'model_name')))\n  ) AS series USING fingerprint\n  GROUP BY ts, provider, model_name, le, outcome\n    )\n    GROUP BY provider, model_name, le, outcome\n  )\n  GROUP BY provider, model_name\n) AS latency ON counts.provider = latency.provider AND counts.model_name = latency.model_name\nORDER BY requests DESC",
+                          "disabled": false,
+                          "legend": ""
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "links": []
+        }
+      },
+      "4f13fc4d-4251-5217-bf18-f0747d046462": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Requests by provider",
+            "description": "All calls in the selected time range, including failed ones and calls stopped before they reached the provider. failed counts every outcome except ok."
+          },
+          "plugin": {
+            "kind": "signoz/TablePanel",
+            "spec": {
+              "visualization": {
+                "timePreference": "global_time"
+              },
+              "formatting": {
+                "columnUnits": {},
+                "decimalPrecision": "2"
+              },
+              "thresholds": null
+            }
+          },
+          "queries": [
+            {
+              "kind": "scalar",
+              "spec": {
+                "plugin": {
+                  "kind": "signoz/CompositeQuery",
+                  "spec": {
+                    "queries": [
+                      {
+                        "type": "clickhouse_sql",
+                        "spec": {
+                          "name": "A",
+                          "query": "SELECT\n  provider,\n  requests,\n  failed,\n  round(100 * failed / requests, 1) AS failed_percent\nFROM (\n  SELECT provider, sum(delta) AS requests, sumIf(delta, outcome != 'ok') AS failed\n  FROM (\n    SELECT fingerprint, if(value >= previous, value - previous, value) AS delta\n    FROM (\n      SELECT\n        fingerprint,\n        unix_milli,\n        value,\n        lagInFrame(value, 1, 0) OVER (PARTITION BY fingerprint ORDER BY unix_milli ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS previous\n      FROM signoz_metrics.distributed_samples_v4\n      WHERE metric_name = 'echo.ai_provider.requests.count'\n        AND unix_milli >= $start_timestamp_ms - 3600000\n        AND unix_milli <= $end_timestamp_ms\n        AND bitAnd(flags, 1) = 0\n    )\n    WHERE unix_milli >= $start_timestamp_ms\n  ) AS points\n  INNER JOIN (\n    SELECT DISTINCT\n      fingerprint,\n      JSONExtractString(labels, 'provider') AS provider,\n      JSONExtractString(labels, 'outcome') AS outcome\n    FROM signoz_metrics.distributed_time_series_v4\n    WHERE metric_name = 'echo.ai_provider.requests.count'\n      AND unix_milli >= $start_timestamp_ms - 7200000\n      AND (has(arrayFlatten([$host]), '__all__') OR has(arrayFlatten([$host]), JSONExtractString(labels, 'host.name')))\n      AND (has(arrayFlatten([$provider]), '__all__') OR has(arrayFlatten([$provider]), JSONExtractString(labels, 'provider')))\n      AND (has(arrayFlatten([$model_name]), '__all__') OR has(arrayFlatten([$model_name]), JSONExtractString(labels, 'model_name')))\n  ) AS series USING fingerprint\n  GROUP BY provider\n  HAVING requests > 0\n)\nORDER BY requests DESC",
                           "disabled": false,
                           "legend": ""
                         }
