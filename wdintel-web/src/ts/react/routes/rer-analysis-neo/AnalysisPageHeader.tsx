@@ -112,22 +112,24 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
           </ListItemIcon>
           <ListItemText>Оновити</ListItemText>
         </MenuItem>
-        <MenuItem
-          disabled={page.threadMode != null}
-          onClick={() => {
-            closeMenu();
-            if (onOpenReport) {
-              window.requestAnimationFrame(() => openReport(settingsButtonRef.current));
-            } else {
-              page.openReport();
-            }
-          }}
-        >
-          <ListItemIcon>
-            <DescriptionOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Звіти</ListItemText>
-        </MenuItem>
+        {page.leftPanelTab !== LeftPanelTab.Messenger ? (
+          <MenuItem
+            disabled={page.threadMode != null}
+            onClick={() => {
+              closeMenu();
+              if (onOpenReport) {
+                window.requestAnimationFrame(() => openReport(settingsButtonRef.current));
+              } else {
+                page.openReport();
+              }
+            }}
+          >
+            <ListItemIcon>
+              <DescriptionOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Звіти</ListItemText>
+          </MenuItem>
+        ) : null}
       </Menu>
     </>
   );
@@ -157,6 +159,7 @@ export function AnalysisPageHeader({
     page.summaryLoading;
   const showPagination = !isNarrowLayout && page.leftPanelTab !== LeftPanelTab.Messenger;
   const showDateRange = page.leftPanelTab !== LeftPanelTab.Messenger;
+  const showReport = page.leftPanelTab !== LeftPanelTab.Messenger;
   return (
     <PageHeader
       title="Аналіз"
@@ -264,23 +267,25 @@ export function AnalysisPageHeader({
                   </IconButton>
                 </span>
               </Tooltip>
-              <Button
-                variant="outlined"
-                color="inherit"
-                disabled={page.threadMode != null}
-                onClick={(event) => openReport(event.currentTarget)}
-                title="Відкрити звіти"
-                sx={{
-                  height: 40,
-                  px: 2,
-                  display: { xs: 'none', md: 'inline-flex' },
-                  ml: 1,
-                  borderColor: 'divider',
-                  '&:hover': { borderColor: 'text.secondary' },
-                }}
-              >
-                Звіти
-              </Button>
+              {showReport ? (
+                <Button
+                  variant="outlined"
+                  color="inherit"
+                  disabled={page.threadMode != null}
+                  onClick={(event) => openReport(event.currentTarget)}
+                  title="Відкрити звіти"
+                  sx={{
+                    height: 40,
+                    px: 2,
+                    display: { xs: 'none', md: 'inline-flex' },
+                    ml: 1,
+                    borderColor: 'divider',
+                    '&:hover': { borderColor: 'text.secondary' },
+                  }}
+                >
+                  Звіти
+                </Button>
+              ) : null}
               <SidePanelToggleButton
                 side="right"
                 active={rightPanelVisible}
