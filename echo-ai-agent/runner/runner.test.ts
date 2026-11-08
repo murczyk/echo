@@ -40,8 +40,10 @@ import {
   formatEchoHttpError,
   validatePayload,
   validateSkill,
+  validationFields,
   writeModelsFile,
 } from "./runner.ts";
+import { createGroupScope, resolveGroups } from "./group-scope.ts";
 import { EDIT_GUIDANCE, MAP_GUIDANCE, MapRegistry } from "./maps.ts";
 
 test("accepts a non-empty final assistant response", () => {
@@ -931,6 +933,64 @@ test("builds bounded paginated inbox requests with an inclusive upper boundary",
   );
 });
 
+test("#4083 a blank inbox search means no text filter", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const period = { kind: "relative_days", days: 3 };
+  const unfiltered = inboxMessagesRequestBody({ period }, context);
+  assert.equal("search" in unfiltered, false);
+  for (const search of ["", "   "])
+    assert.deepEqual(inboxMessagesRequestBody({ period, search }, context), unfiltered);
+  assert.equal(inboxMessagesRequestBody({ period, search: "  удар  " }, context).search, "удар");
+  assert.throws(() => inboxMessagesRequestBody({ period, search: "x".repeat(2001) }, context), /at most 2000/);
+});
+
+test("#4083 Echo's own argument checks name the parameter and never the values", async () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const parameterNames = new Map([
+    ["echo_inbox_messages", new Set(["period", "search", "selectedGroups", "selectedCallsigns", "selectedFrequencies", "selectedUnitIds", "selectedUnits", "cursor", "maxItems"])],
+  ]);
+  const fieldsOf = (message: string) =>
+    validationFields(
+      { content: [{ type: "text", text: message.startsWith("Invalid Echo tool arguments: ") ? message : `Invalid Echo tool arguments: ${message}` }] },
+      "echo_inbox_messages",
+      parameterNames,
+    );
+  const rejection = (params: Record<string, unknown>) => {
+    try {
+      inboxMessagesRequestBody({ period: { kind: "relative_days", days: 3 }, ...params }, context);
+    } catch (error) {
+      return fieldsOf((error as Error).message);
+    }
+    assert.fail(`accepted ${JSON.stringify(params)}`);
+  };
+  assert.equal(rejection({ period: { kind: "relative_days", days: 32 } }), "period:size");
+  assert.equal(rejection({ period: { kind: "relative_hours", hours: 0 } }), "period:size");
+  assert.equal(rejection({ period: { kind: "relative_days", days: 3, extra: 1 } }), "period:additional");
+  assert.equal(rejection({ period: { kind: "date_range", sinceDate: "2026-08-04", tillDateInclusive: "2026-08-01" } }), "period:order");
+  assert.equal(rejection({ period: { kind: "date_range", sinceDate: "SENSITIVE", tillDateInclusive: "2026-08-01" } }), "period.sinceDate:invalid");
+  assert.equal(rejection({ period: { kind: "weeks" } }), "period:invalid");
+  assert.equal(rejection({ cursor: 0 }), "cursor:invalid");
+  assert.equal(rejection({ maxItems: 500 }), "maxItems:size");
+  assert.equal(rejection({ search: 7 }), "search:size");
+  assert.equal(rejection({ selectedCallsigns: ["  "] }), "selectedCallsigns:blank");
+  assert.equal(rejection({ selectedFrequencies: ["SENSITIVE"] }), "selectedFrequencies:invalid");
+  assert.equal(rejection({ selectedUnitIds: [] }), "selectedUnitIds:size");
+  assert.equal(rejection({ SENSITIVE: 1 }), "root:additional");
+
+  const groups = [{ master_key: "group.devops", name: "DEVOPS" }];
+  assert.throws(() => resolveGroups(["SENSITIVE"], groups), (error: Error) => {
+    assert.equal(fieldsOf(error.message), "selectedGroups:unknown");
+    return true;
+  });
+  const scope = createGroupScope(async () => groups, () => {});
+  await scope.resolve({ selectedGroups: ["DEVOPS"] }, true);
+  await assert.rejects(scope.resolve({}, true), (error: Error) => {
+    assert.equal(fieldsOf(error.message), "selectedGroups:required");
+    return true;
+  });
+  assert.equal(fieldsOf("SENSITIVE text from an unknown check"), undefined);
+});
+
 test("normalizes safe period forms emitted by the configured model", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   const expected = {
@@ -1157,7 +1217,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.11.07.2",
+    harnessRelease: "2026.11.08.1",
   });
 });
 

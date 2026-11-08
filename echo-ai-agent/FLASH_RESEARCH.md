@@ -129,7 +129,10 @@ returned a fallback draft instead of a completed synthesis.
 Tool failures also emit private `tool_diagnostic` frames with an allowlisted
 reason code, a recognized tool name and an optional HTTP status. Failed argument
 validation adds `fields`: paths and a fixed kind such as
-`checklist.0.status:enum`, never the received values. A draft rejected by
+`checklist.0.status:enum`, never the received values. Echo's own argument
+checks after validation report the same way, for example `period:size` for a
+date range longer than allowed or `selectedGroups:unknown` for a group that was
+not found. A draft rejected by
 `update_research` logs `citation_rejected` with `draftIssue` (`no_citation`,
 `unknown_link` or `bare_link`). The worker logs
 these against the request ID without arguments, source content or raw errors.
