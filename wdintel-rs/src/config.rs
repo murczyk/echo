@@ -1275,6 +1275,8 @@ pub const MESSENGER_MEDIA_PREVIEW_VIDEO_THREADS: &str = "2";
 pub const MESSENGER_MEDIA_PREVIEW_SOURCE_TIMEOUT_MICROS: &str = "10000000";
 
 pub const MESSENGER_MEDIA_THUMBNAIL_DIR_NAME: &str = "thumbnails";
+pub const THUMBNAIL_LOCAL_FORMAT_WHITELIST: &str =
+    "image2,jpeg_pipe,png_pipe,webp_pipe,bmp_pipe,tiff_pipe,gif,apng,ico,mov,matroska,webm,avi,asf,flv,mpeg,mpegvideo,mpegts,ogg,hevc,h264";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_DIR_NAME: &str = "thumbnail_sources";
 pub const MESSENGER_MEDIA_THUMBNAIL_SOURCE_BUDGET_LOCK_FILE_NAME: &str =
     ".source-budget.lock";

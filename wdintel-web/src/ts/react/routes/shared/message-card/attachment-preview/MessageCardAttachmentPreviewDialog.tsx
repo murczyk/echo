@@ -80,6 +80,8 @@ function getPreviewDialogLabel(item: MessageCardPreviewItem, previewKind: string
   if (previewKind === 'kmz-map' && item.type === 'kmz') {
     if (item.value.nativeFormat === 'kml') return 'Попередній перегляд KML';
     if (item.value.nativeFormat === 'kmz') return 'Попередній перегляд KMZ';
+    if (item.value.nativeFormat === 'gpx') return 'Попередній перегляд GPX';
+    if (item.value.nativeFormat === 'geojson') return 'Попередній перегляд GeoJSON';
     return 'Попередній перегляд конвертованого KMZ';
   }
   return 'Перегляд документа';

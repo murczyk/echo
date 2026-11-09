@@ -1,8 +1,4 @@
-import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -67,7 +63,6 @@ export function DeviceAnalyticsPanel({
   const [reanalysisError, setReanalysisError] = useState<string | null>(null);
   useDeviceFileErrorNotification(reanalysisError);
   const [reanalysisDialogOpen, setReanalysisDialogOpen] = useState(false);
-  const [statsExpanded, setStatsExpanded] = useState(true);
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -153,7 +148,7 @@ export function DeviceAnalyticsPanel({
   const loadError = error ?? tagsState.error;
 
   return (
-    <section aria-label="Відомості пристрою" className="min-w-0 px-echo-xs pb-echo-lg">
+    <section aria-label="Відомості пристрою" className="min-w-0 pb-echo-lg">
       <Dialog open={reanalysisDialogOpen} onClose={() => setReanalysisDialogOpen(false)}>
         <DialogTitle>Запустити повторний аналіз пристрою?</DialogTitle>
         <DialogContent>
@@ -201,134 +196,129 @@ export function DeviceAnalyticsPanel({
           </PowerAlert>
         ) : null}
 
-        {summary !== null ? (
-          <dl
-            data-testid="device-analytics-progress"
-            className="m-0 grid grid-cols-1 gap-echo-md echo-sm:grid-cols-2"
-          >
-            <div className="min-w-0 rounded-echo-lg border border-echo-divider-subtle p-echo-lg">
-              <dt>
-                <Typography variant="caption" color="text.secondary">
-                  Файлів з контентом / усього
-                </Typography>
-              </dt>
-              <Typography component="dd" variant="h5" className="!m-0 tabular-nums">
-                {fileCountFormatter.format(summary.filesWithContentCount)}/
-                {fileCountFormatter.format(summary.totalFileCount)}
-              </Typography>
-            </div>
-            <div className="min-w-0 rounded-echo-lg border border-echo-divider-subtle p-echo-lg">
-              <dt>
-                <Typography variant="caption" color="text.secondary">
-                  Завантажено аудіо
-                </Typography>
-              </dt>
-              <Typography component="dd" variant="h5" className="!m-0 tabular-nums">
-                {audio.loading ? (
-                  <CircularProgress size={18} aria-label="Завантаження кількості аудіо" />
-                ) : audio.value ? (
-                  fileCountFormatter.format(audio.value.uploadedCount)
-                ) : (
-                  '—'
-                )}
-                {audio.error ? (
-                  <PowerButton size="small" onClick={audio.reload}>
-                    Повторити
-                  </PowerButton>
-                ) : null}
-              </Typography>
-            </div>
-          </dl>
-        ) : null}
-
-        {summary !== null ? (
-          <Accordion
-            expanded={statsExpanded}
-            onChange={(_, nextExpanded) => setStatsExpanded(nextExpanded)}
-            disableGutters
-            variant="outlined"
-            data-testid="device-analytics-activity"
-            className="!m-0 min-w-0 !rounded-echo-lg !border-echo-divider-subtle !bg-transparent before:!hidden"
-          >
-            <AccordionSummary
-              expandIcon={<ChevronRightIcon />}
-              className="!min-h-echo-control-lg"
-              sx={{
-                '& .MuiAccordionSummary-expandIconWrapper.Mui-expanded': {
-                  transform: 'rotate(90deg)',
-                },
-              }}
-              aria-controls="device-analytics-stats-content"
-              id="device-analytics-stats-header"
+        <div className="grid min-w-0 items-start gap-echo-lg echo-xl:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+          {summary !== null ? (
+            <section
+              aria-labelledby="device-analytics-stats-header"
+              data-testid="device-analytics-activity"
+              className="flex min-w-0 flex-col gap-echo-lg rounded-echo-lg border border-echo-divider-subtle bg-echo-surface p-echo-lg"
             >
-              <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-echo-sm py-echo-md pr-echo-sm">
-                <Typography component="span" variant="body1">
+              <header className="flex flex-col gap-echo-xs">
+                <Typography component="h2" variant="h6" id="device-analytics-stats-header">
                   Статистика завантажень
                 </Typography>
-                {summary.stats ? (
-                  <span className="text-echo-base">
-                    Тек: {formatDeviceCount(BigInt(summary.stats.directoryCount))} · Файлів:{' '}
-                    {formatDeviceCount(BigInt(summary.filesWithContentCount))} · Типів:{' '}
-                    {countDeviceFileTypes(summary.stats)} · Розмір:{' '}
-                    {formatDeviceBytes(BigInt(summary.stats.contentBytes))}
-                    {isDeviceStatsIncomplete(summary.stats, summary.totalFileCount)
-                      ? ' · статистика неповна'
-                      : ''}
-                  </span>
-                ) : (
-                  <span className="text-echo-base">Аудіо за весь час</span>
-                )}
-              </div>
-            </AccordionSummary>
-            <AccordionDetails id="device-analytics-stats-content" className="!pt-0">
+                <Typography variant="body2" color="text.secondary">
+                  {summary.stats ? (
+                    <>
+                      Тек: {formatDeviceCount(BigInt(summary.stats.directoryCount))} · Типів:{' '}
+                      {countDeviceFileTypes(summary.stats)} · Розмір:{' '}
+                      {formatDeviceBytes(BigInt(summary.stats.contentBytes))}
+                      {isDeviceStatsIncomplete(summary.stats, summary.totalFileCount)
+                        ? ' · статистика неповна'
+                        : ''}
+                    </>
+                  ) : (
+                    'Аудіо за весь час'
+                  )}
+                </Typography>
+              </header>
+              <dl
+                data-testid="device-analytics-progress"
+                className="m-0 grid grid-cols-1 gap-echo-lg border-b border-echo-divider-subtle pb-echo-lg echo-sm:grid-cols-2"
+              >
+                <div className="min-w-0">
+                  <dt>
+                    <Typography variant="body2" color="text.secondary">
+                      Файлів з контентом / усього
+                    </Typography>
+                  </dt>
+                  <Typography component="dd" variant="h5" className="!m-0 tabular-nums">
+                    {fileCountFormatter.format(summary.filesWithContentCount)}/
+                    {fileCountFormatter.format(summary.totalFileCount)}
+                  </Typography>
+                </div>
+                <div className="min-w-0">
+                  <dt>
+                    <Typography variant="body2" color="text.secondary">
+                      Завантажено аудіо
+                    </Typography>
+                  </dt>
+                  <Typography component="dd" variant="h5" className="!m-0 tabular-nums">
+                    {audio.loading ? (
+                      <CircularProgress size={18} aria-label="Завантаження кількості аудіо" />
+                    ) : audio.value ? (
+                      fileCountFormatter.format(audio.value.uploadedCount)
+                    ) : (
+                      '—'
+                    )}
+                    {audio.error ? (
+                      <PowerButton size="small" onClick={audio.reload}>
+                        Повторити
+                      </PowerButton>
+                    ) : null}
+                  </Typography>
+                </div>
+              </dl>
               <DeviceStatsViews
                 stats={summary.stats ?? null}
                 highlightSelection
                 audio={<DeviceAudioActivityView activity={audio} />}
               />
-            </AccordionDetails>
-          </Accordion>
-        ) : null}
-
-        {loadError !== null ? (
-          <PowerAlert
-            severity="error"
-            autoHideDuration={null}
-            action={
-              <PowerButton
-                size="small"
-                color="inherit"
-                onClick={() => {
-                  if (error !== null) void loadSummary();
-                  if (tagsState.error !== null) void tagsState.reload();
-                }}
+            </section>
+          ) : null}
+          <section
+            aria-labelledby="device-analytics-tags-header"
+            className="min-w-0 rounded-echo-lg border border-echo-divider-subtle bg-echo-surface p-echo-lg"
+          >
+            <Typography
+              component="h2"
+              variant="h6"
+              id="device-analytics-tags-header"
+              className="mb-echo-md!"
+            >
+              Аналітичні теги
+            </Typography>
+            {loadError !== null ? (
+              <PowerAlert
+                severity="error"
+                autoHideDuration={null}
+                action={
+                  <PowerButton
+                    size="small"
+                    color="inherit"
+                    onClick={() => {
+                      if (error !== null) void loadSummary();
+                      if (tagsState.error !== null) void tagsState.reload();
+                    }}
+                  >
+                    Повторити
+                  </PowerButton>
+                }
               >
-                Повторити
-              </PowerButton>
-            }
-          >
-            {loadError.message}
-          </PowerAlert>
-        ) : loading || tagsState.loading ? (
-          <div className="grid min-h-echo-control-lg place-items-center p-echo-xl">
-            <CircularProgress size={28} aria-label="Завантаження аналітичних відомостей" />
-          </div>
-        ) : summaries.length === 0 ? (
-          <PowerAlert severity="info" autoHideDuration={null}>
-            {tagsState.tags.length === 0
-              ? 'Активних аналітичних тегів ще немає.'
-              : 'Файлів з активними аналітичними тегами ще немає.'}
-          </PowerAlert>
-        ) : (
-          <ul
-            aria-label="Аналітичні теги"
-            className="m-0 grid list-none grid-cols-1 items-start gap-echo-md p-0 echo-md:grid-cols-2 echo-xl:grid-cols-3 echo-2xl:grid-cols-4"
-          >
-            {summaries.map((summary) => (
-              <DeviceAnalyticsTagWidget key={summary.tag.id} summary={summary} />
-            ))}
-          </ul>
-        )}
+                {loadError.message}
+              </PowerAlert>
+            ) : loading || tagsState.loading ? (
+              <div className="grid min-h-echo-control-lg place-items-center p-echo-xl">
+                <CircularProgress size={28} aria-label="Завантаження аналітичних відомостей" />
+              </div>
+            ) : summaries.length === 0 ? (
+              <PowerAlert severity="info" autoHideDuration={null}>
+                {tagsState.tags.length === 0
+                  ? 'Активних аналітичних тегів ще немає.'
+                  : 'Файлів з активними аналітичними тегами ще немає.'}
+              </PowerAlert>
+            ) : (
+              <ul
+                aria-label="Аналітичні теги"
+                className="m-0 list-none divide-y divide-echo-divider-subtle p-0"
+              >
+                {summaries.map((summary) => (
+                  <DeviceAnalyticsTagWidget key={summary.tag.id} summary={summary} />
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
       </div>
     </section>
   );

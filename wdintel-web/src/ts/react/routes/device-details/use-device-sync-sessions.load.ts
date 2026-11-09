@@ -228,30 +228,59 @@ export function useSessionStats({
   reportError,
 }: ReadOptions & { idsKey: string }) {
   const [stats, setStats] = useState<Record<string, DeviceAnalyticsSummaryRsp>>({});
+  const loaded = useRef(new Set<string>());
+  const pending = useRef(new Set<string>());
+  const controllers = useRef(new Set<AbortController>());
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current += 1;
+    loaded.current.clear();
+    pending.current.clear();
+    return () => {
+      generation.current += 1;
+      for (const controller of controllers.current) controller.abort();
+      controllers.current.clear();
+      pending.current.clear();
+    };
+  }, [deviceId, enabled, refreshVersion]);
   useEffect(() => {
     if (!enabled || idsKey === '') return;
-    const controller = new AbortController();
+    const currentGeneration = generation.current;
     const timer = window.setTimeout(() => {
+      const ids = idsKey
+        .split(',')
+        .filter((id) => !loaded.current.has(id) && !pending.current.has(id));
+      if (ids.length === 0) return;
+      ids.forEach((id) => pending.current.add(id));
+      const controller = new AbortController();
+      controllers.current.add(controller);
       void (async () => {
-        const ids = idsKey.split(',');
-        const next: Record<string, DeviceAnalyticsSummaryRsp> = {};
         for (let offset = 0; offset < ids.length; offset += SESSION_SUMMARY_BATCH_SIZE) {
+          const batch = ids.slice(offset, offset + SESSION_SUMMARY_BATCH_SIZE);
           const rsp = await getDeviceSyncSessionSummaries(
-            { deviceId, syncIds: ids.slice(offset, offset + SESSION_SUMMARY_BATCH_SIZE) },
+            { deviceId, syncIds: batch },
             { signal: controller.signal },
           );
-          if (controller.signal.aborted) return;
-          for (const item of rsp.summaries) next[`${deviceId}:${item.syncId}`] = item.analysis;
+          if (controller.signal.aborted || generation.current !== currentGeneration) return;
+          const next: Record<string, DeviceAnalyticsSummaryRsp> = {};
+          for (const item of rsp.summaries) {
+            next[`${deviceId}:${item.syncId}`] = item.analysis;
+            loaded.current.add(item.syncId);
+          }
+          setStats((current) => ({ ...current, ...next }));
         }
-        setStats((current) => ({ ...current, ...next }));
-      })().catch((cause) => {
-        if (!controller.signal.aborted) reportError(cause, 'Помилка підсумків сесій');
-      });
+      })()
+        .catch((cause) => {
+          if (!controller.signal.aborted && generation.current === currentGeneration)
+            reportError(cause, 'Помилка підсумків сесій');
+        })
+        .finally(() => {
+          controllers.current.delete(controller);
+          if (generation.current === currentGeneration)
+            ids.forEach((id) => pending.current.delete(id));
+        });
     }, 100);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
+    return () => window.clearTimeout(timer);
   }, [deviceId, enabled, idsKey, refreshVersion, reportError]);
 
   return stats;

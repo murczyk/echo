@@ -50,6 +50,8 @@ mod m20261028_153759_finalization_terminal_metrics;
 mod m20261030_143441_device_audio_activity_index;
 mod m20261031_111058_device_list_activity_order;
 
+mod m20261103_101213_file_markers;
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -116,6 +118,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261028_153759_finalization_terminal_metrics::Migration),
             Box::new(m20261030_143441_device_audio_activity_index::Migration),
             Box::new(m20261031_111058_device_list_activity_order::Migration),
+            Box::new(m20261103_101213_file_markers::Migration),
         ]
     }
 }

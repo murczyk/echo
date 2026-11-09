@@ -10,7 +10,7 @@ with source_revisions as materialized (
            entry.created_at as entry_created_at
     from file_revision revision
     join file_entry entry on entry.device_id = revision.device_id and entry.id = revision.id
-    where revision.origin_archive_id is null and entry.archive_file_id is null and revision.device_id = $1 and revision.sync_id = any($2::uuid[])
+    where /* source scope */
     /* revision window */
 ), selected_revisions as materialized (
     select * from source_revisions
@@ -37,8 +37,8 @@ with source_revisions as materialized (
     select revision.id, revision.device_id, revision.parent_id, revision.entry_kind as kind,
            revision.name, revision.absolute_path, revision.hierarchy_path::text,
            revision.mime_type, revision.extension,
-           revision.file_metadata_created_at at time zone 'UTC' as file_metadata_created_at,
-           revision.file_metadata_modified_at at time zone 'UTC' as file_metadata_modified_at,
+           case when revision.entry_kind='directory' then directory_dates.created_at else revision.file_metadata_created_at at time zone 'UTC' end as file_metadata_created_at,
+           case when revision.entry_kind='directory' then directory_dates.modified_at else revision.file_metadata_modified_at at time zone 'UTC' end as file_metadata_modified_at,
            revision.entry_created_at as created_at,
            revision.created_at at time zone 'UTC' as updated_at,
            content.object_key as content_path, revision.revision, revision.sync_id,
@@ -46,8 +46,10 @@ with source_revisions as materialized (
            revision.source_file_state_settled_by, revision.analysis_input_revision,
            analysis.id as current_analysis_run_id,
            coalesce(tags.tag_ids, '{}'::uuid[]) as tag_ids,
-           coalesce(tags.tags, '[]'::jsonb) as tags, revision.is_archive, revision.archive_file_id, revision.archive_relative_path
+           coalesce(tags.tags, '[]'::jsonb) as tags, revision.is_archive, revision.archive_file_id, revision.archive_relative_path,
+           case when revision.entry_kind='directory' then /* archive directory size */ else content.source_size_bytes end as size_bytes
     from selected_revisions revision
+    left join lateral (/* archive directory dates */) directory_dates on true
     left join file_content content on content.file_id = revision.id and content.revision = revision.revision
     left join latest_results analysis on analysis.file_id = revision.id and analysis.revision = revision.revision
     left join result_tags tags on tags.result_tag_ids = analysis.result_tag_ids
@@ -56,48 +58,75 @@ with source_revisions as materialized (
     union all
     select entry.id, entry.device_id, entry.parent_id, entry.kind::text, entry.name,
            entry.absolute_path, entry.hierarchy_path::text, entry.mime_type, entry.extension,
-           entry.file_metadata_created_at, entry.file_metadata_modified_at,
+           ancestors.created_at, ancestors.modified_at,
            entry.created_at, entry.updated_at, entry.content_path, entry.revision, entry.sync_id,
            entry.source_file_state::text, entry.source_file_state_settled_at, entry.source_file_state_settled_by,
-           entry.analysis_input_revision, entry.current_analysis_run_id, '{}'::uuid[], '[]'::jsonb, entry.is_archive, entry.archive_file_id, entry.archive_relative_path
+           entry.analysis_input_revision, entry.current_analysis_run_id, '{}'::uuid[], '[]'::jsonb, entry.is_archive, entry.archive_file_id, entry.archive_relative_path, ancestors.size_bytes
     from (
-        select distinct subpath(revision.hierarchy_path, 0, depth) as hierarchy_path
+        select subpath(revision.hierarchy_path, 0, depth) as hierarchy_path,
+               min(revision.file_metadata_created_at) at time zone 'UTC' as created_at,
+               max(revision.file_metadata_modified_at) at time zone 'UTC' as modified_at,
+               coalesce(sum(content.source_size_bytes),0)::bigint as size_bytes
         from selected_revisions revision
+        left join file_content content on content.file_id=revision.id and content.revision=revision.revision
         cross join lateral generate_series(1, nlevel(revision.hierarchy_path) - 1) levels(depth)
+        where revision.entry_kind='file' and revision.archive_file_id is null
+        group by subpath(revision.hierarchy_path, 0, depth)
     ) ancestors
     join file_entry entry on entry.device_id = $1 and entry.hierarchy_path = ancestors.hierarchy_path
     where entry.kind = 'directory' and entry.archive_file_id is null
 )
 "#;
 
-pub(super) struct SessionQuery {
+pub(in crate::devices::files) struct SessionQuery {
     values: Vec<Value>,
     revision_window: String,
     single_session: bool,
     include_archives: bool,
+    archive_snapshot: bool,
 }
 
 impl SessionQuery {
-    pub(super) fn new(device_id: Uuid, sync_ids: Vec<Uuid>) -> Self {
+    pub(in crate::devices::files) fn new(
+        device_id: Uuid,
+        sync_ids: Vec<Uuid>,
+    ) -> Self {
         Self {
             single_session: sync_ids.len() == 1,
             include_archives: false,
+            archive_snapshot: false,
             values: vec![device_id.into(), sync_ids.into()],
             revision_window: String::new(),
         }
     }
 
-    pub(super) fn include_archives(mut self) -> Self {
+    pub(in crate::devices::files) fn archive(
+        device_id: Uuid,
+        root: Uuid,
+    ) -> Self {
+        Self {
+            values: vec![device_id.into(), root.into()],
+            revision_window: String::new(),
+            single_session: false,
+            include_archives: false,
+            archive_snapshot: true,
+        }
+    }
+
+    pub(in crate::devices::files) fn include_archives(mut self) -> Self {
         self.include_archives = true;
         self
     }
 
-    pub(super) fn bind(&mut self, value: impl Into<Value>) -> String {
+    pub(in crate::devices::files) fn bind(
+        &mut self,
+        value: impl Into<Value>,
+    ) -> String {
         self.values.push(value.into());
         format!("${}", self.values.len())
     }
 
-    pub(super) fn journal_page(
+    pub(in crate::devices::files) fn journal_page(
         &mut self,
         after: Option<(chrono::NaiveDateTime, Uuid)>,
         limit: u64,
@@ -115,7 +144,7 @@ impl SessionQuery {
         self.revision_window = format!("{predicate} order by revision.created_at desc, revision.id desc limit {cap}");
     }
 
-    pub(super) fn tag_filter(
+    pub(in crate::devices::files) fn tag_filter(
         &mut self,
         alias: &str,
         filter: Option<&TagFilter>,
@@ -136,7 +165,7 @@ impl SessionQuery {
         }
     }
 
-    pub(super) async fn all(
+    pub(in crate::devices::files) async fn all(
         self,
         db: &impl ConnectionTrait,
         sql: &str,
@@ -153,7 +182,23 @@ impl SessionQuery {
         } else {
             ""
         };
+        let directory_dates =
+            crate::devices::files::query::dates::aggregate_sql("revision");
+        let directory_dates = format!("select dates.* from ({directory_dates}) dates where revision.entry_kind='directory'");
+        let directory_size =
+            crate::devices::files::query::sizes::directory_value_sql(
+                "revision",
+                "revision.revision",
+            );
+        let source = if self.archive_snapshot {
+            "revision.device_id=$1 and revision.origin_archive_id in (select id from file_archive where root_id=$2 and state='ready')"
+        } else {
+            "revision.origin_archive_id is null and entry.archive_file_id is null and revision.device_id = $1 and revision.sync_id = any($2::uuid[])"
+        };
         let ctes = SESSION_CTES
+            .replace("/* source scope */", source)
+            .replace("/* archive directory size */", &directory_size)
+            .replace("/* archive directory dates */", &directory_dates)
             .replace("/* revision window */", &self.revision_window)
             .replace("/* derived snapshots */", derived);
         let ctes = if self.single_session {

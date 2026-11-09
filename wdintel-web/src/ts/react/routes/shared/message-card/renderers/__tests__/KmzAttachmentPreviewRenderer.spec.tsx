@@ -90,8 +90,8 @@ const nativeSource = {
 };
 const convertedSource = {
   mediaId: 'converted',
-  fileName: 'route.gpx',
-  contentType: 'application/gpx+xml',
+  fileName: 'route.trk',
+  contentType: 'application/octet-stream',
   originalHref: '/original/converted',
   initialStatus: 'pending' as const,
 };
@@ -116,6 +116,34 @@ afterEach(async () => {
 });
 
 describe('KmzAttachmentPreviewRenderer', () => {
+  it.each([
+    ['gpx', 'route.gpx', 'application/octet-stream'],
+    ['geojson', 'route.geojson', 'application/octet-stream'],
+    ['gpx', 'attachment', 'application/gpx+xml; charset=UTF-8'],
+    ['geojson', 'attachment', 'application/geo+json; charset=UTF-8'],
+  ])(
+    '#3930 renders native %s %s when conversion is unavailable',
+    async (format, fileName, contentType) => {
+      api.getStatus.mockResolvedValue({ status: 'error', error: 'converter unavailable' });
+      api.fetch.mockResolvedValue({ buffer: new ArrayBuffer(1) });
+      api.worker.mockResolvedValue({
+        points: [{ coords: { lat: 50, lng: 30 } }],
+        lineStrings: [],
+        polygons: [],
+      });
+      await render({
+        ...nativeSource,
+        fileName,
+        contentType,
+      });
+      await vi.waitFor(() => expect(host?.querySelector('[data-testid="map"]')).not.toBeNull());
+      expect(api.worker.mock.calls[0]?.[1]).toMatchObject({ format });
+      expect(api.fetch).toHaveBeenCalledTimes(1);
+      expect(api.fetch.mock.calls[0]?.[0]).toBe('/original/native');
+      expect(api.notify).not.toHaveBeenCalled();
+      expect(host?.textContent).not.toContain('Не вдалося відкрити попередній перегляд.');
+    },
+  );
   it('loads a native document and keeps its original download', async () => {
     api.getStatus.mockResolvedValue({ status: 'pending', convertedFileName: null });
     api.fetch.mockResolvedValue({ buffer: new ArrayBuffer(1) });

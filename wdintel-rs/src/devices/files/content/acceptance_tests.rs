@@ -285,6 +285,9 @@ macro_rules! cookie {
 #[path = "../archive/access_tests.rs"]
 mod archive_http_access_tests;
 
+#[path = "thumbnail_acceptance_tests.rs"]
+mod thumbnail_acceptance_tests;
+
 #[path = "reuse/acceptance_tests.rs"]
 mod reuse_tests;
 

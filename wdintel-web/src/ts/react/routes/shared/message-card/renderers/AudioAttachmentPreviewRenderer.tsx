@@ -1,5 +1,4 @@
-import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
-import { Typography, useMediaQuery } from '@mui/material';
+import { useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useEffect, useState } from 'react';
 
@@ -13,6 +12,7 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
+import { AudioPreviewContent } from '../attachment-preview/AudioPreviewContent';
 import {
   ReportTextPreviewAction,
   ReportTextPreviewLayout,
@@ -66,48 +66,16 @@ export function AudioAttachmentPreviewRenderer({
         if (region === 'background') onClose();
       }}
     >
-      <div
-        className="flex h-full w-full min-h-0 overflow-y-auto overscroll-contain touch-pan-y"
-        style={{
-          paddingTop: 'var(--attachment-preview-content-inset, 0px)',
-          paddingBottom: 'var(--attachment-preview-content-bottom-inset, 0px)',
-        }}
-      >
-        <div
-          data-audio-preview-content
-          className="m-auto flex w-[min(685px,calc(100%-32px))] flex-col py-[24px]"
-        >
-          <div data-audio-preview-player className="mx-auto w-full">
-            <AudioPlayerHost
-              href={audio.source}
-              displayName={audio.fileName}
-              mediaId={audio.mediaId ?? ''}
-              sizeBytes={audio.sizeBytes ?? null}
-              suppressInitialAutoplay
-              previewSizing
-            />
-          </div>
-          {transcription !== '' ? (
-            <div
-              data-attachment-preview-scroll
-              data-audio-preview-transcription
-              className="mt-[32px] flex min-w-0 gap-2 text-sm leading-5 select-text"
-            >
-              <RecordVoiceOverIcon
-                className="audio-transcription-icon mt-0.5 shrink-0"
-                aria-hidden
-              />
-              <Typography
-                component="div"
-                className="min-w-0 whitespace-pre-wrap wrap-break-word text-left text-sm leading-5"
-                sx={{ fontSize: '14px', lineHeight: '20px' }}
-              >
-                {transcription}
-              </Typography>
-            </div>
-          ) : null}
-        </div>
-      </div>
+      <AudioPreviewContent transcription={transcription}>
+        <AudioPlayerHost
+          href={audio.source}
+          displayName={audio.fileName}
+          mediaId={audio.mediaId ?? ''}
+          sizeBytes={audio.sizeBytes ?? null}
+          suppressInitialAutoplay
+          previewSizing
+        />
+      </AudioPreviewContent>
     </MessageCardAttachmentPreviewStage>
   );
   const source = (

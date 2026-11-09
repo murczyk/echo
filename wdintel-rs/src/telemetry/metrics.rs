@@ -176,6 +176,7 @@ pub struct Metrics {
     device_file_content_failures: Counter<u64>,
     device_file_preview_events: Counter<u64>,
     device_file_preview_queue_age: Gauge<f64>,
+    device_file_thumbnail_duration: Histogram<f64>,
     device_audio_cleanup: Counter<u64>,
     device_audio_preparation: Counter<u64>,
     device_audio_preparation_duration: Histogram<f64>,
@@ -326,6 +327,11 @@ impl Metrics {
         let device_file_preview_queue_age = meter
             .f64_gauge(DEVICE_FILE_PREVIEW_QUEUE_AGE)
             .with_description("Age of the oldest pending device file preview")
+            .with_unit("s")
+            .build();
+        let device_file_thumbnail_duration = meter
+            .f64_histogram(crate::devices::config::DEVICE_FILE_THUMBNAIL_DURATION_METRIC)
+            .with_description("Device file thumbnail source preparation and generation duration")
             .with_unit("s")
             .build();
         let device_audio_cleanup = meter
@@ -517,6 +523,7 @@ impl Metrics {
             device_file_content_failures,
             device_file_preview_events,
             device_file_preview_queue_age,
+            device_file_thumbnail_duration,
             device_audio_cleanup,
             device_audio_preparation,
             device_audio_preparation_duration,
@@ -786,6 +793,13 @@ impl Metrics {
                 | "publish_cas_lost"
                 | "cleanup_success"
                 | "cleanup_failure"
+                | "thumbnail_hit"
+                | "thumbnail_miss"
+                | "thumbnail_queued"
+                | "thumbnail_capacity"
+                | "thumbnail_generated"
+                | "thumbnail_failed"
+                | "thumbnail_retry"
         ) {
             self.device_file_preview_events
                 .add(1, &[KeyValue::new("event", event)]);
@@ -796,6 +810,14 @@ impl Metrics {
         if seconds.is_finite() && seconds >= 0.0 {
             self.device_file_preview_queue_age.record(seconds, &[]);
         }
+    }
+
+    pub(crate) fn record_device_file_thumbnail_duration(
+        &self,
+        duration: Duration,
+    ) {
+        self.device_file_thumbnail_duration
+            .record(duration.as_secs_f64(), &[]);
     }
 
     pub(crate) fn record_device_audio_cleanup(&self, outcome: &'static str) {
@@ -1027,6 +1049,9 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILE_CONTENT_FAILURES_COUNT => (&["stage"], None),
             DEVICE_FILE_PREVIEW_EVENTS_COUNT => (&["event"], None),
             DEVICE_FILE_PREVIEW_QUEUE_AGE => (&[], None),
+            crate::devices::config::DEVICE_FILE_THUMBNAIL_DURATION_METRIC => {
+                (&[], Some(DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS))
+            }
             crate::devices::audio::DEVICE_AUDIO_CLEANUP_METRIC => {
                 (&["outcome"], None)
             }

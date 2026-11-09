@@ -6,6 +6,8 @@ import type { VideoPreviewSource, VideoPlayerState } from '../message-card-video
 import { VideoFilePreview } from './VideoFilePreview';
 import { useVideoFullscreen } from './use-video-fullscreen';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
+import { AudioPreviewContent } from '../attachment-preview/AudioPreviewContent';
+import { isAmbiguousAudioOnlyMedia } from '../audio-only-media';
 import { downloadOriginalVideo, formatVideoTime } from '../message-card-video-utils';
 import { clamp, formatSizeBytes } from '../message-card-image-utils';
 import { getNextWheelZoom, isInteractivePreviewTarget } from '../message-card-image-preview-utils';
@@ -19,7 +21,7 @@ import { loadManagedVideo } from '../message-card-video-loading';
 import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import { VideoAttachmentPreviewMobileControls } from './VideoAttachmentPreviewMobileControls';
-import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
+import { AudioPlayerHost, type MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import {
   ReportTextPreviewAction,
@@ -82,6 +84,10 @@ export function VideoAttachmentPreviewRenderer({
   const touchLandscape = useMediaQuery('(pointer: coarse) and (max-height: 599.95px)');
   const mobileVideo = narrowViewport || touchLandscape;
   const [src, setSrc] = useState<string | null>(null);
+  const [audioOnlySource, setAudioOnlySource] = useState<{
+    source: VideoPreviewSource['source'];
+    src: string;
+  } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const { notify } = useOptionalPowerSnackbar();
   const fullscreen = useVideoFullscreen(videoRef, src, () => {
@@ -520,7 +526,27 @@ export function VideoAttachmentPreviewRenderer({
     />
   );
 
-  const sourceStage = (
+  const audioOnly =
+    src !== null && audioOnlySource?.source === video.source && audioOnlySource.src === src;
+  const sourceStage = audioOnly ? (
+    <MessageCardAttachmentPreviewStage
+      kind="audio"
+      onPrimaryClick={(_, region) => {
+        if (region === 'background') handleClose();
+      }}
+    >
+      <AudioPreviewContent>
+        <AudioPlayerHost
+          href={typeof video.source === 'string' ? video.source : src}
+          displayName={video.name}
+          mediaId={video.id}
+          sizeBytes={video.sizeBytes ?? null}
+          suppressInitialAutoplay
+          previewSizing
+        />
+      </AudioPreviewContent>
+    </MessageCardAttachmentPreviewStage>
+  ) : (
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="video"
@@ -575,6 +601,12 @@ export function VideoAttachmentPreviewRenderer({
               ...state,
               duration: Number.isFinite(element.duration) ? element.duration : 0,
             }));
+            if (
+              src &&
+              element === videoRef.current &&
+              isAmbiguousAudioOnlyMedia(video.name, video.mimeType, element)
+            )
+              setAudioOnlySource({ source: video.source, src });
           }}
           onTimeUpdate={(event) => {
             const element = event.currentTarget;
@@ -730,7 +762,10 @@ export function VideoAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      immersive
+      immersive={!audioOnly}
+      header={audioOnly ? header : undefined}
+      mobileChrome={audioOnly ? 'toggle' : undefined}
+      headerInFlow={audioOnly && reportDraft != null && reportVisible}
       stage={stage}
       infoPopover={infoPopover}
       navigation={fullscreen.active ? undefined : navigation}

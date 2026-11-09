@@ -14,8 +14,8 @@ use sea_orm::sea_query::{
     LikeExpr, Query, SelectStatement, SimpleExpr,
 };
 use sea_orm::{
-    ActiveEnum, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
-    ExprTrait, QueryFilter, QueryOrder, QuerySelect, Select,
+    ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    QueryFilter, QueryOrder, QuerySelect, Select,
 };
 use uuid::Uuid;
 
@@ -121,6 +121,44 @@ pub(in crate::devices::files) async fn find_directory_scope(
     model::map_directory_scope(entry, root_context)
 }
 
+pub(in crate::devices::files) async fn find_search_scope(
+    db: &impl ConnectionTrait,
+    device_id: Uuid,
+    entry_id: Uuid,
+) -> Result<DirectoryScope, FilesystemError> {
+    let entry = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::Id.eq(entry_id))
+        .filter(
+            Condition::any()
+                .add(
+                    file_entry::Column::Kind.eq(DomainFileEntryKind::Directory),
+                )
+                .add(file_entry::Column::IsArchive.eq(true)),
+        )
+        .one(db)
+        .await
+        .map_err(|error| {
+            map_database_error(anyhow::Error::new(error).context(h!()))
+        })?
+        .ok_or(FilesystemError::NotFound)?;
+    if entry.archive_file_id.is_some()
+        || entry.kind == DomainFileEntryKind::File
+    {
+        return Ok(DirectoryScope::Archive {
+            device_id,
+            entry_id,
+            hierarchy_path: entry.hierarchy_path,
+        });
+    }
+    let root_context = if entry.parent_id.is_some() {
+        Some(resolve_root_context(db, device_id, &entry.hierarchy_path).await?)
+    } else {
+        None
+    };
+    model::map_directory_scope(entry, root_context)
+}
+
 pub(super) fn directory_scope_query(
     device_id: Uuid,
     entry_id: Uuid,
@@ -175,19 +213,25 @@ pub(in crate::devices::files) fn apply_entry_scope(
         EntryQueryScope::Browse(directory) => query
             .filter(file_entry::Column::ParentId.is_not_null())
             .filter(file_entry::Column::ParentId.eq(directory.entry_id())),
-        EntryQueryScope::Search { directory, filters } => {
-            apply_search_filters(apply_search_scope(query, directory), filters)
-        }
+        EntryQueryScope::Search { directory, filters } => apply_search_filters(
+            apply_search_scope(query, directory, filters.global_search),
+            filters,
+        ),
     }
 }
 
 pub(super) fn apply_search_scope(
     query: Select<file_entry::Entity>,
     directory: &DirectoryScope,
+    global_search: bool,
 ) -> Select<file_entry::Entity> {
-    query
+    let query = query
         .filter(super::super::archive::query::current_visibility())
-        .filter(file_entry::Column::ParentId.is_not_null())
+        .filter(file_entry::Column::ParentId.is_not_null());
+    if global_search {
+        return query;
+    }
+    query
         .filter(ltree::descendant_expr(directory.hierarchy_path()))
         .filter(file_entry::Column::Id.ne(directory.entry_id()))
 }
@@ -276,7 +320,6 @@ pub(in crate::devices::files) fn apply_entry_order(
     query: Select<file_entry::Entity>,
 ) -> Select<file_entry::Entity> {
     query
-        .order_by_asc(file_entry::Column::Kind)
         .order_by_asc(utf8_name_bytes_expr())
         .order_by_asc(file_entry::Column::Id)
 }
@@ -286,12 +329,10 @@ pub(in crate::devices::files) fn entry_strict_after_condition(
 ) -> Condition {
     Condition::all().add(
         Expr::tuple([
-            Expr::col((file_entry::Entity, file_entry::Column::Kind)),
             utf8_name_bytes_expr(),
             Expr::col((file_entry::Entity, file_entry::Column::Id)),
         ])
         .gt(Expr::tuple([
-            ActiveEnum::as_enum(&after.kind()),
             utf8_bytes_value(after.name()),
             Expr::val(after.entry_id()),
         ])),
@@ -340,15 +381,11 @@ pub(in crate::devices::files) async fn resolve_cursor_entry_sort_key(
 
 pub(super) fn entry_sort_key(entry: &TreeEntry) -> EntrySortKey {
     match entry {
-        TreeEntry::Directory(directory) => EntrySortKey::new(
-            DomainFileEntryKind::Directory,
-            directory.name.clone(),
-            directory.entry_id,
-        ),
-        TreeEntry::File(file) => EntrySortKey::new(
-            DomainFileEntryKind::File,
-            file.name.clone(),
-            file.file_id,
-        ),
+        TreeEntry::Directory(directory) => {
+            EntrySortKey::new(directory.name.clone(), directory.entry_id)
+        }
+        TreeEntry::File(file) => {
+            EntrySortKey::new(file.name.clone(), file.file_id)
+        }
     }
 }

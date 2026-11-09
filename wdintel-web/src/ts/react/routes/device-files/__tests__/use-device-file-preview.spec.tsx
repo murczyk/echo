@@ -19,6 +19,7 @@ const entry: DeviceFileTreeEntry = {
   hasContent: true,
   mimeType: 'text/plain',
   extension: 'txt',
+  contentUploadedAt: null,
   fileMetadataCreatedAt: null,
   fileMetadataModifiedAt: null,
   createdAt: '2026-10-07T00:00:00Z',
@@ -264,6 +265,57 @@ describe('device file preview access', () => {
     await act(async () => oldError(new HttpRequestError(404, 'old parse result')));
     expect(state()).toBe('ready');
     expect(downloadButton().disabled).toBe(false);
+  });
+
+  it('#3930 clears image dimensions and ignores stale loads after a revision change or denial', async () => {
+    fetchMock.mockImplementation(async () => head());
+    const imageFile = { ...entry, name: 'capture.png', extension: 'png', mimeType: 'image/png' };
+    const image = document.createElement('img');
+    Object.defineProperties(image, {
+      naturalWidth: { value: 640 },
+      naturalHeight: { value: 480 },
+    });
+    await select(imageFile);
+    const firstLoad = latest.onImageLoad;
+    await act(async () => firstLoad(image));
+    expect(latest.imageSize).toEqual({ width: 640, height: 480 });
+    await select({ ...imageFile, revision: 2 });
+    expect(latest.imageSize).toBeNull();
+    await act(async () => firstLoad(image));
+    expect(latest.imageSize).toBeNull();
+    const currentLoad = latest.onImageLoad;
+    await act(async () => currentLoad(image));
+    expect(latest.imageSize).toEqual({ width: 640, height: 480 });
+    await act(async () => latest.onError(new HttpRequestError(403, 'revoked')));
+    expect(latest.imageSize).toBeNull();
+    await act(async () => currentLoad(image));
+    expect(latest.imageSize).toBeNull();
+    expect(latest.source).toBeNull();
+  });
+
+  it('#3930 clears media duration and ignores stale metadata after a revision change or denial', async () => {
+    fetchMock.mockImplementation(async () => head());
+    const audioFile = { ...entry, name: 'audio.m4a', extension: 'm4a', mimeType: 'audio/mp4' };
+    await select(audioFile);
+    const firstDuration = latest.onDurationChange;
+    await act(async () => firstDuration(123.5));
+    expect(latest.durationSeconds).toBe(123.5);
+    await select({ ...audioFile, revision: 2 });
+    expect(latest.durationSeconds).toBeNull();
+    await act(async () => {
+      firstDuration(123.5);
+      latest.onDurationChange(Number.NaN);
+      latest.onDurationChange(Number.POSITIVE_INFINITY);
+    });
+    expect(latest.durationSeconds).toBeNull();
+    const currentDuration = latest.onDurationChange;
+    await act(async () => currentDuration(456));
+    expect(latest.durationSeconds).toBe(456);
+    await act(async () => latest.onError(new HttpRequestError(403, 'revoked')));
+    expect(latest.durationSeconds).toBeNull();
+    await act(async () => currentDuration(789));
+    expect(latest.durationSeconds).toBeNull();
+    expect(latest.source).toBeNull();
   });
 
   it.each([403, 404])(

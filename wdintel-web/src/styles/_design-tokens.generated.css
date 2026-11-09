@@ -13,6 +13,7 @@
 @theme inline {
   --color-echo-background: var(--echo-color-background);
   --color-echo-surface: var(--echo-color-surface);
+  --color-echo-header-surface: var(--echo-color-header-surface);
   --color-echo-surface-raised: var(--echo-color-surface-raised);
   --color-echo-dialog-surface: var(--echo-color-dialog-surface);
   --color-echo-surface-inactive: var(--echo-color-surface-inactive);
@@ -28,6 +29,7 @@
   --color-echo-primary-active: var(--echo-color-primary-active);
   --color-echo-on-primary: var(--echo-color-on-primary);
   --color-echo-secondary: var(--echo-color-secondary);
+  --color-echo-folder-icon: var(--echo-color-folder-icon);
   --color-echo-success: var(--echo-color-success);
   --color-echo-own-records: var(--echo-color-own-records);
   --color-echo-on-own-records: var(--echo-color-on-own-records);
@@ -69,6 +71,7 @@
 :root {
   --echo-color-background: #eff0f1;
   --echo-color-surface: #f8f9fb;
+  --echo-color-header-surface: #f8f9fb;
   --echo-color-surface-raised: #ffffff;
   --echo-color-dialog-surface: #ffffff;
   --echo-color-surface-inactive: #eff0f1;
@@ -84,6 +87,7 @@
   --echo-color-primary-active: #235674;
   --echo-color-on-primary: #ffffff;
   --echo-color-secondary: #d3871d;
+  --echo-color-folder-icon: #d5a052;
   --echo-color-success: #16a34a;
   --echo-color-own-records: #66bb6a;
   --echo-color-on-own-records: #000000;
@@ -148,6 +152,7 @@
 html[data-bs-theme='dark'] {
   --echo-color-background: #1f1f1f;
   --echo-color-surface: #2c2c2e;
+  --echo-color-header-surface: #262626;
   --echo-color-surface-raised: #000000;
   --echo-color-dialog-surface: #2c2c2e;
   --echo-color-surface-inactive: #2c2c2e;
@@ -163,6 +168,7 @@ html[data-bs-theme='dark'] {
   --echo-color-primary-active: #76a4c5;
   --echo-color-on-primary: #000000;
   --echo-color-secondary: #d3871d;
+  --echo-color-folder-icon: #d5a052;
   --echo-color-success: #16a34a;
   --echo-color-own-records: #66bb6a;
   --echo-color-on-own-records: #000000;

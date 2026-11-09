@@ -1,5 +1,9 @@
 import type {
   DeviceArchiveStatus,
+  DeviceFileMarkers,
+  DeviceFileFilterOptions,
+  SetDeviceFileFavoriteReq,
+  MarkDeviceFileViewedReq,
   DeviceAudioForwardingSettings,
   DeviceFileContentRef,
   DeviceAnalyticsSummaryReq,
@@ -452,4 +456,40 @@ export async function getDeviceAudioForwarding(
 ): Promise<DeviceAudioForwardingSettings> {
   const data = await postJson('/api/device/audio/forwarding', { device_id: deviceId }, options);
   return transformSnakeToCamel<DeviceAudioForwardingSettings>(data);
+}
+
+export async function setDeviceFileFavorite(
+  req: SetDeviceFileFavoriteReq,
+  options?: RequestOptions,
+): Promise<DeviceFileMarkers> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/files/favorite', transformCamelToSnake(req), options),
+  );
+}
+
+export async function markDeviceFileViewed(
+  req: MarkDeviceFileViewedReq,
+  options?: RequestOptions,
+): Promise<DeviceFileMarkers> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/files/viewed', transformCamelToSnake(req), options),
+  );
+}
+
+export async function markDeviceFileUnviewed(
+  req: MarkDeviceFileViewedReq,
+  options?: RequestOptions,
+): Promise<DeviceFileMarkers> {
+  return transformSnakeToCamel(
+    await postJson('/api/device/files/unviewed', transformCamelToSnake(req), options),
+  );
+}
+
+export async function listDeviceFileFilterOptions(
+  req: ListDeviceFileRootsReq,
+  options?: RequestOptions,
+): Promise<DeviceFileFilterOptions> {
+  return transformSnakeToCamel<DeviceFileFilterOptions>(
+    await postJson('/api/device/files/filter-options', transformCamelToSnake(req), options),
+  );
 }

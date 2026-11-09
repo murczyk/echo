@@ -2,10 +2,13 @@ pub(super) mod ancestors;
 mod browse;
 pub(super) mod core;
 mod counts;
+pub(super) mod dates;
 mod journal;
 pub(super) mod model;
 mod roots;
 pub(super) mod search;
+pub(in crate::devices::files) mod search_ranking;
+pub(super) mod sizes;
 
 pub(super) use model::{map_directory_model, map_root_model};
 #[cfg(test)]
@@ -114,7 +117,26 @@ pub(in crate::devices) async fn list_children(
     scope: &DirectoryScope,
     page: KeysetPageRequest<EntrySortKey>,
 ) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
-    browse::list_children(file_registry_db.connection(), scope, page).await
+    browse::list_children(
+        file_registry_db.connection(),
+        scope,
+        page,
+        Default::default(),
+    )
+    .await
+}
+
+pub(in crate::devices) async fn list_children_sorted(
+    file_registry_db: &FileRegistryDb,
+    scope: &DirectoryScope,
+    page: KeysetPageRequest<EntrySortKey>,
+    sort: super::sorting::FileListingSort,
+) -> Result<KeysetPage<TreeEntry, EntrySortKey>, FilesystemError> {
+    if sort == Default::default() {
+        return list_children(file_registry_db, scope, page).await;
+    }
+    browse::list_children(file_registry_db.connection(), scope, page, sort)
+        .await
 }
 
 pub(in crate::devices) async fn find_matching_tree_entry_ids(
@@ -152,11 +174,40 @@ pub(in crate::devices) async fn search_entries(
         .await
 }
 
+pub(in crate::devices) async fn search_entries_sorted(
+    file_registry_db: &FileRegistryDb,
+    scope: &DirectoryScope,
+    filters: &FileSearchFilters,
+    page: KeysetPageRequest<EntrySortKey>,
+    sort: super::sorting::FileListingSort,
+) -> Result<KeysetPage<SearchEntry, EntrySortKey>, FilesystemError> {
+    if sort == Default::default() {
+        return search_entries(file_registry_db, scope, filters, page).await;
+    }
+    search::search_entries_sorted(
+        file_registry_db.connection(),
+        scope,
+        filters,
+        page,
+        sort,
+    )
+    .await
+}
+
 pub(in crate::devices) async fn list_breadcrumbs(
     file_registry_db: &FileRegistryDb,
     scope: &DirectoryScope,
 ) -> Result<Vec<Breadcrumb>, FilesystemError> {
     ancestors::list_breadcrumbs(file_registry_db.connection(), scope).await
+}
+
+pub(in crate::devices) async fn find_search_scope(
+    file_registry_db: &FileRegistryDb,
+    device_id: Uuid,
+    entry_id: Uuid,
+) -> Result<DirectoryScope, FilesystemError> {
+    core::find_search_scope(file_registry_db.connection(), device_id, entry_id)
+        .await
 }
 
 pub(in crate::devices) async fn find_directory_scope(

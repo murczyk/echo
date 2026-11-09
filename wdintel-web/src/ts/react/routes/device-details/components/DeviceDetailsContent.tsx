@@ -6,7 +6,6 @@ import type { ReactNode } from 'react';
 import type { AiAgentFileCitation, DeviceDetails } from '../../../../../Bindings';
 import { DeviceFileContentPane } from '../../device-files';
 import { DeviceFileJournal } from '../../device-files/components/DeviceFileJournal';
-import type { DeviceAnalyticsTagFilter } from '../../device-files/types';
 import type { DeviceAnalyticsTagsState } from '../../device-files/use-device-analytics-tags';
 import type { DeviceFileJournalState } from '../../device-files/use-device-file-journal';
 import { DeviceDetailsLeftPanel } from './DeviceDetailsLeftPanel';
@@ -25,6 +24,7 @@ export function DeviceDetailsContent({
   audioEditor,
   audioSettings,
   mobileFiles,
+  fileExplorer,
   mobile = false,
   section,
   selectedFile,
@@ -40,14 +40,13 @@ export function DeviceDetailsContent({
   refreshVersion = 0,
   isAdmin,
   tagsState,
-  tagFilter,
-  onTagFilterChange,
 }: {
   device: DeviceDetails;
   audio: DeviceAudioState;
   audioEditor: DeviceAudioEditorState;
   audioSettings: DeviceAudioSettingsState;
   mobileFiles?: ReactNode;
+  fileExplorer?: ReactNode;
   mobile?: boolean;
   section: DeviceDetailsSection;
   selectedFile: DeviceFileSelection | null;
@@ -63,13 +62,11 @@ export function DeviceDetailsContent({
   refreshVersion?: number;
   isAdmin: boolean;
   tagsState: DeviceAnalyticsTagsState;
-  tagFilter: DeviceAnalyticsTagFilter;
-  onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
   return (
     <section
       data-testid="device-details-content"
-      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-echo-xl bg-[color:color-mix(in_srgb,var(--echo-color-surface-raised)_50%,var(--echo-color-background))] text-echo-text"
+      className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden text-echo-text"
     >
       <div className="min-h-0 flex-1 overflow-hidden">
         {section === DeviceDetailsSection.Audio ? (
@@ -99,7 +96,7 @@ export function DeviceDetailsContent({
           <section
             id="device-details-analytical-panel"
             aria-label="Аналітичні відомості"
-            className="flex h-full min-h-0 flex-col gap-echo-lg overflow-auto p-echo-md"
+            className="flex h-full min-h-0 flex-col gap-echo-lg overflow-auto"
           >
             <DeviceDetailsLeftPanel device={device} loading={false} embedded />
             <DeviceAnalyticsPanel
@@ -119,7 +116,7 @@ export function DeviceDetailsContent({
             aria-label="Файли"
             className="h-full min-h-0 min-w-0"
           >
-            {mobileFiles ?? (
+            {fileExplorer ?? mobileFiles ?? (
               <DeviceFileContentPane
                 deviceId={deviceId}
                 file={selectedFile ?? null}
@@ -137,12 +134,7 @@ export function DeviceDetailsContent({
             aria-label="Журнал"
             className="h-full min-h-0 min-w-0"
           >
-            <DeviceFileJournal
-              journal={journal}
-              tagsState={tagsState}
-              tagFilter={tagFilter}
-              onTagFilterChange={onTagFilterChange}
-            />
+            <DeviceFileJournal journal={journal} />
           </section>
         ) : null}
       </div>

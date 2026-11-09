@@ -6388,11 +6388,15 @@ removeDeviceAudioForwardingReqEncoder struct =
 
 
 type alias DeviceFileRoot =
-    { entryId : String
+    { isFavorite : Bool
+    , entryId : String
     , deviceId : String
     , parentEntryId : Maybe (String)
     , kind : FileEntryKind
     , name : String
+    , fileMetadataCreatedAt : Maybe (String)
+    , fileMetadataModifiedAt : Maybe (String)
+    , contentUploadedAt : Maybe (String)
     , createdAt : String
     , updatedAt : String
     , tags : List (AnalyticsTag)
@@ -6402,11 +6406,15 @@ type alias DeviceFileRoot =
 deviceFileRootEncoder : DeviceFileRoot -> Json.Encode.Value
 deviceFileRootEncoder struct =
     Json.Encode.object
-        [ ( "entry_id", (Json.Encode.string) struct.entryId )
+        [ ( "is_favorite", (Json.Encode.bool) struct.isFavorite )
+        , ( "entry_id", (Json.Encode.string) struct.entryId )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "parent_entry_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.parentEntryId )
         , ( "kind", (fileEntryKindEncoder) struct.kind )
         , ( "name", (Json.Encode.string) struct.name )
+        , ( "file_metadata_created_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataCreatedAt )
+        , ( "file_metadata_modified_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileMetadataModifiedAt )
+        , ( "content_uploaded_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentUploadedAt )
         , ( "created_at", (Json.Encode.string) struct.createdAt )
         , ( "updated_at", (Json.Encode.string) struct.updatedAt )
         , ( "tags", (Json.Encode.list (analyticsTagEncoder)) struct.tags )
@@ -6414,7 +6422,8 @@ deviceFileRootEncoder struct =
 
 
 type alias FileBreadcrumb =
-    { entryId : String
+    { archiveRevision : Maybe (Int)
+    , entryId : String
     , name : String
     }
 
@@ -6422,13 +6431,18 @@ type alias FileBreadcrumb =
 fileBreadcrumbEncoder : FileBreadcrumb -> Json.Encode.Value
 fileBreadcrumbEncoder struct =
     Json.Encode.object
-        [ ( "entry_id", (Json.Encode.string) struct.entryId )
+        [ ( "archive_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.archiveRevision )
+        , ( "entry_id", (Json.Encode.string) struct.entryId )
         , ( "name", (Json.Encode.string) struct.name )
         ]
 
 
 type alias DeviceFileTreeEntry =
-    { archive : Maybe (DeviceArchiveSummary)
+    { isFavorite : Bool
+    , isViewed : Bool
+    , sizeBytes : Maybe (Int)
+    , contentUploadedAt : Maybe (String)
+    , archive : Maybe (DeviceArchiveSummary)
     , isArchive : Bool
     , archiveOrigin : Maybe (DeviceArchiveOrigin)
     , virtualPath : Maybe (String)
@@ -6456,7 +6470,11 @@ type alias DeviceFileTreeEntry =
 deviceFileTreeEntryEncoder : DeviceFileTreeEntry -> Json.Encode.Value
 deviceFileTreeEntryEncoder struct =
     Json.Encode.object
-        [ ( "archive", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveSummaryEncoder)) struct.archive )
+        [ ( "is_favorite", (Json.Encode.bool) struct.isFavorite )
+        , ( "is_viewed", (Json.Encode.bool) struct.isViewed )
+        , ( "size_bytes", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sizeBytes )
+        , ( "content_uploaded_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.contentUploadedAt )
+        , ( "archive", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveSummaryEncoder)) struct.archive )
         , ( "is_archive", (Json.Encode.bool) struct.isArchive )
         , ( "archive_origin", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceArchiveOriginEncoder)) struct.archiveOrigin )
         , ( "virtual_path", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.virtualPath )
@@ -6570,7 +6588,8 @@ locateDeviceFileRspEncoder struct =
 
 
 type alias ListDeviceFileRootsReq =
-    { syncId : Maybe (String)
+    { filters : Maybe (DeviceFileFilters)
+    , syncId : Maybe (String)
     , deviceId : String
     }
 
@@ -6578,7 +6597,8 @@ type alias ListDeviceFileRootsReq =
 listDeviceFileRootsReqEncoder : ListDeviceFileRootsReq -> Json.Encode.Value
 listDeviceFileRootsReqEncoder struct =
     Json.Encode.object
-        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        [ ( "filters", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileFiltersEncoder)) struct.filters )
+        , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         ]
 
@@ -6738,8 +6758,182 @@ rebuildDeviceStatsRspEncoder struct =
         ]
 
 
+type alias SetDeviceFileFavoriteReq =
+    { deviceId : String
+    , entryId : String
+    , favorite : Bool
+    }
+
+
+setDeviceFileFavoriteReqEncoder : SetDeviceFileFavoriteReq -> Json.Encode.Value
+setDeviceFileFavoriteReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "entry_id", (Json.Encode.string) struct.entryId )
+        , ( "favorite", (Json.Encode.bool) struct.favorite )
+        ]
+
+
+type alias MarkDeviceFileViewedReq =
+    { deviceId : String
+    , fileId : String
+    , revision : Int
+    }
+
+
+markDeviceFileViewedReqEncoder : MarkDeviceFileViewedReq -> Json.Encode.Value
+markDeviceFileViewedReqEncoder struct =
+    Json.Encode.object
+        [ ( "device_id", (Json.Encode.string) struct.deviceId )
+        , ( "file_id", (Json.Encode.string) struct.fileId )
+        , ( "revision", (Json.Encode.int) struct.revision )
+        ]
+
+
+type alias DeviceFileMarkers =
+    { isFavorite : Bool
+    , isViewed : Bool
+    }
+
+
+deviceFileMarkersEncoder : DeviceFileMarkers -> Json.Encode.Value
+deviceFileMarkersEncoder struct =
+    Json.Encode.object
+        [ ( "is_favorite", (Json.Encode.bool) struct.isFavorite )
+        , ( "is_viewed", (Json.Encode.bool) struct.isViewed )
+        ]
+
+
+type DeviceFileSortBy
+    = FileSortName
+    | FileSortSize
+    | FileSortUploadedAt
+    | FileSortCreatedAt
+    | FileSortModifiedAt
+
+
+deviceFileSortByEncoder : DeviceFileSortBy -> Json.Encode.Value
+deviceFileSortByEncoder enum =
+    case enum of
+        FileSortName ->
+            Json.Encode.string "name"
+        FileSortSize ->
+            Json.Encode.string "size"
+        FileSortUploadedAt ->
+            Json.Encode.string "uploaded_at"
+        FileSortCreatedAt ->
+            Json.Encode.string "created_at"
+        FileSortModifiedAt ->
+            Json.Encode.string "modified_at"
+
+type DeviceFileSortDirection
+    = FileSortAscending
+    | FileSortDescending
+
+
+deviceFileSortDirectionEncoder : DeviceFileSortDirection -> Json.Encode.Value
+deviceFileSortDirectionEncoder enum =
+    case enum of
+        FileSortAscending ->
+            Json.Encode.string "ascending"
+        FileSortDescending ->
+            Json.Encode.string "descending"
+
+type alias DeviceFileFilters =
+    { fileTypes : List (DeviceFileType)
+    , extensions : List (String)
+    , modifiedFrom : Maybe (String)
+    , modifiedTo : Maybe (String)
+    , hasContent : Maybe (Bool)
+    , favoritesOnly : Bool
+    , unviewedOnly : Bool
+    , archiveFailed : Bool
+    , archiveEncrypted : Bool
+    , tagIds : List (String)
+    , tagMatch : Maybe (TagMatch)
+    , untagged : Bool
+    }
+
+
+deviceFileFiltersEncoder : DeviceFileFilters -> Json.Encode.Value
+deviceFileFiltersEncoder struct =
+    Json.Encode.object
+        [ ( "file_types", (Json.Encode.list (deviceFileTypeEncoder)) struct.fileTypes )
+        , ( "extensions", (Json.Encode.list (Json.Encode.string)) struct.extensions )
+        , ( "modified_from", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modifiedFrom )
+        , ( "modified_to", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.modifiedTo )
+        , ( "has_content", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.hasContent )
+        , ( "favorites_only", (Json.Encode.bool) struct.favoritesOnly )
+        , ( "unviewed_only", (Json.Encode.bool) struct.unviewedOnly )
+        , ( "archive_failed", (Json.Encode.bool) struct.archiveFailed )
+        , ( "archive_encrypted", (Json.Encode.bool) struct.archiveEncrypted )
+        , ( "tag_ids", (Json.Encode.list (Json.Encode.string)) struct.tagIds )
+        , ( "tag_match", (Maybe.withDefault Json.Encode.null << Maybe.map (tagMatchEncoder)) struct.tagMatch )
+        , ( "untagged", (Json.Encode.bool) struct.untagged )
+        ]
+
+
+type DeviceFileType
+    = FileTypeFolder
+    | FileTypeArchive
+    | FileTypeImage
+    | FileTypeAudio
+    | FileTypeVideo
+    | FileTypeDocument
+    | FileTypeSpreadsheet
+    | FileTypePresentation
+    | FileTypeMap
+    | FileTypeCode
+    | FileTypeOther
+
+
+deviceFileTypeEncoder : DeviceFileType -> Json.Encode.Value
+deviceFileTypeEncoder enum =
+    case enum of
+        FileTypeFolder ->
+            Json.Encode.string "folder"
+        FileTypeArchive ->
+            Json.Encode.string "archive"
+        FileTypeImage ->
+            Json.Encode.string "image"
+        FileTypeAudio ->
+            Json.Encode.string "audio"
+        FileTypeVideo ->
+            Json.Encode.string "video"
+        FileTypeDocument ->
+            Json.Encode.string "document"
+        FileTypeSpreadsheet ->
+            Json.Encode.string "spreadsheet"
+        FileTypePresentation ->
+            Json.Encode.string "presentation"
+        FileTypeMap ->
+            Json.Encode.string "map"
+        FileTypeCode ->
+            Json.Encode.string "code"
+        FileTypeOther ->
+            Json.Encode.string "other"
+
+type alias DeviceFileFilterOptions =
+    { extensions : List (String)
+    }
+
+
+deviceFileFilterOptionsEncoder : DeviceFileFilterOptions -> Json.Encode.Value
+deviceFileFilterOptionsEncoder struct =
+    Json.Encode.object
+        [ ( "extensions", (Json.Encode.list (Json.Encode.string)) struct.extensions )
+        ]
+
+
 type alias BrowseDeviceFilesReq =
-    { archiveRevision : Maybe (Int)
+    { filters : Maybe (DeviceFileFilters)
+    , sortBy : Maybe (DeviceFileSortBy)
+    , sortDirection : Maybe (DeviceFileSortDirection)
+    , favoritesOnly : Maybe (Bool)
+    , unviewedOnly : Maybe (Bool)
+    , archiveFailed : Maybe (Bool)
+    , archiveEncrypted : Maybe (Bool)
+    , archiveRevision : Maybe (Int)
     , syncId : Maybe (String)
     , deviceId : String
     , parentEntryId : String
@@ -6756,7 +6950,14 @@ type alias BrowseDeviceFilesReq =
 browseDeviceFilesReqEncoder : BrowseDeviceFilesReq -> Json.Encode.Value
 browseDeviceFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "archive_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.archiveRevision )
+        [ ( "filters", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileFiltersEncoder)) struct.filters )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileSortByEncoder)) struct.sortBy )
+        , ( "sort_direction", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileSortDirectionEncoder)) struct.sortDirection )
+        , ( "favorites_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.favoritesOnly )
+        , ( "unviewed_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unviewedOnly )
+        , ( "archive_failed", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.archiveFailed )
+        , ( "archive_encrypted", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.archiveEncrypted )
+        , ( "archive_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.archiveRevision )
         , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "parent_entry_id", (Json.Encode.string) struct.parentEntryId )
@@ -6771,7 +6972,8 @@ browseDeviceFilesReqEncoder struct =
 
 
 type alias BrowseDeviceFilesRsp =
-    { breadcrumbs : List (FileBreadcrumb)
+    { archiveSource : Maybe (DeviceFileContentRef)
+    , breadcrumbs : List (FileBreadcrumb)
     , entries : List (DeviceFileTreeEntry)
     , nextCursor : Maybe (String)
     }
@@ -6780,14 +6982,26 @@ type alias BrowseDeviceFilesRsp =
 browseDeviceFilesRspEncoder : BrowseDeviceFilesRsp -> Json.Encode.Value
 browseDeviceFilesRspEncoder struct =
     Json.Encode.object
-        [ ( "breadcrumbs", (Json.Encode.list (fileBreadcrumbEncoder)) struct.breadcrumbs )
+        [ ( "archive_source", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileContentRefEncoder)) struct.archiveSource )
+        , ( "breadcrumbs", (Json.Encode.list (fileBreadcrumbEncoder)) struct.breadcrumbs )
         , ( "entries", (Json.Encode.list (deviceFileTreeEntryEncoder)) struct.entries )
         , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nextCursor )
         ]
 
 
 type alias SearchDeviceFilesReq =
-    { syncId : Maybe (String)
+    { archiveRevision : Maybe (Int)
+    , globalSearch : Maybe (Bool)
+    , rankByRelevance : Maybe (Bool)
+    , filters : Maybe (DeviceFileFilters)
+    , sortBy : Maybe (DeviceFileSortBy)
+    , sortDirection : Maybe (DeviceFileSortDirection)
+    , hasContent : Maybe (Bool)
+    , favoritesOnly : Maybe (Bool)
+    , unviewedOnly : Maybe (Bool)
+    , archiveFailed : Maybe (Bool)
+    , archiveEncrypted : Maybe (Bool)
+    , syncId : Maybe (String)
     , deviceId : String
     , scopeEntryId : String
     , nameQuery : Maybe (String)
@@ -6807,7 +7021,18 @@ type alias SearchDeviceFilesReq =
 searchDeviceFilesReqEncoder : SearchDeviceFilesReq -> Json.Encode.Value
 searchDeviceFilesReqEncoder struct =
     Json.Encode.object
-        [ ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
+        [ ( "archive_revision", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.archiveRevision )
+        , ( "global_search", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.globalSearch )
+        , ( "rank_by_relevance", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.rankByRelevance )
+        , ( "filters", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileFiltersEncoder)) struct.filters )
+        , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileSortByEncoder)) struct.sortBy )
+        , ( "sort_direction", (Maybe.withDefault Json.Encode.null << Maybe.map (deviceFileSortDirectionEncoder)) struct.sortDirection )
+        , ( "has_content", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.hasContent )
+        , ( "favorites_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.favoritesOnly )
+        , ( "unviewed_only", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.unviewedOnly )
+        , ( "archive_failed", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.archiveFailed )
+        , ( "archive_encrypted", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.archiveEncrypted )
+        , ( "sync_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.syncId )
         , ( "device_id", (Json.Encode.string) struct.deviceId )
         , ( "scope_entry_id", (Json.Encode.string) struct.scopeEntryId )
         , ( "name_query", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.nameQuery )
@@ -24463,11 +24688,15 @@ rebuildDeviceStatsRspDecoder =
 deviceFileRootDecoder : Json.Decode.Decoder DeviceFileRoot
 deviceFileRootDecoder =
     Json.Decode.succeed DeviceFileRoot
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_favorite" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_entry_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (fileEntryKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_created_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_metadata_modified_at" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_uploaded_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.list (analyticsTagDecoder))))
@@ -24476,6 +24705,7 @@ deviceFileRootDecoder =
 fileBreadcrumbDecoder : Json.Decode.Decoder FileBreadcrumb
 fileBreadcrumbDecoder =
     Json.Decode.succeed FileBreadcrumb
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_revision" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entry_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
 
@@ -24483,6 +24713,10 @@ fileBreadcrumbDecoder =
 deviceFileTreeEntryDecoder : Json.Decode.Decoder DeviceFileTreeEntry
 deviceFileTreeEntryDecoder =
     Json.Decode.succeed DeviceFileTreeEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_favorite" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_viewed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "size_bytes" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "content_uploaded_at" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive" (Json.Decode.nullable (deviceArchiveSummaryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_archive" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_origin" (Json.Decode.nullable (deviceArchiveOriginDecoder))))
@@ -24537,6 +24771,7 @@ deviceFileDecoder =
 listDeviceFileRootsReqDecoder : Json.Decode.Decoder ListDeviceFileRootsReq
 listDeviceFileRootsReqDecoder =
     Json.Decode.succeed ListDeviceFileRootsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filters" (Json.Decode.nullable (deviceFileFiltersDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
 
@@ -24627,9 +24862,239 @@ retryDeviceFileGeodataPreviewReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_generation" (Json.Decode.string)))
 
 
+setDeviceFileFavoriteReqDecoder : Json.Decode.Decoder SetDeviceFileFavoriteReq
+setDeviceFileFavoriteReqDecoder =
+    Json.Decode.succeed SetDeviceFileFavoriteReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entry_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "favorite" (Json.Decode.bool)))
+
+
+markDeviceFileViewedReqDecoder : Json.Decode.Decoder MarkDeviceFileViewedReq
+markDeviceFileViewedReqDecoder =
+    Json.Decode.succeed MarkDeviceFileViewedReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "revision" (Json.Decode.int)))
+
+
+deviceFileMarkersDecoder : Json.Decode.Decoder DeviceFileMarkers
+deviceFileMarkersDecoder =
+    Json.Decode.succeed DeviceFileMarkers
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_favorite" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_viewed" (Json.Decode.bool)))
+
+
+deviceFileSortByDecoder : Json.Decode.Decoder DeviceFileSortBy
+deviceFileSortByDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "name" ->
+                            Json.Decode.succeed FileSortName
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "size" ->
+                            Json.Decode.succeed FileSortSize
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "uploaded_at" ->
+                            Json.Decode.succeed FileSortUploadedAt
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "created_at" ->
+                            Json.Decode.succeed FileSortCreatedAt
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "modified_at" ->
+                            Json.Decode.succeed FileSortModifiedAt
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceFileSortDirectionDecoder : Json.Decode.Decoder DeviceFileSortDirection
+deviceFileSortDirectionDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "ascending" ->
+                            Json.Decode.succeed FileSortAscending
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "descending" ->
+                            Json.Decode.succeed FileSortDescending
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceFileFiltersDecoder : Json.Decode.Decoder DeviceFileFilters
+deviceFileFiltersDecoder =
+    Json.Decode.succeed DeviceFileFilters
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "file_types" (Json.Decode.list (deviceFileTypeDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extensions" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modified_from" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modified_to" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "favorites_only" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unviewed_only" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_failed" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_encrypted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_ids" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tag_match" (Json.Decode.nullable (tagMatchDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "untagged" (Json.Decode.bool)))
+
+
+deviceFileTypeDecoder : Json.Decode.Decoder DeviceFileType
+deviceFileTypeDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "folder" ->
+                            Json.Decode.succeed FileTypeFolder
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "archive" ->
+                            Json.Decode.succeed FileTypeArchive
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "image" ->
+                            Json.Decode.succeed FileTypeImage
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "audio" ->
+                            Json.Decode.succeed FileTypeAudio
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "video" ->
+                            Json.Decode.succeed FileTypeVideo
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "document" ->
+                            Json.Decode.succeed FileTypeDocument
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "spreadsheet" ->
+                            Json.Decode.succeed FileTypeSpreadsheet
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "presentation" ->
+                            Json.Decode.succeed FileTypePresentation
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "map" ->
+                            Json.Decode.succeed FileTypeMap
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "code" ->
+                            Json.Decode.succeed FileTypeCode
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "other" ->
+                            Json.Decode.succeed FileTypeOther
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
+deviceFileFilterOptionsDecoder : Json.Decode.Decoder DeviceFileFilterOptions
+deviceFileFilterOptionsDecoder =
+    Json.Decode.succeed DeviceFileFilterOptions
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "extensions" (Json.Decode.list (Json.Decode.string))))
+
+
 browseDeviceFilesReqDecoder : Json.Decode.Decoder BrowseDeviceFilesReq
 browseDeviceFilesReqDecoder =
     Json.Decode.succeed BrowseDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filters" (Json.Decode.nullable (deviceFileFiltersDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (deviceFileSortByDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_direction" (Json.Decode.nullable (deviceFileSortDirectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "favorites_only" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unviewed_only" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_failed" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_encrypted" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_revision" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
@@ -24646,6 +25111,7 @@ browseDeviceFilesReqDecoder =
 browseDeviceFilesRspDecoder : Json.Decode.Decoder BrowseDeviceFilesRsp
 browseDeviceFilesRspDecoder =
     Json.Decode.succeed BrowseDeviceFilesRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_source" (Json.Decode.nullable (deviceFileContentRefDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "breadcrumbs" (Json.Decode.list (fileBreadcrumbDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (deviceFileTreeEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (Json.Decode.string))))
@@ -24654,6 +25120,17 @@ browseDeviceFilesRspDecoder =
 searchDeviceFilesReqDecoder : Json.Decode.Decoder SearchDeviceFilesReq
 searchDeviceFilesReqDecoder =
     Json.Decode.succeed SearchDeviceFilesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_revision" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "global_search" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rank_by_relevance" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "filters" (Json.Decode.nullable (deviceFileFiltersDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (deviceFileSortByDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_direction" (Json.Decode.nullable (deviceFileSortDirectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_content" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "favorites_only" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unviewed_only" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_failed" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "archive_encrypted" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sync_id" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_id" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "scope_entry_id" (Json.Decode.string)))

@@ -83,6 +83,8 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
+                        public.file_favorite,
+                        public.file_view,
                         public.file_archive,
                         public.device_audio_forwarding_outbox,
                         public.device_upload_finalization_job,

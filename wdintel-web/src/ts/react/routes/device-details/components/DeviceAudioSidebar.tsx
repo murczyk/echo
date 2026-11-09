@@ -7,6 +7,7 @@ import { PowerIconButton } from '../../../components/PowerIconButton';
 import type { DeviceAudioState } from '../use-device-audio';
 import { DeviceAudioList } from './DeviceAudioList';
 import { DeviceAudioSettingsMenu } from './DeviceAudioSettingsMenu';
+import { DeviceSidebarHeader, deviceSidebarClassName } from './DeviceSidebar';
 
 const SHOW_RECORDING_START_KEY = 'device-audio.show-recording-start';
 
@@ -41,36 +42,34 @@ export function DeviceAudioSidebar({
       aria-labelledby="device-audio-sidebar-title"
       data-testid="device-audio-sidebar"
       aria-busy={audio.loading}
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-echo-md border border-echo-border bg-echo-surface"
+      className={`${deviceSidebarClassName} flex h-full flex-col overflow-hidden`}
     >
-      <header className="flex h-[58px] shrink-0 items-center justify-between gap-echo-sm border-b border-echo-border px-echo-lg py-echo-sm">
-        <h2
-          id="device-audio-sidebar-title"
-          className="m-0 min-w-0 truncate text-[20px]! font-semibold! text-echo-text"
-        >
-          Аудіо
-        </h2>
-        <div className="flex shrink-0 items-center gap-echo-xs">
-          <Tooltip title={filterLabel}>
-            <PowerIconButton
-              size="small"
-              aria-label={filterLabel}
-              aria-haspopup="menu"
-              aria-expanded={filterAnchor !== null}
-              aria-controls={filterAnchor !== null ? 'device-audio-filters-menu' : undefined}
-              color={audio.unprocessedOnly ? 'primary' : 'inherit'}
-              onClick={(event) => setFilterAnchor(event.currentTarget)}
-            >
-              <FilterAltOutlinedIcon fontSize="small" />
-            </PowerIconButton>
-          </Tooltip>
-          <DeviceAudioSettingsMenu
-            settings={settings}
-            showRecordingStart={showRecordingStart}
-            onShowRecordingStartChange={updateShowRecordingStart}
-          />
-        </div>
-      </header>
+      <DeviceSidebarHeader
+        id="device-audio-sidebar-title"
+        title="Аудіо"
+        actions={
+          <>
+            <Tooltip title={filterLabel}>
+              <PowerIconButton
+                size="small"
+                aria-label={filterLabel}
+                aria-haspopup="menu"
+                aria-expanded={filterAnchor !== null}
+                aria-controls={filterAnchor !== null ? 'device-audio-filters-menu' : undefined}
+                color={audio.unprocessedOnly ? 'primary' : 'inherit'}
+                onClick={(event) => setFilterAnchor(event.currentTarget)}
+              >
+                <FilterAltOutlinedIcon fontSize="small" />
+              </PowerIconButton>
+            </Tooltip>
+            <DeviceAudioSettingsMenu
+              settings={settings}
+              showRecordingStart={showRecordingStart}
+              onShowRecordingStartChange={updateShowRecordingStart}
+            />
+          </>
+        }
+      />
       <Menu
         id="device-audio-filters-menu"
         anchorEl={filterAnchor}
@@ -96,7 +95,7 @@ export function DeviceAudioSidebar({
           Тільки необроблені
         </MenuItem>
       </Menu>
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-echo-sm">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
         <DeviceAudioList audio={audio} showRecordingStart={showRecordingStart} />
       </div>
     </aside>

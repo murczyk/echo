@@ -75,7 +75,7 @@ import { MessageCardTags } from './MessageCardTags';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import { MessageMediaDocumentLink } from './MessageMediaDocumentLink';
 import { KmzAttachmentPreviewLink } from './KmzAttachmentPreviewLink';
-import { isNativeKmlOrKmz } from './kmz/kmz-preview-utils';
+import { getNativeMapFormat } from './kmz/kmz-preview-utils';
 import { collectMessageDocuments } from './message-card-document-utils';
 import { blurActiveElement } from '../../../utils/focus';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -529,7 +529,7 @@ export function MessageCardMessageBody({
       .filter(
         (attachment) =>
           attachment.kmzConversionStatus != null ||
-          isNativeKmlOrKmz(
+          getNativeMapFormat(
             mediaAttachmentDisplayName(attachment),
             mediaAttachmentContentType(attachment),
           ) != null,
@@ -562,7 +562,7 @@ export function MessageCardMessageBody({
   const kmzPreviewAttachments = downloadAttachments.filter(
     (attachment) =>
       attachment.kmzConversionStatus != null ||
-      isNativeKmlOrKmz(
+      getNativeMapFormat(
         mediaAttachmentDisplayName(attachment),
         mediaAttachmentContentType(attachment),
       ) != null,
@@ -692,7 +692,7 @@ export function MessageCardMessageBody({
           sizeBytes: attachment.sizeBytes ?? null,
           contentType: mediaAttachmentContentType(attachment),
           initialStatus: attachment.kmzConversionStatus ?? 'pending',
-          nativeFormat: isNativeKmlOrKmz(
+          nativeFormat: getNativeMapFormat(
             mediaAttachmentDisplayName(attachment),
             mediaAttachmentContentType(attachment),
           ),

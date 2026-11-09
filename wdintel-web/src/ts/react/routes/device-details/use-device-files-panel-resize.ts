@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { DEVICE_SIDEBAR_WIDTH } from './layout';
 
 const MIN_WIDTH = 240;
-const INITIAL_WIDTH = 320;
+const INITIAL_WIDTH = DEVICE_SIDEBAR_WIDTH;
 const CONTENT_MIN_WIDTH = 320;
 const SESSIONS_WIDTH = 344;
 const PANEL_GAP = 16;

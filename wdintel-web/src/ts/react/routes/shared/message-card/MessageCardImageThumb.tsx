@@ -16,7 +16,7 @@ import {
   resolveMediaAttachmentId,
   type MessageCardDownloadGuardProps,
 } from './MessageCardMedia';
-import { useMediaThumbnail, useThumbnailRequestActivation } from './MessageCardVideoThumb';
+import { useMediaThumbnail, useThumbnailRequestActivation } from '../use-media-thumbnail';
 
 type PreviewVariant = 'single' | 'multi';
 const IMAGE_THUMBNAIL_MAX_WAIT_MS = 30_000;
@@ -110,6 +110,7 @@ export function MessageCardImageThumb({
           )}
           {imageSrc !== null && imageSrc !== '' ? (
             <img
+              key={imageSrc}
               src={imageSrc}
               alt="Зображення повідомлення"
               onLoad={() => {

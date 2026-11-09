@@ -73,7 +73,7 @@ for (const id of [
         ).toBeVisible();
       else if (id === 'unsupported-binary')
         await expect(
-          pane.getByRole('heading', { name: 'Перегляд формату BIN не підтримується', exact: true }),
+          pane.getByRole('heading', { name: 'Перегляд недоступний', exact: true }),
         ).toBeVisible();
       else if (id === 'password-zip') await expect(pane).toContainText(/парол|зашифров/i);
       else if (id === 'oversized-text' || id === 'oversized-document')

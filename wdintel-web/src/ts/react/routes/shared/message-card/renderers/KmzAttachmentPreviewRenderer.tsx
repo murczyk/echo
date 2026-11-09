@@ -25,9 +25,10 @@ import { MapFileSurface } from './MapFilePreview';
 import { fetchCachedDocumentResponse } from '../document-preview-utils';
 import {
   MAX_KMZ_PREVIEW_SOURCE_BYTES,
-  isNativeKmlOrKmz,
+  getNativeMapFormat,
   isTerminalKmzPreviewError,
   kmzPreviewErrorCopy,
+  type NativeMapFormat,
 } from '../kmz/kmz-preview-utils';
 import type { KmzPreview } from '../kmz/kmz-preview-types';
 import { runWorkerTask } from '../workers/worker-client';
@@ -103,7 +104,8 @@ export function KmzAttachmentPreviewRenderer({
   const [conversionError, setConversionError] = useState<string | null>(null);
   const [conversionRetrying, setConversionRetrying] = useState(false);
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
-  const nativeFormat = source.nativeFormat ?? isNativeKmlOrKmz(source.fileName, source.contentType);
+  const nativeFormat =
+    source.nativeFormat ?? getNativeMapFormat(source.fileName, source.contentType);
   useEffect(() => {
     notifyRef.current = notify;
   }, [notify]);
@@ -151,7 +153,7 @@ export function KmzAttachmentPreviewRenderer({
           ),
         );
         const value = await runWorkerTask<
-          { buffer: ArrayBuffer; format: 'kml' | 'kmz' },
+          { buffer: ArrayBuffer; format: NativeMapFormat },
           KmzPreview
         >(
           () =>
@@ -228,13 +230,13 @@ export function KmzAttachmentPreviewRenderer({
           const conversionFailure = new Error(
             result.error ?? 'Конвертація завершилася з помилкою.',
           );
-          if (nativeFormat === 'kml') reportConversionError(conversionFailure);
+          if (nativeFormat != null) reportConversionError(conversionFailure);
           else reportError(conversionFailure);
           return;
         }
         if (++polls >= MAX_POLLS) {
           const conversionTimeout = new Error('Перевищено час очікування завершення конвертації.');
-          if (nativeFormat === 'kml') reportConversionError(conversionTimeout);
+          if (nativeFormat != null) reportConversionError(conversionTimeout);
           else reportError(conversionTimeout);
           return;
         }
@@ -242,7 +244,7 @@ export function KmzAttachmentPreviewRenderer({
       } catch (loadError) {
         if (controller.signal.aborted || isAbortError(loadError)) return;
         if (
-          nativeFormat === 'kml' &&
+          nativeFormat != null &&
           loadError instanceof HttpRequestError &&
           loadError.status === 404
         ) {
@@ -251,7 +253,7 @@ export function KmzAttachmentPreviewRenderer({
             reportConversionError(new Error('Не вдалося знайти завдання конвертації.'));
           return;
         }
-        if (nativeFormat === 'kml') reportConversionError(loadError);
+        if (nativeFormat != null) reportConversionError(loadError);
         else reportError(loadError);
       }
     };

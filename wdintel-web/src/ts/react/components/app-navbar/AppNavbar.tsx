@@ -213,7 +213,6 @@ export function AppNavbar({
         .catch(() => {});
     };
 
-    fetchSettings();
     window.addEventListener('system-settings-saved', fetchSettings);
 
     return () => {
