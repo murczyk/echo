@@ -405,8 +405,9 @@ export function useRerAnalysisNeoPage(
       ? 'callsigns'
       : selectedSidebarTab;
   const linkedMessageQueryState = replyNavigationVersion > 0 ? queryState : targetMessageQueryState;
+  // Only the echo filters use the units tree: it stops polling in messenger mode and reloads when the echo tab is back.
   const { hierarchy: unitHierarchy, loading: unitHierarchyLoading } = useUnitHierarchyCatalog(
-    true,
+    leftPanelTab !== LeftPanelTab.Messenger,
     setPageError,
   );
   const effectiveQueryState = useMemo(
