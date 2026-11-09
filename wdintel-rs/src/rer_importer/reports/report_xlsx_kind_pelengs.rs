@@ -622,6 +622,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     text_marked: None,
                     post: None,
                     post_id: None,
+                    unit_display: None,
                     unit_ids: vec![],
                     no_headers_body: None,
                     datasource_id: None,

@@ -2427,6 +2427,7 @@ mod tests {
             post: None,
             post_id: None,
             unit: None,
+            unit_display: None,
             unit_ids: vec![],
             callsign_tokens: None,
             signal_tokens: None,

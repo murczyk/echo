@@ -2470,6 +2470,7 @@ describe('ManageMessageDrawer edit mode', () => {
     const existing = buildMessage({
       text: 'Existing report',
       unit: 'Original unit',
+      unitDisplay: 'Renamed catalog unit, Inferred network unit',
       networkIds: [7],
       networkName: 'Original network',
       date: '2026-10-20',

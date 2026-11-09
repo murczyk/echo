@@ -50,6 +50,7 @@ messageStub =
     , isOwn = Nothing
     , hasDateInHeader = False
     , unit = Just "УКХ р/м йм. 1/2 мсб 1199 мсп"
+    , unitDisplay = Nothing
     , unitIds = []
     , postId = Nothing
     , networkIds = Nothing

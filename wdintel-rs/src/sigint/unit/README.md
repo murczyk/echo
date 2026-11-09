@@ -39,3 +39,18 @@ the tree key is sufficient to force reconstruction on the next request.
 The Callsigns sidebar keeps statistics rows absent from a snapshot as selectable
 root units until reconciliation supplies their hierarchy; search uses the names
 and paths displayed by the current snapshot.
+
+## Inbox unit labels
+
+Inbox responses keep the stored parser/editor input in `unit`. Cards use
+`unit_display` for current names from non-deleted parsed and network-derived
+unit links, including inactive units. Names are distinct and ordered by unit ID;
+`unit_ids` retains every distinct ID even when names match. Without live links,
+`unit_display` is null and cards fall back to `unit`. Older payloads without the
+display field use the same fallback.
+
+Edits and direct-submit copies use `unit`, so displaying inferred network units
+does not promote them into parsed links or invalidate an explicit selection.
+Reconciliation continues to use stored input and selected IDs; display names are
+read from the current catalog on each inbox hydration. Renames and merges need
+no stored-name backfill, schema migration, or analytics resnapshot for display.

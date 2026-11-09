@@ -512,6 +512,7 @@ export type InboxMessage = {
   post: string | null;
   postId: number | null;
   unit: string | null;
+  unitDisplay: string | null;
   unitIds: Array<number>;
   callsignTokens: Array<CnCallsign> | null;
   signalTokens: Array<CnSignal> | null;

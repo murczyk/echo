@@ -43,7 +43,8 @@ for (const host of ['analysis', 'duty'] as const) {
     const response = createLoadedInboxResponse();
     const unit = 'Тестовий підрозділ із довгою назвою для перевірки перенесення тексту';
     Object.assign(response.inbox_items[0][1], {
-      unit,
+      unit: 'Stored unit label',
+      unit_display: unit,
       location: 'Тестова локація',
       groupMasterKey: 'Тестова група',
       sender: 'Тестовий відправник',
