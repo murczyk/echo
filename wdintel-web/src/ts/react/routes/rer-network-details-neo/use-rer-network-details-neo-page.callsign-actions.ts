@@ -213,13 +213,6 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     });
   }, [setState, state.callsignDrawerSaving]);
 
-  const setCallsignDrawerForm = useCallback(
-    (callsignDrawerForm: NetworkDetailsNeoPageState['callsignDrawerForm']) => {
-      setState((current) => ({ ...current, callsignDrawerForm }));
-    },
-    [setState],
-  );
-
   const openCallsignDeleteDialog = useCallback(
     (networkCallsign: NetworkCallsignRowView) => {
       if (!canManageCallsignActions) return;
@@ -249,11 +242,10 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     });
   }, [setState]);
 
-  const saveCallsignDrawer = useCallback(async () => {
+  const saveCallsignDrawer = useCallback(async (form: NetworkCallsignDrawerForm) => {
     const network = state.network;
-    const form = state.callsignDrawerForm;
 
-    if (!canManageCallsignActions || !network || !form || state.callsignDrawerSaving) return;
+    if (!canManageCallsignActions || !network || state.callsignDrawerSaving) return;
 
     const validationError = getNetworkCallsignDrawerSaveError(
       form,
@@ -341,7 +333,6 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     canManageCallsignActions,
     reloadCallsignsData,
     setState,
-    state.callsignDrawerForm,
     state.callsignDrawerMode,
     state.callsignDrawerSaving,
     state.currentUser,
@@ -425,7 +416,6 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
     openCallsignDrawerForCreate,
     openCallsignDrawerForEdit,
     closeCallsignDrawer,
-    setCallsignDrawerForm,
     saveCallsignDrawer,
     openCallsignDeleteDialog,
     closeCallsignDeleteDialog,

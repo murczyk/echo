@@ -141,7 +141,6 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         saving={page.callsignDrawerSaving}
         error={page.callsignDrawerError}
         onClose={page.closeCallsignDrawer}
-        onChange={page.setCallsignDrawerForm}
         onSave={page.saveCallsignDrawer}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
