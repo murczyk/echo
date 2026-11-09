@@ -1265,14 +1265,18 @@ fn inbox_undefined_unit_counts_query(
         active_links.offset(0);
     }
     let mut query = messages.into_query();
+    // Match the linked arm's bigint/text types; an implicit coercion makes
+    // PostgreSQL wrap this arm, and the gateway then runs both arms serially.
     query
         .clear_selects()
         .expr_as(
-            Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_ID),
+            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_ID)
+                .cast_as(Alias::new("bigint")),
             Alias::new("unit_id"),
         )
         .expr_as(
-            Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_NAME),
+            Expr::val(ANALYSIS_STATS_UNDEFINED_UNIT_NAME)
+                .cast_as(Alias::new("text")),
             Alias::new("name"),
         )
         .expr_as(
@@ -3976,5 +3980,27 @@ mod tests {
         assert!(descending
             .contains("ORDER BY \"signal_message\".\"created_at\" DESC"));
         assert!(!query.contains("WHERE \"created_at\""), "{query}");
+    }
+
+    #[test]
+    fn undefined_unit_arm_matches_linked_arm_types_3527() {
+        let messages = signal_message::Entity::find()
+            .select_only()
+            .column(signal_message::Column::Id);
+        let query = render_inbox_unit_stats_query(messages, None, false);
+        let (_, undefined) = query.split_once(" UNION ALL ").unwrap();
+
+        assert!(
+            undefined.contains(&format!(
+                r#"CAST({ANALYSIS_STATS_UNDEFINED_UNIT_ID} AS bigint) AS "unit_id""#
+            )),
+            "{query}"
+        );
+        assert!(
+            undefined.contains(&format!(
+                r#"CAST('{ANALYSIS_STATS_UNDEFINED_UNIT_NAME}' AS text) AS "name""#
+            )),
+            "{query}"
+        );
     }
 }
