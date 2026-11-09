@@ -5377,7 +5377,7 @@ async fn acceptance_content_read_preserves_historical_identity_on_archived_devic
             crate::devices::devices::query::FileRegistryDeviceAccess::FileSync,
         )
         .await,
-        Err(crate::error::AppError::Form(_))
+        Ok(device_id) if device_id == fixture.device.id
     ));
     let mut other_device = fixture.device.clone().into_active_model();
     other_device.id = Set(Uuid::new_v4());

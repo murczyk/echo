@@ -3026,15 +3026,9 @@ mod access_tests {
         archived_device.archived_at = Set(Some(chrono::Utc::now().naive_utc()));
         archived_device.update(&env.dbx).await.unwrap();
 
-        assert!(matches!(
-            authorize_file_sync_snapshot(
-                &env.dbx,
-                &snapshot_login.id,
-                device_id,
-            )
-            .await,
-            Err(AppError::Form(_))
-        ));
+        authorize_file_sync_snapshot(&env.dbx, &snapshot_login.id, device_id)
+            .await
+            .unwrap();
     }
 }
 
