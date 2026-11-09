@@ -41,6 +41,10 @@ import {
 const LOADING_TEXT = `Завантаження${ELLIPSIS}`;
 const REFERENCE_LOADING_TEXT = `Завантажуємо довідники${ELLIPSIS}`;
 const UNIT_MASK_TOOLTIP = "Перехопленя що містять такий текст будуть прив'язані до даної мережі";
+const AI_INSTRUCTIONS_HELPER_TEXT =
+  'Буде використовуватись при визначенні чи саме під цю мережу попадає певне повідомлення, та при відображенні головного співпадіння мережі';
+const AI_INSTRUCTIONS_PLACEHOLDER = 'Напр.: зазвичай з посту A або B; CC 3';
+const AI_INSTRUCTIONS_MAX_CHARS = 2000;
 
 type Props = {
   open: boolean;
@@ -59,6 +63,7 @@ type Props = {
   disableRestoreFocus?: boolean;
   frequencyOptional?: boolean;
   unitMaskVisible?: boolean;
+  aiInstructionsVisible?: boolean;
 };
 
 type UpsertField = keyof Pick<
@@ -130,6 +135,7 @@ function NetworkEditDrawerComponent({
   disableRestoreFocus = false,
   frequencyOptional = false,
   unitMaskVisible = false,
+  aiInstructionsVisible = false,
 }: Props) {
   const radioFeaturesAllowed = useRadioFeatures();
   const titleId = 'network-edit-drawer-title';
@@ -333,6 +339,28 @@ function NetworkEditDrawerComponent({
                 error={fieldError('location') !== undefined}
                 helperText={fieldError('location')}
               />
+
+              {aiInstructionsVisible ? (
+                <TextField
+                  label="Опис для ШІ"
+                  value={form.aiInstructions}
+                  onChange={(event) => onChange({ ...form, aiInstructions: event.target.value })}
+                  disabled={formBlocked}
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={3}
+                  maxRows={10}
+                  placeholder={AI_INSTRUCTIONS_PLACEHOLDER}
+                  helperText={AI_INSTRUCTIONS_HELPER_TEXT}
+                  slotProps={{
+                    htmlInput: {
+                      maxLength: AI_INSTRUCTIONS_MAX_CHARS,
+                      'data-testid': 'network-ai-instructions',
+                    },
+                  }}
+                />
+              ) : null}
 
               <DrawerSection
                 title="Оперативні параметри"

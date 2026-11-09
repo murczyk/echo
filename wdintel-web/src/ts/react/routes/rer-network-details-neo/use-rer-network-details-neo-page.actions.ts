@@ -18,6 +18,7 @@ import {
   formatErrorMessage,
   getNetworkUpsertValidationError,
   normalizeNetworkUnitMask,
+  toNetworkAiInstructionsReq,
   toNetworkEditForm,
   type NetworkDetailsNeoPageState,
   type NetworkEditForm,
@@ -229,6 +230,7 @@ export function useRerNetworkDetailsNeoPageActions({
           : null,
         descriptions: null,
         status: editForm.status,
+        aiInstructions: toNetworkAiInstructionsReq(editForm, state.aiNetworkMatchEnabled),
       });
 
       await syncNetworkRelations(editForm);
@@ -266,7 +268,7 @@ export function useRerNetworkDetailsNeoPageActions({
         editError: formatErrorMessage(error),
       }));
     }
-  }, [state.editForm, state.editInProgress, state.network, setState]);
+  }, [state.aiNetworkMatchEnabled, state.editForm, state.editInProgress, state.network, setState]);
 
   const handleDelete = useCallback(async () => {
     if (!state.network) return;

@@ -451,6 +451,9 @@ where
     )
     .await
     .c(h!())?;
+    crate::ai_network_match::enqueue_for_calculated(dbx, &result)
+        .await
+        .c(h!())?;
     Ok(result)
 }
 

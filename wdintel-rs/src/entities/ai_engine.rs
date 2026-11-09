@@ -47,6 +47,8 @@ pub enum Relation {
     AiIntelReportAttempt,
     #[sea_orm(has_one = "super::ai_intel_report_engine_budget::Entity")]
     AiIntelReportEngineBudget,
+    #[sea_orm(has_many = "super::ai_network_match_result::Entity")]
+    AiNetworkMatchResult,
     #[sea_orm(has_many = "super::ai_position_mention::Entity")]
     AiPositionMention,
     #[sea_orm(has_many = "super::ai_settlement_parse_result::Entity")]
@@ -118,6 +120,12 @@ impl Related<super::ai_intel_report_attempt::Entity> for Entity {
 impl Related<super::ai_intel_report_engine_budget::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiIntelReportEngineBudget.def()
+    }
+}
+
+impl Related<super::ai_network_match_result::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiNetworkMatchResult.def()
     }
 }
 

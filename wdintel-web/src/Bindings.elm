@@ -1298,6 +1298,36 @@ geoCoordinatesEncoder struct =
         ]
 
 
+type alias NetworkMatchCandidate =
+    { networkId : Int
+    , certainty : Int
+    , reason : String
+    }
+
+
+networkMatchCandidateEncoder : NetworkMatchCandidate -> Json.Encode.Value
+networkMatchCandidateEncoder struct =
+    Json.Encode.object
+        [ ( "network_id", (Json.Encode.int) struct.networkId )
+        , ( "certainty", (Json.Encode.int) struct.certainty )
+        , ( "reason", (Json.Encode.string) struct.reason )
+        ]
+
+
+type alias InboxNetworkMatch =
+    { confidentNetworkId : Maybe (Int)
+    , candidates : List (NetworkMatchCandidate)
+    }
+
+
+inboxNetworkMatchEncoder : InboxNetworkMatch -> Json.Encode.Value
+inboxNetworkMatchEncoder struct =
+    Json.Encode.object
+        [ ( "confident_network_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.confidentNetworkId )
+        , ( "candidates", (Json.Encode.list (networkMatchCandidateEncoder)) struct.candidates )
+        ]
+
+
 type alias InboxMessage =
     { messageUuid : Maybe (String)
     , messageUid : Maybe (String)
@@ -1343,6 +1373,7 @@ type alias InboxMessage =
     , location : Maybe (String)
     , tags : Maybe (List (Int))
     , networkIds : Maybe (List (Int))
+    , networkMatch : Maybe (InboxNetworkMatch)
     , networkName : Maybe (String)
     , deviceName : Maybe (String)
     , inboxTags : Maybe (List (InboxMessageTag))
@@ -1399,6 +1430,7 @@ inboxMessageEncoder struct =
         , ( "location", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.location )
         , ( "tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.tags )
         , ( "network_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.networkIds )
+        , ( "network_match", (Maybe.withDefault Json.Encode.null << Maybe.map (inboxNetworkMatchEncoder)) struct.networkMatch )
         , ( "network_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.networkName )
         , ( "device_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deviceName )
         , ( "inbox_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (inboxMessageTagEncoder))) struct.inboxTags )
@@ -13249,6 +13281,7 @@ type alias Network =
     , doNotArchive : Bool
     , unitMask : List (String)
     , status : NetworkStatus
+    , aiInstructions : Maybe (String)
     }
 
 
@@ -13278,6 +13311,7 @@ networkEncoder struct =
         , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
         , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
         , ( "status", (networkStatusEncoder) struct.status )
+        , ( "ai_instructions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiInstructions )
         ]
 
 
@@ -13395,6 +13429,7 @@ type alias CreateNetworkReq =
     , descriptions : List (AddNetworkDescription)
     , doNotArchive : Bool
     , unitMask : List (String)
+    , aiInstructions : Maybe (String)
     }
 
 
@@ -13415,6 +13450,7 @@ createNetworkReqEncoder struct =
         , ( "descriptions", (Json.Encode.list (addNetworkDescriptionEncoder)) struct.descriptions )
         , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
         , ( "unit_mask", (Json.Encode.list (Json.Encode.string)) struct.unitMask )
+        , ( "ai_instructions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiInstructions )
         ]
 
 
@@ -13445,6 +13481,7 @@ type alias UpdateNetworkReq =
     , doNotArchive : Bool
     , unitMask : Maybe (List (String))
     , status : NetworkStatus
+    , aiInstructions : Maybe (String)
     }
 
 
@@ -13465,6 +13502,7 @@ updateNetworkReqEncoder struct =
         , ( "do_not_archive", (Json.Encode.bool) struct.doNotArchive )
         , ( "unit_mask", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.unitMask )
         , ( "status", (networkStatusEncoder) struct.status )
+        , ( "ai_instructions", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiInstructions )
         ]
 
 
@@ -15165,6 +15203,7 @@ type alias SystemSettingsCurrentRsp =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , dutySelectedGroupsEnabled : Bool
+    , aiNetworkMatchEnabled : Bool
     , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Int
@@ -15211,6 +15250,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "duty_selected_groups_enabled", (Json.Encode.bool) struct.dutySelectedGroupsEnabled )
+        , ( "ai_network_match_enabled", (Json.Encode.bool) struct.aiNetworkMatchEnabled )
         , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
@@ -15262,6 +15302,7 @@ type alias SystemSettingsItem =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Bool
     , dutySelectedGroupsEnabled : Bool
+    , aiNetworkMatchEnabled : Bool
     , importantNotifyAllEnabled : Bool
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Int
@@ -15321,6 +15362,7 @@ systemSettingsItemEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Json.Encode.bool) struct.aiPositionHighlightsEnabled )
         , ( "duty_selected_groups_enabled", (Json.Encode.bool) struct.dutySelectedGroupsEnabled )
+        , ( "ai_network_match_enabled", (Json.Encode.bool) struct.aiNetworkMatchEnabled )
         , ( "important_notify_all_enabled", (Json.Encode.bool) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Json.Encode.int) struct.apiRateLimitReplenishIntervalMs )
@@ -15385,6 +15427,7 @@ type alias CreateSystemSettingsReq =
     , analysisAorFilterEnabled : Bool
     , aiPositionHighlightsEnabled : Maybe (Bool)
     , dutySelectedGroupsEnabled : Maybe (Bool)
+    , aiNetworkMatchEnabled : Maybe (Bool)
     , importantNotifyAllEnabled : Maybe (Bool)
     , twoFactorAuthEnabled : Bool
     , apiRateLimitReplenishIntervalMs : Maybe (Int)
@@ -15439,6 +15482,7 @@ createSystemSettingsReqEncoder struct =
         , ( "analysis_aor_filter_enabled", (Json.Encode.bool) struct.analysisAorFilterEnabled )
         , ( "ai_position_highlights_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiPositionHighlightsEnabled )
         , ( "duty_selected_groups_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.dutySelectedGroupsEnabled )
+        , ( "ai_network_match_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.aiNetworkMatchEnabled )
         , ( "important_notify_all_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.importantNotifyAllEnabled )
         , ( "two_factor_auth_enabled", (Json.Encode.bool) struct.twoFactorAuthEnabled )
         , ( "api_rate_limit_replenish_interval_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.apiRateLimitReplenishIntervalMs )
@@ -21599,6 +21643,21 @@ geoCoordinatesDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
 
 
+networkMatchCandidateDecoder : Json.Decode.Decoder NetworkMatchCandidate
+networkMatchCandidateDecoder =
+    Json.Decode.succeed NetworkMatchCandidate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "certainty" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "reason" (Json.Decode.string)))
+
+
+inboxNetworkMatchDecoder : Json.Decode.Decoder InboxNetworkMatch
+inboxNetworkMatchDecoder =
+    Json.Decode.succeed InboxNetworkMatch
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "confident_network_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "candidates" (Json.Decode.list (networkMatchCandidateDecoder))))
+
+
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
@@ -21646,6 +21705,7 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tags" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_match" (Json.Decode.nullable (inboxNetworkMatchDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_tags" (Json.Decode.nullable (Json.Decode.list (inboxMessageTagDecoder)))))
@@ -29699,6 +29759,7 @@ networkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (networkStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_instructions" (Json.Decode.nullable (Json.Decode.string))))
 
 
 networkStatusDecoder : Json.Decode.Decoder NetworkStatus
@@ -29808,6 +29869,7 @@ createNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "descriptions" (Json.Decode.list (addNetworkDescriptionDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_instructions" (Json.Decode.nullable (Json.Decode.string))))
 
 
 deleteNetworkReqDecoder : Json.Decode.Decoder DeleteNetworkReq
@@ -29833,6 +29895,7 @@ updateNetworkReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "do_not_archive" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_mask" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "status" (networkStatusDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_instructions" (Json.Decode.nullable (Json.Decode.string))))
 
 
 networkCallsignsReqDecoder : Json.Decode.Decoder NetworkCallsignsReq
@@ -30831,6 +30894,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_network_match_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
@@ -30883,6 +30947,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_network_match_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.int)))
@@ -30942,6 +31007,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysis_aor_filter_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_position_highlights_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "duty_selected_groups_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "ai_network_match_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "important_notify_all_enabled" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "two_factor_auth_enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "api_rate_limit_replenish_interval_ms" (Json.Decode.nullable (Json.Decode.int))))

@@ -1656,6 +1656,7 @@ where
         unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
         sigint_origin_id: NotSet,
         original_id: NotSet,
+        ai_instructions: NotSet,
     }
     .insert(txn)
     .await
@@ -4166,6 +4167,7 @@ mod tests {
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
             duty_selected_groups_enabled: Set(None),
+            ai_network_match_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             two_factor_auth_enabled: Set(None),
             exclude_orbit_other_units: Set(None),

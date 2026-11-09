@@ -194,6 +194,7 @@ export function NetworkDialogs({ page }: Props) {
         onSave={() => void page.saveNetworkCreate()}
         frequencyOptional={page.supportNonRerInterceptions}
         unitMaskVisible={page.supportNonRerInterceptions}
+        aiInstructionsVisible={page.aiNetworkMatchEnabled}
       />
 
       <NetworkEditDrawer
@@ -216,6 +217,7 @@ export function NetworkDialogs({ page }: Props) {
         onChange={page.setEditDialog}
         onSave={(form) => void page.saveNetworkEdit(form)}
         unitMaskVisible={page.supportNonRerInterceptions}
+        aiInstructionsVisible={page.aiNetworkMatchEnabled}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 

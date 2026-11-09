@@ -1132,6 +1132,13 @@ pub async fn create_network(
         unit_mask: Set(serde_json::to_value(unit_mask).context(h!())?),
         sigint_origin_id: NotSet,
         original_id: NotSet,
+        ai_instructions: Set(req
+            .ai_instructions
+            .clone()
+            .map(crate::ai_network_match::normalize_instructions)
+            .transpose()
+            .c(h!())?
+            .flatten()),
     }
     .insert(&txn)
     .await
@@ -1367,6 +1374,12 @@ pub async fn update_network(
     network_model.operation_type = Set(req.operation_type.clone());
     network_model.operation_period = Set(req.operation_period.clone());
     network_model.do_not_archive = Set(req.do_not_archive);
+    if let Some(ai_instructions) = req.ai_instructions.clone() {
+        network_model.ai_instructions = Set(
+            crate::ai_network_match::normalize_instructions(ai_instructions)
+                .c(h!())?,
+        );
+    }
     if let Some(unit_mask) = &unit_mask {
         network_model.unit_mask =
             Set(serde_json::to_value(unit_mask).context(h!())?);

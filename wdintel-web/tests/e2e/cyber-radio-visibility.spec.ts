@@ -30,6 +30,7 @@ const dutyNetwork: Network = {
   doNotArchive: false,
   unitMask: [],
   status: 'NetworkActive',
+  aiInstructions: null,
 };
 
 function createClassicDutyNetworkInbox(networkIds = [7]) {
@@ -43,6 +44,7 @@ function createClassicDutyNetworkInbox(networkIds = [7]) {
     hasDateInHeader: false,
     unitIds: [],
     networkIds,
+    networkMatch: null,
     networkName: null,
     deviceName: null,
     parentMessages: [],

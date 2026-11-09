@@ -1093,7 +1093,13 @@ function MetaLine({
   );
 }
 
-function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNetwork) {
+function NetworkMetadataItem({
+  networkId,
+  label,
+  badge,
+  certainty,
+  certaintyReason,
+}: MessageCardRenderedNetwork) {
   return (
     <div
       className="message-card-header-meta w-fit max-w-full"
@@ -1115,8 +1121,52 @@ function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNet
             в дорозвідці
           </span>
         ) : null}
+        {certainty != null ? (
+          <span
+            className="message-card-network-certainty"
+            data-message-card-network-certainty="true"
+            title={certaintyReason ? `ШІ: ${certaintyReason}` : 'Впевненість ШІ'}
+          >
+            {certainty}%
+          </span>
+        ) : null}
       </span>
     </div>
+  );
+}
+
+/** With a confident AI match, shows that network and folds the rest. */
+function NetworkMetadataList({
+  networks,
+  confidentNetworkId,
+}: {
+  networks: MessageCardRenderedNetwork[];
+  confidentNetworkId?: number | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const folds = confidentNetworkId != null && networks.length > 1;
+  const visible =
+    folds && !expanded
+      ? networks.filter((network) => network.networkId === confidentNetworkId)
+      : networks;
+  return (
+    <>
+      {visible.map((network) => (
+        <NetworkMetadataItem key={network.networkId} {...network} />
+      ))}
+      {folds ? (
+        <button
+          type="button"
+          className="message-card-network-expand"
+          data-message-card-network-expand="true"
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Згорнути інші мережі' : 'Показати інші мережі'}
+        >
+          {expanded ? 'згорнути' : `і ще ${networks.length - 1}`}
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -1149,9 +1199,12 @@ function NetworkEtalonSection({
     ) : null;
 
   if (primaryKind === 'network') {
-    return renderedNetworks.map((network) => (
-      <NetworkMetadataItem key={network.networkId} {...network} />
-    ));
+    return (
+      <NetworkMetadataList
+        networks={renderedNetworks}
+        confidentNetworkId={etalonDisplayModel.confidentNetworkId}
+      />
+    );
   }
 
   const primaryIcon =
@@ -1250,11 +1303,12 @@ export function MessageCardMetadata({
         className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0"
         style={{ flexWrap: 'wrap' }}
       >
-        {placement === MessageCardMetadataPlacement.Header
-          ? etalonDisplayModel.renderedNetworks.map((network) => (
-              <NetworkMetadataItem key={network.networkId} {...network} />
-            ))
-          : null}
+        {placement === MessageCardMetadataPlacement.Header ? (
+          <NetworkMetadataList
+            networks={etalonDisplayModel.renderedNetworks}
+            confidentNetworkId={etalonDisplayModel.confidentNetworkId}
+          />
+        ) : null}
         {showPrimaryMetadata && isPresent(groupName) ? (
           <MetaLine
             icon={<GraphicEqOutlinedIcon />}

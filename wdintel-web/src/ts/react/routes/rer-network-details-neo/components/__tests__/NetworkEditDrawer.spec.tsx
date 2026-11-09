@@ -150,6 +150,8 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
     operationType: 'ведення службового радіообміну',
     operationPeriod: 'цілодобово',
     doNotArchive: false,
+    unitMask: [],
+    aiInstructions: '',
     status: NETWORK_STATUS_ACTIVE,
     aorIds: [],
     unitIds: [],
@@ -167,7 +169,11 @@ function buildForm(overrides: Partial<NetworkUpsertForm> = {}): NetworkUpsertFor
 function renderDrawer(
   form: NetworkUpsertForm | null,
   mode: 'create' | 'edit' = 'create',
-  options: { frequencyOptional?: boolean; radioFeaturesAllowed?: boolean } = {},
+  options: {
+    frequencyOptional?: boolean;
+    radioFeaturesAllowed?: boolean;
+    aiInstructionsVisible?: boolean;
+  } = {},
 ): Rendered {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -201,6 +207,7 @@ function renderDrawer(
         onChange={nextSetForm}
         onSave={saveSpy}
         frequencyOptional={options.frequencyOptional}
+        aiInstructionsVisible={options.aiInstructionsVisible}
       />
     );
   }
@@ -314,6 +321,23 @@ describe('NetworkEditDrawer', () => {
     expect(saveButton?.disabled).toBe(false);
     expect(view.container.textContent).toContain('Перша частота');
     expect(view.container.textContent).not.toContain('Перша частота *');
+  });
+
+  // Regression: https://github.com/echoua/echo/issues/4095
+  it('#4095 shows «Опис для ШІ» with its helper text only when the setting is on', () => {
+    const hidden = renderDrawer(buildForm({ aiInstructions: 'CC 3' }), 'edit');
+    rendered.push(hidden);
+    expect(hidden.container.querySelector('input[aria-label="Опис для ШІ"]')).toBeNull();
+
+    const view = renderDrawer(buildForm({ aiInstructions: 'CC 3' }), 'edit', {
+      aiInstructionsVisible: true,
+    });
+    rendered.push(view);
+    const input = view.container.querySelector<HTMLInputElement>('input[aria-label="Опис для ШІ"]');
+    expect(input?.value).toBe('CC 3');
+    expect(view.container.textContent).toContain(
+      'Буде використовуватись при визначенні чи саме під цю мережу попадає певне повідомлення, та при відображенні головного співпадіння мережі',
+    );
   });
 
   it('toggles auto-archive protection', () => {

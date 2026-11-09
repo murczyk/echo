@@ -17,6 +17,7 @@ import {
   normalizeNetworkUnitMask,
   shouldIncludeNetworkCreateFrequency,
   toCreateNetworkReq,
+  toNetworkAiInstructionsReq,
   toNetworkEditForm,
 } from '../rer-network-details-neo/use-rer-network-details-neo-page.forms';
 import type { NetworkUpsertForm } from '../rer-network-details-neo/use-rer-network-details-neo-page.types';
@@ -37,6 +38,7 @@ type MutationArgs = {
   editDialog: NetworkUpsertForm | null;
   createDialog: NetworkUpsertForm | null;
   supportNonRerInterceptions: boolean;
+  aiNetworkMatchEnabled: boolean;
   deleteDialogNetwork: Network | null;
   editSubmitting: boolean;
   createSubmitting: boolean;
@@ -150,6 +152,7 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
           : null,
         descriptions: null,
         status: editDialog.status,
+        aiInstructions: toNetworkAiInstructionsReq(editDialog, args.aiNetworkMatchEnabled),
       });
       await syncNetworkRelations(editDialog);
       args.lastExecutedFullQueryKeyRef.current = null;
@@ -198,7 +201,10 @@ export function createRerNetworksNeoMutationActions(args: MutationArgs) {
 
     try {
       const network = await createNetwork(
-        toCreateNetworkReq(args.createDialog, { includeFrequency }),
+        toCreateNetworkReq(args.createDialog, {
+          includeFrequency,
+          aiInstructionsVisible: args.aiNetworkMatchEnabled,
+        }),
       );
       args.setCreateDialog(null);
       args.setStatus({ kind: 'success', text: 'Мережу створено.' });

@@ -20,6 +20,7 @@ pub mod ai_callsign;
 mod ai_control_panel;
 pub mod ai_engine;
 pub mod ai_intel_report;
+pub mod ai_network_match;
 pub mod ai_position;
 pub mod ai_settlement;
 pub mod ai_transcript_analysis;

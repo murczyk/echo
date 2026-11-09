@@ -479,6 +479,17 @@ export type GeoCoordinates = {
   lon: number;
 };
 
+export type NetworkMatchCandidate = {
+  networkId: number;
+  certainty: number;
+  reason: string;
+};
+
+export type InboxNetworkMatch = {
+  confidentNetworkId: number | null;
+  candidates: Array<NetworkMatchCandidate>;
+};
+
 export type InboxMessage = {
   messageUuid: string | null;
   messageUid: string | null;
@@ -524,6 +535,7 @@ export type InboxMessage = {
   location: string | null;
   tags: Array<number> | null;
   networkIds: Array<number> | null;
+  networkMatch: InboxNetworkMatch | null;
   networkName: string | null;
   deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
@@ -5149,6 +5161,7 @@ export type Network = {
   doNotArchive: boolean;
   unitMask: Array<string>;
   status: NetworkStatus;
+  aiInstructions: string | null;
 };
 
 export type NetworkStatus =
@@ -5202,6 +5215,7 @@ export type CreateNetworkReq = {
   descriptions: Array<AddNetworkDescription>;
   doNotArchive: boolean;
   unitMask: Array<string>;
+  aiInstructions: string | null;
 };
 
 export type DeleteNetworkReq = {
@@ -5223,6 +5237,7 @@ export type UpdateNetworkReq = {
   doNotArchive: boolean;
   unitMask: Array<string> | null;
   status: NetworkStatus;
+  aiInstructions: string | null;
 };
 
 export type NetworkCallsignsReq = {
@@ -5891,6 +5906,7 @@ export type SystemSettingsCurrentRsp = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5941,6 +5957,7 @@ export type SystemSettingsItem = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  aiNetworkMatchEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5996,6 +6013,7 @@ export type CreateSystemSettingsReq = {
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
   dutySelectedGroupsEnabled: boolean | null;
+  aiNetworkMatchEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;

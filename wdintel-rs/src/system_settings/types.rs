@@ -44,6 +44,8 @@ pub struct SystemSettingsCurrentRsp {
     pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_duty_selected_groups_enabled")]
     pub duty_selected_groups_enabled: bool,
+    #[serde(default)]
+    pub ai_network_match_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
@@ -105,6 +107,8 @@ pub struct SystemSettingsItem {
     pub ai_position_highlights_enabled: bool,
     #[serde(default = "default_duty_selected_groups_enabled")]
     pub duty_selected_groups_enabled: bool,
+    #[serde(default)]
+    pub ai_network_match_enabled: bool,
     #[serde(default = "default_important_notify_all_enabled")]
     pub important_notify_all_enabled: bool,
     #[serde(default = "default_true")]
@@ -203,6 +207,8 @@ pub struct CreateSystemSettingsReq {
     pub ai_position_highlights_enabled: Option<bool>,
     #[serde(default)]
     pub duty_selected_groups_enabled: Option<bool>,
+    #[serde(default)]
+    pub ai_network_match_enabled: Option<bool>,
     #[serde(default)]
     pub important_notify_all_enabled: Option<bool>,
     #[serde(default = "default_true")]

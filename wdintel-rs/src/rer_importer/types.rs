@@ -103,6 +103,9 @@ pub struct InboxMessage {
     pub location: Option<String>,
     pub tags: Option<Vec<i64>>,
     pub network_ids: Option<Vec<i64>>,
+    /// AI certainty per network; `None` keeps the full network list.
+    #[serde(default)]
+    pub network_match: Option<crate::ai_network_match::InboxNetworkMatch>,
     pub network_name: Option<String>,
     pub device_name: Option<String>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
@@ -234,6 +237,7 @@ impl From<InboxInsertPayload> for InboxMessage {
             location: payload.location,
             tags: payload.tags,
             network_ids: payload.network_ids,
+            network_match: None,
             network_name: None,
             device_name: None,
             inbox_tags: payload.inbox_tags,

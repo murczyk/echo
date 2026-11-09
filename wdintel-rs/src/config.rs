@@ -216,6 +216,33 @@ pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_NETWORK_MATCH_ENABLED_DEFAULT: bool = false;
+pub const AI_NETWORK_MATCH_WORKER_NAME: &str = "network_match";
+pub const AI_NETWORK_MATCH_WORKER_LOCK: i64 = 316_700_002;
+pub const AI_NETWORK_MATCH_WORKER_LEASE_SECS: u64 = 5;
+pub const AI_NETWORK_MATCH_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_NETWORK_MATCH_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_NETWORK_MATCH_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_NETWORK_MATCH_WORKER_MAX_ATTEMPTS: i32 = 8;
+/// Only messages received and intercepted this recently are scored, so
+/// network edits that recalculate old messages do not flood the AI engine.
+pub const AI_NETWORK_MATCH_ENQUEUE_MAX_AGE_HOURS: i64 = 48;
+/// Messages with more candidate networks are not scored.
+pub const AI_NETWORK_MATCH_MAX_CANDIDATES: usize = 12;
+pub const AI_NETWORK_MATCH_MAX_CALLSIGNS_PER_NETWORK: usize = 150;
+pub const AI_NETWORK_MATCH_MAX_LIST_ITEMS_PER_NETWORK: usize = 20;
+pub const AI_NETWORK_MATCH_MESSAGE_MAX_CHARS: usize = 8_000;
+pub const AI_NETWORK_MATCH_INSTRUCTIONS_MAX_CHARS: usize = 2_000;
+pub const AI_NETWORK_MATCH_REASON_MAX_CHARS: usize = 300;
+pub const AI_NETWORK_MATCH_OUTPUT_MAX_TOKENS: u32 = 2_048;
+/// The card folds the other networks only when the best one reaches this
+/// certainty and leads the runner-up by at least the lead below.
+pub const AI_NETWORK_MATCH_CONFIDENT_MIN_CERTAINTY: i32 = 80;
+pub const AI_NETWORK_MATCH_CONFIDENT_MIN_LEAD: i32 = 20;
+/// Sent once when the model's reply is not valid JSON.
+pub const AI_NETWORK_MATCH_REPAIR_PROMPT: &str = "Попередня відповідь не є валідним JSON за схемою. Поверни ту саму оцінку як валідний JSON-об'єкт за схемою запиту.";
+pub const AI_NETWORK_MATCH_PROMPT: &str =
+    include_str!("../../ai-eval/2026-11-09-network-match-prompt/prompt.txt");
 pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
 pub const LOCATION_REGION_MAX_DISTANCE: usize = 2;
 pub const LOCATION_MESSAGE_FUZZY_MAX_LINES: usize = 5;

@@ -129,6 +129,7 @@ export function NetworkDetailsNeoPageDialogs({ page }: Props) {
         onChange={page.setEditForm}
         onSave={page.saveNetworkEdit}
         unitMaskVisible={page.supportNonRerInterceptions}
+        aiInstructionsVisible={page.aiNetworkMatchEnabled}
         {...MRT_ROW_ACTION_MODAL_PROPS}
       />
 

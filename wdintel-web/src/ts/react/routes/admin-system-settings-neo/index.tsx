@@ -61,6 +61,7 @@ type SystemSettingsForm = {
   hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  aiNetworkMatchEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
@@ -113,6 +114,7 @@ type SystemSettingsPayload = {
   hideNetworks: boolean;
   dutyExcludeMenuEnabled: boolean;
   dutySelectedGroupsEnabled: boolean;
+  aiNetworkMatchEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
@@ -165,6 +167,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   hideNetworks: false,
   dutyExcludeMenuEnabled: true,
   dutySelectedGroupsEnabled: true,
+  aiNetworkMatchEnabled: false,
   analysisAorFilterEnabled: true,
   aiPositionHighlightsEnabled: false,
   importantNotifyAllEnabled: true,
@@ -268,6 +271,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     hideNetworks: item?.hideNetworks ?? false,
     dutyExcludeMenuEnabled: item?.dutyExcludeMenuEnabled ?? true,
     dutySelectedGroupsEnabled: item?.dutySelectedGroupsEnabled ?? true,
+    aiNetworkMatchEnabled: item?.aiNetworkMatchEnabled ?? false,
     analysisAorFilterEnabled: item?.analysisAorFilterEnabled ?? true,
     aiPositionHighlightsEnabled: item?.aiPositionHighlightsEnabled ?? false,
     importantNotifyAllEnabled: item?.importantNotifyAllEnabled ?? true,
@@ -323,6 +327,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.hideNetworks === b.hideNetworks &&
     a.dutyExcludeMenuEnabled === b.dutyExcludeMenuEnabled &&
     a.dutySelectedGroupsEnabled === b.dutySelectedGroupsEnabled &&
+    a.aiNetworkMatchEnabled === b.aiNetworkMatchEnabled &&
     a.analysisAorFilterEnabled === b.analysisAorFilterEnabled &&
     a.aiPositionHighlightsEnabled === b.aiPositionHighlightsEnabled &&
     a.importantNotifyAllEnabled === b.importantNotifyAllEnabled &&
@@ -435,6 +440,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     hideNetworks: form.hideNetworks,
     dutyExcludeMenuEnabled: form.dutyExcludeMenuEnabled,
     dutySelectedGroupsEnabled: form.dutySelectedGroupsEnabled,
+    aiNetworkMatchEnabled: form.aiNetworkMatchEnabled,
     analysisAorFilterEnabled: form.analysisAorFilterEnabled,
     aiPositionHighlightsEnabled: form.aiPositionHighlightsEnabled,
     importantNotifyAllEnabled: form.importantNotifyAllEnabled,
@@ -668,6 +674,16 @@ function MainSettingsSection({
             />
           }
           onChange={(checked) => patchForm({ hideNetworks: !checked })}
+        />
+        <MainSettingsSwitchRow
+          checked={form.aiNetworkMatchEnabled}
+          label={
+            <InfoLabel
+              label="ШІ: головна мережа повідомлення"
+              tooltip="Коли повідомлення співпадає з кількома мережами, ШІ оцінює кожну за текстом, позивними та «Описом для ШІ» мережі. Картка показує мережу з високою впевненістю, а решту згортає під «і ще N». Використовує движок ШІ-воркера позивних, тож він має бути увімкнений. Коли вимкнено, показуються всі мережі."
+            />
+          }
+          onChange={(checked) => patchForm({ aiNetworkMatchEnabled: checked })}
         />
         <MainSettingsSwitchRow
           checked={form.aiPositionHighlightsEnabled}
@@ -1502,6 +1518,7 @@ export function AdminSystemSettingsNeoPage() {
       hideNetworks: payload.hideNetworks,
       dutyExcludeMenuEnabled: payload.dutyExcludeMenuEnabled,
       dutySelectedGroupsEnabled: payload.dutySelectedGroupsEnabled,
+      aiNetworkMatchEnabled: payload.aiNetworkMatchEnabled,
       analysisAorFilterEnabled: payload.analysisAorFilterEnabled,
       aiPositionHighlightsEnabled: payload.aiPositionHighlightsEnabled,
       importantNotifyAllEnabled: payload.importantNotifyAllEnabled,

@@ -1259,3 +1259,81 @@ describe('MessageCard', () => {
     ).not.toBeNull();
   });
 });
+
+// Regression coverage for https://github.com/echoua/echo/issues/4095.
+describe('MessageCard AI network match', () => {
+  const networkMap = {
+    7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network,
+    8: { id: 8, name: 'Bravo', unitIds: [], location: null } as Network,
+    9: { id: 9, name: 'Charlie', unitIds: [], location: null } as Network,
+  };
+  const networkDisplayMap = { 7: 'р/м Alpha', 8: 'р/м Bravo', 9: 'р/м Charlie' };
+  const networkMatch = {
+    confidentNetworkId: 8,
+    candidates: [
+      { networkId: 8, certainty: 92, reason: 'CC 3 як в описі' },
+      { networkId: 7, certainty: 30, reason: '' },
+      { networkId: 9, certainty: 10, reason: '' },
+    ],
+  };
+
+  function networkLabels(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll('[data-message-card-network-item="true"]')).map(
+      (item) => item.getAttribute('data-network-id') ?? '',
+    );
+  }
+
+  it('shows only the confident network and folds the others under a toggle', async () => {
+    const view = await renderCard({
+      networkMap,
+      networkDisplayMap,
+      msg: buildMessage({ networkIds: [7, 8, 9], networkMatch }),
+    });
+    expect(networkLabels(view.container)).toEqual(['8']);
+    const certainty = view.container.querySelector('[data-message-card-network-certainty="true"]');
+    expect(certainty?.textContent).toBe('92%');
+    expect(certainty?.getAttribute('title')).toBe('ШІ: CC 3 як в описі');
+    const toggle = view.container.querySelector<HTMLButtonElement>(
+      '[data-message-card-network-expand="true"]',
+    );
+    expect(toggle?.textContent).toBe('і ще 2');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => toggle?.click());
+    expect(networkLabels(view.container)).toEqual(['8', '7', '9']);
+    expect(toggle?.textContent).toBe('згорнути');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    await act(async () => toggle?.click());
+    expect(networkLabels(view.container)).toEqual(['8']);
+  });
+
+  it.each([
+    { label: 'no AI match', networkMatch: null },
+    {
+      label: 'no confident network',
+      networkMatch: { ...networkMatch, confidentNetworkId: null },
+    },
+  ])('keeps every network without a toggle with $label', async ({ networkMatch }) => {
+    const view = await renderCard({
+      networkMap,
+      networkDisplayMap,
+      msg: buildMessage({ networkIds: [7, 8, 9], networkMatch }),
+    });
+    expect(networkLabels(view.container)).toHaveLength(3);
+    expect(view.container.querySelector('[data-message-card-network-expand="true"]')).toBeNull();
+  });
+
+  it('drops the fold when networks are hidden', () => {
+    const displayModel = resolveMessageCardEtalonDisplayModel(
+      buildMessage({ networkIds: [7, 8, 9], networkMatch, unit: 'Підрозділ' }),
+      { networkMap, networkDisplayMap },
+    );
+    expect(displayModel.confidentNetworkId).toBe(8);
+    expect(displayModel.renderedNetworks.map((network) => network.networkId)).toEqual([8, 7, 9]);
+    expect(displayModel.copyEtalonValue).toBe('р/м Bravo\nр/м Alpha\nр/м Charlie');
+    const hidden = hideMessageCardNetworks(displayModel, 'Підрозділ');
+    expect(hidden.confidentNetworkId).toBeNull();
+    expect(hidden.renderedNetworks).toEqual([]);
+  });
+});

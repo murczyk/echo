@@ -1,6 +1,6 @@
 use crate::config::{
-    ANALYSIS_AOR_FILTER_ENABLED_DEFAULT, DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
-    IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
+    AI_NETWORK_MATCH_ENABLED_DEFAULT, ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
+    DUTY_SELECTED_GROUPS_ENABLED_DEFAULT, IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
     REPORT_HISTORY_ETALONKA_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_GLOBAL_CONCURRENCY_DEFAULT,
     REPORT_HISTORY_KIND_CONCURRENCY_DEFAULT,
@@ -214,6 +214,9 @@ fn map_system_settings_item(
         duty_selected_groups_enabled: settings
             .duty_selected_groups_enabled
             .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
+        ai_network_match_enabled: settings
+            .ai_network_match_enabled
+            .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT),
         important_notify_all_enabled: settings
             .important_notify_all_enabled
             .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -438,6 +441,17 @@ where
         .c(h!())?
         .and_then(|settings| settings.important_notify_all_enabled)
         .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT))
+}
+
+pub async fn ai_network_match_enabled<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(get_active_system_settings(dbx)
+        .await
+        .c(h!())?
+        .and_then(|settings| settings.ai_network_match_enabled)
+        .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT))
 }
 
 pub async fn bot_tags_disabled<C>(dbx: &C) -> Result<bool, AppError>
@@ -830,6 +844,7 @@ fn system_settings_active_model(
         analysis_aor_filter_enabled: Set(Some(req.analysis_aor_filter_enabled)),
         ai_position_highlights_enabled: Set(req.ai_position_highlights_enabled),
         duty_selected_groups_enabled: Set(req.duty_selected_groups_enabled),
+        ai_network_match_enabled: Set(req.ai_network_match_enabled),
         important_notify_all_enabled: Set(req.important_notify_all_enabled),
         api_rate_limit_replenish_interval_ms: Set(Some(
             req.api_rate_limit_replenish_interval_ms
@@ -945,6 +960,15 @@ async fn create_system_settings_for_login(
                     .and_then(|settings| settings.duty_selected_groups_enabled)
             })
             .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
+    );
+    req.ai_network_match_enabled = Some(
+        req.ai_network_match_enabled
+            .or_else(|| {
+                settings
+                    .as_ref()
+                    .and_then(|settings| settings.ai_network_match_enabled)
+            })
+            .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT),
     );
     req.important_notify_all_enabled = Some(
         req.important_notify_all_enabled
@@ -1126,6 +1150,9 @@ pub async fn current_system_settings(
             duty_selected_groups_enabled: settings
                 .duty_selected_groups_enabled
                 .unwrap_or(DUTY_SELECTED_GROUPS_ENABLED_DEFAULT),
+            ai_network_match_enabled: settings
+                .ai_network_match_enabled
+                .unwrap_or(AI_NETWORK_MATCH_ENABLED_DEFAULT),
             important_notify_all_enabled: settings
                 .important_notify_all_enabled
                 .unwrap_or(IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT),
@@ -1171,6 +1198,7 @@ pub async fn current_system_settings(
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: false,
             duty_selected_groups_enabled: DUTY_SELECTED_GROUPS_ENABLED_DEFAULT,
+            ai_network_match_enabled: AI_NETWORK_MATCH_ENABLED_DEFAULT,
             important_notify_all_enabled: IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT,
             api_rate_limit_replenish_interval_ms:
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -1735,6 +1763,58 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(saved.duty_selected_groups_enabled, Some(expected));
+        }
+    }
+
+    // Regression: the AI network match flag defaults off, and legacy admin
+    // clients that omit it must not switch it off after it was enabled.
+    #[tokio::test]
+    #[serial]
+    async fn issue_4095_ai_network_match_defaults_off_and_survives_legacy_saves(
+    ) {
+        let _guard = TEST_LOCK.lock().await;
+        let (env, _cleanup_guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let login = test_login_id(&env).await;
+        let legacy_settings = insert_settings(&env.dbx, old_ts(), false).await;
+        assert!(
+            !map_system_settings_item(legacy_settings)
+                .unwrap()
+                .ai_network_match_enabled
+        );
+        assert!(!ai_network_match_enabled(&env.dbx).await.unwrap());
+
+        let mut legacy_body =
+            serde_json::to_value(settings_req(false)).unwrap();
+        legacy_body
+            .as_object_mut()
+            .unwrap()
+            .remove("ai_network_match_enabled");
+        let legacy_req: CreateSystemSettingsReq =
+            serde_json::from_value(legacy_body).unwrap();
+        assert_eq!(legacy_req.ai_network_match_enabled, None);
+
+        let mut req = settings_req(false);
+        for (incoming, expected) in [
+            (Some(true), true),
+            (None, true),
+            (Some(false), false),
+            (None, false),
+        ] {
+            req.ai_network_match_enabled = incoming;
+            let req = if incoming.is_none() {
+                &legacy_req
+            } else {
+                &req
+            };
+            let saved = create_system_settings_for_login(&env.dbx, &login, req)
+                .await
+                .unwrap();
+            assert_eq!(saved.ai_network_match_enabled, Some(expected));
+            assert_eq!(
+                ai_network_match_enabled(&env.dbx).await.unwrap(),
+                expected
+            );
         }
     }
 
@@ -2407,6 +2487,7 @@ mod tests {
             analysis_aor_filter_enabled: ANALYSIS_AOR_FILTER_ENABLED_DEFAULT,
             ai_position_highlights_enabled: Some(false),
             duty_selected_groups_enabled: Some(true),
+            ai_network_match_enabled: Some(false),
             important_notify_all_enabled: Some(true),
             api_rate_limit_replenish_interval_ms: Some(
                 crate::config::API_RATE_LIMIT_REPLENISH_INTERVAL_MS_DEFAULT,
@@ -2499,6 +2580,7 @@ mod tests {
             analysis_aor_filter_enabled: Set(None),
             ai_position_highlights_enabled: Set(None),
             duty_selected_groups_enabled: Set(None),
+            ai_network_match_enabled: Set(None),
             important_notify_all_enabled: Set(None),
             api_rate_limit_replenish_interval_ms: Set(None),
             api_rate_limit_burst_size: Set(None),
