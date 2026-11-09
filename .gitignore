@@ -59,21 +59,26 @@ echo-iggy/deploy/iggy-server
 echo-iggy/test-cli/.env
 
 .specify
-# Shared design skills; keep personal agent state and engine binaries local.
+# Explicit team skills; keep personal agent state local.
 /.agents/*
 !/.agents/skills/
 /.agents/skills/*
-!/.agents/skills/echo-ui-brief
-!/.agents/skills/echo-ui-review
-!/.agents/skills/frontend-react-mui-implementation
-!/.agents/skills/frontend-elm-implementation
-!/.agents/skills/frontend-html-css-accessibility
-!/.agents/skills/frontend-regression-safety
-!/.agents/skills/power-wrapper-components
+!/.agents/skills/echo-designer
+!/.agents/skills/echo-dev
+!/.agents/skills/echo-qa
+!/.agents/skills/playwright-best-practices
+!/.agents/skills/make-interfaces-feel-better
 !/.agents/skills/impeccable/
-/.agents/skills/impeccable/scripts/bin/
 
-# Only team defaults are shared; consent, caches, logs and runtime files stay local.
-/.impeccable/*
-!/.impeccable/config.json
+# Personal Impeccable configuration and state are not shared.
+/.impeccable/
+# Share only the reviewed role configuration; keep local client state private.
+!/.codex/
+/.codex/*
+!/.codex/agents/
+/.codex/agents/*
+!/.codex/agents/designer.toml
+!/.codex/agents/dev.toml
+!/.codex/agents/qa.toml
 specs
+!/docs/superpowers/specs/

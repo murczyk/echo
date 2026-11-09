@@ -1,6 +1,6 @@
 # Using shared design context
 
-This page covers the small context-use loop included with the shared design tools. The full task lifecycle—research gates, approval roles, prototyping, and delivery policy—will be planned separately.
+This page covers the small context-use loop included with the shared design tools. For an optional task workflow, explicitly invoke [Echo Designer, Dev or QA](echo-workflows.md); those stages run only when requested, individually or in a named sequence.
 
 ## Start from the same sources
 
@@ -19,7 +19,7 @@ Existing components/tokens/contracts to reuse:
 Evidence, assumptions, open decisions and verification method:
 ```
 
-Invoke `echo-ui-brief` when a UI change needs scoping and `echo-ui-review` when it needs review. [Design tools](design-tools.md) explains discovery and exact invocation. These skills work without Product Design or an Impeccable engine.
+[Design tools](design-tools.md) explains discovery and prerequisites for the explicitly invoked [Echo workflows](echo-workflows.md). Reading the shared context does not activate a workflow.
 
 For an implementation PR, link the brief or include its compact form, state the criterion of success, and attach the relevant verification evidence. If browser checks were unavailable, name the unverified states. A code review, a screenshot, and an observed user task provide different evidence; avoid calling one a substitute for all three.
 
@@ -36,7 +36,7 @@ Record these in the pilot report or PR, with client/OS/tool versions and failure
 - Time from the task description to an accepted brief/review, and corrections needed before acceptance; compare time only when the same rubric is met.
 - Successful setup attempts / all attempts.
 - Developers with working core context/skills / all team developers, with coverage of each required client/OS combination.
-- Impeccable manual-check and hook status separately; quiet output does not prove that hooks ran.
+- Checks actually performed, their evidence and unavailable capabilities; distinguish source-only review from rendered interactions.
 
 A two-developer pilot checks onboarding and usefulness; it is not statistical proof of improved product UX. Team-wide acceptance needs actual access checks for the whole team.
 

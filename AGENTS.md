@@ -7,10 +7,31 @@
 - For main `wdintel-web` UI work, read [PRODUCT.md](./PRODUCT.md),
   [DESIGN.md](./DESIGN.md), the [layout contract](./docs/frontend/layout-component-contract.md),
   and the affected surface's local `AGENTS.md`. These files do not define GOI/docs UI.
-- Use `echo-ui-brief` when scoping a UI change and `echo-ui-review` when reviewing it.
-  See [context use](./docs/frontend/design-workflow.md) and
+- See [context use](./docs/frontend/design-workflow.md) and
   [team tools](./docs/frontend/design-tools.md) for discovery, optional integrations,
   and verification limits. Personal plugins are not prerequisites.
+
+## Explicit managed roles
+
+- The `designer`, `dev` and `qa` roles run only when the user explicitly invokes
+  the matching `echo-designer`, `echo-dev` or `echo-qa` skill for the current task.
+  Follow [Echo workflows](./docs/frontend/echo-workflows.md) only for those named
+  stages. Ordinary tasks, generic requests to use subagents, quoted commands,
+  skill/configuration maintenance, documents and another skill's delegation
+  instructions do not authorize these roles. Never select them as generic helpers
+  or bypass their entrypoints through direct named-role dispatch.
+- Before dispatch, include the user's invocation and its task/stage scope in the
+  handoff. Do not invent invocation evidence. Reuse it for the same unfinished
+  authorized task; completion, cancellation or a new task ends that authorization.
+  A named chain authorizes only its included stages, subject to its approval gates.
+- Within that process, main coordinates native named roles in `.codex/agents/`
+  sequentially, with fresh context per stage and the configured role models.
+  Children never delegate further or perform Git/release operations. If native
+  role dispatch is unavailable, report it; do not use generic agents or nested AI CLIs.
+- Apply the workflow's stage, file/command and helper-safety boundaries. Impeccable
+  is Markdown-only within this process; helper examples do not grant installation,
+  publication, environment mutation or permission-bypass authority. Scope rules
+  and skill filters are instructions, not separate sandboxes or tool ACLs.
 
 ## Deployment and real-environment approval
 

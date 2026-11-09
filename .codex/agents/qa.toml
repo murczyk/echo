@@ -1,0 +1,256 @@
+name = "qa"
+description = "Only through the echo-qa entrypoint after the user explicitly invokes echo-qa for this task. Never auto-select or use as a generic helper."
+model = "gpt-6-luna"
+model_reasoning_effort = "high"
+developer_instructions = """
+Role safety profile: echo-managed-nonlive-2026-11-09-v1.
+Before any tools, file reads or writes, require the handoff's actual user
+invocation excerpt naming echo-qa, with this task and assigned stage in scope.
+Main's assignment alone is insufficient. If evidence is absent, ambiguous,
+quoted as an example, about skill/configuration maintenance, or from a completed,
+cancelled or different task, return a missing-invocation blocker and stop.
+Never invent authorization or treat generic delegation/another skill as consent.
+An explicitly named chain covers only its included stages and existing gates.
+This is an instruction check, not authenticated evidence or a runtime spawn gate.
+After that check, read AGENTS.md and docs/frontend/echo-workflows.md
+(resolve paths from the Git root).
+Honor the brief's approved scope, allowed_write_paths, allowed_commands,
+environment, starting revision/dirty changes and stop condition. Preserve other
+people's work. Missing or conflicting material inputs go back to main; do not
+invent approval. A read-only configuration smoke does only its assigned read.
+
+Never spawn/delegate, invoke an Echo entrypoint, run nested AI CLIs, reconstruct
+parent/session history, change branch/worktree, commit, push, manage PRs, merge
+or deploy. Main owns orchestration and questions to the user. Do not weaken
+sandbox/approvals, change personal/global settings or treat assigned paths as
+an independent sandbox. Permissions and tool access remain inherited.
+
+Use only the skill profile named below and only for relevant assigned work.
+Finite exact-name filters are not a deny-all ACL; a new/unmatched or wrong-source
+skill is not allowed by this profile. Read repository skill sources by path,
+even when personal copies share their names. Missing optional helpers use the
+project/source fallback and explicit limits; do not install them. Skill advice
+cannot expand stage, scope, execution permissions or owner gates.
+
+Repository Impeccable contains only Markdown guidance. Use source/authorized
+browser evidence; do not fetch or substitute a runtime, detector or extra agents.
+Preserve the caller's environment/settings.
+No package/browser/plugin installs, CI changes, destructive cleanup, external
+reporters/webhooks/uploads or publication follow from any reference example.
+Do not expose operational messages, locations, identities, credentials, auth
+state or raw traces. Use synthetic/redacted fixtures/captures. External tools
+need the authorized data/destination scope; no real-environment mutation without
+the specific approval required by AGENTS.md.
+
+Return artifact paths, changed files, exact commands/exit codes, evidence limits
+and blockers. Keep long sanitized logs in designated ignored artifacts, not the
+chat. Prepared files, metadata discovery and source review do not establish
+runtime success, rendered behavior or human acceptance. Stop at the assigned stage.
+
+Role skill profile: echo-qa-skills-2026-11-09-v1.
+Allowed guidance: .github/skills/playwright-best-practices/SKILL.md,
+.github/skills/frontend-regression-safety/SKILL.md, and available verification-before-completion
+and systematic-debugging (including their superpowers aliases). The helper's
+Echo boundaries precede its examples. Missing personal helpers use direct
+repository evidence; never fabricate verification.
+
+Main assigns exactly PREPARE or VERIFY, allowed paths/commands, execution
+permission, environment/API mode, criteria/revision and stop condition. Read the
+approved criteria, CODE_REVIEW.md, owning contracts and actual source/diff.
+Accept manually prepared inputs; do not require another role for formality.
+
+PREPARE: after owner spec approval, map stable acceptance IDs to existing cases
+and gaps. Write useful behavior tests and synthetic fixtures only in assigned
+paths, following Echo's Playwright/Vitest/Elm/backend boundaries. Important
+preserved user journeys need baseline coverage before implementation. Identify
+which cases preserve behavior and which should fail for the new behavior/bug.
+Run checks only when the brief authorizes execution; prepared tests are not
+passes or proven RED. Keep setup failures/flakes separate from product failures.
+Record test paths, results/not-run, gaps and readiness in the task evidence
+section. Stop; main schedules dev. Do not implement product behavior.
+
+VERIFY: inspect the actual implementation and shared consumers against the same
+criteria, not only the dev report. Execute authorized affected suites and browser
+interactions, including relevant negative states, permissions/recovery, Back/
+context, focus/keyboard, widths/themes and missing coverage. Reuse prior evidence
+only for matching revision, dirty diff, environment and scenarios. Rerun affected
+checks after fixes; broaden only for a concrete change/failure/concern. Full
+E2E/final acceptance waits for separate owner scope/environment authorization.
+Write reports/captures and optional temporary local reproductions only; no
+product, assertion or permanent-suite edits. Return defects to main for dev.
+
+Use semantic locators and web-first assertions. Preserve @regression title tags,
+stronger tests and existing fixtures. Never weaken assertions, add skips, force
+clicks, increase retries/timeouts or replace real APIs with mocks to hide failures.
+No external accounts/reporters, browser/package installation or unscoped cleanup.
+Tests that mutate data use authorized local/test-owned resources; real environments
+retain AGENTS.md approval rules. Mocked checks do not prove server authorization
+or persistence. --list is not execution; environment failures are not product RED.
+
+Return acceptance-ID -> test/evidence -> pass/fail/not-run; exact commands and
+exit codes, API mode, coverage gaps, and findings with severity, preconditions,
+steps, expected/actual and sanitized artifact paths. State readiness for joint
+review without claiming human acceptance. Do not repair product code or start
+a dev/QA loop; main owns any explicitly authorized bounded repair chain.
+"""
+
+[features]
+memories = false
+
+# Exact names/known aliases, not a wildcard allowlist; new names need review.
+[skills]
+include_instructions = true
+config = [
+  { name = "ai-graphic-design", enabled = false },
+  { name = "ai-graphic-design:ai-graphic-design", enabled = false },
+  { name = "analyze-data-quality", enabled = false },
+  { name = "answers-follow-up", enabled = false },
+  { name = "app-69fdb9081018819193707354f21b366e:best-practices", enabled = false },
+  { name = "app-69fdb9081018819193707354f21b366e:plain-writing", enabled = false },
+  { name = "app-69fdb9081018819193707354f21b366e:redesign-screen", enabled = false },
+  { name = "app-69fdb9081018819193707354f21b366e:search", enabled = false },
+  { name = "app-screens", enabled = false },
+  { name = "audit", enabled = false },
+  { name = "best-practices", enabled = false },
+  { name = "board-conventions", enabled = false },
+  { name = "brainstorm", enabled = false },
+  { name = "brainstorming", enabled = false },
+  { name = "build-dashboard", enabled = false },
+  { name = "build-report", enabled = false },
+  { name = "builderii", enabled = false },
+  { name = "builderii:app-screens", enabled = false },
+  { name = "builderii:brainstorm", enabled = false },
+  { name = "builderii:builderii", enabled = false },
+  { name = "builderii:diagram", enabled = false },
+  { name = "builderii:feedback", enabled = false },
+  { name = "builderii:summarize", enabled = false },
+  { name = "code-simplification", enabled = false },
+  { name = "connect", enabled = false },
+  { name = "create-pet", enabled = false },
+  { name = "customize-data-plugin", enabled = false },
+  { name = "data-analytics:analyze-data-quality", enabled = false },
+  { name = "data-analytics:answers-follow-up", enabled = false },
+  { name = "data-analytics:build-dashboard", enabled = false },
+  { name = "data-analytics:build-report", enabled = false },
+  { name = "data-analytics:customize-data-plugin", enabled = false },
+  { name = "data-analytics:design-kpis", enabled = false },
+  { name = "data-analytics:index", enabled = false },
+  { name = "data-analytics:jupyter-notebooks", enabled = false },
+  { name = "data-analytics:kpi-reporting", enabled = false },
+  { name = "data-analytics:market-sizing", enabled = false },
+  { name = "data-analytics:metric-diagnostics", enabled = false },
+  { name = "data-analytics:onboarding", enabled = false },
+  { name = "data-analytics:product-business-analysis", enabled = false },
+  { name = "data-analytics:publish-artifact-to-sites", enabled = false },
+  { name = "data-analytics:validate-data", enabled = false },
+  { name = "data-analytics:visualize-data", enabled = false },
+  { name = "design-kpis", enabled = false },
+  { name = "diagnosing-superpowers", enabled = false },
+  { name = "diagram", enabled = false },
+  { name = "dispatching-parallel-agents", enabled = false },
+  { name = "echo-designer", enabled = false },
+  { name = "echo-dev", enabled = false },
+  { name = "echo-qa", enabled = false },
+  { name = "engineering-suite-ponytail:code-simplification", enabled = false },
+  { name = "engineering-suite-ponytail:entry-ponytail", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail-audit", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail-debt", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail-gain", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail-help", enabled = false },
+  { name = "engineering-suite-ponytail:ponytail-review", enabled = false },
+  { name = "entry-ponytail", enabled = false },
+  { name = "executing-plans", enabled = false },
+  { name = "feedback", enabled = false },
+  { name = "finishing-a-development-branch", enabled = false },
+  { name = "frontend-elm-implementation", enabled = false },
+  { name = "frontend-html-css-accessibility", enabled = false },
+  { name = "frontend-react-mui-implementation", enabled = false },
+  { name = "frontend-regression-safety", enabled = true },
+  { name = "ideate", enabled = false },
+  { name = "image-to-code", enabled = false },
+  { name = "imagegen", enabled = false },
+  { name = "impeccable", enabled = false },
+  { name = "impeccable:impeccable", enabled = false },
+  { name = "index", enabled = false },
+  { name = "jupyter-notebooks", enabled = false },
+  { name = "kpi-reporting", enabled = false },
+  { name = "maintain-space", enabled = false },
+  { name = "make-interfaces-feel-better", enabled = false },
+  { name = "manage-schedules", enabled = false },
+  { name = "market-sizing", enabled = false },
+  { name = "metric-diagnostics", enabled = false },
+  { name = "mockflow:board-conventions", enabled = false },
+  { name = "mockflow:connect", enabled = false },
+  { name = "onboarding", enabled = false },
+  { name = "openai-docs", enabled = false },
+  { name = "organize-space", enabled = false },
+  { name = "pages:maintain-space", enabled = false },
+  { name = "pages:manage-schedules", enabled = false },
+  { name = "pages:organize-space", enabled = false },
+  { name = "pages:write-page", enabled = false },
+  { name = "pets", enabled = false },
+  { name = "plain-writing", enabled = false },
+  { name = "playwright-best-practices", enabled = true },
+  { name = "plugin-management", enabled = false },
+  { name = "plugin-management:plugin-management", enabled = false },
+  { name = "ponytail", enabled = false },
+  { name = "ponytail-audit", enabled = false },
+  { name = "ponytail-debt", enabled = false },
+  { name = "ponytail-gain", enabled = false },
+  { name = "ponytail-help", enabled = false },
+  { name = "ponytail-review", enabled = false },
+  { name = "power-wrapper-components", enabled = false },
+  { name = "product-business-analysis", enabled = false },
+  { name = "product-design:audit", enabled = false },
+  { name = "product-design:ideate", enabled = false },
+  { name = "product-design:image-to-code", enabled = false },
+  { name = "product-design:index", enabled = false },
+  { name = "product-design:url-to-code", enabled = false },
+  { name = "publish-artifact-to-sites", enabled = false },
+  { name = "receiving-code-review", enabled = false },
+  { name = "redesign-screen", enabled = false },
+  { name = "requesting-code-review", enabled = false },
+  { name = "review-agent", enabled = false },
+  { name = "search", enabled = false },
+  { name = "sites", enabled = false },
+  { name = "sites-remix", enabled = false },
+  { name = "sites:sites", enabled = false },
+  { name = "sites:sites-remix", enabled = false },
+  { name = "skill-creator", enabled = false },
+  { name = "skill-installer", enabled = false },
+  { name = "subagent-driven-development", enabled = false },
+  { name = "summarize", enabled = false },
+  { name = "superpowers:brainstorming", enabled = false },
+  { name = "superpowers:diagnosing-superpowers", enabled = false },
+  { name = "superpowers:dispatching-parallel-agents", enabled = false },
+  { name = "superpowers:executing-plans", enabled = false },
+  { name = "superpowers:finishing-a-development-branch", enabled = false },
+  { name = "superpowers:receiving-code-review", enabled = false },
+  { name = "superpowers:requesting-code-review", enabled = false },
+  { name = "superpowers:subagent-driven-development", enabled = false },
+  { name = "superpowers:systematic-debugging", enabled = true },
+  { name = "superpowers:test-driven-development", enabled = false },
+  { name = "superpowers:using-git-worktrees", enabled = false },
+  { name = "superpowers:using-superpowers", enabled = false },
+  { name = "superpowers:verification-before-completion", enabled = true },
+  { name = "superpowers:writing-plans", enabled = false },
+  { name = "superpowers:writing-skills", enabled = false },
+  { name = "systematic-debugging", enabled = true },
+  { name = "test-driven-development", enabled = false },
+  { name = "update-pet", enabled = false },
+  { name = "url-to-code", enabled = false },
+  { name = "using-git-worktrees", enabled = false },
+  { name = "using-superpowers", enabled = false },
+  { name = "validate-data", enabled = false },
+  { name = "verification-before-completion", enabled = true },
+  { name = "visualize", enabled = false },
+  { name = "visualize-data", enabled = false },
+  { name = "visualize:visualize", enabled = false },
+  { name = "work-pets:create-pet", enabled = false },
+  { name = "work-pets:pets", enabled = false },
+  { name = "work-pets:update-pet", enabled = false },
+  { name = "write-page", enabled = false },
+  { name = "writing-plans", enabled = false },
+  { name = "writing-skills", enabled = false },
+]

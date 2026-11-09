@@ -17,9 +17,13 @@
 # Shared product/design context and team tooling
 /PRODUCT.md @ozelenyi @vladyslav-koshulko @thepeterfalk
 /DESIGN.md @ozelenyi @vladyslav-koshulko @thepeterfalk
-/.github/skills/echo-ui-brief/ @ozelenyi @vladyslav-koshulko @thepeterfalk
-/.github/skills/echo-ui-review/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/echo-designer/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/echo-dev/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/echo-qa/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/playwright-best-practices/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.github/skills/make-interfaces-feel-better/ @ozelenyi @vladyslav-koshulko @thepeterfalk
+/.codex/agents/ @ozelenyi @vladyslav-koshulko @thepeterfalk
 /.agents/skills/ @ozelenyi @vladyslav-koshulko @thepeterfalk
-/.impeccable/config.json @ozelenyi @vladyslav-koshulko @thepeterfalk
 /docs/frontend/design-workflow.md @ozelenyi @vladyslav-koshulko @thepeterfalk
 /docs/frontend/design-tools.md @ozelenyi @vladyslav-koshulko @thepeterfalk
+/docs/frontend/echo-workflows.md @ozelenyi @vladyslav-koshulko @thepeterfalk

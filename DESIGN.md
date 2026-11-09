@@ -60,4 +60,4 @@ The manifest's `radius` and `size` groups define shared shape, control, and icon
 - Verify relevant light/dark, responsive, and content states in the browser; explicitly list unverified states when browser access is unavailable.
 - Do not introduce layout-only MUI `Box`/`Stack`/`Grid`/`Container`, structural `sx`, generated `.Mui-*` selectors, copied mode colors, or clickable `div` controls. The layout contract documents permitted component-boundary exceptions.
 - Do not edit generated token outputs or treat a clean token freshness check as proof of contrast or UX quality.
-- Keep only descriptive metadata in this file's frontmatter. Machine token projections, design-system drift checks, and `.impeccable/design.json` are outside this first iteration; the shared Impeccable configuration disables drift checks while retaining general detector checks.
+- Keep only descriptive metadata in this file's frontmatter. Read token values from the canonical manifest rather than duplicating them in design-tool configuration.
