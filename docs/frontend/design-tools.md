@@ -61,9 +61,9 @@ the Git root and retain working symlinks. Metadata discovery is not execution.
 | [make-interfaces-feel-better](../../.github/skills/make-interfaces-feel-better/SKILL.md) | Dev, approved UI details | [jakubkrehel, `35545ea1512ad59fa463e6b1f95ca9c052981fe6`](https://github.com/jakubkrehel/make-interfaces-feel-better/tree/35545ea1512ad59fa463e6b1f95ca9c052981fe6/skills/make-interfaces-feel-better) | Echo entrypoint, five Markdown references, MIT license and source notice |
 
 These are project-local adaptations, not personal-plugin installations or full
-upstream bundles. Each `NOTICE.md` records the source and original reference
-hashes; `SHA256SUMS` covers the local files. No executable helpers, hooks, installer,
-CI configuration or product package dependency is included.
+upstream bundles. Each `NOTICE.md` records the source, pinned version and local
+adaptations. No executable helpers, hooks, installer, CI configuration or product
+package dependency is included.
 
 The static review identified instructional risks in generic examples: Playwright
 setup, reporters/uploads, cleanup, retries/force clicks and incompatible tag
@@ -112,16 +112,8 @@ source analysis and simple SVG/Mermaid diagrams; no image generation is required
 
 Update each Markdown subset only in a reviewed change: select a source commit,
 inspect changed instructions/examples, preserve license/notices, document adapted
-files and original hashes, then regenerate `SHA256SUMS`. Keep explicit-only metadata
-and role scope; do not import full runtime bundles or auto-update personal tools.
-
-Check the local snapshots from the repository root:
-
-```sh
-(cd .agents/skills/impeccable && sha256sum --check SHA256SUMS)
-(cd .github/skills/playwright-best-practices && sha256sum --check SHA256SUMS)
-(cd .github/skills/make-interfaces-feel-better && sha256sum --check SHA256SUMS)
-```
+files and update the source pin. Keep explicit-only metadata and role scope; do
+not import full runtime bundles or auto-update personal tools.
 
 Validate relative links, role configuration, skill metadata and discovery from
 root/subdirectory after updates. Roll back to a reviewed repository version if
