@@ -79,6 +79,13 @@ export type CallsignDraftRow = {
   radioFreq: string;
 };
 
+export type CallsignCreateDraft = {
+  rows: CallsignDraftRow[];
+  unitId: number | null;
+  sourceId: number | null;
+  callsignAdditionalSourceIds: number[];
+};
+
 export type CallsignDuplicateHintMatch = {
   id: number;
   callsign: string;

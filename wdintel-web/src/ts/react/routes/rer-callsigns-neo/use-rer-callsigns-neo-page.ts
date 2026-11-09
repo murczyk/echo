@@ -290,6 +290,7 @@ export function useRerCallsignsNeoPage({ authUserRoles = [] }: { authUserRoles?:
     units,
     selectableUnits,
     sources,
+    callsigns,
     rows,
     sort,
     unitStatsView,
