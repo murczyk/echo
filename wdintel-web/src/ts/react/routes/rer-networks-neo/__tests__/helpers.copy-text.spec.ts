@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Network, NetworkFreq } from '../../../../../Bindings';
-import { buildNetworkCopyText, formatNetworkCopyFrequency, type NetworkRowView } from '../helpers';
+import { buildNetworkCopyText, type NetworkRowView } from '../helpers';
 
 function freq(overrides: Partial<NetworkFreq>): NetworkFreq {
   return {
@@ -87,20 +87,5 @@ describe('buildNetworkCopyText', () => {
       false,
     );
     expect(text).toBe('р/м управління мінбатр 5 мсб 57 омсбр 5 ТА (КАЛИНОВЕ)');
-  });
-});
-
-describe('formatNetworkCopyFrequency', () => {
-  it('drops only a trailing fourth-decimal zero', () => {
-    expect(formatNetworkCopyFrequency('122.4000')).toBe('122.400');
-    expect(formatNetworkCopyFrequency('146.1125')).toBe('146.1125');
-  });
-
-  it('normalizes other precisions to 3-4 decimals like stored frequencies', () => {
-    expect(formatNetworkCopyFrequency('122.4')).toBe('122.400');
-    expect(formatNetworkCopyFrequency(' 122,45 ')).toBe('122.450');
-    expect(formatNetworkCopyFrequency('122.40000')).toBe('122.400');
-    expect(formatNetworkCopyFrequency('146.11259')).toBe('146.1125');
-    expect(formatNetworkCopyFrequency('unknown')).toBe('unknown');
   });
 });

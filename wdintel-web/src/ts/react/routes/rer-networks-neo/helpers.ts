@@ -278,7 +278,7 @@ export function buildNetworkLabel(
  * Stored frequencies have 4 decimals; copy shows 3 unless the 4th is meaningful:
  * "122.4000" -> "122.400", "146.1125" -> "146.1125", "122.4" -> "122.400".
  */
-export function formatNetworkCopyFrequency(freq: string): string {
+function formatNetworkCopyFrequency(freq: string): string {
   const trimmed = freq.trim();
   const match = /^(\d+)[.,](\d+)$/.exec(trimmed);
   if (!match) return trimmed;
