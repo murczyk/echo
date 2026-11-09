@@ -61,6 +61,8 @@ export function networkStatusDisplay(network: Network | null): DisplayNetworkSta
     : { label: 'Неактивна', tone: 'warning' };
 }
 
+export const UNKNOWN_NETWORK_TYPE_LABEL = 'Не визначено';
+
 export function displayNetworkType(modulation: string | null | undefined): string {
   switch (modulation) {
     case 'NFM':
@@ -74,7 +76,7 @@ export function displayNetworkType(modulation: string | null | undefined): strin
     case '':
     case null:
     case undefined:
-      return 'Не визначено';
+      return UNKNOWN_NETWORK_TYPE_LABEL;
     default:
       return normalizeLookupName(modulation);
   }
@@ -103,12 +105,21 @@ export function getFrequencyFormatError(freq: string): string | null {
   return null;
 }
 
-export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
-  const modulations = [
+/** Unique display types of the given frequencies, excluding the unknown type. */
+export function getKnownNetworkTypes(
+  freqs: ReadonlyArray<Pick<Network['freqs'][number], 'modulation'>>,
+): string[] {
+  return [
     ...new Set(
-      freqs.map((freq) => displayNetworkType(freq.modulation)).filter((m) => m !== NO_DATA_LABEL),
+      freqs
+        .map((freq) => displayNetworkType(freq.modulation))
+        .filter((type) => type !== UNKNOWN_NETWORK_TYPE_LABEL),
     ),
   ];
+}
+
+export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
+  const modulations = getKnownNetworkTypes(freqs);
   return modulations.length === 0 ? NO_DATA_LABEL : modulations.join(', ');
 }
 

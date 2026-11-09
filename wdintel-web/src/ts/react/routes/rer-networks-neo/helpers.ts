@@ -13,6 +13,7 @@ import type {
 } from '../../../../Bindings';
 import { APP_TIME_ZONE, isPresent } from '../../utils/misc';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
+import { getKnownNetworkTypes } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
 import type {
   ActivityLoadStateByNetworkId,
   NetworkActivityLoadState,
@@ -271,6 +272,40 @@ export function buildNetworkLabel(
     pieces.push('в дорозвідці');
   }
   return pieces.join(' ');
+}
+
+/**
+ * Stored frequencies have 4 decimals; copy shows 3 unless the 4th is meaningful:
+ * "122.4000" -> "122.400", "146.1125" -> "146.1125", "122.4" -> "122.400".
+ */
+export function formatNetworkCopyFrequency(freq: string): string {
+  const trimmed = freq.trim();
+  const match = /^(\d+)[.,](\d+)$/.exec(trimmed);
+  if (!match) return trimmed;
+  const fraction = match[2].slice(0, 4).padEnd(4, '0');
+  return `${match[1]}.${fraction.endsWith('0') ? fraction.slice(0, 3) : fraction}`;
+}
+
+/**
+ * Single-line network summary for clipboard, e.g.
+ * "УКХ р/м управління 5 мсб 57 омсбр (КАЛИНОВЕ, ЛИМАН ПЕРШИЙ), 122.400 МГц".
+ */
+export function buildNetworkCopyText(row: NetworkRowView, includeFrequencies: boolean): string {
+  const active = row.activeFrequencies.filter((freq) => !freq.deleted);
+  const frequencies = includeFrequencies
+    ? active.length > 0
+      ? active
+      : row.inactiveFrequencies.filter((freq) => !freq.deleted)
+    : [];
+  const typePrefix = getKnownNetworkTypes(frequencies).join('/');
+  const name = [typePrefix, row.networkLabel].filter((part) => part !== '').join(' ');
+  const locationParts = row.network.location
+    .split(/[,\n]/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+  const head = locationParts.length > 0 ? `${name} (${locationParts.join(', ')})` : name;
+  const freqLabels = [...new Set(frequencies.map((freq) => formatNetworkCopyFrequency(freq.freq)))];
+  return freqLabels.length > 0 ? `${head}, ${freqLabels.join(', ')} МГц` : head;
 }
 
 export function buildNetworkFrequencyDisplayGroups(

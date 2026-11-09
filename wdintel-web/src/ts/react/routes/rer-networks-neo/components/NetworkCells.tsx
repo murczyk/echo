@@ -1,9 +1,12 @@
-import { Box, Skeleton, Stack, Tooltip } from '@mui/material';
-import type { PointerEvent } from 'react';
+import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import { Box, IconButton, Skeleton, Stack, Tooltip } from '@mui/material';
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 
+import { copyTextToClipboard } from '../../../../copy-to-clipboard';
 import { PowerChip } from '../../../components/PowerChip';
 import { handleNavigateWithinSpaClick } from '../../../utils/browser';
 import {
+  buildNetworkCopyText,
   buildNetworkFrequencyDisplayGroups,
   getActivityBarHeight,
   type NetworkRowView,
@@ -79,9 +82,88 @@ export function NetworkActivityCell({
   return <Box sx={{ color: 'text.secondary' }}>Немає перехоплень за останні 10 днів</Box>;
 }
 
-export function NetworkCell({ network }: { network: NetworkRowView }) {
+const COPY_BUTTON_CLASS = 'network-row-copy-button';
+type CopyState = 'idle' | 'copied' | 'error';
+
+function NetworkCopyButton({ getText }: { getText: () => string }) {
+  const [copyState, setCopyState] = useState<CopyState>('idle');
+  const resetTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    };
+  }, []);
+
+  const showCopyState = (next: CopyState) => {
+    // Copy is async; the virtualized row may unmount before it settles.
+    if (!mountedRef.current) return;
+    setCopyState(next);
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(() => setCopyState('idle'), 1500);
+  };
+
+  const handleClick = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await copyTextToClipboard(getText());
+      showCopyState('copied');
+    } catch (_) {
+      showCopyState('error');
+    }
+  };
+
+  const title =
+    copyState === 'copied'
+      ? 'Скопійовано'
+      : copyState === 'error'
+        ? 'Не вдалося скопіювати'
+        : 'Копіювати інформацію про мережу';
+
   return (
-    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
+    <Tooltip title={title}>
+      <IconButton
+        className={COPY_BUTTON_CLASS}
+        size="small"
+        aria-label="Копіювати інформацію про мережу"
+        onClick={handleClick}
+        sx={{
+          p: 0.25,
+          flexShrink: 0,
+          opacity: copyState === 'idle' ? 0 : 1,
+          transition: 'opacity 120ms',
+          color: copyState === 'error' ? 'error.main' : 'text.secondary',
+          '&:focus-visible': { opacity: 1 },
+        }}
+      >
+        <ContentCopyOutlinedIcon sx={{ fontSize: 16 }} />
+      </IconButton>
+    </Tooltip>
+  );
+}
+
+export function NetworkCell({
+  network,
+  includeFrequenciesInCopy,
+}: {
+  network: NetworkRowView;
+  includeFrequenciesInCopy: boolean;
+}) {
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      alignItems="center"
+      sx={{
+        minWidth: 0,
+        flexWrap: 'nowrap',
+        [`&:hover .${COPY_BUTTON_CLASS}`]: { opacity: 1 },
+      }}
+    >
       <Tooltip title={network.statusLabel}>
         <Box
           sx={{
@@ -113,6 +195,7 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
       >
         <RowLabel text={network.networkLabel} />
       </Box>
+      <NetworkCopyButton getText={() => buildNetworkCopyText(network, includeFrequenciesInCopy)} />
       {network.developing ? (
         <PowerChip
           label="В дорозвідці"
