@@ -25,6 +25,7 @@
   authorized task; completion, cancellation or a new task ends that authorization.
   A named chain authorizes only its included stages, subject to its approval gates.
 - Within that process, main coordinates native named roles in `.codex/agents/`
+  (Codex) or `.claude/agents/` (Claude Code), using the matching client adapter,
   sequentially, with fresh context per stage and the configured role models.
   Children never delegate further or perform Git/release operations. If native
   role dispatch is unavailable, report it; do not use generic agents or nested AI CLIs.

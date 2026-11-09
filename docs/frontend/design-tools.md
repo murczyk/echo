@@ -21,6 +21,7 @@ separate capabilities. No Impeccable engine or hook setup is required.
 | --- | --- | --- |
 | Codex CLI / Linux x64 | `.agents/skills`; relative links to `.github/skills` and the local Impeccable subset | Local validation target; CLI `0.162.0` |
 | Codex desktop or IDE / each developer's OS | Same repository skills where the client supports them | Actual client/version/OS inventory and teammate checks pending |
+| Claude Code CLI / Linux x64 | `.claude/agents` native adapters and explicit-only `.claude/skills` wrappers reading shared sources | Local CLI `2.1.199`; source/metadata validation only, native role runtime unverified |
 | Other clients used by the team | Verify native `.github/skills` discovery or a necessary supported adapter without copying skill content | Inventory pending; not claimed supported by this change |
 | Windows checkout without working Git symlinks | Use a verified symlink-capable checkout, for example WSL, or validate a client-specific adapter | Not accepted until checked on that configuration |
 
@@ -42,11 +43,19 @@ expose `playwright-best-practices`, `make-interfaces-feel-better`, `ponytail`,
 lives directly in `.agents/skills/impeccable`. All eleven have
 `policy.allow_implicit_invocation: false`. Helper guidance does not launch stages.
 
-Explicitly invoke `$echo-spec`, `$echo-designer`, `$echo-dev` or `$echo-qa`, including the target
+Claude Code discovers eleven thin `.claude/skills` wrappers with native
+`disable-model-invocation: true` frontmatter. They read the same shared entrypoints
+and helper files; skill bodies/resources are not duplicated. Claude does not use
+`agents/openai.yaml`. Children read their profile's guidance directly rather than
+preloading disabled skills or selecting personal copies with the Skill tool.
+The existing `CLAUDE.md` points to `AGENTS.md` and the shared workflow.
+
+Explicitly invoke `$echo-spec`, `$echo-designer`, `$echo-dev` or `$echo-qa` in Codex
+(or `/echo-spec`, `/echo-designer`, `/echo-dev`, `/echo-qa` in Claude Code), including the target
 task, plan or criteria, or ask to apply the named skill. Ordinary requests and
 skill-maintenance requests do not activate these workflows. Entrypoints dispatch
-the native roles in `.codex/agents`; role instructions and filters restrict their
-guidance. See the [invocation contract](echo-workflows.md#invocation-and-chaining)
+the native roles through the [client adapter](echo-workflows.md#native-dispatch);
+role instructions and client-specific controls restrict their guidance. See the [invocation contract](echo-workflows.md#invocation-and-chaining)
 and [runtime limits](echo-workflows.md#availability-and-validation).
 
 `echo-spec` prepares requirements and acceptance criteria for approval;

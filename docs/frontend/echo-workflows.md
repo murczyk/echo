@@ -5,16 +5,18 @@ These workflows run only when the user explicitly invokes the matching
 follows the existing repository rules; reading this guide, mentioning a role,
 quoting a command or asking an ordinary UI/coding/review question does not activate one.
 
-| Entrypoint | Native role | Model / reasoning | Assigned output |
+| Entrypoint (Codex / Claude Code) | Native role | Codex model / reasoning | Assigned output |
 | --- | --- | --- | --- |
-| `$echo-spec` | `spec` | `gpt-6.1-sol` / `high` | Requirements, business rules, scenarios and acceptance criteria for approval |
-| `$echo-designer` | `designer` | `gpt-6.1-sol` / `high` | UX flows, wireframes/Figma design and design notes from an approved specification |
-| `$echo-dev` | `dev` | `gpt-6.1-sol` / `high` | Approved implementation, focused self-checks and browser observations |
-| `$echo-qa` | `qa`, mode `prepare` or `verify` | `gpt-6-luna` / `high` | Prepared tests/coverage map, or verification findings |
+| `$echo-spec` / `/echo-spec` | `spec` | `gpt-6.1-sol` / `high` | Requirements, business rules, scenarios and acceptance criteria for approval |
+| `$echo-designer` / `/echo-designer` | `designer` | `gpt-6.1-sol` / `high` | UX flows, wireframes/Figma design and design notes from an approved specification |
+| `$echo-dev` / `/echo-dev` | `dev` | `gpt-6.1-sol` / `high` | Approved implementation, focused self-checks and browser observations |
+| `$echo-qa` / `/echo-qa` | `qa`, mode `prepare` or `verify` | `gpt-6-luna` / `high` | Prepared tests/coverage map, or verification findings |
 
 The main chat retains the user's chosen model and coordinates stages/questions.
-The four `.codex/agents/*.toml` files define child roles. `agents/openai.yaml`
-files are skill metadata, not agent definitions. This workflow ships no project
+The four `.codex/agents/*.toml` files define Codex child roles; their
+`developer_instructions` strings are the canonical shared role prompts. Claude
+Code adapters read those strings after their own invocation check. `agents/openai.yaml`
+files are Codex skill metadata, not agent definitions. This workflow ships no project
 `config.toml` or shell-environment overrides. For subagent enablement and concurrency
 limits, the developer's effective client
 settings apply. If subagents are disabled, report the blocker without changing
@@ -22,11 +24,39 @@ those settings. Main runs this workflow's stages sequentially, with one writer
 at a time, regardless of the available slots. This ordering applies only to the
 explicitly invoked Echo workflow, not other developer workflows.
 
+## Native dispatch
+
+Use the adapter for the actual client; file format or tool availability does not
+authorize a different role, model or stage.
+
+| Client | Role definitions | Main-chat entrypoints | Dispatch |
+| --- | --- | --- | --- |
+| Codex | `.codex/agents/{spec,designer,dev,qa}.toml` | `.agents/skills/echo-*` links to `.github/skills` | Native named role with `fork_turns="none"`, no model/effort overrides |
+| Claude Code | `.claude/agents/{spec,designer,dev,qa}.md` | `.claude/skills/echo-*/SKILL.md` wrappers | Native `Agent` tool selecting the exact named subagent, in a new context for each stage; no nested CLI or `--agent` session substitute |
+
+Claude roles use `model: inherit` and set no effort or permission-mode override;
+do not pass the Codex GPT model IDs, `fork_turns`, feature flags or skill filters
+to Claude. This does not change the main chat's model or personal settings.
+Use normal native subagents, not conversation forks or agent-team teammates
+that inherit a different context/lifecycle. Resume only the same paused stage.
+
+Claude adapters check the actual invocation before tools, then read only the
+matching TOML's `developer_instructions` string and follow the same role boundaries
+and exact guidance sources. They do not load its Codex configuration as Claude
+settings. They preload no skills and deny `Agent`/`Task`/`Skill` tools: children
+read their allowed repository guidance directly, without recursive delegation or
+personal skill-tool selection. These tool restrictions do not constrain Bash or
+MCP operations to assigned paths; the shared scope and approval rules still apply.
+Missing adapter, prompt source, native dispatch or required model is a blocker;
+do not substitute a generic role, another client's config or inline execution.
+
 ## Invocation and chaining
 
-All four entrypoints have `policy.allow_implicit_invocation: false` ([Codex
-metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata)). Use
-`$skill-name` or the skill picker; slash aliases are not verified. A single-stage
+All four entrypoints have `policy.allow_implicit_invocation: false` in [Codex
+metadata](https://learn.chatgpt.com/docs/build-skills#optional-metadata). Claude Code
+wrappers use `disable-model-invocation: true` in native skill frontmatter;
+`agents/openai.yaml` does not configure Claude. Use `$skill-name`/the picker in
+Codex or `/skill-name` in Claude Code; examples below use Codex syntax. A single-stage
 request ends after that stage. Designer/dev/QA accept manually prepared inputs; the
 existence of a spec or an earlier approval does not authorize a new task.
 
@@ -106,8 +136,8 @@ and the owning contracts. Main UI uses [PRODUCT.md](../../PRODUCT.md),
 and affected [behavior contracts](react-behavior-contracts/README.md).
 Do not apply main Echo rules to GOI/docs by analogy.
 
-Dispatch the actual named role through the client's native interface with
-`fork_turns="none"`. Do not override its configured model/effort. If named roles,
+Dispatch the actual named role through the client's [native adapter](#native-dispatch)
+with fresh context. Do not override its configured model/effort. If named roles,
 fresh context or the configured model are unavailable, report a blocker; do not
 substitute a generic agent, another chat, inline execution or a nested AI CLI.
 For a paused stage, relay answers through main and retain that stage's context;
@@ -338,14 +368,16 @@ plugin changes. Do not claim that disabling a skill disables all equivalent tool
 
 ## Availability and validation
 
-Role files are tracked under `.codex/agents`; dispatcher and the six helper sources
+Canonical role prompts and Codex configuration are tracked under `.codex/agents`;
+Claude native adapters are in `.claude/agents`. Dispatcher and the six helper sources
 are in `.github/skills` with relative `.agents/skills` links. The Markdown-only
-Impeccable subset lives directly in `.agents/skills/impeccable`. Root/subdirectory discovery,
+Impeccable subset lives directly in `.agents/skills/impeccable`; Claude skill wrappers
+point at these same sources. Root/subdirectory discovery,
 client trust, managed policy, model access and effective filters must be verified
 on each team's client/OS. Do not change global trust, permissions or main defaults.
 Unsupported clients can read documentation but cannot silently emulate named roles.
 
-**Runtime smoke: PASSED (read-only, 2026-11-09; this client).** Native `agent_type`
+**Codex runtime smoke: PASSED (read-only, 2026-11-09; this client).** Native `agent_type`
 was available; `spec` → `designer` → `dev` → `qa` launched sequentially with
 `fork_turns="none"` and no model/effort overrides. Before file reads, each role
 reported its injected safety/skill profiles and visible catalog. The injected
@@ -376,10 +408,18 @@ effective-filter behavior remain **UNVERIFIED** until explicitly invoked tasks
 exercise them. This client's direct-read smoke does not establish teammate or
 other client/OS availability.
 
+Claude Code adapter validation covers frontmatter, shared-source links, explicit
+invocation, role mapping and private-file exclusions. It does not establish native
+role execution, effective tools, backend models or isolation. A Claude smoke needs
+an explicitly invoked read-only task in that client; do not use a nested AI CLI
+from Codex to emulate it. Report the injected adapter profile before reads and
+the shared prompt's profile only after reading it; source-read IDs are not injected
+profile evidence. New `.claude/agents` directories require a new Claude session.
+
 When the user explicitly invokes the desired entrypoints for a read-only smoke in
 a supported client, run it sequentially and preserve that invocation in handoffs:
-request each actual named role with fresh context; before file reads ask it to
-report injected profile IDs/catalog (without feeding expected IDs); then read a
+request each actual named role with fresh context using that client's adapter;
+before file reads ask it to report injected profile IDs/catalog (without feeding expected IDs); then read a
 synthetic marker file and one assigned skill entrypoint without executing it.
 Compare native dispatch metadata and output, check a parent-only marker was not
 inherited, and inspect the diff. State that canaries/self-reports are limited

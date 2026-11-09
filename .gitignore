@@ -86,5 +86,29 @@ echo-iggy/test-cli/.env
 !/.codex/agents/dev.toml
 !/.codex/agents/qa.toml
 !/.codex/agents/spec.toml
+
+# Claude Code adapters only; personal settings and runtime state stay local.
+/.claude/*
+!/.claude/agents/
+/.claude/agents/*
+!/.claude/agents/spec.md
+!/.claude/agents/designer.md
+!/.claude/agents/dev.md
+!/.claude/agents/qa.md
+!/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/echo-spec/
+!/.claude/skills/echo-designer/
+!/.claude/skills/echo-dev/
+!/.claude/skills/echo-qa/
+!/.claude/skills/brainstorming/
+!/.claude/skills/impeccable/
+!/.claude/skills/ponytail/
+!/.claude/skills/systematic-debugging/
+!/.claude/skills/verification-before-completion/
+!/.claude/skills/make-interfaces-feel-better/
+!/.claude/skills/playwright-best-practices/
+/.claude/skills/*/*
+!/.claude/skills/*/SKILL.md
 # Generated task specifications are local artifacts, not shared configuration.
 specs
