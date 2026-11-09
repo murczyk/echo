@@ -1090,3 +1090,50 @@ test('@regression #3340 portrait fullscreen header keeps clear of screen edges a
   }
   await session.detach();
 });
+
+for (const exit of ['button', 'Escape'] as const) {
+  test(`@regression #3340 fullscreen ${exit} exit works after a failed retry removes the video`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    const remote = 'https://video.example.test/retry.mp4';
+    const response = buildMessageCardMediaPreviewInboxResponse();
+    const media = response.inbox_items[0][1].media!.map((item) =>
+      item.id === 'e2e-video-1' ? { ...item, href: remote } : item,
+    );
+    const bytes = await readFile('tests/e2e/fixtures/device-file-preview/video.mp4');
+    let fail = false;
+    await page.route(remote, (route) =>
+      fail
+        ? route.abort()
+        : route.fulfill({
+            contentType: 'video/mp4',
+            headers: { 'access-control-allow-origin': '*' },
+            body: bytes,
+          }),
+    );
+    await openMessageCardPreviewHost(page, 'duty', { messageOverrides: { media } });
+    await page.getByRole('button', { name: 'Відкрити відео' }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Перегляд відео' });
+    const video = dialog.locator('video');
+    await expect
+      .poll(() => video.evaluate((element) => element.readyState))
+      .toBeGreaterThanOrEqual(2);
+    await video.evaluate((element) => element.pause());
+    await dialog.getByRole('button', { name: 'На весь екран', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => Boolean(document.fullscreenElement))).toBe(true);
+    await video.dispatchEvent('error');
+    fail = true;
+    await dialog.getByRole('button', { name: 'Повторити завантаження', exact: true }).click();
+    await expect(video).toHaveCount(0);
+    await expect(dialog.getByText('Не вдалося завантажити відео.', { exact: true })).toBeVisible();
+    if (exit === 'button')
+      await dialog
+        .getByRole('button', { name: 'Вийти з повноекранного режиму', exact: true })
+        .click();
+    else await page.keyboard.press('Escape');
+    await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'На весь екран', exact: true })).toBeDisabled();
+  });
+}

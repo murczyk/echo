@@ -277,7 +277,17 @@ test('@regression #3340 mobile audio playback stays independent of chrome taps',
 test('@regression #3340 coordinate markers keep their own actions in the mobile viewer', async ({
   page,
 }, testInfo) => {
+  const session = await page.context().newCDPSession(page);
+  await session.send('Emulation.setSafeAreaInsetsOverride', { insets: { bottom: 34 } });
   const { dialog } = await openAttachment(page, 'duty', '@coordinate');
+  const zoomOut = dialog.locator('.leaflet-control-zoom-out');
+  await expect(zoomOut).toBeVisible();
+  const zoomBounds = (await zoomOut.boundingBox())!;
+  expect(zoomBounds.y + zoomBounds.height).toBeLessThanOrEqual(812 - 34);
+  const layerBounds = (await dialog
+    .getByRole('button', { name: 'OpenStreetMap', exact: true })
+    .boundingBox())!;
+  expect(layerBounds.y + layerBounds.height).toBeLessThanOrEqual(812 - 34);
   const heading = dialog.getByRole('heading', { name: 'Координати', exact: true, level: 6 });
   const map = dialog.locator('.coordinate-fullscreen-map');
   await expect(map.locator('.coordinate-preview-mgrs-label')).toBeVisible();
@@ -298,6 +308,7 @@ test('@regression #3340 coordinate markers keep their own actions in the mobile 
     path: testInfo.outputPath('coordinate-mobile.png'),
     animations: 'disabled',
   });
+  await session.detach();
 });
 
 test('@regression #3340 DOCX taps toggle chrome without resizing content or enabling scripts', async ({
@@ -524,7 +535,13 @@ for (const fileName of ['e2e-route.kml', 'e2e-route.kmz']) {
   test(`@regression #3340 ${fileName}: map gestures and layers stay independent of mobile chrome`, async ({
     page,
   }, testInfo) => {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Emulation.setSafeAreaInsetsOverride', { insets: { bottom: 34 } });
     const { dialog } = await openAttachment(page, 'duty', fileName);
+    const zoomOut = dialog.locator('.leaflet-control-zoom-out');
+    await expect(zoomOut).toBeVisible();
+    const zoomBounds = (await zoomOut.boundingBox())!;
+    expect(zoomBounds.y + zoomBounds.height).toBeLessThanOrEqual(812 - 34);
     const map = dialog.locator('[data-kmz-preview-map="true"]');
     await expect(map).toBeVisible();
     await expect(map.locator('.leaflet-map-pane')).toBeAttached();
@@ -533,11 +550,11 @@ for (const fileName of ['e2e-route.kml', 'e2e-route.kmz']) {
     await expect(island).toBeVisible();
     const layer = dialog.getByRole('button', { name: 'OpenStreetMap', exact: true });
     const layerBounds = (await layer.boundingBox())!;
+    expect(layerBounds.y + layerBounds.height).toBeLessThanOrEqual(812 - 34);
     const islandBounds = (await island.boundingBox())!;
     expect(islandBounds.y + islandBounds.height).toBeLessThan(layerBounds.y);
     await layer.tap();
     await expect(heading).toBeVisible();
-    const session = await page.context().newCDPSession(page);
     await session.send('Input.dispatchTouchEvent', {
       type: 'touchStart',
       touchPoints: [{ x: 100, y: 300 }],

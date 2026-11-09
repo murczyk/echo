@@ -208,7 +208,8 @@ is active, attachment navigation is hidden and horizontal swipes and arrow keys 
 exiting restores normal attachment navigation. Escape or the
 browser's fullscreen exit returns to the open viewer. In portrait fullscreen,
 the header adds minimum top and side spacing to the system safe-area insets.
-Entry failures show a toast.
+Entry failures show a toast. Exiting fullscreen remains available while the video
+element is absent during loading or after a failed retry.
 Leaving the video viewer releases its fullscreen, including late requests after
 closing; returning retains the same video element, position, mute, and speed.
 
@@ -256,7 +257,8 @@ Documents, spreadsheets, archives, audio and coordinate/KML/KMZ maps use the sam
 mobile theme surface, viewport opt-in and header safe areas. Attachment navigation
 floats in a translucent island instead of a full-width bottom bar; one attachment
 has no island. Map controls and spreadsheet sheet buttons keep their own actions,
-with the island above them. Desktop layouts retain their existing behavior.
+with the island above them. Leaflet bottom controls are offset above the gesture
+safe area. Desktop layouts retain their existing behavior.
 
 Single surface taps or Enter/Space on the focused preview region toggle the
 header and island without resizing the content. Buttons, links, spreadsheet

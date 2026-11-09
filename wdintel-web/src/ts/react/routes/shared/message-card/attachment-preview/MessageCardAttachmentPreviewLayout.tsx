@@ -24,6 +24,7 @@ const MOBILE_PREVIEW_SX = {
   '& [data-attachment-preview-carousel-island]': { display: 'flex' },
   '--attachment-preview-table-border-collapse': 'separate',
   '& .leaflet-top': { top: 'var(--attachment-preview-header-height, 0px)' },
+  '& .leaflet-bottom': { bottom: 'env(safe-area-inset-bottom, 0px)' },
   '& [data-map-preview-points]': { minHeight: 0 },
   '& [data-attachment-preview-sheet-tabs]': {
     flexWrap: 'nowrap',
@@ -218,7 +219,7 @@ export function MessageCardAttachmentPreviewLayout({
                 width: '100%',
                 visibility: mobileChromeEnabled && !resolvedHeaderVisible ? 'hidden' : undefined,
                 pointerEvents: 'none',
-                '& > *': {
+                [mobileChromeEnabled ? '&& > *' : '& > *']: {
                   pointerEvents: 'auto',
                   ...(mobileChromeEnabled
                     ? {

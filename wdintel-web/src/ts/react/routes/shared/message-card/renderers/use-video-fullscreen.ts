@@ -87,8 +87,9 @@ export function useVideoFullscreen(
 
   const toggle = useCallback(() => {
     const video = videoRef.current as WebKitVideo | null;
-    if (!video || pending.current) return;
+    if (pending.current) return;
     if (!standardSupported) {
+      if (!video) return;
       try {
         if (nativeVideo.current === video) video.webkitExitFullscreen?.();
         else if (video.webkitEnterFullscreen) {
@@ -105,6 +106,7 @@ export function useVideoFullscreen(
       }
       return;
     }
+    if (!standardActive && !video) return;
     pending.current = true;
     let request: Promise<void>;
     try {
