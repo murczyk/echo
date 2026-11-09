@@ -497,6 +497,7 @@ export type InboxMessage = {
   checked: boolean;
   important: boolean;
   aiImportant: boolean;
+  importantByMyOrganism: boolean;
   bookmarked: boolean;
   timestamp: number | null;
   createdAt: number | null;
@@ -1889,10 +1890,12 @@ export type ImportantAddReq = {
 
 export type ImportantRmReq = {
   messageId: number;
+  keepAiImportance: boolean;
 };
 
 export type ImportantMutationRsp = {
   important: boolean;
+  importantByMyOrganism: boolean;
 };
 
 export type ImportantListReq = {
@@ -4669,6 +4672,7 @@ export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
   period: NetworkFreqCallsignsPeriod | null;
+  includeActivityInfo: boolean | null;
 };
 
 export type ListNetworkCallsignsRes = {
@@ -5712,6 +5716,13 @@ export type TagStatsRsp = {
 
 export type UnitStatsRsp = {
   units: Array<AnalysisStatsUnit>;
+  options: Array<UnitStatsOption>;
+};
+
+export type UnitStatsOption = {
+  value: string;
+  label: string;
+  count: number;
 };
 
 export type LocationStatsRsp = {
@@ -5786,6 +5797,7 @@ export type SystemSettingsCurrentRsp = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5835,6 +5847,7 @@ export type SystemSettingsItem = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  dutySelectedGroupsEnabled: boolean;
   importantNotifyAllEnabled: boolean;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number;
@@ -5844,6 +5857,8 @@ export type SystemSettingsItem = {
   messengerMediaCacheRetentionHours: number;
   messengerMediaCacheMaxSizeGib: number;
   messengerMediaCacheMinFreeGib: number;
+  signozMetricsEnabled: boolean;
+  signozMetricsEndpoint: string | null;
 };
 
 export type SystemSettingsListRsp = {
@@ -5887,6 +5902,7 @@ export type CreateSystemSettingsReq = {
   dutyExcludeMenuEnabled: boolean;
   analysisAorFilterEnabled: boolean;
   aiPositionHighlightsEnabled: boolean | null;
+  dutySelectedGroupsEnabled: boolean | null;
   importantNotifyAllEnabled: boolean | null;
   twoFactorAuthEnabled: boolean;
   apiRateLimitReplenishIntervalMs: number | null;
@@ -5896,6 +5912,8 @@ export type CreateSystemSettingsReq = {
   messengerMediaCacheRetentionHours: number;
   messengerMediaCacheMaxSizeGib: number;
   messengerMediaCacheMinFreeGib: number;
+  signozMetricsEnabled: boolean | null;
+  signozMetricsEndpoint: string | null;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -8146,4 +8164,6 @@ export type UserDutySettingsDto = {
   messageSortBy: MessageTimeBasis;
   messageAutoParseEnabled: boolean;
   aiPositionHighlightsEnabled: boolean;
+  minimalReportWindowEnabled: boolean;
+  importantOnlyMyOrganism: boolean;
 };

@@ -369,7 +369,7 @@ export async function installAnalysisNeoApiMocks(
     }
 
     if (pathname === '/api/rer/analysis/stats/units') {
-      await fulfillJson(route, { units: [] }, options.sidebarDelayMs);
+      await fulfillJson(route, { units: [], options: [] }, options.sidebarDelayMs);
       return;
     }
 

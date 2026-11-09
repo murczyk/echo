@@ -474,6 +474,7 @@ async fn load_network_callsigns(
             network_id,
             sort_by: None,
             period: None,
+            include_activity_info: None,
         },
         user_id,
         dbx,

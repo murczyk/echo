@@ -821,6 +821,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::MetadataStatsRsp,
             crate::rer_importer::types::TagStatsRsp,
             crate::rer_importer::types::UnitStatsRsp,
+            crate::rer_importer::types::UnitStatsOption,
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
             crate::api_senders::ApiSender,
@@ -1828,6 +1829,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::rer_importer::types::MetadataStatsRsp,
             crate::rer_importer::types::TagStatsRsp,
             crate::rer_importer::types::UnitStatsRsp,
+            crate::rer_importer::types::UnitStatsOption,
             crate::rer_importer::types::LocationStatsRsp,
             crate::rer_importer::types::FreqPelengsEntry,
             crate::api_senders::ApiSender,
@@ -2323,6 +2325,14 @@ fn patch_backward_compatible_decoders(
         .replace(
             r#"Json.Decode.field "largeMessageCardText" (Json.Decode.bool)"#,
             r#"Json.Decode.oneOf [ Json.Decode.field "largeMessageCardText" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "minimalReportWindowEnabled" (Json.Decode.bool), Json.Decode.succeed False ]"#,
+        )
+        .replace(
+            r#"Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool)"#,
+            r#"Json.Decode.oneOf [ Json.Decode.field "importantOnlyMyOrganism" (Json.Decode.bool), Json.Decode.succeed False ]"#,
         )
         .replace(
             r#"Json.Decode.field "largeMediaPreviews" (Json.Decode.bool)"#,

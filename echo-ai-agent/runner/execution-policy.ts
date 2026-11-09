@@ -37,6 +37,8 @@ interface BudgetTier {
 export const TIERS = {
   fast: { runtime: 120, finalization: 30, toolCalls: 128 },
   balanced: { runtime: 300, finalization: 60, toolCalls: 128 },
+  // Non-OpenAI engines: 300 s stopped real research with work left on GLM-5.3.
+  boundedBalanced: { runtime: 600, finalization: 60, toolCalls: 128 },
   document: { runtime: 1800, finalization: 120, toolCalls: 128 },
   deep: { runtime: 14_400, finalization: 300, toolCalls: 1024 },
 } as const satisfies Record<string, BudgetTier>;
@@ -48,6 +50,8 @@ function tiersFor(policy: ExecutionPolicy): readonly BudgetTier[] {
   if (policy.documentTask === true)
     return policy.preset === "deep" ? [] : [TIERS.document];
   if (policy.preset === "deep") return [TIERS.deep, LEGACY_DEEP];
+  if (policy.preset === "balanced")
+    return [TIERS.boundedBalanced, TIERS.balanced];
   return Object.hasOwn(TIERS, policy.preset) ? [TIERS[policy.preset]] : [];
 }
 
@@ -252,17 +256,52 @@ export interface CompletionDiagnostic {
     | "tool_error"
     | "context_limit"
     | "time_limit"
-    | "tool_limit";
+    | "tool_limit"
+    | "continued"
+    | "draft_refresh";
   stopReason?: string;
   rawStopReason?: string;
   inputTokens?: number;
   outputTokens?: number;
   textCharacters?: number;
   toolCalls?: number;
+  /** Why a saved draft failed citation validation. */
+  draftIssue?: "no_citation" | "unknown_link" | "bare_link";
   durationMs?: number;
   remainingMs?: number;
   maxTokens?: number;
   attempt?: number;
+  failureKind?: string;
+  httpStatus?: number;
+}
+
+export function providerFailureKind(value: string): string {
+  if (/429|rate.?limit|too many requests|no deployments available/i.test(value))
+    return "rate_limit";
+  if (
+    /401|403|unauthori[sz]ed|forbidden|capability.*(?:invalid|expired)/i.test(
+      value,
+    )
+  )
+    return "authorization";
+  if (
+    /stream ended|interrupted|terminated|connection|network|fetch failed/i.test(
+      value,
+    )
+  )
+    return "interrupted_stream";
+  return "provider_error";
+}
+
+function providerFailureFacts(
+  error: unknown,
+): Pick<CompletionDiagnostic, "failureKind" | "httpStatus"> {
+  const message = typeof error === "string" ? error : "";
+  const status = message.match(/\b[45]\d{2}\b/)?.[0];
+  return {
+    failureKind: message.trim() ? providerFailureKind(message) : "empty",
+    ...(status ? { httpStatus: Number(status) } : {}),
+  };
 }
 
 export function completionFailure(error: unknown): CompletionStatus {
@@ -327,6 +366,9 @@ export function providerCompletion(
     toolCalls:
       response?.content?.filter((item: any) => item.type === "toolCall")
         .length ?? 0,
+    ...(response?.stopReason === "error"
+      ? providerFailureFacts(response?.errorMessage)
+      : {}),
   };
 }
 

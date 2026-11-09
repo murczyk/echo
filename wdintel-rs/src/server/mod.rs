@@ -55,6 +55,21 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
     Ok(Some(listener))
 }
 
+pub(crate) fn identity_middleware() -> IdentityMiddleware {
+    IdentityMiddleware::builder()
+        .visit_deadline(Some(std::time::Duration::from_secs(
+            IDENTITY_DURATION_HOURS * 60 * 60,
+        )))
+        .build()
+}
+
+pub(crate) fn session_middleware(
+    store: RedisSessionStore,
+    secret: &str,
+) -> SessionMiddleware<RedisSessionStore> {
+    SessionMiddleware::new(store, Key::from(secret.as_bytes()))
+}
+
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     Ok(new_env_with_initialization(mode, true).await.c(h!())?)
 }
@@ -109,6 +124,23 @@ async fn new_env_with_initialization(
         .c(h!())?)
 }
 
+async fn new_metrics(
+    dbx: &sea_orm::DatabaseConnection,
+    config: &Config,
+    initialize: bool,
+) -> Option<crate::telemetry::Metrics> {
+    use crate::system_settings::signoz_metrics;
+    if initialize {
+        if let Err(error) =
+            signoz_metrics::import_legacy_config(dbx, config).await
+        {
+            warn!("Importing Signoz metrics settings failed: {error:?}");
+        }
+    }
+    let settings = signoz_metrics::effective(dbx, config).await;
+    crate::telemetry::Metrics::from_settings(config, &settings)
+}
+
 fn ai_provider_metrics_process() -> &'static str {
     crate::pg_runtime_pool_role().map_or(
         crate::config::AI_PROVIDER_METRICS_PROCESS_ONEOFF,
@@ -121,7 +153,6 @@ async fn new_env_from_config(
     initialize: bool,
     config: Config,
 ) -> Result<Arc<Env>, AppError> {
-    let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
     let stats_redis = new_redis_for_db(&config, config.group_stats_redis_db())
         .await
@@ -143,6 +174,7 @@ async fn new_env_from_config(
         .await
         .c(h!())?;
     }
+    let metrics = new_metrics(&dbx, &config, initialize).await;
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -649,6 +681,14 @@ fn spawn_background_workers(
     should_spawn_goi_workers: bool,
     bg_set: &mut JoinSet<()>,
 ) {
+    if env.metrics.is_some() {
+        let metrics_env = env.clone();
+        let metrics_cancel = cancel_token.clone();
+        spawn_named_worker("operational_metrics_worker", bg_set, async move {
+            crate::telemetry::operational::run(metrics_env, metrics_cancel)
+                .await;
+        });
+    }
     let config = env.config.clone();
     let config1 = config.clone();
     let dbx4 = env.dbx.clone();
@@ -734,6 +774,10 @@ fn spawn_background_workers(
     let unit_refresh_env = env.clone();
     spawn_named_worker("iggy_unit_refresh_worker", bg_set, async move {
         crate::iggy::unit_refresh::run_nofail(unit_refresh_env).await;
+    });
+    let group_refresh_env = env.clone();
+    spawn_named_worker("iggy_group_refresh_worker", bg_set, async move {
+        crate::iggy::group_refresh::run_nofail(group_refresh_env).await;
     });
     spawn_named_worker("aor_assignments_worker", bg_set, async move {
         crate::sigint::aor::worker::aor_assignments_check_worker(&dbx10).await;
@@ -1324,6 +1368,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::analysis::sender_stats_count)
             .service(crate::rer_importer::analysis::group_stats_count)
             .service(crate::rer_importer::analysis::summary_table_freq)
+            .service(crate::rer_importer::analysis::ai_frequency_summary)
             .service(crate::rer_importer::analysis::summary_table_task_launch)
             .service(crate::rer_importer::analysis::correlated_freqs)
             .service(crate::rer_importer::analysis::kmz_task_launch)
@@ -1986,7 +2031,7 @@ pub async fn main_server(
         );
     } else if config.signoz_kpi_metrics_enabled.unwrap_or(false) {
         log::warn!(
-            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check signoz_metrics_enabled and signoz_metrics_endpoint"
+            "KPI metrics collection is enabled, but the Signoz metrics exporter is unavailable; check the Monitoring tab in system settings"
         );
     }
     let deployment_maintenance = web::Data::new(
@@ -2115,19 +2160,13 @@ pub async fn main_server(
             .wrap(actix_web::middleware::from_fn(
                 api_rate_limit::throttle_api_users,
             ))
-            .wrap(
-                IdentityMiddleware::builder()
-                    .visit_deadline(Some(std::time::Duration::from_secs(
-                        IDENTITY_DURATION_HOURS * 60 * 60,
-                    )))
-                    .build(),
-            )
+            .wrap(identity_middleware())
             .wrap(actix_web::middleware::from_fn(
                 middleware::purge_legacy_identity_middleware,
             ))
-            .wrap(SessionMiddleware::new(
+            .wrap(session_middleware(
                 redis_session_store.clone(),
-                Key::from(cookie_secret.as_bytes()),
+                &cookie_secret,
             ))
             .wrap(actix_web::middleware::from_fn(read_deadline::enforce))
             .wrap(actix_web::middleware::from_fn(

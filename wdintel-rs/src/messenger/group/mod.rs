@@ -203,6 +203,7 @@ pub async fn collect_groups(
 pub async fn collect_groups_f2(
     keys: Vec<String>,
     env: &Env,
+    opts: CollectGroupsOpts,
 ) -> Result<Vec<types::SignalGroupEntryF2>, AppError> {
     #[derive(FromQueryResult, Eq, PartialEq, Hash)]
     struct GroupRow {
@@ -234,10 +235,13 @@ pub async fn collect_groups_f2(
         .context(h!())?
         .into_iter()
         .collect::<HashSet<_>>();
-    let group_stats =
+    let group_stats = if opts.skip_group_stats {
+        Default::default()
+    } else {
         crate::rer_importer::analysis::read_group_activity(env, keys.clone())
             .await
-            .context(h!())?;
+            .context(h!())?
+    };
     let data: Vec<types::SignalGroupEntryF2> = signal_groups
         .into_iter()
         .map(|group| {

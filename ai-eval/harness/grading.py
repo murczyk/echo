@@ -29,6 +29,25 @@ def covers(periods, start, end):
     return cursor > end
 
 
+def group_scope_failures(case, scope, selections, retrieved, cited):
+    """Judges what was asked of Echo, so a wrong group fails even when the fixture returns nothing."""
+    if scope.get("forbid"):
+        return ["group_scope_applied_to_subject"] if any(selections) else []
+    keys = set(scope["keys"])
+    groups = {item["id"]: item["groupKey"] for item in case["messages"]}
+    failures = []
+    unscoped = any(not selected or not selected <= keys for selected in selections)
+    if unscoped or (keys and not scope.get("optional") and not selections):
+        failures.append("group_scope_not_applied")
+    if scope.get("all") and not keys <= set().union(*selections):
+        failures.append("group_scope_incomplete")
+    if any(groups.get(identifier) not in keys for identifier in retrieved):
+        failures.append("out_of_scope_retrieval")
+    if any(groups.get(identifier) not in keys for identifier in cited):
+        failures.append("out_of_scope_citation")
+    return failures
+
+
 def grade(case, events, failed=False):
     if case['category'] == 'map-documents':
         from maps import grade_maps
@@ -36,6 +55,7 @@ def grade(case, events, failed=False):
     retrieved, cited, inaccessible = set(), set(), set()
     text_calls = tag_calls = unit_calls = 0
     searches = []
+    selections = []
     text_periods, tag_periods, unit_periods = [], [], []
     pages = {}
     answers = [event["text"] for event in events if event.get("type") == "eval_answer"]
@@ -47,6 +67,7 @@ def grade(case, events, failed=False):
             continue
         body = event.get("body") or {}
         if event.get("path", "").endswith("get-inbox"):
+            selections.append(set(body.get("selected_groups") or []))
             text_calls += bool(body.get("search") and not body.get("selected_callsigns"))
             tag_calls += bool(body.get("selected_callsigns") and not body.get("search"))
             unit_calls += bool((body.get("selected_unit_ids") or body.get("selected_units")) and not body.get("search"))
@@ -61,6 +82,8 @@ def grade(case, events, failed=False):
                 elif (body.get("selected_unit_ids") or body.get("selected_units")) and not body.get("search"):
                     unit_periods.append(period)
         response = event.get("response") or {}
+        if not isinstance(response, dict):
+            continue
         if event.get("path", "").endswith("get-inbox") and event.get("status") == 200:
             key = json.dumps({key: value for key, value in body.items() if key != "before_id_noninclusive"}, sort_keys=True)
             pages[key] = len(response.get("inbox_items", []))
@@ -81,12 +104,17 @@ def grade(case, events, failed=False):
             if isinstance(identifier, str) and isinstance(message_id, int):
                 delivered[identifier] = message_id
     invalid_citations = []
-    for target in re.findall(r"\]\(([^\s)]+)\)", answer):
-        message_id = accepted_citation(target, delivered)
-        if message_id is None or message_id not in retrieved:
-            invalid_citations.append(target)
-        else:
-            cited.add(message_id)
+    ever_cited = set()
+    # Every answer must cite safely, but only the final one can satisfy required evidence.
+    for index, text in enumerate(answers):
+        for target in re.findall(r"\]\(([^\s)]+)\)", text):
+            message_id = accepted_citation(target, delivered)
+            if message_id is None or message_id not in retrieved:
+                invalid_citations.append(target)
+            else:
+                ever_cited.add(message_id)
+                if index == len(answers) - 1:
+                    cited.add(message_id)
     expect = case["expect"]
     required = set(expect.get("evidenceIds", []))
     forbidden = set(expect.get("forbiddenEvidenceIds", []))
@@ -101,7 +129,7 @@ def grade(case, events, failed=False):
         failures.append("required_evidence_not_retrieved")
     if expect.get("requireCitations", bool(required)) and not (cited & required):
         failures.append("required_evidence_not_cited")
-    if invalid_citations or inaccessible or cited & forbidden:
+    if invalid_citations or inaccessible or ever_cited & forbidden:
         failures.append("citation_or_access_violation")
     if any(term.lower() not in " ".join(searches) for term in expect.get("searchTerms", [])):
         failures.append("spelling_candidate_missing")
@@ -126,6 +154,10 @@ def grade(case, events, failed=False):
         failures.append("incomplete_pagination")
     if any(re.search(pattern, answer, re.I) for pattern in expect.get("forbiddenPatterns", [])):
         failures.append("unsupported_answer")
+    if not all(re.search(pattern, answer, re.I) for pattern in expect.get("requiredPatterns", [])):
+        failures.append("required_answer_missing")
+    if expect.get("groupScope"):
+        failures.extend(group_scope_failures(case, expect["groupScope"], selections, retrieved, ever_cited))
     return {"passed": not failures, "failures": failures, "retrievedIds": sorted(retrieved),
             "citedIds": sorted(cited), "textSearches": text_calls, "unitSearches": unit_calls, "tagSearches": tag_calls,
             "toolErrors": sum(event.get("type") == "tool_end" and event.get("is_error", False) for event in events),

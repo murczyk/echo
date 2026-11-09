@@ -631,7 +631,9 @@ function ConversationMessage({
               finishedAt={message.createdAt}
               active={false}
             />
-            {message.completionMetadata?.coverageLimited ? ' · Охоплення джерел неповне' : ''}
+            {message.completionMetadata?.coverageLimited && message.reasoningPreset !== 'deep'
+              ? ' · Охоплення джерел неповне'
+              : ''}
           </Typography>
         ) : null}
         <AssistantMessage

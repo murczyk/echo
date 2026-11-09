@@ -7,6 +7,7 @@ use crate::config::{
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer;
+use crate::rer_importer::analysis::stats::effective_groups_with_access;
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::inbox::query::scan_analytics_inbox_candidate_ids;
 use crate::rer_importer::report_chunking::{
@@ -692,25 +693,25 @@ fn interception_report_group_condition(
     req: &InboxMessagesReq,
     allowed_groups: &[String],
 ) -> Option<SimpleExpr> {
-    let allowed = allowed_groups.iter().collect::<HashSet<_>>();
-    let groups = req.selected_groups.as_ref().map(|groups| {
-        groups
-            .iter()
-            .filter(|group| allowed.contains(group))
-            .cloned()
-            .collect::<Vec<_>>()
-    });
-    let groups = groups.filter(|groups| !groups.is_empty());
+    let group_selected = req
+        .selected_groups
+        .as_ref()
+        .is_some_and(|groups| !groups.is_empty());
     let senders = req
         .selected_senders
         .as_ref()
         .filter(|senders| !senders.is_empty());
-    if groups.is_none() && senders.is_none() {
+    if !group_selected && senders.is_none() {
         return None;
+    }
+    let groups =
+        effective_groups_with_access(&req.selected_groups, allowed_groups);
+    if groups.is_empty() {
+        return Some(Expr::cust("FALSE"));
     }
     Some(interception_report_group_lookup(
         req.sort_by,
-        groups.unwrap_or_else(|| allowed_groups.to_vec()),
+        groups,
         senders.map(Vec::as_slice),
     ))
 }
@@ -2226,9 +2227,16 @@ y:73-71279
                         Some(vec!["unavailable-group".to_string()]),
                         Some(vec!["selected".to_string()]),
                     ),
+                    (Some(vec!["unavailable-group".to_string()]), None),
                 ] {
                     let include_other_sender =
                         selected_senders.as_ref().is_none_or(Vec::is_empty);
+                    let unavailable_selection =
+                        selected_groups.as_ref().is_some_and(|groups| {
+                            groups
+                                .iter()
+                                .any(|group| group == "unavailable-group")
+                        });
                     let messages = load_interception_report_chunk_postgres(
                         &login.id,
                         &env,
@@ -2261,6 +2269,9 @@ y:73-71279
                         };
                     if include_other_sender {
                         expected.push(message_ids[3]);
+                    }
+                    if unavailable_selection {
+                        expected.clear();
                     }
                     assert_eq!(
                         messages

@@ -527,6 +527,7 @@ export function useRerDutyFeeds(
     unitHierarchyLoading: feedState.unitHierarchyLoading,
     persistStateToUrl: feedState.persistStateToUrl,
     buildReqForFeed: feedState.buildReqForFeed,
+    pollIntervalMs: feedState.pollIntervalMs,
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
     error: feedState.error,

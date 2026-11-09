@@ -305,7 +305,9 @@ it must wait for a private checkpoint, then either resume with a justified
 coverage need or switch to focused searches. Verify that a real HTTP failure
 still produces a public error with `errorReason` and an allowlisted
 `AI agent tool` diagnostic in the worker journal. Private diagnostic frames must
-never appear in chat events or disclose source content or arguments.
+never appear in chat events or disclose source content or arguments. The one
+exception is a failed script tool: its diagnostic carries the exception class and
+the last traceback line, capped and scrubbed, and only the worker journal sees it.
 Retain the prior containers and rollout journal for the control panel's recovery
 procedure; recovery beyond the approved operation requires separate approval.
 
@@ -427,3 +429,71 @@ limit was reached. Such answers gain the coverage footer, and admins see
 offers **Продовжити глибоким аналізом** both right after it finishes and after
 reload, that clicking it queues a Deep request in the same conversation, and that
 the composer stays on the remembered mode.
+
+## WGS-84 and MGRS map points (release 2026.11.05.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.05.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Releases `2026.11.05.2` and `2026.11.05.1` stay
+in the compatible runner lists. Roll back the application and harness as a pair.
+
+Verify that pasting `name,latitude,longitude` rows and MGRS references each
+produces a map with every point in place, without format probing. Tool failures
+log `AI agent tool failed` with the Rust level: `error!` for `tool_error`,
+`network_error`, HTTP 5xx and `map_not_published`, `warn!` for
+`invalid_arguments` and HTTP 4xx. The SigNoz severity field stays empty for
+`wdintel-rs`, so filter on `body CONTAINS 'AI agent tool failed'`.
+
+## Published bytes realigned (release 2026.11.07.1)
+
+Release `2026.11.06.4` was published to the agent hosts before two commits changed the
+harness under the same ID, so the merged code and the published bundle differ and
+the panel refuses it as an ID collision. This release carries the merged code,
+including those two group-scope fixes, under a new ID.
+
+Deploy the matching application, then upgrade each namespace with
+`ai-control-panel upgrade --host <host> --release 2026.11.07.1`, previewing with
+`--dry-run` first. No migration or provider change is needed. `2026.11.06.4` stays in the
+compatible runner lists. Roll back the application and harness as a pair.
+
+## Group scope and failed first calls (release 2026.11.06.4)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.4`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Release `2026.11.06.3` stays in the compatible runner
+lists. Roll back the application and harness as a pair.
+
+The application change also reaches people: a selection with no accessible group
+now returns nothing instead of every accessible group. A saved filter or duty
+column whose groups were all revoked or archived goes empty, and clearing the
+filter restores it. Before deploying, count saved filters that name archived or
+deleted groups; personal browser selections cannot be counted that way.
+
+Verify on GLM-5.3 that a request naming a group shows `джерела «<group>»` in its
+activity and cites only that group, and that an unknown group is reported as not
+found. Research failures now log `failureKind` and `httpStatus` in the
+`AI agent completion` diagnostic, and a retry shows as `outcome: continued`.
+
+## Deep continuation that finishes the work (release 2026.11.06.3)
+
+Deploy the matching application, then upgrade the approved installation's
+namespace with `ai-control-panel upgrade --host <host> --release 2026.11.06.3`,
+previewing with `--dry-run` first. No migration or provider change is needed.
+Echo requires this exact harness, so the chat reports that the agent is updating
+until the namespace is upgraded. Releases `2026.11.06.2`, `2026.11.06.1` and `2026.11.05.3` stay in the
+compatible runner lists. Use `2026.11.06.3` everywhere: the two before it reached only
+echo-staging. `2026.11.06.1` could say that tools did not run, and `2026.11.06.2` could
+finish Deep without searching. Roll back the application and harness as a pair.
+
+Balanced on non-OpenAI engines now runs up to 10 minutes and holds the user's
+running slot that long; the composer shows the new limit. Verify on GLM-5.3 that a
+short question about a callsign with no matches says that nothing was found, that a
+map request reports its map, and that Deep shows no coverage notice or footer. Synthesis stays bounded
+by each engine's `max_output_tokens` profile, so a host with 8,192 gains nothing
+from the higher limit. `AI agent tool` log lines now name `update_research` and
+`report_progress`, and validation failures add `fields`; use them to confirm which
+constraint models actually break.

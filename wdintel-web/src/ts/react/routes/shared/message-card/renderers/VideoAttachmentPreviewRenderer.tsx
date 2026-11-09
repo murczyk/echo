@@ -521,7 +521,13 @@ export function VideoAttachmentPreviewRenderer({
   );
 
   const sourceStage = (
-    <MessageCardAttachmentPreviewStage ref={setStageEl} kind="video">
+    <MessageCardAttachmentPreviewStage
+      ref={setStageEl}
+      kind="video"
+      onPrimaryClick={(_, region) => {
+        if (!mobileVideo && region === 'background') handleClose();
+      }}
+    >
       <Box
         onMouseMove={!mobileVideo ? revealControls : undefined}
         sx={{
@@ -649,6 +655,7 @@ export function VideoAttachmentPreviewRenderer({
       {!mobileVideo ? (
         <Box
           data-video-header
+          data-attachment-preview-content
           onFocusCapture={() => setInteracting(true)}
           onBlurCapture={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setInteracting(false);
@@ -727,7 +734,8 @@ export function VideoAttachmentPreviewRenderer({
       stage={stage}
       infoPopover={infoPopover}
       navigation={fullscreen.active ? undefined : navigation}
-      swipeEnabled={!fullscreen.active && zoom <= 100}
+      swipeEnabled={zoom <= 100}
+      onSwipeDismiss={mobileVideo ? handleClose : undefined}
     />
   );
 }

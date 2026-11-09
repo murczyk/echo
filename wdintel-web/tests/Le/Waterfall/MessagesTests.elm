@@ -19,6 +19,7 @@ messageStub =
     , checked = True
     , important = False
     , aiImportant = False
+    , importantByMyOrganism = False
     , bookmarked = False
     , coords = Nothing
     , coordsWithLocality = []

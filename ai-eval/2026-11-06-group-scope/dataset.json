@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "group-scope",
+  "revision": "2026-11-06.1",
+  "category": "group-scope",
+  "skills": [
+    "current_user",
+    "accessible_group_details",
+    "inbox_messages",
+    "messages_by_id",
+    "interception_context"
+  ],
+  "caseFiles": [
+    "cases.json"
+  ],
+  "artifacts": {
+    "cases.json": "d39045b6929ff7cfa620ffb69da769238c8c9f10302b2e77e135af4b51dfe122"
+  }
+}

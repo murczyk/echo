@@ -7,17 +7,16 @@ non-deleted linked unit.
 
 The analytics path applies the inbox message-ID scope to unit links as well as
 messages. Recent creation-time rows come from PostgreSQL using a disjoint
-lower-bound partition; that partition uses a lateral unit-link lookup with
-`item_id = messages.id OFFSET 0`, allowing the existing `(item_id, unit_id,
-kind)` index to seek for each candidate. Full-history PostgreSQL fallback keeps
-a set-based join, allowing the planner to choose between indexed and sequential
-access as the visible share changes. The route participates in read deadlines
-and count-search safeguards. Frontend requests are lazy, cached across toggles,
-and coalesced after inbox changes.
+lower-bound partition. Both partitions count distinct message IDs to avoid
+multiplying a unit's count across parsed and network links. The route participates
+in read deadlines and count-search safeguards. Frontend requests run for open
+filter panels; inbox changes coalesce behind active requests and the configured
+refresh interval. Parent counts are enriched in Rust from the Redis hierarchy
+cache, using one bottom-up pass over group totals.
 
-## Source plan evidence
+## Previous source baseline
 
-Local PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON)` used the SQL
+Before the aggregate rewrite, local PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON)` used the SQL
 emitted by `inbox_unit_counts_respect_duty_exclusions_3527` and projection tables
 with 1,000,000 messages, 1,000,000 group links, 1,000 units, and 2,000,000 unit
 links. Each message had parsed/network link kinds. The test user could access
@@ -45,10 +44,46 @@ One paired execution measured 29.214 ms for the ordinary recent-tail join and
 17.573 ms for the bounded lateral lookup. Full-history plans varied between
 an indexed lookup and a scan of all unit links as estimates changed; forcing
 lateral access for that case increased one execution from 130.313 ms to
-427.718 ms, so full-history fallback deliberately retains the ordinary join.
+427.718 ms, so the baseline retained the ordinary join.
 
 These projection tables establish the access path, not production I/O or a
 latency guarantee. A full-history count can still scan large relations and must
 remain subject to the route deadline and analytics fallback capacity controls.
 ClickHouse gateway execution requires the optional analytics environment;
 source plan measurements do not establish its latency.
+
+## Gateway aggregation
+
+Duty counts aggregate active unit links filtered by a message-ID semi-join and
+use a separate anti-join aggregate for the undefined bucket, combined with
+UNION ALL. Filtering links by membership avoids multiplying joined rows and
+keeps the linked-count hash state below the gateway's per-query memory limit.
+This preserves distinct-message counts across multiple link kinds and includes
+messages whose only unit links target deleted units in the undefined bucket.
+Both aggregates and their union must remain pushed into ClickHouse. An outer
+aggregate over a DISTINCT-message subquery joined to a unit-link subquery can
+instead transfer millions of rows to PostgreSQL for a local hash join and sort.
+
+Read-only EXPLAIN on Skhid's gateway showed a single Foreign Scan for the new
+union, with both aggregates remote; the former shape had two Foreign Scans
+below a local Hash Join, Sort and Aggregate. The observed former unit-link
+fragment returned about 17.5 million rows per execution. A bounded read-only
+execution of the rewritten broad query returned 857 aggregate rows in 14.4
+seconds including SSH overhead, under the existing 2.2-GiB query memory limit.
+A flat multi-table inner-join alternative still exceeded that memory limit;
+the membership query is necessary as well as aggregate pushdown. This is one
+measurement under incident load, not a latency guarantee. Keep representative
+gateway plan checks alongside source checks when changing this query.
+
+The rewritten recent-tail query was also checked locally with 1,000,000
+messages, 2,000,000 unit links and 1,000 units. A creation-time index scan
+selected 1,001 candidates; the linked aggregate sought the unit-link primary
+key for 11 accessible messages instead of scanning all links. The undefined
+aggregate used bounded indexed lookups. The combined query took 12.3 ms in
+that synthetic projection; this checks the access path rather than deployed
+latency.
+
+Unbounded source fallback counts use Duty's existing adaptive cutoff policy,
+including concrete unit-ID selections. They retain ordinary source admission;
+the bypass for the disjoint recent analytics tail is not used for a 14-day
+fallback. Explicit date bounds retain their original meaning.

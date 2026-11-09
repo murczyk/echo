@@ -156,6 +156,7 @@ pub const AI_ENGINE_GLM_5_3_OUTPUT_TOKENS: u32 = 16_384;
 pub const AI_ENGINE_GOVERNMENT_COOLDOWN_SECS: u64 = 60;
 pub const AI_GOV_UA_API_HOST: &str = "inference.ai.mod.gov.ua";
 pub const AI_PROVIDER_METRICS_OPENAI_HOST: &str = "api.openai.com";
+pub const AI_ENGINE_BLOCKED_OPENAI_DOMAIN: &str = "openai.com";
 pub const AI_PROVIDER_METRICS_PROCESS_ONEOFF: &str = "echo-oneoff";
 pub const AI_GOV_UA_AUTH_BASE: &str = "https://login.microsoftonline.com";
 pub const AI_GOV_UA_API_BASE: &str = "https://inference.ai.mod.gov.ua/v1";
@@ -454,6 +455,14 @@ pub const AI_AGENT_MAP_PLATFORM_TYPE: &str = "CAPDOC";
 pub const AI_AGENT_MAP_FALLBACK_SIDC: &str = "10061000001211020000";
 pub const AI_AGENT_MAP_UKRAINE_LAT_BOUNDS: (f64, f64) = (43.0, 53.0);
 pub const AI_AGENT_MAP_UKRAINE_LON_BOUNDS: (f64, f64) = (22.0, 42.0);
+pub const AI_AGENT_MAP_SYSTEM_GRID: &str = "msk2000";
+pub const AI_AGENT_MAP_SYSTEM_WGS84: &str = "wgs84";
+pub const AI_AGENT_MAP_SYSTEM_MGRS: &str = "mgrs";
+pub const AI_AGENT_MAP_MGRS_MAX_DIGITS: usize = 10;
+pub const AI_AGENT_TOOL_DIAGNOSTIC_CATEGORY_MAX_CHARS: usize = 120;
+pub const AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_MAX_CHARS: usize = 300;
+pub const AI_AGENT_TOOL_DIAGNOSTIC_DETAIL_INPUT_MAX_CHARS: usize = 1_000;
+pub const AI_AGENT_DIAGNOSTIC_TOKEN_CHARS: usize = 43;
 pub const AI_AGENT_REQUEST_MAX_RUNNER_EVENTS: usize = 10_000;
 pub const AI_AGENT_REQUEST_MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
 pub const AI_AGENT_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -598,13 +607,14 @@ pub const AI_AGENT_GLM_5_3_PROVIDER_REQUEST_TIMEOUT_SEC: u64 =
     AI_AGENT_DISPATCHER_TIMEOUT_SEC;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
-pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
 pub const AI_AGENT_OPENAI_MODEL_PREFIXES: &[&str] = &["gpt-", "o1", "o3", "o4"];
 pub const AI_AGENT_OPENAI_GPT_6_SOL: &str = "gpt-6-sol";
 pub const AI_AGENT_OPENAI_GPT_6_1_SOL: &str = "gpt-6.1-sol";
 pub const AI_AGENT_FAST_RUNTIME_SEC: u64 = 120;
 pub const AI_AGENT_BALANCED_RUNTIME_SEC: u64 = 300;
+/// Balanced on non-OpenAI engines: 300 s stopped real research with work left.
+pub const AI_AGENT_BOUNDED_BALANCED_RUNTIME_SEC: u64 = 600;
 pub const AI_AGENT_DEEP_RUNTIME_SEC: u64 = 4 * 60 * 60;
 /// Fast and Balanced requests that build a document (template report).
 pub const AI_AGENT_DOCUMENT_RUNTIME_SEC: u64 = 1800;
@@ -626,11 +636,17 @@ pub const AI_AGENT_GLM_5_3: &str = "glm-5.3";
 pub const AI_AGENT_GLM_FLASH: &str = "glm-5.3-flash-uncensored";
 pub const AI_AGENT_BOUNDED_RESEARCH_FINALIZATION_MULTIPLIER: u64 = 2;
 pub const AI_AGENT_GLM_5_3_CHECKPOINT_OUTPUT_TOKENS: i32 = 16_384;
-pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.05.1";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.11.08.1";
 pub const AI_CONTROL_PANEL_LOCK_KEY: i64 = 0x4543484f41494350;
 pub const AI_CONTROL_PANEL_POLL_MS: u64 = 100;
 pub const AI_CONTROL_PANEL_LOG_LINES: usize = 500;
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
+/// The AI runner refuses a response over 2 MiB, and an unscoped month of
+/// frequency activity exceeds that without these bounds.
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROWS: usize = 128;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_ROW_VALUES: usize = 32;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_VALUE_CHARS: usize = 200;
+pub const AI_AGENT_FREQUENCY_SUMMARY_MAX_BYTES: usize = 1024 * 1024;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
 pub const AI_AGENT_MATTERMOST_TIMEOUT_SEC: u64 = 5;
@@ -758,6 +774,10 @@ pub const API_INTEGRATION_IGGY_UNIT_REFRESH_BATCH_SIZE: u64 = 500;
 pub const API_INTEGRATION_IGGY_UNIT_REFRESH_ACTIVE_SLEEP_MS: u64 = 100;
 pub const API_INTEGRATION_IGGY_UNIT_REFRESH_IDLE_SLEEP_SECS: u64 = 5;
 pub const API_INTEGRATION_IGGY_UNIT_REFRESH_RETRY_SECS: i64 = 30;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_BATCH_SIZE: u64 = 500;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_ACTIVE_SLEEP_MS: u64 = 100;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_IDLE_SLEEP_SECS: u64 = 5;
+pub const API_INTEGRATION_IGGY_GROUP_REFRESH_RETRY_SECS: i64 = 30;
 pub const RQ_TIMEOUT_ALPINE_CONVERTER: u64 = 600;
 pub const ALPINE_CONVERSION_TIMEOUT_SECONDS: u64 = 60 * 60;
 pub const ALPINE_CONVERSION_MAX_TIMEOUT_SECONDS: u64 = 7 * 24 * 60 * 60;
@@ -774,6 +794,7 @@ pub const COORDS_PER_FREQ_PER_LOC_LIMIT: usize = 10;
 pub const SERVER_MONITORING_CACHE_TTL_SEC: u64 = 5;
 pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
+pub const SESSION_CLI_HOST_SUFFIX: &str = "-staging";
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
 pub const ROLE_API: &str = "Api";
@@ -1018,6 +1039,7 @@ pub const MAX_FREQS_GROUPS_BY_DAY: u64 = 10;
 pub const CORRELATED_FREQS_MAX_DAYS: i64 = 30;
 pub const ANALYSIS_AOR_FILTER_ENABLED_DEFAULT: bool = true;
 pub const IMPORTANT_NOTIFY_ALL_ENABLED_DEFAULT: bool = true;
+pub const DUTY_SELECTED_GROUPS_ENABLED_DEFAULT: bool = true;
 pub const ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT: u64 = 200;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_DEFAULT: u64 = 50;
 pub const ANALYSIS_CALLSIGN_PAGE_SIZE_MAX: u64 = 100;
@@ -1334,6 +1356,7 @@ pub const NOTIFICATION_READ_BOUNDARY_TTL_MINUTES: i64 = 15;
 pub const NOTIFICATION_READ_BOUNDARY_MAX_PER_RECIPIENT: i64 = 8;
 pub const INBOX_MESSAGES_PAGE_LIMIT: usize = 20;
 pub const ANALYTICS_NETWORK_BOUNDS_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
+pub const ANALYTICS_NETWORK_PERIOD_BOUNDS_MARGIN_DAYS: i64 = 1;
 pub const ANALYTICS_NETWORK_ACTIVITY_MESSAGE_ID_CHUNK_SIZE: i64 = 1_000_000;
 pub const ANALYTICS_NETWORK_ACTIVITY_SOURCE_WINDOW_DAYS: i64 = 1;
 pub const ANALYTICS_NETWORK_ACTIVITY_OPERATION: &str = "network group activity";
@@ -1430,6 +1453,120 @@ pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS: u64 = 100;
 pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
 pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
 pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
+pub const OPERATIONAL_METRICS_INTERVAL_SECS: u64 = 60;
+pub const OPERATIONAL_METRICS_TIMEOUT_SECS: u64 = 10;
+pub const OPERATIONAL_METRICS_MAX_AGE_SECS: u64 = 180;
+pub const OPERATIONAL_METRICS_ACTIVITY_AGE: &str =
+    "echo.datasource.activity.age";
+pub const OPERATIONAL_METRICS_DATASOURCE_ACTIVE: &str =
+    "echo.datasource.active";
+pub const OPERATIONAL_METRICS_ROOT_BYTES: &str =
+    "echo.system.filesystem.available_bytes";
+pub const OPERATIONAL_METRICS_ACCOUNT_LINKED: &str =
+    "echo.messenger.account.linked";
+pub const OPERATIONAL_METRICS_ACCOUNT_ACTIVE: &str =
+    "echo.messenger.account.active";
+pub const OPERATIONAL_METRICS_ERRORS: &str =
+    "echo.messenger.restapi.errors.count";
+pub const OPERATIONAL_METRICS_REPORT_TIMEOUTS: &str =
+    "echo.report.timeouts.count";
+pub const OPERATIONAL_METRICS_AVAILABLE: &str =
+    "echo.operational.source.available";
+pub const OPERATIONAL_METRICS_UPDATED_AT: &str =
+    "echo.operational.source.updated_at";
+pub const OPERATIONAL_METRICS_QUEUE_ITEMS: &str = "echo.messenger.queue.items";
+pub const OPERATIONAL_METRICS_QUEUE_AGE: &str =
+    "echo.messenger.queue.oldest.age";
+pub const OPERATIONAL_METRICS_NLP_READY: &str = "echo.messenger.nlp.ready";
+pub const OPERATIONAL_METRICS_UNKNOWN_REPORT_KIND: &str = "unknown";
+pub const OPERATIONAL_METRICS_REPORT_KINDS: &[&str] = &[
+    "tags",
+    "interception",
+    "babak",
+    "mouse",
+    "pelengs",
+    "senders",
+    "posts",
+    "naushnom",
+    "reo",
+    "digest",
+    "posts_docx",
+    "active_networks",
+    "network_frequencies",
+    "report_125",
+    "report_1213",
+    "report_1217",
+    crate::report_history::KIND_SUMMARY_TABLE,
+    crate::report_history::KIND_KMZ,
+    crate::report_history::KIND_GEOJSON,
+    crate::report_history::KIND_ETALONKA,
+    crate::report_history::KIND_GOI,
+    crate::report_history::KIND_GOI_ASSOCIATIONS,
+    crate::report_history::KIND_RER_REPORT,
+    crate::report_history::KIND_SPOSOB,
+];
+pub const OPERATIONAL_METRICS_GAUGES: &[(&str, &str, &str, bool)] = &[
+    (
+        OPERATIONAL_METRICS_ACTIVITY_AGE,
+        "s",
+        "Datasource activity age at the observation time",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_DATASOURCE_ACTIVE,
+        "1",
+        "Whether a datasource is active",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ROOT_BYTES,
+        "By",
+        "Available bytes on the root filesystem",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ACCOUNT_LINKED,
+        "1",
+        "Whether a messenger account is linked",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_ACCOUNT_ACTIVE,
+        "1",
+        "Whether a messenger account has an active datasource",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_AVAILABLE,
+        "1",
+        "Whether an operational source has a fresh successful observation",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_UPDATED_AT,
+        "s",
+        "Unix time of the last successful operational observation",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_QUEUE_ITEMS,
+        "1",
+        "Number of messenger queue items",
+        true,
+    ),
+    (
+        OPERATIONAL_METRICS_QUEUE_AGE,
+        "s",
+        "Age of the oldest messenger queue item",
+        false,
+    ),
+    (
+        OPERATIONAL_METRICS_NLP_READY,
+        "1",
+        "Whether the local NLP dependency is ready",
+        true,
+    ),
+];
 // for xlsx import
 pub const MESSENGER_WORKER_POOL_DEFAULT_CAPACITY: usize = 10;
 /// Jun 1st 2024
@@ -1533,7 +1670,7 @@ pub const RER_REPORT_HIERARCHY_COLUMNS: [&str; 14] = [
     "other",
 ];
 
-pub const RER_REPORT_PARENT_LEVELS: [usize; 5] = [2, 4, 6, 7, 8];
+pub const RER_REPORT_PARENT_LEVELS: [usize; 2] = [4, 5];
 pub const RER_REPORT_HIERARCHY_WHITESPACE: &str = " \t\n\r\u{000b}\u{000c}\u{0085}\u{00a0}\u{1680}\u{2000}\u{2001}\u{2002}\u{2003}\u{2004}\u{2005}\u{2006}\u{2007}\u{2008}\u{2009}\u{200a}\u{2028}\u{2029}\u{202f}\u{205f}\u{3000}";
 pub const RER_REPORT_HYDRATION_BATCH_SIZE: usize = 500;
 pub const RER_REPORT_OTHER_TAG_LABEL: &str = "інше";
@@ -1927,6 +2064,7 @@ pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_TTL_MS: u64 = 5_000;
 pub const ANALYTICS_MESSAGE_ID_SCOPE_CACHE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYTICS_COUNT_FALLBACK_QUEUE_MAX_ENTRIES: usize = 2_048;
 pub const ANALYTICS_UNIT_FILTER_CACHE_TTL_MS: u64 = 5_000;
+pub const ANALYTICS_UNIT_FILTER_IDS_CHUNK_SIZE: usize = 10_000;
 pub const ANALYTICS_UNIT_FILTER_CACHE_MAX_ENTRIES: usize = 2_048;
 /// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
 /// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
@@ -2053,9 +2191,12 @@ pub struct Config {
     pub signoz_logs_enabled: Option<bool>,
     /// Signoz JSON receiver endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:8082.
     pub signoz_logs_endpoint: Option<String>,
-    /// Enable application metrics export to Signoz over OTLP gRPC.
+    /// Legacy: metrics export is set on the Monitoring tab of the admin
+    /// system settings. Startup imports this value there once; remove it
+    /// from config.toml afterwards.
     pub signoz_metrics_enabled: Option<bool>,
-    /// Signoz OTLP gRPC endpoint, e.g. http://signoz-echo.eagle-atria.ts.net:4317.
+    /// Legacy, imported like `signoz_metrics_enabled`; an OTLP gRPC endpoint
+    /// such as http://signoz-echo.eagle-atria.ts.net:4317.
     pub signoz_metrics_endpoint: Option<String>,
     /// Collect hourly admin KPI snapshots through the enabled metrics exporter.
     pub signoz_kpi_metrics_enabled: Option<bool>,

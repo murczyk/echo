@@ -3912,6 +3912,11 @@ async fn fail_in_progress_report(
         .await
         .c(h!())?;
     if let Some(report_history) = &report_history {
+        if let Some(metrics) = &env.metrics {
+            metrics
+                .operational
+                .record_report_timeout(&report_history.report_kind);
+        }
         complete_pending_report_download_attempts(
             &env.dbx,
             report_history.id,
@@ -6593,15 +6598,160 @@ mod tests {
         .await
         .unwrap();
         assert_ne!(first.id, second.id);
-        assert_eq!(
-            first.request["rer_scope"]["units"][unit.id.to_string()]["target"]
-                ["report_name"],
-            "Перший"
+        for (report, expected_name) in [(first, "Перший"), (second, "Другий")]
+        {
+            let ReportHistoryRequest::AnalysisReport {
+                rer_scope: Some(scope),
+                ..
+            } = serde_json::from_value(report.request).unwrap()
+            else {
+                panic!("queued RER report must retain its scope");
+            };
+            assert_eq!(scope.units[&unit.id].target.report_name, expected_name);
+        }
+    }
+
+    // https://github.com/echoua/echo/issues/4034
+    #[tokio::test]
+    #[serial]
+    async fn operational_timeouts_count_only_the_winning_failure_transition(
+    ) -> anyhow::Result<()> {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.c(h!())?;
+        let (metrics, recorder) =
+            crate::telemetry::Metrics::recording(&env.config);
+        let mut env = env.as_ref().clone();
+        env.metrics = Some(metrics.clone());
+        env.config.skip_discord_notifications = Some(true);
+        let now = Utc::now().naive_utc();
+        let report = insert_report_history(
+            &env.dbx,
+            "Tester",
+            KIND_GOI,
+            STATUS_IN_PROGRESS,
+            now,
+            Some(now),
+            None,
+        )
+        .await
+        .c(h!())?;
+        let (first, second) = tokio::join!(
+            fail_in_progress_report(&env, report.id, "timeout".to_string()),
+            fail_in_progress_report(&env, report.id, "timeout".to_string()),
         );
         assert_eq!(
-            second.request["rer_scope"]["units"][unit.id.to_string()]["target"]
-                ["report_name"],
-            "Другий"
+            usize::from(first.c(h!())?.is_some())
+                + usize::from(second.c(h!())?.is_some()),
+            1
         );
+        fail_timed_out_reports(&env).await.c(h!())?;
+        handle_report_timeout(&env, &report, report_timeout_error(&report))
+            .await
+            .c(h!())?;
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[("report_kind", KIND_GOI)]
+            ),
+            Some(1)
+        );
+        insert_report_history(
+            &env.dbx,
+            "Tester",
+            "4034-unsupported",
+            STATUS_PLANNED,
+            now,
+            None,
+            None,
+        )
+        .await
+        .c(h!())?;
+        assert!(fail_next_unknown_report(&env).await.c(h!())?.is_some());
+        metrics.force_flush_for_test();
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[(
+                    "report_kind",
+                    crate::config::OPERATIONAL_METRICS_UNKNOWN_REPORT_KIND
+                )],
+            ),
+            Some(0)
+        );
+        let started = now
+            - Duration::seconds(
+                (REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS + 1) as i64,
+            );
+        let timed_out_kinds: Vec<_> = worker_report_kinds()
+            .into_iter()
+            .map(|(_, kind)| kind)
+            .filter(|kind| {
+                !matches!(*kind, KIND_GOI | KIND_ETALONKA | KIND_GEOJSON)
+            })
+            .collect();
+        for kind in &timed_out_kinds {
+            insert_report_history(
+                &env.dbx,
+                "Tester",
+                kind,
+                STATUS_IN_PROGRESS,
+                started,
+                Some(started),
+                None,
+            )
+            .await
+            .c(h!())?;
+        }
+        insert_report_history(
+            &env.dbx,
+            "Tester",
+            KIND_ETALONKA,
+            STATUS_IN_PROGRESS,
+            started,
+            Some(started),
+            None,
+        )
+        .await
+        .c(h!())?;
+        insert_report_history(
+            &env.dbx,
+            "Tester",
+            KIND_GEOJSON,
+            STATUS_DONE,
+            started,
+            Some(started),
+            None,
+        )
+        .await
+        .c(h!())?;
+        fail_timed_out_reports(&env).await.c(h!())?;
+        fail_timed_out_reports(&env).await.c(h!())?;
+        metrics.force_flush_for_test();
+        for kind in timed_out_kinds {
+            assert_eq!(
+                recorder.counter_value(
+                    crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                    &[("report_kind", kind)]
+                ),
+                Some(1),
+                "timeout metric for {kind}"
+            );
+        }
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[("report_kind", KIND_ETALONKA)]
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            recorder.counter_value(
+                crate::config::OPERATIONAL_METRICS_REPORT_TIMEOUTS,
+                &[("report_kind", KIND_GEOJSON)]
+            ),
+            Some(0)
+        );
+        Ok(())
     }
 }

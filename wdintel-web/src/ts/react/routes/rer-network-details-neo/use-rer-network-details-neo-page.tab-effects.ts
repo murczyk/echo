@@ -5,6 +5,7 @@ import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '
 import type { CallsignsLoadPeriods } from './use-rer-network-details-neo-page.load';
 import type { NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
 import { NETWORK_SETTLEMENTS_POLL_INTERVAL_MS } from './use-rer-network-details-neo-page.constants';
+import { resolveNetworkCallsignStatsPeriod } from './network-callsigns.stats';
 
 type TabEffectsParams = {
   state: NetworkDetailsNeoPageState;
@@ -78,7 +79,7 @@ export function useRerNetworkDetailsNeoPageTabEffects({
     if (state.activeNetworkDetailsTab !== 'callsigns') return;
     if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
     void loadCallsigns(networkIdValue, {
-      network: state.networkCallsignsPeriod,
+      network: resolveNetworkCallsignStatsPeriod(state.networkCallsignsPeriod),
       catalog: state.catalogCallsignsPeriod,
       intercepted: state.interceptedCallsignsPeriod,
     });

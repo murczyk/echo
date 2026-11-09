@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { MapRegistry, countKnownReports, createMapTools, knownReportsGuidance, normalizeToolArguments, preserveMapReferences, publishReferencedDrafts, sanitizeEditOperations, stripUnpublishedMapLinks, validateMapEdit, validateMapSummaries, type MapRecord } from "./maps.ts";
+import { MapRegistry, countKnownReports, createMapTools, knownReportsGuidance, normalizeToolArguments, preserveMapReferences, publishReferencedDrafts, sanitizeEditOperations, stripUnpublishedMapLinks, undeliveredMaps, validateMapEdit, validateMapSummaries, type MapRecord } from "./maps.ts";
 import { citationRepairPrompt, canonicalizeAnswer } from "./citations.ts";
 import { SidcResolver } from "./sidc-resolver.ts";
 
@@ -366,4 +366,51 @@ test("#3064 a single-name symbol target must match one point and drafts with a c
   publishReferencedDrafts(`[мапа](echo-map:${id})`, registry, (event) => events.push(event));
   assert.equal(events.length, 0);
   assert.deepEqual(registry.outcome.unpublished, ["Польоти"]);
+});
+
+test("#4038 a custom link label publishes the draft or stays as plain text", () => {
+  const registry = new MapRegistry();
+  const { id } = registry.create("Точки", true);
+  registry.append(id, [record(1)]);
+  const events: any[] = [];
+  const answer = `**[Точки (1)](echo-map:${id})** і [Чужа](echo-map:22222222-2222-4222-8222-222222222222) та [мапа](echo-map:bad-id)`;
+  publishReferencedDrafts(answer, registry, (event) => events.push(event));
+  assert.equal(events.length, 1);
+  assert.equal(stripUnpublishedMapLinks(answer, registry.list()), `**[Точки (1)](echo-map:${id})** і Чужа та `);
+});
+
+test("#4038 a draft without a single valid point is not auto-published", () => {
+  const registry = new MapRegistry();
+  const { id } = registry.create("Проба", false);
+  registry.append(id, [{ ...record(1), latitude: null, longitude: null }]);
+  const events: any[] = [];
+  publishReferencedDrafts(`[мапа](echo-map:${id})`, registry, (event) => events.push(event));
+  assert.equal(events.length, 0);
+});
+
+test("#4038 the open map stays linked even when it is missing from history", () => {
+  const open = "22222222-2222-4222-8222-222222222222";
+  assert.equal(stripUnpublishedMapLinks(`[Моя](echo-map:${open})`, [], open), `[Моя](echo-map:${open})`);
+  assert.equal(undeliveredMaps(`[Моя](echo-map:${open})`, [], { editSuccesses: 0, unpublished: [] }, open), false);
+});
+
+test("#4038 undelivered maps cover dead links, blank maps and abandoned drafts", () => {
+  const outcome = { editSuccesses: 0, unpublished: [] as string[] };
+  const map = { id: "11111111-1111-4111-8111-111111111111", title: "Точки", totalCount: 15, validCount: 15, published: true };
+  const link = `[мапа](echo-map:${map.id})`;
+  assert.equal(undeliveredMaps(link, [map], outcome), false);
+  assert.equal(undeliveredMaps(link, [], outcome), true);
+  assert.equal(undeliveredMaps("", [{ ...map, validCount: 0 }], outcome), true);
+  assert.equal(undeliveredMaps("", [{ ...map, published: false }], outcome), true);
+  assert.equal(undeliveredMaps("", [{ ...map, published: false }], { ...outcome, editSuccesses: 1 }), false);
+  assert.equal(undeliveredMaps("", [{ ...map, published: false }, { ...map, id: "33333333-3333-4333-8333-333333333333" }], outcome), false);
+  assert.equal(undeliveredMaps(link, [{ ...map, published: false }], { ...outcome, unpublished: ["Точки"] }), false);
+  // A blank map from an earlier request is not this answer's failure.
+  assert.equal(undeliveredMaps("", [{ ...map, validCount: 0, requestId: "r" }], outcome), false);
+});
+
+test("#4038 records may leave the format and Y to Echo", () => {
+  const [record] = sanitizeEditOperations([{ op: "add", record: { sidc: "", name: "Нова", x: "36TXT7958468848" } }], [], () => true) as any[];
+  assert.equal(record.record.coordinateSystem, "");
+  assert.equal(record.record.y, "");
 });

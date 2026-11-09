@@ -697,6 +697,8 @@ test('@regression #3340 desktop clicks toggle chrome without playing or zooming'
   await video.evaluate((element) => element.pause());
   const close = dialog.getByRole('button', { name: 'Закрити', exact: true });
   await expect(close).toBeVisible();
+  await dialog.getByRole('heading', { name: 'e2e-video-1.mp4', exact: true }).click();
+  await expect(dialog).toBeVisible();
   await video.click();
   await expect(close).toBeHidden();
   await expect(video).toHaveJSProperty('paused', true);
@@ -1137,3 +1139,43 @@ for (const exit of ['button', 'Escape'] as const) {
     await expect(dialog.getByRole('button', { name: 'На весь екран', exact: true })).toBeDisabled();
   });
 }
+
+for (const host of ['analysis', 'duty'] as const) {
+  for (const direction of ['up', 'down'] as const) {
+    for (const fullscreen of [false, true]) {
+      test(`@regression #3340 ${host}: swipe ${direction} dismisses ${fullscreen ? 'fullscreen' : 'inline'} video`, async ({
+        page,
+      }) => {
+        const { dialog, video } = await openVideo(page, host);
+        const original = await video.elementHandle();
+        if (fullscreen) {
+          await dialog.getByRole('button', { name: 'На весь екран', exact: true }).click();
+          await expect
+            .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
+            .toBe(true);
+        }
+        await swipe(page, { x: 180, y: 350 }, { x: 180, y: direction === 'up' ? 180 : 520 });
+        await expect(dialog).toHaveCount(0);
+        expect(await original!.evaluate((element) => element.paused)).toBe(true);
+        await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
+      });
+    }
+  }
+}
+
+test('@regression #3340 short vertical drags and timeline gestures keep the video viewer open', async ({
+  page,
+}) => {
+  const { dialog, video } = await openVideo(page, 'duty');
+  await video.evaluate((element) => element.pause());
+  await swipe(page, { x: 180, y: 350 }, { x: 180, y: 390 });
+  await expect(dialog).toBeVisible();
+  await expect(video).toHaveJSProperty('paused', true);
+  const timeline = (await dialog.locator('[data-mobile-video-timeline]').boundingBox())!;
+  const x = timeline.x + timeline.width / 2;
+  const y = timeline.y + timeline.height / 2;
+  await swipe(page, { x, y }, { x, y: y - 140 });
+  await expect(dialog).toBeVisible();
+  await expect(video).toHaveJSProperty('paused', true);
+  await expect(dialog.getByRole('button', { name: 'Закрити', exact: true })).toBeVisible();
+});

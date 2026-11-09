@@ -1169,6 +1169,8 @@ pub struct OrbitReviewWorkflowPs {
 enum Cmd {
     /// Inspect harness releases and roll out selected AI namespaces.
     AiControlPanel(ai_control_panel::Options),
+    /// Print a session cookie for a staging check. Refused on other hosts.
+    IssueSession(users::cli_session::IssueSessionPs),
     /// Compile an inbox search for isolated evaluation fixtures.
     AiEvalSearchQuery,
     /// Prepare map fixtures and parse production CSV/KMZ exports without a database.
@@ -1843,10 +1845,19 @@ async fn async_main(
             .map_err(Into::into);
     }
 
+    if let Cmd::IssueSession(ps) = action {
+        return users::cli_session::issue_session(mode, ps)
+            .await
+            .map_err(Into::into);
+    }
+
     utils::worker_watch::spawn_metrics_logger();
 
     match action {
-        Cmd::AiControlPanel(_) | Cmd::AiEvalSearchQuery | Cmd::AiEvalMaps
+        Cmd::AiControlPanel(_)
+        | Cmd::AiEvalSearchQuery
+        | Cmd::AiEvalMaps
+        | Cmd::IssueSession(_)
         | Cmd::OneoffReplicateHistoricalAttachments => unreachable!(),
         Cmd::Server(ps) => {
             server::main_server(mode, ps, token, shutdown_handle.clone()).await

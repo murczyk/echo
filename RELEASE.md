@@ -2,25 +2,30 @@
 
 A release has two phases, run from a clean `stable` checkout:
 
-- **Prepare**: sync branches, bump the version, deploy to canary servers.
-- **Make**: deploy to every other active server.
+- **Prepare**: sync branches, bump the version, deploy to canary servers and
+  upgrade their AI harness.
+- **Make**: deploy to every other active server and upgrade its AI harness.
 
 "Prepare release", "make release", and "prepare and make release" mean these
-phases.
+phases. "Prepare stable release", "make stable release", and "prepare and make
+stable release" release what is on `stable` without merging `main`; see
+[Stable release](#stable-release).
 
 ## Approval
 
 A user message asking for a phase approves exactly that phase's operations and
-targets, as AGENTS.md allows. Prepare covers pushing `stable` and `main`, and
-deploying the canaries. Make covers deploying the remaining active servers.
+targets, as AGENTS.md allows. Prepare covers pushing `stable` and `main`,
+deploying the canaries, and upgrading their AI harness. Make covers deploying
+the remaining active servers and upgrading their AI harness. A stable release
+covers the same, except that its Prepare pushes only `stable`.
 
 Everything else still needs separate approval, including:
 
 - `just deploy-docs`;
-- `just ai-control-panel upgrade` and other harness changes;
+- harness changes other than the upgrade a deploy notice asks for;
 - configuration changes, one-off commands, and resnapshots from 👷 changelog
   entries;
-- rollbacks and recovery from a failed deploy.
+- rollbacks and recovery from a failed deploy or harness upgrade.
 
 ## Prepare
 
@@ -67,7 +72,8 @@ Everything else still needs separate approval, including:
    ```
 
 6. Deploy the canaries one by one, in this order: `echo-staging`,
-   `echo-cbr-staging`, `echo-kharkiv2`. Check logs after each one (see
+   `echo-cbr-staging`, `echo-kharkiv2`. After each one, upgrade its harness (see
+   [Upgrading the AI harness](#upgrading-the-ai-harness)) and check logs (see
    [Checking a server](#checking-a-server)).
 
    ```bash
@@ -77,18 +83,89 @@ Everything else still needs separate approval, including:
 
    `just deploy` refuses to run on `main`.
 
-7. Report the version, the canary results, the `👷`/`🚨` entries, and any harness
-   upgrade notices.
+7. Report the version, the canary results, the harness release on each canary,
+   and the `👷`/`🚨` entries.
 
 ## Make
 
 Deploy every server in `just servers-active` that is not a canary, one by one,
-in the listed order. Check logs after each one before starting the next. Use
-`just deploy` or `just deploy-from-local` as in Prepare. Do not use
-`just deploy-many`, because it leaves no log check between servers.
+in the listed order. Upgrade its harness and check logs after each one before
+starting the next. Use `just deploy` or `just deploy-from-local` as in Prepare.
+Do not use `just deploy-many`, because it leaves no log check between servers.
 
 For "prepare and make release", start Make straight after Prepare if the
 canaries are clean.
+
+## Stable release
+
+A stable release ships what is already on `stable`, for example a hotfix while
+`main` holds work that is not ready. It never merges `main` into `stable` and
+leaves `main` untouched. The next normal release brings `stable` back into
+`main` in Prepare step 1.
+
+"Prepare stable release" replaces Prepare steps 1 to 3 with these two steps, then
+continues from Prepare step 4:
+
+1. Update `stable` and list what came after the last bump:
+
+   ```bash
+   git switch stable
+   git pull --ff-only origin stable
+   last_bump=$(git log -1 --format=%h --grep='^bump: ')
+   git log --oneline "$last_bump"..
+   git diff "$last_bump" -- CHANGELOG.md | grep -E '^\+.*(👷|🚨)'
+   ```
+
+   If the log lists only `[skip ci]` commits, the last bump's deb already is this
+   release, so also skip Prepare steps 4 and 5.
+
+2. Check that each listed commit passed the tests. Builds from `stable` skip
+   them, so that run is on the commit's PR or on `main`, and a commit pushed
+   straight to `stable` has none. Report any such commit with the `👷`/`🚨`
+   entries.
+
+"Make stable release" is [Make](#make) as written, because Make merges nothing.
+For "prepare and make stable release", start it straight after Prepare if the
+canaries are clean.
+
+## Upgrading the AI harness
+
+Echo requires the exact harness release its running application was built for.
+Until they match, every AI chat request on that server fails, so a server is not
+finished while its deploy notice asks for an upgrade.
+
+Upgrade straight after each deploy, before starting the next server, to the
+release the notice names. The panel refuses to upgrade ahead of the deploy.
+
+1. Build the control panel once per release, from the release checkout:
+
+   ```bash
+   cargo build -p wdintel-rs --bin wdintel-rs
+   ```
+
+2. Preview, then upgrade:
+
+   ```bash
+   just ai-control-panel upgrade --host <server> --release <release> --dry-run
+   just ai-control-panel upgrade --host <server> --release <release>
+   ```
+
+   Queued or running AI requests on the server block the upgrade. Steps that
+   find the agent VM busy with other servers' requests wait and retry on their
+   own. If an upgrade still fails, the panel recovers the previous containers.
+   When the restored harness doesn't match the running Echo build, AI stays
+   disabled and the error says so. Rerun the same command once the VM is quiet:
+   it finishes the upgrade and switches AI back on.
+
+3. Confirm the server now reports its harness as current and AI is still on:
+
+   ```bash
+   python3 deploy/ai-control-panel/deploy-notice.py <server>
+   just ai-control-panel scan --host <server> --json 2>/dev/null | grep '^{"hosts"' | python3 -c 'import json,sys; print(json.load(sys.stdin)["hosts"][0]["enabled"])'
+   ```
+
+   The scan must print `True` unless AI was already off on that server before the
+   upgrade.
 
 ## Checking a server
 
@@ -96,8 +173,8 @@ Wait about 5 minutes after the deploy so there is real traffic in the logs.
 
 1. Confirm the deploy printed `✅✅✅ deploy OK`.
 2. Read the AI harness notice at the end of the deploy output. If it says an
-   upgrade is needed, the server's AI chat may stay unavailable until the
-   upgrade, so report it.
+   upgrade is needed, [upgrade](#upgrading-the-ai-harness) before going on. If it
+   reports an unknown status, stop and report it.
 3. Read the service logs. Match the level in the text: the services log to stdout,
    so `journalctl -p warning` shows nothing even when there are errors.
 
@@ -111,12 +188,17 @@ Wait about 5 minutes after the deploy so there is real traffic in the logs.
    before the deploy. Hosts are usually `ct-<server>`, and
    [MONITORING.md](docs/MONITORING.md#for-agents-over-ssh) has the queries.
 
+5. If the host rebooted since the last check, confirm PostgreSQL bound its
+   addresses. See
+   [After a host reboot](deploy/clickhouse/README.md#after-a-host-reboot).
+
 Compare with the pre-deploy period, because some errors are existing noise.
 
 ## Stopping
 
-Stop the rollout and report if a deploy fails, new errors appear, or a service
-is unhealthy. Do not deploy further servers or start recovery without approval.
+Stop the rollout and report if a deploy or harness upgrade fails, new errors
+appear, or a service is unhealthy. Do not deploy further servers or start
+recovery without approval.
 
 ## Notifications
 

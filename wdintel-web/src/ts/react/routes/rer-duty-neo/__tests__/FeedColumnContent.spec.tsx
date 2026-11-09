@@ -113,6 +113,7 @@ function buildColumn(hideNetworks: boolean): FeedColumnModel {
       hideBotTags: false,
       hideNetworks,
       messageTextPreviewLines: 20,
+      importantOnlyMyOrganism: false,
       tagsMap: {},
       tagsOrder: [],
       botTagAction: null,
@@ -178,6 +179,41 @@ describe('FeedColumnContent', () => {
 
     await act(async () => root.render(<FeedColumnContent column={column} />));
     expect(container.textContent).toContain('Group Alpha');
+  });
+
+  it('shows only marks of my organism when the setting is on, without a refetch (#4073)', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const onMessageImportant = vi.fn();
+    const column = buildColumn(false);
+    column.actions.onMessageImportant = onMessageImportant;
+    column.feed.items = [
+      [1, { ...message, important: true, aiImportant: true, importantByMyOrganism: false }],
+      [2, { ...message, important: true, importantByMyOrganism: true }],
+    ];
+    const withSetting = (importantOnlyMyOrganism: boolean): FeedColumnModel => ({
+      ...column,
+      messageCard: { ...column.messageCard, importantOnlyMyOrganism },
+    });
+    const statusOf = (id: number) =>
+      container.querySelector(
+        `[data-duty-message-id="${id}"] [data-message-card-important-status]`,
+      );
+
+    await act(async () => root.render(<FeedColumnContent column={withSetting(false)} />));
+    expect(statusOf(1)).not.toBeNull();
+    expect(statusOf(2)).not.toBeNull();
+
+    await act(async () => root.render(<FeedColumnContent column={withSetting(true)} />));
+    expect(statusOf(1)).toBeNull();
+    expect(statusOf(2)).not.toBeNull();
+    const importantButton = container.querySelector<HTMLButtonElement>(
+      '[data-duty-message-id="1"] [aria-label="Позначити як важливе"]',
+    );
+    expect(importantButton?.getAttribute('aria-pressed')).toBe('false');
+    await act(async () => importantButton?.click());
+    expect(onMessageImportant).toHaveBeenCalledWith(1, false, true);
   });
 
   it('keeps the first unread divider in place while reading and receiving messages (#3727)', async () => {

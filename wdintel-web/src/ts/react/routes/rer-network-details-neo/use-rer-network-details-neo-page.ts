@@ -59,8 +59,14 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     frequencyReloadGeneration.current += 1;
   }
 
-  const { reload, loadCallsigns, loadRelations, loadNetworkActivity, loadPelengPoints } =
-    useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
+  const {
+    reload,
+    loadCallsigns,
+    loadNetworkCallsignStats,
+    loadRelations,
+    loadNetworkActivity,
+    loadPelengPoints,
+  } = useRerNetworkDetailsNeoPageLoad(networkId, setState, pageReloadGeneration);
 
   const unitsById = useMemo(() => buildLookupMap(state.units), [state.units]);
   const postsById = useMemo(() => buildLookupMap(state.posts), [state.posts]);
@@ -149,6 +155,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     reloadGeneration: frequencyReloadGeneration,
     currentNetworkIdRef,
     loadCallsigns,
+    loadNetworkCallsignStats,
   });
 
   const tabControls = useRerNetworkDetailsNeoPageTabControls(

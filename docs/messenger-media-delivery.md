@@ -71,6 +71,8 @@ Originals and playback copies live in
 originals are retained for at least 24 hours after publication, irrespective of
 viewing or the message's event timestamp. Copied references share the same object
 and extend its protection. Legacy on-demand cache files remain separate.
+Encrypted media over 10 MiB without a retained copy is decrypted once into that
+on-demand cache: decryption covers the whole object, so it cannot serve ranges.
 
 Completed immutable uploads can be hard-linked; other sources are copied with
 bounded memory. Files are synced and published atomically before upload source
@@ -190,7 +192,11 @@ overflow menu. Horizontal swipes and shared carousel controls retain the message
 mixed attachments. The mobile playback panel uses one row from 480px wide, or a
 timeline above the buttons on narrower screens, without a duplicate centre button.
 On narrow screens, carousel navigation sits in a translucent island above the
-playback panel. The panel stays anchored to the bottom for one or many attachments.
+playback panel. At the initial zoom, a vertical swipe on the mobile video surface
+dismisses the viewer, including standard fullscreen, and stops playback. Timeline
+and button gestures keep their own actions; fullscreen still blocks horizontal
+attachment navigation. Desktop background clicks outside the video still dismiss
+the viewer. The panel stays anchored to the bottom for one or many attachments.
 While the mobile video viewer is open, it temporarily sets `viewport-fit=cover`
 so supporting browsers can extend its background underneath gesture navigation.
 The shared dialog owns this setting and keeps it unchanged while switching

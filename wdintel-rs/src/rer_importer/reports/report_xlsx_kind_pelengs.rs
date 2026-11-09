@@ -600,6 +600,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                     checked: m.checked.unwrap_or(false),
                     important: false,
                     ai_important: false,
+                    important_by_my_organism: false,
                     bookmarked: false,
                     timestamp: m
                         .timestamp

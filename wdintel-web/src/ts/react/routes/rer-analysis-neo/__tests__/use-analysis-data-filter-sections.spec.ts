@@ -6,6 +6,10 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Unit } from '../../../../../Bindings';
+import {
+  buildUnitHierarchyIndex,
+  type UnitHierarchyIndex,
+} from '../../shared/unit-children-filter';
 import { buildAnalysisReq, emptyQueryState } from '../helpers';
 import {
   filterSectionsToInvalidateForPatch,
@@ -43,13 +47,20 @@ let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let latest: HookApi | null = null;
 
-function Harness() {
+function Harness({
+  hierarchy,
+  setOptions = vi.fn(),
+}: {
+  hierarchy?: UnitHierarchyIndex;
+  setOptions?: Parameters<typeof useAnalysisFilterSections>[0]['setOptions'];
+}) {
   const unitsMapRef = useRef<Record<number, Unit>>({});
   latest = useAnalysisFilterSections({
     queryState: {
       ...emptyQueryState(),
       fromDateTimeStr: '2026-03-30T08:00',
       toDateTimeStr: '2026-03-31T08:00',
+      unitHierarchy: hierarchy,
     },
     optionsFreqValues: [],
     unitsMapRef,
@@ -58,7 +69,7 @@ function Harness() {
     setAorEntries: vi.fn(),
     setGroupInfos: vi.fn(),
     setNetworks: vi.fn(),
-    setOptions: vi.fn(),
+    setOptions,
     setProfiles: vi.fn(),
     setTagsMap: vi.fn(),
     setTagsOrder: vi.fn(),
@@ -99,7 +110,7 @@ beforeEach(() => {
   });
   analysisApiMocks.fetchAnalysisSenders.mockResolvedValue({ senders: [] });
   analysisApiMocks.fetchAnalysisTags.mockResolvedValue({ tags: [] });
-  analysisApiMocks.fetchAnalysisUnits.mockResolvedValue({ units: [] });
+  analysisApiMocks.fetchAnalysisUnits.mockResolvedValue({ units: [], options: [] });
   analysisApiMocks.fetchAnalysisNetworks.mockResolvedValue({ networks: [], networkNames: [] });
   analysisApiMocks.fetchNetworksByIds.mockResolvedValue([]);
   analysisApiMocks.getLatestSenders.mockResolvedValue({ data: {} });
@@ -216,6 +227,53 @@ describe('loadFilterSectionData', () => {
   });
 });
 describe('useAnalysisFilterSections', () => {
+  it.each([false, true])(
+    '#3527 reconciles parent counts without reloading unrelated facets (pending=%s)',
+    async (pending) => {
+      const oldCounts = deferred<{ units: []; options: [] }>();
+      const options = [{ value: 'unit-parent:group:2:6 А', label: '6 А', count: 3 }];
+      const reconciledCounts = deferred<{ units: []; options: typeof options }>();
+      analysisApiMocks.fetchAnalysisUnits
+        .mockReturnValueOnce(oldCounts.promise)
+        .mockReturnValueOnce(reconciledCounts.promise);
+      const setOptions = vi.fn();
+      root = createRoot(container!);
+      await act(async () => {
+        root?.render(
+          createElement(Harness, { hierarchy: buildUnitHierarchyIndex([]), setOptions }),
+        );
+      });
+      let initialLoad!: Promise<void>;
+      await act(async () => {
+        await latest?.loadFilterSection('tags');
+        initialLoad = latest!.loadFilterSection('units');
+        if (!pending) {
+          oldCounts.resolve({ units: [], options: [] });
+          await initialLoad;
+        }
+      });
+      const priorUpdates = setOptions.mock.calls.length;
+      await act(async () => {
+        root?.render(
+          createElement(Harness, { hierarchy: buildUnitHierarchyIndex([]), setOptions }),
+        );
+      });
+      expect(analysisApiMocks.fetchAnalysisUnits).toHaveBeenCalledTimes(2);
+      expect(analysisApiMocks.fetchAnalysisTags).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        oldCounts.resolve({ units: [], options: [] });
+        await initialLoad;
+        await latest?.loadFilterSection('units');
+      });
+      expect(setOptions).toHaveBeenCalledTimes(priorUpdates);
+      expect(analysisApiMocks.fetchAnalysisUnits).toHaveBeenCalledTimes(2);
+      await act(async () => reconciledCounts.resolve({ units: [], options }));
+      expect(setOptions).toHaveBeenCalledTimes(priorUpdates + 1);
+      expect(setOptions.mock.calls.at(-1)?.[0]({}).units).toEqual(options);
+      expect(analysisApiMocks.fetchAnalysisUnits).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it('returns null when no targeted invalidation is pending', async () => {
     await renderHook();
 

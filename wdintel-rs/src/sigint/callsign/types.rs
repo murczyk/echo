@@ -263,6 +263,9 @@ pub struct ListNetworkCallsignsReq {
     pub sort_by: Option<Vec<ListNetworkCallsignsSortBy>>,
     pub period:
         Option<crate::sigint::network::types::NetworkFreqCallsignsPeriod>,
+    /// `Some(false)` returns the assigned callsigns without activity, ignoring
+    /// `period`. Absent keeps the activity-enriched response.
+    pub include_activity_info: Option<bool>,
 }
 
 #[derive(

@@ -32,6 +32,17 @@ actual_release=$(control_bundle_release_id "$BUNDLE_DIR")
 [[ "$actual_release" == "$expected_release" ]] \
   || die "control bundle checksum mismatch: expected $expected_release, got $actual_release"
 
+install_postgres_listen_wait() {
+  local drop_in_dir=/etc/systemd/system/postgresql@.service.d
+  local drop_in=$drop_in_dir/echo-wait-listen-addresses.conf
+
+  install -d -o root -g root -m 0755 "$drop_in_dir"
+  printf '[Unit]\nAfter=tailscaled.service\n\n[Service]\nExecStartPre=-%s/current/bin/wait-postgres-listen-addresses.sh %%i\n' \
+    "$install_root" >"$drop_in"
+  chown root:root "$drop_in"
+  chmod 0644 "$drop_in"
+}
+
 stage_dir=
 analytics_health_was_active=false
 analytics_reconcile_was_active=false
@@ -87,6 +98,7 @@ normalize_control_release_permissions "$release_dir"
 for unit in "$unit_dir"/*; do
   install -o root -g root -m 0644 "$unit" "/etc/systemd/system/$(basename "$unit")"
 done
+install_postgres_listen_wait
 systemctl daemon-reload
 
 temporary_link=$install_root/.current.$$

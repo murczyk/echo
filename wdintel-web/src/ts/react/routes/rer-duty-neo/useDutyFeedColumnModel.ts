@@ -30,9 +30,11 @@ export type DutyFeedColumnModelDeps = {
   tagsLayout: TagsLayoutVariant;
   hideBotTags: boolean;
   hideNetworks: boolean;
+  dutySelectedGroupsEnabled: boolean;
   collapseMediaPreviews: boolean;
   mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
+  importantOnlyMyOrganism: boolean;
   openReportEditor: (feedId: string, reportId: number, sourceMessageId: number) => void;
   openMessageEditor: (
     feedId: string,
@@ -203,6 +205,7 @@ function buildFeedFilterPanel(
       locationsList,
       unitsList: Object.values(unitsMap),
       unitStatsReq: deps.feeds.buildReqForFeed(feed, { loadLatest: true }),
+      unitStatsRefreshIntervalMs: deps.feeds.pollIntervalMs,
       unitHierarchy: deps.feeds.unitHierarchy,
       persistentUnitFilterValues,
     },
@@ -399,6 +402,7 @@ function buildFeedMessageCard(
     collapseMediaPreviews: deps.collapseMediaPreviews,
     mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
+    importantOnlyMyOrganism: deps.importantOnlyMyOrganism,
     tagsMap,
     tagsOrder,
     botTagAction,
@@ -430,6 +434,7 @@ export function useDutyFeedColumnModel(deps: DutyFeedColumnModelDeps) {
     filterPanel: buildFeedFilterPanel(feed, deps),
     groupNavigation: {
       scope: groupFilterScope(feed.filter.groupsSelected ?? []),
+      showSelectedGroups: deps.dutySelectedGroupsEnabled,
       groupName: feed.groupScopeMasterKey
         ? (deps.feeds.groupInfos[feed.groupScopeMasterKey]?.name ?? feed.groupScopeMasterKey)
         : 'Всі групи',
