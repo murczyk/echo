@@ -266,7 +266,13 @@ export function useRerNetworkDetailsNeoPageActions({
         editError: formatErrorMessage(error),
       }));
     }
-  }, [state.editForm, state.editInProgress, state.network, setState]);
+  }, [
+    state.editForm,
+    state.editInProgress,
+    state.network,
+    state.supportNonRerInterceptions,
+    setState,
+  ]);
 
   const handleDelete = useCallback(async () => {
     if (!state.network) return;
