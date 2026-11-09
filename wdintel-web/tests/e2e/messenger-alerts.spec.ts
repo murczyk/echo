@@ -97,6 +97,32 @@ test('@regression #3610 sending settings preserve sender order and paginate deli
   await page.getByRole('button', { name: 'Оновити', exact: true }).click();
   await expect(page.getByText('Recipient 1', { exact: true })).toBeVisible();
   expect(historyRequests).toEqual([null, 'older-cursor', null]);
+
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.evaluate(() => {
+    localStorage.removeItem('columnOrder-messenger-alert-history');
+    let size = 1024 * 1024;
+    let index = 0;
+    while (size > 0) {
+      try {
+        localStorage.setItem(`quota-regression-${index}`, 'x'.repeat(size));
+        index += 1;
+      } catch (error) {
+        if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') throw error;
+        size = Math.floor(size / 2);
+      }
+    }
+  });
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Відправка', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByText('Recipient 1', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Наступна сторінка' }).click();
+  await expect(page.getByText('Older recipient', { exact: true })).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
 
 test('@regression #3610 personal messenger alerts default off and report failed preference saves', async ({
