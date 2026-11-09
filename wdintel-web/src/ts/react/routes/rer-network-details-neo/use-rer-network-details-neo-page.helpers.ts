@@ -61,6 +61,8 @@ export function networkStatusDisplay(network: Network | null): DisplayNetworkSta
     : { label: 'Неактивна', tone: 'warning' };
 }
 
+export const UNKNOWN_NETWORK_TYPE_LABEL = 'Не визначено';
+
 export function displayNetworkType(modulation: string | null | undefined): string {
   switch (modulation) {
     case 'NFM':
@@ -74,7 +76,7 @@ export function displayNetworkType(modulation: string | null | undefined): strin
     case '':
     case null:
     case undefined:
-      return 'Не визначено';
+      return UNKNOWN_NETWORK_TYPE_LABEL;
     default:
       return normalizeLookupName(modulation);
   }
