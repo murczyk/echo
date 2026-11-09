@@ -13,7 +13,10 @@ import type {
 } from '../../../../Bindings';
 import { APP_TIME_ZONE, isPresent } from '../../utils/misc';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
-import { getKnownNetworkTypes } from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
+import {
+  displayNetworkType,
+  UNKNOWN_NETWORK_TYPE_LABEL,
+} from '../rer-network-details-neo/use-rer-network-details-neo-page.helpers';
 import type {
   ActivityLoadStateByNetworkId,
   NetworkActivityLoadState,
@@ -274,6 +277,13 @@ export function buildNetworkLabel(
   return pieces.join(' ');
 }
 
+function buildNetworkCopyTypePrefix(frequencies: NetworkFreq[]): string {
+  const types = frequencies
+    .map((freq) => displayNetworkType(freq.modulation))
+    .filter((type) => type !== UNKNOWN_NETWORK_TYPE_LABEL);
+  return [...new Set(types)].join('/');
+}
+
 /**
  * Stored frequencies have 4 decimals; copy shows 3 unless the 4th is meaningful:
  * "122.4000" -> "122.400", "146.1125" -> "146.1125", "122.4" -> "122.400".
@@ -297,7 +307,7 @@ export function buildNetworkCopyText(row: NetworkRowView, includeFrequencies: bo
       ? active
       : row.inactiveFrequencies.filter((freq) => !freq.deleted)
     : [];
-  const typePrefix = getKnownNetworkTypes(frequencies).join('/');
+  const typePrefix = buildNetworkCopyTypePrefix(frequencies);
   const name = [typePrefix, row.networkLabel].filter((part) => part !== '').join(' ');
   const locationParts = row.network.location
     .split(/[,\n]/)

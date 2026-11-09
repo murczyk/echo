@@ -105,21 +105,12 @@ export function getFrequencyFormatError(freq: string): string | null {
   return null;
 }
 
-/** Unique display types of the given frequencies, excluding the unknown type. */
-export function getKnownNetworkTypes(
-  freqs: ReadonlyArray<Pick<Network['freqs'][number], 'modulation'>>,
-): string[] {
-  return [
+export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
+  const modulations = [
     ...new Set(
-      freqs
-        .map((freq) => displayNetworkType(freq.modulation))
-        .filter((type) => type !== UNKNOWN_NETWORK_TYPE_LABEL),
+      freqs.map((freq) => displayNetworkType(freq.modulation)).filter((m) => m !== NO_DATA_LABEL),
     ),
   ];
-}
-
-export function formatNetworkFreqRange(freqs: Array<Network['freqs'][number]>): string {
-  const modulations = getKnownNetworkTypes(freqs);
   return modulations.length === 0 ? NO_DATA_LABEL : modulations.join(', ');
 }
 
