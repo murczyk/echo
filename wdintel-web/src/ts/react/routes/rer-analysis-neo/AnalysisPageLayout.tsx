@@ -567,6 +567,8 @@ function AnalysisPageLayout({ page }: { page: AnalysisPageViewModel }) {
                   {page.leftPanelTab === LeftPanelTab.Messenger ? (
                     <MessengerWorkspace
                       loading={page.messengerAccountsLoading}
+                      refreshToken={page.messengerRefreshToken}
+                      onBusyChange={page.setMessengerWorkspaceBusy}
                       onSaveInternalNotes={page.saveMessengerInternalNotes}
                       account={
                         page.messengerAccounts.find(

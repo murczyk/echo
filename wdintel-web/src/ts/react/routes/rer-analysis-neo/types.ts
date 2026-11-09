@@ -248,6 +248,8 @@ export type AnalysisPageState = {
   messengerAccounts: readonly MessengerAccountItem[];
   messengerAccountsLoading: boolean;
   messengerAccountsError: string | null;
+  messengerRefreshToken: number;
+  messengerRefreshing: boolean;
   selectedMessengerAccountId: string | null;
   groupsActivityPeriod: AnalysisGroupsActivityPeriod;
   includeOnlyNewFreqs: boolean;
@@ -408,6 +410,8 @@ export type AnalysisPageActions = {
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;
   setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => void;
+  refreshMessenger: () => void;
+  setMessengerWorkspaceBusy: (busy: boolean) => void;
   resetFilters: () => void;
   saveAsNew: (name: string) => Promise<boolean>;
   setCenterTab: (tab: AnalysisCenterTab) => void;

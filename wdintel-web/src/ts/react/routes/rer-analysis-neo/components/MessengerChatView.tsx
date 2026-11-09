@@ -28,6 +28,9 @@ type Props = {
   title: string;
   // From the URL: the analysis messenger chat opens at this message instead of at its end.
   initialAnchorId: string | null;
+  refreshToken?: number;
+  // Reports whether this chat is loading or refreshing, for the header refresh button.
+  onBusyChange?: (busy: boolean) => void;
   onBack: () => void;
 };
 
@@ -51,14 +54,28 @@ const COPIED_NOTICE_MS = 2000;
 const getMessageId = (message: MessengersMessageItem) => message.id;
 
 // The open chat of the analysis messenger: header, date pill and message feed.
-export function MessengerChatView({ account, chat, title, initialAnchorId, onBack }: Props) {
+export function MessengerChatView({
+  account,
+  chat,
+  title,
+  initialAnchorId,
+  refreshToken = 0,
+  onBusyChange,
+  onBack,
+}: Props) {
   const feedRef = useRef<MessageFeedHandle<string>>(null);
   const chatState = useMessengerChat({
     accountId: account.id,
     chatId: chat.id,
     anchorMessageId: initialAnchorId,
+    refreshToken,
   });
   const { messages, memberById, loading, hasMoreAbove, hasMoreBelow } = chatState;
+  const busy = loading || chatState.refreshing;
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   const [firstVisibleId, setFirstVisibleId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [alignPending, setAlignPending] = useState(true);

@@ -24,6 +24,8 @@ type Args = {
   chatId: string;
   // Message to open the analysis messenger chat at (from the URL). An unknown one falls back to the newest page.
   anchorMessageId: string | null;
+  // Bumped by the header refresh button: fetches fresh messages and members of the open chat.
+  refreshToken?: number;
 };
 
 type Loaded = { pages: MessengerChatPage[]; error: null } | { pages: null; error: string };
@@ -67,6 +69,8 @@ export function useMessengerChat(args: Args) {
   // True while "go to the end" fetches the newest page or fresh messages.
   const [jumpingToEnd, setJumpingToEnd] = useState(false);
   const [pagingError, setPagingError] = useState<string | null>(null);
+  // True while the header refresh is fetching, it stays disabled meanwhile.
+  const [refreshing, setRefreshing] = useState(false);
   const pagesRef = useRef<MessengerChatPage[] | null>(null);
   const busyRef = useRef({ above: false, below: false });
   const controllerRef = useRef<AbortController | null>(null);
@@ -79,6 +83,15 @@ export function useMessengerChat(args: Args) {
     pagesRef.current = pages;
     setLoaded((current) => ({ pages, error: null, attempt: current?.attempt ?? 0 }));
   }, []);
+
+  // Members only decorate messages, so their failure never blocks the feed.
+  const loadMembers = useCallback(
+    (signal: AbortSignal) =>
+      listMessengersChatMembers({ accountId, chatId }, { signal })
+        .then((rsp) => setMembers(rsp.items))
+        .catch(() => undefined),
+    [accountId, chatId],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -95,12 +108,9 @@ export function useMessengerChat(args: Args) {
         if (isAbortError(reason)) return;
         setLoaded({ pages: null, error: toErrorMessage(reason), attempt });
       });
-    // Members only decorate messages, so their failure never blocks the feed.
-    listMessengersChatMembers({ accountId, chatId }, { signal: controller.signal })
-      .then((rsp) => setMembers(rsp.items))
-      .catch(() => undefined);
+    loadMembers(controller.signal);
     return () => controller.abort();
-  }, [accountId, chatId, attempt]);
+  }, [accountId, chatId, attempt, loadMembers]);
 
   // Resolves to false when a request failed, so callers can skip what depends on it.
   const page = useCallback(
@@ -200,6 +210,27 @@ export function useMessengerChat(args: Args) {
     setAttempt((value) => value + 1);
   }, []);
 
+  // The header refresh: the newest page replaces a window that does not reach the end, otherwise
+  // what arrived since is appended. A chat that has not loaded yet is simply loaded again.
+  const refreshToken = args.refreshToken ?? 0;
+  const seenRefreshToken = useRef(refreshToken);
+  useEffect(() => {
+    if (seenRefreshToken.current === refreshToken) return;
+    seenRefreshToken.current = refreshToken;
+    const pages = pagesRef.current;
+    if (pages == null) {
+      retry();
+      return;
+    }
+    const signal = controllerRef.current?.signal;
+    setRefreshing(true);
+    void Promise.all([
+      signal == null ? undefined : loadMembers(signal),
+      // After a failed page request `page` refuses to run, the newest page also clears that error.
+      hasMoreBelow(pages) || pagingError != null ? loadNewestPage() : page('below'),
+    ]).finally(() => setRefreshing(false));
+  }, [refreshToken, retry, loadMembers, loadNewestPage, page, pagingError]);
+
   const pages = loaded?.pages ?? null;
   const messages = useMemo<MessengersMessageItem[]>(
     () => (pages == null ? [] : windowMessages(pages)),
@@ -214,6 +245,7 @@ export function useMessengerChat(args: Args) {
     messages,
     memberById,
     loading: loaded == null,
+    refreshing,
     error: loaded?.error ?? null,
     pagingError,
     clearPagingError: () => setPagingError(null),

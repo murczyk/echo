@@ -20,8 +20,8 @@ describe('useMessengerAccounts', () => {
   let root: Root;
   let latest: State | null;
 
-  function Probe({ enabled }: { enabled: boolean }) {
-    latest = useMessengerAccounts(enabled);
+  function Probe({ enabled, refreshToken = 0 }: { enabled: boolean; refreshToken?: number }) {
+    latest = useMessengerAccounts(enabled, refreshToken);
     return null;
   }
 
@@ -52,6 +52,33 @@ describe('useMessengerAccounts', () => {
     apiMock.listMessengersAccounts.mockRejectedValue(new Error('forbidden'));
     await act(async () => root.render(<Probe enabled />));
     expect(latest).toMatchObject({ loading: false, error: 'forbidden', accounts: [] });
+  });
+
+  it('reloads in place on a new refresh token and reports it as fetching', async () => {
+    let resolve!: (value: unknown) => void;
+    apiMock.listMessengersAccounts
+      .mockResolvedValueOnce({ items: [{ id: '1', displayName: 'A', externalId: 'x' }] })
+      .mockReturnValueOnce(new Promise((r) => (resolve = r)));
+    await act(async () => root.render(<Probe enabled />));
+    expect(latest).toMatchObject({ loading: false, fetching: false });
+
+    await act(async () => root.render(<Probe enabled refreshToken={1} />));
+    expect(latest).toMatchObject({ loading: false, fetching: true });
+    expect(latest?.accounts.map((account) => account.name)).toEqual(['A']);
+
+    await act(async () => resolve({ items: [{ id: '2', displayName: 'B', externalId: 'y' }] }));
+    expect(latest).toMatchObject({ fetching: false });
+    expect(latest?.accounts.map((account) => account.name)).toEqual(['B']);
+  });
+
+  it('keeps the loaded accounts when a refresh fails', async () => {
+    apiMock.listMessengersAccounts
+      .mockResolvedValueOnce({ items: [{ id: '1', displayName: 'A', externalId: 'x' }] })
+      .mockRejectedValueOnce(new Error('offline'));
+    await act(async () => root.render(<Probe enabled />));
+    await act(async () => root.render(<Probe enabled refreshToken={1} />));
+    expect(latest).toMatchObject({ loading: false, fetching: false, error: 'offline' });
+    expect(latest?.accounts).toHaveLength(1);
   });
 
   it('takes the messenger user id from the telegram block only when it exists', () => {

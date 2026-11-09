@@ -21,6 +21,9 @@ import { MessengerSearchField } from './MessengerSearchField';
 type Props = {
   account: MessengerAccountItem | null;
   loading?: boolean;
+  refreshToken?: number;
+  // Reports whether any messenger request of the workspace is running, for the header refresh button.
+  onBusyChange?: (busy: boolean) => void;
   onSaveInternalNotes?: (accountId: string, internalNotes: string) => Promise<void>;
   // shortcut: the external id will open another app, wire the target when it exists.
 };
@@ -208,11 +211,13 @@ function MessengerSidebar({
             Повторити завантаження
           </button>
         </div>
-      ) : loading ? (
+      ) : null}
+      {loading ? (
         <p className="px-3 text-xs opacity-60" role="status">
           Завантажуємо чати…
         </p>
-      ) : (
+      ) : // A failed first load has no chats to show; a failed refresh keeps the old ones under the error.
+      error != null && chats.length === 0 ? null : (
         CHAT_SECTIONS.map(({ key, title }) => (
           <ChatSection
             key={key}
@@ -227,7 +232,13 @@ function MessengerSidebar({
   );
 }
 
-export function MessengerWorkspace({ account, loading = false, onSaveInternalNotes }: Props) {
+export function MessengerWorkspace({
+  account,
+  loading = false,
+  refreshToken = 0,
+  onBusyChange,
+  onSaveInternalNotes,
+}: Props) {
   if (account == null && loading) {
     return (
       <p className="p-4 opacity-60" role="status">
@@ -248,6 +259,8 @@ export function MessengerWorkspace({ account, loading = false, onSaveInternalNot
     <MessengerAccountWorkspace
       key={account.id}
       account={account}
+      refreshToken={refreshToken}
+      onBusyChange={onBusyChange}
       onSaveInternalNotes={onSaveInternalNotes}
     />
   );
@@ -256,12 +269,22 @@ export function MessengerWorkspace({ account, loading = false, onSaveInternalNot
 // Everything that belongs to one analysis messenger account: its chats, the open chat and the account cards.
 function MessengerAccountWorkspace({
   account,
+  refreshToken,
+  onBusyChange,
   onSaveInternalNotes,
 }: {
   account: MessengerAccountItem;
+  refreshToken: number;
+  onBusyChange?: (busy: boolean) => void;
   onSaveInternalNotes?: Props['onSaveInternalNotes'];
 }) {
-  const chatsState = useMessengerChats(account.id);
+  const chatsState = useMessengerChats(account.id, refreshToken);
+  const [chatBusy, setChatBusy] = useState(false);
+  const busy = chatsState.fetching || chatBusy;
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
   // The analysis messenger chat and its position come from the URL once, on mount; after that the chat view owns them.
   const [selected, setSelected] = useState(() => parseMessengerChatQueryFromWindow(account.id));
   const chat = chatsState.chats.find((item) => item.id === selected.chatId) ?? null;
@@ -294,6 +317,8 @@ function MessengerAccountWorkspace({
           chat={chat}
           title={chatLabel(chat)}
           initialAnchorId={selected.anchorMessageId}
+          refreshToken={refreshToken}
+          onBusyChange={setChatBusy}
           onBack={() => selectChat(null)}
         />
       ) : selected.chatId != null && chatsState.loading ? (

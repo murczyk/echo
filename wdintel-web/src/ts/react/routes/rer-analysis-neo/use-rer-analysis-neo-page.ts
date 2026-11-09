@@ -217,8 +217,12 @@ export function useRerAnalysisNeoPage(
     ownsWindowUrl,
     selectedMessengerAccountId,
   ]);
+  const [messengerRefreshToken, setMessengerRefreshToken] = useState(0);
+  const refreshMessenger = useCallback(() => setMessengerRefreshToken((value) => value + 1), []);
+  const [messengerWorkspaceBusy, setMessengerWorkspaceBusy] = useState(false);
   const messengerAccountsState = useMessengerAccounts(
     messengerEnabled && leftPanelTab === LeftPanelTab.Messenger,
+    messengerRefreshToken,
   );
   const [systemSettingsStatus, setSystemSettingsStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
@@ -1764,6 +1768,8 @@ export function useRerAnalysisNeoPage(
     messengerAccounts: messengerAccountsState.accounts,
     messengerAccountsLoading: messengerAccountsState.loading,
     messengerAccountsError: messengerAccountsState.error,
+    messengerRefreshToken,
+    messengerRefreshing: messengerAccountsState.fetching || messengerWorkspaceBusy,
     selectedMessengerAccountId,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
@@ -1896,6 +1902,8 @@ export function useRerAnalysisNeoPage(
     setShowSettlements: data.setShowSettlements,
     renameSummaryUnit: data.renameSummaryUnit,
     reload,
+    refreshMessenger,
+    setMessengerWorkspaceBusy,
     resetFilters,
     saveAsNew: savedFilters.saveAsNew,
     setIncludeOnlyNewFreqs,

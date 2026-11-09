@@ -41,13 +41,27 @@ describe('useMessengerChat', () => {
   let root: Root;
   let latest: State;
 
-  function Probe({ anchor = null }: { anchor?: string | null }) {
-    latest = useMessengerChat({ accountId: 'a1', chatId: 'c1', anchorMessageId: anchor });
+  function Probe({
+    anchor = null,
+    refreshToken = 0,
+  }: {
+    anchor?: string | null;
+    refreshToken?: number;
+  }) {
+    latest = useMessengerChat({
+      accountId: 'a1',
+      chatId: 'c1',
+      anchorMessageId: anchor,
+      refreshToken,
+    });
     return null;
   }
   const ids = () => latest.messages.map((m) => m.id);
   const mount = (anchor: string | null = null) =>
     act(async () => root.render(<Probe anchor={anchor} />));
+  // The header refresh button bumps the token.
+  const refresh = (token: number, anchor: string | null = null) =>
+    act(async () => root.render(<Probe anchor={anchor} refreshToken={token} />));
 
   beforeEach(() => {
     apiMock.listMessengersChatMembers.mockReset().mockResolvedValue({ items: [] });
@@ -307,6 +321,83 @@ describe('useMessengerChat', () => {
       expect(latest.jumpingToEnd).toBe(true);
       await act(async () => resolve(rsp([], null, 'n1')));
       expect(latest.jumpingToEnd).toBe(false);
+    });
+  });
+
+  describe('header refresh', () => {
+    it('appends what arrived since and reloads the members when the chat end is loaded', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b', 'a'], null, 'n1'))
+        .mockResolvedValueOnce(rsp(['c'], 'o2', 'n2'));
+      await mount();
+      expect(apiMock.listMessengersChatMembers).toHaveBeenCalledTimes(1);
+      await refresh(1);
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'n1', direction: 'Newer' }),
+        expect.anything(),
+      );
+      expect(ids()).toEqual(['a', 'b', 'c']);
+      expect(apiMock.listMessengersChatMembers).toHaveBeenCalledTimes(2);
+      expect(latest.refreshing).toBe(false);
+    });
+
+    it('replaces a window that does not reach the chat end with the newest page', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(fullPage())
+        .mockResolvedValueOnce(rsp(['z', 'y'], 'o9', 'n9'));
+      await mount('m10');
+      expect(latest.hasMoreBelow).toBe(true);
+      await refresh(1, 'm10');
+      expect(apiMock.listMessengersMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: null, aroundMessageId: null }),
+        expect.anything(),
+      );
+      expect(ids()).toEqual(['y', 'z']);
+    });
+
+    it('does nothing for the same token', async () => {
+      apiMock.listMessengersMessages.mockResolvedValueOnce(rsp(['a'], null, 'n1'));
+      await mount();
+      await refresh(0);
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(1);
+      expect(apiMock.listMessengersChatMembers).toHaveBeenCalledTimes(1);
+    });
+
+    it('loads a chat that failed to load again', async () => {
+      apiMock.listMessengersMessages
+        .mockRejectedValueOnce(new HttpRequestError(500, 'boom'))
+        .mockResolvedValueOnce(rsp(['a'], null, 'n1'));
+      await mount();
+      expect(latest.error).toBe('boom');
+      await refresh(1);
+      expect(latest.error).toBeNull();
+      expect(ids()).toEqual(['a']);
+    });
+
+    it('reports refreshing until both requests are done', async () => {
+      let resolveMessages!: (value: MessengersMessagesListRsp) => void;
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['a'], null, 'n1'))
+        .mockReturnValueOnce(new Promise((r) => (resolveMessages = r)));
+      await mount();
+      await refresh(1);
+      expect(latest.refreshing).toBe(true);
+      await act(async () => resolveMessages(rsp(['b'], null, 'n2')));
+      expect(latest.refreshing).toBe(false);
+    });
+
+    it('refreshes after a failed page request instead of doing nothing', async () => {
+      apiMock.listMessengersMessages
+        .mockResolvedValueOnce(rsp(['b'], 'o1', 'n1'))
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce(rsp(['z'], null, 'n9'));
+      await mount();
+      await act(async () => latest.loadOlder());
+      expect(latest.pagingError).toBe('offline');
+      await refresh(1);
+      expect(apiMock.listMessengersMessages).toHaveBeenCalledTimes(3);
+      expect(ids()).toEqual(['z']);
+      expect(latest.pagingError).toBeNull();
     });
   });
 });

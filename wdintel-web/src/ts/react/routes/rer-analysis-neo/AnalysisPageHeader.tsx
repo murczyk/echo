@@ -37,7 +37,14 @@ type SettingsMenuProps = {
   onOpenReport?: (focusTarget: HTMLElement) => void;
 };
 
+// In messenger mode the refresh reloads the messenger entities only, otherwise the echo ones.
+function refreshAction(page: AnalysisPageViewModel) {
+  const messenger = page.leftPanelTab === LeftPanelTab.Messenger;
+  return () => (messenger ? page.refreshMessenger() : page.reload({ preserveMessagePage: true }));
+}
+
 function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps) {
+  const refresh = refreshAction(page);
   const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
   const settingsButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuOpen = Boolean(anchorElement);
@@ -101,10 +108,12 @@ function AnalysisSettingsMenu({ page, loading, onOpenReport }: SettingsMenuProps
           <ListItemText>Спочатку нові</ListItemText>
         </MenuItem>
         <MenuItem
-          disabled={loading}
+          disabled={
+            page.leftPanelTab === LeftPanelTab.Messenger ? page.messengerRefreshing : loading
+          }
           onClick={() => {
             closeMenu();
-            page.reload({ preserveMessagePage: true });
+            refresh();
           }}
         >
           <ListItemIcon>
@@ -157,9 +166,11 @@ export function AnalysisPageHeader({
     messageTransitionLoading ||
     page.messagesTotalLoading ||
     page.summaryLoading;
+  const refresh = refreshAction(page);
   const showPagination = !isNarrowLayout && page.leftPanelTab !== LeftPanelTab.Messenger;
   const showDateRange = page.leftPanelTab !== LeftPanelTab.Messenger;
-  const showReport = page.leftPanelTab !== LeftPanelTab.Messenger;
+  const isMessenger = page.leftPanelTab === LeftPanelTab.Messenger;
+  const showReport = !isMessenger;
   return (
     <PageHeader
       title="Аналіз"
@@ -252,8 +263,8 @@ export function AnalysisPageHeader({
               <Tooltip title="Оновити" arrow>
                 <span>
                   <IconButton
-                    onClick={() => page.reload({ preserveMessagePage: true })}
-                    disabled={loading}
+                    onClick={refresh}
+                    disabled={isMessenger ? page.messengerRefreshing : loading}
                     aria-label="Оновити"
                     sx={{
                       width: 40,
