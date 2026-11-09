@@ -30,6 +30,7 @@ pub struct Model {
     pub ai_transcript_analysis_enabled_at: Option<DateTime>,
     pub is_sigint_unit_mandatory: Option<bool>,
     pub is_device_mandatory: Option<bool>,
+    pub send_messages: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -58,6 +59,8 @@ pub enum Relation {
     SecretGroupOrganism,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
+    #[sea_orm(has_many = "super::sigint_group_sender_organism::Entity")]
+    SigintGroupSenderOrganism,
     #[sea_orm(has_many = "super::sigint_zone_datasource::Entity")]
     SigintZoneDatasource,
     #[sea_orm(has_many = "super::signal_group_admin::Entity")]
@@ -121,6 +124,12 @@ impl Related<super::secret_group_organism::Entity> for Entity {
 impl Related<super::secret_group_user::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SecretGroupUser.def()
+    }
+}
+
+impl Related<super::sigint_group_sender_organism::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintGroupSenderOrganism.def()
     }
 }
 

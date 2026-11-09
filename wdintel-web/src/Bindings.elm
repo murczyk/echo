@@ -2452,6 +2452,22 @@ groupCreationInfoEncoder struct =
         ]
 
 
+type alias GroupSendingSettings =
+    { canSendMessages : Bool
+    , sendMessages : Bool
+    , senderOrganismIds : List (Int)
+    }
+
+
+groupSendingSettingsEncoder : GroupSendingSettings -> Json.Encode.Value
+groupSendingSettingsEncoder struct =
+    Json.Encode.object
+        [ ( "can_send_messages", (Json.Encode.bool) struct.canSendMessages )
+        , ( "send_messages", (Json.Encode.bool) struct.sendMessages )
+        , ( "sender_organism_ids", (Json.Encode.list (Json.Encode.int)) struct.senderOrganismIds )
+        ]
+
+
 type alias OrphanSignalGroupEntry =
     { masterKey : String
     , name : String
@@ -9674,6 +9690,8 @@ type alias ZoneDatasourceGroupUpdateReq =
     , fetchNewMessages : Maybe (Bool)
     , isSigintUnitMandatory : Maybe (Bool)
     , isDeviceMandatory : Maybe (Bool)
+    , sendMessages : Maybe (Bool)
+    , senderOrganismIds : Maybe (List (Int))
     , userLogins : List (String)
     , organismIds : List (Int)
     , adminLogins : List (String)
@@ -9697,6 +9715,8 @@ zoneDatasourceGroupUpdateReqEncoder struct =
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
         , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
         , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
+        , ( "send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.sendMessages )
+        , ( "sender_organism_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.senderOrganismIds )
         , ( "user_logins", (Json.Encode.list (Json.Encode.string)) struct.userLogins )
         , ( "organism_ids", (Json.Encode.list (Json.Encode.int)) struct.organismIds )
         , ( "admin_logins", (Json.Encode.list (Json.Encode.string)) struct.adminLogins )
@@ -20713,6 +20733,8 @@ type alias GroupUpdateReq =
     , fetchNewMessages : Maybe (Bool)
     , isSigintUnitMandatory : Maybe (Bool)
     , isDeviceMandatory : Maybe (Bool)
+    , sendMessages : Maybe (Bool)
+    , senderOrganismIds : Maybe (List (Int))
     }
 
 
@@ -20732,6 +20754,8 @@ groupUpdateReqEncoder struct =
         , ( "fetch_new_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.fetchNewMessages )
         , ( "is_sigint_unit_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isSigintUnitMandatory )
         , ( "is_device_mandatory", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.isDeviceMandatory )
+        , ( "send_messages", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.sendMessages )
+        , ( "sender_organism_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.senderOrganismIds )
         ]
 
 
@@ -27256,6 +27280,8 @@ zoneDatasourceGroupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "send_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_organism_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user_logins" (Json.Decode.list (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "organism_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "admin_logins" (Json.Decode.list (Json.Decode.string))))
@@ -33854,6 +33880,8 @@ groupUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "fetch_new_messages" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_sigint_unit_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_device_mandatory" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "send_messages" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sender_organism_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
 
 
 nativeGroupSettingsDecoder : Json.Decode.Decoder NativeGroupSettings
